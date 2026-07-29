@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Shenora.Ipc/Shenora.Ipc.csproj" />
+    <Project Path="src/Shenora.WebView2/Shenora.WebView2.csproj" />
+    <Project Path="src/Shenora.WinForms/Shenora.WinForms.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Shenora.Tests/Shenora.Tests.csproj" />
+  </Folder>
+  <Folder Name="/samples/" />
+</Solution>

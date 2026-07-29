@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+.vs/
+*.user
+
+# npm
+node_modules/
+src/Shenora.React/dist/
+*.tgz
+
+# Sample packaged frontend (built by `npm run build` in samples/Shenora.Sample.Web)
+samples/Shenora.Sample.Desktop/wwwroot/
+
+# Pack/publish output
+publish/
+*.nupkg
+*.snupkg
+
+# API-surface drift dumps (the .txt baselines ARE tracked)
+*.actual
+
+# Devtools scratch (family convention: _-prefixed, never OS temp)
+devtools/_*
+devtools/screenshots/
+devtools/.cdp-port
+
+# Private local-only notes/config (real paths, sibling names, sensitive patterns) — never tracked
+local/

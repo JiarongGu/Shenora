@@ -1,0 +1,184 @@
+Shenora.WinForms.DpiHelper
+  Double BaseDpi
+  Double ScaleFromDeviceDpi(Int32)
+  Double SystemScale()
+  Int32 Scale(Int32, Double)
+  Int32 ScalePixels(Int32)
+  System.Drawing.Point ScalePoint(Int32, Int32)
+  System.Drawing.Size ScaleSize(Int32, Int32)
+Shenora.WinForms.IWindowStateStore
+  Shenora.WinForms.WindowState Load()
+  Void Save(Shenora.WinForms.WindowState)
+Shenora.WinForms.JsonFileWindowStateStore
+  Shenora.WinForms.WindowState Load()
+  Void .ctor(System.String)
+  Void Save(Shenora.WinForms.WindowState)
+Shenora.WinForms.SingleInstanceGuard
+  Boolean TryAcquire()
+  Boolean TryAcquire(System.TimeSpan)
+  System.String ActivateMessageName
+  System.String ApplicationName
+  System.String ChannelKey(System.String)
+  System.String MutexName
+  System.String get_ActivateMessageName()
+  System.String get_ApplicationName()
+  System.String get_MutexName()
+  UInt32 ActivateMessageId
+  UInt32 get_ActivateMessageId()
+  Void .ctor(System.String, System.String)
+  Void BroadcastActivate()
+  Void Dispose()
+Shenora.WinForms.SingleInstanceHostOptions
+  System.Action`2[Shenora.Core.ShenoraApplication,Shenora.WinForms.SingleInstanceGuard] OnSecondInstance
+  System.Action`2[Shenora.Core.ShenoraApplication,Shenora.WinForms.SingleInstanceGuard] get_OnSecondInstance()
+  System.String RestartArgument
+  System.String Scope
+  System.String get_RestartArgument()
+  System.String get_Scope()
+  System.TimeSpan RestartWaitTimeout
+  System.TimeSpan get_RestartWaitTimeout()
+  Void .ctor()
+  Void set_OnSecondInstance(System.Action`2[Shenora.Core.ShenoraApplication,Shenora.WinForms.SingleInstanceGuard])
+  Void set_RestartArgument(System.String)
+  Void set_RestartWaitTimeout(System.TimeSpan)
+  Void set_Scope(System.String)
+Shenora.WinForms.SplashPanel
+  Void .ctor(Shenora.WinForms.SplashPanelOptions)
+  Void SetColors(System.Drawing.Color, System.Drawing.Color)
+  Void UpdateProgress(Int32)
+Shenora.WinForms.SplashPanelOptions
+  Double BarWidthFraction
+  Double get_BarWidthFraction()
+  Int32 BarHeight
+  Int32 BarMaxWidth
+  Int32 get_BarHeight()
+  Int32 get_BarMaxWidth()
+  System.Drawing.Color BackColor
+  System.Drawing.Color BarColor
+  System.Drawing.Color get_BackColor()
+  System.Drawing.Color get_BarColor()
+  Void .ctor()
+  Void set_BackColor(System.Drawing.Color)
+  Void set_BarColor(System.Drawing.Color)
+  Void set_BarHeight(Int32)
+  Void set_BarMaxWidth(Int32)
+  Void set_BarWidthFraction(Double)
+Shenora.WinForms.UnhandledExceptionReport
+  Boolean Equals(Shenora.WinForms.UnhandledExceptionReport)
+  Boolean Equals(System.Object)
+  Boolean IsTerminating
+  Boolean get_IsTerminating()
+  Boolean op_Equality(Shenora.WinForms.UnhandledExceptionReport, Shenora.WinForms.UnhandledExceptionReport)
+  Boolean op_Inequality(Shenora.WinForms.UnhandledExceptionReport, Shenora.WinForms.UnhandledExceptionReport)
+  Int32 GetHashCode()
+  Shenora.WinForms.UnhandledExceptionReport <Clone>$()
+  Shenora.WinForms.UnhandledExceptionSource Source
+  Shenora.WinForms.UnhandledExceptionSource get_Source()
+  System.Exception Exception
+  System.Exception get_Exception()
+  System.String ToString()
+  Void .ctor(System.Exception, Shenora.WinForms.UnhandledExceptionSource, Boolean)
+  Void Deconstruct(System.Exception ByRef, Shenora.WinForms.UnhandledExceptionSource ByRef, Boolean ByRef)
+  Void set_Exception(System.Exception)
+  Void set_IsTerminating(Boolean)
+  Void set_Source(Shenora.WinForms.UnhandledExceptionSource)
+Shenora.WinForms.UnhandledExceptionSource
+  Int32 value__
+  Shenora.WinForms.UnhandledExceptionSource AppDomain
+  Shenora.WinForms.UnhandledExceptionSource UiThread
+  Shenora.WinForms.UnhandledExceptionSource UnobservedTask
+Shenora.WinForms.WinFormsBootstrap
+  Void Initialize(Shenora.WinForms.WinFormsBootstrapOptions)
+Shenora.WinForms.WinFormsBootstrapOptions
+  Boolean ObserveUnobservedTaskExceptions
+  Boolean ShowCrashDialog
+  Boolean get_ObserveUnobservedTaskExceptions()
+  Boolean get_ShowCrashDialog()
+  System.Action`1[Shenora.WinForms.UnhandledExceptionReport] OnUnhandledException
+  System.Action`1[Shenora.WinForms.UnhandledExceptionReport] get_OnUnhandledException()
+  System.String ApplicationName
+  System.String get_ApplicationName()
+  System.Windows.Forms.HighDpiMode HighDpiMode
+  System.Windows.Forms.HighDpiMode get_HighDpiMode()
+  Void .ctor()
+  Void set_ApplicationName(System.String)
+  Void set_HighDpiMode(System.Windows.Forms.HighDpiMode)
+  Void set_ObserveUnobservedTaskExceptions(Boolean)
+  Void set_OnUnhandledException(System.Action`1[Shenora.WinForms.UnhandledExceptionReport])
+  Void set_ShowCrashDialog(Boolean)
+Shenora.WinForms.WinFormsHostExtensions
+  Shenora.Core.ShenoraApplicationBuilder UseWinForms(Shenora.Core.ShenoraApplicationBuilder, Shenora.WinForms.WinFormsHostOptions)
+Shenora.WinForms.WinFormsHostOptions
+  Shenora.WinForms.SingleInstanceHostOptions SingleInstance
+  Shenora.WinForms.SingleInstanceHostOptions get_SingleInstance()
+  Shenora.WinForms.WinFormsBootstrapOptions Bootstrap
+  Shenora.WinForms.WinFormsBootstrapOptions get_Bootstrap()
+  Shenora.WinForms.WindowStateHostOptions WindowState
+  Shenora.WinForms.WindowStateHostOptions get_WindowState()
+  System.Func`2[System.IServiceProvider,System.Windows.Forms.Form] MainForm
+  System.Func`2[System.IServiceProvider,System.Windows.Forms.Form] get_MainForm()
+  Void .ctor()
+  Void set_Bootstrap(Shenora.WinForms.WinFormsBootstrapOptions)
+  Void set_MainForm(System.Func`2[System.IServiceProvider,System.Windows.Forms.Form])
+  Void set_SingleInstance(Shenora.WinForms.SingleInstanceHostOptions)
+  Void set_WindowState(Shenora.WinForms.WindowStateHostOptions)
+Shenora.WinForms.WindowState
+  Boolean Equals(Shenora.WinForms.WindowState)
+  Boolean Equals(System.Object)
+  Boolean Maximized
+  Boolean get_Maximized()
+  Boolean op_Equality(Shenora.WinForms.WindowState, Shenora.WinForms.WindowState)
+  Boolean op_Inequality(Shenora.WinForms.WindowState, Shenora.WinForms.WindowState)
+  Int32 GetHashCode()
+  Shenora.WinForms.WindowState <Clone>$()
+  System.Nullable`1[System.Int32] Height
+  System.Nullable`1[System.Int32] Width
+  System.Nullable`1[System.Int32] X
+  System.Nullable`1[System.Int32] Y
+  System.Nullable`1[System.Int32] get_Height()
+  System.Nullable`1[System.Int32] get_Width()
+  System.Nullable`1[System.Int32] get_X()
+  System.Nullable`1[System.Int32] get_Y()
+  System.String ToString()
+  Void .ctor(System.Nullable`1[System.Int32], System.Nullable`1[System.Int32], System.Nullable`1[System.Int32], System.Nullable`1[System.Int32], Boolean)
+  Void Deconstruct(System.Nullable`1[System.Int32] ByRef, System.Nullable`1[System.Int32] ByRef, System.Nullable`1[System.Int32] ByRef, System.Nullable`1[System.Int32] ByRef, Boolean ByRef)
+  Void set_Height(System.Nullable`1[System.Int32])
+  Void set_Maximized(Boolean)
+  Void set_Width(System.Nullable`1[System.Int32])
+  Void set_X(System.Nullable`1[System.Int32])
+  Void set_Y(System.Nullable`1[System.Int32])
+Shenora.WinForms.WindowStateHostOptions
+  Shenora.WinForms.WindowStateOptions Options
+  Shenora.WinForms.WindowStateOptions get_Options()
+  System.Func`2[System.IServiceProvider,Shenora.WinForms.IWindowStateStore] Store
+  System.Func`2[System.IServiceProvider,Shenora.WinForms.IWindowStateStore] get_Store()
+  Void .ctor()
+  Void set_Options(Shenora.WinForms.WindowStateOptions)
+  Void set_Store(System.Func`2[System.IServiceProvider,Shenora.WinForms.IWindowStateStore])
+Shenora.WinForms.WindowStateManager
+  Boolean IsVisible(Int32, Int32, Int32, Int32, System.Collections.Generic.IEnumerable`1[System.Drawing.Rectangle], Shenora.WinForms.WindowStateOptions)
+  Shenora.WinForms.WindowState ToLogical(System.Drawing.Rectangle, Boolean, Double)
+  System.ValueTuple`5[System.Int32,System.Int32,System.Nullable`1[System.Int32],System.Nullable`1[System.Int32],System.Boolean] ToPhysical(Shenora.WinForms.WindowState, Double, Shenora.WinForms.WindowStateOptions)
+  Void .ctor(Shenora.WinForms.IWindowStateStore, Shenora.WinForms.WindowStateOptions)
+  Void Apply(System.Windows.Forms.Form)
+  Void Save(System.Windows.Forms.Form)
+Shenora.WinForms.WindowStateOptions
+  Int32 DefaultHeight
+  Int32 DefaultWidth
+  Int32 MinHeight
+  Int32 MinVisibleHeight
+  Int32 MinVisibleWidth
+  Int32 MinWidth
+  Int32 get_DefaultHeight()
+  Int32 get_DefaultWidth()
+  Int32 get_MinHeight()
+  Int32 get_MinVisibleHeight()
+  Int32 get_MinVisibleWidth()
+  Int32 get_MinWidth()
+  Void .ctor()
+  Void set_DefaultHeight(Int32)
+  Void set_DefaultWidth(Int32)
+  Void set_MinHeight(Int32)
+  Void set_MinVisibleHeight(Int32)
+  Void set_MinVisibleWidth(Int32)
+  Void set_MinWidth(Int32)

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Core</PackageId>
+    <Description>Shenora core: desktop application host and builder (ShenoraApplication.CreateBuilder), lifecycle, module registration (IShenoraModule), environment and app-path services, UI-dispatcher seam, and event bus for WinForms + WebView2 + React applications. Depends only on Microsoft.Extensions DI + logging abstractions.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The DI IMPLEMENTATION (not just Abstractions) is required: the builder calls
+         BuildServiceProvider, which lives there. D17. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

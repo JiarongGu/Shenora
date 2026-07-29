@@ -1,0 +1,157 @@
+Shenora.WebView2.BrowserArguments
+  System.String Build(Boolean, System.String, System.String)
+Shenora.WebView2.EmbeddedResourceProvider
+  Boolean Exists(System.String)
+  Boolean IsEmbedded
+  Boolean get_IsEmbedded()
+  System.IO.Stream GetResourceStream(System.String)
+  Void .ctor(Shenora.WebView2.EmbeddedResourceProviderOptions)
+  Void BeginWarmup()
+Shenora.WebView2.EmbeddedResourceProviderOptions
+  Boolean PreferFiles
+  Boolean get_PreferFiles()
+  System.Action`1[System.String] Log
+  System.Action`1[System.String] get_Log()
+  System.Reflection.Assembly Assembly
+  System.Reflection.Assembly get_Assembly()
+  System.String FileFallbackDirectory
+  System.String ResourcePrefix
+  System.String get_FileFallbackDirectory()
+  System.String get_ResourcePrefix()
+  Void .ctor()
+  Void set_Assembly(System.Reflection.Assembly)
+  Void set_FileFallbackDirectory(System.String)
+  Void set_Log(System.Action`1[System.String])
+  Void set_PreferFiles(Boolean)
+  Void set_ResourcePrefix(System.String)
+Shenora.WebView2.IWebViewResourceProvider
+  Boolean Exists(System.String)
+  System.IO.Stream GetResourceStream(System.String)
+Shenora.WebView2.WebView2BuilderExtensions
+  Shenora.Core.ShenoraApplicationBuilder PrewarmWebView2(Shenora.Core.ShenoraApplicationBuilder, System.Func`2[Shenora.Core.ShenoraApplication,Shenora.WebView2.WebViewEnvironmentOptions])
+Shenora.WebView2.WebViewDeferredScheme
+  System.Func`2[System.Uri,System.Threading.Tasks.Task`1[System.ValueTuple`2[System.Byte[],System.String]]] Handler
+  System.Func`2[System.Uri,System.Threading.Tasks.Task`1[System.ValueTuple`2[System.Byte[],System.String]]] get_Handler()
+  System.String CacheControl
+  System.String Scheme
+  System.String get_CacheControl()
+  System.String get_Scheme()
+  Void .ctor()
+  Void set_CacheControl(System.String)
+  Void set_Handler(System.Func`2[System.Uri,System.Threading.Tasks.Task`1[System.ValueTuple`2[System.Byte[],System.String]]])
+  Void set_Scheme(System.String)
+Shenora.WebView2.WebViewEnvironment
+  Boolean IsRuntimeAvailable(System.String)
+  System.String GetAvailableRuntimeVersion(System.String)
+  System.Threading.Tasks.Task`1[Microsoft.Web.WebView2.Core.CoreWebView2Environment] CreateForCurrentThreadAsync(Shenora.WebView2.WebViewEnvironmentOptions)
+  System.Threading.Tasks.Task`1[Microsoft.Web.WebView2.Core.CoreWebView2Environment] GetSharedAsync(Shenora.WebView2.WebViewEnvironmentOptions)
+  Void Prewarm(Shenora.WebView2.WebViewEnvironmentOptions)
+Shenora.WebView2.WebViewEnvironmentOptions
+  Boolean IsDevelopment
+  Boolean get_IsDevelopment()
+  System.Action`1[System.String] Log
+  System.Action`1[System.String] get_Log()
+  System.String AdditionalArguments
+  System.String BrowserExecutableFolder
+  System.String DevExtraArguments
+  System.String UserDataFolder
+  System.String get_AdditionalArguments()
+  System.String get_BrowserExecutableFolder()
+  System.String get_DevExtraArguments()
+  System.String get_UserDataFolder()
+  Void .ctor()
+  Void set_AdditionalArguments(System.String)
+  Void set_BrowserExecutableFolder(System.String)
+  Void set_DevExtraArguments(System.String)
+  Void set_IsDevelopment(Boolean)
+  Void set_Log(System.Action`1[System.String])
+  Void set_UserDataFolder(System.String)
+Shenora.WebView2.WebViewFolderMapping
+  Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind AccessKind
+  Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind get_AccessKind()
+  System.String FolderPath
+  System.String HostName
+  System.String get_FolderPath()
+  System.String get_HostName()
+  Void .ctor()
+  Void set_AccessKind(Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind)
+  Void set_FolderPath(System.String)
+  Void set_HostName(System.String)
+Shenora.WebView2.WebViewHost
+  Boolean IsDevelopment
+  Boolean get_IsDevelopment()
+  System.Threading.Tasks.Task InitializeAsync()
+  System.TimeSpan AutoReloadCooldown
+  Void .ctor(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.WebViewHostOptions)
+  Void Navigate()
+Shenora.WebView2.WebViewHostOptions
+  Boolean AllowExternalDrop
+  Boolean BlockBrowserShortcutsInProduction
+  Boolean OpenExternalLinksInSystemBrowser
+  Boolean PreventDefaultFileDrop
+  Boolean ReloadOnRenderProcessFailure
+  Boolean UseSharedEnvironment
+  Boolean get_AllowExternalDrop()
+  Boolean get_BlockBrowserShortcutsInProduction()
+  Boolean get_OpenExternalLinksInSystemBrowser()
+  Boolean get_PreventDefaultFileDrop()
+  Boolean get_ReloadOnRenderProcessFailure()
+  Boolean get_UseSharedEnvironment()
+  Shenora.WebView2.IWebViewResourceProvider ResourceProvider
+  Shenora.WebView2.IWebViewResourceProvider get_ResourceProvider()
+  Shenora.WebView2.WebViewEnvironmentOptions Environment
+  Shenora.WebView2.WebViewEnvironmentOptions get_Environment()
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs] OnDownloadStarting
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs] get_OnDownloadStarting()
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs] OnPermissionRequested
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs] get_OnPermissionRequested()
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs] OnProcessFailed
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs] get_OnProcessFailed()
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings] ConfigureSettings
+  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings] get_ConfigureSettings()
+  System.Action`1[System.String] Log
+  System.Action`1[System.String] get_Log()
+  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object] InjectedGlobals
+  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object] get_InjectedGlobals()
+  System.Collections.Generic.IReadOnlyList`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind] PermittedPermissions
+  System.Collections.Generic.IReadOnlyList`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind] get_PermittedPermissions()
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewDeferredScheme] DeferredSchemes
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewDeferredScheme] get_DeferredSchemes()
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewFolderMapping] FolderMappings
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewFolderMapping] get_FolderMappings()
+  System.Collections.Generic.IReadOnlyList`1[System.String] DocumentCreatedScripts
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_DocumentCreatedScripts()
+  System.Nullable`1[System.Drawing.Color] BackgroundColor
+  System.Nullable`1[System.Drawing.Color] get_BackgroundColor()
+  System.String DevUrl
+  System.String ProductionUrl
+  System.String VirtualHost
+  System.String get_DevUrl()
+  System.String get_ProductionUrl()
+  System.String get_VirtualHost()
+  System.TimeSpan InitTimeout
+  System.TimeSpan get_InitTimeout()
+  Void .ctor()
+  Void set_AllowExternalDrop(Boolean)
+  Void set_BackgroundColor(System.Nullable`1[System.Drawing.Color])
+  Void set_BlockBrowserShortcutsInProduction(Boolean)
+  Void set_ConfigureSettings(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings])
+  Void set_DeferredSchemes(System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewDeferredScheme])
+  Void set_DevUrl(System.String)
+  Void set_DocumentCreatedScripts(System.Collections.Generic.IReadOnlyList`1[System.String])
+  Void set_Environment(Shenora.WebView2.WebViewEnvironmentOptions)
+  Void set_FolderMappings(System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewFolderMapping])
+  Void set_InitTimeout(System.TimeSpan)
+  Void set_InjectedGlobals(System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object])
+  Void set_Log(System.Action`1[System.String])
+  Void set_OnDownloadStarting(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs])
+  Void set_OnPermissionRequested(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs])
+  Void set_OnProcessFailed(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs])
+  Void set_OpenExternalLinksInSystemBrowser(Boolean)
+  Void set_PermittedPermissions(System.Collections.Generic.IReadOnlyList`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind])
+  Void set_PreventDefaultFileDrop(Boolean)
+  Void set_ProductionUrl(System.String)
+  Void set_ReloadOnRenderProcessFailure(Boolean)
+  Void set_ResourceProvider(Shenora.WebView2.IWebViewResourceProvider)
+  Void set_UseSharedEnvironment(Boolean)
+  Void set_VirtualHost(System.String)

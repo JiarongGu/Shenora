@@ -1,0 +1,93 @@
+Shenora.Core.AppRootArgument
+  System.String Flag
+  System.String Resolve(System.String[], System.String)
+Shenora.Core.IShenoraLifecycleHook
+  Void OnStarting(Shenora.Core.ShenoraApplication)
+  Void OnStopping(Shenora.Core.ShenoraApplication)
+Shenora.Core.IShenoraModule
+  Void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection)
+Shenora.Core.IShenoraRunner
+  Void Run(Shenora.Core.ShenoraApplication)
+Shenora.Core.ShenoraApplication
+  Shenora.Core.ShenoraApplicationBuilder CreateBuilder(Shenora.Core.ShenoraApplicationOptions)
+  Shenora.Core.ShenoraApplicationBuilder CreateBuilder(System.String[])
+  Shenora.Core.ShenoraEnvironment Environment
+  Shenora.Core.ShenoraEnvironment get_Environment()
+  Shenora.Core.ShenoraPaths Paths
+  Shenora.Core.ShenoraPaths get_Paths()
+  System.Collections.Generic.IReadOnlyList`1[System.String] Args
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_Args()
+  System.IServiceProvider Services
+  System.IServiceProvider get_Services()
+  System.String ApplicationName
+  System.String get_ApplicationName()
+  Void Dispose()
+  Void Run()
+Shenora.Core.ShenoraApplicationBuilder
+  Microsoft.Extensions.DependencyInjection.IServiceCollection Services
+  Microsoft.Extensions.DependencyInjection.IServiceCollection get_Services()
+  Shenora.Core.ShenoraApplication Build()
+  Shenora.Core.ShenoraApplicationBuilder AddModule(Shenora.Core.IShenoraModule)
+  Shenora.Core.ShenoraApplicationBuilder OnStarting(System.Action`1[Shenora.Core.ShenoraApplication])
+  Shenora.Core.ShenoraApplicationBuilder OnStopping(System.Action`1[Shenora.Core.ShenoraApplication])
+  Shenora.Core.ShenoraEnvironment Environment
+  Shenora.Core.ShenoraEnvironment get_Environment()
+  Shenora.Core.ShenoraPaths Paths
+  Shenora.Core.ShenoraPaths get_Paths()
+  System.Collections.Generic.IReadOnlyList`1[System.String] Args
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_Args()
+  System.String ApplicationName
+  System.String get_ApplicationName()
+Shenora.Core.ShenoraApplicationOptions
+  Shenora.Core.ShenoraPathsOptions Paths
+  Shenora.Core.ShenoraPathsOptions get_Paths()
+  System.Func`2[System.String,System.String] GetEnvironmentVariable
+  System.Func`2[System.String,System.String] get_GetEnvironmentVariable()
+  System.String ApplicationName
+  System.String BaseDirectory
+  System.String get_ApplicationName()
+  System.String get_BaseDirectory()
+  System.String[] Args
+  System.String[] get_Args()
+  Void .ctor()
+  Void set_ApplicationName(System.String)
+  Void set_Args(System.String[])
+  Void set_BaseDirectory(System.String)
+  Void set_GetEnvironmentVariable(System.Func`2[System.String,System.String])
+  Void set_Paths(Shenora.Core.ShenoraPathsOptions)
+Shenora.Core.ShenoraEnvironment
+  Boolean IsDevelopment
+  Boolean get_IsDevelopment()
+  Shenora.Core.ShenoraEnvironment Detect(System.String, System.Func`2[System.String,System.String])
+  System.String BaseDirectory
+  System.String DevMarkerFileName
+  System.String get_BaseDirectory()
+Shenora.Core.ShenoraPaths
+  Shenora.Core.ShenoraPaths Resolve(Shenora.Core.ShenoraPathsOptions, System.String, System.Func`2[System.String,System.String])
+  System.String DataArea(System.String)
+  System.String DataDir
+  System.String ResourcesDir
+  System.String RootDir
+  System.String get_DataDir()
+  System.String get_ResourcesDir()
+  System.String get_RootDir()
+Shenora.Core.ShenoraPathsOptions
+  System.Collections.Generic.IReadOnlyList`1[System.String] ExecutableSubfolders
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_ExecutableSubfolders()
+  System.String DataEnvironmentVariable
+  System.String DataFolderName
+  System.String ExplicitRoot
+  System.String ResourcesFolderName
+  System.String RootEnvironmentVariable
+  System.String get_DataEnvironmentVariable()
+  System.String get_DataFolderName()
+  System.String get_ExplicitRoot()
+  System.String get_ResourcesFolderName()
+  System.String get_RootEnvironmentVariable()
+  Void .ctor()
+  Void set_DataEnvironmentVariable(System.String)
+  Void set_DataFolderName(System.String)
+  Void set_ExecutableSubfolders(System.Collections.Generic.IReadOnlyList`1[System.String])
+  Void set_ExplicitRoot(System.String)
+  Void set_ResourcesFolderName(System.String)
+  Void set_RootEnvironmentVariable(System.String)

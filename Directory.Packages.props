@@ -1,0 +1,5 @@
+<Project>
+  <!-- NuGet resolves the NEAREST Directory.Packages.props walking up from each project, so tests/
+       and samples/ land here — import the src file so the whole tree shares one version list. -->
+  <Import Project="src/Directory.Packages.props" />
+</Project>

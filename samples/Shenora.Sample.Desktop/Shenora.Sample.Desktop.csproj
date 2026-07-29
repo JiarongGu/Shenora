@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- samples/ sits OUTSIDE src/, so src/Directory.Build.props does not apply — shared build
+       properties are restated (samples must never inherit packability). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+    <!-- Same harmless WebView2-WPF WindowsBase conflict as Shenora.WebView2 — demote it. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shenora.WebView2\Shenora.WebView2.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.WinForms\Shenora.WinForms.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The packaged frontend: `npm run build` in samples/Shenora.Sample.Web emits here
+         (gitignored build artifact). Empty in a fresh clone — the app then runs in dev mode
+         against Vite, or file-serves nothing and shows the provider's 404. -->
+    <EmbeddedResource Include="wwwroot\**" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,20 @@
+<Project>
+  <!-- Central package versions for the whole tree (the root Directory.Packages.props imports this
+       file so tests/samples share one version list). No Version= ever appears on a PackageReference. -->
+  <ItemGroup>
+    <!-- Core dependencies. Abstractions for the contracts; the DI IMPLEMENTATION is needed by the
+         builder (BuildServiceProvider lives there, not in Abstractions) — same shape as
+         Microsoft.Extensions.Hosting itself. Recorded in docs/DECISIONS.md D17. -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+
+    <!-- WebView2 (version proven across the sibling apps) -->
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3800.47" />
+
+    <!-- Tests -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+</Project>

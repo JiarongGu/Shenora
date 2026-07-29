@@ -1,0 +1,17 @@
+{
+  // Dev/typecheck config (includes tests) — emits NOTHING. All emit settings live in
+  // tsconfig.build.json so a stray `tsc` can never drop compiled tests into dist/ (which
+  // package.json `files` would then ship).
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

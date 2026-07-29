@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- tests/ sits OUTSIDE src/, so src/Directory.Build.props does not apply — the shared build
+       properties are restated here on purpose (tests must never inherit packability). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+    <!-- Same harmless WebView2-WPF WindowsBase conflict as Shenora.WebView2 — demote it. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A miniature frontend bundle for the EmbeddedResourceProvider tests (manifest prefix
+         Shenora.Tests.TestAssets.wwwroot). vendor.min.js exists to prove dotted FILE names
+         resolve — the mis-map fixed relative to the source app. -->
+    <EmbeddedResource Include="TestAssets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.WebView2\Shenora.WebView2.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.WinForms\Shenora.WinForms.csproj" />
+  </ItemGroup>
+
+</Project>

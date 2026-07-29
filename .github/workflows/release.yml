@@ -1,0 +1,169 @@
+name: Release
+
+# Manual-trigger only (family release model). Cutting a release is a deliberate act you start from
+# the Actions tab (Run workflow) — there is intentionally NO tag-push / release-published trigger
+# and NO push/PR CI (docs/DECISIONS.md D5). The full verify gate runs against the exact commit
+# before the irreversible registry pushes, and the version bump is committed only AFTER both
+# publishes succeed — a failed release burns no version and leaves no phantom commit.
+#
+# Publishing:
+#  - NuGet uses Trusted Publishing (OIDC) — no stored API key. Setup (once): on nuget.org,
+#    Account -> Trusted Publishing -> add a policy for this repository and workflow file
+#    `release.yml`, scoped to the Shenora.* package glob.
+#  - npm publishes with provenance. Configure npm Trusted Publishing (OIDC) for @shenora/react on
+#    npmjs.com (package -> Settings -> Trusted publisher -> this repo + release.yml); until that
+#    exists, set a granular NPM_TOKEN repo secret and the publish step uses it instead.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Explicit version (e.g. 0.2.0) — leave empty to bump'
+        required: false
+        default: ''
+      bump:
+        description: 'Bump kind when version is empty'
+        type: choice
+        options: [none, patch, minor, major]
+        default: patch
+      create_tag:
+        description: 'Create + push the vX.Y.Z tag'
+        type: boolean
+        default: true
+      draft:
+        description: 'Create the GitHub release as a draft'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark the GitHub release as a prerelease'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # push the version-bump commit + tag, create the release
+  id-token: write   # OIDC token for NuGet/npm Trusted Publishing (short-lived — no stored secret)
+
+jobs:
+  publish:
+    runs-on: windows-latest   # net10.0-windows targets need Windows to build
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for release notes
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Determine version
+        id: version
+        run: |
+          $current = node -e "import('./devtools/project.config.mjs').then(m => console.log(m.default.version))"
+          $req = '${{ inputs.version }}'.Trim()
+          if ($req) { $final = $req }
+          else {
+            $parts = $current.Split('.')
+            switch ('${{ inputs.bump }}') {
+              'none'  { $final = $current }
+              'patch' { $parts[2] = [int]$parts[2] + 1; $final = $parts -join '.' }
+              'minor' { $parts[1] = [int]$parts[1] + 1; $parts[2] = 0; $final = $parts -join '.' }
+              'major' { $parts[0] = [int]$parts[0] + 1; $parts[1] = 0; $parts[2] = 0; $final = $parts -join '.' }
+            }
+          }
+          if ($final -notmatch '^\d+\.\d+\.\d+$') { throw "bad version: $final" }
+          # Rewrite VersionPrefix in the WORKING TREE only — the commit is deferred until after
+          # the publishes succeed.
+          $props = 'src/Directory.Build.props'
+          (Get-Content $props -Raw) -replace '<VersionPrefix>[^<]+</VersionPrefix>', "<VersionPrefix>$final</VersionPrefix>" | Set-Content $props -Encoding utf8 -NoNewline
+          "changed=$("$($final -ne $current)".ToLower())" >> $env:GITHUB_OUTPUT
+          "version=$final" >> $env:GITHUB_OUTPUT
+          "tag=v$final" >> $env:GITHUB_OUTPUT
+          Write-Host "current=$current -> final=$final"
+
+      - name: Verify gate
+        run: node devtools/dev.mjs verify
+
+      - name: Pack
+        run: node devtools/dev.mjs pack
+
+      - name: NuGet login (Trusted Publishing / OIDC)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: Jiarong.Gu
+
+      - name: Push to NuGet
+        run: >
+          dotnet nuget push "publish/packages/*.nupkg"
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Publish npm (@shenora/react)
+        working-directory: src/Shenora.React
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # npm Trusted Publishing (OIDC) needs a newer npm CLI than Node 22 bundles; harmless
+          # when NPM_TOKEN auth is used instead.
+          npm install -g npm@latest
+          npm publish --provenance --access public
+
+      - name: Commit version bump
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add src/Directory.Build.props README.md src/Shenora.React/package.json
+          git commit -m "chore: release ${{ steps.version.outputs.tag }}"
+          git push
+
+      - name: Create tag
+        if: inputs.create_tag
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          if (git tag -l $tag) { Write-Host "tag $tag already exists — leaving it" }
+          else {
+            git tag -a $tag -m "Shenora ${{ steps.version.outputs.version }}"
+            git push origin $tag
+          }
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          # Previous release tag by NUMERIC version compare (so 1.10.0 > 1.6.0), not git tag order.
+          $prev = git tag -l 'v*' | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and $_ -ne $tag } |
+            Sort-Object { [version]($_.Substring(1)) } | Select-Object -Last 1
+          $range = if ($prev) { "$prev..HEAD" } else { 'HEAD' }
+          $subjects = git log $range --pretty=%s --no-merges
+          $feat = @(); $fix = @(); $other = @()
+          foreach ($s in $subjects) {
+            if ($s -match '^chore|^docs|^refactor|^style|^perf|^test|^ci|^build') { continue }
+            elseif ($s -match '^feat') { $feat += "- $s" }
+            elseif ($s -match '^fix') { $fix += "- $s" }
+            else { $other += "- $s" }
+          }
+          $lines = @()
+          if ($feat)  { $lines += '## New features'; $lines += $feat; $lines += '' }
+          if ($fix)   { $lines += '## Fixes'; $lines += $fix; $lines += '' }
+          if ($other) { $lines += '## Other changes'; $lines += $other; $lines += '' }
+          $lines += 'Full detail in CHANGELOG.md.'
+          Set-Content release-notes.md ($lines -join "`n") -Encoding utf8
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Shenora ${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          # No attached binaries on purpose — nuget.org/npmjs.com are the canonical homes.

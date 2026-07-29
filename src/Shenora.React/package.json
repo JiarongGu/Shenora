@@ -1,0 +1,45 @@
+{
+  "name": "@shenora/react",
+  "version": "0.1.0",
+  "description": "React client for Shenora desktop hosts: correlated invoke/send/subscribe over the WebView2 bridge, typed module services, hooks, and a browser fallback for pure-UI development.",
+  "license": "MIT",
+  "author": "Jiarong Gu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JiarongGu/Shenora.git",
+    "directory": "src/Shenora.React"
+  },
+  "homepage": "https://github.com/JiarongGu/Shenora#readme",
+  "keywords": ["shenora", "webview2", "desktop", "ipc", "react", "winforms", "dotnet"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
