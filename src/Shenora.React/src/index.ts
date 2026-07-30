@@ -26,7 +26,13 @@ export {
   type InvokeOptions,
 } from './bridge.js';
 export { BaseModuleService } from './moduleService.js';
-export { WindowCommands, useWindowMaximized, type WindowResizeEdge } from './windowCommands.js';
+export {
+  WindowCommands,
+  useWindowMaximized,
+  type WindowResizeEdge,
+  type CaptionButtonKind,
+  type CaptionButtonRect,
+} from './windowCommands.js';
 export {
   useDropZone,
   DROP_ZONE_MODULE,

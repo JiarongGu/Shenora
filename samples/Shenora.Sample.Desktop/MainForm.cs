@@ -99,6 +99,11 @@ public sealed class MainForm : OptimizedForm
                 Window = this,
                 ToggleMaximize = ToggleMaximize,      // the frameless manual work-area path
                 IsMaximized = () => IsAppMaximized,   // WindowState never reflects it
+                // P5.6: let the OS treat the page-drawn caption buttons as real ones, so Windows 11
+                // offers Snap Layouts on maximize. The page reports its rects in CSS px relative to
+                // the WebView2; the facade converts and this hands them to the window.
+                CoordinateSpace = _webView,
+                SetCaptionButtons = SetCaptionButtons,
             }));
             dispatcher.MapModule(new DropZoneFacade(_dropZones));
 
@@ -255,6 +260,19 @@ public sealed class MainForm : OptimizedForm
                 // channel nobody read, and every later START answered STREAM_ALREADY_RUNNING for
                 // the rest of the process. The host is the only side that can observe a reload, via
                 // this handshake; the page can only report an in-page unmount.
+                // Claiming the caption hit-test costs the page its CSS :hover there, so the host
+                // pushes the state instead. Re-sent on every handshake because a reloaded page has
+                // no idea what the pointer was doing.
+                // LOWERCASE on the wire: the client type is `'minimize' | 'maximize' | 'close'`, and the
+                // enum's ToString() is "Close" — so the page compared "Close" === "close" and never
+                // matched. Found by running it; the styling simply never appeared, with no error.
+                CaptionButtonStateChanged = state => _ = eventBus.EmitAsync("WINDOW", "CAPTION_BUTTON_STATE",
+                    new
+                    {
+                        Hot = state.Hot?.ToString().ToLowerInvariant(),
+                        Pressed = state.Pressed?.ToString().ToLowerInvariant(),
+                    });
+
                 var orphan = _stream;
                 _stream = null;
                 if (orphan is not null) _ = orphan.DisposeAsync();

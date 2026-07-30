@@ -923,41 +923,63 @@ reshaped one package and nothing else.
   The rule now lives in `.claude/knowledge/generic-library.md` so the next session catches this class
   unprompted.
 
-### P5.6 — Frameless caption buttons must behave like real ones (2026-07-31)
+### P5.6 — Frameless caption buttons behave like real ones — DONE (2026-07-31)
 
 > DIRECTION (user, 2026-07-31): *"the 'fake' window button at top still need to behave like regular
 > window button (hover style, docking) currently it does none"*
 
-The kit ships frameless chrome (`OptimizedForm` + `WindowCommandFacade`), so the page draws its own
-minimize/maximize/close. They ROUTE correctly — the WINDOW module works — but they are not yet
-*window buttons*: no hover/pressed affordance, and critically no **Snap Layouts**. Verified live in
-the sample this session.
+Suite **492 dotnet + 63 vitest**, `verify` PASSED. Both API baselines that moved are purely
+ADDITIVE — no removals, so nothing here is breaking.
 
-This is KIT work, not sample styling. Snap Layouts cannot be done by the page alone: Windows shows
-the flyout only when the window answers `WM_NCHITTEST` with `HTMAXBUTTON` for the point under the
-cursor, so the HOST must know where the page drew its maximize button.
+- [x] **Snap Layouts on the page's maximize button.** New `CaptionButtonKind` /
+  `CaptionButtonRegion` / `CaptionButtonState` in `Shenora.WinForms`, plus
+  `OptimizedForm.SetCaptionButtons(...)`: the app reports where the PAGE drew its buttons (client px)
+  and `WM_NCHITTEST` answers `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` inside them. `HTMAXBUTTON` is the
+  entire mechanism — Windows offers the flyout over whatever reports itself as the maximize button,
+  and a frameless window has no real caption for it to find.
+  **Claiming the hit-test COSTS the page every mouse event in those rects**, so three more messages
+  had to be handled or the buttons would show the flyout and STOP WORKING (the half-done version this
+  task warned about): `WM_NCLBUTTONDOWN` swallowed + recorded, `WM_NCLBUTTONUP` acting only if the
+  press started on the SAME button (press, drag off, release must not activate), and
+  `WM_NCMOUSEMOVE`/`WM_NCMOUSELEAVE` tracking hover.
+  Two judgement calls: caption buttons WIN over the top resize strip and are hit-tested while
+  MAXIMIZED too (losing a few px of resize border beats a close button that resizes the window); and
+  the click routes through the SAME public `ToggleMaximize()`/`Close()` the IPC commands use, so the
+  frameless manual-maximize bookkeeping (`IsAppMaximized`, P5.5 H2) cannot diverge between the two
+  paths.
+- [x] **Hover / pressed affordance pushed from the host.** `OptimizedForm.CaptionButtonStateChanged`
+  (guarded — it runs inside `WndProc`) → the sample forwards it as a `WINDOW`/`CAPTION_BUTTON_STATE`
+  notification → the page styles from it. Necessary because the page's own CSS `:hover` no longer
+  fires there, and because the button must stay hot while the pointer is over the snap FLYOUT, which
+  is a different window the page could never observe. De-duplicated: `WM_NCMOUSEMOVE` fires per mouse
+  move, so re-pushing an unchanged state would put a notification on the wire per pixel.
+  **Headless (D13): the kit pushes STATE and ships no CSS.** The sample decides what hot/pressed look
+  like, including the close-button red.
+- [x] **The IPC route.** `SET_CAPTION_BUTTONS` on `WindowCommandFacade` (optional, enabled by wiring
+  `SetCaptionButtons`, same shape as `SET_THEME`), taking CSS-px rects and converting through
+  `DpiHelper` + `PointToScreen`/`PointToClient` — the same conversion `DropZoneManager` uses, not a
+  new one. The parser is TOTAL: an unknown kind or a zero-size entry is SKIPPED rather than failing
+  the batch, because the page re-sends on every layout change and dropping the good buttons'
+  hit-tests as collateral is invisible until someone clicks. Client side:
+  `WindowCommands.setCaptionButtons` + exported `CaptionButtonKind`/`CaptionButtonRect`.
+- [x] **Proven LIVE** (`dev.mjs sample --dev` + Win32 probes), not just compiled:
+  - the window really reports `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` at the page-drawn rects — which
+    proves the whole chain: `getBoundingClientRect()` → IPC → DPI conversion → hit-test;
+  - a real caption click took the window from **1280×800 at (303,184) to 1920×1152 at (0,0)** — the
+    manual work-area maximize, so the click path is not the half-done version;
+  - the hit-test still resolves while MAXIMIZED, which also proves the page's resize re-report;
+  - the hover push fires with the right kind and clears on leave.
+  **NOT verifiable without a human: the flyout itself.** A synthetic `WM_NCMOUSEMOVE` cannot hold a
+  hover — Windows sends `WM_NCMOUSELEAVE` immediately because the real cursor is elsewhere (observed).
+  So the OS rendering the Snap Layouts flyout, and the CSS actually painting hot/pressed, still want
+  one human pass: hover each button, hold over maximize for the flyout, pick a zone, and confirm the
+  window docks AND that `IsAppMaximized`/`WindowStateManager` still agree afterwards.
+- [x] **Close-button red** — the same mechanism (`HTCLOSE`); the colour is the app's, demonstrated in
+  the sample.
 
-- [ ] **Snap Layouts on the page's maximize button.** Add a way for the page to report its maximize
-  button's rect (CSS px → physical via the existing `DpiHelper`), e.g. a `SET_CAPTION_BUTTONS` route
-  on `WindowCommandFacade` plus an `IAppMaximizable`-style seam on `OptimizedForm`. Then in the
-  `WndProcHook`: return `HTMAXBUTTON` from `WM_NCHITTEST` when the point is inside that rect, and
-  handle `WM_NCLBUTTONDOWN`/`WM_NCLBUTTONUP` for `HTMAXBUTTON` yourself (once you claim the hit-test,
-  the OS stops delivering ordinary clicks there — a button that shows the flyout but no longer
-  maximizes is the classic half-done version of this). `WM_NCMOUSELEAVE` clears the hover state.
-  Needs Windows 11 detection: on Windows 10 `HTMAXBUTTON` gives the tooltip but no flyout, and the
-  behaviour must degrade cleanly rather than break the button.
-- [ ] **Hover / pressed affordance.** The page can style this itself, and mostly should — but it must
-  be TOLD when the OS is hovering (the snap flyout keeps the button "hot" while the pointer is over
-  the flyout, which the page's own `:hover` cannot see). So the host needs to push a caption-button
-  hover state as a notification when it owns the hit-test. Ship it as a primitive (state out), not as
-  a stylesheet: headless (D13) — the kit provides no CSS, the app decides what hot/pressed look like.
-  The reference composition in `samples/Shenora.Sample.Web` then demonstrates one styling.
-- [ ] **Close-button hover red** is the same mechanism (`HTCLOSE`), and the family convention is that
-  only close goes red — leave the colour to the app, per above.
-- [ ] Prove it live (`dev.mjs sample` + `wgc`), not just by compiling: hover each button, hover
-  maximize long enough for the flyout, pick a snap zone, and confirm the window actually docks AND
-  that `IsAppMaximized`/`WindowStateManager` still agree afterwards — the frameless manual-maximize
-  path (P5.5 H2) is exactly the state a real OS dock will disagree with if this is wired naively.
+**One integration bug found by running it:** the host emitted the enum's `ToString()` (`"Close"`)
+while the client type is `'minimize' | 'maximize' | 'close'`, so the page compared `"Close" === "close"`
+and never matched — the styling simply never appeared, with no error anywhere. The wire is lowercase now.
 
 ### P1 — Skeleton tail
 

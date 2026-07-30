@@ -109,7 +109,9 @@ sealed class Shenora.WebView2.WindowCommandFacade : Shenora.Ipc.BaseFacade
   public const string Module = "WINDOW"
   public override string ModuleName { get; }
 sealed class Shenora.WebView2.WindowCommandOptions
+  public System.Action<System.Collections.Generic.IReadOnlyList<Shenora.WinForms.CaptionButtonRegion>>? SetCaptionButtons { get; init; }
   public System.Action<bool>? ApplyTheme { get; init; }
   public System.Action? ToggleMaximize { get; init; }
   public System.Func<bool>? IsMaximized { get; init; }
+  public System.Windows.Forms.Control? CoordinateSpace { get; init; }
   public required System.Windows.Forms.Form Window { get; init; }

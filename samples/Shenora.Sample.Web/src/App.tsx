@@ -28,15 +28,46 @@ const row: React.CSSProperties = { margin: '0.25rem 0', fontSize: '1rem' };
  */
 function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowCommands }) {
   const maximized = useWindowMaximized(commands);
-  const button: React.CSSProperties = {
-    background: 'none',
+  const buttons = useRef<HTMLDivElement>(null);
+  // Pushed BY THE HOST (P5.6). Claiming the caption hit-test is what buys Snap Layouts, and it costs
+  // this page every mouse event in those rects — so CSS :hover never fires there and the host has to
+  // tell us. It is also the only way to know the button is still "hot" while the pointer is over the
+  // snap flyout, which is a different window entirely.
+  const [caption, setCaption] = useState<{ hot?: string; pressed?: string }>({});
+  useShenoraEvent<{ hot?: string; pressed?: string }>('WINDOW', 'CAPTION_BUTTON_STATE', setCaption);
+
+  // Report where we drew them, in CSS px relative to the WebView2. Re-sent on resize because the
+  // rects are a snapshot: a stale one moves the hit-test off the button the user can see.
+  useEffect(() => {
+    if (!hosted) return;
+    const report = () => {
+      const host = buttons.current;
+      if (!host) return;
+      const kinds = ['minimize', 'maximize', 'close'] as const;
+      const rects = [...host.children].map((el, i) => {
+        const r = el.getBoundingClientRect();
+        return { kind: kinds[i], x: r.left, y: r.top, width: r.width, height: r.height };
+      });
+      void commands.setCaptionButtons(rects);
+    };
+    report();
+    window.addEventListener('resize', report);
+    return () => window.removeEventListener('resize', report);
+  }, [hosted, commands]);
+
+  // Headless (D13): the kit pushes STATE and ships no CSS — what hot/pressed look like is ours.
+  const button = (kind: 'minimize' | 'maximize' | 'close'): React.CSSProperties => ({
+    background: caption.pressed === kind ? (kind === 'close' ? '#8b1a1a' : '#3a3a3a')
+      : caption.hot === kind ? (kind === 'close' ? '#c42b1c' : '#2f2f2f')
+      : 'none',
     border: 'none',
-    color: '#eceaf2',
+    color: caption.hot === kind && kind === 'close' ? '#ffffff' : '#eceaf2',
     width: '2.6rem',
     height: '2rem',
     cursor: 'default',
     fontSize: '0.9rem',
-  };
+    transition: 'background 90ms linear',
+  });
   return (
     <>
       {/* The top resize strip: the host's WM_NCCALCSIZE keeps native side/bottom borders; the
@@ -55,12 +86,15 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
         onMouseDown={(e) => { if (e.button === 0 && hosted) void commands.startDrag(); }}
       >
         <span>神阙 Shenora Sample</span>
-        <div onMouseDown={(e) => e.stopPropagation()}>
-          <button style={button} data-testid="btn-minimize" onClick={() => void commands.minimize()}>─</button>
-          <button style={button} data-testid="btn-maximize" onClick={() => void commands.toggleMaximize()}>
+        {/* The onClick handlers stay as the fallback for an unhosted browser and for a host that
+            has NOT claimed the hit-test; when it has, the host performs the action itself and these
+            never fire, because the click is delivered to the window, not to the page. */}
+        <div ref={buttons} onMouseDown={(e) => e.stopPropagation()}>
+          <button style={button('minimize')} data-testid="btn-minimize" onClick={() => void commands.minimize()}>─</button>
+          <button style={button('maximize')} data-testid="btn-maximize" onClick={() => void commands.toggleMaximize()}>
             {maximized ? '❐' : '☐'}
           </button>
-          <button style={button} data-testid="btn-close" onClick={() => void commands.close()}>✕</button>
+          <button style={button('close')} data-testid="btn-close" onClick={() => void commands.close()}>✕</button>
         </div>
       </header>
     </>

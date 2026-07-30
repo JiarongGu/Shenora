@@ -226,6 +226,25 @@ at the first list and missed five more breaking changes.
   (up to 2×25 s) before anything noticed. The token gates the AWAIT only, never the creation — with the
   per-profile environment cache that task is SHARED across a pool's instances, so cancelling it for one
   caller would break the others.
+- **Page-drawn caption buttons can behave like real ones — including Windows 11 Snap Layouts**
+  (P5.6). A frameless app draws its own minimize/maximize/close, and until now they were buttons the
+  OS knew nothing about: no snap flyout, and no hover affordance the page could render faithfully.
+  New in `Shenora.WinForms`: `CaptionButtonKind`, `CaptionButtonRegion`, `CaptionButtonState`,
+  `OptimizedForm.SetCaptionButtons(...)` and `OptimizedForm.CaptionButtonStateChanged`. New in
+  `Shenora.WebView2`: `WindowCommandOptions.SetCaptionButtons` + `CoordinateSpace`, enabling the
+  `SET_CAPTION_BUTTONS` route (optional, same shape as `SET_THEME`). New in `@shenora/react`:
+  `WindowCommands.setCaptionButtons` with `CaptionButtonKind`/`CaptionButtonRect`.
+  **How it works, and the part worth knowing before adopting it:** Windows shows the Snap Layouts
+  flyout only over a window that answers `WM_NCHITTEST` with `HTMAXBUTTON`, so the page reports where
+  it drew its buttons and the window claims those rectangles. Claiming them COSTS the page every
+  mouse event there — the OS treats them as non-client, so your `onClick` handlers and CSS `:hover`
+  stop firing inside them. The kit therefore performs the click itself (through the same
+  `ToggleMaximize`/`Close` the IPC commands use, so a frameless manual maximize keeps its
+  bookkeeping) and pushes hover/pressed state out for you to render. Headless as ever (D13): the kit
+  ships no CSS — what hot and pressed look like, including whether close goes red, stays yours.
+  Re-send the rectangles whenever your layout changes; they are a snapshot, and a stale one moves the
+  hit-test off the button the user can see. Opt-in throughout: register nothing and every message
+  falls through exactly as before.
 
 ### Changed
 

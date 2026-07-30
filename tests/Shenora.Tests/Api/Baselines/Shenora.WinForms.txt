@@ -1,3 +1,30 @@
+enum Shenora.WinForms.CaptionButtonKind (int)
+  public const Shenora.WinForms.CaptionButtonKind Close = 2
+  public const Shenora.WinForms.CaptionButtonKind Maximize = 1
+  public const Shenora.WinForms.CaptionButtonKind Minimize = 0
+  public int value__
+struct Shenora.WinForms.CaptionButtonRegion : System.IEquatable<Shenora.WinForms.CaptionButtonRegion>
+  public .ctor(Shenora.WinForms.CaptionButtonKind Kind, System.Drawing.Rectangle Bounds)
+  public Shenora.WinForms.CaptionButtonKind Kind { get; init; }
+  public System.Drawing.Rectangle Bounds { get; init; }
+  public bool Equals(Shenora.WinForms.CaptionButtonRegion other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WinForms.CaptionButtonRegion left, Shenora.WinForms.CaptionButtonRegion right)
+  public static bool op_Inequality(Shenora.WinForms.CaptionButtonRegion left, Shenora.WinForms.CaptionButtonRegion right)
+  public void Deconstruct(out Shenora.WinForms.CaptionButtonKind Kind, out System.Drawing.Rectangle Bounds)
+struct Shenora.WinForms.CaptionButtonState : System.IEquatable<Shenora.WinForms.CaptionButtonState>
+  public .ctor(Shenora.WinForms.CaptionButtonKind? Hot, Shenora.WinForms.CaptionButtonKind? Pressed)
+  public Shenora.WinForms.CaptionButtonKind? Hot { get; init; }
+  public Shenora.WinForms.CaptionButtonKind? Pressed { get; init; }
+  public bool Equals(Shenora.WinForms.CaptionButtonState other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WinForms.CaptionButtonState left, Shenora.WinForms.CaptionButtonState right)
+  public static bool op_Inequality(Shenora.WinForms.CaptionButtonState left, Shenora.WinForms.CaptionButtonState right)
+  public void Deconstruct(out Shenora.WinForms.CaptionButtonKind?? Hot, out Shenora.WinForms.CaptionButtonKind?? Pressed)
 sealed class Shenora.WinForms.ClipboardService : Shenora.Core.IClipboardService
   public .ctor()
   public System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
@@ -44,6 +71,7 @@ sealed class Shenora.WinForms.JsonFileWindowStateStore : Shenora.WinForms.IWindo
   public Shenora.WinForms.WindowState? Load()
   public void Save(Shenora.WinForms.WindowState state)
 class Shenora.WinForms.OptimizedForm : System.Windows.Forms.Form, Shenora.WinForms.IAppMaximizable
+  [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Action<Shenora.WinForms.CaptionButtonState>? CaptionButtonStateChanged { get; set; }
   [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Func<int, bool>? WndProcHook { get; set; }
   protected override System.Windows.Forms.CreateParams CreateParams { get; }
   protected override void Dispose(bool disposing)
@@ -58,6 +86,7 @@ class Shenora.WinForms.OptimizedForm : System.Windows.Forms.Form, Shenora.WinFor
   public void ApplyChromeTheme(System.Drawing.Color backColor, System.Drawing.Color? dwmBorderColor, bool immersiveDarkMode = true)
   public void Maximize()
   public void RestoreFromMax()
+  public void SetCaptionButtons(System.Collections.Generic.IReadOnlyList<Shenora.WinForms.CaptionButtonRegion>? regions)
   public void ToggleMaximize()
 sealed class Shenora.WinForms.OptimizedFormOptions
   public .ctor()

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Shenora.Ipc;
 
 namespace Shenora.WebView2;
@@ -31,6 +32,26 @@ public sealed class WindowCommandOptions
     /// theme; measured). What "dark" means (the actual colors) stays app-defined — headless.
     /// </summary>
     public Action<bool>? ApplyTheme { get; init; }
+
+    /// <summary>
+    /// When set, the <c>SET_CAPTION_BUTTONS</c> route is enabled: the page reports where it drew its
+    /// minimize/maximize/close buttons and this hands the rectangles to the window, so the OS can
+    /// treat them as real caption buttons — chiefly so Windows 11 offers **Snap Layouts** on the
+    /// maximize button, which a page-drawn button otherwise never gets (P5.6).
+    /// <para>
+    /// A frameless app wires <c>OptimizedForm.SetCaptionButtons</c> here. A delegate rather than a
+    /// direct call for the same reason as <see cref="ToggleMaximize"/>: <see cref="Window"/> is a
+    /// plain <see cref="Form"/>, and this package does not get to assume which form type an app used.
+    /// </para>
+    /// </summary>
+    public Action<IReadOnlyList<Shenora.WinForms.CaptionButtonRegion>>? SetCaptionButtons { get; init; }
+
+    /// <summary>
+    /// The control the page's CSS coordinates are relative to — required only when
+    /// <see cref="SetCaptionButtons"/> is set. Normally the WebView2 itself. Its
+    /// <c>DeviceDpi</c> is what converts CSS px to physical px, per-monitor under PerMonitorV2.
+    /// </summary>
+    public Control? CoordinateSpace { get; init; }
 }
 
 /// <summary>
@@ -148,6 +169,14 @@ public sealed class WindowCommandFacade : BaseFacade
                 Post(() => applyTheme(dark));
                 return Done();
 
+            case "SET_CAPTION_BUTTONS" when _options.SetCaptionButtons is { } setCaptionButtons:
+                // The page re-sends this on every layout change, so it must be cheap and total: a
+                // stale rectangle silently moves the hit-test away from the button the user sees,
+                // which presents as "the close button sometimes does nothing".
+                var regions = ParseCaptionButtons(request.Payload);
+                Post(() => setCaptionButtons(regions));
+                return Done();
+
             default:
                 throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5)
         }
@@ -173,6 +202,62 @@ public sealed class WindowCommandFacade : BaseFacade
     /// </para>
     /// </summary>
     private void Post(Action action) => _ui.Post(action);
+
+    /// <summary>
+    /// <c>{ buttons: [{ kind, x, y, width, height }] }</c> in CSS px → client-px regions.
+    /// <para>
+    /// Unknown kinds and malformed entries are SKIPPED rather than failing the whole call: the page
+    /// sends this on every layout change, and rejecting a batch because one entry was odd would drop
+    /// the other two buttons' hit-tests as collateral. An entry with no positive size is skipped for
+    /// the same reason a zero-size zone is meaningless.
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<Shenora.WinForms.CaptionButtonRegion> ParseCaptionButtons(JsonElement? payload)
+    {
+        var regions = new List<Shenora.WinForms.CaptionButtonRegion>(3);
+        if (payload is not { } root || root.ValueKind != JsonValueKind.Object) return regions;
+        if (!root.TryGetProperty("buttons", out var buttons) || buttons.ValueKind != JsonValueKind.Array) return regions;
+
+        // Same conversion the drop-zone overlays use (DropZoneManager.ToFormBounds): CSS px →
+        // physical px via the CONTROL's DeviceDpi — per-monitor under PerMonitorV2, where a
+        // process-global scale factor is wrong on a mixed-DPI desktop.
+        var space = _options.CoordinateSpace ?? _options.Window;
+        var scale = Shenora.WinForms.DpiHelper.ScaleFromDeviceDpi(space.DeviceDpi);
+
+        foreach (var entry in buttons.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object) continue;
+            if (ParseKind(entry) is not { } kind) continue;
+
+            static int Px(JsonElement e, string name, double scale) =>
+                e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+                    ? (int)Math.Round(v.GetDouble() * scale)
+                    : 0;
+
+            var width = Px(entry, "width", scale);
+            var height = Px(entry, "height", scale);
+            if (width <= 0 || height <= 0) continue;
+
+            var topLeft = new Point(Px(entry, "x", scale), Px(entry, "y", scale));
+            // Through screen coordinates, because the page's origin is the CONTROL and the hit-test
+            // works in the FORM's client space — identical whenever the WebView2 fills the form, and
+            // correct when it does not.
+            var client = _options.Window.PointToClient(space.PointToScreen(topLeft));
+            regions.Add(new Shenora.WinForms.CaptionButtonRegion(kind, new Rectangle(client.X, client.Y, width, height)));
+        }
+        return regions;
+    }
+
+    private static Shenora.WinForms.CaptionButtonKind? ParseKind(JsonElement entry) =>
+        entry.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String
+            ? kind.GetString()?.ToUpperInvariant() switch
+            {
+                "MINIMIZE" => Shenora.WinForms.CaptionButtonKind.Minimize,
+                "MAXIMIZE" => Shenora.WinForms.CaptionButtonKind.Maximize,
+                "CLOSE" => Shenora.WinForms.CaptionButtonKind.Close,
+                _ => null,
+            }
+            : null;
 
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);

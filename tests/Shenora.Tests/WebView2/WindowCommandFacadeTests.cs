@@ -1,5 +1,6 @@
 using Shenora.Ipc;
 using Shenora.WebView2;
+using Shenora.WinForms;
 using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.WebView2;
@@ -143,6 +144,124 @@ public class WindowCommandFacadeTests
         Application.DoEvents();
         Assert.True(accepted.Success);
         Assert.Equal([false], applied);
+    }
+
+    // ── SET_CAPTION_BUTTONS (P5.6) ────────────────────────────────────────────────────────────────
+    // The page re-sends this on every layout change, so the parser has to be TOTAL: one odd entry
+    // must not cost the other buttons their hit-test, since the result is a caption button that
+    // silently stops responding.
+
+    [Fact]
+    public async Task Caption_buttons_are_refused_until_the_seam_is_wired()
+    {
+        using var form = CreateForm();
+        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+
+        var response = await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS",
+            new { buttons = new[] { new { kind = "maximize", x = 10, y = 0, width = 30, height = 30 } } }));
+
+        // Same shape as SET_THEME: an optional route is NO_HANDLER until its callback exists.
+        Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Caption_buttons_reach_the_seam_with_every_kind_mapped()
+    {
+        using var form = CreateForm();
+        IReadOnlyList<CaptionButtonRegion>? received = null;
+        var facade = new WindowCommandFacade(new WindowCommandOptions
+        {
+            Window = form,
+            CoordinateSpace = form,
+            SetCaptionButtons = r => received = r,
+        });
+
+        await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS", new
+        {
+            buttons = new[]
+            {
+                new { kind = "minimize", x = 700, y = 0, width = 30, height = 30 },
+                new { kind = "maximize", x = 730, y = 0, width = 30, height = 30 },
+                new { kind = "close", x = 760, y = 0, width = 30, height = 30 },
+            },
+        }));
+        Application.DoEvents(); // the seam is invoked through a posted body
+
+        Assert.NotNull(received);
+        Assert.Equal(
+            [CaptionButtonKind.Minimize, CaptionButtonKind.Maximize, CaptionButtonKind.Close],
+            received!.Select(r => r.Kind));
+        Assert.Equal(30, received[0].Bounds.Width);
+    }
+
+    [Theory]
+    [InlineData("MAXIMIZE")]   // case-insensitive: the wire is app-authored text
+    [InlineData("Maximize")]
+    public async Task Caption_button_kinds_are_case_insensitive(string kind)
+    {
+        using var form = CreateForm();
+        IReadOnlyList<CaptionButtonRegion>? received = null;
+        var facade = new WindowCommandFacade(new WindowCommandOptions
+        {
+            Window = form,
+            CoordinateSpace = form,
+            SetCaptionButtons = r => received = r,
+        });
+
+        await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS",
+            new { buttons = new[] { new { kind, x = 1, y = 2, width = 30, height = 30 } } }));
+        Application.DoEvents();
+
+        Assert.Equal(CaptionButtonKind.Maximize, Assert.Single(received!).Kind);
+    }
+
+    [Fact]
+    public async Task A_bad_entry_is_skipped_without_costing_the_others_their_hit_test()
+    {
+        using var form = CreateForm();
+        IReadOnlyList<CaptionButtonRegion>? received = null;
+        var facade = new WindowCommandFacade(new WindowCommandOptions
+        {
+            Window = form,
+            CoordinateSpace = form,
+            SetCaptionButtons = r => received = r,
+        });
+
+        await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS", new
+        {
+            buttons = new object[]
+            {
+                new { kind = "telepathy", x = 0, y = 0, width = 30, height = 30 },  // unknown kind
+                new { kind = "maximize", x = 730, y = 0, width = 0, height = 30 },   // zero size
+                new { kind = "close", x = 760, y = 0, width = 30, height = 30 },     // fine
+            },
+        }));
+        Application.DoEvents();
+
+        // Rejecting the whole batch over one odd entry would drop the good button's hit-test as
+        // collateral — and a caption button that stops responding is invisible until someone clicks.
+        Assert.Equal(CaptionButtonKind.Close, Assert.Single(received!).Kind);
+    }
+
+    [Fact]
+    public async Task An_empty_or_missing_button_list_clears_rather_than_failing()
+    {
+        using var form = CreateForm();
+        IReadOnlyList<CaptionButtonRegion>? received = null;
+        var facade = new WindowCommandFacade(new WindowCommandOptions
+        {
+            Window = form,
+            CoordinateSpace = form,
+            SetCaptionButtons = r => received = r,
+        });
+
+        var response = await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS", new { buttons = Array.Empty<object>() }));
+        Application.DoEvents();
+
+        // Clearing is a legitimate instruction — a page that hides its title bar must be able to
+        // hand every pixel back.
+        Assert.True(response.Success);
+        Assert.Empty(received!);
     }
 
     [Fact]

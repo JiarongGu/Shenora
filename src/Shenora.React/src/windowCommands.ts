@@ -7,6 +7,21 @@ import { BaseModuleService } from './moduleService.js';
  * side/bottom resize borders, so only the top (covered by the WebView) needs page-side help. */
 export type WindowResizeEdge = 'top' | 'topLeft' | 'topRight';
 
+/** Which system caption button a page-drawn region stands in for (mirrors the host's enum). */
+export type CaptionButtonKind = 'minimize' | 'maximize' | 'close';
+
+/**
+ * Where the page drew one caption button, in CSS px relative to the WebView2 — i.e. straight out of
+ * `getBoundingClientRect()`. The host converts to physical px using the control's DeviceDpi.
+ */
+export interface CaptionButtonRect {
+  kind: CaptionButtonKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // A plain interface — NOT `extends Record<string, unknown>` (P5.5 H6). That widened
 // `keyof TRequests & string` to `string`, so a mistyped route compiled and every payload collapsed to
 // `unknown`: the kit's own service was demonstrating the anti-pattern the base class exists to prevent.
@@ -18,6 +33,7 @@ interface WindowRequests {
   START_DRAG: void;
   START_RESIZE: { edge: WindowResizeEdge };
   SET_THEME: { dark: boolean };
+  SET_CAPTION_BUTTONS: { buttons: CaptionButtonRect[] };
 }
 
 /**
@@ -64,6 +80,25 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
   /** Resync the native chrome to the app theme (host `WindowCommandOptions.ApplyTheme`). */
   setTheme(dark: boolean): Promise<void> {
     return this.send('SET_THEME', { payload: { dark } });
+  }
+
+  /**
+   * Tell the host where the page drew its caption buttons, so the OS can treat them as the real
+   * thing — chiefly so Windows 11 offers **Snap Layouts** on the maximize button, which a page-drawn
+   * button never gets otherwise.
+   *
+   * Two consequences worth knowing before calling this. The host takes over CLICKS in those rects
+   * (the OS stops delivering them to the page), so your `onClick` handlers stop firing there — the
+   * host performs minimize/maximize/close itself, through the same commands. And CSS `:hover` stops
+   * firing too, so subscribe to the host's caption-button state to render hot/pressed; it is also the
+   * only way to stay hot while the pointer is over the snap flyout, which is a different window.
+   *
+   * Re-send on every layout change (a resize, a theme that changes button size): the rectangles are a
+   * snapshot, and a stale one moves the hit-test off the button the user can see. Pass an empty array
+   * to hand every pixel back to the page.
+   */
+  setCaptionButtons(buttons: CaptionButtonRect[]): Promise<void> {
+    return this.send('SET_CAPTION_BUTTONS', { payload: { buttons } });
   }
 }
 

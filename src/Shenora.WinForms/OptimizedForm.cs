@@ -66,6 +66,13 @@ public class OptimizedForm : Form, IAppMaximizable
     // Sent when the window moves to a monitor with a different scale factor (PerMonitorV2).
     private const int WM_DPICHANGED = 0x02E0;
     private const int HTCLIENT = 1, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
+    // The caption-button hit-test codes. Answering WM_NCHITTEST with HTMAXBUTTON is the ONLY way to
+    // get the Windows 11 Snap Layouts flyout on a page-drawn maximize button — the OS offers it on
+    // hover over whatever reports itself as the maximize button, and a frameless window has no real
+    // caption for it to find (P5.6).
+    private const int HTMINBUTTON = 8, HTMAXBUTTON = 9, HTCLOSE = 20;
+    private const int WM_NCMOUSEMOVE = 0x00A0, WM_NCMOUSELEAVE = 0x02A2,
+                      WM_NCLBUTTONDOWN = 0x00A1, WM_NCLBUTTONUP = 0x00A2;
     private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
     // Win11 rounded corners. A frameless window (custom WM_NCCALCSIZE) can lose the AUTOMATIC
@@ -77,6 +84,11 @@ public class OptimizedForm : Form, IAppMaximizable
     private bool _immersiveDarkMode;
     private bool _maximized;
     private Rectangle _restoreBounds;
+    // Page-drawn caption buttons, in CLIENT px. Empty = the app draws none, and every message below
+    // falls through untouched — this feature costs nothing until it is used.
+    private CaptionButtonRegion[] _captionButtons = [];
+    private CaptionButtonKind? _hotCaptionButton;
+    private CaptionButtonKind? _pressedCaptionButton;
 
     public OptimizedForm() : this(null)
     {
@@ -138,6 +150,70 @@ public class OptimizedForm : Form, IAppMaximizable
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<int, bool>? WndProcHook { get; set; }
+
+    /// <summary>
+    /// Called when the OS changes what it is doing to a page-drawn caption button (hover in/out,
+    /// press, release) — the app's cue to re-render the affordance. Never called unless
+    /// <see cref="SetCaptionButtons"/> registered regions. See <see cref="CaptionButtonState"/> for
+    /// why the page cannot observe this itself.
+    /// <para>App code, so it is invoked GUARDED — a throw here cannot take the window down.</para>
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Action<CaptionButtonState>? CaptionButtonStateChanged { get; set; }
+
+    /// <summary>
+    /// Tell the window where the page drew its caption buttons, in CLIENT px, so the OS can treat
+    /// them as the real thing — chiefly so Windows 11 offers Snap Layouts on the maximize button.
+    /// Pass an empty list (the default) to hand every pixel back to the page.
+    /// <para>
+    /// Re-send this whenever the page's layout changes: the rectangles are a snapshot, and a stale
+    /// one silently moves the hit-test away from the button the user can see.
+    /// </para>
+    /// </summary>
+    /// <param name="regions">The button rectangles; null or empty clears them.</param>
+    public void SetCaptionButtons(IReadOnlyList<CaptionButtonRegion>? regions)
+    {
+        _captionButtons = regions is { Count: > 0 } ? [.. regions] : [];
+        if (_captionButtons.Length == 0 && (_hotCaptionButton is not null || _pressedCaptionButton is not null))
+        {
+            // Clearing the regions must also clear any state the app is currently rendering, or it
+            // is left painting a hover that can never end.
+            _hotCaptionButton = null;
+            _pressedCaptionButton = null;
+            RaiseCaptionButtonState();
+        }
+    }
+
+    // No public `HotCaptionButton` property: CaptionButtonStateChanged already delivers it, and a
+    // second way to learn the same thing is surface that has to be maintained forever for nothing
+    // (generic-library: every public member earns its keep, default to internal). Adding it later is
+    // non-breaking; removing it would not be.
+
+    private CaptionButtonKind? CaptionButtonAt(Point screenPoint)
+    {
+        if (_captionButtons.Length == 0) return null;
+        var client = PointToClient(screenPoint);
+        foreach (var region in _captionButtons)
+            if (region.Bounds.Contains(client))
+                return region.Kind;
+        return null;
+    }
+
+    private void SetCaptionButtonState(CaptionButtonKind? hot, CaptionButtonKind? pressed)
+    {
+        if (_hotCaptionButton == hot && _pressedCaptionButton == pressed) return;
+        _hotCaptionButton = hot;
+        _pressedCaptionButton = pressed;
+        RaiseCaptionButtonState();
+    }
+
+    private void RaiseCaptionButtonState()
+    {
+        if (CaptionButtonStateChanged is not { } handler) return;
+        var state = new CaptionButtonState(_hotCaptionButton, _pressedCaptionButton);
+        Shenora.Core.AppCallback.Run(() => handler(state));
+    }
 
     /// <summary>
     /// True when the window is maximized. Frameless chrome maximizes MANUALLY (fills the work
@@ -432,29 +508,109 @@ public class OptimizedForm : Form, IAppMaximizable
             return;
         }
 
+        // ── Page-drawn caption buttons (P5.6) ────────────────────────────────────────────────────
+        // Claiming the hit-test is what buys Snap Layouts, and it COSTS the page every mouse event in
+        // those rectangles — Windows now considers them non-client, so the WebView2 sees nothing
+        // there. That is why the three messages below are handled rather than left to DefWindowProc:
+        // without them the buttons would show the flyout and stop working, which is the classic
+        // half-done version of this feature.
+        if (_captionButtons.Length > 0)
+        {
+            if (m.Msg == WM_NCMOUSEMOVE)
+            {
+                SetCaptionButtonState(HitTestToKind((int)m.WParam), _pressedCaptionButton);
+                // Do NOT return: DefWindowProc still owns tooltip/leave tracking for the caption.
+            }
+            else if (m.Msg == WM_NCMOUSELEAVE)
+            {
+                // The pointer left the non-client area entirely — including into the page, which is
+                // the ordinary way out of a button.
+                SetCaptionButtonState(null, null);
+            }
+            else if (m.Msg == WM_NCLBUTTONDOWN && HitTestToKind((int)m.WParam) is { } pressed)
+            {
+                // Swallow the press. Handing it to DefWindowProc would run the OS's own caption
+                // button loop against a caption this window does not have.
+                SetCaptionButtonState(pressed, pressed);
+                m.Result = IntPtr.Zero;
+                return;
+            }
+            else if (m.Msg == WM_NCLBUTTONUP && HitTestToKind((int)m.WParam) is { } released)
+            {
+                var wasPressed = _pressedCaptionButton;
+                SetCaptionButtonState(released, null);
+                // Only act if the press STARTED on this button — press here, drag away, release
+                // elsewhere must not activate, matching every other button on the system.
+                if (wasPressed == released) InvokeCaptionButton(released);
+                m.Result = IntPtr.Zero;
+                return;
+            }
+        }
+
         // WM_NCCALCSIZE gave the TOP edge to the client area, so DefWindowProc reports HTCLIENT
         // there and Windows can't resize from the top. Re-add a top resize border: within the
         // strip, return HTTOP (or the diagonal corners). Below the strip the app's header still
         // gets the drag (mousedown → START_DRAG → HTCAPTION), so the top edge both RESIZES
         // (very edge) and DRAGS (header).
-        if (m.Msg == WM_NCHITTEST && !_maximized)
+        if (m.Msg == WM_NCHITTEST)
         {
             base.WndProc(ref m);
             if ((int)m.Result == HTCLIENT)
             {
                 var lp = unchecked((int)(long)m.LParam);
-                var p = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+                var screen = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
+                var p = PointToClient(screen);
+
+                // Caption buttons win over the resize strip: they sit at the top edge, and losing a
+                // few pixels of resize border is a far smaller cost than a close button that resizes
+                // the window. Checked while MAXIMIZED too — unlike the resize strip below, which is
+                // meaningless then.
+                if (CaptionButtonAt(screen) is { } kind)
+                {
+                    m.Result = (IntPtr)(kind switch
+                    {
+                        CaptionButtonKind.Minimize => HTMINBUTTON,
+                        CaptionButtonKind.Maximize => HTMAXBUTTON,
+                        _ => HTCLOSE,
+                    });
+                    return;
+                }
+
                 // DpiHelper owns every device-DPI conversion (P5.5 H4.5). It was `* DeviceDpi / 96`
                 // here — integer division that only happened to be safe because the multiply came
                 // first, and which silently returns 0 for a non-positive DeviceDpi.
                 var border = Math.Max(6, DpiHelper.Scale(_options.TopResizeBorder, DpiHelper.ScaleFromDeviceDpi(DeviceDpi)));
-                if (p.Y >= 0 && p.Y < border)
+                if (!_maximized && p.Y >= 0 && p.Y < border)
                     m.Result = (IntPtr)(p.X < border ? HTTOPLEFT : p.X >= ClientSize.Width - border ? HTTOPRIGHT : HTTOP);
             }
             return;
         }
 
         base.WndProc(ref m);
+    }
+
+    private static CaptionButtonKind? HitTestToKind(int hitTest) => hitTest switch
+    {
+        HTMINBUTTON => CaptionButtonKind.Minimize,
+        HTMAXBUTTON => CaptionButtonKind.Maximize,
+        HTCLOSE => CaptionButtonKind.Close,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Perform what a caption button does. Routed through the SAME public members the page's IPC
+    /// commands use (<see cref="ToggleMaximize"/>, <see cref="Form.Close"/>), so a click on the
+    /// button and a click delivered by the page cannot diverge — in particular the frameless manual
+    /// maximize keeps its <see cref="IsAppMaximized"/> bookkeeping either way (P5.5 H2).
+    /// </summary>
+    private void InvokeCaptionButton(CaptionButtonKind kind)
+    {
+        switch (kind)
+        {
+            case CaptionButtonKind.Minimize: WindowState = FormWindowState.Minimized; break;
+            case CaptionButtonKind.Maximize: ToggleMaximize(); break;
+            default: Close(); break;
+        }
     }
 
     [DllImport("dwmapi.dll")]
