@@ -5,6 +5,98 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5 increment 4 + phase review: sessions proven live — P5 COMPLETE
+
+The sample gains the sessions demo: a `RenderSessionPool` (capacity 2, own `sessions/render`
+profile, a loopback-only navigation guard) and a `RENDER`/`PROBE` route that leases a pooled
+off-screen session, navigates the requested page, and returns its LIVE-DOM title + HTML length.
+The web page adds a "render this page off-screen" button. PROVEN LIVE (dev mode, CDP through
+`window.__shenora`; screenshot `p54-dev-render.png`): first PROBE created the instance and
+returned `"Shenora Sample"` + ~3.8 KB of live DOM (its JS ran off-screen), a second PROBE reused
+the warm instance in ~250 ms, a non-loopback URL came back as structured `RENDER_REFUSED` (the
+guard seam), and the page button showed the success line. Graceful close exits code 0 (the pool
+disposes with the window).
+
+**Phase review (adversarial subagent over the full P5 diff) — real findings fixed:** the
+`LoginWindowController` assumed a foreground login window, so an off-screen co-browse host (which
+reuses it) would (1) veto `Application.Exit` via its hold-close handler and (2) pop an invisible
+window on screen if a driver called `Reveal` — both now gated behind a `foreground` flag (the
+background co-browse controller's window-managing calls are inert); (3) a failed session init
+leaked the WebView2 control (and could finish attaching a browser process holding the profile
+lock) — the pool now disposes control + fresh host on the failure path; (4) a silent-refresh
+login showed an OWNED modal, disabling the app's main window while invisible — now ownerless;
+(5) the loading-splash fallback never fired `onLoading(false)` if the driver threw before
+signalling — now dropped unconditionally in the finally; (6) `RenderSessionPool.Dispose` hung a
+queued lease forever and could re-pool an instance into a dead pool — Dispose now cancels queued
+waiters via a dispose token and `Return` discards once disposed; (7) the controller's UI marshal
+checked `InvokeRequired` without `IsHandleCreated` (the family pre-handle trap) — fixed;
+(8) `CoBrowseSession.StartAsync`'s `BeginInvoke` was unguarded — now faults the task + completes
+the frame channel; (9) `CoBrowseSession.DisposeAsync` could hang on a stopped message loop —
+completes the frame reader first, then fires UI cleanup without awaiting; (10) drag was
+impossible because mouse-move always sent `buttons:0` — a held button now carries through moves;
+(11) every mouse event round-tripped a script call to read the viewport (and its fallback
+disagreed with the initial viewport, misplacing clicks) — the emulated viewport is now cached;
+(12) the request filter passed `about:blank`/pre-commit sources as the page host, so a same-host
+filter could 403 the page's own document — non-http(s) sources are nulled; (13) the init-timeout
+guidance only wrapped the core attach, not environment creation — now both; (14) the sample
+`RENDER` lease could hang forever behind a wedged pool — bounded with a 60 s `RENDER_BUSY`; plus
+the packaging gap (the new package was missing from `dev.mjs pack`'s list and the README) and
+the controller's raw-event taps silently replaced each other (now accumulate like `OnMessage`).
+A live-caught hang: `SemaphoreSlim.Dispose()` racing a just-cancelled waiter wedged it (fix-log);
+resolved by not disposing the semaphore (it never allocated a wait handle). Re-verified 318
+dotnet + 39 vitest green; sample re-proven live. Deferred deliberately (recorded in the private
+notes): renaming the login-named types to session-neutral names (pre-1.0, revisit if a pure
+co-browse consumer finds it awkward), and STA-wrapping the new pool/login tests (the earned rule's
+trigger — `AllowDrop`/OLE — doesn't apply here; the tests are deterministically green).
+
+### 2026-07-30 — P5 increment 3: co-browse streaming
+
+`CoBrowseSession` ports the server-backed sibling's co-browse core with the transport cut away
+as the seam: the generic package owns the off-screen browser (fixed generous physical surface —
+the CSS viewport is driven purely by `Emulation.setDeviceMetricsOverride`, DPI-independent),
+the screencast (`Page.startScreencast` JPEGs → a bounded latest-frame-wins channel, frame-acked;
+`everyNthFrame:1` because CDP only emits on visual change, so idle bandwidth is ~0), the input
+dispatch (the source's wire protocol VERBATIM for mechanical adoption — 1:1 viewport mirroring
+via device metrics alone with the measured clamps, fraction→CSS-px mouse/wheel, `insertText`
+typing, special keys/shortcuts synthesized with the modifier bitmask + the Windows virtual-key
+map), the hotspot extraction script (clickable rects as viewport fractions — the client only
+has pixels), and the SAME `LoginWindowController` primitives over the streamed page (the
+source's deliberate reuse, kept). The app keeps the WebSocket pumps, the send lock, and the
+polling cadence — its transport, its schema. Formatting is invariant-culture throughout (the
+source's live "1,50-is-broken-JSON" locale fix, pinned by a de-DE test). Verified: 16 new tests
+over the pure protocol builders (clamps, VK map matrix, modifier bitmask, down/up pairing,
+fraction scaling, locale pinning, option validation) — 315 dotnet + 39 vitest green; baseline
+promoted (additions only). Live streaming is the P5.4 e2e's subject.
+
+### 2026-07-30 — P5 increments 1–2: the sessions package — offscreen render pool + login windows
+
+New package `Shenora.WebView2.Sessions` (D14), extracted from the server-backed sibling's
+render/session/login stack merged with the primary sibling's external-login service. P5.1: the
+one auxiliary-browser configuration path (`SessionBrowser` — per-profile environment,
+quiet-start + background-throttling-off arguments, hardening, `RequestFilter` seam, the 25 s
+init-timeout guard) and the bounded LIFO render pool (`RenderSessionPool`/`RenderSession` —
+capacity waits queue rather than fail, a creation failure releases its slot, a failed
+about:blank reset DISCARDS the poisoned instance, `NavigationGuard` is the generalized SSRF
+policy seam; one shared hidden off-screen host in runtime mode, visible cascaded windows in dev
+mode). P5.2: the login stack — `LoginWindow` runs a caller-supplied driver over
+`LoginWindowController` primitives inside a modal nested loop, with the sibling-proven
+mechanics ported: busy serialization with EXACTLY-ONCE completion (the dropped-post wedge fixed
+via the cancellation-token fallback — and the source's unused-token gap fixed with observed
+tokens throughout), the user's close HELD open for a final cookie read, the silent-refresh
+off-screen shape (`RevealImmediately=false` + idempotent `Reveal()` — "no interaction ⇒ no
+window"), desktop-width default sizing (narrow windows reflow providers to mobile layouts with
+NO login UI — measured), `FitToBox` CSS→physical DPI math, per-provider AND per-sub-account
+profile scoping documented as the security boundary it is, and `ClearProfile` as real logout.
+`CookieLoginFlow` is the built-in driver: poll for a FRESHLY-SET auth cookie judged against a
+pre-navigation baseline (a stale profile cookie never captures — the dead-session incident),
+reading from the SEPARATE `CookieReadUrl` origin (the parent-domain capture bug), with the
+no-anonymous-blob gate held even on the final close read. Verified: 26 new tests over internal
+seams (pool accounting/LIFO/discard/cancellation with a fake factory; flow freshness/reveal
+timing/close capture/gating via the hooks seam; busy-gate + token-fallback mechanics with a
+deliberately unpumped anchor; `ComputeFitSize` DPI cases; `ClearProfile`) — 299 dotnet + 39
+vitest green; Sessions API baseline reviewed and promoted (additions only). Real browser
+behavior is the P5.4 sample/e2e's subject, per the family precedent.
+
 ### 2026-07-30 — P1.1: local-feed consumption smoke — and the real bug it caught
 
 The pack output was consumed like an external app would (the rerunnable scratch consumer lives
@@ -478,15 +570,14 @@ standard IPC composition, frameless chrome + frontend window commands, the nativ
 (dialogs/shell/clipboard/interaction), drag-drop zones + `useDropZone` (+ the P2.3b DPI tail),
 secondary windows + tray, and the live sample/e2e proof.
 
-### P5 — Auxiliary browser sessions (`Shenora.WebView2.Sessions`, D14)
+### P5 — Auxiliary browser sessions (`Shenora.WebView2.Sessions`, D14) — COMPLETE
 
-- The multi-form/aux-browser stack proven across the siblings, generalized: the "one place a
-  WebView2 gets configured" initializer (+ init-timeout guard), offscreen render sessions with
-  a bounded LIFO pool, per-provider/per-account persistent login-window profiles with clear-on-
-  logout, driveable session primitives (navigate/read/execute, UI-thread marshalled), and
-  co-browse streaming (CDP screencast frames over a socket out, human input dispatched back —
-  captcha/login flows stay human-solved by design).
-- Own package so the core hosting package stays lean; the sample app gains a demo page for each.
+Everything landed (increments 1–4 + phase review, see Done): the one browser-configuration path
+(`SessionBrowser` + init-timeout guard), the bounded LIFO render-session pool, the login-window
+stack (`LoginWindow`/`LoginWindowController`/`CookieLoginFlow` — per-provider/per-account
+profiles, silent refresh, clear-on-logout) and co-browse streaming (`CoBrowseSession` — CDP
+screencast frames out, input dispatched back, human-solved by design), in its own package with a
+live sample demo.
 
 ### P6 — Sibling adoption (brief Phase 5)
 

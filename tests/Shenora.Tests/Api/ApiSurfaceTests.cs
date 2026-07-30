@@ -17,6 +17,7 @@ public class ApiSurfaceTests
         [typeof(global::Shenora.Core.ShenoraEnvironment).Assembly],
         [typeof(global::Shenora.Ipc.IpcRequest).Assembly],
         [typeof(global::Shenora.WebView2.BrowserArguments).Assembly],
+        [typeof(global::Shenora.WebView2.Sessions.RenderSessionPool).Assembly],
         [typeof(global::Shenora.WinForms.DpiHelper).Assembly],
     ];
 

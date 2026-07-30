@@ -114,3 +114,38 @@ hooks `useShenora`/`useShenoraEvent` (latest-ref, no resubscribe churn)/`useShen
 (minimal fetch state, headless per D13), and `installDevInterceptor` (`window.__shenora` ring
 buffers for CDP-driven testing). `react` is now a REQUIRED peer (hooks import it);
 `isShenoraAvailable()` unchanged.
+
+P5.1/P5.2 — new package `Shenora.WebView2.Sessions` (D14): auxiliary browser sessions — browser
+work OUTSIDE the app's own UI, over the same WebView2 runtime. `SessionBrowser(+Options)` (the
+ONE configuration path for auxiliary WebView2s: per-profile environment, quiet-start +
+background-throttling-off arguments, settings hardening, `RequestFilter` request-blocking seam,
+init-timeout guard, `GetHtmlAsync`) and the render pool — `RenderSessionPool(+Options)`/
+`RenderSession`/`SessionApiCall` (bounded LIFO pool of off-screen sessions leased for
+navigation/scripting/HTML-read/DevTools/network+message taps; capacity waits queue, a creation
+failure releases the slot, a failed reset discards the instance instead of re-pooling it;
+`NavigationGuard` SSRF policy seam; one shared hidden host in runtime mode or visible
+per-session dev windows). The login stack — `LoginWindow(+Options)`/`LoginWindowController`/
+`LoginResult`/`LoginErrorCodes`/`LoginCookie`/`DownloadHit`: interactive logins over
+per-provider (and per-sub-account — a security boundary) persistent profiles, driven by a
+caller-supplied driver over controller primitives (guarded navigate, script, origin-scoped
+cookie read, message/download/new-window/navigation taps, `FitToBox` CSS→physical sizing,
+`SetLoading`, idempotent `Reveal`); one login at a time with exactly-once completion, the
+user's close HELD for a final cookie read, an optional silent-refresh shape (created
+off-screen, revealed only if interaction is needed), and `ClearProfile` for real logout.
+`CookieLoginFlow(+Options)` is the built-in driver: navigate then poll for a FRESHLY-SET auth
+cookie (pattern-matched, judged against a pre-navigation baseline — a stale cookie never
+captures, not even on close), cookies read from the separate `CookieReadUrl` origin, blob
+round-trip via `ReadBlob`.
+
+P5.3 — `Shenora.WebView2.Sessions` gains `CoBrowseSession(+Options)`/`CoBrowseViewport`:
+co-browse an off-screen page in-app (countdowns/captchas stay human-solved, no native window) —
+CDP `Page.startScreencast` JPEG frames flow into a bounded latest-wins `ChannelReader<byte[]>`
+(`Frames`: a slow client drops the oldest frame, never backs up the compositor), the client's
+input JSON is dispatched back via `DispatchInputAsync` (viewport messages mirror the client's
+content box 1:1 through device metrics ALONE — never a physical resize; fraction-coordinate
+mouse/wheel; `insertText` typing; special keys/shortcuts synthesized with the modifier bitmask +
+Windows virtual-key map), `ReadHotspotsAsync` returns clickable-element rects as viewport
+fractions (client-side hover/pressed affordances over pixels), and `Controller` exposes the
+SAME `LoginWindowController` primitives over the streamed page. The wire protocol is identical
+to the proven source for mechanical adoption; the transport (WebSocket, bridge, …) stays the
+app's — frames out, input text back.

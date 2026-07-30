@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Shenora.Core;
 using Shenora.Ipc;
 using Shenora.WebView2;
+using Shenora.WebView2.Sessions;
 using Shenora.WinForms;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
@@ -25,10 +27,11 @@ public sealed class MainForm : OptimizedForm
     private readonly WebViewIpcBridge _bridge;
     private readonly DropZoneManager _dropZones;
     private readonly TrayIcon _tray;
+    private readonly RenderSessionPool _renderPool;
     private readonly System.Windows.Forms.Timer _tickTimer;
     private int _tickCount;
 
-    public MainForm(WebViewHostOptions hostOptions, IMessageDispatcher dispatcher, IEventBus eventBus)
+    public MainForm(WebViewHostOptions hostOptions, IMessageDispatcher dispatcher, IEventBus eventBus, ShenoraPaths paths)
         : base(new OptimizedFormOptions
         {
             FramelessChrome = true,
@@ -61,6 +64,22 @@ public sealed class MainForm : OptimizedForm
             EventBus = eventBus,
         });
 
+        // P5: a pool of driveable OFF-SCREEN browser sessions anchored on this form's UI thread.
+        // Its own profile directory — never the main WebView2's user-data folder (two
+        // environments over one folder fight for the browser lock). The guard demonstrates the
+        // SSRF policy seam: session URLs are data-driven, and this demo only renders local pages.
+        _renderPool = new RenderSessionPool(new RenderSessionPoolOptions
+        {
+            Anchor = this,
+            Browser = new SessionBrowserOptions
+            {
+                ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "render"),
+                KeepAliveInBackground = true, // off-screen pages must keep their JS running
+            },
+            Capacity = 2,
+            NavigationGuard = (uri, _) => Task.FromResult(uri.IsLoopback),
+        });
+
         // The window-facing facades need the live form, so they map here (late registration is
         // supported — the dispatcher rebuilds its pipeline lazily).
         if (dispatcher is MessageDispatcher concrete)
@@ -72,6 +91,37 @@ public sealed class MainForm : OptimizedForm
                 IsMaximized = () => IsAppMaximized,   // WindowState never reflects it
             }));
             concrete.MapModule(new DropZoneFacade(_dropZones));
+
+            // The route-builder shape (SampleFacade shows the BaseFacade shape): lease a pooled
+            // off-screen session, render the requested page, and prove its JS ran (title + HTML
+            // length come from the LIVE DOM, not the response bytes) — the e2e drives this.
+            concrete.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async request =>
+            {
+                var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
+                // Bound the lease: with Capacity 2, two wedged sessions would otherwise hang every
+                // later PROBE request forever with no response. A real queue wait is fine; an
+                // indefinite one is a structured RENDER_BUSY.
+                using var leaseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                RenderSession session;
+                try { session = await _renderPool.LeaseAsync(leaseTimeout.Token); }
+                catch (OperationCanceledException) { throw new OperationException("RENDER_BUSY", "url", url); }
+                await using (session)
+                {
+                    try
+                    {
+                        await session.NavigateAsync(url);
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+                    {
+                        // The guard (or the http/https gate) refused the data-driven URL — cross
+                        // the bridge as a structured error, not as leaked exception text.
+                        throw new OperationException("RENDER_REFUSED", "url", url);
+                    }
+                    var html = await session.GetHtmlAsync() ?? "";
+                    var titleJson = await session.ExecuteScriptAsync("document.title") ?? "\"\"";
+                    return new { Length = html.Length, Title = JsonSerializer.Deserialize<string>(titleJson) };
+                }
+            }));
         }
 
         // Construct the bridge BEFORE InitializeAsync — bus buffering starts here, so events
@@ -166,6 +216,7 @@ public sealed class MainForm : OptimizedForm
             _dropZones.Dispose();
             _bridge.Dispose();
             _tray.Dispose();
+            _renderPool.Dispose();
         }
         base.Dispose(disposing);
     }

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.WebView2.Sessions</PackageId>
+    <!-- The WebView2 package always references its WPF assembly, whose WindowsBase differs from a
+         WinForms-only project's — MSB3277 fires but the WPF dll is never loaded here. Demote it. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+    <Description>Shenora auxiliary browser sessions: off-screen driveable WebView2 sessions with a bounded pool, login windows with per-provider persistent profiles (silent refresh, cookie capture), and co-browse streaming primitives (CDP screencast frames out, input dispatch back).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shenora.WebView2\Shenora.WebView2.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+
+</Project>

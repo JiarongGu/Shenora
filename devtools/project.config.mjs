@@ -27,6 +27,7 @@ export default {
     'src/Shenora.Core',
     'src/Shenora.Ipc',
     'src/Shenora.WebView2',
+    'src/Shenora.WebView2.Sessions',
     'src/Shenora.WinForms',
   ],
   /** The npm package dir (version synced from VersionPrefix by pack/doctor). */

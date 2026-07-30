@@ -1,0 +1,266 @@
+Shenora.WebView2.Sessions.CoBrowseSession
+  Shenora.WebView2.Sessions.LoginWindowController Controller
+  Shenora.WebView2.Sessions.LoginWindowController get_Controller()
+  System.Threading.Channels.ChannelReader`1[System.Byte[]] Frames
+  System.Threading.Channels.ChannelReader`1[System.Byte[]] get_Frames()
+  System.Threading.Tasks.Task DispatchInputAsync(System.String)
+  System.Threading.Tasks.Task`1[Shenora.WebView2.Sessions.CoBrowseSession] StartAsync(Shenora.WebView2.Sessions.CoBrowseSessionOptions, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] ReadHotspotsAsync()
+  System.Threading.Tasks.ValueTask DisposeAsync()
+Shenora.WebView2.Sessions.CoBrowseSessionOptions
+  Int32 FrameBuffer
+  Int32 JpegQuality
+  Int32 MaxFrameHeight
+  Int32 MaxFrameWidth
+  Int32 get_FrameBuffer()
+  Int32 get_JpegQuality()
+  Int32 get_MaxFrameHeight()
+  Int32 get_MaxFrameWidth()
+  Shenora.WebView2.Sessions.CoBrowseViewport InitialViewport
+  Shenora.WebView2.Sessions.CoBrowseViewport get_InitialViewport()
+  Shenora.WebView2.Sessions.SessionBrowserOptions Browser
+  Shenora.WebView2.Sessions.SessionBrowserOptions get_Browser()
+  System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] NavigationGuard
+  System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] get_NavigationGuard()
+  System.Windows.Forms.Control Anchor
+  System.Windows.Forms.Control get_Anchor()
+  Void .ctor()
+  Void set_Anchor(System.Windows.Forms.Control)
+  Void set_Browser(Shenora.WebView2.Sessions.SessionBrowserOptions)
+  Void set_FrameBuffer(Int32)
+  Void set_InitialViewport(Shenora.WebView2.Sessions.CoBrowseViewport)
+  Void set_JpegQuality(Int32)
+  Void set_MaxFrameHeight(Int32)
+  Void set_MaxFrameWidth(Int32)
+  Void set_NavigationGuard(System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]])
+Shenora.WebView2.Sessions.CoBrowseViewport
+  Boolean Equals(Shenora.WebView2.Sessions.CoBrowseViewport)
+  Boolean Equals(System.Object)
+  Boolean op_Equality(Shenora.WebView2.Sessions.CoBrowseViewport, Shenora.WebView2.Sessions.CoBrowseViewport)
+  Boolean op_Inequality(Shenora.WebView2.Sessions.CoBrowseViewport, Shenora.WebView2.Sessions.CoBrowseViewport)
+  Double DeviceScaleFactor
+  Double get_DeviceScaleFactor()
+  Int32 GetHashCode()
+  Int32 Height
+  Int32 Width
+  Int32 get_Height()
+  Int32 get_Width()
+  System.String ToString()
+  Void .ctor(Int32, Int32, Double)
+  Void Deconstruct(Int32 ByRef, Int32 ByRef, Double ByRef)
+  Void set_DeviceScaleFactor(Double)
+  Void set_Height(Int32)
+  Void set_Width(Int32)
+Shenora.WebView2.Sessions.CookieLoginFlow
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.Sessions.LoginCookie] ReadBlob(System.String)
+  System.Threading.Tasks.Task`1[System.String] DriveAsync(Shenora.WebView2.Sessions.LoginWindowController, System.Threading.CancellationToken)
+  Void .ctor(Shenora.WebView2.Sessions.CookieLoginFlowOptions)
+Shenora.WebView2.Sessions.CookieLoginFlowOptions
+  Boolean CaptureAllCookies
+  Boolean get_CaptureAllCookies()
+  System.Collections.Generic.IReadOnlyList`1[System.String] AuthCookiePatterns
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_AuthCookiePatterns()
+  System.String CookieReadUrl
+  System.String LoginUrl
+  System.String get_CookieReadUrl()
+  System.String get_LoginUrl()
+  System.TimeSpan PollInterval
+  System.TimeSpan RevealDelay
+  System.TimeSpan get_PollInterval()
+  System.TimeSpan get_RevealDelay()
+  Void .ctor()
+  Void set_AuthCookiePatterns(System.Collections.Generic.IReadOnlyList`1[System.String])
+  Void set_CaptureAllCookies(Boolean)
+  Void set_CookieReadUrl(System.String)
+  Void set_LoginUrl(System.String)
+  Void set_PollInterval(System.TimeSpan)
+  Void set_RevealDelay(System.TimeSpan)
+Shenora.WebView2.Sessions.DownloadHit
+  Boolean Equals(Shenora.WebView2.Sessions.DownloadHit)
+  Boolean Equals(System.Object)
+  Boolean op_Equality(Shenora.WebView2.Sessions.DownloadHit, Shenora.WebView2.Sessions.DownloadHit)
+  Boolean op_Inequality(Shenora.WebView2.Sessions.DownloadHit, Shenora.WebView2.Sessions.DownloadHit)
+  Int32 GetHashCode()
+  Shenora.WebView2.Sessions.DownloadHit <Clone>$()
+  System.String FileName
+  System.String ToString()
+  System.String Url
+  System.String get_FileName()
+  System.String get_Url()
+  Void .ctor(System.String, System.String)
+  Void Deconstruct(System.String ByRef, System.String ByRef)
+  Void set_FileName(System.String)
+  Void set_Url(System.String)
+Shenora.WebView2.Sessions.LoginCookie
+  Boolean Equals(Shenora.WebView2.Sessions.LoginCookie)
+  Boolean Equals(System.Object)
+  Boolean op_Equality(Shenora.WebView2.Sessions.LoginCookie, Shenora.WebView2.Sessions.LoginCookie)
+  Boolean op_Inequality(Shenora.WebView2.Sessions.LoginCookie, Shenora.WebView2.Sessions.LoginCookie)
+  Int32 GetHashCode()
+  Shenora.WebView2.Sessions.LoginCookie <Clone>$()
+  System.String Domain
+  System.String Name
+  System.String Path
+  System.String ToString()
+  System.String Value
+  System.String get_Domain()
+  System.String get_Name()
+  System.String get_Path()
+  System.String get_Value()
+  Void .ctor(System.String, System.String, System.String, System.String)
+  Void Deconstruct(System.String ByRef, System.String ByRef, System.String ByRef, System.String ByRef)
+  Void set_Domain(System.String)
+  Void set_Name(System.String)
+  Void set_Path(System.String)
+  Void set_Value(System.String)
+Shenora.WebView2.Sessions.LoginErrorCodes
+  System.String Busy
+  System.String Cancelled
+  System.String Error
+  System.String Incomplete
+  System.String Unavailable
+Shenora.WebView2.Sessions.LoginResult
+  Boolean Success
+  Boolean get_Success()
+  System.String Blob
+  System.String ErrorCode
+  System.String get_Blob()
+  System.String get_ErrorCode()
+  Void .ctor()
+  Void set_Blob(System.String)
+  Void set_ErrorCode(System.String)
+  Void set_Success(Boolean)
+Shenora.WebView2.Sessions.LoginWindow
+  Boolean IsBusy
+  Boolean get_IsBusy()
+  System.Threading.Tasks.Task`1[Shenora.WebView2.Sessions.LoginResult] RunAsync(System.Func`3[Shenora.WebView2.Sessions.LoginWindowController,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.String]], System.Threading.CancellationToken)
+  Void .ctor(Shenora.WebView2.Sessions.LoginWindowOptions)
+  Void ClearProfile(System.String)
+Shenora.WebView2.Sessions.LoginWindowController
+  System.Threading.CancellationToken WindowClosed
+  System.Threading.CancellationToken get_WindowClosed()
+  System.Threading.Tasks.Task NavigateAsync(System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.Sessions.LoginCookie]] GetCookiesAsync(System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] ExecuteScriptAsync(System.String, System.Threading.CancellationToken)
+  Void FitToBox(Int32, Int32)
+  Void OnDownload(System.Action`1[Shenora.WebView2.Sessions.DownloadHit])
+  Void OnMessage(System.Action`1[System.String])
+  Void OnNavigation(System.Action`1[System.String])
+  Void OnNewWindow(System.Action`1[System.String])
+  Void Reveal()
+  Void SetLoading(Boolean)
+Shenora.WebView2.Sessions.LoginWindowOptions
+  Boolean RevealImmediately
+  Boolean get_RevealImmediately()
+  System.Action`1[System.Boolean] OnLoading
+  System.Action`1[System.Boolean] get_OnLoading()
+  System.Drawing.Icon Icon
+  System.Drawing.Icon get_Icon()
+  System.Drawing.Size ClientSize
+  System.Drawing.Size MinimumSize
+  System.Drawing.Size get_ClientSize()
+  System.Drawing.Size get_MinimumSize()
+  System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] NavigationGuard
+  System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] get_NavigationGuard()
+  System.Nullable`1[System.Drawing.Color] BackColor
+  System.Nullable`1[System.Drawing.Color] get_BackColor()
+  System.String ProfileDirectory
+  System.String Title
+  System.String get_ProfileDirectory()
+  System.String get_Title()
+  System.TimeSpan LoadingFallbackTimeout
+  System.TimeSpan get_LoadingFallbackTimeout()
+  System.Windows.Forms.Control Anchor
+  System.Windows.Forms.Control get_Anchor()
+  System.Windows.Forms.Form Owner
+  System.Windows.Forms.Form get_Owner()
+  Void .ctor()
+  Void set_Anchor(System.Windows.Forms.Control)
+  Void set_BackColor(System.Nullable`1[System.Drawing.Color])
+  Void set_ClientSize(System.Drawing.Size)
+  Void set_Icon(System.Drawing.Icon)
+  Void set_LoadingFallbackTimeout(System.TimeSpan)
+  Void set_MinimumSize(System.Drawing.Size)
+  Void set_NavigationGuard(System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]])
+  Void set_OnLoading(System.Action`1[System.Boolean])
+  Void set_Owner(System.Windows.Forms.Form)
+  Void set_ProfileDirectory(System.String)
+  Void set_RevealImmediately(Boolean)
+  Void set_Title(System.String)
+Shenora.WebView2.Sessions.RenderSession
+  System.IDisposable OnMessage(System.Action`1[System.String])
+  System.IDisposable OnNetwork(System.Action`1[Shenora.WebView2.Sessions.SessionApiCall])
+  System.Threading.Tasks.Task NavigateAsync(System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] CallDevToolsAsync(System.String, System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] ExecuteScriptAsync(System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] GetHtmlAsync(System.Threading.CancellationToken)
+  System.Threading.Tasks.ValueTask DisposeAsync()
+Shenora.WebView2.Sessions.RenderSessionPool
+  System.Threading.Tasks.Task`1[Shenora.WebView2.Sessions.RenderSession] LeaseAsync(System.Threading.CancellationToken)
+  Void .ctor(Shenora.WebView2.Sessions.RenderSessionPoolOptions)
+  Void Dispose()
+Shenora.WebView2.Sessions.RenderSessionPoolOptions
+  Boolean VisiblePerSession
+  Boolean get_VisiblePerSession()
+  Int32 Capacity
+  Int32 get_Capacity()
+  Shenora.WebView2.Sessions.SessionBrowserOptions Browser
+  Shenora.WebView2.Sessions.SessionBrowserOptions get_Browser()
+  System.Drawing.Size OffscreenClientSize
+  System.Drawing.Size get_OffscreenClientSize()
+  System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] NavigationGuard
+  System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] get_NavigationGuard()
+  System.Windows.Forms.Control Anchor
+  System.Windows.Forms.Control get_Anchor()
+  Void .ctor()
+  Void set_Anchor(System.Windows.Forms.Control)
+  Void set_Browser(Shenora.WebView2.Sessions.SessionBrowserOptions)
+  Void set_Capacity(Int32)
+  Void set_NavigationGuard(System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]])
+  Void set_OffscreenClientSize(System.Drawing.Size)
+  Void set_VisiblePerSession(Boolean)
+Shenora.WebView2.Sessions.SessionApiCall
+  Boolean Equals(Shenora.WebView2.Sessions.SessionApiCall)
+  Boolean Equals(System.Object)
+  Boolean op_Equality(Shenora.WebView2.Sessions.SessionApiCall, Shenora.WebView2.Sessions.SessionApiCall)
+  Boolean op_Inequality(Shenora.WebView2.Sessions.SessionApiCall, Shenora.WebView2.Sessions.SessionApiCall)
+  Int32 GetHashCode()
+  Shenora.WebView2.Sessions.SessionApiCall <Clone>$()
+  System.String BodySample
+  System.String ContentType
+  System.String Method
+  System.String ToString()
+  System.String Url
+  System.String get_BodySample()
+  System.String get_ContentType()
+  System.String get_Method()
+  System.String get_Url()
+  Void .ctor(System.String, System.String, System.String, System.String)
+  Void Deconstruct(System.String ByRef, System.String ByRef, System.String ByRef, System.String ByRef)
+  Void set_BodySample(System.String)
+  Void set_ContentType(System.String)
+  Void set_Method(System.String)
+  Void set_Url(System.String)
+Shenora.WebView2.Sessions.SessionBrowser
+  System.Threading.Tasks.Task InitializeAsync(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.Sessions.SessionBrowserOptions)
+  System.Threading.Tasks.Task`1[System.String] GetHtmlAsync(Microsoft.Web.WebView2.WinForms.WebView2)
+Shenora.WebView2.Sessions.SessionBrowserOptions
+  Boolean KeepAliveInBackground
+  Boolean MuteAudio
+  Boolean get_KeepAliveInBackground()
+  Boolean get_MuteAudio()
+  System.Func`3[System.Uri,System.Uri,System.Boolean] RequestFilter
+  System.Func`3[System.Uri,System.Uri,System.Boolean] get_RequestFilter()
+  System.String AdditionalBrowserArguments
+  System.String ProfileDirectory
+  System.String get_AdditionalBrowserArguments()
+  System.String get_ProfileDirectory()
+  System.TimeSpan InitTimeout
+  System.TimeSpan get_InitTimeout()
+  Void .ctor()
+  Void set_AdditionalBrowserArguments(System.String)
+  Void set_InitTimeout(System.TimeSpan)
+  Void set_KeepAliveInBackground(Boolean)
+  Void set_MuteAudio(Boolean)
+  Void set_ProfileDirectory(System.String)
+  Void set_RequestFilter(System.Func`3[System.Uri,System.Uri,System.Boolean])

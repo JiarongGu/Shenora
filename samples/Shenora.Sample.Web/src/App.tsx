@@ -108,6 +108,21 @@ export function App() {
   const refreshPanel = () =>
     getBridge().invoke<{ open: boolean }>('SAMPLE', 'HAS_PANEL').then((r) => setPanelOpen(r.open), () => {});
 
+  // P5: lease a pooled OFF-SCREEN browser session in the host and render this very page in it —
+  // the returned title/length come from the offscreen page's LIVE DOM (its JS ran). The host's
+  // navigation guard only allows loopback URLs, so the packaged (virtual-host) origin shows the
+  // structured refusal instead — the policy seam, demonstrated either way.
+  const [probe, setProbe] = useState<string>();
+  const runProbe = () => {
+    setProbe('leasing an offscreen session…');
+    getBridge()
+      .invoke<{ length: number; title: string }>('RENDER', 'PROBE', { payload: { url: window.location.origin } })
+      .then(
+        (r) => setProbe(`offscreen "${r.title}" rendered — ${r.length} chars of live DOM`),
+        (e) => setProbe(`refused/failed: ${e.message}`),
+      );
+  };
+
   return (
     <>
       <TitleBar hosted={hosted} commands={commands} />
@@ -168,6 +183,19 @@ export function App() {
             {' '}
             <span data-testid="panel-state" style={panelOpen ? value : { color: '#9a9a9a' }}>
               panel: {panelOpen ? 'open' : 'closed'}
+            </span>
+          </p>
+          <p style={row}>
+            <button
+              data-testid="btn-render"
+              style={{ background: '#2c2c2c', color: '#eceaf2', border: '1px solid #555', borderRadius: 6, padding: '0.4rem 0.9rem' }}
+              onClick={runProbe}
+            >
+              render this page off-screen
+            </button>
+            {' '}
+            <span data-testid="render-state" style={probe?.startsWith('offscreen') ? value : { color: '#9a9a9a' }}>
+              {probe ?? 'sessions: idle'}
             </span>
           </p>
         </div>

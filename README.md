@@ -13,13 +13,13 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.1.0 — pre-release, core host + IPC + native services extracted.** The application builder,
+**v0.1.0 — pre-release, core host + IPC + native services + auxiliary browser sessions extracted.** The application builder,
 WinForms host, WebView2 hosting, the full typed IPC stack (envelopes, middleware dispatcher,
 scoped-container router, event bus, postMessage transport, `@shenora/react` client), and the
 native desktop surface (frameless chrome + frontend window commands, STA dialogs, shell/clipboard,
-drag-drop zones, secondary windows, tray) are extracted from the proven in-house applications and
-verified end-to-end against the sample app (see `docs/ROADMAP.md`). Auxiliary browser sessions
-(P5) are next. Not yet published to NuGet/npm.
+drag-drop zones, secondary windows, tray), and the auxiliary browser sessions (offscreen render
+pool, login windows, co-browse streaming) are extracted from the proven in-house applications and
+verified end-to-end against the sample app (see `docs/ROADMAP.md`). Not yet published to NuGet/npm.
 
 ## Packages
 
@@ -28,19 +28,19 @@ verified end-to-end against the sample app (see `docs/ROADMAP.md`). Auxiliary br
 | `Shenora.Core` | NuGet | Application host + builder + lifetime, module registration (`IShenoraModule`), environment (dev/prod), app paths, options, event bus. Depends only on Microsoft.Extensions abstractions. |
 | `Shenora.Ipc` | NuGet | Typed request/response/notification envelopes, composable middleware dispatcher, structured error contract (`code` + parameters, i18n-ready), `System.Text.Json` defaults. Transport-neutral. |
 | `Shenora.WebView2` | NuGet | WebView2 hosting: environment prewarm, dev-server vs packaged-frontend loading (embedded resources / virtual host), navigation + new-window + download + permission + process-failure handling, postMessage bridge with batched event push. |
+| `Shenora.WebView2.Sessions` | NuGet | Auxiliary off-screen browser sessions over the same runtime: the one browser-configuration path, a bounded LIFO render-session pool, per-provider/per-account login windows (clear-on-logout), and co-browse streaming (CDP screencast out / input dispatch back). Layers on `Shenora.WebView2`. |
 | `Shenora.WinForms` | NuGet | The native shell: bootstrapper with global exception handling, window-state persistence (DPI-correct), single-instance guard, secondary windows, STA file dialogs, clipboard/shell services, drag-drop overlays, tray support, UI-thread dispatcher. |
 | `@shenora/react` | npm | The frontend bridge: correlated `invoke`/`send`/`subscribe`, typed module services, React hooks (`useShenora`, `useShenoraEvent`, `useShenoraQuery`), drop-zone hook, window commands, a browser fallback for pure-UI development. |
 
-Two consumption profiles are supported: **desktop-only** (full postMessage IPC — all five
-packages) and **server-backed** (the app runs its own in-process HTTP server shared with
-mobile/LAN clients; Shenora provides the shell and an optional one-way event fast-path).
+Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and
+**server-backed** (the app runs its own in-process HTTP server shared with mobile/LAN clients;
+Shenora provides the shell and an optional one-way event fast-path).
 
 Shenora is deliberately **headless**: it depends on no UI component library — applications bring
 their own design system on top of the shell, bridge, hooks, and behaviors. The IPC contract is
 transport-neutral, so the same application logic can later run in mobile shells (Capacitor-style)
-speaking the same envelope. Planned areas beyond the initial packages: auxiliary browser sessions
-(offscreen render pool, login windows, co-browse streaming) and server-hosting helpers — see
-`docs/ROADMAP.md`.
+speaking the same envelope. Planned areas beyond the current packages: server-hosting helpers
+(`Shenora.Hosting.AspNetCore`) and a mobile transport adapter — see `docs/ROADMAP.md`.
 
 ## Ergonomics (as built — the sample app is the full reference)
 

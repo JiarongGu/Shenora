@@ -31,6 +31,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
     <ProjectReference Include="..\..\src\Shenora.WebView2\Shenora.WebView2.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.WebView2.Sessions\Shenora.WebView2.Sessions.csproj" />
     <ProjectReference Include="..\..\src\Shenora.WinForms\Shenora.WinForms.csproj" />
   </ItemGroup>
 

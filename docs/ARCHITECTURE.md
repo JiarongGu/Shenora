@@ -4,15 +4,17 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state (P4 modules + native services complete)
+## Current state (P5 complete — auxiliary browser sessions)
 
 P2 delivered the core host (builder, WinForms runner, WebView2 hosting + serving, samples). P3
 delivered the full IPC stack (wire contract, dispatcher + facades, event bus, postMessage
 transport, `@shenora/react` client, live round-trip). P4 delivered the native desktop surface:
 the scoped-container router + standard IPC composition, frameless chrome + frontend window
 commands, STA dialogs/shell/clipboard/interaction services, drag-drop zones + `useDropZone`
-(+ per-monitor DPI handling), secondary windows + tray — all proven live in the samples.
-Next: P5 (auxiliary browser sessions, `Shenora.WebView2.Sessions`).
+(+ per-monitor DPI handling), secondary windows + tray. P5 added the `Shenora.WebView2.Sessions`
+package: the one browser-configuration path, a bounded LIFO render-session pool, the login-window
+stack (persistent per-account profiles, silent refresh, clear-on-logout), and co-browse streaming
+— all proven live in the sample. Next: P6 (sibling adoption).
 
 ```
 Shenora.slnx
@@ -20,10 +22,11 @@ Shenora.slnx
 │   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
 │   ├── Shenora.Ipc         net10.0          — deps: Shenora.Core
 │   ├── Shenora.WebView2    net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
+│   ├── Shenora.WebView2.Sessions net10.0-windows — deps: Shenora.WebView2, Microsoft.Web.WebView2
 │   ├── Shenora.WinForms    net10.0-windows  — deps: Shenora.Core
 │   └── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
 ├── tests/
-│   └── Shenora.Tests       net10.0-windows  — xunit; references all four src projects
+│   └── Shenora.Tests       net10.0-windows  — xunit; references all five src projects
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
     ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWinForms →
     │                                            prewarm → WebViewHost + provider + SplashPanel +
@@ -120,6 +123,31 @@ changes, noting them in `CHANGELOG.md`).
   capture real OS paths incl. background drags; non-blocking UI marshalling, activation sync,
   DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; events on
   `IEventBus`) + `DropZoneFacade` (module `DROP_ZONE`: REGISTER/UPDATE/UNREGISTER/SHOW).
+- `Shenora.WebView2.Sessions` — auxiliary browser sessions (D14: browser work outside the
+  app's own UI, kept out of the core hosting package): `SessionBrowser(+Options)` (the ONE
+  auxiliary-WebView2 configuration path — per-profile environment, quiet-start +
+  background-throttling-off arguments, settings hardening, `RequestFilter` block seam,
+  init-timeout guard, `GetHtmlAsync`); `RenderSessionPool(+Options)`/`RenderSession`/
+  `SessionApiCall` (bounded LIFO-pooled off-screen sessions: lease → navigate (http/https-only
+  + `NavigationGuard` SSRF seam + nav cap)/execute/read/DevTools/network+message taps →
+  dispose returns to the pool; capacity waits queue, a creation failure releases the slot, a
+  failed about:blank reset DISCARDS the instance; one shared hidden host in runtime mode,
+  visible cascaded windows in dev mode); the login stack — `LoginWindow(+Options)` (modal
+  driver-run logins over per-provider/per-sub-account persistent profiles — the sub scoping is
+  a security boundary; busy-serialized with exactly-once completion incl. the token fallback,
+  the user's close HELD for a final cookie read, silent-refresh off-screen shape, static
+  `ClearProfile` = real logout), `LoginWindowController` (guarded `NavigateAsync`,
+  `ExecuteScriptAsync`, origin-scoped `GetCookiesAsync`, `OnMessage`/`OnDownload`/
+  `OnNewWindow`/`OnNavigation` taps, `FitToBox` CSS→physical, `SetLoading`, idempotent
+  `Reveal`, `WindowClosed`), `LoginResult`/`LoginErrorCodes`, and `CookieLoginFlow(+Options)`/
+  `LoginCookie`/`DownloadHit` (the built-in driver: fresh-set auth-cookie detection against a
+  pre-navigation baseline — a stale cookie never captures, not even on close; separate
+  `CookieReadUrl` origin; `ReadBlob`); `CoBrowseSession(+Options)`/`CoBrowseViewport`
+  (co-browse an off-screen page: screencast JPEGs into a bounded latest-wins
+  `ChannelReader<byte[]>`, `DispatchInputAsync` for the client's input JSON — 1:1
+  device-metrics viewport mirroring, fraction-coordinate mouse/wheel, text insert, VK-mapped
+  special keys — `ReadHotspotsAsync` clickable-rect fractions, the same controller primitives
+  over the stream; transport is the app's, wire protocol identical to the source).
 - `Shenora.Ipc` — the transport-neutral wire contract (design §5, D11/D16; names pinned with
   `JsonPropertyName` so envelopes hold under any serializer options): `IpcRequest`
   (`{id, module, type, scope?, payload?, timestamp}` — `scope` is the app-defined routing
@@ -160,6 +188,8 @@ changes, noting them in `CHANGELOG.md`).
 - `Core` depends only on Microsoft.Extensions DI (implementation — the builder needs
   `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on
   `Core`; never sideways (`WinForms` ↔ `WebView2`) — host packages contribute via extension
-  methods over the Core builder, and the app composes them.
+  methods over the Core builder, and the app composes them. `Shenora.WebView2.Sessions` layers
+  on `Shenora.WebView2` (the one deliberate package-on-package edge above `Core` — D14 keeps
+  the session stack out of the core hosting package).
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.
 - No Lyntai reference, ever (docs/DECISIONS.md D1).
