@@ -38,7 +38,12 @@
        (EnableSourceLink defaults true) — only PublishRepositoryUrl. -->
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1591 (missing XML doc on a public member) stays suppressed for now; turning it on is the
+         P7 docs sweep, not a P5.5 gate change. Everything ELSE is an error: warnings were both
+         non-fatal AND invisible (`-clp:ErrorsOnly`), which is part of how the P0-P5 latent defects
+         passed five phase reviews (P5.5 H5). -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DebugType>portable</DebugType>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

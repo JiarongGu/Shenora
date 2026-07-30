@@ -2,4 +2,11 @@
   <!-- NuGet resolves the NEAREST Directory.Packages.props walking up from each project, so tests/
        and samples/ land here — import the src file so the whole tree shares one version list. -->
   <Import Project="src/Directory.Packages.props" />
+
+  <!-- Enforce central package management for the WHOLE tree from one place. It used to be hand-set
+       per project (src/Directory.Build.props + tests + samples) and simply absent from the devtools
+       projects, so an inline Version= there would not have been caught (P5.5 H5). -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
 </Project>

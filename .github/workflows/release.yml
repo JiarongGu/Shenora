@@ -88,6 +88,12 @@ jobs:
           Write-Host "current=$current -> final=$final"
 
       - name: Verify gate
+        # local/sensitive-patterns.txt is gitignored, so the private half of the sensitive guard
+        # cannot run here — the pre-commit + commit-msg hooks are its real gate, locally. The scanner
+        # now FAILS CLOSED without that file (P5.5 H5), so CI must opt in to a builtins-only scan
+        # EXPLICITLY rather than silently getting one.
+        env:
+          SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY: '1'
         run: node devtools/dev.mjs verify
 
       - name: Pack
@@ -158,7 +164,13 @@ jobs:
           $lines += 'Full detail in CHANGELOG.md.'
           Set-Content release-notes.md ($lines -join "`n") -Encoding utf8
 
+      # NOTE (P5.5 H5): this action CREATES tag_name when the tag doesn't exist, so gating only the
+      # "Create tag" step above left `create_tag: false` still producing a tag — at the default-branch
+      # head, which may not be the published commit. Gate the release step on the same input so
+      # "don't tag" actually means it; a no-tag run publishes the packages and skips the GitHub
+      # release (nuget.org/npmjs.com are the canonical homes anyway).
       - name: Create GitHub release
+        if: inputs.create_tag
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}

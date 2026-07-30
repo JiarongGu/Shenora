@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Shenora.Core/Shenora.Core.csproj" />
     <Project Path="src/Shenora.Ipc/Shenora.Ipc.csproj" />
     <Project Path="src/Shenora.WebView2/Shenora.WebView2.csproj" />
     <Project Path="src/Shenora.WebView2.Sessions/Shenora.WebView2.Sessions.csproj" />
@@ -8,5 +9,10 @@
   <Folder Name="/tests/">
     <Project Path="tests/Shenora.Tests/Shenora.Tests.csproj" />
   </Folder>
-  <Folder Name="/samples/" />
+  <!-- The samples ARE part of the gate: they are the reference composition and the e2e subject, so
+       `dev.mjs build|verify` must compile them. This folder was EMPTY until P5.5 H5, which is how
+       the sample could be red while `verify` reported green. Never packable (see their csproj). -->
+  <Folder Name="/samples/">
+    <Project Path="samples/Shenora.Sample.Desktop/Shenora.Sample.Desktop.csproj" />
+  </Folder>
 </Solution>

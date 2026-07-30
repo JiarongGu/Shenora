@@ -266,9 +266,20 @@ public sealed class WebViewIpcBridge : IDisposable
 
     private void Flush()
     {
-        var batchJson = TryBuildBatchJson();
-        if (batchJson is null) return;
-        PostJson(batchJson);
+        // Catch-all: this runs on a WinForms timer, so ANYTHING that escapes here is an unhandled
+        // UI-thread exception — a modal crash dialog under the family bootstrap, repeating every
+        // interval. The incoming path has always been guarded; this one was not (found in the P0–P5
+        // review).
+        try
+        {
+            var batchJson = TryBuildBatchJson();
+            if (batchJson is null) return;
+            PostJson(batchJson);
+        }
+        catch (Exception ex)
+        {
+            _log?.Invoke($"[Shenora.WebView2] Notification flush failed: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -290,7 +301,30 @@ public sealed class WebViewIpcBridge : IDisposable
         }
         if (batch.Count == 0) return null;
 
-        return IpcJson.Serialize(new IpcNotificationBatch { Payload = batch });
+        // Payloads are APP-supplied objects, so serialization can throw on data the framework never
+        // sees until here: a cyclic object graph (parent/child entities), a Type/delegate member, a
+        // throwing getter. The queue is already drained at this point, so an unguarded throw lost the
+        // WHOLE batch as well as crashing the UI thread. Serialize per-notification and drop only the
+        // offender, so one bad event can't take its batch down with it.
+        var serializable = new List<IpcNotification>(batch.Count);
+        foreach (var notification in batch)
+        {
+            try
+            {
+                _ = IpcJson.Serialize(notification);
+                serializable.Add(notification);
+            }
+            catch (Exception ex)
+            {
+                // Module/type only — a payload that fails to serialize must not have its contents
+                // logged either (it may carry app data).
+                _log?.Invoke($"[Shenora.WebView2] Dropped unserializable notification " +
+                             $"{notification.Module}/{notification.Type}: {ex.GetType().Name}");
+            }
+        }
+        if (serializable.Count == 0) return null;
+
+        return IpcJson.Serialize(new IpcNotificationBatch { Payload = serializable });
     }
 
     /// <summary>Buffered notification count. Internal seam for tests.</summary>

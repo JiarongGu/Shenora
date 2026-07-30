@@ -5,6 +5,48 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 batches H1 + H5: the security fixes and the gate that was supposed to catch them
+
+First half of the consolidation phase, deliberately sequenced ahead of the re-layer so a
+path-traversal fix wasn't waiting behind a refactor.
+
+**H5 — the gate holes closed first**, because until they were, "verified" meant less than it
+claimed: `Shenora.slnx` carried an EMPTY `samples` folder (and omitted `Shenora.Core`), so
+`verify` never compiled the reference composition or the e2e subject; `dev.mjs test <typo>` exited 0
+having run nothing; and `check-sensitive` silently degraded to two structural patterns whenever the
+gitignored `local/sensitive-patterns.txt` was absent — every fresh clone and every CI run, i.e. the
+private-name half never ran in the release gate. Now: samples + Core are in the solution, `verify`
+additionally type-checks the sample web app and runs `doctor`, unknown test targets fail, warnings
+are errors for `src/` and no longer hidden by `-clp:ErrorsOnly`, the scanner fails CLOSED (with an
+explicit `--allow-builtins-only` opt-in that the release workflow now uses) and also scans file
+paths and renamed/copied files, a new `commit-msg` hook scans commit messages, `create_tag: false`
+no longer produces a tag, CPM is enforced from the root shim, and the npm package gained
+`prepublishOnly`. **The first build with the samples compiled and warnings-as-errors on came back
+0 warnings / 0 errors** — the sample was not, in fact, broken; it simply wasn't being checked.
+
+**H1 — five fixes, four of them reachable by content the app doesn't control.** Arbitrary file read
+through file-mode serving (no path containment, and `Path.Combine` returns a rooted second argument
+verbatim); `NavigationGuard` bypassed by redirects; an unserializable notification payload crashing
+the UI thread and losing its whole batch; `ClearProfile`'s recursive delete accepting a traversing
+path; and a leaked `Process` handle per external link click. Root causes and verification per fix in
+`docs/FIX-LOG.md`; new public API (`LoginWindow.ComposeProfileDirectory`) and the behaviour changes
+in `CHANGELOG.md`.
+
+One fix had to be **adapted rather than implemented as specified**, and the adaptation is the
+interesting part: `CoreWebView2NavigationStartingEventArgs` has no deferral, so an async guard cannot
+be awaited in that event at all. What shipped is a synchronous cross-host rule (the pool records the
+host the guard approved and cancels unvetted hops), which closes the documented
+`302 → 127.0.0.1` vector, while `SessionBrowserOptions.RequestFilter` — synchronous by design and
+already wired with `WebResourceContext.All` — remains the seam for full redirect/subresource policy.
+Both options now say so instead of over-promising. Not applied to `LoginWindow`: interactive OAuth
+legitimately redirects across hosts.
+
+Verified: `dev.mjs verify` PASSED — 346 dotnet + 39 vitest, sample web typecheck, sensitive scan,
+knowledge check, doctor. 20 new tests (7 escaping paths + 3 legitimate CJK/spaced paths + a
+sibling-prefix case; 2 notification-serialize cases; 4 traversal + 9 unsafe-segment + 2 composition
+cases). The `Shenora.WebView2.Sessions` API baseline drifted by exactly one intentional line and was
+reviewed before promotion.
+
 ### 2026-07-30 — P5 increment 4 + phase review: sessions proven live — P5 COMPLETE
 
 The sample gains the sessions demo: a `RenderSessionPool` (capacity 2, own `sessions/render`

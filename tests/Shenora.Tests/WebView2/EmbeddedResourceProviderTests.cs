@@ -118,4 +118,104 @@ public class EmbeddedResourceProviderTests
         Assert.Null(provider.GetResourceStream("index.html"));
         Assert.False(provider.Exists("index.html"));
     }
+
+    // ── Path containment (P5.5 H1) ────────────────────────────────────────────────────────────────
+    // File-mode serving had NO containment: the host unescapes the request path before calling the
+    // provider (it must, so CJK/spaced bundle filenames resolve), so "%2e%2e%2f…" arrived as "../",
+    // and a ROOTED path escaped even more simply because Path.Combine discards its first argument
+    // when the second is rooted. Responses carry Access-Control-Allow-Origin: *.
+
+    [Theory]
+    // Traversal, in both separator spellings and nested forms.
+    [InlineData("../secret.txt")]
+    [InlineData("..\\secret.txt")]
+    [InlineData("assets/../../secret.txt")]
+    [InlineData("../../Windows/win.ini")]
+    // Rooted paths — the Path.Combine vector.
+    [InlineData("C:/Windows/win.ini")]
+    [InlineData("C:\\Windows\\win.ini")]
+    [InlineData("/C:/Windows/win.ini")]
+    public void File_mode_refuses_paths_that_escape_the_root(string virtualPath)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "shenora-tests-" + Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(Path.Combine(root, "assets"));
+        try
+        {
+            // A real file immediately OUTSIDE the root: a successful traversal would return it.
+            File.WriteAllText(Path.Combine(root, "..", "shenora-outside-marker.txt"), "escaped");
+            File.WriteAllText(Path.Combine(root, "index.html"), "inside");
+
+            var provider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+            {
+                Assembly = Assembly.GetExecutingAssembly(),
+                ResourcePrefix = "Shenora.Tests.NoSuchPrefix", // force file mode
+                FileFallbackDirectory = root,
+                PreferFiles = true,
+            });
+            Assert.False(provider.IsEmbedded);
+
+            Assert.Null(provider.GetResourceStream(virtualPath));
+            Assert.False(provider.Exists(virtualPath));
+            // …and the legitimate path still works, i.e. containment didn't just break serving.
+            Assert.Equal("inside", ReadAll(provider.GetResourceStream("index.html")));
+        }
+        finally
+        {
+            try { File.Delete(Path.Combine(root, "..", "shenora-outside-marker.txt")); } catch { }
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Theory]
+    // The unescaping the host does exists FOR these — containment must not regress them.
+    [InlineData("assets/my app.js")]
+    [InlineData("assets/日本語.js")]
+    [InlineData("nested/deep/file.css")]
+    public void File_mode_still_serves_legitimate_paths_including_spaces_and_cjk(string virtualPath)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "shenora-tests-" + Guid.NewGuid().ToString("n"));
+        try
+        {
+            var full = Path.Combine(root, virtualPath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, "served");
+
+            var provider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+            {
+                Assembly = Assembly.GetExecutingAssembly(),
+                ResourcePrefix = "Shenora.Tests.NoSuchPrefix",
+                FileFallbackDirectory = root,
+                PreferFiles = true,
+            });
+
+            Assert.True(provider.Exists(virtualPath));
+            Assert.Equal("served", ReadAll(provider.GetResourceStream(virtualPath)));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void A_sibling_directory_sharing_the_root_prefix_is_not_inside_the_root()
+    {
+        // "…/bundle-evil" must not pass as a child of "…/bundle" — the prefix check appends the
+        // separator for exactly this case.
+        var baseDir = Path.Combine(Path.GetTempPath(), "shenora-tests-" + Guid.NewGuid().ToString("n"));
+        var root = Path.Combine(baseDir, "bundle");
+        var sibling = Path.Combine(baseDir, "bundle-evil");
+        try
+        {
+            Directory.CreateDirectory(root);
+            Directory.CreateDirectory(sibling);
+            File.WriteAllText(Path.Combine(sibling, "secret.txt"), "escaped");
+
+            Assert.Null(EmbeddedResourceProvider.ResolveContained(root, "../bundle-evil/secret.txt"));
+        }
+        finally
+        {
+            try { Directory.Delete(baseDir, recursive: true); } catch { }
+        }
+    }
 }

@@ -133,6 +133,7 @@ Shenora.WebView2.Sessions.LoginResult
 Shenora.WebView2.Sessions.LoginWindow
   Boolean IsBusy
   Boolean get_IsBusy()
+  System.String ComposeProfileDirectory(System.String, System.String[])
   System.Threading.Tasks.Task`1[Shenora.WebView2.Sessions.LoginResult] RunAsync(System.Func`3[Shenora.WebView2.Sessions.LoginWindowController,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.String]], System.Threading.CancellationToken)
   Void .ctor(Shenora.WebView2.Sessions.LoginWindowOptions)
   Void ClearProfile(System.String)

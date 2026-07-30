@@ -1,0 +1,12 @@
+#!/bin/sh
+# Sensitive-info guard for the COMMIT MESSAGE (see .claude/rules/sensitive-info.md). A message is
+# history too: scrubbing a leaked token out of the blobs still leaves it in `git log`, and fixing
+# that needs --replace-message on top of --replace-text. The pre-commit hook scans the staged
+# CONTENT; this one scans what you are about to write into the log.
+#
+# Added in P5.5 H5 — until then commit messages were never scanned at all, while the release
+# workflow pipes commit subjects straight into public release notes.
+#
+# Install with: node devtools/dev.mjs install-hooks   (sets core.hooksPath to devtools/hooks)
+# Bypass intentionally with: git commit --no-verify
+node devtools/scripts/check-sensitive.mjs --message "$1"

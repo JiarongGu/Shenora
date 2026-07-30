@@ -7,8 +7,9 @@
 //   node devtools/dev.mjs sample [--dev]   - run the sample desktop app (Phase 2+)
 //   node devtools/dev.mjs vite             - run the sample web dev server (Phase 2+)
 //   node devtools/dev.mjs shot|wgc [name]  - capture the sample window (PrintWindow / occlusion-immune WGC)
-//   node devtools/dev.mjs click <fx> <fy>  - background click at client fractions (drive the sample WebView2, no CDP)
-//   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | drag)
+//   node devtools/dev.mjs click|rclick|move <fx> <fy>       - background mouse at client fractions (no CDP, no focus steal)
+//   node devtools/dev.mjs drag <fx1> <fy1> <fx2> <fy2>      - background press-move-release between two fractions
+//   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | move | drag)
 //   node devtools/dev.mjs knowledge <…>    - two-tier rule-base doctor (check | footprint | new <name> [--core])
 //   node devtools/dev.mjs check-sensitive [--tree] - public-repo leak scan (the pre-commit guard)
 //   node devtools/dev.mjs install-hooks    - point core.hooksPath at devtools/hooks (once per clone)
@@ -83,7 +84,9 @@ function doctor({ fix = false } = {}) {
 
 switch (cmd) {
   case 'build': {
-    const ok = step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal', '-clp:ErrorsOnly']))
+    // No -clp:ErrorsOnly: warnings must be VISIBLE (they are errors under TreatWarningsAsErrors,
+    // but a suppressed-warning build is how invisible problems accumulated — P5.5 H5).
+    const ok = step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal']))
       && ensureNpmDeps(npmDirAbs)
       && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
     process.exitCode = ok ? 0 : 1;
@@ -92,6 +95,13 @@ switch (cmd) {
 
   case 'test': {
     const which = args[0] ?? 'all';
+    // Fail loudly on a typo: this used to fall through both ifs and exit 0 having run NOTHING,
+    // i.e. `dev.mjs test dotnett` reported success (P5.5 H5).
+    if (!['all', 'dotnet', 'npm'].includes(which)) {
+      console.error(`dev.mjs test: unknown target "${which}" — expected all | dotnet | npm`);
+      process.exitCode = 1;
+      break;
+    }
     let ok = true;
     if (which === 'all' || which === 'dotnet')
       ok = step('dotnet test', () => run('dotnet', ['test', config.solution, '-v', 'minimal', '--nologo'])) && ok;
@@ -106,8 +116,18 @@ switch (cmd) {
     const steps = [
       ['build', () => spawnSync('node', [import.meta.filename, 'build'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['test', () => spawnSync('node', [import.meta.filename, 'test'], { stdio: 'inherit', cwd: repo }).status === 0],
+      ['sample web typecheck', () => {
+        // The e2e subject's TS was never type-checked by any gate (P5.5 H5). Skipped only when the
+        // sample web app doesn't exist yet.
+        const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
+        if (!fs.existsSync(webDir)) return true;
+        return ensureNpmDeps(webDir) && runNpm('run typecheck', { cwd: webDir });
+      }],
       ['check-sensitive --tree', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), '--tree'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['knowledge check', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'check'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // doctor LAST and non-fixing: verify must FAIL on version/README drift rather than leave it to
+      // `pack` (which runs doctor --fix, so verify was scanning pre-sync files) — P5.5 H5.
+      ['doctor', () => doctor({ fix: false })],
     ];
     let ok = true;
     for (const [label, fn] of steps) {
@@ -166,6 +186,10 @@ switch (cmd) {
   case 'vite': {
     const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
     if (!fs.existsSync(webDir)) { console.error(`sample web not created yet (${config.sampleWebDir}) — Phase 2, see docs/ROADMAP.md`); process.exitCode = 1; break; }
+    // Install the SAMPLE's deps too (it was only ever done for the react package, so a fresh clone
+    // got a bare "vite: not found" — P5.5 H5). Its @shenora/react dep is a file: link, so the
+    // package must be built first or the sample resolves an empty dist.
+    if (!ensureNpmDeps(npmDirAbs) || !runNpm('run build', { cwd: npmDirAbs }) || !ensureNpmDeps(webDir)) { process.exitCode = 1; break; }
     runNpm('run dev', { cwd: webDir });
     break;
   }
@@ -221,6 +245,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|sample|vite|shot|wgc|click|input|knowledge|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|sample|vite|shot|wgc|click|rclick|move|drag|input|knowledge|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }

@@ -8,6 +8,9 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!-- BOM-less UTF-8 sources on a CJK-locale machine mojibake without this (csc reads them as
+         ANSI) — these files carry non-ASCII characters in user-facing strings. -->
+    <CodePage>65001</CodePage>
     <AssemblyName>win-input</AssemblyName>
   </PropertyGroup>
 </Project>

@@ -59,6 +59,12 @@ public sealed class RenderSession : IAsyncDisposable
         if (_navigationGuard is { } guard && !await guard(uri, cancellationToken).ConfigureAwait(true))
             throw new InvalidOperationException($"Navigation refused by the navigation guard: {uri.Host}");
 
+        // Record what the guard actually vetted. The pool's NavigationStarting policy cancels an
+        // unvetted CROSS-HOST hop from here on, so a 302 to a host the guard never saw (the classic
+        // "redirect me to 127.0.0.1" SSRF step) can't be followed. See
+        // RenderSessionPool.WireNavigationPolicy for why the event can enforce only a sync rule.
+        _instance.ApprovedHost = uri.Host;
+
         var navDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnNav(object? s, CoreWebView2NavigationCompletedEventArgs e) => navDone.TrySetResult(e.IsSuccess);
         _web.CoreWebView2.NavigationCompleted += OnNav;

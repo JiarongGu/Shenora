@@ -265,6 +265,66 @@ public class WebViewIpcBridgeTests
         Assert.NotNull(bridge.TryBuildBatchJson());
     }
 
+    // ── The outgoing serialize guard (P5.5 H1) ────────────────────────────────────────────────────
+    // Payloads are APP-supplied objects, so serialization can throw on data the framework only sees
+    // at flush time. The queue is drained BEFORE the serialize, so an unguarded throw both crashed
+    // the UI thread (this runs on a 50 ms WinForms timer) and lost the whole batch.
+
+    [Fact]
+    public async Task An_unserializable_notification_is_dropped_without_taking_its_batch_down()
+    {
+        using var bridge = CreateBridge(new WebViewIpcBridgeOptions { Dispatcher = new MessageDispatcher() });
+        await bridge.HandleIncomingAsync(ReadyJson());
+
+        bridge.SendNotification("APP", "GOOD_BEFORE", payload: new { n = 1 });
+        bridge.SendNotification("APP", "CYCLIC", payload: Cyclic());
+        bridge.SendNotification("APP", "THROWING", payload: new ThrowingGetterPayload());
+        bridge.SendNotification("APP", "GOOD_AFTER", payload: new { n = 2 });
+
+        var json = bridge.TryBuildBatchJson();   // must NOT throw
+
+        Assert.NotNull(json);
+        using var doc = JsonDocument.Parse(json!);
+        var items = doc.RootElement.GetProperty("payload");
+        Assert.Equal(2, items.GetArrayLength()); // the two offenders dropped, the good ones survive
+        Assert.Equal("GOOD_BEFORE", items[0].GetProperty("type").GetString());
+        Assert.Equal("GOOD_AFTER", items[1].GetProperty("type").GetString());
+        Assert.Equal(0, bridge.PendingNotificationCount);
+    }
+
+    [Fact]
+    public async Task A_batch_of_only_unserializable_notifications_yields_no_batch_rather_than_throwing()
+    {
+        using var bridge = CreateBridge(new WebViewIpcBridgeOptions { Dispatcher = new MessageDispatcher() });
+        await bridge.HandleIncomingAsync(ReadyJson());
+
+        bridge.SendNotification("APP", "CYCLIC", payload: Cyclic());
+
+        Assert.Null(bridge.TryBuildBatchJson());
+        Assert.Equal(0, bridge.PendingNotificationCount);
+    }
+
+    /// <summary>A parent/child cycle — the shape a real app hits with ORM entities.</summary>
+    private static object Cyclic()
+    {
+        var parent = new Node { Name = "parent" };
+        var child = new Node { Name = "child", Parent = parent };
+        parent.Child = child;
+        return parent;
+    }
+
+    private sealed class Node
+    {
+        public string Name { get; set; } = "";
+        public Node? Parent { get; set; }
+        public Node? Child { get; set; }
+    }
+
+    private sealed class ThrowingGetterPayload
+    {
+        public string Boom => throw new InvalidOperationException("secret detail from a getter");
+    }
+
     private sealed class ThrowingDispatcher : IMessageDispatcher
     {
         public Task<IpcResponse> DispatchAsync(IpcRequest request) =>

@@ -295,6 +295,12 @@ public sealed class LoginWindow
     public static void ClearProfile(string profileDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileDirectory);
+        // This is a RECURSIVE DELETE on a caller-composed path, and the path is normally built from
+        // data-driven provider/account identifiers — so a stray ".." segment would aim it outside the
+        // sessions root. Refuse rather than trust the caller (found in the P0–P5 review). Use
+        // ComposeProfileDirectory to build the path and this can't arise.
+        if (HasTraversalSegment(profileDirectory))
+            throw new ArgumentException("profileDirectory must not contain '..' segments", nameof(profileDirectory));
         try
         {
             if (Directory.Exists(profileDirectory)) Directory.Delete(profileDirectory, recursive: true);
@@ -304,4 +310,48 @@ public sealed class LoginWindow
             // locked / already gone — the caller's stored session is cleared regardless
         }
     }
+
+    /// <summary>
+    /// Compose a per-account profile directory under <paramref name="root"/> from untrusted
+    /// identifier <paramref name="segments"/> (a provider id, an account id, …). Each segment must be
+    /// a single plain name: separators, <c>..</c>, drive qualifiers and Windows reserved device names
+    /// are rejected. Per-provider/per-account scoping is the session stack's isolation boundary — two
+    /// accounts sharing a directory share a cookie jar — and the library previously documented that
+    /// boundary while shipping no safe way to build the path.
+    /// </summary>
+    public static string ComposeProfileDirectory(string root, params string[] segments)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        ArgumentNullException.ThrowIfNull(segments);
+
+        var reserved = new[] { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5",
+                               "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
+                               "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+        foreach (var segment in segments)
+        {
+            if (string.IsNullOrWhiteSpace(segment))
+                throw new ArgumentException("profile segments must be non-empty", nameof(segments));
+            if (segment.Contains('/') || segment.Contains('\\') || segment.Contains(':'))
+                throw new ArgumentException($"profile segment '{segment}' must not contain a path separator or drive qualifier", nameof(segments));
+            if (segment is "." or "..")
+                throw new ArgumentException("profile segments must not be '.' or '..'", nameof(segments));
+            if (segment.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new ArgumentException($"profile segment '{segment}' contains invalid file-name characters", nameof(segments));
+            var stem = Path.GetFileNameWithoutExtension(segment);
+            if (reserved.Contains(stem, StringComparer.OrdinalIgnoreCase))
+                throw new ArgumentException($"profile segment '{segment}' is a Windows reserved device name", nameof(segments));
+        }
+
+        var fullRoot = Path.GetFullPath(root);
+        var combined = Path.GetFullPath(Path.Combine(new[] { fullRoot }.Concat(segments).ToArray()));
+        var prefix = fullRoot.EndsWith(Path.DirectorySeparatorChar) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
+        if (!combined.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && combined != fullRoot)
+            throw new ArgumentException("the composed profile directory would fall outside the root", nameof(segments));
+        return combined;
+    }
+
+    private static bool HasTraversalSegment(string path) =>
+        path.Replace('/', Path.DirectorySeparatorChar)
+            .Split(Path.DirectorySeparatorChar)
+            .Any(s => s == "..");
 }

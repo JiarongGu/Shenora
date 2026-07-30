@@ -122,7 +122,11 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         if (!IsEmbedded)
         {
             if (_options.FileFallbackDirectory is not { Length: > 0 } root) return null;
-            var filePath = Path.Combine(root, virtualPath.Replace('/', Path.DirectorySeparatorChar));
+            if (ResolveContained(root, virtualPath) is not { } filePath)
+            {
+                _options.Log?.Invoke($"[Shenora.WebView2] Rejected out-of-root resource path: {virtualPath}");
+                return null;
+            }
             if (!File.Exists(filePath)) return null;
             try
             {
@@ -158,7 +162,8 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         if (!IsEmbedded)
         {
             return _options.FileFallbackDirectory is { Length: > 0 } root
-                   && File.Exists(Path.Combine(root, virtualPath.Replace('/', Path.DirectorySeparatorChar)));
+                   && ResolveContained(root, virtualPath) is { } filePath
+                   && File.Exists(filePath);
         }
         return _manifest.ContainsKey(ResourceName(virtualPath));
     }
@@ -178,4 +183,51 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         _options.ResourcePrefix + "." + normalizedVirtualPath.Replace('/', '.');
 
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/');
+
+    /// <summary>
+    /// Map a normalized virtual path to a file under <paramref name="root"/>, or null when it would
+    /// escape. File-mode serving is REACHABLE BY PAGE CONTENT and had no containment at all
+    /// (found in the P0–P5 review): the host unescapes the request path before calling us — it must,
+    /// so bundle filenames with spaces or CJK characters resolve — so two vectors existed.
+    /// (1) <c>%2e%2e%2f…</c> arrives here as <c>../</c> and walked out of the bundle. (2) A ROOTED
+    /// path (<c>/C:%2fUsers%2f…</c>) is worse: <see cref="Path.Combine(string,string)"/> DISCARDS the
+    /// first argument when the second is rooted, so it returned the caller's absolute path verbatim.
+    /// Responses are served with <c>Access-Control-Allow-Origin: *</c>, so any script in the page
+    /// could read and exfiltrate what it got back. Embedded mode was safe only incidentally
+    /// (<c>../</c> yields a manifest name that doesn't exist).
+    /// Both checks matter: rejecting <c>..</c> alone leaves the rooted vector open, and the
+    /// full-path prefix assertion alone would still let a rooted path through on some inputs.
+    /// </summary>
+    internal static string? ResolveContained(string root, string normalizedVirtualPath)
+    {
+        var relative = normalizedVirtualPath.Replace('/', Path.DirectorySeparatorChar);
+
+        // Reject anything rooted (drive-qualified, UNC, or leading separator) outright — a rooted
+        // path is never a legitimate bundle-relative resource request.
+        if (Path.IsPathRooted(relative) || relative.Contains(':')) return null;
+
+        // Reject traversal segments before touching the filesystem.
+        foreach (var segment in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+        {
+            if (segment == "..") return null;
+        }
+
+        string fullRoot, combined;
+        try
+        {
+            fullRoot = Path.GetFullPath(root);
+            combined = Path.GetFullPath(Path.Combine(fullRoot, relative));
+        }
+        catch (Exception)
+        {
+            return null; // malformed path (invalid characters, too long, …) — never serve it
+        }
+
+        // Belt-and-braces: the resolved path must still sit under the root. Compare with the
+        // separator appended so "/bundle-evil" can't pass as a child of "/bundle".
+        var prefix = fullRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? fullRoot
+            : fullRoot + Path.DirectorySeparatorChar;
+        return combined.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? combined : null;
+    }
 }

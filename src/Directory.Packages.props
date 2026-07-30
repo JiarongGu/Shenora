@@ -6,7 +6,6 @@
          builder (BuildServiceProvider lives there, not in Abstractions) — same shape as
          Microsoft.Extensions.Hosting itself. Recorded in docs/DECISIONS.md D17. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
 
     <!-- WebView2 (version proven across the sibling apps) -->

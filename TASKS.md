@@ -48,7 +48,7 @@ code comment.
 
 **H1 — Security / data-integrity (do first; two are reachable by content the app doesn't control)**
 
-- [ ] **Path containment in file-mode serving.** `WebViewHost.cs:199` unescapes the request path,
+- [x] **Path containment in file-mode serving.** `WebViewHost.cs:199` unescapes the request path,
   then `WebViewResourceProvider.Normalize:180` only does `\`→`/` + `TrimStart('/')` — no `..`
   rejection, no containment — before `Path.Combine(root, …)` at `:125` (and `:161` `Exists`). Two
   live vectors: `%2e%2e%2f…` → `../`, and a ROOTED path (`/C:%2f…`) which `Path.Combine` returns
@@ -57,26 +57,36 @@ code comment.
   reject rooted/`..` paths and assert `Path.GetFullPath(combined).StartsWith(fullRoot + sep)` in
   BOTH methods; tests for `%2e%2e%2f`, `C:%2f`, and a legitimate CJK/spaced filename (the unescape
   exists for those — don't regress it).
-- [ ] **Enforce `NavigationGuard` in `NavigationStarting`, not only on the explicit call.** Checked
+- [x] **Enforce `NavigationGuard` in `NavigationStarting`, not only on the explicit call.** Checked
   only at `RenderSession.cs:59` / `LoginWindowController.cs:142`; the package's sole
   `NavigationStarting` subscription (`LoginWindowController.cs:94`) just fans out to app taps and
   never cancels. So a guard-approved URL answering `302 → http://127.0.0.1:8080/admin` is followed
   and its DOM handed to the caller — the documented SSRF boundary doesn't hold for redirects,
   `location.href`, `<meta refresh>`, or iframes. FIX: cancel in `NavigationStarting` (covers
   `e.IsRedirected`); keep the per-call check as a fast pre-check. Same wiring for pool instances.
-- [ ] **Guard the outgoing notification serialize.** `WebViewIpcBridge.TryBuildBatchJson:278-293`
+  **DONE, but the fix had to be ADAPTED — read this before "finishing" it:**
+  `CoreWebView2NavigationStartingEventArgs` has **no deferral** (proven by compiler error while
+  implementing the obvious version), so the async guard CANNOT be awaited in that event and blocking
+  on it would deadlock the UI thread it runs on. What shipped: the pool records the host the guard
+  approved (`PoolInstance.ApprovedHost`, cleared on return-to-pool) and cancels unvetted CROSS-HOST
+  navigation synchronously — which closes the documented `302 → 127.0.0.1` vector while leaving
+  same-host hops working. Full redirect/subresource policy remains `SessionBrowserOptions.RequestFilter`
+  (already synchronous and wired with `WebResourceContext.All`); both options now document the
+  division of labour. Deliberately NOT applied to `LoginWindow` — interactive OAuth legitimately
+  redirects across hosts, so cancelling unvetted hops there would break real logins.
+- [x] **Guard the outgoing notification serialize.** `WebViewIpcBridge.TryBuildBatchJson:278-293`
   DRAINS the queue then calls `IpcJson.Serialize` with no try/catch, reached from `Flush` ← the
   50 ms timer. An app event carrying a cyclic graph, a `Type`/delegate member, or a throwing getter
   → unhandled UI-thread exception (crash dialog under the family bootstrap) AND the whole drained
   batch is lost. The INCOMING path already guards this exact case with a comment — copy it
   (per-notification, so one bad event can't kill its batch) + a catch-all in `Flush`.
-- [ ] **Contain the profile path that `ClearProfile` deletes.** `LoginWindow.cs:295-306` is an
+- [x] **Contain the profile path that `ClearProfile` deletes.** `LoginWindow.cs:295-306` is an
   unbounded `Directory.Delete(recursive: true)` on a caller-composed path, while the same options
   doc calls per-(provider, sub) scoping a security boundary and describes provider definitions as
   data-driven. A `..` segment merges two accounts onto one cookie jar or aims the delete outside the
   sessions root. FIX: a compose helper that rejects separators/`..`/reserved names + resolve-and-
   contain before deleting.
-- [ ] **Dispose the leaked process handle** at `WebViewHost.cs:324` — `ShellLauncher.cs:69-72` has
+- [x] **Dispose the leaked process handle** at `WebViewHost.cs:324` — `ShellLauncher.cs:69-72` has
   the Win11 `?.Dispose()` lesson; the WebView2 copy of the same open-in-shell code omits it, so
   every external link click from the page leaks a `Process`.
 
@@ -342,15 +352,15 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
 
 **H5 — Close the gate holes (near-zero churn, highest payoff per edit)**
 
-- [ ] **`Shenora.slnx` has an EMPTY `<Folder Name="/samples/" />`** and doesn't list
+- [x] **`Shenora.slnx` has an EMPTY `<Folder Name="/samples/" />`** and doesn't list
   `Shenora.Core` either. `dev.mjs build` builds only `config.solution`, so **`verify` — the
   documented "am I done?" gate — never compiles the reference composition or the e2e subject**; the
   sample can be red while `verify` and the release workflow pass green. `samples/Shenora.Sample.Web`
   is likewise never type-checked (its `typecheck`/`build` scripts are called by nothing). FIX: add
   the sample projects + `Shenora.Core` to the solution; add the web typecheck to `verify`.
-- [ ] **`dev.mjs test <typo>` exits 0 having run nothing** (`:93-101` — no else branch, `ok` stays
+- [x] **`dev.mjs test <typo>` exits 0 having run nothing** (`:93-101` — no else branch, `ok` stays
   `true`). Add the else and fail loudly.
-- [ ] **`check-sensitive.mjs` fails OPEN on a fresh clone and in CI.** `:33-42` prints a notice and
+- [x] **`check-sensitive.mjs` fails OPEN on a fresh clone and in CI.** `:33-42` prints a notice and
   continues with only the two structural built-ins when `local/sensitive-patterns.txt` is absent —
   and `local/` is gitignored, so **the brand/sibling-name half of the guard never runs in the
   release gate**. Three further misses: renamed/copied staged files are skipped entirely
@@ -360,23 +370,30 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   the release workflow pipes commit subjects into public release notes. FIX: exit non-zero when the
   pattern file is missing (or require an explicit `--allow-builtins-only`), match paths too, include
   `R`/`C` status, and add a `commit-msg` hook.
-- [ ] Turn on `TreatWarningsAsErrors` in `src/Directory.Build.props` and drop `-clp:ErrorsOnly`
+- [x] Turn on `TreatWarningsAsErrors` in `src/Directory.Build.props` and drop `-clp:ErrorsOnly`
   from `dev.mjs:86,128-129` — nothing in the repo makes warnings errors and the gate hides them
   (CS1591 is additionally silenced, so missing XML docs ship to the nupkg unnoticed).
-- [ ] Make `verify` run `doctor` (today version/README drift doesn't fail the gate; it self-heals
+- [x] Make `verify` run `doctor` (today version/README drift doesn't fail the gate; it self-heals
   only because `pack` runs `doctor --fix` first, meaning verify scans the PRE-sync files). Also add
   a `prepublishOnly` guard for the npm package — the release workflow re-packs from source and a
   stale/missing `dist/` would ship a README-only package with no error.
-- [ ] `release.yml` creates the GitHub release — and therefore the TAG — even when
+- [x] `release.yml` creates the GitHub release — and therefore the TAG — even when
   `create_tag: false` (only the tag STEP is gated), so the tag can be created at the default-branch
   head, pointing at a different commit than the one published.
-- [ ] Set `ManagePackageVersionsCentrally` in the root `Directory.Packages.props` shim (it's
+- [x] Set `ManagePackageVersionsCentrally` in the root `Directory.Packages.props` shim (it's
   hand-set 3× today and missing from both devtools csprojs); add `CodePage=65001` to the two
   devtools csprojs (both contain non-ASCII string literals and `src/Directory.Build.props:20-21`
   documents that exact mojibake failure on this machine); drop the unused
   `M.E.DependencyInjection.Abstractions` pin and the redundant `Microsoft.Web.WebView2` re-declaration
   in `Shenora.WebView2.Sessions.csproj:16`; reconsider shipping `InternalsVisibleTo Shenora.Tests`
   in all five nupkgs on unsigned assemblies.
+  **DONE except two DELIBERATE keeps:** (a) the `Microsoft.Web.WebView2` reference in
+  `Shenora.WebView2.Sessions.csproj` STAYS — the package uses WebView2 types directly, and an
+  explicit direct reference is better practice than relying on a transitive one arriving through
+  `Shenora.WebView2`; the duplicate nuspec entry is harmless. (b) `InternalsVisibleTo Shenora.Tests`
+  stays for now: removing it needs the test project to stop using internal seams (a large change),
+  and the exposure is bounded to an assembly deliberately named `Shenora.Tests`. Revisit at P7 with
+  signing. Also done here: `prepublishOnly` on the npm package, so a stale/missing `dist/` can't ship.
 
 **H6 — Public surface + cross-language lockstep (cheapest window is BEFORE 1.0)**
 

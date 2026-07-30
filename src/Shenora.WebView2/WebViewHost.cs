@@ -321,8 +321,13 @@ public sealed class WebViewHost
                 {
                     try
                     {
+                        // Dispose the returned Process: it holds an OS handle that Win11 does NOT
+                        // release on its own, so every external link click leaked one. The sibling
+                        // copy of this code (ShellLauncher.OpenUrl) already had the fix; this one
+                        // didn't (found in the P0–P5 review). P5.5 H4.5 deletes this copy entirely in
+                        // favour of IUrlLauncher once the re-layer lands.
                         System.Diagnostics.Process.Start(
-                            new System.Diagnostics.ProcessStartInfo(uri.ToString()) { UseShellExecute = true });
+                            new System.Diagnostics.ProcessStartInfo(uri.ToString()) { UseShellExecute = true })?.Dispose();
                     }
                     catch
                     {

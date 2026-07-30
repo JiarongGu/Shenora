@@ -9,7 +9,66 @@ landing order (oldest first) because they narrate one version being built.
 
 ## Unreleased (0.1.0)
 
+### Added
+
+- `LoginWindow.ComposeProfileDirectory(root, params segments)` — builds a per-account profile path
+  from untrusted identifier segments, rejecting separators, `..`, drive qualifiers, invalid
+  file-name characters and Windows reserved device names. Per-provider/per-account scoping is the
+  session stack's isolation boundary, and the library previously documented that boundary while
+  shipping no safe way to construct the path.
+
+### Changed
+
+- **The verification gate now covers what it claimed to** (P5.5 H5): `Shenora.slnx` includes the
+  sample projects and `Shenora.Core`, so `dev.mjs build|verify` compiles the reference composition
+  and the e2e subject (the solution's `samples` folder was empty, so the sample could be red while
+  `verify` reported green); `verify` also type-checks the sample web app and runs `doctor`;
+  `dev.mjs test <unknown-target>` now fails instead of exiting 0 having run nothing; warnings are
+  errors for `src/` (`TreatWarningsAsErrors`, `CS1591` still suppressed pending the P7 doc sweep)
+  and are no longer hidden by `-clp:ErrorsOnly`; `vite` installs the sample's own dependencies and
+  builds `@shenora/react` first.
+- **The sensitive-info guard fails CLOSED** (P5.5 H5): a missing `local/sensitive-patterns.txt` used
+  to print a notice and continue with only two structural patterns, so the private-name half of the
+  scan silently did not run on a fresh clone or in CI. It now exits non-zero; pass
+  `--allow-builtins-only` (or set `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1`, as the release workflow
+  does) to opt in deliberately. It also scans file PATHS as well as contents, includes
+  renamed/copied staged files (`git mv` stages as `R` and was skipped entirely), and a new
+  `commit-msg` hook scans commit messages — which are history too.
+- `create_tag: false` no longer produces a tag: the release step was always given `tag_name`, so it
+  created the tag itself whenever the gated tag step was skipped — at the default-branch head,
+  which need not be the published commit.
+- A pool configured with a `NavigationGuard` now cancels unvetted CROSS-HOST navigation. See Fixed.
+
 ### Fixed
+
+- **Arbitrary file read through file-mode frontend serving.** The resource provider applied no path
+  containment, and the host unescapes the request path before calling it (it must, so bundle
+  filenames with spaces or CJK characters resolve) — so `%2e%2e%2f…` arrived as `../` and walked out
+  of the bundle, and a ROOTED path (`/C:%2f…`) escaped even more simply because `Path.Combine`
+  discards its first argument when the second is rooted. Responses carry
+  `Access-Control-Allow-Origin: *`, so page script could read what came back. Live wherever
+  `PreferFiles` is on — which the sample derives from `IsDevelopment`. Both `GetResourceStream` and
+  `Exists` now reject rooted and traversing paths and assert the resolved path stays under the root.
+- **`NavigationGuard` was bypassed by redirects.** It was consulted only on the explicit
+  `NavigateAsync` call, so a guard-approved URL answering `302 → http://127.0.0.1:8080/admin` was
+  followed and its DOM handed to the caller. The pool now cancels unvetted cross-host navigation at
+  `NavigationStarting`. Note the scope honestly: that event has no deferral in the WebView2 SDK, so
+  an async guard cannot be awaited inside it — a synchronous cross-host rule is the most the event
+  can enforce, and `SessionBrowserOptions.RequestFilter` (synchronous, `WebResourceContext.All`)
+  remains the seam for full redirect/subresource policy. Documented on both options.
+- **An unserializable notification payload crashed the UI thread and lost its whole batch.** The
+  notification flush drained the queue and then serialized with no try/catch, on a 50 ms WinForms
+  timer — so one app event carrying a cyclic object graph, a `Type`/delegate member or a throwing
+  getter took down the UI thread (a modal crash dialog under the family bootstrap) and discarded the
+  drained batch. Payloads are now serialized per notification so only the offender is dropped, with
+  a catch-all around the flush. The incoming path had always been guarded; this asymmetry was the bug.
+- **`LoginWindow.ClearProfile` is a recursive delete and accepted a traversing path.** Profile paths
+  are normally composed from data-driven identifiers, so a stray `..` segment could aim the delete
+  outside the sessions root — while the same options documented that scoping as a security boundary.
+  It now refuses traversal segments; use `ComposeProfileDirectory` to build the path safely.
+- A `Process` handle leaked on every external link click from the page: the WebView2 host's
+  open-in-system-browser path did not dispose the started process, though the sibling implementation
+  in `ShellLauncher.OpenUrl` already carried that Win11 fix.
 
 - **`@shenora/react` was not importable under native Node ESM** (`0776f37`). The emitted relative
   imports carried no `.js` extension, which bundler resolution silently tolerated and plain Node

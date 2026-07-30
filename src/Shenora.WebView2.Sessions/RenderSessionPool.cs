@@ -31,10 +31,23 @@ public sealed class RenderSessionPoolOptions
     public bool VisiblePerSession { get; init; }
 
     /// <summary>
-    /// Consulted before EVERY session navigation (return false to refuse). Wire your
+    /// Consulted before every EXPLICIT session navigation (return false to refuse). Wire your
     /// SSRF/allowlist policy here — sessions navigate data-driven URLs, and a server-reachable
     /// loopback/LAN/metadata host behind an unguarded navigate is a request-forgery hole (the
     /// source app guards every browser the same way). Null = any http(s) URL.
+    /// <para>
+    /// SCOPE, precisely (it was over-promised before the P5.5 review): this runs on the explicit
+    /// <c>NavigateAsync</c> call. It CANNOT be consulted for redirects or in-page navigation, because
+    /// WebView2's <c>NavigationStarting</c> event has no deferral and an async policy cannot be
+    /// awaited inside it. What setting this DOES additionally buy you: the pool then cancels any
+    /// unvetted CROSS-HOST navigation, so a guard-approved URL answering
+    /// <c>302 → http://127.0.0.1:8080/admin</c> is not followed. Same-host hops stay allowed.
+    /// </para>
+    /// <para>
+    /// For a full policy over redirect targets AND subresources, also set
+    /// <see cref="SessionBrowserOptions.RequestFilter"/> on <see cref="Browser"/> — it is synchronous
+    /// by design and sees every request. Guard = pre-check; request filter = enforcement.
+    /// </para>
     /// </summary>
     public Func<Uri, CancellationToken, Task<bool>>? NavigationGuard { get; init; }
 
@@ -78,7 +91,16 @@ public sealed class RenderSessionPool : IDisposable
     }
 
     /// <summary>One pooled WebView2 + the window hosting it. The pool alone creates/resets/discards it.</summary>
-    internal sealed record PoolInstance(Form Host, WebView2Control Web);
+    internal sealed record PoolInstance(Form Host, WebView2Control Web)
+    {
+        /// <summary>
+        /// The host the caller's async <see cref="RenderSessionPoolOptions.NavigationGuard"/> last
+        /// approved, or null before any explicit navigate. Read by the navigation policy wired in
+        /// <see cref="WireNavigationPolicy"/> to reject an UNVETTED cross-host hop. Cleared on
+        /// return-to-pool so a recycled instance can't inherit the previous lease's approval.
+        /// </summary>
+        internal string? ApprovedHost { get; set; }
+    }
 
     /// <summary>
     /// Lease a session (never null). Returns a free instance; else creates one under the cap;
@@ -154,7 +176,9 @@ public sealed class RenderSessionPool : IDisposable
                     web = new WebView2Control { Dock = DockStyle.Fill };
                     host.Controls.Add(web);
                     await SessionBrowser.InitializeAsync(web, _options.Browser).ConfigureAwait(true);
-                    tcs.TrySetResult(new PoolInstance(host, web));
+                    var instance = new PoolInstance(host, web);
+                    WireNavigationPolicy(instance);
+                    tcs.TrySetResult(instance);
                 }
                 catch (Exception ex)
                 {
@@ -181,6 +205,60 @@ public sealed class RenderSessionPool : IDisposable
             tcs.TrySetException(ex);
         }
         return tcs.Task;
+    }
+
+    /// <summary>
+    /// Cancel an UNVETTED cross-host navigation for the instance's whole life — wired once here, on
+    /// the UI thread, right after init, and only when the app configured a
+    /// <see cref="RenderSessionPoolOptions.NavigationGuard"/>.
+    /// <para>
+    /// WHAT THIS CLOSES: the guard is documented as the app's SSRF/allowlist policy but was consulted
+    /// ONLY inside the explicit <c>NavigateAsync</c> call, so a guard-approved URL that answered
+    /// <c>302 → http://127.0.0.1:8080/admin</c> was followed anyway and its DOM handed back to the
+    /// caller (found in the P0–P5 review). The caller vetted host X; nothing vetted host Y.
+    /// </para>
+    /// <para>
+    /// WHY IT IS A HOST COMPARISON AND NOT THE GUARD ITSELF: <c>NavigationStarting</c> has NO
+    /// deferral in the WebView2 SDK (verified — <c>CoreWebView2NavigationStartingEventArgs</c>
+    /// exposes none), so an <c>async</c> policy simply cannot be awaited there; blocking on it would
+    /// deadlock the UI thread it runs on. A synchronous, guard-independent rule is therefore the most
+    /// that this event can enforce. Same-host hops (<c>http → https</c>, <c>/</c> → <c>/index.html</c>,
+    /// in-page navigation) stay allowed; an unvetted cross-host hop is cancelled.
+    /// </para>
+    /// <para>
+    /// FOR A FULL REDIRECT/SUBRESOURCE POLICY, use
+    /// <see cref="SessionBrowserOptions.RequestFilter"/>: it is SYNCHRONOUS by design and is wired at
+    /// the request layer with <c>WebResourceContext.All</c>, so it sees every request including
+    /// redirect targets and subresources. The async guard is a pre-check; the request filter is the
+    /// enforcement seam. Documented on both options.
+    /// </para>
+    /// <para>
+    /// NOT applied to <c>LoginWindow</c> deliberately: an interactive sign-in legitimately redirects
+    /// across hosts (OAuth), so cancelling unvetted hops there would break real logins. A login
+    /// window is human-driven, not a data-driven SSRF surface.
+    /// </para>
+    /// </summary>
+    private void WireNavigationPolicy(PoolInstance instance)
+    {
+        if (_options.NavigationGuard is null) return;
+
+        instance.Web.CoreWebView2.NavigationStarting += (_, e) =>
+        {
+            // Sync handler, but it runs inside a WebView2 event: an escaping exception is an
+            // unhandled UI-thread crash, so everything is guarded and failure means CANCEL.
+            try
+            {
+                if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) return;
+                if (uri.Scheme is not ("http" or "https")) return; // the about:blank reset, data:, …
+                if (instance.ApprovedHost is not { } approved) return; // nothing vetted yet
+                if (string.Equals(uri.Host, approved, StringComparison.OrdinalIgnoreCase)) return;
+                e.Cancel = true;
+            }
+            catch (Exception)
+            {
+                e.Cancel = true;
+            }
+        };
     }
 
     /// <summary>
@@ -239,6 +317,10 @@ public sealed class RenderSessionPool : IDisposable
 
     private static async Task<bool> ResetToBlankAsync(PoolInstance instance)
     {
+        // Drop the previous lease's vetted host with its DOM: a recycled instance must not inherit an
+        // approval the NEXT caller's guard never granted.
+        instance.ApprovedHost = null;
+
         var navDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnNav(object? s, CoreWebView2NavigationCompletedEventArgs e) => navDone.TrySetResult(true);
         instance.Web.CoreWebView2.NavigationCompleted += OnNav;

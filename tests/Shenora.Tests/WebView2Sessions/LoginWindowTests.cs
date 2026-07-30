@@ -105,4 +105,58 @@ public class LoginWindowTests
 
         LoginWindow.ClearProfile(dir); // already gone — best-effort, no throw
     }
+
+    // ── Profile-path containment (P5.5 H1) ────────────────────────────────────────────────────────
+    // ClearProfile is a RECURSIVE DELETE and profile paths are normally composed from data-driven
+    // provider/account identifiers, so a stray ".." would aim it outside the sessions root — while
+    // the same options doc calls per-account scoping a security boundary.
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData("../elsewhere")]
+    [InlineData("provider/../../elsewhere")]
+    [InlineData(@"provider\..\..\elsewhere")]
+    public void ClearProfile_refuses_a_path_with_traversal_segments(string relative)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "login-tests", relative);
+        Assert.Throws<ArgumentException>(() => LoginWindow.ClearProfile(path));
+    }
+
+    [Fact]
+    public void ComposeProfileDirectory_builds_a_contained_path_from_plain_segments()
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "profiles");
+
+        var composed = LoginWindow.ComposeProfileDirectory(root, "provider-a", "account-1");
+
+        Assert.Equal(Path.Combine(Path.GetFullPath(root), "provider-a", "account-1"), composed);
+        // …and the result is safe to hand straight to ClearProfile.
+        LoginWindow.ClearProfile(composed);
+    }
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData(".")]
+    [InlineData("a/b")]           // separator smuggled into one segment
+    [InlineData(@"a\b")]
+    [InlineData("C:")]            // drive qualifier
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("CON")]           // Windows reserved device name
+    [InlineData("nul.txt")]       // reserved even with an extension
+    public void ComposeProfileDirectory_rejects_an_unsafe_segment(string segment)
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "profiles");
+        Assert.Throws<ArgumentException>(() => LoginWindow.ComposeProfileDirectory(root, segment));
+    }
+
+    [Fact]
+    public void ComposeProfileDirectory_keeps_two_accounts_in_separate_cookie_jars()
+    {
+        // The isolation boundary the docs promise: distinct accounts must not collide on one directory.
+        var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "profiles");
+        var a = LoginWindow.ComposeProfileDirectory(root, "provider", "account-1");
+        var b = LoginWindow.ComposeProfileDirectory(root, "provider", "account-2");
+        Assert.NotEqual(a, b);
+    }
 }
