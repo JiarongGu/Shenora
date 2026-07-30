@@ -1327,6 +1327,20 @@ in the gate around them**:
   patched — notably the DI composition (facades injecting `IMessageDispatcher`), async disposal of
   singletons, and a relative `--app-root`.
 
+
+**Scoped 2026-07-31 (survey done, nothing adopted yet) — and the premise above is now STALE.**
+The first target is no longer a small host: it has grown an API tier, a plugin system, an MCP server
+and a deployment stack, and its desktop side now carries 28 IPC modules against ~148 client
+call-sites. It is still the right first target, but not for the reason originally given. What makes
+it tractable is that both sides funnel through ONE seam each — a single client post/subscribe pair
+and a single host dispatcher behind a one-method module interface — so swapping the IPC substrate is
+two ADAPTERS rather than 28 rewrites. The itemised increments (consume → shell primitives → the
+WebView2 host → the IPC swap → portability → feed back) are in `TASKS.md` `### P6`, and the model
+mismatch they have to bridge is that the target speaks flat, uncorrelated, fire-and-forget IPC with
+an event stream back, against Shenora's correlated request/response. Per D21 that compat lives in
+the ADOPTER's shim and never in the kit's envelope — a question the 2026-07-30 extraction survey had
+deliberately left open until adoption time, now decided.
+
 ### P7 — Stabilisation + 1.0 (brief Phase 6)
 
 - API-surface baseline tests on; docs pass (XML docs, README per package section); CHANGELOG

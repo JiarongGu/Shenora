@@ -916,6 +916,78 @@ reshaped one package and nothing else.
   The rule now lives in `.claude/knowledge/generic-library.md` so the next session catches this class
   unprompted.
 
+### P6 — Sibling adoption (brief Phase 5) — SCOPED 2026-07-31, not started
+
+The first adoption target is the **business-manager sibling** (`local/EXTRACTION-MAP.md` names it).
+Survey done 2026-07-31; the increments below come from that survey, not from the original brief.
+
+> ⚠ **The roadmap's premise for this phase is STALE — do not plan against it.** P6 was written around
+> "adopt in the newest desktop sibling first (smallest host, gaps already documented)". That app has
+> since grown an API tier, a plugin system with its own IPC-namespace guarding, an MCP server and a
+> deployment stack. Its desktop host now has **28 IPC modules** and its web client **~148 send
+> call-sites**. It is still the right first target — its gaps are exactly Shenora's value proposition,
+> and it already consumes the family's other library from a pinned feed — but "smallest host" is no
+> longer why.
+
+**The finding that makes this tractable.** Both sides of its IPC funnel through ONE seam each: the
+client has a single `post()` + `onMessage()` pair (~60 lines total) that all ~148 call-sites go
+through, and the host has a single dispatcher (`DispatchAsync` + `Emit`) behind a one-method module
+interface. So swapping the IPC substrate is **two adapters, not 28 module rewrites and 148 edits**.
+Verify that both chokepoints still hold before committing to the plan — it is the whole basis of the
+sizing.
+
+**The model mismatch to design for.** Its IPC is FLAT and UNCORRELATED — `{ type: "module.action",
+…payload }` posted fire-and-forget, with everything coming back as a pushed event stream
+discriminated by `type`. Shenora's is correlated request/response plus a separate notification
+channel. The mapping is not mechanical: a request whose result arrives later as an event has no
+response to correlate. **Per D21/`generic-library`, the compat lives in the ADOPTER's shim, never in
+the kit's envelope** — the first adopter's migration convenience is exactly the pull that must be
+resisted here. If the shim turns out to need something the kit genuinely lacks, that is a kit gap to
+fix on its own merits, recorded as such.
+
+#### Increments (keep it runnable at every step — that is the phase's standing rule)
+
+- [ ] **P6.1 — Consume the packages at all.** `dev.mjs pack` → local feed + exact-version pinning
+  per `docs/RELEASING.md`, npm tarball for `@shenora/react`. Nothing adopted yet; this proves the
+  consumption path end-to-end from outside this repo. **This is also P1.2's blocker in disguise** —
+  a real external consumer is the dry run.
+- [ ] **P6.2 — Shell primitives only (`Shenora.WinForms`), zero IPC churn.** The package has no IPC
+  dependency, so this is the increment with all of the win and none of the risk: window-state
+  persistence (the survey found the same window-state code duplicated line-for-line across two
+  windows), `OptimizedForm`, tray, single-instance, clipboard, file dialogs. Delete the app's copies.
+  Its drop-zone trio is annotated as a port of the primary sibling's — that is the THIRD copy, and
+  retiring it is the clearest possible proof the kit is worth adopting.
+- [ ] **P6.3 — The WebView2 host (`Shenora.WebView2`), still no IPC swap.** `WebViewHost` +
+  options + the resource provider replace its hand-rolled init. **Decide the serving model here:** it
+  maps a virtual host name to a folder on disk, while the kit serves through `WebResourceRequested`
+  with an embedded-resource provider and a dev-URL switch. The kit's own no-cache-HTML policy and the
+  stale-bundle footgun the survey recorded both live at this seam.
+- [ ] **P6.4 — The IPC swap, via the two adapters.** A client shim mapping `post`/`onMessage` onto
+  the bridge, and a host adapter presenting its module interface to `MessageDispatcher` — so all 28
+  modules and all ~148 call-sites keep working while the substrate changes underneath. Correlated
+  request/response then gets adopted per-module, at whatever pace, with the shim as the fallback.
+  **This is the increment that tests D21 for real**; write down every "the framework almost fits,
+  but…" as it happens, because that list is the phase's most valuable output.
+- [ ] **P6.5 — Portability (D20).** Its `Core` project is ALREADY `net10.0` while the 28 modules sit
+  in the Windows host project, so the portable-facade pattern has a home waiting. Move facades there
+  against the Core contracts (`H4.3` proves the pattern on this repo's sample). Feed the answer back
+  as a D20 amendment — "are these the right portable contracts?" becomes a concrete question answered
+  by a real app.
+- [ ] **P6.6 — Feed back, then re-evaluate the other targets.** Every API change P6.1–P6.5 argues for
+  lands BEFORE 1.0 (P7 freezes SemVer). Then evaluate the other two desktop siblings and the
+  server-backed app (shell-only profile).
+
+#### Standing constraints for the phase
+
+- **The adoption is the real test of P5.5's fixes.** Several P0s were latent-only — nothing in this
+  repo triggered them — so a real consumer is what proves them fixed rather than merely patched:
+  the DI composition (a facade injecting `IMessageDispatcher`), async disposal of singletons, and a
+  relative `--app-root`. Exercise all three deliberately rather than hoping they come up.
+- **Adopt against the CURRENT layering.** D19/D20 landed in P5.5, so referencing the leaf package
+  pulls the rest transitively; nothing here should reference `Shenora.Core` directly.
+- **Private specifics stay in `local/`.** Real names, paths and file-level findings from the survey
+  live in `local/PROJECT_NOTES.md` and `local/EXTRACTION-MAP.md` — this file stays generic.
+
 ### P1 — Skeleton tail
 
 - [ ] **P1.2 — Release workflow dry-run readiness.** Once a GitHub remote exists: run the Release
