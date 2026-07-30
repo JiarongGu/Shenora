@@ -1,18 +1,26 @@
 using System.Diagnostics;
+using Shenora.Core;
 
 namespace Shenora.WinForms;
 
-/// <summary>Shell integrations: reveal in Explorer, open a folder, open a URL, launch a process.</summary>
-public interface IShellLauncher
+/// <summary>
+/// Shell integrations: reveal in Explorer, open a folder, open a URL, launch a process.
+/// <para>
+/// Opening a URL is meaningful on ANY host, so it lives on <see cref="IUrlLauncher"/> in
+/// <c>Shenora.Core</c> and is inherited here — app logic that only opens links should depend on that
+/// and stay platform-neutral (D20). Revealing in a file manager and launching a process are
+/// desktop-only CONCEPTS, so they stay on this interface. <c>UseWinForms</c> registers both faces of
+/// the same instance. <c>OpenUrl</c> is deliberately NOT redeclared: re-declaring an inherited member
+/// is CS0108, a build error now that warnings are errors.
+/// </para>
+/// </summary>
+public interface IShellLauncher : IUrlLauncher
 {
     /// <summary>Open Windows Explorer with <paramref name="filePath"/> selected.</summary>
     void RevealInExplorer(string filePath);
 
     /// <summary>Open a directory in the shell's file manager.</summary>
     void OpenDirectory(string directoryPath);
-
-    /// <summary>Open an http/https URL in the system browser (anything else is rejected).</summary>
-    void OpenUrl(string url);
 
     /// <summary>Launch an executable (working directory defaults to the exe's folder).</summary>
     void LaunchProcess(string executablePath, string? arguments = null, string? workingDirectory = null);

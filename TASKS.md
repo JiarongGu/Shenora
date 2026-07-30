@@ -235,7 +235,7 @@ hosting-on-primitives) + **D20** (portable contracts + `IUiDispatcher` in `Sheno
 logic compiles with no Windows reference and a future mobile shell can implement the same
 contracts). The design-contract §4 rule authorised this revision on exactly this evidence.
 
-- [ ] **H4.1 — Land the re-layer (own commit, before the dedup items below).** Take the
+- [x] **H4.1 — Land the re-layer (own commit, before the dedup items below).** Take the
   `WebView2 → WinForms` project reference; move the portable contracts to `Shenora.Core`
   (`IClipboardService`, `IFileDialogs`/`IFileDialogPathStore` + `FileDialogOptions`/`FileDialogFilter`/
   `FileDialogResult` — platform-neutral in signature, but this is a file **SPLIT**: every one of them

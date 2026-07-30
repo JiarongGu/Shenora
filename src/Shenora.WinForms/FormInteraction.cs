@@ -1,3 +1,5 @@
+using Shenora.Core;
+
 namespace Shenora.WinForms;
 
 /// <summary>
@@ -5,8 +7,16 @@ namespace Shenora.WinForms;
 /// sibling: native dialogs need the main window's handle for ownership (z-order), and the
 /// window is disabled while one is up so the user can't re-enter the app mid-dialog.
 /// Registered by <c>UseWinForms</c>; the runner sets the main form automatically.
+/// <para>
+/// The portable half is <see cref="IUiInteraction"/> in <c>Shenora.Core</c> (block/unblock, which any
+/// host can implement); what remains here is the <see cref="Form"/>-typed part, which is Windows by
+/// definition (D20). App logic that only needs to block the UI should depend on
+/// <see cref="IUiInteraction"/> — <c>UseWinForms</c> registers both faces of the same instance.
+/// Note the blocking members are NOT redeclared here: re-declaring an inherited member is CS0108,
+/// which is a build error now that warnings are errors.
+/// </para>
 /// </summary>
-public interface IFormInteraction
+public interface IFormInteraction : IUiInteraction
 {
     /// <summary>Register the main window (the WinForms runner does this after the form factory).</summary>
     void SetMainForm(Form form);
@@ -19,12 +29,6 @@ public interface IFormInteraction
     /// no window (or no handle yet) — callers fall back to an unowned dialog.
     /// </summary>
     IntPtr GetMainFormHandle();
-
-    /// <summary>Disable interaction with the main window (nested: pairs with <see cref="UnblockInteraction"/>).</summary>
-    void BlockInteraction();
-
-    /// <summary>Re-enable interaction once every block is released.</summary>
-    void UnblockInteraction();
 }
 
 /// <summary>

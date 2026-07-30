@@ -98,10 +98,17 @@ a finding that contradicts one of these is either a real regression or a rule th
 - `WindowCommandFacade` / the drop-zone stack live in `Shenora.WebView2` (not `WinForms`) because
   they need `Shenora.Ipc`, which `WinForms` deliberately does not reference.
 - `Shenora.WebView2.Sessions` depends on `Shenora.WebView2` (D14 keeps the session stack out of the
-  core hosting package). It was "the one deliberate package-on-package edge above `Core`" until D19
-  added `WebView2` → `WinForms` — so that edge is sanctioned too, not a violation. Note the Sessions
+  core hosting package), and `Shenora.WebView2` depends on `Shenora.WinForms` (**D19** — the two
+  Windows packages are one layer: primitives, then web hosting on top). Both edges are deliberate, so
+  neither is a violation; the old "never sideways" rule was retired on evidence. `WinForms` →
+  `WebView2` is still forbidden, and `WinForms` still carries no `Ipc` dependency. Note the Sessions
   edge is currently **declared but unused**: nothing in the package imports a `Shenora.WebView2`
   type, which is `TASKS.md` H4.4.
+- The portable contracts (`IUiDispatcher`, `IFileDialogs` + models, `IClipboardService`,
+  `IUrlLauncher`, `IUiInteraction`) live in `Shenora.Core` with their implementations in
+  `Shenora.WinForms` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
+  `ProjectReference` does not grant `internal` access, so the alternative was `InternalsVisibleTo` for
+  two packages.
 - `CoBrowseSession` reuses `LoginWindowController` as a **background** controller (the source's own
   pattern); its window-managing calls are gated inert by a `foreground` flag.
 - `PayloadHelper` is static; `IpcResponse.category` is lowercase; notifications are always batched —

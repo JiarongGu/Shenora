@@ -1,98 +1,12 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Shenora.Core;
 
 namespace Shenora.WinForms;
 
-/// <summary>One dialog filter row (e.g. name "Images", extensions ["png", "jpg"]).</summary>
-public sealed class FileDialogFilter
-{
-    /// <summary>Display name of the filter row.</summary>
-    public required string Name { get; init; }
-
-    /// <summary>Extensions WITHOUT the dot or wildcard (<c>"png"</c>, not <c>"*.png"</c>).</summary>
-    public required IReadOnlyList<string> Extensions { get; init; }
-}
-
-/// <summary>
-/// Inputs for one dialog call — the frontend typically sends these over IPC, so the shape is
-/// wire-friendly.
-/// </summary>
-public sealed class FileDialogOptions
-{
-    /// <summary>Dialog title. Null = a neutral default per dialog kind.</summary>
-    public string? Title { get; init; }
-
-    /// <summary>Start directory when nothing is remembered. Null/missing = the user's Documents.</summary>
-    public string? DefaultPath { get; init; }
-
-    /// <summary>Filter rows; null/empty = "All Files".</summary>
-    public IReadOnlyList<FileDialogFilter>? Filters { get; init; }
-
-    /// <summary>
-    /// Key under which the last-used directory is remembered (via the app's
-    /// <see cref="IFileDialogPathStore"/>) and restored next time. Null = no memory.
-    /// </summary>
-    public string? RememberPathKey { get; init; }
-
-    /// <summary>
-    /// Folder dialog only: also allow picking a FILE. Uses an OpenFileDialog with relaxed
-    /// validation and a placeholder file name instead of the folder browser — the family's
-    /// proven pattern for "give me a folder or an archive".
-    /// </summary>
-    public bool AllowFileSelection { get; init; }
-
-    /// <summary>File dialog: require the picked file to exist. Default true.</summary>
-    public bool? CheckFileExists { get; init; }
-
-    /// <summary>Require the path to exist. Default true.</summary>
-    public bool? CheckPathExists { get; init; }
-
-    /// <summary>Validate Windows file-name rules. Default true for file dialogs.</summary>
-    public bool? ValidateNames { get; init; }
-
-    /// <summary>Initial file name shown in the dialog.</summary>
-    public string? FileName { get; init; }
-
-    /// <summary>Save dialog: extension appended when the user omits one (no dot).</summary>
-    public string? DefaultExtension { get; init; }
-
-    /// <summary>Save dialog: prompt before overwriting an existing file. Default true.</summary>
-    public bool OverwritePrompt { get; init; } = true;
-}
-
-/// <summary>
-/// A dialog outcome: the selection, or a cancellation (<see cref="Success"/> false). Failures
-/// THROW — the source app flattened exceptions into a wire-bound error string, which is the
-/// exact leak shape the IPC error contract forbids; the dispatch boundary maps throws instead.
-/// </summary>
-public sealed class FileDialogResult
-{
-    /// <summary>True when the user picked something.</summary>
-    public required bool Success { get; init; }
-
-    /// <summary>The picked absolute path (file or folder) when <see cref="Success"/>.</summary>
-    public string? FilePath { get; init; }
-
-    /// <summary>A successful selection.</summary>
-    public static FileDialogResult Selected(string path) => new() { Success = true, FilePath = path };
-
-    /// <summary>The user cancelled.</summary>
-    public static FileDialogResult Cancelled() => new() { Success = false };
-}
-
-/// <summary>
-/// Where remembered dialog directories live — the seam generalizing the source app's coupling
-/// to its own settings service (persist to your settings store; relativize portable paths there
-/// if you want portability, the framework passes absolutes).
-/// </summary>
-public interface IFileDialogPathStore
-{
-    /// <summary>The remembered directory for a key, or null.</summary>
-    Task<string?> GetPathAsync(string key);
-
-    /// <summary>Remember a directory for a key.</summary>
-    Task SavePathAsync(string key, string path);
-}
+// The dialog CONTRACT (IFileDialogs, IFileDialogPathStore, FileDialogOptions/Filter/Result) moved to
+// Shenora.Core in P5.5 H4.1 so app logic that picks files compiles with no Windows reference (D20).
+// What stays here is the Windows IMPLEMENTATION and its configuration.
 
 /// <summary>Inputs for <see cref="FileDialogs"/>.</summary>
 public sealed class FileDialogsOptions
@@ -102,19 +16,6 @@ public sealed class FileDialogsOptions
 
     /// <summary>Backs <see cref="FileDialogOptions.RememberPathKey"/>. Null = no path memory.</summary>
     public IFileDialogPathStore? PathStore { get; init; }
-}
-
-/// <summary>Native file/folder/save dialogs (see <see cref="FileDialogs"/>).</summary>
-public interface IFileDialogs
-{
-    /// <summary>Pick an existing file.</summary>
-    Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null);
-
-    /// <summary>Pick a folder (or a file too, with <see cref="FileDialogOptions.AllowFileSelection"/>).</summary>
-    Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null);
-
-    /// <summary>Pick a save destination.</summary>
-    Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null);
 }
 
 /// <summary>

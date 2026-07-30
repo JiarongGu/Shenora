@@ -1,3 +1,4 @@
+using Shenora.Core;
 using Shenora.WinForms;
 
 namespace Shenora.Tests.WinForms;

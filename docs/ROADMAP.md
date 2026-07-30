@@ -5,6 +5,44 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 batch H4.1: the re-layer (D19 + D20)
+
+The structural half of consolidation, as its own commit. `Shenora.WebView2` now depends on
+`Shenora.WinForms` — the two Windows packages are one layer, primitives then web hosting on top — and
+the platform-neutral contracts moved to `Shenora.Core`: `IFileDialogs`/`IFileDialogPathStore` +
+`FileDialogOptions`/`Filter`/`Result`, `IClipboardService`, and the portable `IUrlLauncher` /
+`IUiInteraction` bases that `IShellLauncher` / `IFormInteraction` now derive from. `UseWinForms`
+registers both faces of each split service, resolving to the same singleton, so app logic can depend
+on the neutral contract and compile with no Windows reference.
+
+**`IUiDispatcher` finally exists.** The design contract's §4 table listed "`IUiDispatcher` interface"
+under `Shenora.Core` and "`IUiDispatcher` implementation" under `Shenora.WinForms` from its first
+draft; P2 never built it, which is exactly why the marshalling pattern ended up hand-rolled 14 times
+with five incompatible pre-handle policies. It is deliberately **three-state**
+(`NotReady`/`Ready`/`Gone`) rather than one availability flag — an adversarial review of the design
+draft caught that a bool would have silently re-broken two previously-fixed defects, because three
+call sites have different earned pre-handle policies. Per-control, not per-application; body guarded
+on the posted AND inline paths; awaitable overloads observe their cancellation token.
+
+Two things worth recording honestly. First, **the blast radius was two `using` lines** — one in the
+sample facade, one in a test — which is the strongest evidence that the contracts really were
+platform-neutral in signature. Second, **the first implementation of `Post(Func<Task>)` recursed
+infinitely**: written as `Post(() => _ = RunGuardedAsync(work))` the lambda body is an *expression* of
+type `Task`, so overload resolution picked `Post(Func<Task>)` again — a `StackOverflowException`, which
+is uncatchable, so the test host aborted with no failing test to point at (the run totals silently
+dropped from 346 to 322). The new file's own async-post test is what surfaced it; the `(Action)` cast
+is now load-bearing and commented as such. Ironically the same unbounded-recursion shape the
+three-state model exists to prevent elsewhere.
+
+Verified: `dev.mjs verify` PASSED — **357 dotnet** (+11 dispatcher tests) + 39 vitest, sample web
+typecheck, sensitive scan, knowledge check, doctor. **Exactly two API baselines drifted** (Core gained
+the contracts, WinForms lost them and its signatures now reference `Shenora.Core.*`); the other three
+were confirmed byte-identical, as the design predicted. Docs synced in the same commit
+(ARCHITECTURE's dependency rules, REVIEW-GUIDE §5, README's package table, RELEASING's reference
+recipe, both package descriptions, and the design contract's §4 table). Remaining re-layer work —
+routing the sessions package through the edge, collapsing the duplicate helpers onto the new seam —
+is H4.2–H4.7.
+
 ### 2026-07-30 — P5.5 batches H1 + H5: the security fixes and the gate that was supposed to catch them
 
 First half of the consolidation phase, deliberately sequenced ahead of the re-layer so a

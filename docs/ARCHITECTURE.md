@@ -188,13 +188,23 @@ changes, noting them in `CHANGELOG.md`).
 ## Dependency rules (enforced by review)
 
 - `Core` depends only on Microsoft.Extensions DI (implementation — the builder needs
-  `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on
-  `Core`; never sideways (`WinForms` ↔ `WebView2`) — host packages contribute via extension
-  methods over the Core builder, and the app composes them. **⚠ D19 SUPERSEDES the sideways clause
-  for the two Windows packages** — `WebView2` → `WinForms` is approved and pending `TASKS.md` H4.1
-  (`docs/2026-07-30-shenora-relayering-design.md`). This file is **as-built, not the target**: do not
-  reject the H4.1 diff on the strength of this line. `WinForms` → `WebView2` stays forbidden, and
-  `WinForms` keeps carrying no `Ipc` dependency. `Shenora.WebView2.Sessions` layers
+  `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on `Core`.
+- **The two Windows packages are ONE layer (D19):** `Shenora.WebView2` → `Shenora.WinForms`, i.e.
+  Windows **primitives** and **web hosting on top of them** — not two peers. This replaced the old
+  "never sideways" rule on evidence (the UI-thread marshal pattern had been hand-rolled 14 times with
+  five incompatible pre-handle policies, two of them buggy), and it adds no new *technology*
+  dependency: `Shenora.WebView2` already sets `UseWindowsForms` and hosts the WebView2 WinForms
+  control. Still forbidden: `WinForms` → `WebView2` (that direction would be a cycle), and
+  `Shenora.WinForms` still carries **no `Shenora.Ipc` dependency** — which is what keeps a
+  WinForms-only consumer (a tray/single-instance utility with no web frontend) viable, and why the
+  window-command and drop-zone facades live in `Shenora.WebView2`.
+- **Portable contracts live in `Shenora.Core` (D20):** `IUiDispatcher`/`UiTargetState`,
+  `IFileDialogs`/`IFileDialogPathStore` + `FileDialogOptions`/`Filter`/`Result`, `IClipboardService`,
+  and the portable bases `IUrlLauncher`/`IUiInteraction`. Their Windows implementations stay in
+  `Shenora.WinForms`, which registers BOTH faces of each split service so app logic can depend on the
+  neutral contract and compile with no Windows reference. The bar for moving a contract to `Core` is
+  "app logic must compile off Windows", NOT "the signature happens to be platform-neutral" — which is
+  why the window-state stack deliberately stays in `Shenora.WinForms`. `Shenora.WebView2.Sessions` layers
   on `Shenora.WebView2` (the one deliberate package-on-package edge above `Core` — D14 keeps
   the session stack out of the core hosting package).
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.

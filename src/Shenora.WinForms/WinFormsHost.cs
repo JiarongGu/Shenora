@@ -115,6 +115,17 @@ public static class WinFormsHostExtensions
                 PathStore = sp.GetService<IFileDialogPathStore>(),
             },
             sp.GetService<ILogger<FileDialogs>>()));
+
+        // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
+        // the SAME singleton — so an app's own logic can inject Shenora.Core contracts, compile
+        // without a Windows reference, and still get these implementations at runtime.
+        builder.Services.TryAddSingleton<IUiInteraction>(sp => sp.GetRequiredService<IFormInteraction>());
+        builder.Services.TryAddSingleton<IUrlLauncher>(sp => sp.GetRequiredService<IShellLauncher>());
+
+        // The UI dispatcher must resolve the main form LAZILY: this provider is built before the
+        // runner creates the form, so anything captured here would capture null.
+        builder.Services.TryAddSingleton<IUiDispatcher>(sp =>
+            new MainFormUiDispatcher(sp.GetRequiredService<IFormInteraction>()));
         return builder;
     }
 }

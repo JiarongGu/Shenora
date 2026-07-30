@@ -12,72 +12,19 @@ Shenora.WinForms.DpiHelper
   Int32 ScalePixels(Int32)
   System.Drawing.Point ScalePoint(Int32, Int32)
   System.Drawing.Size ScaleSize(Int32, Int32)
-Shenora.WinForms.FileDialogFilter
-  System.Collections.Generic.IReadOnlyList`1[System.String] Extensions
-  System.Collections.Generic.IReadOnlyList`1[System.String] get_Extensions()
-  System.String Name
-  System.String get_Name()
-  Void .ctor()
-  Void set_Extensions(System.Collections.Generic.IReadOnlyList`1[System.String])
-  Void set_Name(System.String)
-Shenora.WinForms.FileDialogOptions
-  Boolean AllowFileSelection
-  Boolean OverwritePrompt
-  Boolean get_AllowFileSelection()
-  Boolean get_OverwritePrompt()
-  System.Collections.Generic.IReadOnlyList`1[Shenora.WinForms.FileDialogFilter] Filters
-  System.Collections.Generic.IReadOnlyList`1[Shenora.WinForms.FileDialogFilter] get_Filters()
-  System.Nullable`1[System.Boolean] CheckFileExists
-  System.Nullable`1[System.Boolean] CheckPathExists
-  System.Nullable`1[System.Boolean] ValidateNames
-  System.Nullable`1[System.Boolean] get_CheckFileExists()
-  System.Nullable`1[System.Boolean] get_CheckPathExists()
-  System.Nullable`1[System.Boolean] get_ValidateNames()
-  System.String DefaultExtension
-  System.String DefaultPath
-  System.String FileName
-  System.String RememberPathKey
-  System.String Title
-  System.String get_DefaultExtension()
-  System.String get_DefaultPath()
-  System.String get_FileName()
-  System.String get_RememberPathKey()
-  System.String get_Title()
-  Void .ctor()
-  Void set_AllowFileSelection(Boolean)
-  Void set_CheckFileExists(System.Nullable`1[System.Boolean])
-  Void set_CheckPathExists(System.Nullable`1[System.Boolean])
-  Void set_DefaultExtension(System.String)
-  Void set_DefaultPath(System.String)
-  Void set_FileName(System.String)
-  Void set_Filters(System.Collections.Generic.IReadOnlyList`1[Shenora.WinForms.FileDialogFilter])
-  Void set_OverwritePrompt(Boolean)
-  Void set_RememberPathKey(System.String)
-  Void set_Title(System.String)
-  Void set_ValidateNames(System.Nullable`1[System.Boolean])
-Shenora.WinForms.FileDialogResult
-  Boolean Success
-  Boolean get_Success()
-  Shenora.WinForms.FileDialogResult Cancelled()
-  Shenora.WinForms.FileDialogResult Selected(System.String)
-  System.String FilePath
-  System.String get_FilePath()
-  Void .ctor()
-  Void set_FilePath(System.String)
-  Void set_Success(Boolean)
 Shenora.WinForms.FileDialogs
-  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFileAsync(Shenora.WinForms.FileDialogOptions)
-  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFolderAsync(Shenora.WinForms.FileDialogOptions)
-  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] SaveFileAsync(Shenora.WinForms.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] OpenFileAsync(Shenora.Core.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] OpenFolderAsync(Shenora.Core.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] SaveFileAsync(Shenora.Core.FileDialogOptions)
   Void .ctor(Shenora.WinForms.FileDialogsOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WinForms.FileDialogs])
 Shenora.WinForms.FileDialogsOptions
-  Shenora.WinForms.IFileDialogPathStore PathStore
-  Shenora.WinForms.IFileDialogPathStore get_PathStore()
+  Shenora.Core.IFileDialogPathStore PathStore
+  Shenora.Core.IFileDialogPathStore get_PathStore()
   Shenora.WinForms.IFormInteraction Interaction
   Shenora.WinForms.IFormInteraction get_Interaction()
   Void .ctor()
   Void set_Interaction(Shenora.WinForms.IFormInteraction)
-  Void set_PathStore(Shenora.WinForms.IFileDialogPathStore)
+  Void set_PathStore(Shenora.Core.IFileDialogPathStore)
 Shenora.WinForms.FormInteraction
   IntPtr GetMainFormHandle()
   System.Windows.Forms.Form GetMainForm()
@@ -85,28 +32,13 @@ Shenora.WinForms.FormInteraction
   Void BlockInteraction()
   Void SetMainForm(System.Windows.Forms.Form)
   Void UnblockInteraction()
-Shenora.WinForms.IClipboardService
-  System.Threading.Tasks.Task SetImageFromFileAsync(System.String)
-  System.Threading.Tasks.Task SetTextAsync(System.String)
-  System.Threading.Tasks.Task`1[System.Boolean] TrySaveImageToFileAsync(System.String)
-  System.Threading.Tasks.Task`1[System.String] GetTextAsync()
-Shenora.WinForms.IFileDialogPathStore
-  System.Threading.Tasks.Task SavePathAsync(System.String, System.String)
-  System.Threading.Tasks.Task`1[System.String] GetPathAsync(System.String)
-Shenora.WinForms.IFileDialogs
-  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFileAsync(Shenora.WinForms.FileDialogOptions)
-  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFolderAsync(Shenora.WinForms.FileDialogOptions)
-  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] SaveFileAsync(Shenora.WinForms.FileDialogOptions)
 Shenora.WinForms.IFormInteraction
   IntPtr GetMainFormHandle()
   System.Windows.Forms.Form GetMainForm()
-  Void BlockInteraction()
   Void SetMainForm(System.Windows.Forms.Form)
-  Void UnblockInteraction()
 Shenora.WinForms.IShellLauncher
   Void LaunchProcess(System.String, System.String, System.String)
   Void OpenDirectory(System.String)
-  Void OpenUrl(System.String)
   Void RevealInExplorer(System.String)
 Shenora.WinForms.IWindowStateStore
   Shenora.WinForms.WindowState Load()
@@ -337,6 +269,18 @@ Shenora.WinForms.WinFormsHostOptions
   Void set_MainForm(System.Func`2[System.IServiceProvider,System.Windows.Forms.Form])
   Void set_SingleInstance(Shenora.WinForms.SingleInstanceHostOptions)
   Void set_WindowState(Shenora.WinForms.WindowStateHostOptions)
+Shenora.WinForms.WinFormsUiDispatcher
+  Boolean IsOnUiThread
+  Boolean Post(System.Action)
+  Boolean Post(System.Func`1[System.Threading.Tasks.Task])
+  Boolean get_IsOnUiThread()
+  Shenora.Core.UiTargetState State
+  Shenora.Core.UiTargetState get_State()
+  System.Threading.Tasks.Task InvokeAsync(System.Action, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task InvokeAsync(System.Func`1[System.Threading.Tasks.Task], System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[T] InvokeAsync[T](System.Func`1[System.Threading.Tasks.Task`1[T]], System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[T] InvokeOrDefaultAsync[T](System.Func`1[System.Threading.Tasks.Task`1[T]], T, System.Threading.CancellationToken)
+  Void .ctor(System.Windows.Forms.Control, System.Action`1[System.Exception])
 Shenora.WinForms.WindowState
   Boolean Equals(Shenora.WinForms.WindowState)
   Boolean Equals(System.Object)

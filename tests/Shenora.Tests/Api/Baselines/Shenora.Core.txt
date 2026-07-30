@@ -32,6 +32,64 @@ Shenora.Core.EventMessage
   Void set_Scope(System.String)
   Void set_Timestamp(System.DateTimeOffset)
   Void set_Type(System.String)
+Shenora.Core.FileDialogFilter
+  System.Collections.Generic.IReadOnlyList`1[System.String] Extensions
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_Extensions()
+  System.String Name
+  System.String get_Name()
+  Void .ctor()
+  Void set_Extensions(System.Collections.Generic.IReadOnlyList`1[System.String])
+  Void set_Name(System.String)
+Shenora.Core.FileDialogOptions
+  Boolean AllowFileSelection
+  Boolean OverwritePrompt
+  Boolean get_AllowFileSelection()
+  Boolean get_OverwritePrompt()
+  System.Collections.Generic.IReadOnlyList`1[Shenora.Core.FileDialogFilter] Filters
+  System.Collections.Generic.IReadOnlyList`1[Shenora.Core.FileDialogFilter] get_Filters()
+  System.Nullable`1[System.Boolean] CheckFileExists
+  System.Nullable`1[System.Boolean] CheckPathExists
+  System.Nullable`1[System.Boolean] ValidateNames
+  System.Nullable`1[System.Boolean] get_CheckFileExists()
+  System.Nullable`1[System.Boolean] get_CheckPathExists()
+  System.Nullable`1[System.Boolean] get_ValidateNames()
+  System.String DefaultExtension
+  System.String DefaultPath
+  System.String FileName
+  System.String RememberPathKey
+  System.String Title
+  System.String get_DefaultExtension()
+  System.String get_DefaultPath()
+  System.String get_FileName()
+  System.String get_RememberPathKey()
+  System.String get_Title()
+  Void .ctor()
+  Void set_AllowFileSelection(Boolean)
+  Void set_CheckFileExists(System.Nullable`1[System.Boolean])
+  Void set_CheckPathExists(System.Nullable`1[System.Boolean])
+  Void set_DefaultExtension(System.String)
+  Void set_DefaultPath(System.String)
+  Void set_FileName(System.String)
+  Void set_Filters(System.Collections.Generic.IReadOnlyList`1[Shenora.Core.FileDialogFilter])
+  Void set_OverwritePrompt(Boolean)
+  Void set_RememberPathKey(System.String)
+  Void set_Title(System.String)
+  Void set_ValidateNames(System.Nullable`1[System.Boolean])
+Shenora.Core.FileDialogResult
+  Boolean Success
+  Boolean get_Success()
+  Shenora.Core.FileDialogResult Cancelled()
+  Shenora.Core.FileDialogResult Selected(System.String)
+  System.String FilePath
+  System.String get_FilePath()
+  Void .ctor()
+  Void set_FilePath(System.String)
+  Void set_Success(Boolean)
+Shenora.Core.IClipboardService
+  System.Threading.Tasks.Task SetImageFromFileAsync(System.String)
+  System.Threading.Tasks.Task SetTextAsync(System.String)
+  System.Threading.Tasks.Task`1[System.Boolean] TrySaveImageToFileAsync(System.String)
+  System.Threading.Tasks.Task`1[System.String] GetTextAsync()
 Shenora.Core.IEventBus
   System.String Subscribe(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
   System.String Subscribe(System.String, System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
@@ -41,6 +99,13 @@ Shenora.Core.IEventBus
   System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage)
   System.Threading.Tasks.Task EmitAsync(System.String, System.String, System.Object, System.String)
   Void Unsubscribe(System.String)
+Shenora.Core.IFileDialogPathStore
+  System.Threading.Tasks.Task SavePathAsync(System.String, System.String)
+  System.Threading.Tasks.Task`1[System.String] GetPathAsync(System.String)
+Shenora.Core.IFileDialogs
+  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] OpenFileAsync(Shenora.Core.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] OpenFolderAsync(Shenora.Core.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] SaveFileAsync(Shenora.Core.FileDialogOptions)
 Shenora.Core.IShenoraLifecycleHook
   Void OnStarting(Shenora.Core.ShenoraApplication)
   Void OnStopping(Shenora.Core.ShenoraApplication)
@@ -48,6 +113,22 @@ Shenora.Core.IShenoraModule
   Void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection)
 Shenora.Core.IShenoraRunner
   Void Run(Shenora.Core.ShenoraApplication)
+Shenora.Core.IUiDispatcher
+  Boolean IsOnUiThread
+  Boolean Post(System.Action)
+  Boolean Post(System.Func`1[System.Threading.Tasks.Task])
+  Boolean get_IsOnUiThread()
+  Shenora.Core.UiTargetState State
+  Shenora.Core.UiTargetState get_State()
+  System.Threading.Tasks.Task InvokeAsync(System.Action, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task InvokeAsync(System.Func`1[System.Threading.Tasks.Task], System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[T] InvokeAsync[T](System.Func`1[System.Threading.Tasks.Task`1[T]], System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[T] InvokeOrDefaultAsync[T](System.Func`1[System.Threading.Tasks.Task`1[T]], T, System.Threading.CancellationToken)
+Shenora.Core.IUiInteraction
+  Void BlockInteraction()
+  Void UnblockInteraction()
+Shenora.Core.IUrlLauncher
+  Void OpenUrl(System.String)
 Shenora.Core.ShenoraApplication
   Shenora.Core.ShenoraApplicationBuilder CreateBuilder(Shenora.Core.ShenoraApplicationOptions)
   Shenora.Core.ShenoraApplicationBuilder CreateBuilder(System.String[])
@@ -131,3 +212,8 @@ Shenora.Core.ShenoraPathsOptions
   Void set_ExplicitRoot(System.String)
   Void set_ResourcesFolderName(System.String)
   Void set_RootEnvironmentVariable(System.String)
+Shenora.Core.UiTargetState
+  Int32 value__
+  Shenora.Core.UiTargetState Gone
+  Shenora.Core.UiTargetState NotReady
+  Shenora.Core.UiTargetState Ready

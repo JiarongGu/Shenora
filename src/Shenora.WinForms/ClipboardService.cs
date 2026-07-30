@@ -1,25 +1,11 @@
 using System.Drawing.Imaging;
+using Shenora.Core;
 
 namespace Shenora.WinForms;
 
-/// <summary>System-clipboard access, safe to call from any thread.</summary>
-public interface IClipboardService
-{
-    /// <summary>Put text on the clipboard.</summary>
-    Task SetTextAsync(string text);
-
-    /// <summary>The clipboard's text, or null when it holds none.</summary>
-    Task<string?> GetTextAsync();
-
-    /// <summary>Put an image FILE's content on the clipboard (the family's copy-preview use).</summary>
-    Task SetImageFromFileAsync(string imagePath);
-
-    /// <summary>
-    /// Save the clipboard's image to <paramref name="targetPath"/> as PNG (the family's
-    /// paste-preview use). False when the clipboard holds no image.
-    /// </summary>
-    Task<bool> TrySaveImageToFileAsync(string targetPath);
-}
+// IClipboardService moved to Shenora.Core in P5.5 H4.1 — a clipboard is portable in both concept and
+// signature, so app logic using it needs no Windows reference (D20). The STA-thread implementation
+// below is what stays Windows-side.
 
 /// <summary>
 /// The <see cref="IClipboardService"/> implementation: every operation runs on a dedicated STA

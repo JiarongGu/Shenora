@@ -59,7 +59,7 @@ layer is transport-pluggable (postMessage or WebSocket, one envelope).
 |---|---|---|---|
 | `Shenora.Core` | `net10.0` | M.E.DependencyInjection.Abstractions, M.E.Logging.Abstractions | Application/builder/lifetime abstractions, `IShenoraModule` registration, environment (`IsDevelopment` + `.dev` marker), app paths service, `IUiDispatcher` interface, options types, startup-cleanup pipeline, event bus. |
 | `Shenora.Ipc` | `net10.0` | `Shenora.Core` | Request/response/notification envelopes, middleware dispatcher (`Use`/`MapModule`/`MapRoute`), handler + facade base, structured `OperationException` (code + params, i18n-ready), payload helpers, `System.Text.Json` serializer defaults (camelCase, camelCase enums). Transport-neutral. |
-| `Shenora.WebView2` | `net10.0-windows` | `Shenora.Core`, `Shenora.Ipc`, Microsoft.Web.WebView2 | Environment prewarmer/factory, host/initializer driven by an options record (dev URL, virtual host, custom schemes, background color, injected scripts), embedded-resource provider (assembly + prefix parameters), dev/prod navigation, `NewWindowRequested`/`DownloadStarting`/`PermissionRequested`/`ProcessFailed` hooks, runtime presence check, postMessage bridge + batched event push, settings hardening. |
+| `Shenora.WebView2` | `net10.0-windows` | `Shenora.WinForms` (D19), `Shenora.Ipc`, `Shenora.Core`, Microsoft.Web.WebView2 | Environment prewarmer/factory, host/initializer driven by an options record (dev URL, virtual host, custom schemes, background color, injected scripts), embedded-resource provider (assembly + prefix parameters), dev/prod navigation, `NewWindowRequested`/`DownloadStarting`/`PermissionRequested`/`ProcessFailed` hooks, runtime presence check, postMessage bridge + batched event push, settings hardening. |
 | `Shenora.WinForms` | `net10.0-windows` | `Shenora.Core` | Bootstrapper (STA, DPI, **global exception handlers**), optimized main form + frameless-chrome option, window-state persistence (DPI-logical store/physical restore, off-screen recovery), single-instance guard + activate-broadcast, secondary windows on own STA threads (`IWindowGeometryStore` seam), STA file/folder/save dialogs, clipboard, shell open/reveal, drag-drop overlay manager, tray icon support, form-interaction (modal blocking), splash panel, `IUiDispatcher` implementation, DPI helpers. |
 | `@shenora/react` | — | react ≥18 peer | Bridge (correlation ids, timeout, category routing, batch unbundling, ready handshake, browser fallback seam for pure-UI dev), typed module-service base, event bus + `useShenora`/`useShenoraEvent`/`useShenoraQuery`, drop-zone hook, window-command helpers, dev interceptor (ring buffers + `window.__shenora` for CDP-driven testing). |
 
@@ -200,8 +200,10 @@ traced to the divergence. Two changes, designed in
    internal `MainFormUiDispatcher` for the DI singleton. Contracts move only when app logic needs
    them to compile off Windows: the window-state stack deliberately stays in `Shenora.WinForms`.
 
-**§4's table is not yet rewritten** — when the work lands, three rows change: `Shenora.WebView2`'s
-*Depends on* column gains `Shenora.WinForms`; `Shenora.Core`'s contents gain the moved contracts; and
-`Shenora.WinForms`'s contents keep the implementations but not the contracts. Until then
-`docs/ARCHITECTURE.md` records the current as-built layering and remains authoritative — it is
-as-built, not the target. Tracked work: `TASKS.md` `### P5.5` batch H4.
+**LANDED** in `TASKS.md` H4.1 — §4's table above is updated (`Shenora.WebView2`'s *Depends on* column
+now carries `Shenora.WinForms`), and `docs/ARCHITECTURE.md` records the new layering as-built. Worth
+noting for the record: §4's table already listed "`IUiDispatcher` interface" under `Shenora.Core` and
+"`IUiDispatcher` implementation" under `Shenora.WinForms` from the very first draft — P2 simply never
+built it, which is precisely why the marshalling pattern was hand-rolled 14 times instead. The
+remaining re-layer work (routing the sessions package through the edge, collapsing the duplicate
+helpers onto the new seam) is H4.2–H4.7.

@@ -9,8 +9,37 @@ landing order (oldest first) because they narrate one version being built.
 
 ## Unreleased (0.1.0)
 
+### Breaking
+
+- **The two Windows packages are now one layer, and the portable contracts moved to
+  `Shenora.Core`** (D19 + D20; design: `docs/2026-07-30-shenora-relayering-design.md`).
+  `Shenora.WebView2` now depends on `Shenora.WinForms` — the boundary is Windows *primitives* and
+  *web hosting on top of them*, not two peers. `WinForms` still carries no `Shenora.Ipc` dependency,
+  and `WinForms → WebView2` remains forbidden.
+  **What a consumer must change:** add `using Shenora.Core;` where these types are referenced —
+  `IFileDialogs`, `IFileDialogPathStore`, `FileDialogOptions`, `FileDialogFilter`,
+  `FileDialogResult`, `IClipboardService` moved namespace (identical signatures otherwise). Nothing
+  needs re-registering: `UseWinForms` registers the same implementations, now behind both the
+  Windows and the portable interface.
+  `IShellLauncher` and `IFormInteraction` were **split**, not changed: they now derive from
+  `Shenora.Core.IUrlLauncher` and `Shenora.Core.IUiInteraction` respectively, so `OpenUrl`,
+  `BlockInteraction` and `UnblockInteraction` are inherited rather than declared. Existing call
+  sites compile unchanged; code that *implements* these interfaces still implements the same member
+  set. Depend on the portable base where you only need the portable operation, and your logic
+  compiles with no Windows reference — the point of the change (D16: mobile shells are a target).
+
 ### Added
 
+- **`IUiDispatcher` + `UiTargetState` (`Shenora.Core`) and `WinFormsUiDispatcher` (`Shenora.WinForms`)**
+  — the single UI-thread marshalling seam the design contract specified from the start and P2 never
+  built, which is how the pattern ended up hand-rolled 14 times across three packages with five
+  mutually incompatible pre-handle policies. The target is deliberately **three-state**
+  (`NotReady`/`Ready`/`Gone`) rather than one availability flag: "no handle yet" and "gone" require
+  different caller behaviour, and three call sites in the kit have review-earned pre-handle policies
+  that a bool would silently break. The dispatcher is per-CONTROL (sessions marshal to their anchor
+  form; secondary windows run their own pumps), guards the body on both the posted and the inline
+  path, and its awaitable overloads observe their cancellation token — an operation that accepts a
+  token and ignores it cannot be cancelled when the UI thread is wedged.
 - `LoginWindow.ComposeProfileDirectory(root, params segments)` — builds a per-account profile path
   from untrusted identifier segments, rejecting separators, `..`, drive qualifiers, invalid
   file-name characters and Windows reserved device names. Per-provider/per-account scoping is the

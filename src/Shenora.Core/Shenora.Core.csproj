@@ -3,7 +3,7 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Core</PackageId>
-    <Description>Shenora core: desktop application host and builder (ShenoraApplication.CreateBuilder), lifecycle, module registration (IShenoraModule), environment and app-path services, UI-dispatcher seam, and event bus for WinForms + WebView2 + React applications. Depends only on Microsoft.Extensions DI + logging abstractions.</Description>
+    <Description>Shenora core: desktop application host and builder (ShenoraApplication.CreateBuilder), lifecycle, module registration (IShenoraModule), environment and app-path services, event bus, and the platform-neutral shell contracts — the IUiDispatcher UI-thread seam plus file dialogs, clipboard, URL launching and UI blocking — so application logic compiles without a Windows reference. Depends on Microsoft.Extensions DI (implementation) + logging abstractions.</Description>
   </PropertyGroup>
 
   <ItemGroup>

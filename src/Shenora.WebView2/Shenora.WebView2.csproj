@@ -13,6 +13,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Shenora.Ipc\Shenora.Ipc.csproj" />
+    <!-- D19: the two Windows packages are ONE layer — Windows PRIMITIVES (WinForms) and web hosting
+         on top of them. This edge replaced the old "never sideways" rule on evidence: the UI-thread
+         marshal pattern had been hand-rolled 14 times across three packages with five incompatible
+         pre-handle policies, two of them buggy. It adds no new TECHNOLOGY dependency — this project
+         already sets UseWindowsForms and hosts the WebView2 WinForms control. WinForms must never
+         reference this project back, and it deliberately still carries no Shenora.Ipc dependency. -->
+    <ProjectReference Include="..\Shenora.WinForms\Shenora.WinForms.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>
 

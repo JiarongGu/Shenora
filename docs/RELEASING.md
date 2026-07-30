@@ -43,9 +43,10 @@ Until the first public release, siblings consume the local pack output. The reci
 - NuGet: `node devtools/dev.mjs pack`, then in the consumer's `nuget.config` add
   `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the
   WebView2 package come from there) and pin EXACT versions with the range syntax:
-  `<PackageReference Include="Shenora.WinForms" Version="[0.1.0]" />`. Reference the leaf packages
-  you actually need — `Shenora.WinForms` + `Shenora.WebView2`, or `Shenora.WebView2.Sessions` when
-  you want auxiliary browser sessions (it pulls `WebView2`) — and `Core`/`Ipc` arrive transitively.
+  `<PackageReference Include="Shenora.WinForms" Version="[0.1.0]" />`. Reference the leaf package you
+  actually need and the rest arrive transitively: `Shenora.WebView2` pulls `WinForms` + `Ipc` + `Core`
+  (D19 — the two Windows packages are one layer), and `Shenora.WebView2.Sessions` pulls `WebView2`.
+  Reference `Shenora.WinForms` directly only for a shell with no web frontend.
   A consumer inside this repo's tree must set `ManagePackageVersionsCentrally=false`.
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
