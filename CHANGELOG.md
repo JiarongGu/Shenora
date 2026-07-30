@@ -121,6 +121,9 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Breaking
 
+- **`WebViewHost.AutoReloadCooldown` moved to `WebViewHostOptions.AutoReloadCooldown`** (P5.5 H3). It
+  was a public static field, so it was neither per-host nor configurable. The new
+  `WebViewHostOptions.MaxAutoReloads` joins it — see Fixed for why a cap was needed at all.
 - **`OptimizedForm` is no longer a drop target.** It used to set `AllowDrop = true` with a `DragOver`
   handler, justified as letting a drop-zone manager see drags over the form — which is not how OLE drop
   works: targets are registered per HWND and `DropZoneOverlay` registers itself, so nothing in the kit
@@ -131,6 +134,55 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Fixed
 
+- **Notifications could stop for the rest of the process** (P5.5 H3). The ready gate closed on EVERY
+  `NavigationStarting`, but the client sends `READY` only once per real page load — so a navigation that
+  never replaced the document (one an app tap or a policy cancelled, one that failed before committing)
+  closed the gate permanently on a page that was still alive: notifications buffered to the 10 000 cap
+  and then silently dropped the oldest, forever. The gate now closes on `ContentLoading`, which is raised
+  only when a new document actually begins loading. It also closes on `ProcessFailed` — a dead renderer
+  left it OPEN, so the next tick drained a whole batch into a process that could not receive it, and
+  since the queue was already emptied those notifications were simply gone.
+- **Six unvalidated options that failed far from their cause** (P5.5 H3), now all rejected at
+  construction: `MaxQueuedNotifications = 0` made `Enqueue` dequeue the item it had just enqueued, so
+  every notification for the life of the process vanished with no error and no log line;
+  `NotificationInterval` below 1 ms (or above the WinForms timer's int32 millisecond limit) threw from
+  inside `Attach()`; `SessionBrowserOptions.InitTimeout = 0` failed init instantly with the
+  profile-LOCK diagnosis, sending the caller hunting a zombie browser process that did not exist;
+  `RenderSessionPoolOptions.OffscreenClientSize` of zero gave a 0×0 viewport in which pages "load" with
+  every element sized zero; and `ScopedContainerRouterOptions.ConfigureScope` set to null surfaced as an
+  NRE from inside scope creation, reported to the client as `UNKNOWN_ERROR` (`required` compels the
+  caller to write the initializer, not to write a non-null value). `ConfigureScope` now also documents
+  that each scope is a ROOT provider, so `AddScoped` there behaves as a per-scope singleton — the
+  opposite of what it means elsewhere in Microsoft DI.
+- **`WebViewHost.InitializeAsync` is idempotent, and its timeout covers the whole sequence** (P5.5 H3).
+  The timeout message advises "start again", so a Retry button is the expected recovery — and a second
+  call re-ran the event-policy wiring, double-subscribing every handler: from then on each external link
+  opened TWICE, each download decision ran twice, and the renderer auto-reload raced itself. A failed
+  initialization clears the cached task so a retry is still a real retry. Separately, each step used to
+  get its own full `InitTimeout` — so the documented 25 s was really 50 s before the sequence even
+  reached `ApplySettings`, and script injection was unbounded on top of that.
+- **One transient WebView2 environment failure was terminal for the process.**
+  `WebViewEnvironment.GetSharedAsync` cached its task with `??=`, faulted or not, so every later
+  attempt — including the retry the init-timeout message asks for — got the original exception back
+  without ever touching WebView2 again. A faulted or cancelled task is now evicted when observed.
+- **A mistyped resource prefix opened a black window with no error.** The prefix depends on MSBuild's
+  manifest-name mangling, so it matches nothing silently and every request 404s. `WebViewHost` now fails
+  at `Navigate()` with an actionable message when the start document IS the packaged bundle and the
+  provider has no `index.html`, and `EmbeddedResourceProvider` reports a can-serve-nothing configuration
+  (new `CanServe` property) naming the bad prefix and the assembly's actual manifest prefixes. The check
+  is deliberately not in the provider's constructor: a provider with nothing to serve is correct when
+  the page loads from a dev URL, which is the normal state of a freshly cloned repo.
+- **Exception text no longer reaches HTTP response bodies.** All three 404 paths served
+  `$"Error: {ex.Message}"` under `Access-Control-Allow-Origin: *`, so page script could fetch and read
+  it — routinely a full local filesystem path, and for a deferred-scheme handler potentially a remote
+  URL. The body is now a constant and the diagnosis goes to the host log, matching the IPC error
+  boundary's rule.
+- **A crash-looping page reloaded forever.** The renderer auto-reload was rate-limited but had no
+  terminal state, so a page that faults during load reloaded every cooldown for the process lifetime,
+  spawning a renderer each time — while the option's own documentation promised that "a crash-looping
+  page must not spin". New `MaxAutoReloads` (default 3) is that terminal state; the give-up is logged
+  exactly once, and a successful navigation resets the budget so a long-running app is not rationed by
+  unrelated crashes hours apart.
 - **`@shenora/react`'s robustness tail** (P5.5 H2). A host message of literal `null` — valid JSON —
   survived the parse and then threw a `TypeError` out of the transport listener: an uncaught page error
   with no caller to catch it. `bridge.isAvailable` ignored `disposed`, so a stale reference to a bridge

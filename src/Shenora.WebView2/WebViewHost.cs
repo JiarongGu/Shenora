@@ -22,10 +22,6 @@ namespace Shenora.WebView2;
 /// </summary>
 public sealed class WebViewHost
 {
-    /// <summary>Minimum spacing between automatic renderer-crash reloads (see
-    /// <see cref="WebViewHostOptions.ReloadOnRenderProcessFailure"/>).</summary>
-    public static readonly TimeSpan AutoReloadCooldown = TimeSpan.FromSeconds(10);
-
     private readonly WebView2Control _webView;
     private readonly WebViewHostOptions _options;
     private readonly Action<string>? _log;
@@ -33,6 +29,8 @@ public sealed class WebViewHost
     // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
     private readonly Shenora.Core.IUrlLauncher _urls = new Shenora.WinForms.ShellLauncher();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
+    private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)
+    private Task? _initialization;           // InitializeAsync is idempotent — see its remarks
 
     public WebViewHost(WebView2Control webView, WebViewHostOptions options)
     {
@@ -88,29 +86,56 @@ public sealed class WebViewHost
     /// browser process) otherwise hangs <c>EnsureCoreWebView2Async</c> forever with no window
     /// and no error — the family's measured failure mode.
     /// </summary>
-    public async Task InitializeAsync()
+    /// <remarks>
+    /// IDEMPOTENT (P5.5 H3): the first call does the work and every later call awaits that same task.
+    /// The timeout message itself advises "start again", so a Retry button is the expected recovery —
+    /// and a second call used to re-run <c>WireEventPolicies</c>, double-subscribing every policy
+    /// handler: from then on each external link opened TWICE, each download decision ran twice, and the
+    /// renderer auto-reload raced itself. Nothing in the sequence was safe to repeat. A FAILED
+    /// initialization clears the cached task, so a retry is still a real retry. UI thread only, like the
+    /// rest of this type — hence no locking around the cache.
+    /// </remarks>
+    public Task InitializeAsync() => _initialization ??= InitializeCoreAsync();
+
+    private async Task InitializeCoreAsync()
     {
+        // ONE budget for the WHOLE sequence, not one per await (P5.5 H3). Each step used to get its own
+        // full InitTimeout, so the documented "25 s" was really 50 s before the sequence even reached
+        // ApplySettings — and ApplySettings/RegisterResourceServing/InjectScriptsAsync were unbounded on
+        // top of that, which matters because script injection is a real round-trip to the browser.
+        using var budget = new CancellationTokenSource(_options.InitTimeout);
         try
         {
-            var environment = _options.UseSharedEnvironment
-                ? await WebViewEnvironment.GetSharedAsync(_options.Environment).WaitAsync(_options.InitTimeout)
-                : await WebViewEnvironment.CreateForCurrentThreadAsync(_options.Environment).WaitAsync(_options.InitTimeout);
+            var environment = await (_options.UseSharedEnvironment
+                ? WebViewEnvironment.GetSharedAsync(_options.Environment)
+                : WebViewEnvironment.CreateForCurrentThreadAsync(_options.Environment))
+                .WaitAsync(budget.Token);
 
-            await _webView.EnsureCoreWebView2Async(environment).WaitAsync(_options.InitTimeout);
+            await _webView.EnsureCoreWebView2Async(environment).WaitAsync(budget.Token);
+
+            ApplySettings();
+            RegisterResourceServing();
+            await InjectScriptsAsync().WaitAsync(budget.Token);
+            WireEventPolicies();
         }
-        catch (TimeoutException)
+        catch (OperationCanceledException) when (budget.IsCancellationRequested)
         {
+            // Re-throw as a TimeoutException: the budget expiring is a timeout, and the caller never
+            // handed us a token, so an OperationCanceledException would be a lie about who gave up.
             throw new TimeoutException(
                 $"WebView2 failed to initialize within {_options.InitTimeout.TotalSeconds:0}s. " +
                 $"The usual cause is a leftover browser process holding the user-data folder lock " +
                 $"('{_options.Environment.UserDataFolder}') — end stray WebView2/msedgewebview2 " +
                 "processes for this app, or delete the folder, and start again.");
         }
+        catch
+        {
+            // A failed init must be retryable — otherwise the "start again" the message advises would
+            // hand back the same faulted task forever.
+            _initialization = null;
+            throw;
+        }
 
-        ApplySettings();
-        RegisterResourceServing();
-        await InjectScriptsAsync();
-        WireEventPolicies();
         Log(() => $"[Shenora.WebView2] Host initialized (mode: {(IsDevelopment ? "Development" : "Production")})");
     }
 
@@ -118,8 +143,47 @@ public sealed class WebViewHost
     public void Navigate()
     {
         var url = ResolveStartUrl(_options);
+        AssertBundleServable(url, _options);
         Log(() => $"[Shenora.WebView2] Navigating to {url}");
         _webView.CoreWebView2.Navigate(url);
+    }
+
+    /// <summary>
+    /// Fail loudly when the START DOCUMENT is the packaged bundle but the provider cannot serve it
+    /// (P5.5 H3).
+    /// <para>
+    /// A mistyped or stale <see cref="EmbeddedResourceProviderOptions.ResourcePrefix"/> — a string that
+    /// depends on MSBuild's manifest-name mangling — matches nothing, so every request 404s and the app
+    /// opens a BLACK WINDOW with no error anywhere. <see cref="ResolveStartUrl"/> already throws
+    /// actionably for the neighbouring class of mistake (missing URL configuration); this closes the gap
+    /// where the URL is fine and the content behind it is not.
+    /// </para>
+    /// <para>
+    /// It is checked HERE, not in the provider's constructor, because a provider with nothing to serve
+    /// is perfectly valid when the page loads from a dev URL — which is the normal state of a fresh
+    /// clone, whose bundle has not been built yet. The condition is "the bundle IS the document", and
+    /// only this method knows that. The probe is <see cref="IWebViewResourceProvider.Exists"/> on
+    /// <c>index.html</c>, which also catches a bundle that is present but incomplete.
+    /// </para>
+    /// <para>Internal + static (like <see cref="ResolveStartUrl"/>) so it is testable without a live
+    /// browser process — <c>Navigate</c> itself needs one.</para>
+    /// </summary>
+    internal static void AssertBundleServable(string url, WebViewHostOptions options)
+    {
+        if (options.ResourceProvider is not { } provider) return;
+        // Only when the start document comes from the virtual host — an app pointing ProductionUrl
+        // elsewhere may use the provider for subresources only, and that is its business.
+        if (options.VirtualHost is not { Length: > 0 } host) return;
+        if (!url.StartsWith($"https://{host}/", StringComparison.OrdinalIgnoreCase)) return;
+
+        if (provider.Exists("index.html")) return;
+
+        throw new InvalidOperationException(
+            $"The start document is '{url}', but the resource provider has no 'index.html' to serve — " +
+            "every request would 404 and the window would come up blank. Check the bundle was built " +
+            "into the app (an empty output folder embeds nothing) and that the provider's resource " +
+            "prefix matches the assembly's actual manifest names; the provider logs what it found on " +
+            "construction.");
     }
 
     /// <summary>
@@ -249,14 +313,23 @@ public sealed class WebViewHost
             }
             else
             {
-                args.Response = NotFound($"Resource not found: {path}");
+                // The path is the page's own request, so echoing it leaks nothing — but keep the shape
+                // uniform with the catch below and let the log carry the detail.
+                Log(() => $"[Shenora.WebView2] 404 for bundle resource '{path}'");
+                args.Response = NotFound();
             }
         }
         catch (Exception ex)
         {
             try
             {
-                args.Response = NotFound($"Error: {ex.Message}");
+                // The BODY says nothing about the exception (P5.5 H3). These responses carry
+                // `Access-Control-Allow-Origin: *`, so page script can fetch any of them and read the
+                // text — `ex.Message` there routinely means a full local filesystem path, or an inner
+                // provider's message. Same rule as the IPC error boundary: the diagnosis goes to the
+                // host log, the wire gets a code.
+                Log(() => $"[Shenora.WebView2] Serving '{uri}' failed: {ex}");
+                args.Response = NotFound();
             }
             catch
             {
@@ -282,7 +355,11 @@ public sealed class WebViewHost
             }
             catch (Exception ex)
             {
-                data = Encoding.UTF8.GetBytes($"Error: {ex.Message}");
+                // No exception text in the body (P5.5 H3) — an app scheme handler's message is the most
+                // likely of all of these to carry a real path or a remote URL, and page script can read
+                // this body. The handler's failure goes to the host log instead.
+                Log(() => $"[Shenora.WebView2] Deferred scheme '{scheme.Scheme}' failed for '{uri}': {ex}");
+                data = NotFoundBody;
                 status = 404;
                 reason = "Not Found";
                 headers = "Content-Type: text/plain";
@@ -322,9 +399,17 @@ public sealed class WebViewHost
         });
     }
 
-    private CoreWebView2WebResourceResponse NotFound(string message) =>
+    /// <summary>
+    /// The one 404 body served to the page — deliberately CONSTANT. Every response here carries
+    /// <c>Access-Control-Allow-Origin: *</c>, so page script can read whatever is in it; the reason a
+    /// request failed belongs in the host log, not in a body a compromised or third-party script can
+    /// fetch (P5.5 H3 — this used to be <c>$"Error: {ex.Message}"</c>).
+    /// </summary>
+    private static readonly byte[] NotFoundBody = Encoding.UTF8.GetBytes("Not Found");
+
+    private CoreWebView2WebResourceResponse NotFound() =>
         _webView.CoreWebView2.Environment.CreateWebResourceResponse(
-            new MemoryStream(Encoding.UTF8.GetBytes(message), writable: false),
+            new MemoryStream(NotFoundBody, writable: false),
             404, "Not Found", "Content-Type: text/plain");
 
     private async Task InjectScriptsAsync()
@@ -408,14 +493,39 @@ public sealed class WebViewHost
                 return;
 
             Log(() => $"[Shenora.WebView2] Process failed: {e.ProcessFailedKind} (reason: {e.Reason})");
-            if (_options.ReloadOnRenderProcessFailure
-                && e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited
-                && DateTime.UtcNow - _lastAutoReloadUtc > AutoReloadCooldown)
+            if (!_options.ReloadOnRenderProcessFailure
+                || e.ProcessFailedKind != CoreWebView2ProcessFailedKind.RenderProcessExited) return;
+
+            if (DateTime.UtcNow - _lastAutoReloadUtc <= _options.AutoReloadCooldown) return;
+
+            // TERMINAL after MaxAutoReloads (P5.5 H3). The cooldown alone only slowed the loop down: a
+            // page that faults during load kept crash-reload-crashing every 10 s for the process
+            // lifetime, spawning a renderer each time. Log the give-up ONCE — at the cap, not on every
+            // later crash — so the log says what happened without becoming the new spin.
+            if (_autoReloadCount >= _options.MaxAutoReloads)
             {
-                _lastAutoReloadUtc = DateTime.UtcNow;
-                Log(() => "[Shenora.WebView2] Renderer crashed — reloading.");
-                try { _webView.Reload(); } catch { }
+                if (_autoReloadCount == _options.MaxAutoReloads)
+                {
+                    _autoReloadCount++; // past the cap: never log this again
+                    Log(() => $"[Shenora.WebView2] Renderer crashed {_options.MaxAutoReloads} times — " +
+                              "giving up on auto-reload. The page is most likely crashing deterministically; " +
+                              "handle it via WebViewHostOptions.OnProcessFailed.");
+                }
+                return;
             }
+
+            _autoReloadCount++;
+            _lastAutoReloadUtc = DateTime.UtcNow;
+            Log(() => $"[Shenora.WebView2] Renderer crashed — reloading ({_autoReloadCount}/{_options.MaxAutoReloads}).");
+            try { _webView.Reload(); } catch { }
+        };
+
+        // A page that actually loads clears the budget, so a long-running app is not slowly used up by
+        // unrelated crashes hours apart — the cap is meant to catch a CRASH LOOP, not to ration a
+        // session. Only a successful navigation counts; an error page must not reset it.
+        core.NavigationCompleted += (_, e) =>
+        {
+            if (e.IsSuccess) _autoReloadCount = 0;
         };
     }
 }

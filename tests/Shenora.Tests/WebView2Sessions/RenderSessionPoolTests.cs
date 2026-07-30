@@ -447,6 +447,39 @@ public class RenderSessionPoolTests
             throw new ObjectDisposedException(nameof(ThrowingLogger));
     }
 
+    [Fact]
+    public void A_zero_offscreen_client_size_is_rejected_at_construction()
+    {
+        using var fixture = new Fixture();
+
+        // A 0×0 viewport lets the page "load" with every element sized zero, so any site that gates on
+        // window size behaves as if on a phantom display — with nothing anywhere pointing at the
+        // viewport as the cause (P5.5 H3).
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionPool(new RenderSessionPoolOptions
+        {
+            Anchor = fixture.Anchor,
+            Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused") },
+            OffscreenClientSize = new Size(0, 0),
+        }));
+    }
+
+    [Fact]
+    public async Task A_non_positive_init_timeout_is_rejected_rather_than_blamed_on_a_profile_lock()
+    {
+        // Both of SessionBrowser's WaitAsync calls would expire immediately, so init failed instantly
+        // with the profile-LOCK diagnosis — sending the caller hunting a zombie msedgewebview2 process
+        // that does not exist (P5.5 H3).
+        var error = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => SessionBrowser.InitializeAsync(
+            new WebView2Control(),
+            new SessionBrowserOptions
+            {
+                ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"),
+                InitTimeout = TimeSpan.Zero,
+            }));
+
+        Assert.Contains(nameof(SessionBrowserOptions.InitTimeout), error.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// An anchor whose message queue NOBODY pumps, realized on its own thread.
     /// <para>

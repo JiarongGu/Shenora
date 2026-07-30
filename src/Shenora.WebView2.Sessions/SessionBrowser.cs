@@ -115,6 +115,14 @@ public static class SessionBrowser
     {
         ArgumentNullException.ThrowIfNull(web);
         ArgumentNullException.ThrowIfNull(options);
+
+        // A non-positive InitTimeout makes both WaitAsync calls below expire immediately, so init fails
+        // instantly with the profile-LOCK diagnosis — sending the caller after a zombie msedgewebview2
+        // process that does not exist (P5.5 H3). Reject the option instead of blaming the environment.
+        if (options.InitTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(SessionBrowserOptions.InitTimeout)} must be positive.");
+
         Directory.CreateDirectory(options.ProfileDirectory);
 
         // Compose through Shenora.WebView2's owner (P5.5 H4.4 — the edge D14 declared but nothing

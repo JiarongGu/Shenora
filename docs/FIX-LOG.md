@@ -14,6 +14,66 @@ entry template:
 
 ## 2026-07-30
 
+### Shenora.WebView2: notifications could stop for the rest of the process
+- **Symptom:** found by review. Host→page notifications silently stopped arriving, permanently, with the
+  app otherwise working normally. Or, after a renderer crash, one whole batch vanished.
+- **Root cause:** the ready gate had exactly one close path and one open path, and they were not
+  symmetric. `WebViewIpcBridge` closed it on EVERY `NavigationStarting`, while the client sends `READY`
+  once per real page load — so a navigation that never replaced the document (cancelled by an app tap or
+  by the navigation policy, or failed before committing) closed the gate on a page that then had no
+  second `READY` to give: `TryBuildBatchJson` returned null forever, the queue grew to
+  `MaxQueuedNotifications` and started dropping its oldest entries silently. The mirror case: a dead
+  renderer left the gate OPEN, so the next 50 ms tick DRAINED the queue into a process that could not
+  receive it — and because the drain empties the queue before posting, those notifications were gone.
+- **Fix:** close on `ContentLoading` (raised only when a new document actually begins loading, so a
+  cancelled or non-committing navigation no longer counts) and on `ProcessFailed`, which the bridge now
+  subscribes to itself rather than depending on the host's auto-reload policy being enabled. The residual
+  window between `NavigationStarting` and `ContentLoading` is documented at the site as a deliberate
+  trade: a flush there reaches the outgoing page, whose listeners are still attached.
+- **Verify:** `WebViewIpcBridgeTests` — a closed gate buffers with the queue INTACT and the buffered
+  event survives to the next page's handshake; the gate is re-armable repeatedly (reload, crash-reload,
+  hot reload) and closing it twice is harmless, since `ContentLoading` and `ProcessFailed` can both fire.
+- **Commit:** _pending (P5.5 H3)_
+
+### Shenora.WebView2: one transient environment failure was terminal for the process
+- **Symptom:** found by review. After a single failed WebView2 environment creation — a profile lock
+  from a zombie process, a runtime update mid-launch — every subsequent attempt failed identically and
+  instantly, including the retry the init-timeout's own message tells the user to make. Only restarting
+  the app helped.
+- **Root cause:** `WebViewEnvironment.GetSharedAsync` cached with `_shared ??= CreateAsync(options)`. A
+  faulted `Task` is non-null, so the failure was cached permanently and every later caller awaited the
+  same faulted task without WebView2 ever being touched again.
+- **Fix:** reuse the cached task only while it is in flight or ran to completion; evict a faulted or
+  cancelled one when it is observed, so the next call genuinely retries. This is the shape
+  `Shenora.WebView2.Sessions.SessionEnvironmentCache` was deliberately written to in H2 while explicitly
+  NOT copying this one — the original is now brought in line, and the cross-reference points both ways.
+- **Verify:** compile-and-review; a live browser is needed to fault environment creation, and the
+  decision logic is the same one `SessionEnvironmentCacheTests` covers directly.
+- **Commit:** _pending (P5.5 H3)_
+
+### Shenora.WebView2: a mistyped resource prefix opened a black window with no error
+- **Symptom:** found by review. The app starts, the window is blank, nothing is logged as an error, and
+  every resource request 404s. The cause is a `ResourcePrefix` that matches no embedded resource.
+- **Root cause:** the prefix is a manifest name, so it depends on MSBuild's name mangling (directory
+  separators AND filename dots collapse to `.`), which makes it easy to get wrong and impossible to
+  eyeball. `EmbeddedResourceProvider` computed an empty manifest, reported "FILE-BASED" at info level,
+  and then answered every request with null. `ResolveStartUrl` throws actionably for the neighbouring
+  mistake (missing URL configuration), so the asymmetry was the bug.
+- **Fix:** and the PLACEMENT is the interesting part. Throwing from the provider's constructor — the
+  obvious fix, and what the review asked for — is wrong: a provider with nothing to serve is legitimate
+  when the page loads from a dev URL, which is the normal state of a fresh clone whose bundle has not
+  been built (the sample's csproj documents exactly that). So the provider REPORTS the condition (new
+  `CanServe`, plus a log notice naming the bad prefix, the assembly, and the manifest prefixes that DO
+  exist) and `WebViewHost.AssertBundleServable` throws — it is the only place that knows the bundle is
+  the start document. The probe is `IWebViewResourceProvider.Exists("index.html")`, which also catches a
+  present-but-incomplete bundle and gives that member the consumer H6 was going to delete it for.
+- **Verify:** `WebViewHostTests` — a bundle start document with no index throws actionably; a servable
+  one passes; and a dev URL or a `ProductionUrl` pointing elsewhere never consults the provider (the
+  three cases that make constructor-throwing wrong). `EmbeddedResourceProviderTests` asserts the notice
+  names the prefix and the available ones, and that a file directory alone is enough. Note the old test
+  `No_matching_resources_and_no_directory_serves_nothing` asserted the DEFECT and was rewritten.
+- **Commit:** _pending (P5.5 H3)_
+
 ### @shenora/react: the client robustness tail (seven defects, two silent by construction)
 - **Symptom:** found by review. An uncaught page error from one host message; a bridge reporting itself
   available while rejecting everything; a hung caller with no diagnostics; every request from a service

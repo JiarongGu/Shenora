@@ -26,8 +26,10 @@ Shenora.WebView2.DropZoneManagerOptions
   Void set_ParentForm(System.Windows.Forms.Form)
   Void set_WebView(Microsoft.Web.WebView2.WinForms.WebView2)
 Shenora.WebView2.EmbeddedResourceProvider
+  Boolean CanServe
   Boolean Exists(System.String)
   Boolean IsEmbedded
+  Boolean get_CanServe()
   Boolean get_IsEmbedded()
   System.IO.Stream GetResourceStream(System.String)
   Void .ctor(Shenora.WebView2.EmbeddedResourceProviderOptions)
@@ -106,7 +108,6 @@ Shenora.WebView2.WebViewHost
   Boolean IsDevelopment
   Boolean get_IsDevelopment()
   System.Threading.Tasks.Task InitializeAsync()
-  System.TimeSpan AutoReloadCooldown
   Void .ctor(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.WebViewHostOptions)
   Void Navigate()
 Shenora.WebView2.WebViewHostOptions
@@ -122,6 +123,8 @@ Shenora.WebView2.WebViewHostOptions
   Boolean get_PreventDefaultFileDrop()
   Boolean get_ReloadOnRenderProcessFailure()
   Boolean get_UseSharedEnvironment()
+  Int32 MaxAutoReloads
+  Int32 get_MaxAutoReloads()
   Shenora.WebView2.IWebViewResourceProvider ResourceProvider
   Shenora.WebView2.IWebViewResourceProvider get_ResourceProvider()
   Shenora.WebView2.WebViewEnvironmentOptions Environment
@@ -154,10 +157,13 @@ Shenora.WebView2.WebViewHostOptions
   System.String get_DevUrl()
   System.String get_ProductionUrl()
   System.String get_VirtualHost()
+  System.TimeSpan AutoReloadCooldown
   System.TimeSpan InitTimeout
+  System.TimeSpan get_AutoReloadCooldown()
   System.TimeSpan get_InitTimeout()
   Void .ctor()
   Void set_AllowExternalDrop(Boolean)
+  Void set_AutoReloadCooldown(System.TimeSpan)
   Void set_BackgroundColor(System.Nullable`1[System.Drawing.Color])
   Void set_BlockBrowserShortcutsInProduction(Boolean)
   Void set_ConfigureSettings(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings])
@@ -169,6 +175,7 @@ Shenora.WebView2.WebViewHostOptions
   Void set_InitTimeout(System.TimeSpan)
   Void set_InjectedGlobals(System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object])
   Void set_Log(System.Action`1[System.String])
+  Void set_MaxAutoReloads(Int32)
   Void set_OnDownloadStarting(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs])
   Void set_OnPermissionRequested(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs])
   Void set_OnProcessFailed(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs])

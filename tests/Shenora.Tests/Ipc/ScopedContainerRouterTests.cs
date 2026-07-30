@@ -81,6 +81,19 @@ public class ScopedContainerRouterTests
     }
 
     [Fact]
+    public void A_null_ConfigureScope_is_rejected_at_construction()
+    {
+        // `required` forces the caller to WRITE the initializer, not to write a non-null value — so an
+        // explicit null (or a field that happened to be null) surfaced as an NRE from inside scope
+        // creation, which the pipeline's error mapping then reported to the client as UNKNOWN_ERROR: a
+        // composition bug wearing a runtime failure's clothes (P5.5 H3).
+        Assert.Throws<ArgumentNullException>(() => new ScopedContainerRouter(new ScopedContainerRouterOptions
+        {
+            ConfigureScope = null!,
+        }));
+    }
+
+    [Fact]
     public async Task Unresolvable_facade_falls_through()
     {
         // The module is declared scoped, but the scope's container doesn't register the facade.

@@ -20,9 +20,36 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   is single-threaded by construction. Cache the IN-FLIGHT task, not just the result — `WaitAsync`
   abandons the *await*, never `CreateAsync`, so without that a retry against a locked profile
   spawns a SECOND browser process onto the lock the timeout's own message blames.
-- **Never cache a FAULTED environment task.** One transient failure becomes terminal for the process
-  (still open in `WebViewEnvironment`, `TASKS.md` H3; deliberately not copied into the sessions
-  cache). Evict on observing a faulted/cancelled entry so the next attempt genuinely retries.
+- **Never cache a FAULTED environment task.** `??=` caches a faulted `Task` as happily as a good one,
+  so ONE transient failure (a profile lock, a runtime update mid-launch) became terminal for the whole
+  process — including the retry the init-timeout's own message asks for. Reuse only "in flight or ran
+  to completion"; evict a faulted/cancelled entry when you observe it. Both caches now do this
+  (`WebViewEnvironment.GetSharedAsync`, `SessionEnvironmentCache`).
+- **A rate limit is NOT a terminal state.** The renderer auto-reload was throttled to once per 10 s
+  with no stopping condition, so a page that faults during load reload-crashed forever, spawning a
+  renderer each time — while the option's own doc promised "a crash-looping page must not spin". Give a
+  retry loop a CAP (`WebViewHostOptions.MaxAutoReloads`), log the give-up EXACTLY once (or the log
+  becomes the new spin), and reset the budget on real success so a long-running app isn't rationed by
+  unrelated failures hours apart.
+- **The ready gate must close on `ContentLoading`, not `NavigationStarting`** — and on `ProcessFailed`.
+  The client spends one `READY` per real page load, so closing the gate on a navigation that never
+  replaces the document (cancelled by an app tap or a policy, or failed before committing) closed it
+  FOREVER on a live page: buffer to the cap, then silently drop-oldest, for the process lifetime. A dead
+  renderer is the mirror case — the gate stayed OPEN and the next tick DRAINED the queue into a process
+  that could not receive it, and the drain empties before posting, so those notifications were gone.
+  Accept the small `NavigationStarting`→`ContentLoading` window: a flush there reaches the outgoing
+  page, whose listeners are still attached.
+- **Fail loudly, but from the layer that knows the requirement.** A mistyped `ResourcePrefix` (a
+  manifest name, so MSBuild's mangling makes it easy to get wrong and impossible to eyeball) matched
+  nothing and opened a BLACK WINDOW with no error. The fix is NOT to throw in
+  `EmbeddedResourceProvider`'s constructor: a provider that can serve nothing is correct when the page
+  loads from a dev URL — the normal state of a fresh clone. The provider reports (`CanServe` + a notice
+  listing the manifest prefixes that DO exist); `WebViewHost.AssertBundleServable` throws, because only
+  it knows the bundle is the start document. Probe with `Exists("index.html")`.
+- **No exception text in an HTTP response body.** Every response here carries
+  `Access-Control-Allow-Origin: *`, so page script can fetch and read it — and `ex.Message` routinely
+  means a full local path, or a remote URL from an app scheme handler. One constant body; the diagnosis
+  goes to the host log. Same rule as the IPC error boundary (`ipc-contracts`).
 - **Everything on `CoreWebView2` is UI-affine — marshal through the ONE owner, never hand-roll a
   `BeginInvoke`.** Post-D19/D20 the seam is `IUiDispatcher` (`Shenora.Core`) implemented once as
   `WinFormsUiDispatcher(Control)` (`Shenora.WinForms`); `Shenora.WebView2` and

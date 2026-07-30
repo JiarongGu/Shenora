@@ -5,6 +5,43 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H3: the ready gate, option validation, and the fail-loudly cases
+
+Thirteen new tests (417 dotnet). Three of these are worth reading past the one-line summary.
+
+**The ready gate.** It closed on every `NavigationStarting` while the client spends its single `READY`
+per real page load — so any navigation that never replaced the document (cancelled by an app tap or a
+policy, or failed before committing) closed the gate FOREVER on a page that was still perfectly alive:
+notifications buffered to the 10 000 cap and then silently dropped the oldest, for the process lifetime.
+It now closes on `ContentLoading`, raised only when a new document actually begins loading, and on
+`ProcessFailed`, which the bridge watches itself rather than trusting the host's optional auto-reload
+policy. The trade is recorded at the site: between `NavigationStarting` and `ContentLoading` the gate
+stays open, so a flush there reaches the OUTGOING page instead of buffering for the incoming one — which
+is the better outcome, because those listeners are still attached and these are progress/status events.
+
+**Where "fail loudly" belongs.** The review asked for a mistyped `ResourcePrefix` to throw, and the
+obvious place — the provider's constructor — turns out to be wrong: a provider with nothing to serve is
+CORRECT when the page loads from a dev URL, which is the normal state of a fresh clone whose bundle has
+not been built. The sample's own csproj documents that shape. So the provider reports it (`CanServe` plus
+a notice naming the bad prefix and the assembly's real manifest prefixes) and the throw lives in
+`WebViewHost.AssertBundleServable`, the only place that knows the bundle IS the start document. The probe
+is `Exists("index.html")` — which incidentally gives that member the consumer H6 was going to delete it
+for, and catches a present-but-incomplete bundle too.
+
+**Terminal states, not just rate limits.** The renderer auto-reload was throttled to once per 10 s and
+had no stopping condition, so a page that faults during load reload-crashed forever, spawning a renderer
+each time — while the option's own doc promised "a crash-looping page must not spin". A cooldown is not a
+terminal state. `MaxAutoReloads` is, and the give-up logs exactly once so the log doesn't become the new
+spin. The same shape appears in `WebViewEnvironment.GetSharedAsync`, which cached its task faulted or
+not: one transient failure was terminal for the whole process, including the retry its own timeout
+message asks for. Both now distinguish "in flight or succeeded" from "failed, try again" — the rule
+`SessionEnvironmentCache` was written to in H2, now applied to the original it was contrasted against.
+
+Also: six options validated at construction (each previously failed somewhere unrelated to its cause —
+the worst made `Enqueue` dequeue what it had just enqueued, silently discarding every notification for
+the process lifetime), and exception text removed from all three 404 response bodies, which were readable
+by page script under `Access-Control-Allow-Origin: *`.
+
 ### 2026-07-30 — P5.5 H2 (client): the `@shenora/react` tail — **H2 IS COMPLETE**
 
 Seven client-side defects, +10 vitest (49 total). The two that needed thought rather than a patch:

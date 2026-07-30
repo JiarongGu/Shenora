@@ -139,6 +139,12 @@ public sealed class RenderSessionPool : IDisposable
         RequireUsableTimeout(options.OpTimeout, nameof(RenderSessionPoolOptions.OpTimeout));
         RequireUsableTimeout(options.NavigationTimeout, nameof(RenderSessionPoolOptions.NavigationTimeout));
         RequireUsableTimeout(options.ResetTimeout, nameof(RenderSessionPoolOptions.ResetTimeout));
+        // A zero/negative client size gives a 0×0 viewport (P5.5 H3): the page "loads", every element
+        // has zero size, and any site that gates on window size behaves as if on a phantom display —
+        // with nothing anywhere to suggest the viewport is the problem.
+        if (options.OffscreenClientSize.Width < 1 || options.OffscreenClientSize.Height < 1)
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(RenderSessionPoolOptions.OffscreenClientSize)} must be positive in both dimensions.");
         _capacity = new SemaphoreSlim(options.Capacity, options.Capacity);
 
         // The upper bound is not pedantry: these feed CancellationTokenSource.CancelAfter and

@@ -16,6 +16,13 @@ public sealed class ScopedContainerRouterOptions
     /// into the structured wire error. Keep it fast: requests for the scope wait on it (the
     /// source app blocked here deliberately, for message ordering); heavy initialization
     /// belongs in <see cref="OnScopeCreated"/>, fire-and-forget where possible.
+    /// <para>
+    /// EACH SCOPE IS A ROOT PROVIDER, not a DI child scope — so <c>AddScoped</c> registered here
+    /// behaves as a SINGLETON for that scope's whole lifetime, and <c>AddTransient</c> disposables it
+    /// resolves are held until the scope is disposed. That is usually what an app wants (the scope IS
+    /// the lifetime boundary), but it is the opposite of what <c>AddScoped</c> means everywhere else in
+    /// Microsoft DI, so it is worth stating rather than discovering.
+    /// </para>
     /// </summary>
     public required Action<string, IServiceCollection> ConfigureScope { get; init; }
 
@@ -58,6 +65,11 @@ public sealed class ScopedContainerRouter : IDisposable
     public ScopedContainerRouter(ScopedContainerRouterOptions options, ILogger<ScopedContainerRouter>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        // `required` only forces the caller to WRITE the initializer, not to write a non-null value —
+        // and an explicit `ConfigureScope = null!` (or a field that happened to be null) surfaced as an
+        // NRE from inside scope creation, which the pipeline's error mapping then reported to the client
+        // as UNKNOWN_ERROR: a composition bug disguised as a runtime failure (P5.5 H3).
+        ArgumentNullException.ThrowIfNull(options.ConfigureScope, $"{nameof(options)}.{nameof(options.ConfigureScope)}");
         _logger = logger ?? NullLogger<ScopedContainerRouter>.Instance;
     }
 

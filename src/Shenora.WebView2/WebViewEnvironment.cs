@@ -85,7 +85,21 @@ public static class WebViewEnvironment
     {
         lock (Lock)
         {
-            return _shared ??= CreateAsync(options);
+            if (_shared is { } existing)
+            {
+                // PENDING or SUCCEEDED → reuse; that is the whole point of prewarming.
+                if (!existing.IsCompleted || existing.Status == TaskStatus.RanToCompletion) return existing;
+
+                // FAULTED or CANCELLED → forget it (P5.5 H3). `??=` cached a faulted task FOREVER, so a
+                // single transient failure — a profile lock that has since cleared, a runtime update
+                // mid-launch — was terminal for the whole process: every retry, including the one the
+                // init-timeout message tells the user to make, got the original exception back without
+                // ever touching WebView2 again. Evicting on observation is what makes a retry real.
+                // (`Shenora.WebView2.Sessions.SessionEnvironmentCache` deliberately copies this shape
+                // rather than the old one.)
+                _shared = null;
+            }
+            return _shared = CreateAsync(options);
         }
     }
 

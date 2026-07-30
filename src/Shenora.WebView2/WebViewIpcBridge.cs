@@ -88,6 +88,27 @@ public sealed class WebViewIpcBridge : IDisposable
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+
+        // Validate at CONSTRUCTION (P5.5 H3), the kit's convention. Both of these otherwise fail far
+        // from their cause:
+        //
+        // MaxQueuedNotifications = 0 makes Enqueue dequeue the item it just enqueued, so EVERY
+        // notification for the life of the process vanishes with no error and no log line — the worst
+        // possible shape for a misconfiguration.
+        //
+        // NotificationInterval below 1 ms truncates to 0 and threw out of Attach() instead, as an
+        // opaque ArgumentOutOfRangeException from the WinForms Timer, at a call site that has nothing
+        // to do with the option.
+        if (options.MaxQueuedNotifications < 1)
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(WebViewIpcBridgeOptions.MaxQueuedNotifications)} must be at least 1 — 0 would silently discard every notification.");
+        if (options.NotificationInterval < TimeSpan.FromMilliseconds(1))
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must be at least 1 ms.");
+        if (options.NotificationInterval.TotalMilliseconds > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must fit in an int32 millisecond count (the WinForms timer's limit).");
+
         _log = options.Log;
         // The one marshalling owner (D19/D20) — reachable because Shenora.WebView2 layers on
         // Shenora.WinForms. A posted body that throws is reported here instead of becoming an
@@ -133,10 +154,28 @@ public sealed class WebViewIpcBridge : IDisposable
         _attached = true;
 
         _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-        // Any main-document navigation (renderer-crash auto-reload, dev reload) replaces the
-        // page and its listeners — close the ready gate so notifications BUFFER again until the
-        // new page's handshake, instead of draining into a document with no subscriber.
-        _webView.CoreWebView2.NavigationStarting += OnNavigationStarting;
+        // A NEW document is loading, so the old page's listeners are gone — close the ready gate so
+        // notifications BUFFER until the new page's handshake instead of draining into a document with
+        // no subscriber.
+        //
+        // ContentLoading, NOT NavigationStarting (P5.5 H3). NavigationStarting fires for navigations
+        // that never replace the document — one an app tap or a policy CANCELS, one that fails before
+        // committing — and the surviving page has already sent its one READY, so the gate closed
+        // FOREVER: notifications buffered to the 10 000 cap and then silently dropped the oldest, for
+        // the life of the process. ContentLoading is raised only when a new document actually begins
+        // loading, which is exactly the condition the gate cares about.
+        //
+        // The trade, stated plainly: between NavigationStarting and ContentLoading the gate is still
+        // open, so a flush tick in that window delivers to the OUTGOING page rather than buffering for
+        // the incoming one. That is the better outcome — those listeners are still attached, and these
+        // notifications are progress/status (see MaxQueuedNotifications), so live delivery to the page
+        // that is still on screen beats holding them for a document that may never load.
+        _webView.CoreWebView2.ContentLoading += OnContentLoading;
+        // A dead renderer leaves the gate OPEN, so the next tick drained a whole batch into a process
+        // that cannot receive it — the queue was already emptied, so those notifications were simply
+        // gone (P5.5 H3). The bridge watches this itself rather than relying on the host's auto-reload
+        // policy, which is optional and may be off.
+        _webView.CoreWebView2.ProcessFailed += OnProcessFailed;
 
         // A WinForms timer ticks on the UI thread — the only thread allowed to touch
         // CoreWebView2 — so the flush needs no marshalling.
@@ -218,15 +257,18 @@ public sealed class WebViewIpcBridge : IDisposable
         }
     }
 
-    private void OnNavigationStarting(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2NavigationStartingEventArgs e) =>
-        ResetClientReady();
+    private void OnContentLoading(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2ContentLoadingEventArgs e) =>
+        ResetClientReady("a new document is loading");
 
-    /// <summary>Close the ready gate (a new document is coming). Internal seam for tests.</summary>
-    internal void ResetClientReady()
+    private void OnProcessFailed(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs e) =>
+        ResetClientReady($"the browser process failed ({e.ProcessFailedKind})");
+
+    /// <summary>Close the ready gate — the page that handshook can no longer receive. Internal seam for tests.</summary>
+    internal void ResetClientReady(string reason = "the page is being replaced")
     {
         if (!_clientReady) return;
         _clientReady = false;
-        Log(() => "[Shenora.WebView2] Navigation started — buffering notifications until the client is ready again");
+        Log(() => $"[Shenora.WebView2] Buffering notifications until the client is ready again — {reason}");
     }
 
     /// <summary>
@@ -395,7 +437,8 @@ public sealed class WebViewIpcBridge : IDisposable
             if (_attached && _webView.CoreWebView2 is not null)
             {
                 _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
-                _webView.CoreWebView2.NavigationStarting -= OnNavigationStarting;
+                _webView.CoreWebView2.ContentLoading -= OnContentLoading;
+                _webView.CoreWebView2.ProcessFailed -= OnProcessFailed;
             }
         }
         catch (Exception ex)

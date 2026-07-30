@@ -120,6 +120,85 @@ public class WebViewIpcBridgeTests
         Assert.Null(await bridge.HandleIncomingAsync(json));
     }
 
+    // ── The ready gate's re-arm paths (P5.5 H3) ───────────────────────────────────────────────────
+    // The gate used to close on EVERY NavigationStarting while the client sends READY only once per
+    // real page load. So a navigation that never replaced the document — one an app tap or a policy
+    // CANCELLED, one that failed before committing — closed the gate FOREVER on a page that was still
+    // very much alive: notifications buffered to the 10 000 cap and then silently dropped the oldest,
+    // for the process lifetime. It now closes on ContentLoading (a new document really is loading) and
+    // on ProcessFailed (the renderer that handshook is dead).
+
+    [Fact]
+    public async Task A_new_document_closes_the_gate_so_the_next_page_rehandshakes()
+    {
+        using var bridge = CreateBridge(new WebViewIpcBridgeOptions { Dispatcher = new MessageDispatcher() });
+        await bridge.HandleIncomingAsync(ReadyJson());
+        Assert.True(bridge.IsClientReady);
+
+        bridge.ResetClientReady("a new document is loading"); // what OnContentLoading calls
+
+        Assert.False(bridge.IsClientReady);
+        bridge.SendNotification("APP", "TICK");
+        Assert.Null(bridge.TryBuildBatchJson());          // buffered, not drained into a dead document
+        Assert.Equal(1, bridge.PendingNotificationCount); // and the queue is INTACT
+
+        await bridge.HandleIncomingAsync(ReadyJson("h2")); // the new page's handshake
+        Assert.NotNull(bridge.TryBuildBatchJson());        // the buffered event survives the reload
+    }
+
+    [Fact]
+    public async Task Closing_the_gate_twice_is_harmless_and_re_arming_always_works()
+    {
+        // The gate must be re-armable an unbounded number of times — reload, crash-reload, dev hot
+        // reload — because the ONE path that used to close it had no counterpart.
+        using var bridge = CreateBridge(new WebViewIpcBridgeOptions { Dispatcher = new MessageDispatcher() });
+
+        for (var i = 0; i < 3; i++)
+        {
+            await bridge.HandleIncomingAsync(ReadyJson($"h{i}"));
+            Assert.True(bridge.IsClientReady);
+            bridge.ResetClientReady();
+            bridge.ResetClientReady(); // idempotent — ContentLoading and ProcessFailed can both fire
+            Assert.False(bridge.IsClientReady);
+        }
+
+        await bridge.HandleIncomingAsync(ReadyJson("final"));
+        bridge.SendNotification("APP", "TICK");
+        Assert.NotNull(bridge.TryBuildBatchJson());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void A_zero_notification_cap_is_rejected_at_construction(int cap)
+    {
+        // MaxQueuedNotifications = 0 made Enqueue dequeue the item it had just enqueued, so EVERY
+        // notification for the life of the process vanished with no error and no log line (P5.5 H3).
+        var error = Assert.Throws<ArgumentOutOfRangeException>(() => CreateBridge(new WebViewIpcBridgeOptions
+        {
+            Dispatcher = new MessageDispatcher(),
+            MaxQueuedNotifications = cap,
+        }));
+        Assert.Contains("silently discard", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_sub_millisecond_notification_interval_is_rejected_at_construction()
+    {
+        // It used to truncate to 0 and throw out of Attach() — an opaque WinForms Timer exception at a
+        // call site that has nothing to do with the option.
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateBridge(new WebViewIpcBridgeOptions
+        {
+            Dispatcher = new MessageDispatcher(),
+            NotificationInterval = TimeSpan.Zero,
+        }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateBridge(new WebViewIpcBridgeOptions
+        {
+            Dispatcher = new MessageDispatcher(),
+            NotificationInterval = TimeSpan.MaxValue, // beyond the timer's int32 millisecond limit
+        }));
+    }
+
     [Fact]
     public async Task Notifications_hold_until_the_client_is_ready()
     {

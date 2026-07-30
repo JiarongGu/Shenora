@@ -165,12 +165,28 @@ public sealed class WebViewHostOptions
         [CoreWebView2PermissionKind.ClipboardRead];
 
     /// <summary>
-    /// Recover from a crashed renderer by reloading (at most once per
-    /// <see cref="WebViewHost.AutoReloadCooldown"/> — a crash-looping page must not spin). The
-    /// browser-process kinds are NOT auto-recovered: the whole control is dead then, which is an
-    /// app-level decision.
+    /// Recover from a crashed renderer by reloading — at most <see cref="MaxAutoReloads"/> times, and
+    /// never more than once per <see cref="AutoReloadCooldown"/>. The browser-process kinds are NOT
+    /// auto-recovered: the whole control is dead then, which is an app-level decision.
     /// </summary>
     public bool ReloadOnRenderProcessFailure { get; init; } = true;
+
+    /// <summary>Minimum spacing between automatic renderer-crash reloads.</summary>
+    public TimeSpan AutoReloadCooldown { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How many times a renderer crash may be auto-recovered before the host gives up and leaves the
+    /// failure to <see cref="OnProcessFailed"/> (default 3).
+    /// <para>
+    /// Having a TERMINAL state is the point (P5.5 H3). Rate-limiting alone is not a stopping condition:
+    /// a deterministically-crashing page — one that faults during load — reloaded every cooldown
+    /// FOREVER, burning a browser process each time, while
+    /// <see cref="ReloadOnRenderProcessFailure"/>'s own documentation promised that "a crash-looping
+    /// page must not spin". After the cap the host logs once and stops. A successful navigation resets
+    /// the count, so a long-running app is not slowly used up by unrelated crashes.
+    /// </para>
+    /// </summary>
+    public int MaxAutoReloads { get; init; } = 3;
 
     /// <summary>Replaces the default process-failure handling (which logs + auto-reloads per
     /// <see cref="ReloadOnRenderProcessFailure"/>).</summary>

@@ -107,16 +107,61 @@ public class EmbeddedResourceProviderTests
     }
 
     [Fact]
-    public void No_matching_resources_and_no_directory_serves_nothing()
+    public void No_matching_resources_and_no_directory_reports_that_it_serves_nothing()
     {
+        // A mistyped or stale ResourcePrefix matches no manifest names, so every request 404s and the
+        // app opens a BLACK WINDOW with no error anywhere — the prefix depends on MSBuild's name
+        // mangling, so it is the last thing anyone suspects (P5.5 H3).
+        //
+        // The provider REPORTS this rather than throwing, and that split is deliberate: a provider with
+        // nothing to serve is perfectly valid when the page loads from a dev URL, which is the normal
+        // state of a fresh clone whose bundle has not been built. Only the host knows whether the bundle
+        // IS the start document, so the loud failure lives there (see WebViewHostTests).
+        var messages = new List<string>();
         var provider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
         {
             Assembly = Assembly.GetExecutingAssembly(),
             ResourcePrefix = "Shenora.Tests.NoSuchPrefix",
+            Log = messages.Add,
         });
+
+        Assert.False(provider.CanServe);
         Assert.False(provider.IsEmbedded);
         Assert.Null(provider.GetResourceStream("index.html"));
         Assert.False(provider.Exists("index.html"));
+
+        // The notice has to be self-servicing: the whole difficulty is not being able to see the
+        // manifest, so it names the bad prefix and what the assembly ACTUALLY contains.
+        var notice = Assert.Single(messages);
+        Assert.Contains("SERVES NOTHING", notice, StringComparison.Ordinal);
+        Assert.Contains("Shenora.Tests.NoSuchPrefix", notice, StringComparison.Ordinal);
+        Assert.Contains("available manifest prefixes", notice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_configured_file_directory_is_enough_on_its_own()
+    {
+        // No embedded match is FINE when file mode can serve — the unpackaged/dev shape.
+        var directory = Path.Combine(Path.GetTempPath(), "shenora-provider-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var provider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+            {
+                Assembly = Assembly.GetExecutingAssembly(),
+                ResourcePrefix = "Shenora.Tests.NoSuchPrefix",
+                FileFallbackDirectory = directory,
+                PreferFiles = true,
+            });
+
+            Assert.True(provider.CanServe);
+            Assert.False(provider.IsEmbedded);
+            Assert.Null(provider.GetResourceStream("index.html")); // nothing there yet, but serviceable
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     // ── Path containment (P5.5 H1) ────────────────────────────────────────────────────────────────

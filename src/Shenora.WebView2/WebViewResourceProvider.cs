@@ -76,10 +76,33 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             .Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             .ToDictionary(n => n, n => n, StringComparer.OrdinalIgnoreCase);
 
-        IsEmbedded = !(options.PreferFiles
+        var fileMode = options.PreferFiles
                        && options.FileFallbackDirectory is { Length: > 0 } dir
-                       && Directory.Exists(dir))
-                     && _manifest.Count > 0;
+                       && Directory.Exists(dir);
+        IsEmbedded = !fileMode && _manifest.Count > 0;
+
+        // A provider that can serve NOTHING is reported here but NOT rejected (P5.5 H3). Rejecting in
+        // the constructor was the obvious move and is wrong: dev mode navigates to the Vite DevUrl, so
+        // the provider is legitimately never consulted, and a fresh clone has an empty wwwroot (the
+        // sample's csproj documents exactly that). The loud failure belongs at the point the host
+        // COMMITS to serving the bundle — see WebViewHost's startup sanity check, which is what turns a
+        // mistyped ResourcePrefix from a black window into an actionable error.
+        CanServe = IsEmbedded || fileMode;
+        if (!CanServe)
+        {
+            var available = options.Assembly.GetManifestResourceNames();
+            var hint = available.Length == 0
+                ? "that assembly embeds NO resources at all — check the <EmbeddedResource> item group"
+                : "available manifest prefixes: " + string.Join(", ",
+                    available.Select(TopTwoSegments).Distinct(StringComparer.OrdinalIgnoreCase).Order().Take(10));
+            options.Log?.Invoke(
+                $"[Shenora.WebView2] Resource provider: SERVES NOTHING — no embedded resources match " +
+                $"'{options.ResourcePrefix}' in '{options.Assembly.GetName().Name}', and no usable " +
+                $"{nameof(EmbeddedResourceProviderOptions.FileFallbackDirectory)} is configured " +
+                $"(PreferFiles={options.PreferFiles}, directory='{options.FileFallbackDirectory ?? "<null>"}'). " +
+                $"Fine if the page loads from a dev URL; otherwise every request will 404. {hint}.");
+            return;
+        }
 
         options.Log?.Invoke(IsEmbedded
             ? $"[Shenora.WebView2] Resource provider: EMBEDDED ({_manifest.Count} resources under {options.ResourcePrefix})"
@@ -88,6 +111,16 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
 
     /// <summary>True = serving embedded resources; false = serving <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/>.</summary>
     public bool IsEmbedded { get; }
+
+    /// <summary>
+    /// False when this provider has NOTHING to serve — no embedded resource matches
+    /// <see cref="EmbeddedResourceProviderOptions.ResourcePrefix"/> and no usable
+    /// <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/> exists — so every request
+    /// would 404. Legitimate when the page loads from a dev URL instead; fatal when the bundle IS the
+    /// document, which is why <see cref="WebViewHost"/> checks it at startup rather than the constructor
+    /// rejecting it outright (P5.5 H3).
+    /// </summary>
+    public bool CanServe { get; }
 
     /// <summary>
     /// Start caching every embedded resource in the background (fire-and-forget, idempotent).
@@ -176,6 +209,18 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         using var memory = new MemoryStream();
         stream.CopyTo(memory);
         return _cache.GetOrAdd(actualName, memory.ToArray());
+    }
+
+    /// <summary>
+    /// The first two dot-separated segments of a manifest name — enough to recognise a bundle root
+    /// (<c>MyApp.wwwroot</c>) in the "did you mean" hint without dumping every file name.
+    /// </summary>
+    private static string TopTwoSegments(string manifestName)
+    {
+        var first = manifestName.IndexOf('.');
+        if (first < 0) return manifestName;
+        var second = manifestName.IndexOf('.', first + 1);
+        return second < 0 ? manifestName : manifestName[..second];
     }
 
     /// <summary>Deterministic virtual-path → manifest-name mapping (slashes become dots).</summary>

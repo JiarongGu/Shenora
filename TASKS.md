@@ -271,38 +271,57 @@ code comment.
   good data on a failed refetch (`hooks.ts:86`); `bridge.isAvailable` ignores `disposed` (`:87-89`);
   the `fallback` path bypasses the timeout entirely (`:120-127`).
 
-**H3 — The notification/ready gate and validation**
+**H3 — The notification/ready gate and validation — DONE (2026-07-30)**
 
-- [ ] **The ready gate has exactly one re-arm path,** so any spurious close stops notifications
-  forever. `WebViewIpcBridge` `OnNavigationStarting` → `ResetClientReady()` unconditionally, while
-  the client sends `READY` once per real page load (`bridge.ts:168`) — a same-document navigation
-  the page survives leaves `_clientReady=false` permanently: buffer to 10 000, then drop-oldest,
-  silently. Conversely the gate stays OPEN after a renderer crash until `Reload()`, so a tick in
-  between drains a batch into a dead renderer. FIX: ignore same-document navigations; reset in the
-  `ProcessFailed` path before reloading.
-- [ ] **Validate the numeric options nobody validates** (ctor-time `ArgumentOutOfRangeException`,
-  the `RenderSessionPool.cs:76` convention): `MaxQueuedNotifications = 0` makes `Enqueue` dequeue
-  what it just enqueued — silently dropping EVERY notification for the process lifetime;
-  `NotificationInterval < 1 ms` throws out of `Attach()` instead of construction;
-  `SessionBrowserOptions.InitTimeout = 0` reports the misleading profile-lock diagnosis;
-  `RenderSessionPoolOptions.OffscreenClientSize` default/zero gives a 0×0 viewport. Also null-check
-  `ScopedContainerRouterOptions.ConfigureScope` (`required` but unvalidated → NRE as
-  `UNKNOWN_ERROR`) and document that a scope container is a ROOT provider (so `AddScoped` inside
-  `ConfigureScope` silently becomes a singleton).
-- [ ] `WebViewHost.InitializeAsync` is public, non-idempotent and unguarded (`:51-75`) — a Retry
-  button (its own timeout message says "start again") double-subscribes every policy handler, so
-  every external link opens twice. Add an `_initialized` guard. Also make the timeout cover the
-  WHOLE sequence (today each await gets its own full budget → 2× 25 s, and `ApplySettings`/
-  `InjectScriptsAsync` are unbounded), and stop `WebViewEnvironment.cs:84-90` caching a FAULTED
-  shared task permanently (one transient failure is currently terminal for the process).
-- [ ] A mistyped `ResourcePrefix` degrades to a silent all-404 provider
-  (`WebViewResourceProvider.cs:79-86`) — a black window with no error, while `ResolveStartUrl`
-  throws actionably for the same class of mistake. Fail loudly.
-- [ ] Don't put exception text in HTTP response bodies readable by page script
-  (`WebViewHost.cs:219,245` — `NotFound($"Error: {ex.Message}")` with `Access-Control-Allow-Origin: *`).
-- [ ] Cap the renderer auto-reload (`WebViewHost.cs:358-374`): rate-limited but with no terminal
-  state, so a deterministically-crashing page reloads every 10 s forever, contradicting the option's
-  own doc. Also make `AutoReloadCooldown` an option rather than a public static field (`:27`).
+- [x] **The ready gate has exactly one re-arm path.** DONE — the gate now closes on **`ContentLoading`**
+  (a new document really is loading) and on **`ProcessFailed`**, instead of on every
+  `NavigationStarting`. That event fires for navigations that never replace the document — one an app
+  tap or a policy CANCELS, one that fails before committing — and the surviving page has already spent
+  its single `READY`, so the gate closed FOREVER: buffer to 10 000, then silently drop-oldest, for the
+  process lifetime. The bridge watches `ProcessFailed` ITSELF rather than relying on the host's
+  auto-reload policy, which is optional. **The trade is stated at the site:** between
+  `NavigationStarting` and `ContentLoading` the gate is still open, so a flush tick there delivers to
+  the OUTGOING page rather than buffering for the incoming one — which is the better outcome, since
+  those listeners are still attached and these are progress/status notifications.
+- [x] **Validate the numeric options nobody validates.** DONE, all six:
+  `MaxQueuedNotifications` (< 1 rejected — 0 made `Enqueue` dequeue what it had just enqueued, so
+  EVERY notification vanished for the process lifetime with no error), `NotificationInterval`
+  (< 1 ms, and > int32 ms — the WinForms timer's real limit), `SessionBrowserOptions.InitTimeout`
+  (non-positive made init fail instantly with the profile-LOCK diagnosis, sending the caller after a
+  zombie process that does not exist), `RenderSessionPoolOptions.OffscreenClientSize` (0×0 viewport),
+  and `ScopedContainerRouterOptions.ConfigureScope` (`required` forces the caller to WRITE the
+  initializer, not to write a non-null value — an explicit null surfaced as an NRE from inside scope
+  creation, reported to the client as `UNKNOWN_ERROR`). The ROOT-provider caveat is documented on
+  `ConfigureScope` itself: `AddScoped` there behaves as a per-scope SINGLETON, which is the opposite of
+  what it means everywhere else in MS DI.
+- [x] `WebViewHost.InitializeAsync` idempotence + one whole-sequence budget. DONE — the first call does
+  the work and later calls await the same task; a FAILED init clears the cache so a retry is a real
+  retry. It used to re-run `WireEventPolicies` on every call, double-subscribing every handler: each
+  external link then opened TWICE and the auto-reload raced itself. The `InitTimeout` now covers the
+  whole sequence through one linked CTS (each step used to get its own full budget, so "25 s" was
+  really 50 s before `ApplySettings`, and script injection — a real browser round-trip — was
+  unbounded). `WebViewEnvironment.GetSharedAsync` no longer caches a FAULTED task: `??=` made one
+  transient failure terminal for the process, so the retry its own timeout message advises got the
+  original exception back without touching WebView2 again.
+- [x] A mistyped `ResourcePrefix` degrades to a silent all-404 provider. DONE, **but NOT where the
+  review said** — read this before "improving" it. Throwing from the provider's constructor was the
+  obvious fix and is wrong: a provider with nothing to serve is legitimate when the page loads from a
+  dev URL, which is the normal state of a fresh clone whose bundle has not been built (the sample's own
+  csproj documents exactly that). So the provider REPORTS it (`CanServe` + a log notice naming the bad
+  prefix and the assembly's actual manifest prefixes), and the loud failure lives in
+  `WebViewHost.AssertBundleServable`, which is the only place that knows the bundle IS the start
+  document. The probe is `IWebViewResourceProvider.Exists("index.html")` — which also gives that member
+  the consumer H6 was going to delete it for.
+- [x] Don't put exception text in HTTP response bodies readable by page script. DONE — one constant
+  `NotFoundBody` for every 404 and the diagnosis to the host log. Applies to all three sites (bundle
+  miss, bundle failure, deferred-scheme handler failure); the last is the worst, since an app scheme
+  handler's message is the most likely to carry a real path or a remote URL.
+- [x] Cap the renderer auto-reload. DONE — new `MaxAutoReloads` (3) is the TERMINAL state the option's
+  own doc already promised ("a crash-looping page must not spin"); rate-limiting alone is not a
+  stopping condition, so a page that faults during load reloaded every 10 s forever, burning a browser
+  process each time. The give-up is logged EXACTLY once, or the log becomes the new spin. A successful
+  navigation resets the count, so a long-running app isn't rationed by unrelated crashes hours apart.
+  `AutoReloadCooldown` moved from a public static field on `WebViewHost` to an option (**breaking**).
 
 **H4 — The re-layer, then the dedup collapse (this duplication CAUSED several H1–H3 items)**
 
