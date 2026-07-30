@@ -16,7 +16,8 @@ interface Shenora.Ipc.IModuleFacade
 interface Shenora.Ipc.IModuleRegistry
   public abstract System.Collections.Generic.IReadOnlyCollection<string> MappedModules { get; }
   public abstract bool IsModuleMapped(string module)
-  public abstract void TrackMappedModule(string module)
+  public abstract bool TryClaimModule(Shenora.Ipc.IModuleFacade facade)
+  public abstract bool TryReleaseModule(string module)
 static class Shenora.Ipc.IpcCategories
   public const string Ipc = "ipc"
   public const string Notification = "notification"
@@ -78,7 +79,8 @@ sealed class Shenora.Ipc.MessageDispatcher : Shenora.Ipc.IMessageDispatcher, She
   public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, System.Threading.CancellationToken cancellationToken = default)
   public bool IsModuleMapped(string module)
-  public void TrackMappedModule(string module)
+  public bool TryClaimModule(Shenora.Ipc.IModuleFacade facade)
+  public bool TryReleaseModule(string module)
 static class Shenora.Ipc.MessageDispatcherExtensions
   public static Shenora.Ipc.IMessageDispatcher MapModule(Shenora.Ipc.IMessageDispatcher dispatcher, Shenora.Ipc.IModuleFacade facade)
   public static Shenora.Ipc.IMessageDispatcher MapModule(Shenora.Ipc.IMessageDispatcher dispatcher, string module, System.Action<Shenora.Ipc.ModuleRouteBuilder> configure)
@@ -88,6 +90,7 @@ static class Shenora.Ipc.MessageDispatcherExtensions
   public static Shenora.Ipc.IMessageDispatcher UseModule(Shenora.Ipc.IMessageDispatcher dispatcher, string module, System.Func<Shenora.Ipc.IpcRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> handler)
   public static Shenora.Ipc.IMessageDispatcher UseRoute(Shenora.Ipc.IMessageDispatcher dispatcher, string module, string type, System.Func<Shenora.Ipc.IpcRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> handler)
   public static bool TryMapModule(Shenora.Ipc.IMessageDispatcher dispatcher, Shenora.Ipc.IModuleFacade facade)
+  public static bool TryReleaseModule(Shenora.Ipc.IMessageDispatcher dispatcher, string module)
 delegate Shenora.Ipc.MessageMiddleware
   public .ctor(object object, System.IntPtr method)
   public virtual System.IAsyncResult BeginInvoke(Shenora.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> next, System.Threading.CancellationToken cancellationToken, System.AsyncCallback callback, object object)

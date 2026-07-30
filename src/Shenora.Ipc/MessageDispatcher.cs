@@ -40,10 +40,12 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     private readonly object _pipelineLock = new();
     private volatile MessageMiddleware[] _middlewares = [];
     private volatile Func<IpcRequest, CancellationToken, Task<IpcResponse?>>? _pipeline;
-    // Claimed module names. Case-insensitive because routing is. Guarded by _pipelineLock rather
-    // than a concurrent set: LATE MAPPING is supported, so this is written while requests are in
-    // flight, and it must move in step with the pipeline it describes.
-    private readonly HashSet<string> _mappedModules = new(StringComparer.OrdinalIgnoreCase);
+    // Claimed modules → the middleware installed for each. Case-insensitive because routing is.
+    // Guarded by _pipelineLock rather than a concurrent dictionary: LATE MAPPING is supported, so
+    // this is written while requests are in flight, and it must move in step with the pipeline it
+    // describes. It maps to the MIDDLEWARE, not just the name, because that reference is the only
+    // thing that makes release possible — see IModuleRegistry.
+    private readonly Dictionary<string, MessageMiddleware> _mappedModules = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The logger is optional so composition works without <c>AddLogging</c>.</summary>
     public MessageDispatcher(ILogger<MessageDispatcher>? logger = null)
@@ -207,21 +209,56 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     public IReadOnlyCollection<string> MappedModules
     {
         // A snapshot under the lock: late mapping means this can be read while another thread maps.
-        get { lock (_pipelineLock) { return _mappedModules.ToArray(); } }
+        get { lock (_pipelineLock) { return _mappedModules.Keys.ToArray(); } }
     }
 
     /// <inheritdoc />
     public bool IsModuleMapped(string module)
     {
         if (string.IsNullOrEmpty(module)) return false;
-        lock (_pipelineLock) { return _mappedModules.Contains(module); }
+        lock (_pipelineLock) { return _mappedModules.ContainsKey(module); }
     }
 
     /// <inheritdoc />
-    public void TrackMappedModule(string module)
+    public bool TryClaimModule(IModuleFacade facade)
     {
-        ArgumentException.ThrowIfNullOrEmpty(module);
-        lock (_pipelineLock) { _mappedModules.Add(module); }
+        ArgumentNullException.ThrowIfNull(facade);
+        ArgumentException.ThrowIfNullOrEmpty(facade.ModuleName);
+
+        // Built OUTSIDE the lock, but the check-and-install must be atomic: two threads claiming the
+        // same name concurrently is exactly the plug-in case this seam exists for.
+        var middleware = MessageDispatcherExtensions.ModuleMiddleware(facade.ModuleName,
+            async (request, ct) => await facade.HandleMessageAsync(request, ct));
+
+        lock (_pipelineLock)
+        {
+            if (_mappedModules.ContainsKey(facade.ModuleName)) return false;
+            _mappedModules[facade.ModuleName] = middleware;
+            _middlewares = [.. _middlewares, middleware];
+            _pipeline = null;
+        }
+        return true;
+    }
+
+    /// <inheritdoc />
+    public bool TryReleaseModule(string module)
+    {
+        if (string.IsNullOrEmpty(module)) return false;
+        lock (_pipelineLock)
+        {
+            if (!_mappedModules.Remove(module, out var middleware)) return false;
+
+            // Rebuild WITHOUT that one entry, preserving the order of everything else exactly. This
+            // is why release is a registry operation and not a generic "remove a middleware": the
+            // relative order of the error handler, logging, app middleware and the scoped router is
+            // load-bearing (design §5), and only the module's own entry may move.
+            //
+            // A dispatch already in flight holds a pipeline SNAPSHOT and completes against the old
+            // chain — the same contract late mapping has always had.
+            _middlewares = [.. _middlewares.Where(m => !ReferenceEquals(m, middleware))];
+            _pipeline = null;
+        }
+        return true;
     }
 
     /// <summary>

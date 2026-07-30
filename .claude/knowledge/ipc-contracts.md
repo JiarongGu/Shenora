@@ -32,6 +32,17 @@ transport, or building the P6 adoption shims.
   `UseErrorHandler`, `BaseFacade`, `PayloadHelper` (the wire message carries only the key — the
   serializer's text lives in the inner exception), and the bridge's own fallback. New error
   paths get a `DoesNotContain` leak test (the suite has precedents).
+- **Claim and release are ONE owner's job.** `IModuleRegistry` records the module AND holds the
+  routing it installed (`TryClaimModule(facade)` / `TryReleaseModule(name)`), because a registry that
+  only remembers a NAME can never take the route out again — which is precisely why release was
+  impossible while `TrackMappedModule(string)` was the contract. Two properties the implementation
+  owes: the claim is ATOMIC (check-then-map lets two threads offering the same plug-in name both
+  win — the silent-shadowing defect reintroduced as a race), and release is SURGICAL — only the
+  released module's entry leaves the pipeline, and the relative order of the error handler, logging,
+  app middleware and the scoped router is preserved exactly, because that order is load-bearing
+  (design §5) and reordering it fails in ways that do not look like an ordering bug. Release removes
+  the ROUTE and nothing else: in-flight requests finish, and the facade is NOT disposed (its lifetime
+  belongs to whoever built it — usually DI).
 - **The dispatch token is a LIFETIME, not a per-request cancel — and the boundary still never
   throws.** `DispatchAsync`/`SendAsync`/`MessageMiddleware`/`IModuleFacade`/`BaseFacade.RouteMessageAsync`
   all carry a `CancellationToken` (P6.4; before that the whole pipeline was uncancellable, so a handler

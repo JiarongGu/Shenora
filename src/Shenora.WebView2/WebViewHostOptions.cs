@@ -14,14 +14,25 @@ public sealed class WebViewDeferredScheme
     public required string Scheme { get; init; }
 
     /// <summary>
-    /// Produces the response bytes + MIME type for a request. Runs on a thread-pool thread —
-    /// never touch UI state. Throw to answer 404 (the message becomes the body).
+    /// Answers one request. Runs on a thread-pool thread — never touch UI state. Return null or
+    /// throw to answer 404; a thrown message never reaches the page (it goes to the host log).
+    /// <para>
+    /// It takes the whole <see cref="WebViewResourceRequest"/> and returns a
+    /// <see cref="WebViewResourceResponse"/> — status, headers, and a STREAM — rather than the
+    /// <c>(byte[], contentType)</c> pair it used to (P6.6). Two things were impossible before and are
+    /// the reason this changed: a handler could not read a request header, so <c>Range</c> was
+    /// invisible and a page could not SEEK anything it served; and returning the complete bytes meant
+    /// a 4 GB file became 4 GB of memory. Use <see cref="WebViewByteRange.TryParse"/> plus
+    /// <see cref="WebViewResourceResponse.PartialContent"/> for the seekable case.
+    /// </para>
     /// </summary>
-    public required Func<Uri, Task<(byte[] Data, string ContentType)>> Handler { get; init; }
+    public required Func<WebViewResourceRequest, Task<WebViewResourceResponse?>> Handler { get; init; }
 
     /// <summary>
-    /// <c>Cache-Control</c> for successful responses. The family default caches one day; callers
-    /// cache-bust with a query token (e.g. <c>?t=&lt;mtime&gt;</c>) when the content can change.
+    /// Default <c>Cache-Control</c> for SUCCESSFUL (2xx) responses that do not set their own. The
+    /// family default caches one day; callers cache-bust with a query token (e.g.
+    /// <c>?t=&lt;mtime&gt;</c>) when the content can change. A handler that sets the header itself
+    /// wins — a 206 or a 404 has its own caching story and must not be stamped over.
     /// </summary>
     public string CacheControl { get; init; } = "public, max-age=86400";
 }

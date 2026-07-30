@@ -30,9 +30,21 @@ public static class MessageDispatcherExtensions
                                                Func<IpcRequest, CancellationToken, Task<IpcResponse?>> handler)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
+        return dispatcher.Use(ModuleMiddleware(module, handler));
+    }
+
+    /// <summary>
+    /// The module-matching rule, in ONE place. <see cref="UseModule"/> composes it through
+    /// <see cref="IMessageDispatcher.Use"/>; <see cref="MessageDispatcher.TryClaimModule"/> installs
+    /// it directly so it can keep the reference and take it out again on release. Two copies of
+    /// "does this request belong to this module?" is the sort of duplication that drifts (P5.5 H4.5).
+    /// </summary>
+    internal static MessageMiddleware ModuleMiddleware(string module,
+                                                       Func<IpcRequest, CancellationToken, Task<IpcResponse?>> handler)
+    {
         ArgumentException.ThrowIfNullOrEmpty(module);
         ArgumentNullException.ThrowIfNull(handler);
-        return dispatcher.Use(async (request, next, ct) =>
+        return async (request, next, ct) =>
         {
             if (string.Equals(request.Module, module, StringComparison.OrdinalIgnoreCase))
             {
@@ -41,7 +53,7 @@ public static class MessageDispatcherExtensions
                     return response;
             }
             return await next();
-        });
+        };
     }
 
     /// <summary>Give requests matching module + type (both case-insensitive) to <paramref name="handler"/>.</summary>
@@ -152,15 +164,17 @@ public static class MessageDispatcherExtensions
         ArgumentNullException.ThrowIfNull(facade);
         if (dispatcher is IModuleRegistry registry)
         {
-            if (registry.IsModuleMapped(facade.ModuleName))
+            if (!registry.TryClaimModule(facade))
             {
                 throw new InvalidOperationException(
                     $"Module '{facade.ModuleName}' is already mapped. A facade answers every request for its "
                     + $"module, so this mapping would never run. Use {nameof(TryMapModule)} if a taken name is "
                     + "an expected outcome (dynamically composed modules).");
             }
-            registry.TrackMappedModule(facade.ModuleName);
+            return dispatcher;
         }
+        // A dispatcher that does not track modules gets the route with no duplicate guard — the same
+        // behaviour it has always had, and the reason TryMapModule refuses to answer for one.
         return dispatcher.UseModule(facade.ModuleName, async (request, ct) => await facade.HandleMessageAsync(request, ct));
     }
 
@@ -180,27 +194,67 @@ public static class MessageDispatcherExtensions
     /// dispatchers and decorators opt in by implementing <see cref="IModuleRegistry"/>.
     /// </para>
     /// <para>
-    /// KNOWN LIMIT, stated rather than worked around: a mapped module cannot be RELEASED — the
-    /// pipeline only grows, so disabling a dynamic module needs a restart. No consumer has yet needed
-    /// runtime removal (the surveyed app applies plug-in enable/disable at startup), so the kit does
-    /// not guess at that surface; it is a real capability gap, recorded in <c>TASKS.md</c>.
+    /// The claim is ATOMIC — check and install happen under one lock — because two threads offering
+    /// the same plug-in name concurrently is precisely the case this exists for. A check followed by a
+    /// separate map would let both win.
+    /// </para>
+    /// <para>
+    /// Pair it with <see cref="TryReleaseModule"/> when the composition is genuinely dynamic.
     /// </para>
     /// </summary>
     /// <returns>True if the module was mapped; false if the name was already claimed.</returns>
     public static bool TryMapModule(this IMessageDispatcher dispatcher, IModuleFacade facade)
     {
-        ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(facade);
-        if (dispatcher is not IModuleRegistry registry)
-        {
-            throw new NotSupportedException(
-                $"This {nameof(IMessageDispatcher)} does not implement {nameof(IModuleRegistry)}, so it cannot "
-                + "say whether a module name is already taken. Implement it (a decorator must forward all three "
-                + "members) rather than assuming the name is free.");
-        }
-        if (registry.IsModuleMapped(facade.ModuleName)) return false;
-        registry.TrackMappedModule(facade.ModuleName);
-        dispatcher.UseModule(facade.ModuleName, async (request, ct) => await facade.HandleMessageAsync(request, ct));
-        return true;
+        return Registry(dispatcher, nameof(TryMapModule)).TryClaimModule(facade);
+    }
+
+    /// <summary>
+    /// Release a mapped module: it stops answering and its name becomes free to claim again.
+    /// <para>
+    /// The other half of a dynamic IPC surface — disabling a plug-in, dropping a per-tenant module
+    /// when the tenant goes away, unloading a lazily loaded area. Until this existed the pipeline only
+    /// grew, so turning a module off meant restarting the app; it was a recorded capability gap rather
+    /// than a decision, and it is closed here because "restart to disable a plug-in" is not something
+    /// an adopter should have to design around.
+    /// </para>
+    /// <para>
+    /// TWO THINGS IT DELIBERATELY DOES NOT DO. Requests already executing inside the facade run to
+    /// completion — this removes the ROUTE, it does not abort work in flight, and a caller mid-request
+    /// gets its answer. And the facade is not disposed: its lifetime belongs to whoever created it
+    /// (usually the DI container), so disposing it here would kill a shared instance under another
+    /// caller. Dispose it yourself if you own it, after releasing.
+    /// </para>
+    /// <para>
+    /// Only modules mapped from a FACADE can be released — those are the ones the registry claimed.
+    /// Routes added with <see cref="MapRoute"/>/<see cref="UseRoute"/>/<see cref="UseModule"/> or the
+    /// <see cref="ModuleRouteBuilder"/> form are plain middleware and were never tracked, so they are
+    /// not releasable; <see cref="IModuleRegistry.MappedModules"/> tells you what is.
+    /// </para>
+    /// <para>
+    /// Throws <see cref="NotSupportedException"/> when the dispatcher cannot answer — see
+    /// <see cref="TryMapModule"/> for why that is better than a permissive false.
+    /// </para>
+    /// </summary>
+    /// <returns>True if the module was mapped and is now released; false if it was not mapped.</returns>
+    public static bool TryReleaseModule(this IMessageDispatcher dispatcher, string module)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(module);
+        return Registry(dispatcher, nameof(TryReleaseModule)).TryReleaseModule(module);
+    }
+
+    /// <summary>
+    /// The registry seam, or a refusal that says what to do about it — never a permissive wrong
+    /// answer. A dispatcher that does not know what it routes must not be able to report a name as
+    /// free, nor to claim a release succeeded.
+    /// </summary>
+    private static IModuleRegistry Registry(IMessageDispatcher dispatcher, string operation)
+    {
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        if (dispatcher is IModuleRegistry registry) return registry;
+        throw new NotSupportedException(
+            $"This {nameof(IMessageDispatcher)} does not implement {nameof(IModuleRegistry)}, so {operation} "
+            + "cannot know what it routes. Implement it (a decorator must forward every member) rather than "
+            + "assuming the name is free.");
     }
 }

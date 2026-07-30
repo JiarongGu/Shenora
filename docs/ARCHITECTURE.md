@@ -119,7 +119,10 @@ changes, noting them in `CHANGELOG.md`).
   `WebViewHost(+Options)` (the ONE place a WebView2 is configured: env + ensure under a 25 s
   init-timeout guard, settings-hardening preset + `ConfigureSettings` escape hatch, dev/prod
   `Navigate` with actionable errors, sync virtual-host serving of the packaged bundle vs
-  deferred off-UI-thread app schemes (`WebViewDeferredScheme`), disk-folder hosts
+  deferred off-UI-thread app schemes (`WebViewDeferredScheme` — a full request/response seam:
+  `WebViewResourceRequest` (uri/method/headers) in, `WebViewResourceResponse` (status/headers/
+  content STREAM) out, with `WebViewByteRange.TryParse` + `PartialContent`/`RangeNotSatisfiable`
+  so a served resource can be SOUGHT and a large one is never buffered whole), disk-folder hosts
   (`WebViewFolderMapping`), escaped `InjectedGlobals` + family scripts, and the four default
   event policies: new-window→system browser, downloads canceled, permissions denied except
   allowlist, guarded renderer-crash reload); `IWebViewResourceProvider` seam +
@@ -213,7 +216,7 @@ changes, noting them in `CHANGELOG.md`).
   `MessageDispatcherExtensions`, which carries the composition helpers as extensions over the
   interface's ONE `Use(MessageMiddleware)` primitive — so they work on any `IMessageDispatcher`,
   including a decorator, without the downcast the reference composition used to need (H6);
-  and `IModuleRegistry` (`MappedModules`/`IsModuleMapped`/`TrackMappedModule`, implemented by
+  and `IModuleRegistry` (`MappedModules`/`IsModuleMapped`/`TryClaimModule`/`TryReleaseModule` — claim, ask, release; implemented by
   `MessageDispatcher`) + `TryMapModule` — the seam for a DYNAMICALLY composed surface (plug-ins,
   licence-gated or per-tenant modules), kept OFF `IMessageDispatcher` so that interface stays the
   four things a dispatcher IS. `MapModule(facade)` throws on a duplicate; `TryMapModule` returns

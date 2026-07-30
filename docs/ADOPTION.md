@@ -65,6 +65,13 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
   DIFFERENT origin when you need cross-origin ES-module imports (set `AccessKind`). Embedded-resource
   serving and app schemes are available too (`ResourceProvider`, `DeferredSchemes`). A `DevUrl` gives
   you the dev-server switch a hand-rolled host usually lacks, which is the stale-bundle footgun.
+- **Serving something SEEKABLE or large** — video, audio, anything a page scrubs through — needs a
+  `DeferredSchemes` handler, not a folder mapping: `SetVirtualHostNameToFolderMapping` cannot honour
+  `Range`, which is the reason apps hand-roll this. The handler receives the request headers and
+  returns a status, headers and a **stream**, so nothing is buffered whole:
+  `WebViewByteRange.TryParse(request.GetHeader("Range"), length, out var range)` then
+  `WebViewResourceResponse.PartialContent(...)`, or `RangeNotSatisfiable(length)` when
+  `range.IsSatisfiable(length)` is false. Serve the whole file with `Ok(...)` when there is no range.
 - **Policies you may not have.** `NewWindowRequested`, `PermissionRequested`, `ProcessFailed` and
   download handling are wired with safe defaults; app hooks fall back to the built-in policy if they
   throw, because leaving one of those events unanswered is its own bug.
@@ -141,8 +148,9 @@ until the page is listening.
 - **Dynamically composed modules** (plug-ins, licence-gated features, per-tenant modules): map your
   own modules first, then offer the rest through `TryMapModule`, which returns false if the name is
   taken. `MapModule` throws on a duplicate. Ask what is claimed via `IModuleRegistry`.
-  **Known limit:** a mapped module cannot be released — the pipeline only grows, so disabling a
-  dynamic module needs a restart. Say so if you need otherwise; it is a recorded gap, not a refusal.
+  Turn one off again with `TryReleaseModule` — it stops answering and its name frees up for a
+  replacement, with no restart. Requests already inside the facade finish, and the facade is not
+  disposed (its lifetime is yours).
 - **Shared, host-fed state** (progress, status — the many-watchers case): `createShenoraStore` opens
   ONE subscription per event type however many components read it, and takes a `snapshot` on the
   first subscriber so a component that mounts mid-operation is not empty. Use `useShenoraEvent` for a
@@ -163,13 +171,49 @@ and a page reload re-establishes events without duplicate subscriptions.
 
 ## Stage 4 — portability (optional, but cheap here)
 
-Put your facades in a `net10.0` project (no `-windows`) that references only `Shenora.Core`, and
-inject the portable contracts — `IUrlLauncher`, `IClipboardService`, `IFileDialogs`,
-`IUiDispatcher`. The Windows implementations are registered by `UseWinForms` in the desktop host.
+**The point is enforcement, not tidiness.** A `net10.0` project cannot reference a Windows type, so
+the compiler checks on every build what a document could only assert — and it stays checked when
+someone later reaches for `Screen`, `Form` or `Application` inside app logic. It also makes the same
+logic usable from a non-WinForms shell later, which is what D20 is for.
 
-The point is enforcement, not tidiness: if a Windows type ever creeps into your app logic, that
-project turns red instead of the portability staying merely asserted. It also makes the same logic
-usable from a future non-WinForms shell.
+**The recipe**, as proven twice in this repo (`samples/Shenora.Sample.Logic` and the P6.4 host
+adapter, which needed no Windows reference either):
+
+1. **New project, plain `net10.0`** — no `-windows` suffix, no `UseWindowsForms`. Reference
+   `Shenora.Core` and, if it holds facades, `Shenora.Ipc`. **Do not reference `Shenora.WinForms` or
+   `Shenora.WebView2`**; adding either defeats the guard entirely, which is the one way this goes
+   wrong quietly.
+2. **Add it to your solution.** A guard project that nothing builds is not a guard. (This repo learned
+   that the hard way: the samples were missing from the solution file, so the "am I done?" gate never
+   compiled them.)
+3. **Move the facades, then fix what goes red.** Each error is a genuine platform dependency; the
+   fix is nearly always to inject a contract instead:
+
+   | App logic reaches for | Inject instead (all in `Shenora.Core`) |
+   |---|---|
+   | `OpenFileDialog` / `SaveFileDialog` / `FolderBrowserDialog` | `IFileDialogs` (+ `FileDialogOptions`, `FileDialogFilter`, `FileDialogResult`) |
+   | `Clipboard` | `IClipboardService` |
+   | `Process.Start(url)` / `ShellExecute` | `IUrlLauncher` |
+   | `Control.Invoke` / `BeginInvoke` / `InvokeRequired` | `IUiDispatcher` |
+   | Enabling/disabling the window while busy | `IUiInteraction` |
+   | App root, data and resource paths | `ShenoraPaths` |
+4. **Leave the genuinely platform-bound routes behind** in the desktop project. Reveal-in-Explorer,
+   secondary windows on their own STA threads, tray behaviour, window geometry — these are desktop
+   concepts and forcing them through a portable contract only produces a contract nobody else can
+   implement. `Shenora.Sample.Logic` and the desktop sample's own facade split exactly along that line.
+5. **Register nothing extra.** `UseWinForms` registers both faces of each contract — the Windows one
+   (`IShellLauncher`, `IFormInteraction`) and the portable one (`IUrlLauncher`, `IUiInteraction`) —
+   against one implementation, so injecting the portable face just works.
+
+**What is deliberately NOT portable, so you do not go looking:** the window-state stack
+(`WindowStateManager`, `IWindowStateStore`) stays in `Shenora.WinForms`. Its signatures happen to look
+platform-neutral, and that is not the bar — window geometry is a desktop concept, and the bar is "app
+logic must be able to compile off Windows". Same for `OptimizedForm`, `TrayIcon`, `SplashPanel`,
+`SecondaryWindows` and `SingleInstanceGuard`.
+
+**If a contract does not fit**, say so — that is the feedback D20 wants. The portable set was derived
+from what the surveyed apps actually needed, so a capability you cannot express through it is a real
+finding, not a misuse.
 
 ---
 

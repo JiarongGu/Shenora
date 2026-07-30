@@ -6,6 +6,23 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 
 ## The rules
 
+- **A resource handler answers a REQUEST with a RESPONSE — never "here are all the bytes".** The
+  deferred-scheme seam used to be `Func<Uri, Task<(byte[], string)>>`, which made two whole classes of
+  response unwritable: anything depending on a request header (above all `Range`, so **nothing it
+  served could be sought**), and anything larger than memory (the complete `byte[]` meant a 4 GB file
+  was 4 GB of RAM). A surveyed app had bypassed the kit and hooked WebView2 itself for exactly this,
+  with its own ADR (P6.6) — the definition of a capability someone needs and cannot express. Three
+  things the implementation must keep right: **snapshot the request on the UI THREAD** before handing
+  it to the handler's pool thread (the WebView2 args and their header collection are COM objects with
+  thread affinity); the scheme's `CacheControl` is a DEFAULT for 2xx only, never stamped over a
+  handler's own header or onto a 206/404; and `Accept-Ranges: bytes` must be advertised on the 200,
+  or a media element will not even ATTEMPT a seek — indistinguishable from "seeking is broken".
+  On the parser: a start past the end is **unsatisfiable (416), not clamped** — clamping serves bytes
+  nobody asked for with no error — and the suffix form `bytes=-500` means the LAST 500 bytes, which
+  hand-rolled parsers read as "from 500". Test it with an ASYMMETRIC case (`bytes=-1`): with a
+  1000-byte resource, `bytes=-500` resolves to 500 either way, so the obvious test passes while the
+  bug is live.
+
 - **`CoreWebView2Environment` is thread-affine.** Only the main UI thread uses the shared/
   prewarmed environment (`WebViewEnvironment.GetSharedAsync`); a window on its own STA thread
   MUST create its own on that thread (`CreateForCurrentThreadAsync`; same options + user-data

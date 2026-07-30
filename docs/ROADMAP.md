@@ -5,6 +5,69 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P6.5 + P6.6: the last two items, and the last gap the survey found
+
+**P6 is complete.** What remained was guidance and a survey, and the survey found one more real gap.
+
+**P6.5 — portability guidance.** `docs/ADOPTION.md` Stage 4 became the actual recipe rather than a
+paragraph of intent: the project shape (plain `net10.0`, and the warning that referencing
+`Shenora.WinForms` defeats the guard entirely — the one way this goes wrong quietly), the
+contract-substitution table, the "add it to your solution or the guard never runs" step, and an
+explicit NOT-portable list so nobody hunts for a contract that deliberately does not exist. The
+window-state stack stays in `Shenora.WinForms` on purpose: its signatures look platform-neutral, and
+that is not the bar — window geometry is a desktop concept. No D20 amendment was needed; the portable
+contract set covered every case the two in-tree exercises hit.
+
+**P6.6 — the remaining targets, read as capability CHECKPOINTS.** Three surveyed, one real gap:
+
+**The gap, closed: a resource handler could only ever answer "200, here are all the bytes."** The
+video-library sibling serves local media to its page over a custom virtual host with HTTP `Range` and
+206, and carries an ADR explaining why: `SetVirtualHostNameToFolderMapping` cannot honour `Range`.
+Shenora's deferred-scheme seam was `Func<Uri, Task<(byte[], string)>>` — the handler never saw a
+request header, so `Range` was invisible and **nothing it served could be sought**, and returning the
+complete bytes meant a 4 GB file was 4 GB of memory. So the app had bypassed the kit and hooked
+WebView2 itself, which is the definition of a capability someone needs and cannot express. It is now a
+full request/response seam: `WebViewResourceRequest` in, `WebViewResourceResponse` (status, headers,
+content STREAM) out, plus `WebViewByteRange.TryParse`. Not a media feature — conditional GETs,
+redirects, per-asset CORS and streaming-without-buffering were all equally unreachable.
+
+The parser ships because each legal form is its own chance to be wrong, and one of them is a trap:
+`bytes=-500` is a SUFFIX (the last 500 bytes), not an offset. Its test table uses `bytes=-1` and
+`bytes=-5000` deliberately — sabotaging the branch to read a suffix as an offset leaves `bytes=-500`
+of a 1000-byte resource resolving to 500 either way, so the obvious test passes while the bug is live.
+A start past the end is reported unsatisfiable rather than clamped, because clamping serves bytes
+nobody asked for with no error; and the 200 advertises `Accept-Ranges`, without which a media element
+will not even attempt a seek — indistinguishable from "seeking is broken".
+
+**Recorded, not built:** the same sibling composites a native player surface with the web view.
+P5.6's caption-button clipping is the same mechanism, but the sibling solves it in its own leaf
+library and has never asked the kit for it — speculation, so it stays recorded.
+
+**No gap** in the other two. The skin-manager sibling's plug-in SDK is the APP's contract (D21); what
+it needs from the kit is dynamic module composition with claim/release and progress-as-notifications,
+both present. The server-backed app needs the least of all: it serves over in-process Kestrel, so
+`Range` is ASP.NET's problem, and its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`
+— an HTTP endpoint calls it directly, so D16's transport pluggability holds with no new surface. Its
+profile is shell-only.
+
+The review of this batch found two things in the new code, both about honesty rather than behaviour:
+the `Content` stream's doc claimed the host disposes it, which it does not — WebView2 reads it after
+the handler returns, so a `using` there would truncate the response, and the host disposes it only
+when handing it over failed. And the new 404 shipped an empty body while the kit's policy (P5.5 H3) is
+ONE constant body for every 404; it carries that constant now.
+
+**And the last recorded limit is gone: a mapped module can be RELEASED.** The pipeline only ever grew,
+so disabling a plug-in, dropping a per-tenant module or unloading a lazily loaded area meant
+restarting. `IModuleRegistry` is reshaped to `TryClaimModule`/`TryReleaseModule`, because claim and
+release have to be one owner's job — a registry that only remembers a NAME can never take the route
+out again, which is exactly why release had been impossible. Two properties had to be right and both
+have tests: the claim is ATOMIC (check-then-map lets two threads offering the same plug-in name both
+win — the silent-shadowing defect reintroduced as a race), and release is SURGICAL, leaving the
+relative order of the error handler, logging, app middleware and the scoped router untouched. It
+removes the route and nothing else: in-flight requests finish, and the facade is not disposed because
+its lifetime belongs to whoever built it. The original "no consumer has needed it, so do not guess at
+the surface" was a sound default and the wrong final answer once the alternative was a SemVer freeze.
+
 ### 2026-07-31 — P6.4 follow-up: close the three gaps, instead of recording them
 
 The adapter probes above produced three "the framework almost fits, but…" notes, and the first pass
@@ -1428,7 +1491,17 @@ in the gate around them**:
   composition has to downcast `IMessageDispatcher` because form-dependent facades have no
   registration seam.
 
-### P6 — Sibling adoption (brief Phase 5)
+### P6 — Sibling adoption (brief Phase 5) — **COMPLETE 2026-07-31**
+
+> ✅ **P6.1–P6.6 are all done; nothing here is pending.** The narrative entries are under `## Done`
+> (newest first). What the phase actually delivered, against the framing below: the library is READY
+> and `docs/ADOPTION.md` is the artefact an adopting app's own session works from — this repo never
+> edited a sibling, on user direction. Six gaps were found and closed rather than recorded (the npm
+> `.d.ts` UMD-global defect, the client's missing catch-all subscription, the absent dispatch
+> `CancellationToken`, no synchronous `IEventBus.Emit`, an internal-only `IpcErrorMapping`, and a
+> resource seam that could not answer anything but "200, here are all the bytes"), plus module
+> release. Everything below is the ORIGINAL framing, kept for the record — its "adopt in the sibling
+> first" premise was superseded, and its "smallest host" premise was stale before the phase started.
 
 - Adopt in the newest desktop sibling first (smallest host, gaps already documented), via local
   feed + pinning; keep it runnable at every step. Then evaluate the other two desktop siblings

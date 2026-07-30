@@ -338,20 +338,54 @@ public sealed class WebViewHost
         }
     }
 
+    /// <summary>
+    /// Copy the request onto a plain object, ON THE UI THREAD, before handing it to a pool thread.
+    /// The WebView2 args and their header collection are COM objects with thread affinity, so
+    /// reading <c>args.Request.Headers</c> from inside the handler's <c>Task.Run</c> is a use of a
+    /// UI-thread object off the UI thread — the kind that works until it doesn't.
+    /// </summary>
+    private static WebViewResourceRequest SnapshotRequest(CoreWebView2WebResourceRequestedEventArgs args, string uri)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var header in args.Request.Headers)
+            {
+                // Last one wins for a repeated name; none of the headers a handler acts on repeat.
+                headers[header.Key] = header.Value;
+            }
+        }
+        catch
+        {
+            // A torn-down request has no readable headers; an empty set simply means "no Range",
+            // which degrades to serving the whole resource rather than failing.
+        }
+
+        var method = "GET";
+        try { method = args.Request.Method ?? "GET"; } catch { /* same */ }
+
+        return new WebViewResourceRequest
+        {
+            Uri = new Uri(uri),
+            Method = method.ToUpperInvariant(),
+            Headers = headers,
+        };
+    }
+
     private void ServeDeferred(CoreWebView2WebResourceRequestedEventArgs args, string uri, WebViewDeferredScheme scheme)
     {
         var deferral = args.GetDeferral();
+        // Snapshot the request on THIS thread: the args object belongs to the UI thread and its
+        // Headers collection must not be walked from the pool thread the handler runs on.
+        var request = SnapshotRequest(args, uri);
+
         _ = Task.Run(async () =>
         {
-            byte[] data;
-            var status = 200;
-            var reason = "OK";
-            string headers;
+            WebViewResourceResponse response;
             try
             {
-                var (bytes, contentType) = await scheme.Handler(new Uri(uri)).ConfigureAwait(false);
-                data = bytes;
-                headers = $"Content-Type: {contentType}\nCache-Control: {scheme.CacheControl}";
+                response = await scheme.Handler(request).ConfigureAwait(false)
+                           ?? WebViewResourceResponse.NotFound();
             }
             catch (Exception ex)
             {
@@ -359,22 +393,28 @@ public sealed class WebViewHost
                 // likely of all of these to carry a real path or a remote URL, and page script can read
                 // this body. The handler's failure goes to the host log instead.
                 Log(() => $"[Shenora.WebView2] Deferred scheme '{scheme.Scheme}' failed for '{uri}': {ex}");
-                data = NotFoundBody;
-                status = 404;
-                reason = "Not Found";
-                headers = "Content-Type: text/plain";
+                response = WebViewResourceResponse.NotFound();
             }
+
+            var headerLines = new List<string>();
+            foreach (var (key, value) in response.Headers) headerLines.Add($"{key}: {value}");
+            // The scheme's Cache-Control is a DEFAULT, not an override: a handler answering 206 or 404
+            // has its own caching story, and stamping "cache for a day" over it would be wrong.
+            if (!response.Headers.ContainsKey("Cache-Control") && response.StatusCode is >= 200 and < 300)
+                headerLines.Add($"Cache-Control: {scheme.CacheControl}");
 
             void Build()
             {
                 try
                 {
                     args.Response = _webView.CoreWebView2.Environment.CreateWebResourceResponse(
-                        new MemoryStream(data, writable: false), status, reason, headers);
+                        response.Content, response.StatusCode, response.ReasonPhrase,
+                        string.Join("\n", headerLines));
                 }
                 catch
                 {
                     // the webview may be tearing down
+                    response.Content.Dispose();
                 }
                 finally
                 {

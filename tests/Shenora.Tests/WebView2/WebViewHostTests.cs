@@ -154,7 +154,8 @@ public class WebViewHostTests
         var scheme = new WebViewDeferredScheme
         {
             Scheme = "app",
-            Handler = _ => Task.FromResult((Array.Empty<byte>(), "text/plain")),
+            Handler = _ => Task.FromResult<WebViewResourceResponse?>(
+                WebViewResourceResponse.Bytes([], "text/plain")),
         };
         Assert.Equal("public, max-age=86400", scheme.CacheControl);
     }

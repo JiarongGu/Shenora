@@ -188,6 +188,23 @@ at the first list and missed five more breaking changes.
 - **`IEventBus` gained `Emit`** (two overloads, fire-and-forget). Additive for CALLERS; **breaking for
   anyone who implements `IEventBus` themselves** — a test double or a substitute registered over the
   built-in one needs the two new members. See `### Added` for why it exists.
+- **`IModuleRegistry.TrackMappedModule(string)` is now `TryClaimModule(IModuleFacade)`, and there is
+  a matching `TryReleaseModule(string)`.** Claim and release have to be ONE owner's job: the registry
+  can only take a route out again if it holds the routing it installed, and splitting "remember the
+  name" from "install the route" is exactly what made release impossible. The claim is also ATOMIC
+  now — check and install happen under one lock, so two threads offering the same plug-in name
+  concurrently cannot both win, which the previous check-then-map could allow.
+  **Migration:** apps never called `TrackMappedModule` (its own doc said so); use
+  `MapModule`/`TryMapModule` as before. A DECORATOR that implements `IModuleRegistry` must forward
+  the new members instead of the old one.
+- **A deferred scheme's `Handler` now takes a `WebViewResourceRequest` and returns a
+  `WebViewResourceResponse`**, instead of `Func<Uri, Task<(byte[], string)>>`. See `### Added` for
+  what that unlocks and why it could not be done additively — the old signature had no room for a
+  request header, a status code, or a stream.
+  **Migration**, mechanically:
+  `Handler = uri => Task.FromResult((bytes, "text/plain"))` becomes
+  `Handler = request => Task.FromResult<WebViewResourceResponse?>(WebViewResourceResponse.Bytes(bytes, "text/plain"))`.
+  Returning null now means 404, and throwing still does (with the message kept host-side, as before).
 
 ### Added
 
@@ -379,6 +396,36 @@ at the first list and missed five more breaking changes.
   runs inside the bus's own guard, so the task cannot fault because of a subscriber. A caller could
   only learn that by reading the implementation, which is the actual finding: the guarantee is the
   API's to state, so it states it. Argument errors still throw synchronously — those are caller bugs.
+- **`IMessageDispatcher.TryReleaseModule` — a dynamically composed module can now be turned OFF.**
+  The pipeline only ever grew, so disabling a plug-in, dropping a per-tenant module when the tenant
+  goes away, or unloading a lazily loaded area meant restarting the app. That was recorded as a known
+  limit on the grounds that no consumer had needed it; "restart to disable a plug-in" is not something
+  an adopter should have to design around, so it is closed. Releasing frees the name for a
+  replacement, and `MappedModules` tells you what is releasable.
+  **Two things it deliberately does not do.** Requests already executing inside the facade run to
+  completion — this removes the ROUTE, it does not abort work in flight, and a caller mid-request
+  still gets its answer. And the facade is NOT disposed: its lifetime belongs to whoever created it
+  (usually the DI container), so disposing it here would kill a shared instance under another caller.
+  Removal is surgical — the released module's entry comes out and the relative order of everything
+  else (error handler, logging, app middleware, scoped router) is preserved exactly, which is the part
+  that had to be right and has its own test.
+- **A deferred scheme can answer any HTTP response, not just "200, here are all the bytes"** —
+  `WebViewResourceRequest` (uri, method, headers) in, `WebViewResourceResponse` (status, reason,
+  headers, content STREAM) out, plus `WebViewByteRange.TryParse` for the `Range` header.
+  Two things were impossible before: a handler never saw a request header, so `Range` was invisible
+  and **nothing it served could be sought** — a media element cannot seek a resource whose handler
+  has no way to learn what offset was asked for; and it returned the complete `byte[]`, so a 4 GB file
+  meant 4 GB of memory. One of the surveyed apps had to bypass the seam entirely and hook WebView2
+  itself for exactly this, with an ADR explaining why (P6.6). It is not a media feature: conditional
+  GETs, redirects, per-asset CORS and streaming-without-buffering were all equally unreachable.
+  `WebViewByteRange.TryParse` ships because each of the three legal forms is its own chance to be
+  wrong — `bytes=0-499`, `bytes=500-` (what a player actually sends when it seeks), and `bytes=-500`,
+  a SUFFIX meaning the last 500 bytes, which hand-rolled parsers reliably read as "from 500". A start
+  past the end is reported unsatisfiable rather than clamped, because clamping serves bytes nobody
+  asked for with no error; `WebViewResourceResponse.RangeNotSatisfiable` carries the `Content-Range`
+  the spec requires so a client can retry instead of looping on the same bad range.
+  `Ok`/`Bytes` advertise `Accept-Ranges: bytes`, without which a media element will not even attempt
+  a seek — which looks exactly like "seeking is broken" while the handler is perfectly capable.
 
 ### Changed
 

@@ -996,12 +996,13 @@ Already covered — no work needed, and the earlier plan was wrong to call these
   version reaches for `Screen.WorkingArea`, which is DPI-mis-scaled (use `GetMonitorInfo`).
 - **Dynamic module composition.** CLOSED 2026-07-31: `IModuleRegistry` + `TryMapModule`.
 
-Known capability LIMITS, recorded rather than guessed at:
-- [ ] **A mapped module cannot be RELEASED — the dispatcher's pipeline only grows.** Disabling a
-  dynamically composed module therefore needs a restart. Not built because no consumer has needed it
-  (the surveyed app applies plug-in enable/disable at startup, so it never unmaps). Build it when a
-  consumer genuinely cannot express what they need — a capability nobody has needed is speculation,
-  one someone needs and cannot express is a gap.
+Known capability LIMITS:
+- [x] **A mapped module cannot be RELEASED — CLOSED 2026-07-31.** `TryReleaseModule`, with
+  `IModuleRegistry` reshaped to `TryClaimModule`/`TryReleaseModule` so claim and release have one
+  owner (a registry that only remembers a NAME can never take the route out again). The original
+  reasoning — "no consumer has needed it, so do not guess at the surface" — was sound as a default and
+  wrong as a final answer once P7's SemVer freeze was the alternative: "restart to disable a plug-in"
+  is not something an adopter should design around.
 
 #### Still to do for adoption readiness
 
@@ -1039,15 +1040,35 @@ Known capability LIMITS, recorded rather than guessed at:
   kit source to know it is safe; `IpcErrorMapping` is public so an app whose failures travel as EVENTS
   can reuse the leak policy instead of retyping it. All three were re-verified from the ADAPTER's side,
   not just by unit tests — the throwaway probe now uses each and its 22 checks pass.
-- [ ] **P6.5 — Portability (D20).** Already proven through a PACKAGE reference in P6.1's `portable`
-  consumer, and again by P6.4's host adapter compiling as `net10.0`. What remains is guidance: how an
-  app moves its facades into a `net10.0` project. Cheap for the surveyed target — its `Core` project
-  is ALREADY `net10.0` while its modules sit in the Windows host project, so the portable-facade
-  pattern has a home waiting. Feed the answer back as a D20 amendment: "are these the right portable
-  contracts?" becomes a concrete question answered by a real app.
-- [ ] **P6.6 — Feed back, then re-evaluate the other targets.** Every API change P6 argues for lands
-  BEFORE 1.0 (P7 freezes SemVer). Then evaluate the other two desktop siblings and the server-backed
-  app (shell-only profile).
+- [x] **P6.5 — DONE (2026-07-31): portability guidance (D20).** `docs/ADOPTION.md` Stage 4 is now the
+  real recipe — the project shape, the contract-substitution table (dialogs/clipboard/URL launcher/UI
+  dispatcher/interaction/paths), the "add it to the solution or the guard never runs" step, and an
+  explicit NOT-portable list (the window-state stack, `OptimizedForm`, tray, splash, secondary
+  windows, single-instance) so nobody goes looking for a contract that deliberately does not exist.
+  Proven twice in-tree: `samples/Shenora.Sample.Logic` and P6.4's host adapter, which needed no
+  Windows reference either. No D20 amendment needed — the portable contract set covered every case
+  both exercises hit.
+- [x] **P6.6 — DONE (2026-07-31): the remaining targets evaluated.** Read as capability CHECKPOINTS,
+  never as specs. Findings:
+  - **The video-library sibling — ONE REAL GAP, closed.** It serves local media to its page over a
+    custom virtual host with HTTP `Range`/206, with an ADR recording that
+    `SetVirtualHostNameToFolderMapping` cannot honour `Range`. Shenora's deferred-scheme handler was
+    `Func<Uri, Task<(byte[], string)>>` — no request headers, no status, no response headers, whole
+    file in memory — so it could not express that at all. Closed: `WebViewResourceRequest`/
+    `WebViewResourceResponse` + `WebViewByteRange` (**breaking**, see CHANGELOG).
+  - **Its native-player host is RECORDED, not built.** It composites a native surface with the web
+    view; P5.6's caption-button clipping is the same mechanism, but the sibling solves this in its own
+    leaf library and has not asked the kit for it. A capability nobody has asked for is speculation.
+  - **The skin-manager sibling — no gap.** Its plug-in SDK (`IPlugin`/`IPluginContext`/
+    `IPluginProgress`) is the APP's contract per D21; what it needs from the kit is dynamic module
+    composition with claim/release (now present) and progress-as-notifications (present).
+  - **The server-backed app — no gap, and it needs the least.** It serves over in-process Kestrel, so
+    `Range` is ASP.NET's problem, not the kit's; its profile is shell-only (`Shenora.WinForms` plus
+    optionally the WebView2 host with no resource provider). Its host-side IPC seam is already
+    `IMessageDispatcher.DispatchAsync` — an HTTP endpoint calls it directly, so D16's transport
+    pluggability holds without new surface.
+  - **Feed-back status:** every API change P6 argued for has landed, so nothing is left owing before
+    P7 freezes SemVer.
 
 #### Increments (keep it runnable at every step — that is the phase's standing rule)
 
