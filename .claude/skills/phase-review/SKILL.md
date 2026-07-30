@@ -12,8 +12,12 @@ The standing rule: every phase gets an adversarial review before its commit.
 1. **Scope the diff**: `git diff <last-phase-commit>..HEAD --stat` (or working tree if
    uncommitted). Identify the phase's themes (new packages, public-surface changes, ported code).
 2. **Spawn a review subagent** with the diff scope, and hand it `docs/REVIEW-GUIDE.md` as its brief
-   (invariants by area, risk hotspots, and the already-settled list it must not re-raise). Prompt it
-   to hunt for:
+   (invariants by area, risk hotspots, and the already-settled list it must not re-raise).
+   **If the Agent tool is unavailable — it usually has been — run the SAME checklist yourself against
+   the diff and say so in the notes.** Every review since P5.5 has been done that way and has still
+   found real defects (the P5.6 pass caught a gate failing open; P6.3a's caught a vacuous tripwire),
+   so a missing subagent is never a reason to skip the pass — only to do it by hand. Either way, hunt
+   for:
    - **the five classes five consecutive phase reviews MISSED** (earned 2026-07-30 — the first full
      review found them after this checklist had passed the same code five times): path/containment
      checks on anything that maps a request to a file; an async op that accepts a

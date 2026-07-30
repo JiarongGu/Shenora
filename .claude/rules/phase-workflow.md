@@ -1,8 +1,10 @@
 # Phase workflow — build, verify, review, commit
 
 The project moves in phases (`docs/ROADMAP.md`: P1 skeleton → P2 core host → P3 IPC → P4 modules
-+ native services → P5 auxiliary browser sessions → **P5.5 consolidation/re-layer (CURRENT)** →
-P6 sibling adoption → P7 stabilisation/1.0). Per phase:
++ native services → P5 auxiliary browser sessions → P5.5 consolidation/re-layer → P5.6 native
+caption buttons → **P6 adoption readiness (CURRENT)** → P7 stabilisation/1.0). P6 readies the
+LIBRARY and writes `docs/ADOPTION.md`; the adopting app's own session does the adoption, and this
+repo does not edit another repo. Per phase:
 
 1. **Build** through the dev loop: `node devtools/dev.mjs <build|test|verify|pack|doctor|sample|…>`
    — don't invent ad-hoc shell for these steps.

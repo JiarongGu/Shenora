@@ -205,16 +205,26 @@ changes, noting them in `CHANGELOG.md`).
   `AddModuleFacade<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher` on
   `IpcServiceCollectionExtensions` (error handler → app middleware → DI-registered facades, mapped
   LAZILY so the singleton is cached before the provider is enumerated); and
-  `MessageDispatcherExtensions`, which carries the six composition helpers as extensions over the
+  `MessageDispatcherExtensions`, which carries the composition helpers as extensions over the
   interface's ONE `Use(MessageMiddleware)` primitive — so they work on any `IMessageDispatcher`,
-  including a decorator, without the downcast the reference composition used to need (H6).
+  including a decorator, without the downcast the reference composition used to need (H6);
+  and `IModuleRegistry` (`MappedModules`/`IsModuleMapped`/`TrackMappedModule`, implemented by
+  `MessageDispatcher`) + `TryMapModule` — the seam for a DYNAMICALLY composed surface (plug-ins,
+  licence-gated or per-tenant modules), kept OFF `IMessageDispatcher` so that interface stays the
+  four things a dispatcher IS. `MapModule(facade)` throws on a duplicate; `TryMapModule` returns
+  false instead, and throws rather than answering when the dispatcher cannot know. Known limit: a
+  mapped module cannot be released — the pipeline only grows.
 - `@shenora/react` — the client side of the contract: wire types mirroring `Shenora.Ipc`
   name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError`
   (structured code + parameters; client-side `TIMEOUT`/`NO_TRANSPORT` reject the same way),
   `ShenoraTransport` seam + `createWebView2Transport` (D16 pluggability) +
-  `isShenoraAvailable`, `ShenoraBridge` (correlated `invoke` + timeout, category routing,
-  batch unbundling, `notifyReady` handshake, `fallback` seam for pure-UI browser dev; lazy
-  default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus`,
+  `isShenoraAvailable`, `ShenoraBridge` (correlated `invoke` + timeout, one-way `post` +
+  `onPostError` — no pending entry, no deadline, and a failed response reported rather than dropped;
+  category routing, batch unbundling, `notifyReady` handshake, `fallback` seam for pure-UI browser
+  dev; lazy default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus`,
+  `createShenoraStore` (a store fed by one module's event stream: ONE subscription however many
+  components read it, `snapshot` on the first subscriber so a late mounter is not empty, built on
+  React's `useSyncExternalStore` so the package imposes no state library),
   `BaseModuleService<TRequests>`, hooks (`useShenora`/`useShenoraEvent`/`useShenoraQuery`),
   `WindowCommands` typed service + `useWindowMaximized` (resize-triggered resync), `useDropZone`
   (native drop zones synced to elements — real OS paths, unstyled drag feedback),
