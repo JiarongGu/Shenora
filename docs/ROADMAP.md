@@ -995,7 +995,16 @@ profiles, silent refresh, clear-on-logout) and co-browse streaming (`CoBrowseSes
 screencast frames out, input dispatched back, human-solved by design), in its own package with a
 live sample demo.
 
-### P5.5 — Consolidation: cleanup, re-layer, roadmap revisit — NEXT, before P6
+### P5.5 — Consolidation: cleanup, re-layer, roadmap revisit — IN PROGRESS, before P6
+
+> **STATUS (2026-07-30, end of the second consolidation session): H1 · H2 · H3 · H4 · H5 · H6 · H8 are
+> DONE. Only H7 and H9 remain.** Fourteen commits across two sessions; `dev.mjs verify` PASSES at
+> **428 dotnet + 54 vitest**. See `## Done` above for the per-batch narratives (newest first) and
+> `TASKS.md` `### P5.5` for the itemised remainder. Two notes for whoever picks this up:
+> **(a)** several of H7's docs-drift items were fixed opportunistically while other batches landed, so
+> re-check each against the tree instead of working the list as written;
+> **(b)** four surface items were deliberately deferred OUT of H6 and INTO H9 or the H2 tail, with the
+> reasons recorded next to them in `TASKS.md` — they are not oversights.
 
 **What this phase is.** P0–P5 put the whole body of the kit down in a short span — five commits,
 ~8.7k lines of `src/` plus ~4.7k of tests, five packages and an npm client — extraction-first and
