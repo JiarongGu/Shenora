@@ -59,17 +59,11 @@ public sealed class MessageDispatcher : IMessageDispatcher
             return IpcResponse.CreateError(request.Id, IpcErrorCodes.NoHandler, parameters:
                 new Dictionary<string, string> { ["module"] = request.Module, ["type"] = request.Type });
         }
-        catch (OperationException ex)
-        {
-            _logger.LogWarning(ex, "Operation error dispatching {Module}/{Type}: [{Code}]",
-                request.Module, request.Type, ex.Code);
-            return IpcResponse.CreateError(request.Id, ex.ToError());
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error dispatching {Module}/{Type}", request.Module, request.Type);
-            return IpcResponse.CreateError(request.Id, IpcErrorCodes.UnknownError, parameters:
-                new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name });
+            // One owner for the error boundary (P5.5 H4.5) — see IpcErrorMapping for why four copies
+            // of this rule was a leak waiting to happen.
+            return IpcErrorMapping.ToErrorResponse(request, ex, _logger, "dispatching");
         }
     }
 
@@ -212,17 +206,9 @@ public sealed class MessageDispatcher : IMessageDispatcher
             {
                 return await next();
             }
-            catch (OperationException ex)
-            {
-                _logger.LogWarning(ex, "Operation error in {Module}/{Type}: [{Code}]",
-                    request.Module, request.Type, ex.Code);
-                return IpcResponse.CreateError(request.Id, ex.ToError());
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled error in {Module}/{Type}", request.Module, request.Type);
-                return IpcResponse.CreateError(request.Id, IpcErrorCodes.UnknownError, parameters:
-                    new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name });
+                return IpcErrorMapping.ToErrorResponse(request, ex, _logger, "in");
             }
         });
     }

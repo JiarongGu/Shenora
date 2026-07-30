@@ -187,7 +187,9 @@ public sealed class DropZoneManager : IDisposable
     /// </summary>
     private (int X, int Y, int Width, int Height) ToFormBounds(int cssX, int cssY, int cssWidth, int cssHeight)
     {
-        var scale = _options.WebView.DeviceDpi / 96.0;
+        // DpiHelper owns device-DPI conversion (P5.5 H4.5) — reachable since the re-layer (D19), and
+        // it guards a non-positive DeviceDpi, which the hand-rolled `/ 96.0` did not.
+        var scale = Shenora.WinForms.DpiHelper.ScaleFromDeviceDpi(_options.WebView.DeviceDpi);
         var physX = (int)Math.Round(cssX * scale);
         var physY = (int)Math.Round(cssY * scale);
         var physW = (int)Math.Round(cssWidth * scale);

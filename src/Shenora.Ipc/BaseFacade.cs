@@ -36,18 +36,29 @@ public abstract class BaseFacade : IModuleFacade
             var data = await RouteMessageAsync(request).ConfigureAwait(false);
             return IpcResponse.CreateSuccess(request.Id, data);
         }
-        catch (OperationException ex)
-        {
-            _logger.LogWarning(ex, "{Module} operation error on {Type}: [{Code}]",
-                ModuleName, request.Type, ex.Code);
-            return IpcResponse.CreateError(request.Id, ex.ToError());
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "{Module} unhandled error on {Type}", ModuleName, request.Type);
-            return IpcResponse.CreateError(request.Id, IpcErrorCodes.UnknownError, parameters:
-                new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name });
+            return IpcErrorMapping.ToErrorResponse(request, ex, _logger, $"{ModuleName} handling");
         }
+    }
+
+    /// <summary>
+    /// A route that returns nothing. Absorbed from the facades that each declared their own private
+    /// copy — including the SAMPLE app's, which is the tell that it was consumer-facing boilerplate
+    /// rather than an implementation detail (P5.5 H4.5).
+    /// </summary>
+    protected static Task<object?> Done() => Task.FromResult<object?>(null);
+
+    /// <summary>
+    /// The terminator for an unrecognized request type: a structured <see cref="IpcErrorCodes.NoHandler"/>
+    /// carrying the module and type. Every facade ended its switch with a hand-written copy of this,
+    /// so every consumer had to know the exact error shape to stay consistent with the framework.
+    /// </summary>
+    protected OperationException UnknownType(IpcRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new OperationException(IpcErrorCodes.NoHandler,
+            new Dictionary<string, string> { ["module"] = ModuleName, ["type"] = request.Type });
     }
 
     /// <summary>

@@ -61,7 +61,7 @@ public sealed class LoginWindowOptions
     /// Initial client size — desktop-width by default ON PURPOSE: responsive login pages reflow
     /// to a mobile layout in a narrow window, and at least one family provider renders NO login
     /// UI at all below desktop width (measured). The driver shrinks to the login box afterwards
-    /// via <see cref="LoginWindowController.FitToBox"/>.
+    /// via <see cref="SessionController.FitToBox"/>.
     /// </summary>
     public Size ClientSize { get; init; } = new(680, 780);
 
@@ -81,7 +81,7 @@ public sealed class LoginWindowOptions
     /// True (default): the window shows immediately and <see cref="LoginWindow.RunAsync"/>
     /// behaves like the server-backed sibling's modal flow. False: the SILENT-REFRESH shape from
     /// the primary sibling — the window is created REALIZED BUT OFF-SCREEN, and only a driver
-    /// call to <see cref="LoginWindowController.Reveal"/> brings it on screen; a driver that
+    /// call to <see cref="SessionController.Reveal"/> brings it on screen; a driver that
     /// completes without revealing (the persistent profile was already signed in) refreshes the
     /// session with the user never seeing a window ("no interaction ⇒ no window").
     /// </summary>
@@ -97,7 +97,7 @@ public sealed class LoginWindowOptions
     /// <summary>
     /// Loading-state hook (marshalled to the UI thread): show/hide the app's own splash overlay
     /// over the WebView2 — the visual is the app's (headless). Driven by the driver via
-    /// <see cref="LoginWindowController.SetLoading"/>, plus a one-shot fallback hide after
+    /// <see cref="SessionController.SetLoading"/>, plus a one-shot fallback hide after
     /// <see cref="LoadingFallbackTimeout"/> so a driver that never signals can't leave the
     /// splash up forever (measured — three independent drop paths in the source).
     /// </summary>
@@ -136,7 +136,7 @@ public sealed class LoginWindow
     /// long-poll it by design.
     /// </summary>
     public async Task<LoginResult> RunAsync(
-        Func<LoginWindowController, CancellationToken, Task<string?>> driveLogin,
+        Func<SessionController, CancellationToken, Task<string?>> driveLogin,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(driveLogin);
@@ -192,7 +192,7 @@ public sealed class LoginWindow
     /// runs over the controller, and when it returns the window closes (ending ShowDialog).
     /// </summary>
     private LoginResult RunOnUi(
-        Func<LoginWindowController, CancellationToken, Task<string?>> driveLogin,
+        Func<SessionController, CancellationToken, Task<string?>> driveLogin,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_options.ProfileDirectory);
@@ -215,7 +215,7 @@ public sealed class LoginWindow
             // Silent-refresh shape: realized (WebView2 needs a real handle) but parked
             // off-screen; Reveal() brings it on screen only when interaction is needed.
             form.StartPosition = FormStartPosition.Manual;
-            form.Location = new Point(-32000, -32000);
+            form.Location = new Point(OffscreenWindow.ParkedCoordinate, OffscreenWindow.ParkedCoordinate);
             form.ShowInTaskbar = false;
         }
 
@@ -240,7 +240,7 @@ public sealed class LoginWindow
         form.Shown += async (_, _) =>
         {
             if (cancellationToken.IsCancellationRequested) { form.Close(); return; }
-            LoginWindowController? controller = null;
+            SessionController? controller = null;
             try
             {
                 await SessionBrowser.InitializeAsync(web, new SessionBrowserOptions
@@ -249,7 +249,7 @@ public sealed class LoginWindow
                     KeepAliveInBackground = !_options.RevealImmediately, // a hidden window must keep its JS running
                 });
 
-                controller = new LoginWindowController(form, web, _options.NavigationGuard, _options.OnLoading, foreground: true);
+                controller = new SessionController(form, web, _options.NavigationGuard, _options.OnLoading, foreground: true);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, controller.WindowClosed);
                 var blob = await driveLogin(controller, linked.Token);
                 outcome = !string.IsNullOrEmpty(blob)

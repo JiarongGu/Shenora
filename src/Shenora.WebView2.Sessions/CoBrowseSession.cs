@@ -85,6 +85,7 @@ public sealed class CoBrowseSessionOptions
 public sealed class CoBrowseSession : IAsyncDisposable
 {
     private readonly Form _form;
+    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Channel<byte[]> _frames;
     private int _disposed;
@@ -95,9 +96,10 @@ public sealed class CoBrowseSession : IAsyncDisposable
     private double _viewportHeight;
     private bool _buttonDown;
 
-    private CoBrowseSession(Form form, WebView2Control web, Channel<byte[]> frames, LoginWindowController controller, CoBrowseViewport initial)
+    private CoBrowseSession(Form form, WebView2Control web, Channel<byte[]> frames, SessionController controller, CoBrowseViewport initial)
     {
         _form = form;
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(form);
         _web = web;
         _frames = frames;
         Controller = controller;
@@ -114,7 +116,7 @@ public sealed class CoBrowseSession : IAsyncDisposable
     /// login window runs, so one driver serves both shapes; here it is a BACKGROUND controller,
     /// so its window-managing calls (Reveal/FitToBox, hold-close) are inert.
     /// </summary>
-    public LoginWindowController Controller { get; }
+    public SessionController Controller { get; }
 
     /// <summary>
     /// Create the off-screen browser and start the screencast, on the anchor's UI thread. No
@@ -172,7 +174,7 @@ public sealed class CoBrowseSession : IAsyncDisposable
                     // Reuse the SAME controller the login window uses (a BACKGROUND one — no
                     // hold-close, no reveal), so a driver's capture hooks run identically over
                     // the stream without the off-screen host ever vetoing app shutdown.
-                    var controller = new LoginWindowController(form, web, options.NavigationGuard, onLoading: null, foreground: false);
+                    var controller = new SessionController(form, web, options.NavigationGuard, onLoading: null, foreground: false);
                     await core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").ConfigureAwait(true);
                     var vp = options.InitialViewport;
                     await core.CallDevToolsProtocolMethodAsync("Emulation.setDeviceMetricsOverride",
@@ -345,20 +347,13 @@ return o;}catch(_){return [];}})()";
     /// UI-thread crash. A throwing body, or a control whose handle is already gone, yields the
     /// fallback.
     /// </summary>
-    private Task<T> RunOnUiAsync<T>(Func<Task<T>> body, T fallback)
-    {
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        try
-        {
-            _form.BeginInvoke(new Action(async () =>
-            {
-                try { tcs.TrySetResult(await body().ConfigureAwait(true)); }
-                catch { tcs.TrySetResult(fallback); }
-            }));
-        }
-        catch { tcs.TrySetResult(fallback); } // handle already destroyed (form closed mid-session)
-        return tcs.Task;
-    }
+    private Task<T> RunOnUiAsync<T>(Func<Task<T>> body, T fallback) =>
+        // The ONE marshal owner (P5.5 H4.2), in its never-faulting mode — which exists BECAUSE of
+        // this contract: a per-message input dispatch must not fault the whole session. That is also
+        // why the dispatcher needed an InvokeOrDefault overload rather than only faulting ones; an
+        // adversarial review of the design caught that collapsing this site onto a plain InvokeAsync
+        // would have silently inverted its behaviour.
+        _ui.InvokeOrDefaultAsync(body, fallback);
 
     /// <summary>Void variant — run a UI-thread action to completion, swallowing failures (a
     /// per-message input dispatch must never fault the session).</summary>
@@ -366,12 +361,8 @@ return o;}catch(_){return [];}})()";
         RunOnUiAsync<bool>(async () => { await body().ConfigureAwait(true); return true; }, false);
 
     /// <summary>Post UI cleanup WITHOUT awaiting — dispose must never hang on a stopped message
-    /// loop (the async-void body is fully wrapped so nothing escapes).</summary>
-    private void RunOnUiFireAndForget(Func<Task> body)
-    {
-        try { _form.BeginInvoke(new Action(async () => { try { await body().ConfigureAwait(true); } catch { } })); }
-        catch { /* loop gone — the frame reader is already completed, so nothing waits */ }
-    }
+    /// loop. The dispatcher's async Post guards the body, so no fault escapes as an async-void crash.</summary>
+    private void RunOnUiFireAndForget(Func<Task> body) => _ui.Post(body);
 
     // ---- pure protocol builders (internal: unit-tested without a browser) ------------------
 

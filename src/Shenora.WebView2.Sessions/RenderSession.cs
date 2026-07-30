@@ -24,6 +24,7 @@ public sealed class RenderSession : IAsyncDisposable
     private readonly RenderSessionPool _pool;
     private readonly RenderSessionPool.PoolInstance _instance;
     private readonly Control _anchor;
+    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
 
@@ -39,6 +40,7 @@ public sealed class RenderSession : IAsyncDisposable
         _pool = pool;
         _instance = instance;
         _anchor = anchor;
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(anchor);
         _web = instance.Web;
         _navigationGuard = navigationGuard;
     }
@@ -220,36 +222,22 @@ public sealed class RenderSession : IAsyncDisposable
     {
         if (Volatile.Read(ref _disposed) != 0)
             return Task.FromException<T>(new ObjectDisposedException(nameof(RenderSession)));
-        var anchor = _anchor;
-        if (anchor.IsDisposed)
-            return Task.FromException<T>(new InvalidOperationException("The session host is gone."));
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        try
-        {
-            anchor.BeginInvoke(new Action(async () =>
-            {
-                if (cancellationToken.IsCancellationRequested) { tcs.TrySetCanceled(cancellationToken); return; }
-                try { tcs.TrySetResult(await work().ConfigureAwait(true)); }
-                catch (Exception ex) { tcs.TrySetException(ex); }
-            }));
-        }
-        catch (Exception ex)
-        {
-            tcs.TrySetException(ex);
-        }
-        return tcs.Task;
+
+        // The ONE marshal owner (P5.5 H4.2). This replaces a hand-rolled BeginInvoke + TCS that
+        // checked the cancellation token ONCE, inside the posted delegate, and then awaited the body
+        // with no way to observe it again — so an op against a page whose JS thread is blocked (an
+        // alert(), a spin loop) could never be cancelled, the lease never returned, and the pool's
+        // permit was gone for the process lifetime. The dispatcher observes the token via WaitAsync,
+        // so the CALLER always escapes even when the UI thread never runs the body.
+        return _ui.InvokeAsync(work, cancellationToken);
     }
 
     /// <summary>
     /// Marshal an interceptor (un)subscribe onto the UI thread WITHOUT awaiting — the returned
-    /// IDisposable must be non-blocking. Best-effort: if the loop is gone it's a no-op.
+    /// IDisposable must be non-blocking. Best-effort: if the loop is gone it's a no-op, which is
+    /// exactly what the dispatcher's <c>false</c> return means here.
     /// </summary>
-    private void OnUiFireAndForget(Action work)
-    {
-        var anchor = _anchor;
-        if (anchor.IsDisposed || !anchor.IsHandleCreated) return;
-        try { anchor.BeginInvoke(work); } catch { }
-    }
+    private void OnUiFireAndForget(Action work) => _ui.Post(work);
 
     /// <summary>Bounded body-sample read, then deliver — best-effort throughout (UI thread).</summary>
     private static async Task DeliverAsync(CoreWebView2WebResourceResponseView response, string url, string method,

@@ -183,9 +183,8 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 {
                     // Apply BEFORE the loop shows the form (geometry set after show causes a
                     // visible jump); persist on FormClosed, when the bounds are still readable.
-                    var manager = new WindowStateManager(windowState.Store(app.Services), windowState.Options);
-                    manager.Apply(form);
-                    form.FormClosed += (_, _) => manager.Save(form);
+                    // AttachTo owns the apply-before-show / save-on-closed ordering (P5.5 H4.5).
+                    new WindowStateManager(windowState.Store(app.Services), windowState.Options).AttachTo(form);
                 }
 
                 // A 2nd launch of this scope broadcasts the guard's activation message; bring the

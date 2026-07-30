@@ -59,8 +59,8 @@ internal sealed class SampleFacade(
                 return null;
 
             default:
-                throw new OperationException(IpcErrorCodes.NoHandler,
-                    new Dictionary<string, string> { ["module"] = "SAMPLE", ["type"] = request.Type });
+                // BaseFacade owns the unknown-type shape now — an app no longer retypes it.
+                throw UnknownType(request);
         }
     }
 

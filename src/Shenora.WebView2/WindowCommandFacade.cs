@@ -141,12 +141,9 @@ public sealed class WindowCommandFacade : BaseFacade
                 return Done();
 
             default:
-                throw new OperationException(IpcErrorCodes.NoHandler,
-                    new Dictionary<string, string> { ["module"] = Module, ["type"] = request.Type });
+                throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5)
         }
     }
-
-    private static Task<object?> Done() => Task.FromResult<object?>(null);
 
     /// <summary>
     /// Best-effort non-blocking post to the form's UI thread, through the one owner.

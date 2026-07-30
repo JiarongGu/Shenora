@@ -310,7 +310,10 @@ public class OptimizedForm : Form
             {
                 var lp = unchecked((int)(long)m.LParam);
                 var p = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
-                var border = Math.Max(6, _options.TopResizeBorder * DeviceDpi / 96);
+                // DpiHelper owns every device-DPI conversion (P5.5 H4.5). It was `* DeviceDpi / 96`
+                // here — integer division that only happened to be safe because the multiply came
+                // first, and which silently returns 0 for a non-positive DeviceDpi.
+                var border = Math.Max(6, DpiHelper.Scale(_options.TopResizeBorder, DpiHelper.ScaleFromDeviceDpi(DeviceDpi)));
                 if (p.Y >= 0 && p.Y < border)
                     m.Result = (IntPtr)(p.X < border ? HTTOPLEFT : p.X >= ClientSize.Width - border ? HTTOPRIGHT : HTTOP);
             }

@@ -11,7 +11,7 @@ namespace Shenora.Tests.WebView2Sessions;
 /// </summary>
 public class LoginWindowTests
 {
-    private static Task<string?> NeverDriver(LoginWindowController controller, CancellationToken ct) =>
+    private static Task<string?> NeverDriver(SessionController controller, CancellationToken ct) =>
         Task.FromResult<string?>("unreached");
 
     private static LoginWindowOptions OptionsFor(Control anchor) => new()
@@ -88,7 +88,7 @@ public class LoginWindowTests
     public void ComputeFitSize_scales_by_dpi_and_clamps_to_the_work_area(
         int cssWidth, int cssHeight, int dpi, int expectedWidth, int expectedHeight)
     {
-        var size = LoginWindowController.ComputeFitSize(cssWidth, cssHeight, dpi, new Size(1920, 1040));
+        var size = SessionController.ComputeFitSize(cssWidth, cssHeight, dpi, new Size(1920, 1040));
 
         Assert.Equal(new Size(expectedWidth, expectedHeight), size);
     }

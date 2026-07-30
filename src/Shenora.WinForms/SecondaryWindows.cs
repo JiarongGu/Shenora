@@ -94,11 +94,8 @@ public sealed class SecondaryWindows : IDisposable
 
             if (options.StateStore is { } store)
             {
-                // Apply BEFORE the pump shows the form (post-show geometry jumps visibly);
-                // save on FormClosed, while the bounds are still readable.
-                var manager = new WindowStateManager(store, options.StateOptions);
-                manager.Apply(form);
-                form.FormClosed += (_, _) => manager.Save(form);
+                // AttachTo owns the apply-before-show / save-on-closed ordering (P5.5 H4.5).
+                new WindowStateManager(store, options.StateOptions).AttachTo(form);
             }
 
             form.FormClosed += (_, _) => _windows.TryRemove(name, out _);
@@ -148,13 +145,7 @@ public sealed class SecondaryWindows : IDisposable
     public void Activate(string name)
     {
         if (!_windows.TryGetValue(name, out var entry) || entry.Form is not { } form) return;
-        Post(form, () =>
-        {
-            if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
-            form.Show();
-            form.Activate();
-            form.BringToFront();
-        });
+        Post(form, () => WindowActivation.BringToFront(form));   // one owner (P5.5 H4.5)
     }
 
     /// <summary>Close the named window (non-blocking; safe from any thread).</summary>

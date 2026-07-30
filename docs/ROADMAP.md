@@ -5,6 +5,59 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H4 COMPLETE: H4.2 (rest) + H4.3 + H4.4 + H4.5 + H4.6 + H4.7
+
+The re-layer's payoff, landed in three commits. **H4 is done.**
+
+**H4.3 — the portability guard.** `samples/Shenora.Sample.Logic` is plain `net10.0` referencing only
+`Core` + `Ipc`, with a facade that picks a file, uses the clipboard, opens a URL and reads UI-thread
+state. It compiles — which is the proof D20 was asserting. It works by what it *cannot* reference, so
+dragging a Windows type into one of those contracts turns it red.
+
+**H4.4 — the session edge carries something.** Scoping judgement worth recording: what crossed was
+the *invariant* (`BrowserArguments.Compose` — single-occurrence feature switches, plus the dev CDP
+re-append the sessions package had re-broken by hand), NOT the app-shell preset. The session argument
+preset, event policies and environment caching legitimately differ — an app shell opens external
+links in the system browser, an unattended session must open nothing. Sharing those would be coupling
+dressed as dedup. That unblocked the behavioural half: the three policies `extraction-sources.md`
+lists as must-fix, which P5 shipped without. `ProcessFailed` in particular closes a hang — a dead
+renderer was invisible, so the pool reset and re-leased the corpse forever and a co-browse frame
+channel stopped with its reader waiting. Script dialogs off too (an `alert()` off-screen blocked the
+JS thread behind a dialog nobody could dismiss).
+
+**H4.2 (rest) — the sessions marshals.** `RenderSession` now observes the cancellation tokens it
+accepts, which is H2's pool-starvation P0: the dispatcher's `WaitAsync` lets the caller escape even
+when the UI thread never runs the body. `SessionController`'s inverted pre-handle guard is gone — its
+own comment described the trap and the next line committed it. `CoBrowseSession` uses the
+never-faulting overload, so its "one bad input message must not fault the session" contract survived
+the collapse; that overload exists *because* an adversarial design review predicted this exact site.
+
+**H4.5 — eight duplicate families collapsed**, each with a defect attached rather than mere
+repetition: the IPC error boundary existed four times (a fifth copy is how a raw `ex.Message`
+eventually reaches a client); `WebViewHost`'s open-a-URL was a drifted copy missing the Win11 handle
+`Dispose`; the tray's bring-to-front omitted `SetForegroundWindow`, so restoring from the tray behind
+another app could leave the window hidden; one `DeviceDpi / 96` used integer division and none
+guarded a non-positive DPI; and the off-screen park coordinate had a THIRD site inferring
+on-screen-ness from a *different* threshold, so moving the park position would have silently broken
+reveal detection. Two were deliberately left alone with reasons at the site.
+
+**H4.6 — `LoginWindowController` → `SessionController`.** Done as a rename rather than a base
+extraction, because the rename is what fixed the actual problem: `CoBrowseSession.Controller` is
+public and was typed with a login-named type, so a co-browse consumer had to program against
+"Login…". Login-specific types keep their names. What the shared core *should* be is deferred to H9,
+where the co-browse API is reshaped anyway (D21) — better decided there than guessed here.
+
+**H4.7 — the sessions package can be diagnosed.** It shipped with no logging of any kind against ~30
+swallowed catches; `Log` options now exist on the browser/pool/co-browse options with messages at the
+init, policy, discard and poison paths.
+
+Verified: `dev.mjs verify` PASSED — 357 dotnet + 39 vitest, sample web typecheck, sensitive scan,
+knowledge check, doctor. Four baselines were reviewed line by line and promoted deliberately across
+the batch. One honest loose end: a single test run reported 1 m 15 s instead of the usual 4 s; three
+consecutive re-runs came back at 4 s with no test over 1 s, so it is recorded as
+unexplained-but-not-reproducible (most likely MSBuild nodes from the build in the same command)
+rather than written off as a flake.
+
 ### 2026-07-30 — P5.5 batch H4.2 (part): the marshal copies outside the sessions package
 
 Six sites now route through `WinFormsUiDispatcher` instead of hand-rolling the

@@ -30,6 +30,8 @@ public sealed class WebViewHost
     private readonly WebViewHostOptions _options;
     private readonly Action<string>? _log;
     private readonly Shenora.Core.IUiDispatcher _ui;
+    // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
+    private readonly Shenora.Core.IUrlLauncher _urls = new Shenora.WinForms.ShellLauncher();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
 
     public WebViewHost(WebView2Control webView, WebViewHostOptions options)
@@ -319,22 +321,20 @@ public sealed class WebViewHost
             core.NewWindowRequested += (_, e) =>
             {
                 e.Handled = true;
-                if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+                try
                 {
-                    try
-                    {
-                        // Dispose the returned Process: it holds an OS handle that Win11 does NOT
-                        // release on its own, so every external link click leaked one. The sibling
-                        // copy of this code (ShellLauncher.OpenUrl) already had the fix; this one
-                        // didn't (found in the P0–P5 review). P5.5 H4.5 deletes this copy entirely in
-                        // favour of IUrlLauncher once the re-layer lands.
-                        System.Diagnostics.Process.Start(
-                            new System.Diagnostics.ProcessStartInfo(uri.ToString()) { UseShellExecute = true })?.Dispose();
-                    }
-                    catch
-                    {
-                        // no default browser — nothing sensible to do
-                    }
+                    // Delegate to the ONE open-a-URL implementation (P5.5 H4.5) — reachable since the
+                    // re-layer (D19). This used to be a hand-copied duplicate of
+                    // ShellLauncher.OpenUrl that had drifted: it was missing the Win11 process-handle
+                    // Dispose, so every external link click leaked a handle. It also re-implemented
+                    // the http/https scheme gate, which the launcher enforces itself.
+                    _urls.OpenUrl(e.Uri);
+                }
+                catch (Exception ex)
+                {
+                    // Rejected scheme, or no default browser — a page must not be able to crash the
+                    // host by asking to open something odd.
+                    _log?.Invoke($"[Shenora.WebView2] Ignoring new-window request for {e.Uri}: {ex.GetType().Name}");
                 }
             };
         }

@@ -45,10 +45,7 @@ public sealed class DropZoneFacade : BaseFacade
                 return Done();
 
             default:
-                throw new OperationException(IpcErrorCodes.NoHandler,
-                    new Dictionary<string, string> { ["module"] = DropZoneManager.Module, ["type"] = request.Type });
+                throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5)
         }
     }
-
-    private static Task<object?> Done() => Task.FromResult<object?>(null);
 }

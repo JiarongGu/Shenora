@@ -13,7 +13,7 @@ Two independent pressures met at the same seam.
 **From the first full code review (P0–P5, 2026-07-30):** the UI-thread marshal pattern was
 hand-rolled **14 times across 3 packages with 5 mutually incompatible pre-handle policies**. The
 divergence was not cosmetic — it produced real defects, including a site whose comment explains the
-pre-handle trap and then commits it on the next line (`LoginWindowController.cs:250`), 7 entirely
+pre-handle trap and then commits it on the next line (`SessionController.cs:250`), 7 entirely
 unguarded `BeginInvoke` calls in `Shenora.WebView2.Sessions`, and a P0 where `RenderSession` accepts
 cancellation tokens it can never observe (one JS-blocked page starves the session pool for the
 process lifetime). The review's two proposed fixes were a sideways project reference or a linked
@@ -223,7 +223,7 @@ source files.
 ### 5.3 What this retires — and what it does NOT
 
 Retires: 14 marshal copies · 5 divergent pre-handle policies · the 7 unguarded `BeginInvoke`s in
-Sessions · the inverted guard at `LoginWindowController.cs:254` (whose own comment two lines above
+Sessions · the inverted guard at `SessionController.cs:254` (whose own comment two lines above
 explains the trap it then commits) · and the `InternalsVisibleTo`/linked-file workarounds the review
 proposed.
 

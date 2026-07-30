@@ -3,7 +3,7 @@ using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.WebView2.Sessions;
 
-/// <summary>One captured browser cookie (see <see cref="LoginWindowController.GetCookiesAsync"/>).</summary>
+/// <summary>One captured browser cookie (see <see cref="SessionController.GetCookiesAsync"/>).</summary>
 public sealed record LoginCookie(string Name, string Value, string Domain, string Path);
 
 /// <summary>A page-initiated download the browser reported (and cancelled) — the app fetches it itself.</summary>
@@ -22,9 +22,10 @@ public sealed record DownloadHit(string Url, string? FileName);
 /// hidden infrastructure window vetoing its own close would veto <c>Application.Exit</c>, and
 /// revealing/resizing an invisible screencast host is nonsense (its viewport is driven by CDP).
 /// </summary>
-public sealed class LoginWindowController
+public sealed class SessionController
 {
     private readonly Form _form;
+    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly Action<bool>? _onLoading;
@@ -40,15 +41,19 @@ public sealed class LoginWindowController
     private bool _finishing;
     private bool _revealed;
 
-    internal LoginWindowController(Form form, WebView2Control web,
+    internal SessionController(Form form, WebView2Control web,
         Func<Uri, CancellationToken, Task<bool>>? navigationGuard, Action<bool>? onLoading, bool foreground)
     {
         _form = form;
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(form);
         _web = web;
         _navigationGuard = navigationGuard;
         _onLoading = onLoading;
         _foreground = foreground;
-        _revealed = foreground && form.Location.X > -30000; // RevealImmediately windows start on screen
+        // RevealImmediately windows start on screen. Derived from OffscreenWindow's own constant
+        // (P5.5 H4.5) — this used to hard-code a DIFFERENT threshold (-30000) than the park
+        // coordinate (-32000), so moving the park position would have silently broken reveal detection.
+        _revealed = foreground && !OffscreenWindow.IsParked(form);
 
         _web.CoreWebView2.WebMessageReceived += (_, e) =>
         {
@@ -229,7 +234,9 @@ public sealed class LoginWindowController
     /// (margins leave room for the window chrome).</summary>
     internal static Size ComputeFitSize(int cssWidth, int cssHeight, int deviceDpi, Size workArea)
     {
-        var scale = deviceDpi / 96.0; // CSS px → physical px
+        // CSS px → physical px. DpiHelper owns the conversion (P5.5 H4.5) — reachable since D19 — and
+        // it guards a non-positive DPI.
+        var scale = Shenora.WinForms.DpiHelper.ScaleFromDeviceDpi(deviceDpi);
         return new Size(
             Math.Min((int)Math.Round(cssWidth * scale), workArea.Width - 40),
             Math.Min((int)Math.Round(cssHeight * scale), workArea.Height - 60));
@@ -246,39 +253,19 @@ public sealed class LoginWindowController
         }
     }
 
-    /// <summary>Marshal a WebView2 call to the form's UI thread (a driver continuation may resume off it).</summary>
-    private Task<T> OnUiAsync<T>(Func<Task<T>> work)
-    {
-        // IsHandleCreated FIRST: pre-handle, InvokeRequired lies (returns false), so "no handle"
-        // would be mistaken for "already on the UI thread" and run the WebView2 call off-thread.
-        if (!_form.IsHandleCreated || !_form.InvokeRequired) return work();
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        try
-        {
-            _form.BeginInvoke(new Action(async () =>
-            {
-                try { tcs.TrySetResult(await work().ConfigureAwait(true)); }
-                catch (Exception ex) { tcs.TrySetException(ex); }
-            }));
-        }
-        catch (Exception ex)
-        {
-            tcs.TrySetException(ex);
-        }
-        return tcs.Task;
-    }
+    /// <summary>
+    /// Marshal a WebView2 call to the form's UI thread (a driver continuation may resume off it),
+    /// through the ONE owner (P5.5 H4.2).
+    /// <para>
+    /// This site is why the collapse mattered. The comment it used to carry said: "IsHandleCreated
+    /// FIRST: pre-handle, InvokeRequired lies (returns false), so 'no handle' would be mistaken for
+    /// 'already on the UI thread' and run the WebView2 call off-thread" — and the very next line was
+    /// <c>if (!_form.IsHandleCreated || !_form.InvokeRequired) return work();</c>, which does exactly
+    /// that. Reachable through the co-browse background controller, whose driver continuations resume
+    /// on a pool thread. The dispatcher answers <c>NotReady</c> with a faulted task instead.
+    /// </para>
+    /// </summary>
+    private Task<T> OnUiAsync<T>(Func<Task<T>> work) => _ui.InvokeAsync(work);
 
-    private void PostUi(Action work)
-    {
-        try
-        {
-            if (_form.IsDisposed) return;
-            if (_form.IsHandleCreated && _form.InvokeRequired) _form.BeginInvoke(work);
-            else work();
-        }
-        catch
-        {
-            // window gone
-        }
-    }
+    private void PostUi(Action work) => _ui.Post(work);
 }

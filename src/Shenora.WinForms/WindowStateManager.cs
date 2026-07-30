@@ -49,6 +49,23 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     }
 
     /// <summary>
+    /// Attach the full lifecycle to <paramref name="form"/>: apply the saved geometry NOW and save it
+    /// on <see cref="Form.FormClosed"/>.
+    /// <para>
+    /// Exists because the ORDERING is the contract and it was hand-written in two places (P5.5 H4.5):
+    /// apply BEFORE the form is shown — geometry set after show causes a visible jump — and save on
+    /// <c>FormClosed</c>, while the bounds are still readable. A caller who reverses those gets a
+    /// window that flickers on open and forgets its position on close, with nothing failing loudly.
+    /// </para>
+    /// </summary>
+    public void AttachTo(Form form)
+    {
+        ArgumentNullException.ThrowIfNull(form);
+        Apply(form);
+        form.FormClosed += (_, _) => Save(form);
+    }
+
+    /// <summary>
     /// Capture the form's CURRENT state as logical px and persist it (best-effort — never blocks
     /// close). Uses the restore-down bounds when maximized/minimized so the flag AND the normal
     /// size both survive. Call from FormClosing/FormClosed on the UI thread.

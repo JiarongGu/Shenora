@@ -138,7 +138,7 @@ changes, noting them in `CHANGELOG.md`).
   driver-run logins over per-provider/per-sub-account persistent profiles — the sub scoping is
   a security boundary; busy-serialized with exactly-once completion incl. the token fallback,
   the user's close HELD for a final cookie read, silent-refresh off-screen shape, static
-  `ClearProfile` = real logout), `LoginWindowController` (guarded `NavigateAsync`,
+  `ClearProfile` = real logout), `SessionController` (guarded `NavigateAsync`,
   `ExecuteScriptAsync`, origin-scoped `GetCookiesAsync`, `OnMessage`/`OnDownload`/
   `OnNewWindow`/`OnNavigation` taps, `FitToBox` CSS→physical, `SetLoading`, idempotent
   `Reveal`, `WindowClosed`), `LoginResult`/`LoginErrorCodes`, and `CookieLoginFlow(+Options)`/

@@ -109,7 +109,7 @@ a finding that contradicts one of these is either a real regression or a rule th
   `Shenora.WinForms` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
   `ProjectReference` does not grant `internal` access, so the alternative was `InternalsVisibleTo` for
   two packages.
-- `CoBrowseSession` reuses `LoginWindowController` as a **background** controller (the source's own
+- `CoBrowseSession` reuses `SessionController` as a **background** controller (the source's own
   pattern); its window-managing calls are gated inert by a `foreground` flag.
 - `PayloadHelper` is static; `IpcResponse.category` is lowercase; notifications are always batched —
   all documented deviations from the source shapes.
@@ -122,7 +122,7 @@ cached co-browse viewport; request-filter `about:blank` page-source; init-timeou
 sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
 **Deliberately deferred** (recorded in the private notes; not defects to file):
-- Renaming the login-named types (`LoginWindowController`/`LoginCookie`/`DownloadHit`) to
+- Renaming the login-named types (`SessionController`/`LoginCookie`/`DownloadHit`) to
   session-neutral names — a documented pre-1.0 option, revisit only if a pure co-browse consumer
   finds it awkward.
 - STA-wrapping the new pool/login tests — the earned STA rule's trigger (`AllowDrop`/OLE) does not

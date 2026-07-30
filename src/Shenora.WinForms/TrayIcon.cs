@@ -125,16 +125,12 @@ public sealed class TrayIcon : IDisposable
     /// <summary>The tray menu (built-in Open first, app items, separator, Exit last).</summary>
     public ContextMenuStrip Menu { get; }
 
-    /// <summary>Restore + focus the window (double-click / the Open item).</summary>
-    public void ShowWindow()
-    {
-        var window = _options.Window;
-        if (window.IsDisposed) return;
-        window.Show();
-        if (window.WindowState == FormWindowState.Minimized)
-            window.WindowState = FormWindowState.Normal;
-        window.Activate();
-    }
+    /// <summary>
+    /// Restore + focus the window (double-click / the Open item). Routed through the one activation
+    /// owner (P5.5 H4.5) — this copy used to omit <c>SetForegroundWindow</c>, so restoring from the
+    /// tray while another app held the foreground could leave the window BEHIND everything.
+    /// </summary>
+    public void ShowWindow() => WindowActivation.BringToFront(_options.Window);
 
     /// <summary>Close the window FOR REAL — bypasses close-to-tray.</summary>
     public void ExitApplication()

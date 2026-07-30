@@ -1,6 +1,6 @@
 Shenora.WebView2.Sessions.CoBrowseSession
-  Shenora.WebView2.Sessions.LoginWindowController Controller
-  Shenora.WebView2.Sessions.LoginWindowController get_Controller()
+  Shenora.WebView2.Sessions.SessionController Controller
+  Shenora.WebView2.Sessions.SessionController get_Controller()
   System.Threading.Channels.ChannelReader`1[System.Byte[]] Frames
   System.Threading.Channels.ChannelReader`1[System.Byte[]] get_Frames()
   System.Threading.Tasks.Task DispatchInputAsync(System.String)
@@ -56,7 +56,7 @@ Shenora.WebView2.Sessions.CoBrowseViewport
   Void set_Width(Int32)
 Shenora.WebView2.Sessions.CookieLoginFlow
   System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.Sessions.LoginCookie] ReadBlob(System.String)
-  System.Threading.Tasks.Task`1[System.String] DriveAsync(Shenora.WebView2.Sessions.LoginWindowController, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] DriveAsync(Shenora.WebView2.Sessions.SessionController, System.Threading.CancellationToken)
   Void .ctor(Shenora.WebView2.Sessions.CookieLoginFlowOptions)
 Shenora.WebView2.Sessions.CookieLoginFlowOptions
   Boolean CaptureAllCookies
@@ -137,22 +137,9 @@ Shenora.WebView2.Sessions.LoginWindow
   Boolean IsBusy
   Boolean get_IsBusy()
   System.String ComposeProfileDirectory(System.String, System.String[])
-  System.Threading.Tasks.Task`1[Shenora.WebView2.Sessions.LoginResult] RunAsync(System.Func`3[Shenora.WebView2.Sessions.LoginWindowController,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.String]], System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[Shenora.WebView2.Sessions.LoginResult] RunAsync(System.Func`3[Shenora.WebView2.Sessions.SessionController,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.String]], System.Threading.CancellationToken)
   Void .ctor(Shenora.WebView2.Sessions.LoginWindowOptions)
   Void ClearProfile(System.String)
-Shenora.WebView2.Sessions.LoginWindowController
-  System.Threading.CancellationToken WindowClosed
-  System.Threading.CancellationToken get_WindowClosed()
-  System.Threading.Tasks.Task NavigateAsync(System.String, System.Threading.CancellationToken)
-  System.Threading.Tasks.Task`1[System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.Sessions.LoginCookie]] GetCookiesAsync(System.String, System.Threading.CancellationToken)
-  System.Threading.Tasks.Task`1[System.String] ExecuteScriptAsync(System.String, System.Threading.CancellationToken)
-  Void FitToBox(Int32, Int32)
-  Void OnDownload(System.Action`1[Shenora.WebView2.Sessions.DownloadHit])
-  Void OnMessage(System.Action`1[System.String])
-  Void OnNavigation(System.Action`1[System.String])
-  Void OnNewWindow(System.Action`1[System.String])
-  Void Reveal()
-  Void SetLoading(Boolean)
 Shenora.WebView2.Sessions.LoginWindowOptions
   Boolean RevealImmediately
   Boolean get_RevealImmediately()
@@ -277,3 +264,16 @@ Shenora.WebView2.Sessions.SessionBrowserOptions
   Void set_MuteAudio(Boolean)
   Void set_ProfileDirectory(System.String)
   Void set_RequestFilter(System.Func`3[System.Uri,System.Uri,System.Boolean])
+Shenora.WebView2.Sessions.SessionController
+  System.Threading.CancellationToken WindowClosed
+  System.Threading.CancellationToken get_WindowClosed()
+  System.Threading.Tasks.Task NavigateAsync(System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.Sessions.LoginCookie]] GetCookiesAsync(System.String, System.Threading.CancellationToken)
+  System.Threading.Tasks.Task`1[System.String] ExecuteScriptAsync(System.String, System.Threading.CancellationToken)
+  Void FitToBox(Int32, Int32)
+  Void OnDownload(System.Action`1[Shenora.WebView2.Sessions.DownloadHit])
+  Void OnMessage(System.Action`1[System.String])
+  Void OnNavigation(System.Action`1[System.String])
+  Void OnNewWindow(System.Action`1[System.String])
+  Void Reveal()
+  Void SetLoading(Boolean)

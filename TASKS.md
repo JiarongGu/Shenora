@@ -262,7 +262,15 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   `docs/RELEASING.md`'s "the two leaf packages" (WinForms stops being a leaf); plus the design
   contract's §4 table rows. Then the `Shenora.Core`/`Shenora.WinForms` csproj `<Description>`s — the
   "UI-dispatcher seam" claim becomes TRUE here, and WinForms gains the dispatcher implementation.
-- [~] **H4.2 — Retire the 14 marshal copies onto `WinFormsUiDispatcher`.** PARTLY DONE — the six
+- [x] **H4.2 — Retire the marshal copies onto `WinFormsUiDispatcher`.** COMPLETE. The sessions copies
+  landed with H4.4 as planned (`RenderSession.OnUiAsync`/`OnUiFireAndForget`,
+  `SessionController.OnUiAsync`/`PostUi`, `CoBrowseSession.RunOnUiAsync`×2/`RunOnUiFireAndForget`),
+  and each closed something real: `RenderSession` now OBSERVES the cancellation tokens it accepts
+  (H2's pool-starvation P0 — the dispatcher's `WaitAsync` means the caller escapes even when the UI
+  thread never runs the body), `SessionController`'s inverted pre-handle guard is gone (its own
+  comment described the trap and the next line committed it), and `CoBrowseSession` uses the
+  never-faulting `InvokeOrDefaultAsync` so its "one bad input message must not fault the session"
+  contract survives the collapse. Earlier: the six
   outside the sessions package are converted (`FormInteraction.SetEnabled`, `SecondaryWindows.Post`,
   `WebViewIpcBridge.PostJson`, `WebViewHost`'s deferral marshal, `WindowCommandFacade.Post`,
   `DropZoneManager.MarshalToUi`). **The sessions copies land with H4.4**, which rewrites the same
@@ -337,7 +345,23 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   renderer crash is invisible to the pool (and leaves `CoBrowseSession.Frames` waiting forever).
   Wiring `ProcessFailed` is also what lets the pool poison an instance and co-browse complete its
   channel. Either route Sessions through the edge or drop the reference and stop claiming it.
-- [ ] **H4.5 —** Collapse the remaining duplicates, each to a named owner. **Visibility rule (from
+- [x] **H4.5 —** DONE. Collapsed: the IPC error boundary → one `IpcErrorMapping.ToErrorResponse` (it
+  was four byte-identical copies of the kit's most load-bearing invariant — the fifth copy is how a
+  raw `ex.Message` eventually reaches a client); `Done()` + `UnknownType(request)` → `BaseFacade`
+  (three private copies, one of them in the SAMPLE, which is the tell it was consumer-facing);
+  `WebViewHost`'s open-a-URL → `IUrlLauncher` (a drifted copy of `ShellLauncher.OpenUrl` that was
+  missing the Win11 handle `Dispose`); four bring-to-front variants → one internal
+  `WindowActivation.BringToFront` (the tray copy omitted `SetForegroundWindow`, so restoring from the
+  tray behind another app could leave the window hidden); three `DeviceDpi / 96` sites → `DpiHelper`
+  (one used integer division, none guarded a non-positive DPI); the off-screen park coordinate → one
+  const + `OffscreenWindow.IsParked` (a THIRD site inferred on-screen-ness from a DIFFERENT threshold,
+  so moving the park position would have silently broken reveal detection); the window-state
+  apply/save pair → `WindowStateManager.AttachTo` (the ordering IS the contract); `CookieLoginFlow`'s
+  private `JsonSerializerOptions` → `IpcJson.Options`. NOT collapsed, deliberately: `WebViewScripts`'
+  own options (it must NOT omit nulls, unlike the wire serializer — noted at the site), and the npm
+  `randomUUID`/debounce helpers (trivial, and the npm package has no shared-internals home yet —
+  folded into H7). Original list —
+  Collapse the remaining duplicates, each to a named owner. **Visibility rule (from
   D19/D20): a helper whose consumer is ANOTHER PACKAGE is public, not `internal`** — a
   `ProjectReference` does not grant internal access, and `InternalsVisibleTo` is granted only to
   `Shenora.Tests`. That corrects three prescriptions below whose `internal` owner could not serve the
@@ -366,7 +390,15 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   why); the window-state attach triple (`WinFormsHost.cs:175-177` = `SecondaryWindows.cs:99-101`) →
   `WindowStateManager.AttachTo(form)`; `randomUUID`-with-fallback and the debounce helper in
   `@shenora/react` (`bridge.ts:54-58`, `useDropZone.ts:38-41,48-56`) → internal utils.
-- [ ] **H4.6 —** Consider one honest shared base for the three session types (`RenderSession` /
+- [x] **H4.6 —** DONE as a RENAME, not a base extraction: `LoginWindowController` → `SessionController`
+  (21 occurrences across 5 source files + the living docs; historical `ROADMAP`/`FIX-LOG` entries left
+  intact because they were true when written, with the mapping noted in the new entry). That is what
+  actually fixed the reported surface problem — `CoBrowseSession.Controller` is public and was typed
+  with a login-named type, so a co-browse consumer had to program against "Login…". The login-specific
+  types keep their names. The base extraction below is DEFERRED to H9 on purpose: the neutral name was
+  the surface fix, and what the shared core should be is better decided while reshaping the co-browse
+  API (D21) than guessed now. Original note kept for context —
+  Consider one honest shared base for the three session types (`RenderSession` /
   `LoginWindowController` / `CoBrowseSession` share browser + host window + guarded navigate +
   script + taps + marshal). This is also the clean route to the deferred session-neutral rename: a
   neutral base with the login-flavoured type as the foreground subclass. Judgement call — only do it

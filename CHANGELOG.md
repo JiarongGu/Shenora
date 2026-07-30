@@ -11,6 +11,17 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Breaking
 
+- **`LoginWindowController` is now `SessionController`** (P5.5 H4.6). It was never login-specific:
+  `CoBrowseSession.Controller` is typed with it and exposes it publicly, so a co-browse consumer —
+  streaming a page for remote viewing, nothing to do with signing in — had to program against a
+  login-named type. Pure rename: same members, same behaviour, and the types that ARE
+  login-specific keep their names (`LoginWindow`, `LoginResult`, `LoginErrorCodes`,
+  `CookieLoginFlow`, `LoginCookie`). Update the type name where you name it explicitly —
+  `LoginWindow.RunAsync`'s driver signature and `CookieLoginFlow.DriveAsync` both mention it.
+  Deferred deliberately: extracting a genuinely shared base out of `RenderSession` and
+  `SessionController`. The neutral NAME is what fixed the surface problem; what the shared core
+  should actually be is better decided when the co-browse API is reshaped (D21 / H9) than guessed at
+  now.
 - **The two Windows packages are now one layer, and the portable contracts moved to
   `Shenora.Core`** (D19 + D20; design: `docs/2026-07-30-shenora-relayering-design.md`).
   `Shenora.WebView2` now depends on `Shenora.WinForms` — the boundary is Windows *primitives* and

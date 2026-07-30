@@ -320,6 +320,7 @@ Shenora.WinForms.WindowStateManager
   System.ValueTuple`5[System.Int32,System.Int32,System.Nullable`1[System.Int32],System.Nullable`1[System.Int32],System.Boolean] ToPhysical(Shenora.WinForms.WindowState, Double, Shenora.WinForms.WindowStateOptions)
   Void .ctor(Shenora.WinForms.IWindowStateStore, Shenora.WinForms.WindowStateOptions)
   Void Apply(System.Windows.Forms.Form)
+  Void AttachTo(System.Windows.Forms.Form)
   Void Save(System.Windows.Forms.Form)
 Shenora.WinForms.WindowStateOptions
   Int32 DefaultHeight

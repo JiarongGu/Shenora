@@ -62,7 +62,10 @@ public sealed class CookieLoginFlowOptions
 /// </summary>
 public sealed class CookieLoginFlow
 {
-    private static readonly JsonSerializerOptions BlobJson = new(JsonSerializerDefaults.Web);
+    // The frozen wire serializer, not a private copy (P5.5 H4.5): IpcJson's own docs record that
+    // the source app grew three private option sets that drifted apart. Same camelCase shape, and the
+    // captured blob rides the IPC contract anyway.
+    private static JsonSerializerOptions BlobJson => Shenora.Ipc.IpcJson.Options;
 
     private readonly CookieLoginFlowOptions _options;
     private readonly List<Regex> _patterns;
@@ -88,7 +91,7 @@ public sealed class CookieLoginFlow
     }
 
     /// <summary>Drive one login over the window's controller (pass this to <see cref="LoginWindow.RunAsync"/>).</summary>
-    public Task<string?> DriveAsync(LoginWindowController controller, CancellationToken cancellationToken = default)
+    public Task<string?> DriveAsync(SessionController controller, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(controller);
         return DriveAsync(new Hooks

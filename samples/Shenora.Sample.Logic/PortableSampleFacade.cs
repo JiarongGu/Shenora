@@ -69,8 +69,7 @@ public sealed class PortableSampleFacade(
                 return new { State = ui.State.ToString(), OnUiThread = ui.IsOnUiThread };
 
             default:
-                throw new OperationException(IpcErrorCodes.NoHandler,
-                    new Dictionary<string, string> { ["module"] = Module, ["type"] = request.Type });
+                throw UnknownType(request);
         }
     }
 }
