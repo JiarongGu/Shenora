@@ -28,14 +28,44 @@ public delegate Task<IpcResponse?> MessageMiddleware(IpcRequest request, Func<Ta
 public sealed class MessageDispatcher : IMessageDispatcher
 {
     private readonly ILogger<MessageDispatcher> _logger;
-    private readonly List<MessageMiddleware> _middlewares = [];
-    private Lazy<Func<IpcRequest, Task<IpcResponse?>>> _pipeline;
+
+    // The middleware list and the built pipeline are mutated by Use() and read by every dispatch,
+    // concurrently and by design (P5.5 H6). See Use() and Pipeline for why this shape.
+    private readonly object _pipelineLock = new();
+    private volatile MessageMiddleware[] _middlewares = [];
+    private volatile Func<IpcRequest, Task<IpcResponse?>>? _pipeline;
 
     /// <summary>The logger is optional so composition works without <c>AddLogging</c>.</summary>
     public MessageDispatcher(ILogger<MessageDispatcher>? logger = null)
     {
         _logger = logger ?? NullLogger<MessageDispatcher>.Instance;
-        _pipeline = new Lazy<Func<IpcRequest, Task<IpcResponse?>>>(BuildPipeline);
+    }
+
+    /// <summary>
+    /// The composed pipeline, rebuilt on first use after any <see cref="Use"/>.
+    /// <para>
+    /// This used to be a <c>Lazy</c> field reassigned by <see cref="Use"/>, over a mutable
+    /// <c>List&lt;MessageMiddleware&gt;</c>, with no synchronization anywhere — and late mapping is a
+    /// SUPPORTED, documented pattern here (the WinForms host maps its window facades after the form
+    /// exists), so "configure then serve" is not a safe assumption. Two things went wrong under
+    /// concurrency: a dispatch could read the OLD <c>Lazy</c> — already built, already cached — and
+    /// answer <see cref="IpcErrorCodes.NoHandler"/> for a route that was by then registered; and a
+    /// build enumerating the list while <c>Add</c> grew it is a plain data race. Now the list is
+    /// copy-on-write so a build always sees an immutable snapshot, the field is volatile so a reader
+    /// cannot see a stale pipeline after the swap, and invalidate-then-rebuild happens under one lock.
+    /// </para>
+    /// </summary>
+    private Func<IpcRequest, Task<IpcResponse?>> Pipeline
+    {
+        get
+        {
+            // Fast path: no lock once built, which is the overwhelmingly common case.
+            if (_pipeline is { } built) return built;
+            lock (_pipelineLock)
+            {
+                return _pipeline ??= BuildPipeline(_middlewares);
+            }
+        }
     }
 
     /// <summary>
@@ -51,7 +81,7 @@ public sealed class MessageDispatcher : IMessageDispatcher
         ArgumentNullException.ThrowIfNull(request);
         try
         {
-            var response = await _pipeline.Value(request);
+            var response = await Pipeline(request);
             if (response is not null)
                 return response;
 
@@ -128,12 +158,21 @@ public sealed class MessageDispatcher : IMessageDispatcher
         }
     }
 
-    /// <summary>Append a middleware. The pipeline rebuilds lazily before the next dispatch.</summary>
+    /// <summary>
+    /// Append a middleware. The pipeline rebuilds lazily before the next dispatch, and is safe to call
+    /// while dispatches are in flight — late mapping is a supported pattern (see <see cref="Pipeline"/>).
+    /// </summary>
     public MessageDispatcher Use(MessageMiddleware middleware)
     {
         ArgumentNullException.ThrowIfNull(middleware);
-        _middlewares.Add(middleware);
-        _pipeline = new Lazy<Func<IpcRequest, Task<IpcResponse?>>>(BuildPipeline);
+        lock (_pipelineLock)
+        {
+            // Copy-on-write, so a build already enumerating the previous array is unaffected; and both
+            // writes happen under the lock, so the next reader cannot see the new middleware with the
+            // old pipeline still cached.
+            _middlewares = [.. _middlewares, middleware];
+            _pipeline = null;
+        }
         return this;
     }
 
@@ -241,15 +280,16 @@ public sealed class MessageDispatcher : IMessageDispatcher
             async request => await facade.HandleMessageAsync(request));
     }
 
-    private Func<IpcRequest, Task<IpcResponse?>> BuildPipeline()
+    /// <summary>Compose an IMMUTABLE snapshot — never the live field, or this races <see cref="Use"/>.</summary>
+    private static Func<IpcRequest, Task<IpcResponse?>> BuildPipeline(MessageMiddleware[] middlewares)
     {
         // Terminal: nothing handled the request.
         Func<IpcRequest, Task<IpcResponse?>> pipeline = _ => Task.FromResult<IpcResponse?>(null);
 
         // Compose in reverse so middlewares run in registration order.
-        for (var i = _middlewares.Count - 1; i >= 0; i--)
+        for (var i = middlewares.Length - 1; i >= 0; i--)
         {
-            var middleware = _middlewares[i];
+            var middleware = middlewares[i];
             var next = pipeline;
             pipeline = request => middleware(request, () => next(request));
         }

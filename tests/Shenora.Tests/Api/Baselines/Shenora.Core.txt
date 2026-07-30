@@ -124,9 +124,16 @@ sealed class Shenora.Core.ShenoraPaths
   public string DataDir { get; }
   public string ResourcesDir { get; }
   public string RootDir { get; }
-sealed class Shenora.Core.ShenoraPathsOptions
+sealed class Shenora.Core.ShenoraPathsOptions : System.IEquatable<Shenora.Core.ShenoraPathsOptions>
   public .ctor()
+  public Shenora.Core.ShenoraPathsOptions <Clone>$()
   public System.Collections.Generic.IReadOnlyList<string> ExecutableSubfolders { get; init; }
+  public bool Equals(Shenora.Core.ShenoraPathsOptions? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.ShenoraPathsOptions? left, Shenora.Core.ShenoraPathsOptions? right)
+  public static bool op_Inequality(Shenora.Core.ShenoraPathsOptions? left, Shenora.Core.ShenoraPathsOptions? right)
   public string DataFolderName { get; init; }
   public string ResourcesFolderName { get; init; }
   public string? DataEnvironmentVariable { get; init; }

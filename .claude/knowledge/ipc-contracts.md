@@ -46,6 +46,21 @@ transport, or building the P6 adoption shims.
   entirely, so an async fallback (a scripted preview harness usually is) that never settled hung the
   caller with none of the real path's diagnostics. Race a THENABLE only — a plain value has already
   settled and must not be made async.
+- **LATE MAPPING is supported, so the pipeline must be thread-safe** — "configure then serve" is not a
+  safe assumption here (the WinForms host maps its window facades after the form exists). `Use` was a
+  `Lazy` reassignment over a mutable `List<T>` with no synchronization: a dispatch could read the OLD
+  cached pipeline and answer `NO_HANDLER` for an already-registered route, and a build enumerating the
+  list while `Add` grew it was a data race. Copy-on-write list + volatile pipeline + one lock around
+  invalidate-then-rebuild.
+- **Cancellation is a NORMAL outcome and gets its own code** (`OPERATION_CANCELLED`), not
+  `UNKNOWN_ERROR` — it is the one failure a UI should stay silent about, and a client could not tell it
+  from a real fault. Map it AFTER `OperationException` so an app that models cancellation in its own
+  words keeps them. Same shape for a scope invalidated mid-request: that is a race with a documented
+  app-facing call, so retry once rather than reporting a fault.
+- **`ConfigureAwait(false)` does NOT belong in the dispatch path.** The pipeline preserves the
+  synchronization context BY DESIGN, because a facade routing a window command touches WinForms and must
+  resume on the UI thread. One stray `ConfigureAwait(false)` in `BaseFacade` contradicted that for two
+  phases and survived only because every in-repo facade marshals internally anyway.
 - **The dispatch boundary never throws and never returns null** (`DispatchAsync`): unhandled →
   `NO_HANDLER` (+`{module,type}` params), `OperationException` → its structured error, else →
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so

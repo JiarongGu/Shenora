@@ -19,6 +19,14 @@ public static class IpcErrorCodes
     /// <summary>A scope-routed module was called without <see cref="IpcRequest.Scope"/>. Parameters: <c>module</c>.</summary>
     public const string ScopeRequired = "SCOPE_REQUIRED";
 
+    /// <summary>
+    /// The operation was cancelled — a NORMAL outcome, not a fault. Distinguished from
+    /// <see cref="UnknownError"/> (P5.5 H6) so a client can stay silent instead of showing an error for
+    /// something the user or the host asked for; cancellation used to be indistinguishable from a real
+    /// failure, and the reference composition had already hand-rolled the workaround.
+    /// </summary>
+    public const string OperationCancelled = "OPERATION_CANCELLED";
+
     /// <summary>A required payload value is absent or JSON null. Parameters: <c>key</c>.</summary>
     public const string MissingPayloadValue = "MISSING_PAYLOAD_VALUE";
 

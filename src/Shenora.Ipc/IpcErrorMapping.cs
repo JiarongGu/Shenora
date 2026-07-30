@@ -39,6 +39,18 @@ internal static class IpcErrorMapping
             return IpcResponse.CreateError(request.Id, operation.ToError());
         }
 
+        // Cancellation is a NORMAL outcome, not an unknown failure (P5.5 H6). It used to fall through to
+        // UNKNOWN_ERROR, so a client could not tell "you cancelled this" from "something broke" — and a
+        // cancel is the one failure a UI should NOT show an error for. The reference composition had
+        // already hand-rolled this arm, which is the tell that every adopting app would have to.
+        // Checked AFTER OperationException on purpose: an app that models cancellation with its own code
+        // keeps its own words.
+        if (exception is OperationCanceledException)
+        {
+            logger.LogDebug("Cancelled {Context} {Module}/{Type}", context, request.Module, request.Type);
+            return IpcResponse.CreateError(request.Id, IpcErrorCodes.OperationCancelled);
+        }
+
         // Unexpected: the client learns only THAT it failed and the exception's type name.
         logger.LogError(exception, "Unhandled error {Context} {Module}/{Type}",
             context, request.Module, request.Type);

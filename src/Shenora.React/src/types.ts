@@ -35,6 +35,11 @@ export const IpcErrorCodes = {
   scopeRequired: 'SCOPE_REQUIRED',
   missingPayloadValue: 'MISSING_PAYLOAD_VALUE',
   invalidPayloadValue: 'INVALID_PAYLOAD_VALUE',
+  /**
+   * The operation was cancelled — a NORMAL outcome, not a fault. Treat it as "show nothing": it is the
+   * one failure a UI should stay silent about. Previously indistinguishable from `UNKNOWN_ERROR`.
+   */
+  operationCancelled: 'OPERATION_CANCELLED',
   /** Client-only: the request timed out waiting for a response. */
   timeout: 'TIMEOUT',
   /** Client-only: no transport is available and no fallback was configured. */

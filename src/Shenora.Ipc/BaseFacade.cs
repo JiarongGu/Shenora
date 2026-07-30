@@ -33,7 +33,13 @@ public abstract class BaseFacade : IModuleFacade
         try
         {
             _logger.LogDebug("{Module} handling {Type}", ModuleName, request.Type);
-            var data = await RouteMessageAsync(request).ConfigureAwait(false);
+            // NO ConfigureAwait(false) — removed in P5.5 H6. It was the only one in the dispatch path and
+            // it CONTRADICTED the documented model: the pipeline preserves the synchronization context on
+            // purpose, because a facade routing a WINDOW command touches WinForms and must resume on the
+            // UI thread. Under the WebView2 bridge the request already arrives there, so this discarded
+            // the very context the design guarantees — it survived only because every in-repo facade
+            // happens to marshal internally anyway. See .claude/knowledge/ipc-contracts.md.
+            var data = await RouteMessageAsync(request);
             return IpcResponse.CreateSuccess(request.Id, data);
         }
         catch (Exception ex)

@@ -177,8 +177,25 @@ public sealed class ScopedContainerRouter : IDisposable
                 new Dictionary<string, string> { ["module"] = request.Module });
         }
 
-        var scopeServices = GetScopeServices(request.Scope);
-        var facade = _facadeResolvers[request.Module](scopeServices);
+        IModuleFacade? facade;
+        try
+        {
+            facade = _facadeResolvers[request.Module](GetScopeServices(request.Scope));
+        }
+        catch (ObjectDisposedException) when (!_disposed)
+        {
+            // The scope was invalidated (or disposed) BETWEEN us fetching its container and resolving
+            // from it — a normal race, because InvalidateScope is a documented app-facing call that can
+            // fire while requests are in flight (P5.5 H6). It used to surface as UNKNOWN_ERROR, telling
+            // the client something broke when the correct answer is simply to use the rebuilt scope.
+            // GetScopeServices already removed the dead entry, so ONE retry builds a fresh container; a
+            // second failure is a real fault and propagates. Guarded on !_disposed so a router shutting
+            // down does not spin rebuilding scopes it is trying to tear down.
+            _logger.LogDebug("Scope {Scope} was invalidated mid-request; rebuilding for {Module}/{Type}",
+                request.Scope, request.Module, request.Type);
+            facade = _facadeResolvers[request.Module](GetScopeServices(request.Scope));
+        }
+
         if (facade is null)
             return await next();
 

@@ -12,6 +12,19 @@ public class EventBusTests
             return Task.CompletedTask;
         };
 
+    [Theory]
+    [InlineData("", "TICK")]
+    [InlineData("APP", "")]
+    public async Task The_convenience_overload_rejects_an_empty_module_or_type(string module, string type)
+    {
+        // The envelope overload is guarded by `required` plus the subscribe-side checks, but this one
+        // accepted an empty module or type and built a message that could never match any subscription —
+        // a silently undeliverable event, which is exactly what this bus exists to prevent (P5.5 H6).
+        var bus = new EventBus();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => bus.EmitAsync(module, type));
+    }
+
     [Fact]
     public async Task Exact_subscription_receives_only_its_event()
     {

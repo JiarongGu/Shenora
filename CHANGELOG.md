@@ -137,6 +137,17 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Breaking
 
+- **`IpcResponse.CreateError`'s argument order now matches `OperationException`'s** (P5.5 H6):
+  `(id, code, parameters, message)`, previously `(id, code, message, parameters)`. The two are siblings
+  that build the same structured error from the same pieces, and they disagreed about the last two — so
+  which one you were calling decided what a positional third argument meant. The shared order puts the
+  wire-relevant piece first: `parameters` crosses to the client as i18n interpolation values, `message`
+  is host-log only. Calls using `parameters:`/`message:` by name are unaffected; a positional third
+  argument now fails to compile rather than silently landing in the wrong slot.
+- **`BaseFacade` no longer calls `ConfigureAwait(false)` around your `RouteMessageAsync`** (P5.5 H6). It
+  was the only such call in the dispatch path and it contradicted the documented context-preserving
+  model — a facade routing a window command must be able to resume on the UI thread. If your facade
+  relied on being resumed off the captured context, marshal explicitly.
 - **`WebViewHost.AutoReloadCooldown` moved to `WebViewHostOptions.AutoReloadCooldown`** (P5.5 H3). It
   was a public static field, so it was neither per-host nor configurable. The new
   `WebViewHostOptions.MaxAutoReloads` joins it — see Fixed for why a cap was needed at all.
@@ -150,6 +161,30 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Fixed
 
+- **A route mapped while requests were in flight could answer `NO_HANDLER`** (P5.5 H6). Late mapping is a
+  supported, documented pattern — the WinForms host maps its window facades after the form exists — but
+  `MessageDispatcher.Use` reassigned a `Lazy` field over an unsynchronized `List<T>` with no
+  synchronization anywhere, so a concurrent dispatch could read the old cached pipeline and report no
+  handler for a route that was by then registered, and a pipeline build enumerating the list while `Add`
+  grew it was a plain data race. The middleware list is now copy-on-write, the built pipeline is volatile,
+  and invalidate-then-rebuild happens under one lock.
+- **Cancellation is no longer reported as `UNKNOWN_ERROR`** (P5.5 H6). New
+  `IpcErrorCodes.OperationCancelled` (`OPERATION_CANCELLED`, mirrored on the client) means a UI can stay
+  silent for the one failure it should not report as an error. Placed after `OperationException` in the
+  mapping, so an app that models cancellation with its own code keeps its own words. The reference
+  composition had already hand-rolled this arm — the tell that every adopting app would have had to.
+- **A scope invalidated mid-request failed instead of using the rebuilt scope.**
+  `ScopedContainerRouter.HandleAsync` now retries once on `ObjectDisposedException` (and not at all while
+  the router itself is disposing, so shutdown cannot spin). `InvalidateScope` is a documented app-facing
+  call that can fire while requests are in flight, so this race is normal, not exceptional.
+- `EventBus.EmitAsync(module, type, …)` rejects an empty module or type instead of building an event that
+  could never match any subscription; and `SubscribeCore` now publishes `_patterns` last — it is what
+  `EmitAsync` enumerates, so a concurrent emit could previously see a subscription whose handler and
+  match cache were not written yet, making its `continue` mean something other than the "concurrently
+  unsubscribed" its comment claims.
+- **An option added to `ShenoraPathsOptions` would have been silently dropped under `--app-root`.** The
+  merge hand-copied all six properties into a new instance; the type is now a `record` and the merge uses
+  `with`.
 - **Notifications could stop for the rest of the process** (P5.5 H3). The ready gate closed on EVERY
   `NavigationStarting`, but the client sends `READY` only once per real page load — so a navigation that
   never replaced the document (one an app tap or a policy cancelled, one that failed before committing)

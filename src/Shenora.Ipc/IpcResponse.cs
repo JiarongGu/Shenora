@@ -42,8 +42,22 @@ public sealed class IpcResponse
     public static IpcResponse CreateError(string id, IpcError error) =>
         new() { Id = id, Success = false, Error = error };
 
-    /// <summary>A failure response built from the error parts (see <see cref="IpcError"/>).</summary>
+    /// <summary>
+    /// A failure response built from the error parts (see <see cref="IpcError"/>).
+    /// <para>
+    /// Parameter order matches <see cref="OperationException"/>'s — <c>code</c>, then
+    /// <c>parameters</c>, then <c>message</c> (P5.5 H6). The two are siblings: they build the same
+    /// structured error from the same three pieces, and they used to disagree about the order of the
+    /// last two, so which one you were calling decided what a positional third argument meant. The
+    /// shared order puts the WIRE-relevant piece first: <c>parameters</c> crosses to the client as the
+    /// i18n interpolation values, while <c>message</c> is host-log only.
+    /// </para>
+    /// </summary>
+    /// <param name="id">Correlation id of the request being answered.</param>
+    /// <param name="code">Error code / i18n key.</param>
+    /// <param name="parameters">Optional interpolation values — these DO cross the wire.</param>
+    /// <param name="message">Optional untranslated message for host logs.</param>
     public static IpcResponse CreateError(
-        string id, string code, string? message = null, IReadOnlyDictionary<string, string>? parameters = null) =>
+        string id, string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null) =>
         CreateError(id, new IpcError { Code = code, Message = message, Parameters = parameters });
 }

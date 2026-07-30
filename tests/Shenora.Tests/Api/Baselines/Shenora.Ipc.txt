@@ -23,6 +23,7 @@ static class Shenora.Ipc.IpcErrorCodes
   public const string InvalidPayloadValue = "INVALID_PAYLOAD_VALUE"
   public const string MissingPayloadValue = "MISSING_PAYLOAD_VALUE"
   public const string NoHandler = "NO_HANDLER"
+  public const string OperationCancelled = "OPERATION_CANCELLED"
   public const string ScopeRequired = "SCOPE_REQUIRED"
   public const string UnknownError = "UNKNOWN_ERROR"
 static class Shenora.Ipc.IpcJson
@@ -54,7 +55,7 @@ sealed class Shenora.Ipc.IpcResponse
   [JsonPropertyName("id")] public required string Id { get; init; }
   [JsonPropertyName("success")] public bool Success { get; init; }
   public static Shenora.Ipc.IpcResponse CreateError(string id, Shenora.Ipc.IpcError error)
-  public static Shenora.Ipc.IpcResponse CreateError(string id, string code, string? message = null, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null)
+  public static Shenora.Ipc.IpcResponse CreateError(string id, string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
   public static Shenora.Ipc.IpcResponse CreateSuccess(string id, object? data = null)
 static class Shenora.Ipc.IpcServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<System.IServiceProvider, Shenora.Ipc.MessageDispatcher>? configure = null)

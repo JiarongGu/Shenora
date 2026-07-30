@@ -1,7 +1,15 @@
 namespace Shenora.Core;
 
-/// <summary>Inputs for <see cref="ShenoraPaths.Resolve"/>. All family-proven conventions, parameterized.</summary>
-public sealed class ShenoraPathsOptions
+/// <summary>
+/// Inputs for <see cref="ShenoraPaths.Resolve"/>. All family-proven conventions, parameterized.
+/// <para>
+/// A <c>record</c> so callers can use <c>with</c> (P5.5 H6): the <c>--app-root</c> merge in
+/// <see cref="ShenoraApplication"/> hand-copied all six properties into a new instance, which means a
+/// SEVENTH option added here would have been silently dropped whenever that flag was passed — a
+/// data-loss bug whose only symptom is an option quietly not applying.
+/// </para>
+/// </summary>
+public sealed record ShenoraPathsOptions
 {
     /// <summary>
     /// Explicit root (normally from <see cref="AppRootArgument.Resolve"/>). Wins over everything.

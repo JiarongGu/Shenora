@@ -610,7 +610,43 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   main form lazily via the existing `IFormInteraction` so they register as ordinary DI facades
   through `AddModuleFacade` (smaller surface change than widening the interface). Fix the
   `WindowCommandFacade` doc either way.
-- [ ] Trim surface that doesn't earn its keep, and add what's missing: `DpiHelper.ScalePixels`/
+- [~] Trim surface that doesn't earn its keep, and add what's missing. **The CORRECTNESS half is DONE
+  (2026-07-30)** — these were bugs behind surface items, so they went first:
+  - `MessageDispatcher.Use()`/`_middlewares`: the `Lazy` + `List<T>` swap was unsynchronized, so a
+    concurrent dispatch could read the OLD cached pipeline and answer `NO_HANDLER` for a route that was
+    already registered, and a build enumerating the list while `Add` grew it was a plain data race. Now
+    copy-on-write array + volatile pipeline + invalidate-and-rebuild under one lock. Regression test
+    hammers 200 late `UseRoute` calls against continuous dispatch.
+  - `IpcErrorCodes.OperationCancelled` + the `catch (OperationCanceledException)` arm in
+    `IpcErrorMapping`, placed AFTER `OperationException` so an app that models cancellation in its own
+    words keeps them. Mirrored to `types.ts` (the H6.2 tripwire enforced that automatically — it works).
+  - `IpcResponse.CreateError`'s argument order now matches `OperationException`'s: `code`,
+    `parameters`, `message`. The shared order puts the WIRE-relevant piece first (`parameters` crosses;
+    `message` is host-log only). Every in-repo call site already used `parameters:` named, and a
+    positional third argument now fails to compile rather than binding to the wrong thing.
+  - `EventBus`: the convenience `EmitAsync` overload guards module/type (it used to build a message that
+    could never match any subscription — a silently undeliverable event); and `SubscribeCore` publishes
+    `_patterns` LAST, since that is what `EmitAsync` enumerates — so its `continue` can now only mean
+    "concurrently unsubscribed", as its comment always claimed.
+  - `ScopedContainerRouter.HandleAsync` retries ONCE on `ObjectDisposedException` (guarded on
+    `!_disposed` so a router shutting down can't spin): `InvalidateScope` is a documented app-facing call
+    that can fire mid-request, and the race used to surface as `UNKNOWN_ERROR` instead of just using the
+    rebuilt scope.
+  - `ShenoraPathsOptions` is a `record`, and the `--app-root` merge uses `with` — it hand-copied six
+    properties, so a seventh option would have been silently dropped whenever that flag was passed.
+  - `BaseFacade`'s lone `ConfigureAwait(false)` REMOVED: it was the only one in the dispatch path and it
+    contradicted the documented context-preserving model, discarding the very context a WINDOW facade
+    needs. It survived only because every in-repo facade marshals internally anyway.
+  **STILL OPEN (the surface-trim half):** `DpiHelper.ScalePixels`/`ScaleSize`/`ScalePoint` (zero
+  callers); `SessionBrowser`'s public statics → internal, WITH the H2-deferred `CancellationToken`;
+  `CoBrowseSession.DispatchInputAsync`/`ReadHotspotsAsync` cancellation tokens (H9 reshapes both — do it
+  there); bridging Sessions' `LoginErrorCodes` into the IPC contract; rejecting duplicate `ModuleName`s
+  in the EAGER `MapRegisteredModules` (the lazy path already does); the npm items (drop
+  `declare global { Window.chrome }`, `EventMessage<T>` as an alias of `IpcNotification<T>`,
+  `"./package.json"` in `exports`, a LICENSE in the tarball); and the form-dependent-facade registration
+  seam. **NOTE `IWebViewResourceProvider.Exists` must NOT be removed** — H3 gave it a real consumer (the
+  startup bundle sanity check), which is the option the review offered as the alternative.
+  Original list: `DpiHelper.ScalePixels`/
   `ScaleSize`/`ScalePoint` have ZERO callers and their documented consumer (the drop-zone overlay)
   architecturally cannot reach them; `IWebViewResourceProvider.Exists` is never called in `src/` or
   `samples/` (every implementor pays for it) — remove it or use it for a startup sanity check on

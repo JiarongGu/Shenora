@@ -17,6 +17,73 @@ public class MessageDispatcherTests
         };
 
     [Fact]
+    public async Task A_route_mapped_while_dispatches_are_in_flight_is_seen_immediately()
+    {
+        // Late mapping is a SUPPORTED, documented pattern (the WinForms host maps its window facades
+        // after the form exists), so "configure then serve" is not a safe assumption. The pipeline was a
+        // Lazy field reassigned by Use() over an unsynchronized List<T>, so a concurrent dispatch could
+        // read the OLD cached Lazy and answer NO_HANDLER for a route that was already registered — and a
+        // build enumerating the list while Add grew it is a plain data race (P5.5 H6).
+        var dispatcher = new MessageDispatcher();
+        dispatcher.UseRoute("APP", "FIRST", _ => Task.FromResult(IpcResponse.CreateSuccess("1")));
+
+        // Force the pipeline to be built and cached — the precondition for the stale read.
+        Assert.True((await dispatcher.DispatchAsync(Request("APP", "FIRST"))).Success);
+
+        var added = 0;
+        var mapping = Task.Run(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                var type = $"LATE{i}";
+                dispatcher.UseRoute("APP", type, _ => Task.FromResult(IpcResponse.CreateSuccess("ok")));
+                Interlocked.Increment(ref added);
+            }
+        });
+        var dispatching = Task.Run(async () =>
+        {
+            while (!mapping.IsCompleted)
+                Assert.True((await dispatcher.DispatchAsync(Request("APP", "FIRST"))).Success);
+        });
+
+        await Task.WhenAll(mapping, dispatching);
+        Assert.Equal(200, added);
+
+        // Every late route resolves — none was lost behind a stale pipeline.
+        for (var i = 0; i < 200; i++)
+            Assert.True((await dispatcher.DispatchAsync(Request("APP", $"LATE{i}"))).Success, $"LATE{i} was not routable");
+    }
+
+    [Fact]
+    public async Task Cancellation_surfaces_as_its_own_code_not_as_unknown()
+    {
+        // It used to fall through to UNKNOWN_ERROR, so a client could not tell "you cancelled this" from
+        // "something broke" — and a cancel is the one failure a UI should NOT report as an error. The
+        // reference composition had already hand-rolled this arm, which is the tell that every adopting
+        // app would have to (P5.5 H6).
+        var dispatcher = new MessageDispatcher();
+        dispatcher.UseRoute("APP", "SLOW", _ => throw new OperationCanceledException());
+
+        var response = await dispatcher.DispatchAsync(Request("APP", "SLOW"));
+
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.OperationCancelled, response.Error?.Code);
+    }
+
+    [Fact]
+    public async Task An_app_that_models_cancellation_itself_keeps_its_own_code()
+    {
+        // The cancellation arm sits AFTER OperationException on purpose: an app that describes the
+        // outcome in its own words must not have them replaced by ours.
+        var dispatcher = new MessageDispatcher();
+        dispatcher.UseRoute("APP", "SLOW", _ => throw new OperationException("IMPORT_ABORTED"));
+
+        var response = await dispatcher.DispatchAsync(Request("APP", "SLOW"));
+
+        Assert.Equal("IMPORT_ABORTED", response.Error?.Code);
+    }
+
+    [Fact]
     public async Task MapRoute_handles_and_wraps_success()
     {
         var dispatcher = new MessageDispatcher().MapRoute("APP", "PING", _ => "pong");

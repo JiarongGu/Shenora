@@ -60,9 +60,15 @@ public sealed class EventBus : IEventBus
 
         // Human-readable prefix + guid: the id doubles as a diagnostic label in logs.
         var subscriptionId = $"{modulePattern}.{typePattern}.{scopePattern ?? "*"}_{Guid.NewGuid()}";
+
+        // ORDER MATTERS: _patterns is what EmitAsync ENUMERATES, so it must be published LAST (P5.5 H6).
+        // Published first, a concurrent emit could see the pattern and then miss the handler or the match
+        // cache that had not been written yet — and it would `continue`, whose comment claims that can
+        // only mean "concurrently unsubscribed". Registering in reverse makes the comment true: by the
+        // time a subscription is visible to an emit, everything it needs is already there.
         _handlers[subscriptionId] = handler;
-        _patterns[subscriptionId] = (modulePattern, typePattern, scopePattern);
         _matchCache[subscriptionId] = new ConcurrentDictionary<string, bool>();
+        _patterns[subscriptionId] = (modulePattern, typePattern, scopePattern);
         return subscriptionId;
     }
 
@@ -112,8 +118,16 @@ public sealed class EventBus : IEventBus
     }
 
     /// <inheritdoc />
-    public Task EmitAsync(string module, string type, object? payload = null, string? scope = null) =>
-        EmitAsync(new EventMessage { Module = module, Type = type, Payload = payload, Scope = scope });
+    public Task EmitAsync(string module, string type, object? payload = null, string? scope = null)
+    {
+        // Guard HERE too (P5.5 H6). The envelope overload validates via `required` + the checks in
+        // SubscribeCore's mirror, but this convenience overload accepted an empty module or type and
+        // built a message that could never match any subscription — a silently undeliverable event,
+        // which is exactly the class of failure this bus is supposed to make impossible.
+        ArgumentException.ThrowIfNullOrEmpty(module);
+        ArgumentException.ThrowIfNullOrEmpty(type);
+        return EmitAsync(new EventMessage { Module = module, Type = type, Payload = payload, Scope = scope });
+    }
 
     private async Task InvokeSafely(Func<EventMessage, Task> handler, EventMessage message)
     {

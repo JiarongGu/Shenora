@@ -91,15 +91,10 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
             var argRoot = AppRootArgument.Resolve(args, string.Empty);
             if (argRoot.Length > 0)
             {
-                pathsOptions = new ShenoraPathsOptions
-                {
-                    ExplicitRoot = argRoot,
-                    RootEnvironmentVariable = pathsOptions.RootEnvironmentVariable,
-                    DataEnvironmentVariable = pathsOptions.DataEnvironmentVariable,
-                    ExecutableSubfolders = pathsOptions.ExecutableSubfolders,
-                    DataFolderName = pathsOptions.DataFolderName,
-                    ResourcesFolderName = pathsOptions.ResourcesFolderName,
-                };
+                // `with`, not a hand-copied initializer (P5.5 H6). The previous version restated all six
+                // properties, so adding a seventh option to ShenoraPathsOptions would have silently
+                // dropped it for every launch that passed --app-root.
+                pathsOptions = pathsOptions with { ExplicitRoot = argRoot };
             }
         }
 
