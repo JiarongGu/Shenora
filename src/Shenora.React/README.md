@@ -59,7 +59,12 @@ useDeploy.actions.start({ env: 'prod' });
 
 Use the **store for shared or long-lived state** and **`useShenoraEvent` for a one-off reaction in a
 single component**. A failed `post` has no promise to reject, so it is reported through the bridge's
-`onPostError` (default `console.error`) rather than vanishing.
+`onPostError` rather than vanishing — it is bridge-wide, so wire it once at startup
+(`getBridge()` takes no options):
+
+```ts
+configureBridge({ onPostError: (failure) => log.error(failure.module, failure.type, failure.error) });
+```
 
 Pure-UI development in a plain browser: pass a `fallback` to `configureBridge` (gated behind
 `import.meta.env.DEV`) to answer requests with canned data. Other shells (WebSocket,

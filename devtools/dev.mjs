@@ -50,6 +50,38 @@ const step = (label, fn) => {
 const npmDirAbs = path.join(repo, ...config.npmDir.split('/'));
 const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'package.json'), 'utf8'));
 
+// ---- Evict this repo's packages from the NuGet GLOBAL cache after packing.
+//
+// NuGet keys the global folder (~/.nuget/packages) on id+VERSION and it wins over every source, so
+// re-packing the same pre-release version leaves consumers restoring the OLD copy — silently, with
+// no warning and no restore error. Found in P6.1: a consumer resolved a Shenora.WebView2 packed
+// before the D19 re-layer, so `Shenora.WinForms` was simply absent from its dependency graph and the
+// build failed with "namespace does not exist" while the freshly packed nupkg on disk was correct.
+// `--no-cache` does NOT help (that is HTTP caching). Since a fresh pack makes any cached copy of
+// these exact ids stale by definition, evicting them here removes the trap instead of documenting
+// it. Scoped strictly to the ids this repo produces.
+function evictGlobalCache() {
+  const home = process.env.USERPROFILE || process.env.HOME;
+  if (!home) { console.log('  (no home dir — skipped)'); return true; }
+  const root = path.join(home, '.nuget', 'packages');
+  if (!fs.existsSync(root)) { console.log('  (no global packages folder — nothing to evict)'); return true; }
+  let evicted = 0;
+  for (const proj of config.packableProjects) {
+    const id = path.basename(proj).replace(/\.csproj$/i, '');
+    const dir = path.join(root, id.toLowerCase(), config.version);
+    if (!fs.existsSync(dir)) continue;
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      evicted++;
+    } catch (error) {
+      // A locked file means some other process is mid-restore; say so rather than failing the pack.
+      console.log(`  could not evict ${id} ${config.version}: ${error.message}`);
+    }
+  }
+  console.log(`  evicted ${evicted} cached package(s) for version ${config.version}`);
+  return true;
+}
+
 // ---- doctor: the version story has ONE source (src/Directory.Build.props VersionPrefix).
 // The npm package.json version and the README "## Status" headline are derived; `doctor` fails
 // on drift, `doctor --fix` (also run by `pack`) rewrites them.
@@ -206,6 +238,7 @@ switch (cmd) {
     ok = ok && ensureNpmDeps(npmDirAbs);
     ok = ok && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
     ok = ok && step('npm pack (react package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: npmDirAbs }));
+    if (ok) ok = step('evict stale Shenora.* from the NuGet global cache', () => evictGlobalCache());
     if (ok) {
       console.log('\npacked:');
       for (const f of fs.readdirSync(out).sort()) {

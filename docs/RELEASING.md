@@ -53,6 +53,20 @@ Until the first public release, siblings consume the local pack output. The reci
   The tarball works under native Node ESM, not just bundlers (the emitted imports carry explicit
   `.js` extensions; enforced by the package's NodeNext tsconfig — see `docs/FIX-LOG.md`).
 
+> ⚠ **The NuGet GLOBAL cache beats every source, so re-packing the same version is not enough.**
+> `~/.nuget/packages` is keyed on id+VERSION, and a cached copy wins over any feed — including this
+> repo's `publish/packages`. Re-packing `0.1.0` therefore leaves consumers restoring whatever
+> `0.1.0` they cached first, silently: no warning, no restore error, and `--no-cache` does not help
+> (that flag is HTTP caching). Found in P6.1, and it is not a theoretical risk — a consumer resolved
+> a `Shenora.WebView2` packed BEFORE the D19 re-layer, so `Shenora.WinForms` was absent from its
+> dependency graph and the build failed with "the namespace does not exist" while the freshly packed
+> nupkg on disk was perfectly correct. The diagnosis is `obj/project.assets.json`: compare the
+> dependencies it recorded against the `.nuspec` inside the nupkg you just built.
+> **`dev.mjs pack` now evicts this repo's ids at that version after packing**, so the trap is closed
+> for anyone packing from here. A consumer who obtained packages another way clears them with
+> `dotnet nuget locals global-packages --clear` (blunt) or by deleting
+> `~/.nuget/packages/<id>/<version>` (surgical, and what `pack` does).
+
 Pin exact versions and upgrade deliberately — the same model the family already uses for its
 other in-house library.
 

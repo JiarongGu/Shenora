@@ -975,7 +975,16 @@ carrying someone's envelope.
 
 #### Increments (keep it runnable at every step — that is the phase's standing rule)
 
-- [ ] **P6.1 — Consume the packages at all.** `dev.mjs pack` → local feed + exact-version pinning
+- [x] **P6.1 — DONE (2026-07-31): the consumption path is proven, and it was BROKEN.**
+  Three consumers under `devtools/_p6-consumer/` (gitignored): a leaf one with ONE PackageReference
+  that touches a type from every package, a `net10.0` portable one proving D20 through a PACKAGE
+  reference for the first time, and an npm one type-checking the packed tarball under NodeNext plus a
+  native-ESM import. **It found a real defect: the NuGet global cache beats every source, so a
+  consumer silently restored a `Shenora.WebView2` packed before the D19 re-layer and `Shenora.WinForms`
+  was absent from its graph — with no restore error.** `dev.mjs pack` now evicts this repo's ids at
+  the packed version, closing it; `docs/RELEASING.md` + `docs/FIX-LOG.md` carry the detail. Also fixed:
+  the npm README did not say `onPostError` is set via `configureBridge`. Original note follows.
+- [x] ~~P6.1 original~~ `dev.mjs pack` → local feed + exact-version pinning
   per `docs/RELEASING.md`, npm tarball for `@shenora/react`. Nothing adopted yet; this proves the
   consumption path end-to-end from outside this repo. **This is also P1.2's blocker in disguise** —
   a real external consumer is the dry run.

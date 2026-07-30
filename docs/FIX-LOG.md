@@ -14,6 +14,42 @@ entry template:
 
 ## 2026-07-31
 
+### P6.1: a consumer silently restored a months-old package from the NuGet global cache
+
+- **Symptom.** A scratch consumer referencing only the leaf package failed to compile with "the type
+  or namespace name 'WinForms' does not exist in the namespace 'Shenora'", while `Shenora.Core`,
+  `Shenora.Ipc`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` all resolved. Restore reported no
+  error at all.
+- **Root cause.** NuGet's global folder (`~/.nuget/packages`) is keyed on id+VERSION and wins over
+  every source, including the local `publish/packages` feed. The cached `Shenora.WebView2 0.1.0` had
+  been packed BEFORE the D19 re-layer added the `Shenora.WinForms` edge, so its recorded dependency
+  graph simply had no WinForms in it. The freshly packed nupkg on disk was correct the whole time.
+  `--no-cache` does not help — that flag governs HTTP caching, not the global folder.
+- **How it was found, and the step that made it decisive.** The nuspec inside the packed nupkg listed
+  `Shenora.WinForms`, so the package was right; `obj/project.assets.json` recorded only
+  `Shenora.Ipc` + `Microsoft.Web.WebView2` for the same package id, which is what proved a DIFFERENT
+  copy had been resolved. Comparing those two is the diagnosis for this whole class.
+- **Fix.** `dev.mjs pack` now evicts this repo's ids at the packed version from the global folder
+  after packing (`evictGlobalCache`) — a fresh pack makes any cached copy of those exact ids stale by
+  definition, so the trap is removed rather than documented. `docs/RELEASING.md` carries the warning
+  and the manual remedy for anyone who obtained packages another way.
+- **Why it matters more than a scratch consumer.** This would have silently invalidated P6 itself: an
+  adopting app would have compiled against a stale surface while believing it was testing the current
+  one. It also means any re-run of the P1.1 smoke since the re-layer had been testing the old package.
+- **Verified.** With the cache evicted, one PackageReference to the leaf resolves all five assemblies
+  and the consumer runs. Re-running `pack` reports "evicted 5 cached package(s)".
+
+### P6.1: two smaller findings from the same dry run
+
+- **The transitivity promise was never tested.** `docs/RELEASING.md` says to reference the leaf and
+  let the rest arrive, but P1.1's smoke referenced two packages BY HAND, so nothing exercised the
+  chain. The P6.1 consumer references exactly one and touches a type from every package, so a missing
+  link is a compile error. (It is what surfaced the cache bug.)
+- **D20's portability claim now holds through a PACKAGE reference, not only a ProjectReference.** A
+  `net10.0` (non-Windows) project consuming `Shenora.Core` compiles app logic against
+  `IUrlLauncher`/`IClipboardService`/`IFileDialogs`/`IUiDispatcher`. The in-repo sample proves the
+  same thing, but package resolution is a different path and had never been checked.
+
 ### Maximize+restore did not exit an Aero snap
 
 - **Symptom.** Snap the window to a screen edge, then maximize and restore it: it went straight back
