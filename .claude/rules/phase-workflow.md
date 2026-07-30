@@ -7,14 +7,12 @@ P6 sibling adoption → P7 stabilisation/1.0). Per phase:
 1. **Build** through the dev loop: `node devtools/dev.mjs <build|test|verify|pack|doctor|sample|…>`
    — don't invent ad-hoc shell for these steps.
 2. **Verify with evidence.** `node devtools/dev.mjs verify` is the "am I done?" gate (dotnet
-   build + tests, npm build + tests, sensitive scan, knowledge check). Behavioral claims about the
-   desktop shell are proven against the sample app (`dev.mjs sample` + the capture/input tools),
-   not asserted. Performance claims need numbers.
-   **The gate has known holes until P5.5 H5 lands** (`TASKS.md`) — and these are exactly how the
-   P0–P5 latent defects passed five phase reviews: `verify` does NOT compile `samples/` (the
-   solution's `/samples/` folder is empty, so the reference composition and e2e subject can be red
-   while verify is green), `dev.mjs test <typo>` exits 0 having run nothing, and warnings are
-   neither errors nor shown (`-clp:ErrorsOnly`). Compile the sample by hand before claiming done.
+   build + tests, samples, npm build + tests, sample-web typecheck, sensitive scan, knowledge
+   check, doctor). Behavioral claims about the desktop shell are proven against the sample app
+   (`dev.mjs sample` + the capture/input tools), not asserted. Performance claims need numbers.
+   The gate's holes were closed by P5.5 H5 — but remember WHY they mattered: a green gate that
+   wasn't looking at the samples is how the P0–P5 latent defects passed five phase reviews. When a
+   claim isn't covered by the gate, say so instead of implying it is.
 3. **Phase review (standing user rule):** run `/phase-review` — a review subagent over the full
    phase diff → fix its real findings (delegating the fix batch to a subagent works well) → sync
    docs (`ARCHITECTURE`/`ROADMAP`/`TASKS`/`CHANGELOG`) and rules/skills → then commit.

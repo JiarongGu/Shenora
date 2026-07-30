@@ -5,6 +5,38 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H2 (WinForms): the shell robustness tail + the `winforms-shell` rule
+
+Nine items in `src/Shenora.WinForms/`, the layer under everything else — which is why its failures look
+like anything but a window bug: a resident process nobody asked for, a stale profile lock, a maximize
+button that stops working, a suite that stalls with no failing test. 404 dotnet + 39 vitest.
+
+Two judgement calls are the interesting part. The form-level `AllowDrop` was **removed outright** rather
+than option-gated, because the premise behind it was false: OLE registers drop targets PER HWND and
+`DropZoneOverlay` registers itself, so nothing ever needed the form's drag events. What it actually did
+was force OLE — hence STA — on every consumer of the base class, and show a copy cursor for a drop it
+then silently discarded (there was no `DragDrop` handler). The existing test asserting
+`AllowDrop == true` carried that false premise in its own comment. And `TrayIcon`'s wrong comment was
+fixed as DOCUMENTATION rather than code: `CloseReason` genuinely cannot distinguish the user's X from a
+programmatic `Close()`, so the honest fix is telling adopters to close via
+`ExitApplication()`/`Application.Exit()` — now stated on the `CloseToTray` option itself, where the
+decision gets made, not buried in a private handler.
+
+The rest: `Initialize` fails fast on a non-STA thread with the fix in the message and is idempotent; the
+crash dialog is one-at-a-time per thread, because `MessageBox.Show` pumps and a recurring exception
+stacked dialogs unboundedly (driven by a new internal `ShowDialogOverride` seam — a real MessageBox
+would hang the suite, and the re-entrancy IS the invariant, so it had to be testable);
+`SecondaryWindows` cleans up only after `Application.Run` returns, removes a phantom entry when
+`thread.Start()` fails, and replays a pre-handle `Activate`; `SingleInstanceGuard.TryAcquire` is
+idempotent against a per-thread-reentrant mutex; `OptimizedForm` re-fills on DPI/display change and
+validates its restore rect through `WindowStateManager.IsVisible`; `SetTextAsync("")` clears.
+
+H8's last owed file, `winforms-shell.md`, landed with it — and its `RULES_INDEX` row pushed the
+always-loaded tier OVER budget (16.4 / 16.0 KB), which was paid for by a real trim rather than a
+cosmetic one: the "known gate holes until H5 lands" text in `CLAUDE.md` and `phase-workflow.md`, and the
+guard's "current limits" list in `sensitive-info.md`, were all stale — H5 closed those holes — and were
+actively instructing future sessions to distrust a gate that now works. Back to 15.6 / 16.0.
+
 ### 2026-07-30 — P5.5 H2 (callbacks): no app-supplied delegate runs unguarded, kit-wide
 
 Closes the H2 item that had been open since the first full review, and the answer turned out to be

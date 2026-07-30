@@ -43,6 +43,129 @@ public class WinFormsBootstrapTests
     }
 
     [Fact]
+    public void Initialize_rejects_a_non_STA_thread_with_an_actionable_message()
+    {
+        // xunit workers are MTA, which is exactly the shape of an app whose Main lacks [STAThread].
+        Assert.Equal(ApartmentState.MTA, Thread.CurrentThread.GetApartmentState());
+
+        // It must fail HERE rather than later inside window creation, where WinForms answers with a
+        // BLOCKING modal dialog on a window that may not be visible yet (P5.5 H2).
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            WinFormsBootstrap.Initialize(new WinFormsBootstrapOptions { ShowCrashDialog = false }));
+
+        Assert.Contains("STAThread", ex.Message, StringComparison.Ordinal); // the fix is in the message
+    }
+
+    [Fact]
+    public void Only_one_crash_dialog_is_shown_at_a_time()
+    {
+        // MessageBox.Show runs its own modal loop, so it PUMPS: a UI-thread exception that RECURS (a
+        // broken paint handler, a timer throwing every tick) is dispatched again while the dialog is
+        // still up, re-entering Handle and stacking another dialog — unboundedly, over a window nobody
+        // can reach (P5.5 H2). The override stands in for that pumping.
+        var shown = 0;
+        WinFormsBootstrapOptions options = null!;
+        options = new WinFormsBootstrapOptions { ApplicationName = "Test" };
+        WinFormsBootstrap.ShowDialogOverride = (_, _) =>
+        {
+            shown++;
+            if (shown < 4) // "the pump dispatched the recurring exception while we were up"
+            {
+                WinFormsBootstrap.Handle(
+                    new UnhandledExceptionReport(new Exception("again"), UnhandledExceptionSource.UiThread, false),
+                    options);
+            }
+        };
+        try
+        {
+            WinFormsBootstrap.Handle(
+                new UnhandledExceptionReport(new Exception("first"), UnhandledExceptionSource.UiThread, false), options);
+
+            Assert.Equal(1, shown); // the re-entrant reports are dropped, not stacked
+        }
+        finally
+        {
+            WinFormsBootstrap.ShowDialogOverride = null;
+        }
+    }
+
+    [Fact]
+    public void A_recurring_exception_still_reaches_the_app_logger()
+    {
+        // The dialog is suppressed on re-entry; the LOG must not be — a repeating fault is exactly what
+        // an app needs recorded.
+        var logged = 0;
+        WinFormsBootstrapOptions options = null!;
+        options = new WinFormsBootstrapOptions
+        {
+            OnUnhandledException = _ =>
+            {
+                if (++logged < 3)
+                {
+                    WinFormsBootstrap.Handle(
+                        new UnhandledExceptionReport(new Exception("again"), UnhandledExceptionSource.UiThread, false),
+                        options);
+                }
+            },
+        };
+        WinFormsBootstrap.ShowDialogOverride = (_, _) => { };
+        try
+        {
+            WinFormsBootstrap.Handle(
+                new UnhandledExceptionReport(new Exception("first"), UnhandledExceptionSource.UiThread, false), options);
+
+            Assert.Equal(3, logged);
+        }
+        finally
+        {
+            WinFormsBootstrap.ShowDialogOverride = null;
+        }
+    }
+
+    [Fact]
+    public void The_dialog_title_and_body_distinguish_a_fatal_exception()
+    {
+        var seen = new List<(string Title, string Body)>();
+        WinFormsBootstrap.ShowDialogOverride = (t, b) => seen.Add((t, b));
+        try
+        {
+            var options = new WinFormsBootstrapOptions { ApplicationName = "Shenora Sample" };
+            WinFormsBootstrap.Handle(
+                new UnhandledExceptionReport(new Exception("x"), UnhandledExceptionSource.AppDomain, IsTerminating: true),
+                options);
+
+            Assert.Contains("Shenora Sample", seen[0].Title, StringComparison.Ordinal);
+            Assert.Contains("fatal", seen[0].Title, StringComparison.Ordinal);
+            Assert.Contains("has to close", seen[0].Body, StringComparison.Ordinal);
+        }
+        finally
+        {
+            WinFormsBootstrap.ShowDialogOverride = null;
+        }
+    }
+
+    [Fact]
+    public void An_unobserved_task_exception_is_logged_but_never_dialogued()
+    {
+        var shown = 0;
+        var logged = 0;
+        WinFormsBootstrap.ShowDialogOverride = (_, _) => shown++;
+        try
+        {
+            WinFormsBootstrap.Handle(
+                new UnhandledExceptionReport(new Exception("x"), UnhandledExceptionSource.UnobservedTask, false),
+                new WinFormsBootstrapOptions { OnUnhandledException = _ => logged++ });
+
+            Assert.Equal(1, logged);
+            Assert.Equal(0, shown); // background noise by definition — log it, don't interrupt the user
+        }
+        finally
+        {
+            WinFormsBootstrap.ShowDialogOverride = null;
+        }
+    }
+
+    [Fact]
     public void Defaults_are_the_family_standard()
     {
         var opt = new WinFormsBootstrapOptions();

@@ -55,8 +55,6 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 ## Dev loop
 
 `node devtools/dev.mjs <build|test|verify|pack|doctor|sample|vite|shot|wgc|click|rclick|move|drag|input|knowledge|check-sensitive|install-hooks>`
-— see `devtools/README.md`. Verification gate before claiming done: `dev.mjs verify`.
-**Known gate holes until P5.5 H5 lands** (`TASKS.md`): `verify` does NOT compile `samples/` (the
-solution's `/samples/` folder is empty), `dev.mjs test <typo>` exits 0 having run nothing, and the
-sensitive guard fails OPEN when `local/sensitive-patterns.txt` is absent (fresh clone / CI) and
-never scans commit messages or renamed files. Check those by hand before claiming done.
+— see `devtools/README.md`. Verification gate before claiming done: `dev.mjs verify` (it compiles the
+samples, type-checks the sample web app, and runs doctor since P5.5 H5). CI needs
+`SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` — the sensitive guard fails CLOSED and `local/` can't exist there.

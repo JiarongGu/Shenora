@@ -96,6 +96,28 @@ public class SingleInstanceGuardTests
     }
 
     [Fact]
+    public void TryAcquire_is_idempotent_and_leaks_no_handle()
+    {
+        // A second call used to overwrite the field with a fresh Mutex handle, leaking the first. And
+        // because an OS mutex is per-thread REENTRANT, the second WaitOne(0) succeeded on this very
+        // thread — so it reported ownership while Dispose could then release only one of the two
+        // handles: the mutex stayed held after shutdown, and the fast --restarted handoff (which waits
+        // for the predecessor to let go) timed out against a corpse (P5.5 H2).
+        var scope = UniqueScope();
+        var guard = new SingleInstanceGuard("Shenora.Tests", scope);
+
+        Assert.True(guard.TryAcquire());
+        Assert.True(guard.TryAcquire()); // already ours = success, and no second handle taken
+
+        guard.Dispose();
+
+        // The one release really did let go: a fresh guard on another thread (as a new process would)
+        // can now take it. If a handle had leaked, this would fail.
+        using var successor = new ThreadHeldGuard("Shenora.Tests", scope);
+        Assert.True(successor.Acquired);
+    }
+
+    [Fact]
     public void Widened_wait_acquires_once_the_predecessor_releases()
     {
         var scope = UniqueScope();

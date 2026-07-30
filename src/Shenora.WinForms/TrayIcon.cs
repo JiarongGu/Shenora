@@ -52,6 +52,14 @@ public sealed class TrayIconOptions
     /// <see cref="TrayIcon.ExitApplication"/>) closes for real. False: the tray is just a
     /// launcher; closing the window behaves normally.
     /// </summary>
+    /// <remarks>
+    /// While this is on, a bare <see cref="Form.Close"/> from YOUR code hides the window rather than
+    /// exiting: WinForms reports <see cref="CloseReason.UserClosing"/> for a programmatic close exactly
+    /// as it does for the user's X, and the reason code carries no way to tell them apart. Close from
+    /// code with <see cref="TrayIcon.ExitApplication"/> or <c>Application.Exit()</c> — a startup-abort
+    /// path that calls <c>Close()</c> instead leaves a resident process with a tray icon and a window
+    /// that can never finish loading.
+    /// </remarks>
     public bool CloseToTray { get; init; } = true;
 
     /// <summary>Label of the built-in open item (bold, double-click equivalent).</summary>
@@ -145,8 +153,21 @@ public sealed class TrayIcon : IDisposable
 
     private void OnWindowClosing(object? sender, FormClosingEventArgs e)
     {
-        // Closing the window hides to the tray — the app keeps running. A real exit (the Exit
-        // item, Windows shutdown, code-driven close) passes through.
+        // Closing the window hides to the tray — the app keeps running.
+        //
+        // WHAT PASSES THROUGH, precisely. This comment used to claim that "a real exit (the Exit item,
+        // Windows shutdown, CODE-DRIVEN CLOSE) passes through", and the last of those is FALSE:
+        // WinForms reports CloseReason.UserClosing for a programmatic Form.Close() exactly as it does
+        // for the user's X — this repo's own TrayIconTests assert the cancellation. So with
+        // CloseToTray on, an app whose startup-abort path calls Close() (a missing WebView2 runtime is
+        // that shape) HID the window instead of exiting, and shipped a resident process with a tray
+        // icon and a window that can never finish loading. Correcting the comment IS the fix, because
+        // the reason code carries no way to tell the two apart.
+        //
+        // Passes through: _exiting (the Exit item / ExitApplication), ApplicationExitCall
+        // (Application.Exit), WindowsShutDown, TaskManagerClosing, FormOwnerClosing, MdiFormClosing.
+        // Hides to tray: UserClosing — the user's X AND a bare Form.Close().
+        // To close for real from code, call ExitApplication() or Application.Exit(), never Close().
         if (_exiting || e.CloseReason != CloseReason.UserClosing)
             return;
         e.Cancel = true;

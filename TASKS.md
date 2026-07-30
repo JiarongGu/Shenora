@@ -208,7 +208,25 @@ code comment.
   body re-checks, closing the check-then-post race. They were the only public members without a
   disposal check and the only two that install a PERSISTENT tap, so a late subscribe streamed the next
   lease's API responses and posted messages to the previous caller's handler.
-- [ ] WinForms robustness tail: STA assertion + idempotence in `WinFormsBootstrap.Initialize:65-88`
+- [x] **WinForms robustness tail — DONE**, all nine items, with `winforms-shell.md` (H8) capturing the
+  invariants. Two judgement calls worth reading: (a) the form-level `AllowDrop`/`DragOver` was
+  **removed outright** rather than option-gated, because the premise behind it was false — a drop target
+  is registered PER HWND and `DropZoneOverlay` registers itself, so nothing ever needed the form's drag
+  events; all it did was force OLE/STA on every consumer of the base class and show a copy cursor for a
+  drop it then silently discarded (the existing test asserting `AllowDrop == true` carried that false
+  premise in its comment). (b) `TrayIcon`'s wrong comment was fixed as DOCUMENTATION, not code:
+  `CloseReason` genuinely cannot distinguish the user's X from a programmatic `Close()`, so the fix is
+  telling adopters to close via `ExitApplication()`/`Application.Exit()` — now on the `CloseToTray`
+  option itself, where the decision is made. Also landed: `OptimizedForm` re-fills on `WM_DPICHANGED` +
+  `DisplaySettingsChanged` (with the `SystemEvents` unsubscribe that a static publisher demands) and
+  validates its restore rect through `WindowStateManager.IsVisible` rather than a second opinion on
+  "off-screen"; `WinFormsBootstrap` asserts STA with the fix in the message, is idempotent, and its
+  crash dialog is one-at-a-time per thread (new internal `ShowDialogOverride` seam, since a real
+  MessageBox would hang the suite and the re-entrancy IS the invariant); `SecondaryWindows` cleans up
+  only after `Application.Run` returns, removes the entry on a failed `thread.Start()`, and replays a
+  pre-handle `Activate`; `SingleInstanceGuard.TryAcquire` is idempotent; `SetTextAsync("")` clears.
+  NOT tested, deliberately: the clipboard fix — a test would clobber the developer's real clipboard.
+  Original list: STA assertion + idempotence in `WinFormsBootstrap.Initialize:65-88`
   (a missing `[STAThread]` currently surfaces as a blocking dialog inside handle creation; a second
   call double-registers all three exception channels); re-entrancy guard on the last-resort crash
   dialog (`:103-121` — `MessageBox.Show` pumps, so a repeating UI-thread exception stacks dialogs
@@ -662,11 +680,13 @@ would have argued a future session back to the pre-D19 position:
   (added under the marshalling rule it completes), re-check cancellation after a multi-second acquire,
   a health probe must fail closed, a subscribe API on a pooled object needs a disposal check, and root
   a CDP event receiver in a field.
-- [ ] **The one genuinely new file: `winforms-shell.md`** — `src/Shenora.WinForms/` has NO knowledge
-  row at all, while its earned traps are real and expensive: the frameless-maximize ⇄ window-state
-  seam, `TrayIcon` cancelling a programmatic `Close()` because WinForms reports `UserClosing`,
-  `SingleInstanceGuard.TryAcquire` not being idempotent, and `SecondaryWindows`' registry/wait
-  ordering. Add it with `dev.mjs knowledge new winforms-shell` + a `RULES_INDEX` row when H2 lands.
+- [x] **The one genuinely new file: `winforms-shell.md`** — DONE with the WinForms tail, covering all
+  four named traps plus the ones that batch earned (pumping re-entrancy, `SystemEvents` leaking a
+  static reference, per-HWND drop targets, `FormClosed` ≠ pump finished, pre-handle intent in a flag).
+  **The core tier was OVER budget when the `RULES_INDEX` row landed (16.4/16.0)** — paid for by a real
+  trim, not a cosmetic one: the "known gate holes until H5 lands" text in `CLAUDE.md` +
+  `phase-workflow.md` and the guard's "current limits" list in `sensitive-info.md` were all STALE (H5
+  closed them) and were actively telling future sessions to distrust a working gate. Now 15.6/16.0.
 - [ ] Unclaimed from the fix log: the `SemaphoreSlim.Dispose()`-wedges-a-cancelled-waiter root cause
   never became a rule, though `/fix-log`'s own closing step requires it → one bullet somewhere in
   the WinForms/sessions rule.

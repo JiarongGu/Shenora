@@ -63,6 +63,8 @@ public class OptimizedForm : Form, IAppMaximizable
 {
     private const int WS_THICKFRAME = 0x00040000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000;
     private const int WM_NCCALCSIZE = 0x0083, WM_SYSCOMMAND = 0x0112, WM_NCACTIVATE = 0x0086, WM_NCHITTEST = 0x0084;
+    // Sent when the window moves to a monitor with a different scale factor (PerMonitorV2).
+    private const int WM_DPICHANGED = 0x02E0;
     private const int HTCLIENT = 1, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
     private const int SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_BORDER_COLOR = 34;
@@ -95,12 +97,37 @@ public class OptimizedForm : Form, IAppMaximizable
         if (_options.BackColor is { } backColor) BackColor = backColor;
         if (_options.FramelessChrome) FormBorderStyle = FormBorderStyle.None; // custom chrome
 
-        // Drag-and-drop enabled so a drop-zone manager can see system drag events over the form.
-        AllowDrop = true;
-        DragOver += (_, e) =>
-        {
-            if (e.Data?.GetDataPresent(DataFormats.FileDrop) == true) e.Effect = DragDropEffects.Copy;
-        };
+        // NO form-level AllowDrop (removed in P5.5 H2). It used to be set here with a DragOver handler,
+        // justified as "so a drop-zone manager can see system drag events over the form" — which is not
+        // how OLE drop works: a drop target is registered PER HWND, and DropZoneOverlay sets its own
+        // AllowDrop and handles all four drag events on itself. Nothing in the kit ever subscribed to
+        // the FORM's drag events.
+        //
+        // So it cost two things and bought none. It made handle creation OLE-dependent, hence
+        // STA-dependent, for every consumer of this base class — the trap behind this repo's own
+        // earned test rule (handle creation throws inside WndProc on an MTA thread, and WinForms
+        // answers with a BLOCKING dialog that stalled a whole suite). And with a DragOver handler but
+        // no DragDrop handler, dragging files anywhere over the window showed a COPY CURSOR and then
+        // silently discarded the drop — worse than not being a drop target at all.
+        //
+        // An app that genuinely wants form-level drops sets AllowDrop = true and wires its own
+        // handlers; that is plain WinForms and needs nothing from us.
+
+        // Only a FRAMELESS window maximizes manually, so only it can hold a stale fill (P5.5 H2).
+        // SystemEvents holds a STRONG static reference, so this must be unsubscribed in Dispose or the
+        // form is leaked for the process lifetime.
+        if (_options.FramelessChrome)
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+    }
+
+    /// <inheritdoc />
+    protected override void Dispose(bool disposing)
+    {
+        // Unconditional detach: SystemEvents is a static, process-lifetime publisher, so a missed
+        // unsubscribe keeps this form (and its whole control tree) alive forever. Removing a handler
+        // that was never added is a no-op, so this needs no matching condition.
+        if (disposing) Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        base.Dispose(disposing);
     }
 
     /// <summary>
@@ -166,18 +193,57 @@ public class OptimizedForm : Form, IAppMaximizable
         if (GetWindowRect(Handle, out var wr))
             _restoreBounds = Rectangle.FromLTRB(wr.left, wr.top, wr.right, wr.bottom);
 
-        // GetMonitorInfo, never Screen.WorkingArea — the managed value is DPI-mis-scaled on a
-        // HiDPI monitor (~12 px short per edge, measured); the P/Invoke rect is exact physical px.
-        var hMon = MonitorFromWindow(Handle, MONITOR_DEFAULTTONEAREST);
-        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (!GetMonitorInfo(hMon, ref mi)) return;
-        var w = mi.rcWork;
+        if (!TryGetCurrentWorkArea(out var work)) return;
         _maximized = true;
         ApplyCornerPreference(); // square corners while maximized
-        SetWindowPos(Handle, IntPtr.Zero, w.left, w.top, w.right - w.left, w.bottom - w.top,
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        FillWorkArea(work);
         MaximizedChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>
+    /// The CURRENT monitor's work area in exact physical px.
+    /// <para>
+    /// GetMonitorInfo, never <see cref="Screen.WorkingArea"/> — the managed value is DPI-mis-scaled on
+    /// a HiDPI monitor (~12 px short per edge, measured); the P/Invoke rect is exact.
+    /// </para>
+    /// </summary>
+    private bool TryGetCurrentWorkArea(out RECT workArea)
+    {
+        workArea = default;
+        if (!IsHandleCreated) return false;
+        var hMon = MonitorFromWindow(Handle, MONITOR_DEFAULTTONEAREST);
+        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(hMon, ref mi)) return false;
+        workArea = mi.rcWork;
+        return true;
+    }
+
+    private void FillWorkArea(RECT work) =>
+        SetWindowPos(Handle, IntPtr.Zero, work.left, work.top, work.right - work.left, work.bottom - work.top,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+    /// <summary>
+    /// Re-apply the maximized fill to whatever monitor the window is on now (P5.5 H2).
+    /// <para>
+    /// A manual maximize is a one-shot <c>SetWindowPos</c> to one monitor's work area, so nothing kept
+    /// it true afterwards: moving a maximized window to a monitor with different DPI or resolution
+    /// (Win+Shift+Arrow), changing the display scale, or docking/undocking left the window at the OLD
+    /// monitor's physical size — too small (a gap) or too large (spilling off-screen) — while still
+    /// believing it was maximized. Called from <c>WM_DPICHANGED</c> and from
+    /// <c>SystemEvents.DisplaySettingsChanged</c>.
+    /// </para>
+    /// </summary>
+    private void RefreshMaximizedFill()
+    {
+        if (!_options.FramelessChrome || !_maximized || IsDisposed || !IsHandleCreated) return;
+        if (WindowState == FormWindowState.Minimized) return; // nothing to fill while minimized
+        if (TryGetCurrentWorkArea(out var work)) FillWorkArea(work);
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
+        // SystemEvents raises this on its OWN thread, so it must be marshalled — and through the one
+        // owner, whose guard matters here because a system-event handler has no caller to catch a throw.
+        new WinFormsUiDispatcher(this).Post(RefreshMaximizedFill);
 
     /// <summary>Restore from maximize (the manual path when frameless).</summary>
     public void RestoreFromMax()
@@ -196,9 +262,33 @@ public class OptimizedForm : Form, IAppMaximizable
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         _maximized = false;
         ApplyCornerPreference(); // rounded corners again when windowed
-        if (_restoreBounds.Width > 0)
-            SetWindowPos(Handle, IntPtr.Zero, _restoreBounds.X, _restoreBounds.Y,
-                _restoreBounds.Width, _restoreBounds.Height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+        // _restoreBounds is RAW PHYSICAL px captured on whichever monitor the window was maximized from,
+        // so it can be unreachable by now: that monitor may have been unplugged, moved in the virtual
+        // desktop, or rescaled (P5.5 H2). Restoring to it blind put the window somewhere the user
+        // cannot grab it. Reuse the window-state stack's own reachability check rather than a second
+        // opinion on what "off-screen" means, and fall back to a centred half-work-area.
+        var target = _restoreBounds;
+        if (target.Width > 0 && target.Height > 0
+            && !WindowStateManager.IsVisible(target.X, target.Y, target.Width, target.Height,
+                                             Screen.AllScreens.Select(s => s.Bounds), new WindowStateOptions()))
+        {
+            target = Rectangle.Empty;
+        }
+
+        if (target.Width <= 0 && TryGetCurrentWorkArea(out var work))
+        {
+            var w = (work.right - work.left) / 2;
+            var h = (work.bottom - work.top) / 2;
+            target = new Rectangle(work.left + w / 2, work.top + h / 2, w, h);
+        }
+
+        if (target.Width > 0)
+        {
+            _restoreBounds = target;
+            SetWindowPos(Handle, IntPtr.Zero, target.X, target.Y, target.Width, target.Height,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
         MaximizedChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -278,6 +368,17 @@ public class OptimizedForm : Form, IAppMaximizable
         if (!_options.FramelessChrome)
         {
             base.WndProc(ref m);
+            return;
+        }
+
+        // The window moved to a monitor with a different scale factor. Let WinForms rescale fonts and
+        // child controls FIRST, then re-apply our manual fill: a maximized frameless window is sized to
+        // one monitor's work area in physical px, so after the move it is the wrong size until we
+        // recompute it (P5.5 H2).
+        if (m.Msg == WM_DPICHANGED)
+        {
+            base.WndProc(ref m);
+            RefreshMaximizedFill();
             return;
         }
 

@@ -20,7 +20,12 @@ public sealed class ClipboardService : IClipboardService
         ArgumentNullException.ThrowIfNull(text);
         return StaThread.RunAsync(() =>
         {
-            Clipboard.SetText(text);
+            // Empty means CLEAR, not throw (P5.5 H2). Clipboard.SetText rejects an empty string with
+            // ArgumentNullException — a surprise for "set the clipboard to what the user selected" when
+            // the selection happens to be empty, which is app data, not a programming error. Clear()
+            // is what the caller meant. A null argument is still a caller bug and still throws above.
+            if (text.Length == 0) Clipboard.Clear();
+            else Clipboard.SetText(text);
             return true;
         });
     }

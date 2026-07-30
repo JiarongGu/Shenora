@@ -14,6 +14,41 @@ entry template:
 
 ## 2026-07-30
 
+### Shenora.WinForms: the shell robustness tail (nine defects under everything else)
+- **Symptom:** found by review. All of them present as something other than a window bug: a resident
+  process with a tray icon and a window that can never load; a stale WebView2 profile lock that hangs the
+  NEXT launch; a "maximized" window at the wrong size after a monitor move, or restoring somewhere the
+  user cannot reach it; a secondary-window name permanently "already open"; a single-instance mutex still
+  held after shutdown; two stacked crash dialogs, or unboundedly many; `SetTextAsync("")` throwing.
+- **Root cause:** nine independent mechanisms; the ones worth naming here —
+  `MessageBox.Show` runs its own modal loop, so it PUMPS: a recurring UI-thread exception is dispatched
+  again while the dialog is up, re-entering the handler. `FormClosed` fires while `Application.Run` has
+  NOT returned (the form is still disposing children), so removing the registry entry there let a
+  `Dispose` waiting on "no windows left" return mid-teardown. An OS mutex is per-thread REENTRANT, so a
+  second `TryAcquire` on the same thread took a second handle and reported success even though this
+  process was the owner — leaving `Dispose` able to release only one. A manual maximize is a one-shot
+  `SetWindowPos` in physical px, so nothing kept it true across a DPI/resolution change, and the saved
+  restore rect could point at a monitor that no longer exists. And a missing `[STAThread]` surfaced not
+  as an error but as WinForms' own BLOCKING modal dialog inside handle creation.
+- **Fix:** see the CHANGELOG entry for the full list. Two were judgement calls rather than mechanical
+  fixes. The form-level `AllowDrop`/`DragOver` on `OptimizedForm` was REMOVED, not option-gated, because
+  its justification was false: OLE registers drop targets per HWND and `DropZoneOverlay` registers
+  itself, so nothing ever consumed the form's drag events — the flag only forced OLE/STA on every
+  consumer of the base class and showed a copy cursor for a drop it then discarded (no `DragDrop`
+  handler). `TrayIcon`'s wrong comment was fixed as DOCUMENTATION: `CloseReason` cannot distinguish the
+  user's X from a programmatic `Close()`, so the fix is telling adopters to use
+  `ExitApplication()`/`Application.Exit()`, stated on the `CloseToTray` option where the choice is made.
+- **Verify:** 10 new tests, 404 dotnet + 39 vitest, `verify` PASSED. Notably
+  `WinFormsBootstrapTests.Only_one_crash_dialog_is_shown_at_a_time` drives the re-entrancy through a new
+  internal `ShowDialogOverride` seam (a real MessageBox would hang the suite, and the re-entrancy is the
+  whole invariant), `A_recurring_exception_still_reaches_the_app_logger` pins that suppression applies to
+  the DIALOG only, `SecondaryWindowsTests.The_entry_survives_until_the_pump_has_finished_tearing_down`
+  blocks inside `FormClosed` to stand in for a slow WebView2 child, and
+  `OptimizedFormTests.Restoring_from_an_unreachable_saved_rect_lands_somewhere_visible` maximizes from
+  an off-virtual-desktop rect. NOT tested, deliberately: the clipboard fix — a test would clobber the
+  developer's real clipboard, and the change is `Clipboard.Clear()` instead of a throwing `SetText("")`.
+- **Commit:** _pending (P5.5 H2 WinForms tail)_
+
 ### Kit-wide: the last unguarded app callbacks, and a data race in the session controller's taps
 - **Symptom:** found by review; the closing half of H2's "no app callback runs unguarded" item. Three
   distinct failures, all from app-supplied delegates invoked where nothing can catch them: a throwing

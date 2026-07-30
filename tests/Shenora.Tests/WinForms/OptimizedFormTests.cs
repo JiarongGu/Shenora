@@ -7,10 +7,13 @@ namespace Shenora.Tests.WinForms;
 /// State-machine tests over real (invisible) forms — the WndProc chrome visuals (frameless
 /// borders, DWM rounding) are the sample e2e's subject, family precedent.
 ///
-/// Every body runs on a dedicated STA thread: <see cref="OptimizedForm"/> sets
-/// <c>AllowDrop = true</c>, whose OLE drag-drop registration REQUIRES STA — xunit workers are
-/// MTA, and the failure mode is not a clean test failure but a blocking WinForms
-/// unhandled-exception dialog inside handle creation that stalls the whole suite (found live).
+/// Every body runs on a dedicated STA thread. The original trigger was <see cref="OptimizedForm"/>
+/// setting <c>AllowDrop = true</c>, whose OLE registration REQUIRES STA — xunit workers are MTA, and
+/// the failure mode is not a clean test failure but a blocking WinForms unhandled-exception dialog
+/// inside handle creation that stalls the whole suite (found live). P5.5 H2 removed that
+/// <c>AllowDrop</c>, so this class no longer strictly needs STA — but the harness STAYS: STA is simply
+/// correct for tests that realize window handles, and the next OLE-touching feature (a file dialog, the
+/// clipboard) would silently reintroduce the same stall.
 /// </summary>
 public class OptimizedFormTests
 {
@@ -40,7 +43,12 @@ public class OptimizedFormTests
         using var form = new OptimizedForm();
 
         Assert.Equal(FormBorderStyle.Sizable, form.FormBorderStyle);
-        Assert.True(form.AllowDrop); // drop-zone managers need system drag events over the form
+
+        // NOT a drop target (P5.5 H2). This used to assert true, with a comment claiming drop-zone
+        // managers need the form's drag events — they do not: OLE registers drop targets per HWND and
+        // DropZoneOverlay registers itself. All the form-level flag did was force OLE/STA on every
+        // consumer and show a copy cursor for a drop it then silently discarded.
+        Assert.False(form.AllowDrop);
     });
 
     [Fact]
@@ -66,6 +74,43 @@ public class OptimizedFormTests
         Assert.True(calls > 0);                 // the hook really did run (and really did throw)
         Assert.True(form.IsHandleCreated);      // …and the window survived it
         Assert.Equal("still alive", form.Text); // …and still responds
+    });
+
+    [Fact]
+    public void Restoring_from_an_unreachable_saved_rect_lands_somewhere_visible() => RunSta(() =>
+    {
+        // _restoreBounds is RAW PHYSICAL px from whichever monitor the window maximized on, so it can
+        // be unreachable later: that monitor unplugged, moved in the virtual desktop, or rescaled
+        // (P5.5 H2). Restoring to it blind put the window where the user cannot grab it.
+        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
+        form.Bounds = new Rectangle(-40000, -40000, 400, 300); // "a monitor that is no longer there"
+        _ = form.Handle;
+
+        form.Maximize();                    // captures the off-screen rect as the restore target
+        Assert.True(form.IsAppMaximized);
+        form.RestoreFromMax();
+
+        Assert.False(form.IsAppMaximized);
+        Assert.True(
+            WindowStateManager.IsVisible(form.Bounds.X, form.Bounds.Y, form.Bounds.Width, form.Bounds.Height,
+                Screen.AllScreens.Select(s => s.Bounds), new WindowStateOptions()),
+            $"restored to {form.Bounds}, which no monitor can reach");
+    });
+
+    [Fact]
+    public void A_framed_window_does_not_subscribe_to_display_changes() => RunSta(() =>
+    {
+        // SystemEvents is a static, process-lifetime publisher, so the subscription must be both
+        // conditional (only a frameless window maximizes manually) and released on dispose — a missed
+        // unsubscribe keeps the whole control tree alive forever.
+        var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
+        _ = form.Handle;
+        form.Dispose();
+
+        // Disposing twice must stay safe: the detach is unconditional, and removing a handler that was
+        // never added is a no-op.
+        form.Dispose();
+        Assert.True(form.IsDisposed);
     });
 
     [Fact]

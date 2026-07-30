@@ -90,6 +90,15 @@ public sealed class SingleInstanceGuard : IDisposable
     public bool TryAcquire(TimeSpan waitForPredecessor)
     {
         ActivateMessageId = RegisterWindowMessage(ActivateMessageName);
+
+        // IDEMPOTENT (P5.5 H2). A second call used to overwrite _mutex with a fresh handle, leaking the
+        // first one — and because an OS mutex is per-thread REENTRANT, the second WaitOne(0) succeeds on
+        // the same thread even when this process is the owner. So a retry would report "I own it" while
+        // Release/Dispose could then only ever let go of one of the two handles: the mutex stayed held
+        // after shutdown, and the fast `--restarted` handoff (which waits for the predecessor to let go)
+        // timed out against a corpse. Already holding it IS success.
+        if (_mutex is not null) return true;
+
         try
         {
             _mutex = new Mutex(initiallyOwned: false, MutexName);

@@ -119,8 +119,42 @@ landing order (oldest first) because they narrate one version being built.
   which need not be the published commit.
 - A pool configured with a `NavigationGuard` now cancels unvetted CROSS-HOST navigation. See Fixed.
 
+### Breaking
+
+- **`OptimizedForm` is no longer a drop target.** It used to set `AllowDrop = true` with a `DragOver`
+  handler, justified as letting a drop-zone manager see drags over the form — which is not how OLE drop
+  works: targets are registered per HWND and `DropZoneOverlay` registers itself, so nothing in the kit
+  ever used the form's drag events. All the flag did was force OLE (hence STA) on every consumer of the
+  base class, and show a copy cursor for a drop it then silently discarded, since there was no
+  `DragDrop` handler. If your app relies on form-level drops, set `AllowDrop = true` and wire your own
+  handlers — plain WinForms, nothing needed from us. The IPC drop zones are unaffected.
+
 ### Fixed
 
+- **The WinForms shell's robustness tail** (P5.5 H2). `WinFormsBootstrap.Initialize` now fails fast on a
+  non-STA thread with the fix in the message (a missing `[STAThread]` otherwise surfaced much later as a
+  BLOCKING modal dialog inside window creation) and is idempotent (a second call re-registered all three
+  exception channels, so every later exception was reported twice and raised two stacked dialogs). Its
+  last-resort crash dialog is now one-at-a-time per thread: `MessageBox.Show` pumps, so a recurring
+  UI-thread exception re-entered the handler and stacked dialogs unboundedly over a window nobody could
+  reach — recurrences still reach the app's logger. `SecondaryWindows` removes its registry entry only
+  after `Application.Run` returns (`FormClosed` fires while the form is still disposing its children, so
+  a `Dispose` waiting for "no windows left" returned mid-teardown and let the process exit while a
+  WebView2 child was still shutting down, leaving its user-data folder locked), removes the entry when
+  `thread.Start()` fails (it was otherwise permanently "already open"), and replays an `Activate` that
+  arrived before the window's handle existed (previously dropped — and that is the documented "`Open` on
+  an existing name activates it" path). `SingleInstanceGuard.TryAcquire` is idempotent: an OS mutex is
+  per-thread reentrant, so a second call took a second handle and reported success even when this
+  process already owned it, after which `Dispose` could release only one and the mutex stayed held past
+  shutdown. `OptimizedForm` re-applies its manual maximize on `WM_DPICHANGED` and display-settings
+  changes (a monitor move or scale change left a "maximized" window at the old monitor's size) and
+  validates its saved restore rect before using it, so a window whose monitor is gone no longer restores
+  somewhere unreachable. `ClipboardService.SetTextAsync("")` clears the clipboard instead of throwing.
+- `TrayIcon`'s close-to-tray documentation was factually wrong and is corrected: WinForms reports
+  `CloseReason.UserClosing` for a programmatic `Form.Close()` too, so with `CloseToTray` on, an app whose
+  startup-abort path calls `Close()` HIDES the window and leaves a resident process with a tray icon and
+  a window that can never finish loading. Close from code with `ExitApplication()` or
+  `Application.Exit()`. No behaviour changed — the reason code carries no way to tell the two apart.
 - **An app callback that threw could take the host down, stall a browser event, or corrupt a tap list**
   (P5.5 H2). Every remaining unguarded app-supplied delegate now runs through `AppCallback`:
   `WebViewHostOptions.OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` (all three run

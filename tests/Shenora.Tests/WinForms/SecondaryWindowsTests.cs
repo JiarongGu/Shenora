@@ -56,6 +56,75 @@ public class SecondaryWindowsTests
     }
 
     [Fact]
+    public void The_entry_survives_until_the_pump_has_finished_tearing_down()
+    {
+        // The entry used to be removed on FormClosed — but Application.Run has NOT returned then: the
+        // form is still disposing its children. Dispose() waits on the registry becoming empty, so it
+        // saw "empty" mid-teardown and let the process exit while a WebView2 child was still shutting
+        // down, leaving its user-data folder LOCKED (P5.5 H2).
+        using var windows = new SecondaryWindows();
+        var teardownEntered = new ManualResetEventSlim();
+        var releaseTeardown = new ManualResetEventSlim();
+
+        windows.Open("slow", new SecondaryWindowOptions
+        {
+            CreateForm = () =>
+            {
+                var form = new Form { Text = "slow", ShowInTaskbar = false, WindowState = FormWindowState.Minimized };
+                // Stands in for a child control whose disposal takes real time (a WebView2).
+                form.FormClosed += (_, _) =>
+                {
+                    teardownEntered.Set();
+                    releaseTeardown.Wait(TimeSpan.FromSeconds(5));
+                };
+                return form;
+            },
+        });
+        WaitUntil(() => windows.TryGetForm("slow") is { IsHandleCreated: true }, "window creation");
+
+        windows.Close("slow");
+        Assert.True(teardownEntered.Wait(TimeSpan.FromSeconds(10)), "teardown never started");
+
+        // Mid-teardown the window must still count as present, or a waiting Dispose returns too early.
+        Assert.True(windows.HasWindow("slow"));
+
+        releaseTeardown.Set();
+        WaitUntil(() => !windows.HasWindow("slow"), "registry cleanup after the pump returned");
+    }
+
+    [Fact]
+    public void Activate_on_a_still_opening_window_is_replayed_not_dropped()
+    {
+        // Pre-handle the marshal is a deliberate no-op, so an Activate arriving while the window thread
+        // is still starting used to be silently lost — and that IS the documented "Open on an existing
+        // name activates it" path, which a user hits by double-clicking a launcher (P5.5 H2).
+        using var windows = new SecondaryWindows();
+        var release = new ManualResetEventSlim();
+
+        windows.Open("slow-start", new SecondaryWindowOptions
+        {
+            CreateForm = () =>
+            {
+                release.Wait(TimeSpan.FromSeconds(5)); // still "starting up"
+                return new Form { Text = "slow-start", ShowInTaskbar = false, WindowState = FormWindowState.Minimized };
+            },
+        });
+
+        // No form exists yet, let alone a handle — this must be recorded, not dropped.
+        var second = windows.Open("slow-start", new SecondaryWindowOptions { CreateForm = () => new Form() });
+        Assert.False(second); // already open → activates instead
+
+        release.Set();
+        WaitUntil(() => windows.TryGetForm("slow-start") is { IsHandleCreated: true }, "window creation");
+        // The replay runs on HandleCreated; the window ends up realized and the app never lost the
+        // request. (Actual foreground order is the OS's business and not assertable here.)
+        Assert.True(windows.HasWindow("slow-start"));
+
+        windows.Close("slow-start");
+        WaitUntil(() => !windows.HasWindow("slow-start"), "window close");
+    }
+
+    [Fact]
     public void Opening_an_existing_name_returns_false()
     {
         using var windows = new SecondaryWindows();
