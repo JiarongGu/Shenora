@@ -7,11 +7,11 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
  * (`{ [type]: payloadType }`) for compile-time payload checking:
  *
  * ```ts
- * interface TodoRequests { GET_ALL: void; ADD: { title: string } }
- * class TodoService extends BaseModuleService<TodoRequests> {
- *   constructor() { super('TODO'); }
- *   getAll() { return this.send<TodoItem[]>('GET_ALL'); }
- *   add(title: string) { return this.send<TodoItem>('ADD', { payload: { title } }); }
+ * interface NoteRequests { GET_ALL: void; ADD: { title: string } }
+ * class NoteService extends BaseModuleService<NoteRequests> {
+ *   constructor() { super('NOTES'); }
+ *   getAll() { return this.send<Note[]>('GET_ALL'); }
+ *   add(title: string) { return this.send<Note>('ADD', { payload: { title } }); }
  * }
  * ```
  *
@@ -27,7 +27,7 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
  */
 export abstract class BaseModuleService<TRequests extends object = Record<string, unknown>> {
   protected constructor(
-    /** The backend module this service fronts (e.g. `"TODO"`). */
+    /** The backend module this service fronts (e.g. `"NOTES"`). */
     protected readonly module: string,
     /**
      * The bridge to speak over. Omit to use the shared default bridge, resolved PER CALL — see

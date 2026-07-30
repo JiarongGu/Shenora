@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Ipc;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Ipc;
 
@@ -21,7 +22,7 @@ public class ScopedContainerRouterTests
     }
 
     private static IpcRequest Request(string module, string? scope = null) =>
-        new() { Module = module, Type = "ANY", Scope = scope };
+        IpcRequests.Create(module, scope: scope);
 
     private static ScopedContainerRouter CreateRouter(
         Action<string, IServiceCollection>? configureScope = null,

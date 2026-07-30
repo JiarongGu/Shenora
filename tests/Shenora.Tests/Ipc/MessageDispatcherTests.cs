@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Shenora.Ipc;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Ipc;
 
@@ -8,13 +9,7 @@ public class MessageDispatcherTests
     private sealed record Item(string Name, int Count);
 
     private static IpcRequest Request(string module, string type, string? scope = null, object? payload = null) =>
-        new()
-        {
-            Module = module,
-            Type = type,
-            Scope = scope,
-            Payload = payload is null ? null : IpcJson.SerializeToElement(payload),
-        };
+        IpcRequests.Create(module, type, scope, payload);
 
     [Fact]
     public async Task A_route_mapped_while_dispatches_are_in_flight_is_seen_immediately()

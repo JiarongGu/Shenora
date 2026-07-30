@@ -162,6 +162,15 @@ public sealed class WindowCommandFacade : BaseFacade
     /// window-move loop must start while the button is still down. The dispatcher runs inline when
     /// the caller is already on the UI thread and posts otherwise.
     /// </para>
+    /// <para>
+    /// CONSEQUENCE for the two handoff routes, accepted deliberately: because a transport dispatches
+    /// on the UI thread, <c>SendMessage(WM_NCLBUTTONDOWN)</c> runs inline and blocks for the WHOLE OS
+    /// move/size loop, so their <c>Done()</c> reaches the page only after the user releases the mouse
+    /// (a drag past the client's request timeout rejects a promise whose work already succeeded). That
+    /// is the cost of correct mouse-down timing — do NOT "fix" it by forcing a post, which is the very
+    /// regression the paragraph above records. It also means a test must dispatch these two routes
+    /// from a worker thread or it enters the modal loop itself (P5.5 H7).
+    /// </para>
     /// </summary>
     private void Post(Action action) => _ui.Post(action);
 

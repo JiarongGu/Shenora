@@ -1,4 +1,5 @@
 using Shenora.Core;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Core;
 
@@ -26,17 +27,11 @@ public class ShenoraEnvironmentTests
     [Fact]
     public void Dev_marker_file_enables_development()
     {
-        var dir = Directory.CreateTempSubdirectory().FullName;
-        try
-        {
-            Assert.False(ShenoraEnvironment.Detect(dir, _ => null).IsDevelopment);
-            File.WriteAllText(Path.Combine(dir, ShenoraEnvironment.DevMarkerFileName), "");
-            Assert.True(ShenoraEnvironment.Detect(dir, _ => null).IsDevelopment);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        using var temp = TempDir.Create();
+        var dir = temp.Root;
+        Assert.False(ShenoraEnvironment.Detect(dir, _ => null).IsDevelopment);
+        File.WriteAllText(Path.Combine(dir, ShenoraEnvironment.DevMarkerFileName), "");
+        Assert.True(ShenoraEnvironment.Detect(dir, _ => null).IsDevelopment);
     }
 
     [Fact]

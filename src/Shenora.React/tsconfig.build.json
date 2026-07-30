@@ -6,5 +6,10 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  // src/testing/ holds test-support code (the shared FakeTransport) and MUST stay excluded here, or
+  // it compiles into dist/ and package.json's `files: ["dist"]` publishes it to npm. The two patterns
+  // beside it only cover *.test.ts, so a non-test helper sitting next to the sources would have
+  // shipped silently. `dev.mjs doctor` enforces this by reading THIS array (not dist/, which `pack`
+  // rebuilds after doctor has already run) — so dropping the entry fails the gate, verified.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/testing/**"]
 }

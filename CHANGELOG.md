@@ -7,6 +7,11 @@ API-surface baseline tests; while every consumer is one of the author's own appl
 heading here. Released versions are listed newest first; within `## Unreleased`, entries are in
 landing order (oldest first) because they narrate one version being built.
 
+**Each `###` heading appears AT MOST ONCE per version** — append to the existing group, never open a
+second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7), which is worse
+here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
+at the first list and missed five more breaking changes.
+
 ## Unreleased (0.1.0)
 
 ### Breaking
@@ -38,6 +43,52 @@ landing order (oldest first) because they narrate one version being built.
   sites compile unchanged; code that *implements* these interfaces still implements the same member
   set. Depend on the portable base where you only need the portable operation, and your logic
   compiles with no Windows reference — the point of the change (D16: mobile shells are a target).
+- **`DpiHelper.ScalePixels`, `ScaleSize` and `ScalePoint` are removed** (P5.5 H6). They had no callers,
+  and they were worse than unused: each baked in the PRIMARY monitor's scale, so any code that adopted
+  them would silently mis-scale on a secondary monitor. Use `DpiHelper.Scale` with the DPI you mean —
+  `ScaleFromDeviceDpi(control.DeviceDpi)` for anything attached to a control, `SystemScale()` only when no
+  control exists yet.
+- **`@shenora/react` no longer augments the global `Window` type** (P5.5 H6). The package shipped
+  `declare global { interface Window { chrome?: … } }` in its `.d.ts`, which collides with `@types/chrome`
+  in a consumer's program as an unfixable TS2717 in a file they do not own. A library must not claim
+  global names; the transport now reads `window` through a local interface. No runtime change.
+- **The dispatcher's composition helpers moved from `MessageDispatcher` onto `IMessageDispatcher`**
+  (P5.5 H6). `Use(MessageMiddleware)` — the single primitive all of them already delegated to — is now an
+  interface member, and `UseModule`/`UseRoute`/`UseLogging`/`UseErrorHandler`/`MapRoute`/`MapModule`/
+  `UseScopedRouter`/`MapRegisteredModules`(`Lazily`) are extension methods over the interface
+  (`MessageDispatcherExtensions`). **Why:** the interface exposed only dispatch/send, so a composition that
+  maps a facade AFTER the container is built — the documented pattern for anything needing the live
+  window — had to downcast. The reference composition did, and its `if (dispatcher is MessageDispatcher
+  concrete)` had no `else`: registering a different `IMessageDispatcher`, or wrapping it in any decorator,
+  silently dropped three whole modules and the frameless title bar just stopped working with no error.
+  Adopters copy that branch.
+  **What you must change:** almost certainly nothing — `dispatcher.MapModule(…)` etc. still compile
+  through extension resolution. A fluent chain whose result you assign to a `MessageDispatcher`-typed
+  variable now yields `IMessageDispatcher`; `AddMessageDispatcher`'s configure callback receives
+  `IMessageDispatcher` instead of `MessageDispatcher`; and a custom `IMessageDispatcher` implementation
+  must add `Use`. `UseLogging`/`UseErrorHandler` gained an optional `ILogger` and default to the
+  dispatcher's own logger, so behaviour is unchanged.
+- **`IpcResponse.CreateError`'s argument order now matches `OperationException`'s** (P5.5 H6):
+  `(id, code, parameters, message)`, previously `(id, code, message, parameters)`. The two are siblings
+  that build the same structured error from the same pieces, and they disagreed about the last two — so
+  which one you were calling decided what a positional third argument meant. The shared order puts the
+  wire-relevant piece first: `parameters` crosses to the client as i18n interpolation values, `message`
+  is host-log only. Calls using `parameters:`/`message:` by name are unaffected; a positional third
+  argument now fails to compile rather than silently landing in the wrong slot.
+- **`BaseFacade` no longer calls `ConfigureAwait(false)` around your `RouteMessageAsync`** (P5.5 H6). It
+  was the only such call in the dispatch path and it contradicted the documented context-preserving
+  model — a facade routing a window command must be able to resume on the UI thread. If your facade
+  relied on being resumed off the captured context, marshal explicitly.
+- **`WebViewHost.AutoReloadCooldown` moved to `WebViewHostOptions.AutoReloadCooldown`** (P5.5 H3). It
+  was a public static field, so it was neither per-host nor configurable. The new
+  `WebViewHostOptions.MaxAutoReloads` joins it — see Fixed for why a cap was needed at all.
+- **`OptimizedForm` is no longer a drop target.** It used to set `AllowDrop = true` with a `DragOver`
+  handler, justified as letting a drop-zone manager see drags over the form — which is not how OLE drop
+  works: targets are registered per HWND and `DropZoneOverlay` registers itself, so nothing in the kit
+  ever used the form's drag events. All the flag did was force OLE (hence STA) on every consumer of the
+  base class, and show a copy cursor for a drop it then silently discarded, since there was no
+  `DragDrop` handler. If your app relies on form-level drops, set `AllowDrop = true` and wire your own
+  handlers — plain WinForms, nothing needed from us. The IPC drop zones are unaffected.
 
 ### Added
 
@@ -137,55 +188,22 @@ landing order (oldest first) because they narrate one version being built.
   created the tag itself whenever the gated tag step was skipped — at the default-branch head,
   which need not be the published commit.
 - A pool configured with a `NavigationGuard` now cancels unvetted CROSS-HOST navigation. See Fixed.
-
-### Breaking
-
-- **`DpiHelper.ScalePixels`, `ScaleSize` and `ScalePoint` are removed** (P5.5 H6). They had no callers,
-  and they were worse than unused: each baked in the PRIMARY monitor's scale, so any code that adopted
-  them would silently mis-scale on a secondary monitor. Use `DpiHelper.Scale` with the DPI you mean —
-  `ScaleFromDeviceDpi(control.DeviceDpi)` for anything attached to a control, `SystemScale()` only when no
-  control exists yet.
-- **`@shenora/react` no longer augments the global `Window` type** (P5.5 H6). The package shipped
-  `declare global { interface Window { chrome?: … } }` in its `.d.ts`, which collides with `@types/chrome`
-  in a consumer's program as an unfixable TS2717 in a file they do not own. A library must not claim
-  global names; the transport now reads `window` through a local interface. No runtime change.
-- **The dispatcher's composition helpers moved from `MessageDispatcher` onto `IMessageDispatcher`**
-  (P5.5 H6). `Use(MessageMiddleware)` — the single primitive all of them already delegated to — is now an
-  interface member, and `UseModule`/`UseRoute`/`UseLogging`/`UseErrorHandler`/`MapRoute`/`MapModule`/
-  `UseScopedRouter`/`MapRegisteredModules`(`Lazily`) are extension methods over the interface
-  (`MessageDispatcherExtensions`). **Why:** the interface exposed only dispatch/send, so a composition that
-  maps a facade AFTER the container is built — the documented pattern for anything needing the live
-  window — had to downcast. The reference composition did, and its `if (dispatcher is MessageDispatcher
-  concrete)` had no `else`: registering a different `IMessageDispatcher`, or wrapping it in any decorator,
-  silently dropped three whole modules and the frameless title bar just stopped working with no error.
-  Adopters copy that branch.
-  **What you must change:** almost certainly nothing — `dispatcher.MapModule(…)` etc. still compile
-  through extension resolution. A fluent chain whose result you assign to a `MessageDispatcher`-typed
-  variable now yields `IMessageDispatcher`; `AddMessageDispatcher`'s configure callback receives
-  `IMessageDispatcher` instead of `MessageDispatcher`; and a custom `IMessageDispatcher` implementation
-  must add `Use`. `UseLogging`/`UseErrorHandler` gained an optional `ILogger` and default to the
-  dispatcher's own logger, so behaviour is unchanged.
-- **`IpcResponse.CreateError`'s argument order now matches `OperationException`'s** (P5.5 H6):
-  `(id, code, parameters, message)`, previously `(id, code, message, parameters)`. The two are siblings
-  that build the same structured error from the same pieces, and they disagreed about the last two — so
-  which one you were calling decided what a positional third argument meant. The shared order puts the
-  wire-relevant piece first: `parameters` crosses to the client as i18n interpolation values, `message`
-  is host-log only. Calls using `parameters:`/`message:` by name are unaffected; a positional third
-  argument now fails to compile rather than silently landing in the wrong slot.
-- **`BaseFacade` no longer calls `ConfigureAwait(false)` around your `RouteMessageAsync`** (P5.5 H6). It
-  was the only such call in the dispatch path and it contradicted the documented context-preserving
-  model — a facade routing a window command must be able to resume on the UI thread. If your facade
-  relied on being resumed off the captured context, marshal explicitly.
-- **`WebViewHost.AutoReloadCooldown` moved to `WebViewHostOptions.AutoReloadCooldown`** (P5.5 H3). It
-  was a public static field, so it was neither per-host nor configurable. The new
-  `WebViewHostOptions.MaxAutoReloads` joins it — see Fixed for why a cap was needed at all.
-- **`OptimizedForm` is no longer a drop target.** It used to set `AllowDrop = true` with a `DragOver`
-  handler, justified as letting a drop-zone manager see drags over the form — which is not how OLE drop
-  works: targets are registered per HWND and `DropZoneOverlay` registers itself, so nothing in the kit
-  ever used the form's drag events. All the flag did was force OLE (hence STA) on every consumer of the
-  base class, and show a copy cursor for a drop it then silently discarded, since there was no
-  `DragDrop` handler. If your app relies on form-level drops, set `AllowDrop = true` and wire your own
-  handlers — plain WinForms, nothing needed from us. The IPC drop zones are unaffected.
+- **The `notifyReady()` → drop-zone-reset ordering contract is now documented on the surface**
+  (P5.5 H7). No behaviour change; it was already sharp enough to bite and lived nowhere. A host clears
+  the previous page's drop-zone overlays on the ready handshake, so a `REGISTER` that arrives BEFORE
+  `READY` is discarded *after being acked* — the client believes its zone is live, the host has
+  forgotten it, and nothing is logged on either side. In React this is the DEFAULT outcome rather than
+  bad luck, because CHILD effects run before PARENT effects: the obvious reading of "call `notifyReady`
+  once at startup" is a root-component effect, which runs after every child's `useDropZone` has already
+  registered. Keep the handshake in the same component as, and declared above, anything that
+  registers — or await it before rendering the subtree that does. Written on
+  `ShenoraBridge.notifyReady`, `UseDropZoneOptions`, `DropZoneManager.ClearAll` and the npm README.
+  `notifyReady()`'s promise REJECTS on a failed handshake, which is now stated too: `void`-ing it makes
+  an unhandled rejection, and in a WebView2 page that is a silent console error.
+- **The `@shenora/react` docs stopped using `'TODO'` as the example module name** (P5.5 H7). It was
+  indistinguishable from an unfinished-work marker in published documentation — and it was the only
+  `TODO` anywhere in `src/`. The example domain is now `NOTES` / `NoteService` / `Note`; nothing in the
+  API changed.
 
 ### Fixed
 
@@ -570,3 +588,16 @@ fractions (client-side hover/pressed affordances over pixels), and `Controller` 
 SAME `LoginWindowController` primitives over the streamed page. The wire protocol is identical
 to the proven source for mechanical adoption; the transport (WebSocket, bridge, …) stays the
 app's — frames out, input text back.
+- **The npm tarball could have shipped test-support code** (P5.5 H7). `tsconfig.build.json` excluded
+  only `src/**/*.test.ts(x)`, so the new shared `src/testing/fakeTransport.ts` — a non-test helper
+  sitting beside the sources — compiled straight into `dist/`, which `files: ["dist"]` publishes
+  wholesale. Caught while adding it, and confirmed by building without the exclusion: `dist/testing/`
+  really was emitted. Fixed by excluding `src/testing/**`, and `dev.mjs doctor` now FAILS when
+  `dist/testing/` exists so the exclusion cannot be dropped silently while editing an unrelated pattern.
+- **The reference sample no longer swallows a failed ready handshake** (P5.5 H7). It called
+  `void getBridge().notifyReady()`, so a rejection (no host, disposed bridge, timeout) became an
+  unhandled promise rejection — a silent console error in a WebView2 page. It now catches and logs.
+  Worth listing even though the sample is not shipped: it is the reference composition, and this is the
+  snippet adopters copy. The sample also gained the CSS rule behind its `dropClassName`, which it had
+  been passing with nothing to style it — so the e2e subject can finally demonstrate the drop zone's
+  HOVER feedback and not only the drop.

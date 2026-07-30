@@ -2,36 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge, configureBridge, getBridge } from './bridge.js';
 import { OperationError } from './errors.js';
 import { ShenoraEventBus } from './eventBus.js';
-import type { ShenoraTransport } from './transport.js';
-import { HANDSHAKE_MODULE, HANDSHAKE_TYPE, IpcErrorCodes, type EventMessage, type IpcRequest } from './types.js';
-
-class FakeTransport implements ShenoraTransport {
-  posted: string[] = [];
-  private listener?: (message: string) => void;
-
-  post(message: string): void {
-    this.posted.push(message);
-  }
-
-  subscribe(listener: (message: string) => void): () => void {
-    this.listener = listener;
-    return () => {
-      this.listener = undefined;
-    };
-  }
-
-  get subscribed(): boolean {
-    return this.listener !== undefined;
-  }
-
-  emitFromHost(message: unknown): void {
-    this.listener?.(typeof message === 'string' ? message : JSON.stringify(message));
-  }
-
-  lastRequest<T = unknown>(): IpcRequest<T> {
-    return JSON.parse(this.posted.at(-1)!) as IpcRequest<T>;
-  }
-}
+import { IpcCategories, HANDSHAKE_MODULE, HANDSHAKE_TYPE, IpcErrorCodes, type EventMessage, type IpcRequest } from './types.js';
+import { FakeTransport } from './testing/fakeTransport.js';
 
 function createBridge(options: { fallback?: (request: IpcRequest) => unknown } = {}) {
   const transport = new FakeTransport();
@@ -63,7 +35,7 @@ describe('ShenoraBridge', () => {
     const { transport, bridge } = createBridge();
 
     const promise = bridge.invoke<{ count: number }>('APP', 'PING');
-    transport.emitFromHost({ category: 'ipc', id: transport.lastRequest().id, success: true, data: { count: 2 } });
+    transport.emitFromHost({ category: IpcCategories.ipc, id: transport.lastRequest().id, success: true, data: { count: 2 } });
 
     await expect(promise).resolves.toEqual({ count: 2 });
   });
@@ -73,7 +45,7 @@ describe('ShenoraBridge', () => {
 
     const promise = bridge.invoke('APP', 'FAIL');
     transport.emitFromHost({
-      category: 'ipc',
+      category: IpcCategories.ipc,
       id: transport.lastRequest().id,
       success: false,
       error: { code: 'IMPORT_FAILED', parameters: { name: 'x' } },
@@ -92,7 +64,7 @@ describe('ShenoraBridge', () => {
     const { transport, bridge } = createBridge();
 
     const promise = bridge.invoke('APP', 'FAIL');
-    transport.emitFromHost({ category: 'ipc', id: transport.lastRequest().id, success: false });
+    transport.emitFromHost({ category: IpcCategories.ipc, id: transport.lastRequest().id, success: false });
 
     await expect(promise).rejects.toMatchObject({ code: IpcErrorCodes.unknownError });
   });
@@ -106,7 +78,7 @@ describe('ShenoraBridge', () => {
     vi.advanceTimersByTime(101);
 
     await expect(promise).rejects.toMatchObject({ code: IpcErrorCodes.timeout });
-    expect(() => transport.emitFromHost({ category: 'ipc', id, success: true })).not.toThrow();
+    expect(() => transport.emitFromHost({ category: IpcCategories.ipc, id, success: true })).not.toThrow();
   });
 
   it('unbundles notification batches into the event bus in order', () => {
@@ -115,7 +87,7 @@ describe('ShenoraBridge', () => {
     bus.subscribe('APP', 'TICK', (event) => received.push(event));
 
     transport.emitFromHost({
-      category: 'notification',
+      category: IpcCategories.notification,
       id: 'b1',
       timestamp: new Date().toISOString(),
       payload: [
@@ -134,7 +106,7 @@ describe('ShenoraBridge', () => {
 
     expect(() => transport.emitFromHost('not json')).not.toThrow();
     expect(() => transport.emitFromHost({ category: 'something-else', id: 'x' })).not.toThrow();
-    expect(() => transport.emitFromHost({ category: 'ipc' })).not.toThrow(); // no id
+    expect(() => transport.emitFromHost({ category: IpcCategories.ipc })).not.toThrow(); // no id
   });
 
   it('survives a host message that is a bare JSON value', () => {
@@ -170,7 +142,7 @@ describe('ShenoraBridge', () => {
       fallback: () => new Promise(() => { /* never settles */ }),
     });
 
-    await expect(bridge.invoke('TODO', 'GET_ALL', { timeoutMs: 20 }))
+    await expect(bridge.invoke('NOTES', 'GET_ALL', { timeoutMs: 20 }))
       .rejects.toMatchObject({ code: IpcErrorCodes.timeout });
   });
 
@@ -183,7 +155,7 @@ describe('ShenoraBridge', () => {
       fallback: () => ({ ok: true }),
     });
 
-    await expect(bridge.invoke('TODO', 'GET_ALL', { timeoutMs: 20 })).resolves.toEqual({ ok: true });
+    await expect(bridge.invoke('NOTES', 'GET_ALL', { timeoutMs: 20 })).resolves.toEqual({ ok: true });
   });
 
   it('notifyReady sends the reserved handshake route', async () => {
@@ -195,7 +167,7 @@ describe('ShenoraBridge', () => {
     expect(request.type).toBe(HANDSHAKE_TYPE);
     expect(request.payload).toEqual({ clientId: 'w1' });
 
-    transport.emitFromHost({ category: 'ipc', id: request.id, success: true });
+    transport.emitFromHost({ category: IpcCategories.ipc, id: request.id, success: true });
     await expect(promise).resolves.toBeUndefined();
   });
 

@@ -1,4 +1,4 @@
-using System.Runtime.ExceptionServices;
+using Shenora.Tests.TestSupport;
 using Shenora.WinForms;
 
 namespace Shenora.Tests.WinForms;
@@ -9,26 +9,6 @@ namespace Shenora.Tests.WinForms;
 /// </summary>
 public class TrayIconTests
 {
-    private static void RunSta(Action body)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                body();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
-    }
-
     private static readonly TrayMenuColors DarkColors = new()
     {
         Surface = Color.FromArgb(26, 26, 26),
@@ -40,7 +20,7 @@ public class TrayIconTests
     };
 
     [Fact]
-    public void Menu_composes_open_app_items_and_exit_in_order() => RunSta(() =>
+    public void Menu_composes_open_app_items_and_exit_in_order() => Sta.Run(() =>
     {
         using var form = new Form();
         using var tray = new TrayIcon(new TrayIconOptions
@@ -55,12 +35,17 @@ public class TrayIconTests
         var labels = tray.Menu.Items.Cast<ToolStripItem>()
             .Select(i => i is ToolStripSeparator ? "---" : i.Text ?? string.Empty).ToArray();
         Assert.Equal(["Show it", "App item", "---", "Quit"], labels);
-        // MenuColors set → the parameterized renderer replaced the stock one.
-        Assert.Contains("TrayMenuRenderer", tray.Menu.Renderer.GetType().Name);
+        // MenuColors set → the app's colours really reach the renderer. This used to assert the
+        // internal type's NAME (`Contains("TrayMenuRenderer", …GetType().Name)`), which pinned a
+        // private implementation detail and would have passed a renderer that ignored every colour
+        // it was handed (P5.5 H7). The colour table is the observable contract.
+        var renderer = Assert.IsAssignableFrom<ToolStripProfessionalRenderer>(tray.Menu.Renderer);
+        Assert.Equal(DarkColors.Surface, renderer.ColorTable.ToolStripDropDownBackground);
+        Assert.Equal(DarkColors.Surface, renderer.ColorTable.ImageMarginGradientBegin);
     });
 
     [Fact]
-    public void Close_to_tray_hides_and_exit_really_closes() => RunSta(() =>
+    public void Close_to_tray_hides_and_exit_really_closes() => Sta.Run(() =>
     {
         using var form = new Form();
         _ = form.Handle; // FormClosed needs a created handle (the WM_CLOSE path)
@@ -81,7 +66,7 @@ public class TrayIconTests
     });
 
     [Fact]
-    public void Close_to_tray_off_leaves_closing_alone() => RunSta(() =>
+    public void Close_to_tray_off_leaves_closing_alone() => Sta.Run(() =>
     {
         using var form = new Form();
         _ = form.Handle;
@@ -96,7 +81,7 @@ public class TrayIconTests
     });
 
     [Fact]
-    public void A_canceled_exit_rearms_close_to_tray() => RunSta(() =>
+    public void A_canceled_exit_rearms_close_to_tray() => Sta.Run(() =>
     {
         // Regression: _exiting stayed true after another FormClosing handler canceled the
         // close — the NEXT plain user close then exited instead of hiding to the tray.
@@ -125,7 +110,7 @@ public class TrayIconTests
     });
 
     [Fact]
-    public void Dispose_detaches_the_closing_handler() => RunSta(() =>
+    public void Dispose_detaches_the_closing_handler() => Sta.Run(() =>
     {
         using var form = new Form();
         _ = form.Handle;

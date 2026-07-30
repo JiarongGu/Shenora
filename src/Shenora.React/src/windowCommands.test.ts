@@ -3,33 +3,9 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
-import type { ShenoraTransport } from './transport.js';
 import type { IpcRequest } from './types.js';
 import { WindowCommands, useWindowMaximized } from './windowCommands.js';
-
-class FakeTransport implements ShenoraTransport {
-  posted: IpcRequest[] = [];
-  private listener?: (message: string) => void;
-
-  post(message: string): void {
-    this.posted.push(JSON.parse(message) as IpcRequest);
-  }
-
-  subscribe(listener: (message: string) => void): () => void {
-    this.listener = listener;
-    return () => {
-      this.listener = undefined;
-    };
-  }
-
-  respond(id: string, data: unknown): void {
-    this.listener?.(JSON.stringify({ category: 'ipc', id, success: true, data }));
-  }
-
-  respondToLast(data: unknown): void {
-    this.respond(this.posted.at(-1)!.id, data);
-  }
-}
+import { FakeTransport } from './testing/fakeTransport.js';
 
 function createCommands() {
   const transport = new FakeTransport();

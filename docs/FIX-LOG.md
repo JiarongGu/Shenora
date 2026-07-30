@@ -14,6 +14,75 @@ entry template:
 
 ## 2026-07-30
 
+### Shenora.Tests: one test entered the OS modal size loop and hung, hidden by test parallelism
+- **Symptom:** invisible for four batches. `WindowCommandFacadeTests.Drag_and_resize_routes_answer_success(START_RESIZE)`
+  took **16.9 s of the suite's 26.8 s** once tests ran serially, and **hung indefinitely** (killed at
+  200 s) when run alone with `--filter`. Under the previous collection-level parallelism the wall clock
+  stayed at 6 s, so nothing looked wrong and five phase reviews passed it.
+- **Root cause:** P5.5 H4.2 made `WinFormsUiDispatcher.Post` run a body **INLINE** when the caller is
+  already on the UI thread — correct and deliberate, because `START_DRAG`/`START_RESIZE` hand off to the
+  OS move/size loop, which must start while the mouse button is still down. The test creates its form on
+  the test thread, so the test thread IS that form's UI thread: `SendMessage(WM_NCLBUTTONDOWN, HTTOPLEFT, …)`
+  ran synchronously and entered the modal size loop inside the test, escaping only when unrelated
+  concurrent activity happened to interrupt it. The test's own comment — "Deliberately NOT pumped: the
+  posted handoff enters the OS move/size loop" — had silently become false at H4.2: the body was no
+  longer posted.
+- **Fix:** test-only, because the production behaviour is right. The route is now dispatched from a
+  worker thread (`Task.Run`), so `InvokeRequired` is true, the body is `BeginInvoke`'d to a queue the
+  test never pumps, and the comment is true again. `WindowCommandFacade.Post`'s doc gained the
+  consequence this pins down — a transport dispatches on the UI thread, so those two routes' `Done()`
+  reaches the page only after the user releases the mouse, and forcing a post to "fix" that would
+  reintroduce the H4.2 regression. Files: `tests/…/WebView2/WindowCommandFacadeTests.cs`,
+  `src/Shenora.WebView2/WindowCommandFacade.cs` (doc), plus `tests/…/xunit.runner.json`
+  (`parallelizeTestCollections: false`) so a future hang cannot hide the same way.
+- **Verify:** suite went from 26.8 s (one test 16.9 s) to a steady **9–10 s across three runs**; the
+  isolated `--filter` run no longer hangs. Full `verify` PASSED (442 dotnet + 63 vitest).
+- **Commit:** _pending (P5.5 H7 batch)_
+
+### Shenora.Tests: four path-containment cases were passing with containment deleted
+- **Symptom:** found while reworking the fixture. `EmbeddedResourceProviderTests.File_mode_refuses_paths_that_escape_the_root`
+  looked like seven cases guarding the H1 traversal fix; four of them proved nothing.
+- **Root cause:** the fixture created exactly one file outside the provider root and named it
+  `shenora-outside-marker.txt`, while the theory requested `../secret.txt`, `..\secret.txt`,
+  `assets/../../secret.txt` and `../../Windows/win.ini`. Nothing named `secret.txt` existed anywhere, so
+  those four resolved to a path that merely did not exist and the provider returned null **whether or
+  not containment ran**. Only the three ROOTED cases (`C:/Windows/win.ini` and friends), which land on
+  the real `win.ini`, exercised the check. The marker file was decorative — and it was written into
+  `%TEMP%` itself, cleaned up in a `finally`.
+- **Fix:** the fixture now places the escape target where the requested paths actually point
+  (`<temp>/secret.txt` with the provider root at `<temp>/bundle`), and the test asserts the target
+  EXISTS as an explicit precondition, so a refusal can only mean containment worked.
+  `../../Windows/win.ini` was dropped (unreachable as a real file; `assets/../../secret.txt` already
+  covers multi-segment traversal), hence 428 → 427 before the batch's additions. File:
+  `tests/…/WebView2/EmbeddedResourceProviderTests.cs`.
+- **Verify:** sabotage — with all three containment checks in `WebViewResourceProvider.ResolveContained`
+  stubbed out, all 6 cases plus `A_sibling_directory_sharing_the_root_prefix_is_not_inside_the_root`
+  FAIL (7 of 18 in that class). Before the rework, four of them would have stayed green. Production file
+  restored and confirmed diff-free.
+- **Commit:** _pending (P5.5 H7 batch)_
+
+### devtools: the new "test code must not ship" gate failed OPEN twice before it worked
+- **Symptom:** found by this batch's own phase review, in code the batch had just added. The new
+  `doctor` check meant to stop `src/testing/` (the shared `FakeTransport`) from being published
+  reported `ok` in both situations that matter.
+- **Root cause:** two independent fail-open bugs. (1) It inspected `dist/testing/`, but `pack` calls
+  `doctor` FIRST and only then runs `npm run build`, whose `clean` step deletes `dist/` and rebuilds
+  it — so the artifact doctor examined was never the artifact that ships, and on a fresh clone there is
+  no `dist/` at all, which skipped the check entirely. This is the same shape as the H5 finding where
+  `verify` scanned pre-sync files because `pack` had already run `doctor --fix`. (2) Rewritten to check
+  the source instead, it did `tsconfigText.includes('src/testing')` over the WHOLE file — and passed
+  because the explanatory COMMENT above the `exclude` array also names that path. The guard was
+  satisfied by the prose explaining it.
+- **Fix:** the check is source-based and scoped to the `"exclude"` ARRAY via
+  `/"exclude"\s*:\s*\[([^\]]*)\]/` (the file is JSONC, so it cannot be `JSON.parse`d), keyed on
+  `src/testing/` actually existing on disk so it adapts rather than hardcoding a folder that may be
+  renamed. The `dist/testing/` check is retained as belt-and-braces for when a build does precede
+  doctor. File: `devtools/dev.mjs`.
+- **Verify:** with the `exclude` entry removed AND `dist/` deleted — the exact fresh-clone/pack
+  condition both earlier versions missed — `doctor` now exits 1 with the remediation text. Restored,
+  and full `verify` PASSED.
+- **Commit:** _pending (P5.5 H7 batch)_
+
 ### Shenora.WebView2: notifications could stop for the rest of the process
 - **Symptom:** found by review. Host→page notifications silently stopped arriving, permanently, with the
   app otherwise working normally. Or, after a renderer crash, one whole batch vanished.

@@ -90,11 +90,26 @@ transport, or building the P6 adoption shims.
 - **Notifications are ALWAYS a batch** (a single event is a batch of one) — `category` alone
   discriminates, which is what lets the same envelope ride postMessage, WebSocket, or a mobile
   channel (D16). Don't reintroduce a single-notification shape or a synthetic batch module/type.
-- **The ready gate re-closes on every main-document navigation.** `WebViewIpcBridge` buffers
-  notifications from construction, delivers only after the client's `READY`, and
-  `NavigationStarting` resets the gate — otherwise a renderer-crash reload silently drains
-  events into a listener-less page (found in review). The client calls `notifyReady()` per page
-  load, after its listeners subscribe.
+- **The ready gate re-closes on `ContentLoading`, NOT on `NavigationStarting`** (+ on `ProcessFailed`,
+  which the bridge subscribes to itself, since the host's auto-reload is optional). `WebViewIpcBridge`
+  buffers notifications from construction and delivers only after the client's `READY`; the reset
+  exists because a renderer-crash reload would otherwise drain events into a listener-less page.
+  `NavigationStarting` was the wrong trigger and closed the gate FOREVER: it fires for navigations
+  that never replace the document (one a tap or policy cancels, one that fails before committing),
+  and the surviving page has already spent its single `READY` — so the buffer filled to 10 000 and
+  then silently dropped oldest for the process lifetime (H3). The residual window between
+  `NavigationStarting` and `ContentLoading`, where a flush reaches the OUTGOING page, is deliberate
+  and documented at the site: those listeners are still attached.
+- **`READY` must precede anything that registers per-page host state — the handshake is destructive.**
+  A host clears the previous page's drop-zone overlays on the handshake, so a `REGISTER` that arrives
+  BEFORE `READY` is wiped *after being acked*: the client believes the zone is live, the host has
+  forgotten it, and nothing is logged on either side. In React this is the DEFAULT outcome rather than
+  bad luck — CHILD effects run before PARENT effects, so the obvious reading of "call `notifyReady()`
+  once at startup" (a root-component effect) runs after every child's `useDropZone` has registered.
+  Either keep the handshake in the same component as, and declared above, whatever registers (what the
+  reference composition does), or clear on DOCUMENT CHANGE instead, which is order-independent because
+  it never races the client. Documented on `notifyReady`, `UseDropZoneOptions`, `DropZoneManager.ClearAll`
+  and the npm README, because a contract this sharp that lives only in one doc comment gets missed.
 - **The dispatcher pipeline preserves the caller's synchronization context** (no
   `ConfigureAwait(false)` anywhere in `MessageDispatcher`) — that's the §5 threading model:
   transports dispatch on the UI thread and every handler's synchronous segment stays there, even

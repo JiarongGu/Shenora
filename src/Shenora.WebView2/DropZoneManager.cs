@@ -128,7 +128,23 @@ public sealed class DropZoneManager : IDisposable
             overlay.OnFrontendMouseLeave();
     }
 
-    /// <summary>Remove every zone (the ready handshake calls this — a reloaded page re-registers its own).</summary>
+    /// <summary>
+    /// Remove every zone (the ready handshake calls this — a reloaded page re-registers its own).
+    /// <para>
+    /// ORDERING CONTRACT, and it is sharp enough that adopters need telling (P5.5 H7): calling this
+    /// from <c>OnClientReady</c> means every <c>REGISTER</c> that arrived BEFORE the client's
+    /// <c>READY</c> is destroyed, while the client — which got a successful ack — still believes its
+    /// zone is live. The result is a silently dead drop zone, with nothing logged on either side.
+    /// </para>
+    /// <para>
+    /// That is easy to hit, because React runs CHILD effects before PARENT effects: the natural
+    /// reading of "call <c>notifyReady()</c> once at startup" is a root-component effect, which runs
+    /// AFTER the child components' <c>useDropZone</c> effects have already registered. An app must
+    /// therefore either send <c>READY</c> before anything registers (the reference composition keeps
+    /// both calls in one component, handshake first) or clear on DOCUMENT CHANGE instead of on the
+    /// handshake, which is order-independent because it does not race the client at all.
+    /// </para>
+    /// </summary>
     public void ClearAll()
     {
         if (MarshalToUi(ClearAll)) return;

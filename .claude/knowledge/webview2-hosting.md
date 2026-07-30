@@ -148,6 +148,15 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   belongs to the next lease — so a late subscribe streamed another lease's API responses and posted
   messages to the previous caller. Throw `ObjectDisposedException` (loudly, not a silent no-op) AND
   re-check inside the marshalled body, or the check-then-post race reopens it.
+- **NEVER dispose a `SemaphoreSlim` (or its linked CTS) right after cancelling waiters on it.**
+  `RenderSessionPool.Dispose()` cancelled the dispose CTS — correct, it wakes a lease queued on the
+  capacity semaphore — and then immediately called `_capacity.Dispose()`. Disposing while a waiter is
+  still unwinding its just-fired cancellation races the semaphore's internal queue-removal and can
+  leave that waiter's task PERMANENTLY INCOMPLETE: the test hung for the full 10-minute harness
+  timeout with no summary. A `SemaphoreSlim` only needs disposing if `AvailableWaitHandle` was touched
+  (it never is here), so the fix is to not dispose it at all — the cancel alone wakes waiters cleanly.
+  Bound such a regression test with `Task.WaitAsync(5s)` so a re-break FAILS instead of stalling the
+  suite. (Earned in the P5 review; promoted from `FIX-LOG` to a rule in P5.5 H8.)
 - **Root a CDP event receiver in a field for the subscription's whole life.**
   `GetDevToolsProtocolEventReceiver(...)` left in a local means nothing references the receiver once
   the method returns, so the subscription's survival relies on the SDK caching it internally —

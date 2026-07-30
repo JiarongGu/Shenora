@@ -1,4 +1,4 @@
-using System.Runtime.ExceptionServices;
+using Shenora.Tests.TestSupport;
 using Shenora.WinForms;
 
 namespace Shenora.Tests.WinForms;
@@ -17,28 +17,8 @@ namespace Shenora.Tests.WinForms;
 /// </summary>
 public class OptimizedFormTests
 {
-    private static void RunSta(Action body)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                body();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
-    }
-
     [Fact]
-    public void Defaults_are_a_framed_window_with_the_perf_styles() => RunSta(() =>
+    public void Defaults_are_a_framed_window_with_the_perf_styles() => Sta.Run(() =>
     {
         using var form = new OptimizedForm();
 
@@ -52,7 +32,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void A_throwing_WndProcHook_does_not_take_the_window_down() => RunSta(() =>
+    public void A_throwing_WndProcHook_does_not_take_the_window_down() => Sta.Run(() =>
     {
         // The hook is APP CODE inside WndProc — the worst place for an escaping exception (P5.5 H2):
         // nothing is above it on the stack, and before the bootstrap installs its handlers this
@@ -77,7 +57,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void Restoring_from_an_unreachable_saved_rect_lands_somewhere_visible() => RunSta(() =>
+    public void Restoring_from_an_unreachable_saved_rect_lands_somewhere_visible() => Sta.Run(() =>
     {
         // _restoreBounds is RAW PHYSICAL px from whichever monitor the window maximized on, so it can
         // be unreachable later: that monitor unplugged, moved in the virtual desktop, or rescaled
@@ -98,7 +78,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void A_framed_window_does_not_subscribe_to_display_changes() => RunSta(() =>
+    public void A_framed_window_does_not_subscribe_to_display_changes() => Sta.Run(() =>
     {
         // SystemEvents is a static, process-lifetime publisher, so the subscription must be both
         // conditional (only a frameless window maximizes manually) and released on dispose — a missed
@@ -114,7 +94,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void Frameless_options_apply() => RunSta(() =>
+    public void Frameless_options_apply() => Sta.Run(() =>
     {
         using var form = new OptimizedForm(new OptimizedFormOptions
         {
@@ -127,7 +107,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void Framed_toggle_maximize_falls_back_to_window_state() => RunSta(() =>
+    public void Framed_toggle_maximize_falls_back_to_window_state() => Sta.Run(() =>
     {
         using var form = new OptimizedForm();
         var changes = 0;
@@ -144,7 +124,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void Frameless_manual_maximize_fills_and_restores_without_touching_window_state() => RunSta(() =>
+    public void Frameless_manual_maximize_fills_and_restores_without_touching_window_state() => Sta.Run(() =>
     {
         using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
         form.StartPosition = FormStartPosition.Manual;
@@ -169,7 +149,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void Frameless_maximize_is_idempotent() => RunSta(() =>
+    public void Frameless_maximize_is_idempotent() => Sta.Run(() =>
     {
         using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
         _ = form.Handle;
@@ -185,7 +165,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void Restore_from_max_unminimizes_first() => RunSta(() =>
+    public void Restore_from_max_unminimizes_first() => Sta.Run(() =>
     {
         // Regression: restoring bounds on a still-minimized window mangled them under
         // WS_MINIMIZE and left the window in the taskbar with the state dropped.
@@ -204,7 +184,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void WndProc_hook_sees_messages() => RunSta(() =>
+    public void WndProc_hook_sees_messages() => Sta.Run(() =>
     {
         using var form = new OptimizedForm();
         var seen = new List<int>();
@@ -220,7 +200,7 @@ public class OptimizedFormTests
     });
 
     [Fact]
-    public void ApplyChromeTheme_updates_the_fill_and_survives_a_live_handle() => RunSta(() =>
+    public void ApplyChromeTheme_updates_the_fill_and_survives_a_live_handle() => Sta.Run(() =>
     {
         using var form = new OptimizedForm(new OptimizedFormOptions
         {

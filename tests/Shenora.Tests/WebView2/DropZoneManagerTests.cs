@@ -1,6 +1,6 @@
-using System.Runtime.ExceptionServices;
 using Shenora.Core;
 using Shenora.Ipc;
+using Shenora.Tests.TestSupport;
 using Shenora.WebView2;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
@@ -13,26 +13,6 @@ namespace Shenora.Tests.WebView2;
 /// </summary>
 public class DropZoneManagerTests
 {
-    private static void RunSta(Action body)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                body();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
-    }
-
     private static (Form Form, WebView2Control WebView, EventBus Bus, DropZoneManager Manager) CreateFixture()
     {
         var form = new Form();
@@ -50,7 +30,7 @@ public class DropZoneManagerTests
     }
 
     [Fact]
-    public void Register_creates_a_parented_overlay_and_update_moves_it() => RunSta(() =>
+    public void Register_creates_a_parented_overlay_and_update_moves_it() => Sta.Run(() =>
     {
         var (form, _, _, manager) = CreateFixture();
         using (form)
@@ -72,7 +52,7 @@ public class DropZoneManagerTests
     });
 
     [Fact]
-    public void Unregister_disposes_and_clear_all_empties() => RunSta(() =>
+    public void Unregister_disposes_and_clear_all_empties() => Sta.Run(() =>
     {
         var (form, _, _, manager) = CreateFixture();
         using (form)
@@ -94,7 +74,7 @@ public class DropZoneManagerTests
     });
 
     [Fact]
-    public void Reapply_recomputes_bounds_from_the_stored_css_rects() => RunSta(() =>
+    public void Reapply_recomputes_bounds_from_the_stored_css_rects() => Sta.Run(() =>
     {
         var (form, _, _, manager) = CreateFixture();
         using (form)
@@ -111,7 +91,7 @@ public class DropZoneManagerTests
     });
 
     [Fact]
-    public void Notifications_emit_on_the_bus_with_the_wire_shape() => RunSta(() =>
+    public void Notifications_emit_on_the_bus_with_the_wire_shape() => Sta.Run(() =>
     {
         var (form, _, bus, manager) = CreateFixture();
         using (form)
@@ -138,7 +118,7 @@ public class DropZoneManagerTests
     });
 
     [Fact]
-    public void Pre_handle_calls_proceed_inline_without_recursing() => RunSta(() =>
+    public void Pre_handle_calls_proceed_inline_without_recursing() => Sta.Run(() =>
     {
         // Regression: the pre-handle marshal used to re-invoke the CALLER as its own action —
         // unbounded recursion → uncatchable StackOverflow (reachable via a startup-failure
@@ -161,7 +141,7 @@ public class DropZoneManagerTests
     });
 
     [Fact]
-    public void Dispose_detaches_form_handlers_and_destroys_overlays() => RunSta(() =>
+    public void Dispose_detaches_form_handlers_and_destroys_overlays() => Sta.Run(() =>
     {
         var (form, _, _, manager) = CreateFixture();
         using (form)
@@ -177,7 +157,7 @@ public class DropZoneManagerTests
     });
 
     [Fact]
-    public async Task Facade_routes_the_client_messages() => await Task.Run(() => RunSta(() =>
+    public async Task Facade_routes_the_client_messages() => await Task.Run(() => Sta.Run(() =>
     {
         var (form, _, _, manager) = CreateFixture();
         using (form)

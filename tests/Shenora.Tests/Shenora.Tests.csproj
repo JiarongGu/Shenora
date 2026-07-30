@@ -16,6 +16,21 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Parallelization control (P5.5 H7). Declared explicitly rather than trusting xunit's
+         auto-include glob — verified the hard way: the file alone did NOT reach the output directory,
+         so the runner never read it, and a config the runner ignores is worse than none (it reads as
+         control that isn't there). Check with:
+             ls bin/Debug/net10.0-windows/xunit.runner.json
+         WHY serial (see xunit.runner.json): this suite creates real STA message pumps, real OS
+         mutexes and six real window threads, and asserts wall-clock budgets — collection-level
+         parallelism made those race each other on a loaded box. It also actively HID a defect:
+         WindowCommandFacadeTests' START_RESIZE case entered the OS modal size loop on the test
+         thread for ~17 s (indefinitely when run alone), and overlapping work kept the wall clock at
+         6 s so nobody saw it. Serial costs 6 s → 9 s and is steady. -->
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- A miniature frontend bundle for the EmbeddedResourceProvider tests (manifest prefix
          Shenora.Tests.TestAssets.wwwroot). vendor.min.js exists to prove dotted FILE names
          resolve — the mis-map fixed relative to the source app. -->

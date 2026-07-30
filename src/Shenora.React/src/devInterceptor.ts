@@ -8,8 +8,8 @@
  * request/response/event into ring buffers, and (2) expose a window global so a CDP eval can
  * invoke ANY IPC directly and await events:
  *
- *   window.__shenora.call('TODO', 'ADD', { title: 'x' })   // drive an IPC, bypass the UI
- *   window.__shenora.waitEvent('TODO', 'ADDED')            // resolves on the next emit
+ *   window.__shenora.call('NOTES', 'ADD', { title: 'x' })   // drive an IPC, bypass the UI
+ *   window.__shenora.waitEvent('NOTES', 'ADDED')            // resolves on the next emit
  *   window.__shenora.recentIpc(20) / .recentEvents(20)     // inspect traffic
  */
 import { getBridge, type InvokeOptions, type ShenoraBridge } from './bridge.js';

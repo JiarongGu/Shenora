@@ -1,5 +1,6 @@
 using Shenora.Core;
 using Shenora.WinForms;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.WinForms;
 
@@ -40,43 +41,31 @@ public class FileDialogsTests
     [Fact]
     public async Task Initial_path_prefers_the_remembered_directory()
     {
-        var existing = Directory.CreateTempSubdirectory().FullName;
-        try
-        {
-            var store = new FakePathStore { Paths = { ["import"] = existing } };
-            var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
+        using var temp = TempDir.Create();
+        var existing = temp.Root;
+        var store = new FakePathStore { Paths = { ["import"] = existing } };
+        var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
 
-            var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions { RememberPathKey = "import" });
+        var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions { RememberPathKey = "import" });
 
-            Assert.Equal(existing, resolved);
-        }
-        finally
-        {
-            Directory.Delete(existing, recursive: true);
-        }
+        Assert.Equal(existing, resolved);
     }
 
     [Fact]
     public async Task Stale_remembered_paths_fall_through_to_the_default()
     {
-        var defaultDir = Directory.CreateTempSubdirectory().FullName;
-        try
-        {
-            var store = new FakePathStore { Paths = { ["import"] = Path.Combine(defaultDir, "gone-subdir") } };
-            var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
+        using var temp = TempDir.Create();
+        var defaultDir = temp.Root;
+        var store = new FakePathStore { Paths = { ["import"] = Path.Combine(defaultDir, "gone-subdir") } };
+        var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
 
-            var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions
-            {
-                RememberPathKey = "import",
-                DefaultPath = defaultDir,
-            });
-
-            Assert.Equal(defaultDir, resolved);
-        }
-        finally
+        var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions
         {
-            Directory.Delete(defaultDir, recursive: true);
-        }
+            RememberPathKey = "import",
+            DefaultPath = defaultDir,
+        });
+
+        Assert.Equal(defaultDir, resolved);
     }
 
     [Fact]
@@ -92,25 +81,19 @@ public class FileDialogsTests
     [Fact]
     public async Task Remember_saves_only_valid_keyed_directories()
     {
-        var existing = Directory.CreateTempSubdirectory().FullName;
-        try
-        {
-            var store = new FakePathStore();
-            var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
-            var keyed = new FileDialogOptions { RememberPathKey = "import" };
+        using var temp = TempDir.Create();
+        var existing = temp.Root;
+        var store = new FakePathStore();
+        var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
+        var keyed = new FileDialogOptions { RememberPathKey = "import" };
 
-            await dialogs.RememberPathAsync(keyed, existing);
-            Assert.Equal(existing, store.Paths["import"]);
+        await dialogs.RememberPathAsync(keyed, existing);
+        Assert.Equal(existing, store.Paths["import"]);
 
-            await dialogs.RememberPathAsync(keyed, Path.Combine(existing, "missing"));
-            await dialogs.RememberPathAsync(new FileDialogOptions(), existing); // no key
-            await dialogs.RememberPathAsync(keyed, null);
-            Assert.Single(store.Paths); // nothing else landed
-        }
-        finally
-        {
-            Directory.Delete(existing, recursive: true);
-        }
+        await dialogs.RememberPathAsync(keyed, Path.Combine(existing, "missing"));
+        await dialogs.RememberPathAsync(new FileDialogOptions(), existing); // no key
+        await dialogs.RememberPathAsync(keyed, null);
+        Assert.Single(store.Paths); // nothing else landed
     }
 
     [Fact]

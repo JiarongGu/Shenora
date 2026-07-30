@@ -1,4 +1,5 @@
 using Shenora.Core;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Core;
 
@@ -70,17 +71,11 @@ public class ShenoraPathsTests
     [Fact]
     public void DataArea_creates_on_first_access()
     {
-        var dir = Directory.CreateTempSubdirectory().FullName;
-        try
-        {
-            var paths = ShenoraPaths.Resolve(baseDirectory: dir, getEnvironmentVariable: Env());
-            var area = paths.DataArea("cache");
-            Assert.True(Directory.Exists(area));
-            Assert.Equal(Path.Combine(dir, "data", "cache"), area);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        using var temp = TempDir.Create();
+        var dir = temp.Root;
+        var paths = ShenoraPaths.Resolve(baseDirectory: dir, getEnvironmentVariable: Env());
+        var area = paths.DataArea("cache");
+        Assert.True(Directory.Exists(area));
+        Assert.Equal(Path.Combine(dir, "data", "cache"), area);
     }
 }

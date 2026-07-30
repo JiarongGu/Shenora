@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 namespace Shenora.Tests.TestSupport;
 
 /// <summary>
@@ -11,8 +13,12 @@ namespace Shenora.Tests.TestSupport;
 /// belongs on this helper.
 /// </para>
 /// <para>
-/// Shared home for what used to be three byte-identical copies of this runner (P5.5 H7); new tests
-/// should use it rather than adding a fourth.
+/// The ONE home for this runner. It replaced four copies (P5.5 H4.2 started it, H7 finished it) and
+/// is the SUPERSET of what they each did, which is why nothing regressed on the way in: the copies
+/// rethrew through <see cref="ExceptionDispatchInfo"/> (preserving the body's original stack trace —
+/// a bare <c>throw failure;</c> resets it, so the failure pointed at this helper instead of the
+/// assertion that failed), while only this one bounds the join. New tests use it rather than adding a
+/// fifth copy.
 /// </para>
 /// </summary>
 internal static class Sta
@@ -28,9 +34,12 @@ internal static class Sta
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        // Generous but bounded: a deadlock must fail the test, not hang the suite.
+        // Generous but BOUNDED, and the three copies this replaced all used a bare Join(): a body that
+        // deadlocks (trivial to write against a pump that never runs) hung the whole suite with no
+        // failing test, which on CI is a job timeout with nothing to read.
         if (!thread.Join(TimeSpan.FromSeconds(30)))
             throw new TimeoutException("The STA test body did not finish within 30s.");
-        if (failure is not null) throw failure;
+        // Capture/Throw, not `throw failure` — keep the body's stack trace pointing at the assertion.
+        if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
     }
 }

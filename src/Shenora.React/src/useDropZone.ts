@@ -15,7 +15,13 @@ export interface DropZoneFileDrop {
   position: { x: number; y: number };
 }
 
-/** Inputs for {@link useDropZone}. */
+/**
+ * Inputs for {@link useDropZone}.
+ *
+ * ORDERING: the host clears all zones on the ready handshake, so this hook's `REGISTER` must not
+ * outrun `notifyReady()` — see {@link ShenoraBridge.notifyReady} for why React's child-before-parent
+ * effect order makes that the DEFAULT outcome rather than an unlucky one.
+ */
 export interface UseDropZoneOptions {
   /** The element the native overlay tracks. */
   targetRef: React.RefObject<HTMLElement | null>;

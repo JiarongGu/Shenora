@@ -1,5 +1,6 @@
 using Shenora.Ipc;
 using Shenora.WebView2;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.WebView2;
 
@@ -12,12 +13,7 @@ namespace Shenora.Tests.WebView2;
 public class WindowCommandFacadeTests
 {
     private static IpcRequest Request(string type, object? payload = null) =>
-        new()
-        {
-            Module = WindowCommandFacade.Module,
-            Type = type,
-            Payload = payload is null ? null : IpcJson.SerializeToElement(payload),
-        };
+        IpcRequests.Create(WindowCommandFacade.Module, type, payload: payload);
 
     private static Form CreateForm()
     {
@@ -112,11 +108,20 @@ public class WindowCommandFacadeTests
         using var form = CreateForm();
         var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
 
-        var response = await facade.HandleMessageAsync(Request(type, new { edge = "topLeft" }));
+        // DISPATCHED FROM A WORKER THREAD ON PURPOSE — do not "simplify" this to a direct await.
+        // The handoff body calls SendMessage(WM_NCLBUTTONDOWN), which enters the OS modal move/size
+        // loop and does not return until the loop ends. H4.2 made the dispatcher run a body INLINE
+        // when the caller is already on the UI thread (correct: the loop must start while the mouse
+        // button is down), and this form's UI thread is the test thread — so awaiting directly ran
+        // the modal loop IN THE TEST. It blocked ~17 s in the suite and hung indefinitely when run
+        // alone; collection-level parallelism had been masking it in the wall clock since H4.2, and
+        // the old "deliberately NOT pumped" comment here had silently become false.
+        // From a worker thread the state check passes, InvokeRequired is true, and the body is
+        // BeginInvoke'd to a queue this test never pumps — which is what the comment always claimed.
+        var response = await Task.Run(() => facade.HandleMessageAsync(Request(type, new { edge = "topLeft" })));
 
         Assert.True(response.Success);
-        // Deliberately NOT pumped: the posted handoff enters the OS move/size loop, which needs
-        // a live interactive window (sample e2e territory).
+        Assert.False(form.IsDisposed); // the handoff was queued, never run — no modal loop entered
     }
 
     [Fact]

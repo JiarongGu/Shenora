@@ -188,6 +188,19 @@ export class ShenoraBridge {
    * app shell has subscribed — a reloaded page calls it again on its fresh startup, which is
    * also the host's cue to reset per-page state. No-transport is a silent no-op so browser dev
    * doesn't error.
+   *
+   * CALL THIS BEFORE ANYTHING REGISTERS PER-PAGE HOST STATE (P5.5 H7). "Reset per-page state" above
+   * is not passive: a host typically clears the previous page's drop-zone overlays here, so a
+   * `REGISTER` sent before this `READY` is wiped even though it was acked — leaving a zone the client
+   * believes is live and the host has forgotten. In React the trap is structural rather than a
+   * mistake: CHILD effects run before PARENT effects, so putting this in a root-component effect (the
+   * obvious way to "call it once at startup") runs it AFTER every child's `useDropZone` has already
+   * registered. Keep the handshake in the same component as, and declared above, anything that
+   * registers — or await it before rendering the subtree that does.
+   *
+   * The returned promise REJECTS on a failed handshake (disposed bridge, timeout). Handle it —
+   * `void bridge.notifyReady()` turns that into an unhandled rejection, which in a WebView2 page is
+   * a silent console error.
    */
   async notifyReady<TPayload = unknown>(payload?: TPayload): Promise<void> {
     if (!this.transport) return;

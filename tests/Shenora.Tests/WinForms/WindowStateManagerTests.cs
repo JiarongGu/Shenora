@@ -1,4 +1,5 @@
 using System.Drawing;
+using Shenora.Tests.TestSupport;
 using Shenora.WinForms;
 
 namespace Shenora.Tests.WinForms;
@@ -102,13 +103,6 @@ public class WindowStateManagerTests
 
     // ---- Store integration (pure part) ----
 
-    private sealed class MemoryStore : IWindowStateStore
-    {
-        public WindowState? State;
-        public WindowState? Load() => State;
-        public void Save(WindowState state) => State = state;
-    }
-
     // ── The app-maximized seam (P5.5 H2) ──────────────────────────────────────────────────────────
     // Frameless chrome maximizes by hand and keeps WindowState.Normal, so reading Form.WindowState /
     // Form.RestoreBounds persisted "not maximized" together with the WORK-AREA rect as the normal
@@ -132,7 +126,7 @@ public class WindowStateManagerTests
     [Fact]
     public void Save_prefers_the_windows_own_maximize_truth_over_WindowState()
     {
-        var store = new MemoryStore();
+        var store = new FakeWindowStateStore();
         using var form = new AppMaximizedForm
         {
             StartPosition = FormStartPosition.Manual,
@@ -145,25 +139,25 @@ public class WindowStateManagerTests
 
         new WindowStateManager(store, new WindowStateOptions()).Save(form);
 
-        Assert.NotNull(store.State);
-        Assert.True(store.State!.Maximized);            // …not false, as WindowState would have said
+        Assert.NotNull(store.Saved);
+        Assert.True(store.Saved!.Maximized);            // …not false, as WindowState would have said
         // …and the persisted size is the WINDOWED geometry, not the work area — this is what made
         // restore a no-op on the next launch.
         var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
-        Assert.Equal(DpiHelper.Scale(900, 1 / scale), store.State.Width);
-        Assert.Equal(DpiHelper.Scale(700, 1 / scale), store.State.Height);
+        Assert.Equal(DpiHelper.Scale(900, 1 / scale), store.Saved.Width);
+        Assert.Equal(DpiHelper.Scale(700, 1 / scale), store.Saved.Height);
     }
 
     [Fact]
     public void Save_falls_back_to_WindowState_for_an_ordinary_form()
     {
-        var store = new MemoryStore();
+        var store = new FakeWindowStateStore();
         using var form = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(50, 60, 800, 600) };
 
         new WindowStateManager(store, new WindowStateOptions()).Save(form);
 
-        Assert.NotNull(store.State);
-        Assert.False(store.State!.Maximized);   // a framed window's WindowState IS the truth
+        Assert.NotNull(store.Saved);
+        Assert.False(store.Saved!.Maximized);   // a framed window's WindowState IS the truth
     }
 
     [Fact]
@@ -171,7 +165,7 @@ public class WindowStateManagerTests
     {
         // The runner creates the form and THEN applies state, so an app that sets MinimumSize in its
         // constructor had it silently replaced — the reference composition's own 640x420 was dead code.
-        var store = new MemoryStore();
+        var store = new FakeWindowStateStore();
         using var form = new Form { MinimumSize = new Size(640, 420) };
 
         new WindowStateManager(store, new WindowStateOptions()).Apply(form);
@@ -182,7 +176,7 @@ public class WindowStateManagerTests
     [Fact]
     public void Apply_still_sets_a_minimum_when_the_form_has_none()
     {
-        var store = new MemoryStore();
+        var store = new FakeWindowStateStore();
         using var form = new Form();
         var options = new WindowStateOptions();
 
@@ -201,7 +195,7 @@ public class WindowStateManagerTests
         // captures RestoreBounds for exactly this). Regression: a review found an added
         // !maximized condition silently re-centering every maximized launch.
         var scale = DpiHelper.SystemScale();
-        var store = new MemoryStore { State = new WindowState(500, 400, 10, 10, Maximized: true) };
+        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, Maximized: true) };
         using var form = new Form();
         new WindowStateManager(store).Apply(form);
 
@@ -213,21 +207,15 @@ public class WindowStateManagerTests
     [Fact]
     public void JsonFileWindowStateStore_roundtrips_and_is_best_effort()
     {
-        var dir = Directory.CreateTempSubdirectory().FullName;
-        try
-        {
-            var store = new JsonFileWindowStateStore(Path.Combine(dir, "window.json"));
-            Assert.Null(store.Load());
+        using var temp = TempDir.Create();
+        var dir = temp.Root;
+        var store = new JsonFileWindowStateStore(Path.Combine(dir, "window.json"));
+        Assert.Null(store.Load());
 
-            store.Save(new WindowState(1000, 700, 30, 40, true));
-            Assert.Equal(new WindowState(1000, 700, 30, 40, true), store.Load());
+        store.Save(new WindowState(1000, 700, 30, 40, true));
+        Assert.Equal(new WindowState(1000, 700, 30, 40, true), store.Load());
 
-            File.WriteAllText(Path.Combine(dir, "window.json"), "{not json");
-            Assert.Null(store.Load()); // corrupt file → null, never a throw
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        File.WriteAllText(Path.Combine(dir, "window.json"), "{not json");
+        Assert.Null(store.Load()); // corrupt file → null, never a throw
     }
 }

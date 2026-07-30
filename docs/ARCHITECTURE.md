@@ -36,6 +36,14 @@ Shenora.slnx
     │                                            SampleFacade → MessageDispatcher → WebViewIpcBridge,
     │                                            1 Hz IEventBus tick source); embeds wwwroot
     │                                            (built by the web sample, gitignored)
+    ├── Shenora.Sample.Logic    net10.0         — the PORTABILITY PROOF (H4.3): one facade that picks
+    │                                            a file, reads the clipboard and opens a URL through
+    │                                            the Core contracts only (IUrlLauncher, NOT the
+    │                                            Windows IShellLauncher). Plain net10.0 with no
+    │                                            Windows reference, referenced by the desktop sample
+    │                                            and in the solution — so a Windows type dragged into
+    │                                            a portable contract turns the build RED instead of
+    │                                            leaving D20's portability merely asserted
     └── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
                                                  into the desktop sample's wwwroot; page-owned title
                                                  bar (WindowCommands + useWindowMaximized), notifyReady,
@@ -79,7 +87,7 @@ changes, noting them in `CHANGELOG.md`).
   `--restarted` widened-wait handoff with abandoned-mutex recovery); `WinFormsBootstrap(+Options)`
   + `UnhandledExceptionReport/Source` (one-call WinForms init + the three global exception
   channels with crash-log callback and last-resort dialog); the host composition —
-  `UseWinForms(WinFormsHostOptions)` with `SingleInstanceHostOptions` (gate scope/restart
+  `UseWinForms(WinFormsHostOptions)` on `WinFormsHostExtensions`, with `SingleInstanceHostOptions` (gate scope/restart
   argument/wait/losing-launch callback) and `WindowStateHostOptions` (store factory + options),
   backed by an internal runner (gate → bootstrap → starting hooks → form factory → window state →
   activate-message filter → loop → reverse-order stopping hooks → release); `SplashPanel(+Options)`
@@ -101,7 +109,7 @@ changes, noting them in `CHANGELOG.md`).
 - `Shenora.WebView2` — `BrowserArguments` (the measured Chromium display-optimization preset;
   single-occurrence feature lists; dev CDP-args append); `WebViewEnvironment(+Options)`
   (runtime presence probe, idempotent prewarm, thread-affine shared environment +
-  per-STA-thread creation for secondary windows); `PrewarmWebView2` builder extension
+  per-STA-thread creation for secondary windows); `PrewarmWebView2` on `WebView2BuilderExtensions`
   (prewarm as a deferred starting hook — stays behind the single-instance gate);
   `WebViewHost(+Options)` (the ONE place a WebView2 is configured: env + ensure under a 25 s
   init-timeout guard, settings-hardening preset + `ConfigureSettings` escape hatch, dev/prod
@@ -180,9 +188,14 @@ changes, noting them in `CHANGELOG.md`).
   `MapModule`, no static registry) / `BaseFacade` (standardized error boundary);
   `ScopedContainerRouter(+Options)` (per-scope child containers: app `ConfigureScope` +
   `OnScopeCreated`, single-flight creation, `MapModule<TFacade>` declarations, structured
-  `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`;
-  composition helpers `AddModuleFacade<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher`
-  (error handler → app middleware → DI-registered facades).
+  `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`
+  (on `ScopedContainerRouterExtensions`); composition helpers
+  `AddModuleFacade<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher` on
+  `IpcServiceCollectionExtensions` (error handler → app middleware → DI-registered facades, mapped
+  LAZILY so the singleton is cached before the provider is enumerated); and
+  `MessageDispatcherExtensions`, which carries the six composition helpers as extensions over the
+  interface's ONE `Use(MessageMiddleware)` primitive — so they work on any `IMessageDispatcher`,
+  including a decorator, without the downcast the reference composition used to need (H6).
 - `@shenora/react` — the client side of the contract: wire types mirroring `Shenora.Ipc`
   name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError`
   (structured code + parameters; client-side `TIMEOUT`/`NO_TRANSPORT` reject the same way),

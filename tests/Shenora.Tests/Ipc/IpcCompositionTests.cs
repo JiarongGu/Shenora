@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Ipc;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Ipc;
 
@@ -22,7 +23,7 @@ public class IpcCompositionTests
     }
 
     private static IpcRequest Request(string module, string type = "ANY") =>
-        new() { Module = module, Type = type };
+        IpcRequests.Create(module, type);
 
     /// <summary>
     /// A pass-through decorator — the shape that used to break composition silently (P5.5 H6). It must

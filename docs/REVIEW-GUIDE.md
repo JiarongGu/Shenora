@@ -134,13 +134,30 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 ## 6. What's verified vs what's not (so thin coverage isn't mistaken for a gap)
 
 - **Gated by tests:** the public surface is pinned by API-surface baseline tests
-  (`tests/Shenora.Tests/Api/Baselines/*.txt` — drift fails the build) — but **public members only**:
-  `protected` members (including `BaseFacade.RouteMessageAsync`, the one every consumer overrides),
-  default parameter values, `init`-vs-`set` and `required` are NOT gated yet (`TASKS.md` H6). Unit tests cover the pure/
+  (`tests/Shenora.Tests/Api/Baselines/*.txt` — drift fails the build). Since H6 that gate is
+  thorough, not nominal: `protected` members (including `BaseFacade.RouteMessageAsync`, the one every
+  consumer overrides), default parameter values, `init`-vs-`set`, `required`, `static`, virtuality,
+  parameter NAMES, generic constraints, nullability, base types, const VALUES and attributes — all 22
+  `[JsonPropertyName]` wire names included, so a rename cannot break the C#⇄TS mirror silently. A
+  companion test walks transitive references so a NEW package cannot ship without a baseline. The npm
+  half has its own gate since H7 (`index.test.ts` pins the barrel's 21 runtime exports as an explicit
+  array — not a snapshot, which would self-update under `-u`). Unit tests cover the pure/
   seam-testable logic: Core env/paths/builder/event-bus, Ipc envelopes/dispatcher/facade/router/
   payload, WinForms dpi/window-state/single-instance/dialog seams, WebView2 bridge + drop-zone
-  seams, React bridge/hooks/services, Sessions pool accounting (via factory/reset seams), login
-  gate mechanics, cookie-flow freshness logic, and the co-browse protocol builders.
+  seams, React bridge/hooks/services/transport, Sessions pool accounting (via factory/reset seams),
+  login gate mechanics, cookie-flow freshness logic, the co-browse protocol builders, and the
+  session request-filter decision (`SessionBrowser.ShouldBlockRequest`).
+- **The sessions live-browser boundary — read this before filing "untested public member".**
+  `SessionController`'s constructor subscribes to `_web.CoreWebView2.WebMessageReceived`, so the type
+  cannot be INSTANTIATED without a real browser core. Everything reachable only through an instance is
+  therefore e2e/manual territory by construction, not by neglect: `SessionController`'s public members
+  (bar `ComputeFitSize`, which is tested), `CoBrowseSession.DispatchInputAsync`/`ReadHotspotsAsync`/
+  `Frames`/`DisposeAsync`, `RenderSession`'s tap BOOKKEEPING (its disposal checks *are* tested), and
+  `CookieLoginFlow`'s four-line `SessionController` → `Hooks` mapping (the flow's own poll/capture
+  logic is covered through the internal `Hooks` overload, 8 cases). The lesson H7 applied where it
+  COULD: pure decisions get lifted out of live-object lambdas so the real rule is testable — that is
+  what `ShouldBlockRequest` and the pool's `AwaitResetNavigationAsync` are. Prefer that over a mock of
+  `CoreWebView2`.
 - **Proven live (e2e), not unit-tested:** real WebView2 behavior is driven against the sample via
   CDP (`window.__shenora`) + `win-input` + `wgc` screenshots — hosting, IPC round-trip,
   notifications, window commands, drop-zone registration, secondary windows, and the P5 render-
@@ -151,7 +168,10 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   and are validated by hand. Judge their code by inspection against the source + the invariants,
   not by expecting a test.
 
-Current totals: **318 dotnet + 39 vitest** green; `verify` PASSED; `doctor` consistent.
+Current totals: **442 dotnet + 63 vitest** green; `verify` PASSED; `doctor` consistent. The dotnet
+suite runs SERIALLY (`tests/Shenora.Tests/xunit.runner.json`, P5.5 H7) — it creates real STA message
+pumps, real OS mutexes and real window threads, and collection parallelism was both a flake vector and
+an active mask: it hid a test that entered the OS modal size loop for ~17 s.
 
 ## 7. Reproduce / verify locally
 

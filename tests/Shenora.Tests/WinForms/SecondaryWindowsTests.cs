@@ -1,3 +1,4 @@
+using Shenora.Tests.TestSupport;
 using Shenora.WinForms;
 
 namespace Shenora.Tests.WinForms;
@@ -8,15 +9,6 @@ namespace Shenora.Tests.WinForms;
 /// </summary>
 public class SecondaryWindowsTests
 {
-    private sealed class RecordingStore : IWindowStateStore
-    {
-        public WindowState? Saved { get; private set; }
-
-        public WindowState? Load() => null;
-
-        public void Save(WindowState state) => Saved = state;
-    }
-
     private static void WaitUntil(Func<bool> condition, string what)
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -165,7 +157,7 @@ public class SecondaryWindowsTests
     public void Geometry_saves_through_the_state_store_on_close()
     {
         using var windows = new SecondaryWindows();
-        var store = new RecordingStore();
+        var store = new FakeWindowStateStore();
 
         windows.Open("w1", new SecondaryWindowOptions
         {
@@ -199,7 +191,7 @@ public class SecondaryWindowsTests
         // Regression: dispose used to fire-and-forget the closes; background pumps died with
         // the process before FormClosed-driven geometry saves ran.
         var windows = new SecondaryWindows();
-        var store = new RecordingStore();
+        var store = new FakeWindowStateStore();
         windows.Open("w1", new SecondaryWindowOptions
         {
             CreateForm = () => new Form { ShowInTaskbar = false, WindowState = FormWindowState.Minimized },

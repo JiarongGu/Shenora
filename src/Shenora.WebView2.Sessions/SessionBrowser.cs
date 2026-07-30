@@ -11,7 +11,7 @@ public sealed class SessionBrowserOptions
     /// <summary>
     /// The persistent profile (user-data folder) this browser runs in. Sessions key their whole
     /// isolation story on this directory: a login window scopes it per provider (and per
-    /// sub-account — a SECURITY boundary, see <see cref="LoginWindow"/> once it ships), a pool
+    /// sub-account — a SECURITY boundary, see <see cref="LoginWindow"/>), a pool
     /// shares one across its instances, and wiping it is what makes a logout real.
     /// </summary>
     public required string ProfileDirectory { get; init; }
@@ -237,23 +237,46 @@ public static class SessionBrowser
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += (_, e) =>
         {
-            if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var requestUri)) return;
-            // Only an http(s) page source is a real "page host" to compare against. Before the
-            // first navigation commits the source is empty, and a returned/reset pool instance
-            // sits on `about:blank` — both parse as a non-web Uri (or none), and passing them
-            // through would make a same-host filter treat the page's OWN next document as
-            // third-party and 403 it. Pass null so a sane filter never blocks the document.
-            var pageUri = Uri.TryCreate(core.Source, UriKind.Absolute, out var p) && p.Scheme is "http" or "https" ? p : null;
-            try
-            {
-                if (filter(requestUri, pageUri))
-                    e.Response = env.CreateWebResourceResponse(null, 403, "Blocked", "");
-            }
-            catch
-            {
-                // a throwing filter must not break page loading — fail open
-            }
+            if (ShouldBlockRequest(e.Request.Uri, core.Source, filter))
+                e.Response = env.CreateWebResourceResponse(null, 403, "Blocked", "");
         };
+    }
+
+    /// <summary>
+    /// The request-filter DECISION, split out of the event handler so the real rule is unit-testable
+    /// (P5.5 H7 — the same lesson as the pool's reset probe: a rule reachable only through a live
+    /// <c>CoreWebView2</c> is a rule nothing tests, and this one is the app's blocking boundary).
+    /// Returns true when the request must be answered with the 403.
+    /// </summary>
+    /// <param name="requestUri">The raw <c>e.Request.Uri</c>.</param>
+    /// <param name="pageSource">The raw <c>core.Source</c> — may be empty or <c>about:blank</c>.</param>
+    /// <param name="filter">The app's policy: (request, pageUri) → block?</param>
+    internal static bool ShouldBlockRequest(string? requestUri, string? pageSource, Func<Uri, Uri?, bool> filter)
+    {
+        // A request URI we cannot parse is not something we can describe to a policy — pass it.
+        if (!Uri.TryCreate(requestUri, UriKind.Absolute, out var request)) return false;
+
+        // Only an http(s) page source is a real "page host" to compare against. Before the first
+        // navigation commits the source is empty, and a returned/reset pool instance sits on
+        // `about:blank` — both parse as a non-web Uri (or none), and passing them through would make
+        // a same-host filter treat the page's OWN next document as third-party and 403 it. Pass null
+        // so a sane filter never blocks the document.
+        var pageUri = Uri.TryCreate(pageSource, UriKind.Absolute, out var p)
+                      && p.Scheme is "http" or "https"
+            ? p
+            : null;
+        try
+        {
+            return filter(request, pageUri);
+        }
+        catch
+        {
+            // A throwing filter must not break page loading — FAIL OPEN. Deliberate, and the opposite
+            // of the navigation guard's fail-closed stance: this runs on every subresource of every
+            // page, so failing closed on a buggy app predicate would present as a blank page with no
+            // diagnosis. The guard is the boundary that must hold; this is the sieve.
+            return false;
+        }
     }
 
     /// <summary>

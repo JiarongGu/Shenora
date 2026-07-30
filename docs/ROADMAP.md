@@ -5,6 +5,104 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H7: tests, docs and dead weight — and a 17-second hang parallelism was hiding
+
+The hygiene batch found a real defect, which is the argument for doing hygiene at all. Suite:
+**442 dotnet + 63 vitest**, `verify` PASSED.
+
+**The find.** With the suite forced serial, `WindowCommandFacadeTests`' `START_RESIZE` case took
+**16.9 s of 26.8 s** — and hung indefinitely when run alone. H4.2 had made
+`WinFormsUiDispatcher.Post` run a body INLINE when the caller is already on the UI thread (correct:
+the OS move/size loop must start while the mouse button is down), and that test creates its form on
+the test thread — so `SendMessage(WM_NCLBUTTONDOWN)` executed synchronously and entered the modal
+size loop *inside the test*. Its own "deliberately NOT pumped" comment had been false since H4.2, and
+collection-level parallelism kept the wall clock at 6 s so five phase reviews never saw it. The fix
+is test-only, because the production behaviour is right; `WindowCommandFacade.Post` now documents the
+accepted consequence — those two routes answer only after the user releases the mouse.
+
+**Parallelization control** landed as `xunit.runner.json` with `parallelizeTestCollections: false`,
+chosen by measurement: parallel 6 s (masking the hang), serial-with-hang 28 s then 1 m 6 s, serial
+once fixed a steady 9–10 s. Serial is self-maintaining — a future pump test needs no `[Collection]`
+attribute — and it is what surfaced the defect. The file is declared explicitly in the csproj because
+xunit's auto-include glob did not copy it, and a runner config the runner ignores is worse than none.
+
+**Test doubles collapsed to one owner each, every owner a SUPERSET of what it replaced** — which is
+why nothing regressed on the way in. `Sta.Run` (3 remaining copies: they had `ExceptionDispatchInfo`
+but a bare unbounded `Join()`; the shared one has both, so a deadlocking body fails instead of
+hanging the suite), `FakeWindowStateStore` (3 fakes; seed and assertion target are deliberately
+separate members), `IpcRequests.Create` (5 factories over 4 signatures; the part worth owning is the
+`Payload` null-means-absent rule), `TempDir` (all 7 create/delete pairs; cleanup is best-effort
+because four copies threw FROM `finally` and replaced the test's real failure with an IO error). On
+the npm side one shared `FakeTransport` replaced 4 classes and 2 inline literals, and it builds host
+replies from the exported `IpcCategories` — all four copies hand-wrote `{ category: 'ipc' }`, so they
+could have drifted from the wire contract together and stayed green.
+
+**A second vacuity find.** Four of the seven `File_mode_refuses_paths_that_escape_the_root` cases
+were **passing with containment deleted**: they asked for `../secret.txt` while the fixture's only
+outside file was named `shenora-outside-marker.txt`, so the traversal resolved to a path that merely
+did not exist. Only the three rooted cases (landing on the real `win.ini`) did any work. The fixture
+now puts the escape target where the requested paths actually point, asserts its existence as a
+precondition, and the whole set was sabotage-verified.
+
+**Gates added where the npm half had none:** `vitest.config.ts` + `vitest.setup.ts` (there was no
+config at all, so `globals` was false, so RTL's `afterEach(cleanup)` never registered and every
+un-unmounted `renderHook` stayed live for the rest of its file — `globals` stays false and cleanup is
+registered explicitly instead); a barrel test pinning the 21 runtime exports as an explicit array
+rather than a snapshot, since a snapshot self-updates under `-u`; 5 tests for
+`createWebView2Transport`, which had zero references while being the transport every real consumer
+runs on; and a `doctor` check that fails if `dist/testing/` exists, because `src/testing/` had to be
+excluded in `tsconfig.build.json` or `files: ["dist"]` would have published the test double to npm.
+
+**`SessionBrowserOptions.RequestFilter` is covered at last** (15 tests). Its decision was lifted out
+of the `WebResourceRequested` lambda into `internal SessionBrowser.ShouldBlockRequest` — the same
+"make the REAL path testable" move as the pool's reset probe, and the reason the `about:blank`
+normalization now has a test: without it a same-host filter treats a reset pool instance's own first
+document as third-party and 403s it. The rest of the sessions cluster is e2e/manual **by
+construction**, not by neglect — `SessionController`'s constructor subscribes to
+`_web.CoreWebView2.WebMessageReceived`, so the type cannot be instantiated without a live browser —
+and `docs/REVIEW-GUIDE.md` §6 now states that boundary so it stops being re-filed as a coverage gap.
+
+**Four implementation-detail assertions became assertions about the actual invariant:** an exact
+exception-message sentence → contains the key and leaks neither the raw value, the CLR type nor the
+JSON path; an internal type's NAME → the tray renderer's `ColorTable` really carries the app's
+colours (the old test would have passed a renderer that ignored every colour it was handed);
+`Controls[0].Controls[0]` → named `internal` accessors with layout expectations derived from
+`SplashPanelOptions` instead of retyping its defaults; exact STJ digit padding → no comma-decimal
+plus a parsed value, so changing a format string no longer fails a *culture* test.
+
+**Dead weight and one documented contract.** `grep TODO src/` is empty (`'TODO'` was the example
+module name in shipped npm docs — the example domain is now `NOTES`); two stale comments fixed; the
+sample's `dropClassName` finally has a CSS rule, so the e2e subject can show the hover half of the
+drop contract; and `void getBridge().notifyReady()` became a real `.catch`. The
+**`notifyReady` → `ClearAll` ordering contract** is now written at four sites plus
+`ipc-contracts.md`: the host clears drop zones on the handshake, so a `REGISTER` arriving first is
+wiped *after being acked*, and React's child-before-parent effect order makes that the DEFAULT
+outcome rather than bad luck. Making it order-independent (clear on document change instead) is
+recorded in `TASKS.md` as its own item — that is a lifecycle change, not hygiene.
+
+**Docs drift turned out ~80% stale** — earlier batches had already fixed most of the list. The four
+genuine items: `ARCHITECTURE` never listed `Shenora.Sample.Logic` (the H4.3 portability proof) and
+named none of the five public extension classes; `CHANGELOG` had two separate `### Breaking` groups
+under one version, which matters because that heading is the SemVer gate and a reader would have
+missed five entries; and — not on the list — `ipc-contracts.md` still said the ready gate re-closes
+on `NavigationStarting`, which H3 changed to `ContentLoading`. `REVIEW-GUIDE` §6 was stale too.
+
+H8's last two items closed with this batch: the `SemaphoreSlim.Dispose()`-wedges-a-cancelled-waiter
+root cause is now a rule bullet, and `knowledge footprint` confirms the core tier is unchanged at
+**15.6 / 16.0 KB** (H7 grew only the on-demand tier).
+
+### 2026-07-30 — P5.5 H6 (part 4): the surface trim and the npm packaging gaps
+
+`DpiHelper.ScalePixels`/`ScaleSize`/`ScalePoint` removed — and they were worse than merely unused:
+each baked in the PRIMARY monitor's scale, so any code that adopted them would have silently
+mis-scaled on a secondary monitor. `Scale` plus the DPI you actually mean replaces them, and the
+consumer their own docs named (the drop-zone overlay) already converts from the control's
+`DeviceDpi`, which is the correct source. On the npm side: the `declare global { Window.chrome }`
+augmentation is gone (it collided with `@types/chrome` as an unfixable TS2717 in a `.d.ts` the
+consumer cannot edit — a library must not claim global names), `"./package.json"` was added to
+`exports`, and the tarball now ships a LICENSE with `doctor` checking it byte-matches the root one.
+**H6 COMPLETE.**
+
 ### 2026-07-30 — P5.5 H6 (part 3): the facade registration seam — no more downcast
 
 The reference composition had to write `if (dispatcher is MessageDispatcher concrete)` to map its
@@ -34,6 +132,23 @@ covariant return when implementing an interface, so the explicit implementation 
 Also fixed here: `WindowCommandFacade`'s registration doc pointed at `AddMessageDispatcher`'s configure
 callback — a path that CANNOT work, because that callback runs at provider-build time, before any form
 exists.
+
+### 2026-07-30 — P5.5 H6 (part 2): the bugs hiding inside the surface-trim list
+
+The trim bullet mixed cosmetics with real defects, so the defects went first and on their own.
+`MessageDispatcher.Use()`'s unsynchronized `Lazy` + `List<T>` swap meant a concurrent dispatch could
+read the OLD cached pipeline and answer `NO_HANDLER` for an already-registered route — now
+copy-on-write plus a volatile pipeline under one lock, with a test hammering 200 late routes against
+continuous dispatch. `IpcErrorCodes.OperationCancelled` was added with its mapping arm placed AFTER
+`OperationException`, so an app that models cancellation in its own words keeps them.
+`ScopedContainerRouter` retries once on `ObjectDisposedException` (guarded on `!_disposed` so a
+shutting-down router cannot spin), because `InvalidateScope` is a documented app-facing call that can
+fire mid-request. `EventBus` gained its convenience-overload guards and publishes `_patterns` LAST —
+which is what `EmitAsync` enumerates, making its `continue` comment true at last.
+`ShenoraPathsOptions` became a `record` using `with`, since the `--app-root` merge hand-copied six
+properties and would have silently dropped a seventh. Two **breaking**: `CreateError`'s argument
+order aligned to `OperationException`'s (wire-relevant `parameters` first) and `BaseFacade`'s stray
+`ConfigureAwait(false)` removed, as it contradicted the documented context-preserving model.
 
 ### 2026-07-30 — P5.5 H6 (part): the gates that were supposed to be watching
 

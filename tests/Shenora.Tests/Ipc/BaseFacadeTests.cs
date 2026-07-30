@@ -1,4 +1,5 @@
 using Shenora.Ipc;
+using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.Ipc;
 
@@ -18,7 +19,7 @@ public class BaseFacadeTests
         };
     }
 
-    private static IpcRequest Request(string type) => new() { Module = "ECHO", Type = type };
+    private static IpcRequest Request(string type) => IpcRequests.Create("ECHO", type);
 
     [Fact]
     public async Task Wraps_route_result_in_a_success_response()

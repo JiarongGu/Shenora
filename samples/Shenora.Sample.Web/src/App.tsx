@@ -79,8 +79,24 @@ export function App() {
 
   // The ready handshake — the app shell's listeners exist now; the host starts delivering
   // buffered notifications (and the sample starts its tick source).
+  //
+  // ORDERING MATTERS, and this composition is deliberate (P5.5 H7). The host's OnClientReady calls
+  // DropZoneManager.ClearAll() — stale overlays belong to the outgoing page — so any REGISTER that
+  // arrives BEFORE this READY is destroyed while the client still believes its zone is live: a
+  // silently dead drop zone. React runs CHILD effects before PARENT effects, so moving this
+  // handshake "up to the root component" (the obvious reading of "call it once at startup") is
+  // exactly what breaks it. It works here because notifyReady and useDropZone live in ONE
+  // component, and effects within a component run in declaration order — so this useEffect must
+  // stay ABOVE the useDropZone call below.
+  //
+  // Not `void`: a rejected handshake (no host, disposed bridge, timeout) became an unhandled
+  // promise rejection, which in a WebView2 page is a silent console error — and this is the snippet
+  // adopters copy.
   useEffect(() => {
-    if (hosted) void getBridge().notifyReady();
+    if (!hosted) return;
+    getBridge()
+      .notifyReady()
+      .catch((error: unknown) => console.error('[sample] ready handshake failed', error));
   }, [hosted]);
 
   // React → typed .NET handler → typed response.

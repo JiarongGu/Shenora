@@ -10,20 +10,24 @@ system. Versioned in lockstep with the `Shenora.*` NuGet packages.
 ```ts
 import { getBridge, useShenoraEvent, useShenoraQuery, BaseModuleService } from '@shenora/react';
 
-// once, at startup, after your listeners are attached:
+// Once at startup, after your listeners are attached — and BEFORE anything registers per-page host
+// state (e.g. useDropZone). The host clears the previous page's drop zones on this handshake, so a
+// REGISTER that arrives first is silently discarded. React runs CHILD effects before PARENT effects,
+// so a root-component effect is NOT early enough: keep this in the same component as, and declared
+// above, any useDropZone — or await it before rendering the subtree that registers.
 await getBridge().notifyReady();
 
 // a typed service per backend module:
-interface TodoRequests { GET_ALL: void; ADD: { title: string } }
-class TodoService extends BaseModuleService<TodoRequests> {
-  constructor() { super('TODO'); }
-  getAll() { return this.send<TodoItem[]>('GET_ALL'); }
-  add(title: string) { return this.send<TodoItem>('ADD', { payload: { title } }); }
+interface NoteRequests { GET_ALL: void; ADD: { title: string } }
+class NoteService extends BaseModuleService<NoteRequests> {
+  constructor() { super('NOTES'); }
+  getAll() { return this.send<Note[]>('GET_ALL'); }
+  add(title: string) { return this.send<Note>('ADD', { payload: { title } }); }
 }
 
 // in components:
-const { data, loading, refetch } = useShenoraQuery<TodoItem[]>('TODO', 'GET_ALL');
-useShenoraEvent<TodoItem>('TODO', 'ADDED', (todo) => refetch());
+const { data, loading, refetch } = useShenoraQuery<Note[]>('NOTES', 'GET_ALL');
+useShenoraEvent<Note>('NOTES', 'ADDED', (note) => refetch());
 ```
 
 Failed calls reject with `OperationError` — a structured `code` (an i18n key: translate

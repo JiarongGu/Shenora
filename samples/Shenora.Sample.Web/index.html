@@ -7,6 +7,17 @@
     <!-- Same color as the form/WebView2/splash — the no-white-flash contract end-to-end. -->
     <style>
       html, body { margin: 0; background: #1f1f1f; color: #e8e8e8; font-family: "Segoe UI", sans-serif; }
+
+      /* The class useDropZone's `dropClassName` toggles while a native drag is over the zone. The
+         sample passed 'drop-hover' with NO rule behind it (P5.5 H7), so the e2e subject could only
+         demonstrate the DROP half of the contract — the hover feedback, which is the part an adopter
+         most wants to see working, was invisible. Keep it visually obvious: this is a screenshot
+         target. */
+      .drop-hover {
+        border-color: #4ea1ff !important;
+        background: rgba(78, 161, 255, 0.12);
+        color: #cfe6ff !important;
+      }
     </style>
   </head>
   <body>

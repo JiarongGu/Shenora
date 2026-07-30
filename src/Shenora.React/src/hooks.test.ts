@@ -4,32 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
 import { useShenora, useShenoraEvent, useShenoraQuery } from './hooks.js';
-import type { ShenoraTransport } from './transport.js';
 import type { IpcRequest } from './types.js';
-
-class FakeTransport implements ShenoraTransport {
-  posted: IpcRequest[] = [];
-  private listener?: (message: string) => void;
-
-  post(message: string): void {
-    this.posted.push(JSON.parse(message) as IpcRequest);
-  }
-
-  subscribe(listener: (message: string) => void): () => void {
-    this.listener = listener;
-    return () => {
-      this.listener = undefined;
-    };
-  }
-
-  respond(id: string, data: unknown): void {
-    this.listener?.(JSON.stringify({ category: 'ipc', id, success: true, data }));
-  }
-
-  fail(id: string, code: string): void {
-    this.listener?.(JSON.stringify({ category: 'ipc', id, success: false, error: { code } }));
-  }
-}
+import { FakeTransport } from './testing/fakeTransport.js';
 
 describe('useShenora', () => {
   it('reports availability and hands out the bridge', () => {

@@ -1,4 +1,5 @@
 using Shenora.Core;
+using Shenora.Tests.TestSupport;
 using Shenora.WinForms;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -159,24 +160,11 @@ public class WinFormsHostTests
         }
     }
 
-    private sealed class FakeStore : IWindowStateStore
-    {
-        public WindowState? Stored { get; init; }
-        public bool LoadCalled { get; private set; }
-        public WindowState? Saved { get; private set; }
-        public WindowState? Load()
-        {
-            LoadCalled = true;
-            return Stored;
-        }
-        public void Save(WindowState state) => Saved = state;
-    }
-
     [Fact]
     public void Window_state_applies_before_the_loop_and_saves_on_close()
     {
         var root = UniqueRoot();
-        var store = new FakeStore { Stored = new WindowState(500, 400, null, null, false) };
+        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, null, null, false) };
         var sizeInLoop = Size.Empty;
         var builder = Builder(root);
         builder.UseWinForms(new WinFormsHostOptions

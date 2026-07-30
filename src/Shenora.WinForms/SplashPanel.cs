@@ -107,6 +107,16 @@ public sealed class SplashPanel : Panel
         Invalidate();
     }
 
+    // Named test accessors for the two child controls (P5.5 H7). The tests used to reach them as
+    // `Controls[0]` and `Controls[0].Controls[0]`, which asserted the CONTROL TREE SHAPE as a
+    // side effect: inserting any decorative child, or reparenting the bar, would have failed a
+    // layout test with an IndexOutOfRange or an InvalidCast rather than a message about layout.
+    /// <summary>The centered container holding the bar. Internal for tests.</summary>
+    internal Panel ContentPanel => _content;
+
+    /// <summary>The progress bar itself. Internal for tests.</summary>
+    internal ProgressBar Bar => _bar;
+
     /// <summary>Size the bar per options and center it. Internal for tests.</summary>
     internal void UpdateBarLayout()
     {

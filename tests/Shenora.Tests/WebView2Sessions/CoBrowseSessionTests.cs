@@ -33,8 +33,15 @@ public class CoBrowseSessionTests
         {
             CultureInfo.CurrentCulture = new CultureInfo("de-DE");
             var json = CoBrowseSession.BuildMetricsOverrideJson(800, 600, 1.5);
-            Assert.Contains("\"deviceScaleFactor\":1.50", json);
-            _ = JsonDocument.Parse(json); // parseable regardless of locale
+
+            // The invariant is that the number is written with a DOT and parses back to the value it
+            // was given — not that it renders in one particular way. This used to assert
+            // `Contains("\"deviceScaleFactor\":1.50")`, which pinned the exact digit padding of the
+            // format string (P5.5 H7): switching "0.00" to "0.##" or to a plain double would have
+            // failed a culture test for a reason that has nothing to do with culture.
+            Assert.DoesNotContain("1,5", json, StringComparison.Ordinal); // the comma-decimal break
+            using var doc = JsonDocument.Parse(json);                     // parseable regardless of locale
+            Assert.Equal(1.5, doc.RootElement.GetProperty("deviceScaleFactor").GetDouble());
         }
         finally
         {

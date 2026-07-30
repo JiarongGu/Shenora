@@ -96,6 +96,35 @@ function doctor({ fix = false } = {}) {
     }
   }
 
+  // Test-support code must never reach the published tarball (P5.5 H7). `src/testing/` holds the
+  // shared FakeTransport; tsconfig.build.json's `exclude` is the only thing keeping it out of dist/,
+  // that exclusion is easy to drop while editing an unrelated pattern, and package.json ships
+  // `files: ["dist"]` wholesale — so the leak would be silent.
+  //
+  // Checked against the SOURCE, not against dist/. Inspecting dist/ alone would fail OPEN in the one
+  // path that matters: `pack` calls doctor FIRST and only then runs `npm run build`, whose `clean`
+  // step deletes dist/ and rebuilds it — so the artifact doctor looked at is never the artifact that
+  // ships, and on a fresh clone there is no dist/ to look at at all. (Same shape as the H5 finding
+  // where `verify` scanned pre-sync files because `pack` had already run `doctor --fix`.) The
+  // dist/ check below is kept as belt-and-braces for when a build DOES precede doctor.
+  const testingSrc = path.join(npmDirAbs, 'src', 'testing');
+  if (fs.existsSync(testingSrc)) {
+    const buildTsconfig = path.join(npmDirAbs, 'tsconfig.build.json');
+    const tsconfigText = fs.existsSync(buildTsconfig) ? fs.readFileSync(buildTsconfig, 'utf8') : '';
+    // Match inside the "exclude" ARRAY, not the whole file. Scoping matters and was found the hard
+    // way: a plain `text.includes('src/testing')` passed because the COMMENT above that array also
+    // names the path — the guard was satisfied by the prose explaining it. The file is JSONC
+    // (comments), so it cannot be JSON.parse'd; the array's contents are what the compiler reads.
+    const excluded = /"exclude"\s*:\s*\[([^\]]*)\]/.exec(tsconfigText)?.[1] ?? '';
+    if (!excluded.includes('src/testing'))
+      fail(`${config.npmDir}/src/testing/ exists but tsconfig.build.json's "exclude" does not list it — `
+        + `test-support code would compile into dist/ and be PUBLISHED. Add "src/testing/**" to "exclude".`);
+  }
+  const distDir = path.join(npmDirAbs, 'dist');
+  if (fs.existsSync(path.join(distDir, 'testing')))
+    fail(`${config.npmDir}/dist/testing/ exists — test-support code is staged for PUBLISH; `
+      + `restore the "src/testing/**" entry in tsconfig.build.json "exclude" and rebuild`);
+
   if (problems === 0) console.log(`  ok  version ${config.version} consistent (props · npm · README · LICENSE)`);
   return problems === 0;
 }

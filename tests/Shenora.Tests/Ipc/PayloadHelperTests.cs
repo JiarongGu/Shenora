@@ -56,9 +56,15 @@ public class PayloadHelperTests
 
         Assert.Equal(IpcErrorCodes.InvalidPayloadValue, ex.Code);
         Assert.Equal("count", ex.Parameters!["key"]);
-        // The serializer's details (CLR type names, JSON paths) stay host-side in the inner
-        // exception; the message that crosses the bridge carries only the key (design §5).
-        Assert.Equal("Invalid payload value 'count'.", ex.Message);
+        // The serializer's details (CLR type names, JSON paths, the offending VALUE) stay host-side in
+        // the inner exception; the message that crosses the bridge carries only the key (design §5).
+        // Asserted as the INVARIANT rather than as the exact sentence (P5.5 H7): pinning the prose
+        // made rewording the message a test failure, while saying nothing about the thing that
+        // actually matters — that nothing leaks.
+        Assert.Contains("count", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("not-a-number", ex.Message, StringComparison.Ordinal); // the raw value
+        Assert.DoesNotContain("Int32", ex.Message, StringComparison.Ordinal);        // the CLR type
+        Assert.DoesNotContain("$.", ex.Message, StringComparison.Ordinal);           // the JSON path
         Assert.NotNull(ex.InnerException);
     }
 

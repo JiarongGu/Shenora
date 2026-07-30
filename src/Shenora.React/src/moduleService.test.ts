@@ -20,7 +20,7 @@ afterEach(() => {
 // A PLAIN interface, exactly as the TSDoc example and the README show it — which is the point: this
 // used to require `extends Record<string, unknown>` to satisfy the base class, so the documented example
 // did not compile (TS2344), and the workaround silently disabled the type checking (P5.5 H6).
-interface TodoRequests {
+interface NoteRequests {
   GET_ALL: void;
   ADD: { title: string };
 }
@@ -34,9 +34,9 @@ describe('BaseModuleService', () => {
     };
     const bridge = new ShenoraBridge({ transport, eventBus: new ShenoraEventBus() });
 
-    class TodoService extends BaseModuleService<TodoRequests> {
+    class NoteService extends BaseModuleService<NoteRequests> {
       constructor() {
-        super('TODO', bridge);
+        super('NOTES', bridge);
       }
 
       add(title: string) {
@@ -44,9 +44,9 @@ describe('BaseModuleService', () => {
       }
     }
 
-    new TodoService().add('write tests').catch(() => {}); // never acked
+    new NoteService().add('write tests').catch(() => {}); // never acked
 
-    expect(posted[0]?.module).toBe('TODO');
+    expect(posted[0]?.module).toBe('NOTES');
     expect(posted[0]?.type).toBe('ADD');
     expect(posted[0]?.payload).toEqual({ title: 'write tests' });
   });
@@ -56,12 +56,12 @@ describe('BaseModuleService', () => {
     // `extends Record<string, unknown>`, which widened `keyof TRequests & string` to `string` — so both
     // errors below compiled happily and every payload collapsed to `unknown`. These are @ts-expect-error
     // assertions: the build FAILS if the errors stop occurring, which is what pins the feature.
-    class TodoService extends BaseModuleService<TodoRequests> {
+    class NoteService extends BaseModuleService<NoteRequests> {
       constructor() {
-        super('TODO', new ShenoraBridge({ transport: null, eventBus: new ShenoraEventBus() }));
+        super('NOTES', new ShenoraBridge({ transport: null, eventBus: new ShenoraEventBus() }));
       }
 
-      // @ts-expect-error NO_SUCH_ROUTE is not a key of TodoRequests
+      // @ts-expect-error NO_SUCH_ROUTE is not a key of NoteRequests
       typo() { return this.send('NO_SUCH_ROUTE'); }
 
       // @ts-expect-error ADD's payload is { title: string }, not { name: string }
@@ -71,7 +71,7 @@ describe('BaseModuleService', () => {
     }
 
     // The positive case must still work — a constraint that rejects everything is not a fix.
-    expect(typeof new TodoService().correct).toBe('function');
+    expect(typeof new NoteService().correct).toBe('function');
   });
 
   it('a service built BEFORE configureBridge still speaks over the new default', async () => {
@@ -79,9 +79,9 @@ describe('BaseModuleService', () => {
     // configureBridge DISPOSES the bridge it replaces. So a module-level service singleton (the normal
     // way to write one) captured a bridge that startup then killed, and every call from it rejected
     // with "Bridge disposed" for the rest of the session (P5.5 H2).
-    class TodoService extends BaseModuleService<TodoRequests> {
+    class NoteService extends BaseModuleService<NoteRequests> {
       constructor() {
-        super('TODO'); // no explicit bridge → the shared default
+        super('NOTES'); // no explicit bridge → the shared default
       }
 
       getAll() {
@@ -89,7 +89,7 @@ describe('BaseModuleService', () => {
       }
     }
 
-    const service = new TodoService(); // built first, on purpose
+    const service = new NoteService(); // built first, on purpose
 
     const posted: IpcRequest[] = [];
     configureBridge({ transport: recordingTransport(posted), eventBus: new ShenoraEventBus() });
@@ -97,7 +97,7 @@ describe('BaseModuleService', () => {
     service.getAll().catch(() => {}); // never acked; the afterEach reset rejects it
 
     expect(posted).toHaveLength(1);
-    expect(posted[0]?.module).toBe('TODO');
+    expect(posted[0]?.module).toBe('NOTES');
     expect(posted[0]?.type).toBe('GET_ALL');
   });
 
@@ -108,9 +108,9 @@ describe('BaseModuleService', () => {
     const shared: IpcRequest[] = [];
     configureBridge({ transport: recordingTransport(shared), eventBus: new ShenoraEventBus() });
 
-    class TodoService extends BaseModuleService<TodoRequests> {
+    class NoteService extends BaseModuleService<NoteRequests> {
       constructor() {
-        super('TODO', bridge);
+        super('NOTES', bridge);
       }
 
       getAll() {
@@ -120,7 +120,7 @@ describe('BaseModuleService', () => {
 
     // Swallow the rejection: nothing acks these requests, and the afterEach reset disposes the bridge,
     // which rejects everything still pending. Vitest fails the run on an unhandled rejection.
-    new TodoService().getAll().catch(() => {});
+    new NoteService().getAll().catch(() => {});
 
     expect(explicit).toHaveLength(1);
     expect(shared).toHaveLength(0);

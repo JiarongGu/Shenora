@@ -4,6 +4,7 @@ import { ShenoraBridge } from './bridge.js';
 import { installDevInterceptor, type DevIpcEntry } from './devInterceptor.js';
 import { ShenoraEventBus } from './eventBus.js';
 import type { ShenoraTransport } from './transport.js';
+import { IpcCategories } from './types.js';
 
 interface InterceptorGlobal {
   call: (module: string, type: string, payload?: unknown, scope?: string) => Promise<unknown>;
@@ -30,7 +31,7 @@ describe('installDevInterceptor', () => {
       post: (message) => {
         // Echo success immediately so recorded calls complete.
         const request = JSON.parse(message) as { id: string };
-        queueMicrotask(() => listener?.(JSON.stringify({ category: 'ipc', id: request.id, success: true, data: 'ok' })));
+        queueMicrotask(() => listener?.(JSON.stringify({ category: IpcCategories.ipc, id: request.id, success: true, data: 'ok' })));
       },
       subscribe: (l) => {
         listener = l;

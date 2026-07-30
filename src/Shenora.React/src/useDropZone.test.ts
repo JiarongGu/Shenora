@@ -3,46 +3,17 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
-import type { ShenoraTransport } from './transport.js';
 import type { IpcRequest } from './types.js';
 import { DROP_ZONE_MODULE, useDropZone } from './useDropZone.js';
-
-class FakeTransport implements ShenoraTransport {
-  posted: IpcRequest[] = [];
-  autoAck = true;
-  private listener?: (message: string) => void;
-  private unacked: string[] = [];
-
-  post(message: string): void {
-    const request = JSON.parse(message) as IpcRequest;
-    this.posted.push(request);
-    if (this.autoAck) {
-      queueMicrotask(() =>
-        this.listener?.(JSON.stringify({ category: 'ipc', id: request.id, success: true })));
-    } else {
-      this.unacked.push(request.id);
-    }
-  }
-
-  ackAll(): void {
-    for (const id of this.unacked.splice(0))
-      this.listener?.(JSON.stringify({ category: 'ipc', id, success: true }));
-  }
-
-  subscribe(listener: (message: string) => void): () => void {
-    this.listener = listener;
-    return () => {
-      this.listener = undefined;
-    };
-  }
-
-  routes(): string[] {
-    return this.posted.map((r) => r.type);
-  }
-}
+import { FakeTransport } from './testing/fakeTransport.js';
 
 function createFixture() {
   const transport = new FakeTransport();
+  // These zones must reach the "registered" state, so the fixture acks. This was the local fake's
+  // class default; the shared one defaults to OFF (three of the four suites it replaced reply by
+  // hand), so it is set explicitly here — the one test that needs acks held back overrides it back
+  // to false, and that override is only meaningful if the default here is true.
+  transport.autoAck = true;
   const bus = new ShenoraEventBus();
   const bridge = new ShenoraBridge({ transport, eventBus: bus });
   const element = document.createElement('div');
