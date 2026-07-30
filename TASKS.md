@@ -936,14 +936,42 @@ interface. So swapping the IPC substrate is **two adapters, not 28 module rewrit
 Verify that both chokepoints still hold before committing to the plan — it is the whole basis of the
 sizing.
 
-**The model mismatch to design for.** Its IPC is FLAT and UNCORRELATED — `{ type: "module.action",
-…payload }` posted fire-and-forget, with everything coming back as a pushed event stream
-discriminated by `type`. Shenora's is correlated request/response plus a separate notification
-channel. The mapping is not mechanical: a request whose result arrives later as an event has no
-response to correlate. **Per D21/`generic-library`, the compat lives in the ADOPTER's shim, never in
-the kit's envelope** — the first adopter's migration convenience is exactly the pull that must be
-resisted here. If the shim turns out to need something the kit genuinely lacks, that is a kit gap to
-fix on its own merits, recorded as such.
+**The two models, and which one is the DEFAULT (user direction, 2026-07-31 — corrects the first
+scoping pass).** The target's IPC is FLAT and UNCORRELATED — `{ type: "module.action", …payload }`
+posted fire-and-forget, with everything coming back on a pushed event stream discriminated by
+`type`. The first pass scoped that as legacy to be bridged away from. **That was backwards.** For a
+desktop shell the event pipe is the correct default and request/response is the special case, for two
+reasons the kit's own docs already establish:
+
+- **It frees the UI thread.** The dispatch pipeline preserves the caller's synchronization context
+  BY DESIGN (`.claude/knowledge/ipc-contracts.md`: "transports dispatch on the UI thread and every
+  handler's synchronous segment stays there"), so a request/response handler's synchronous segment
+  runs ON the UI thread. This repo already pays that knowingly in one place —
+  `WindowCommandFacade.Post` documents `START_DRAG` blocking for the whole OS modal loop for exactly
+  this reason. Making request/response the default generalises that stall to the whole app. Posting
+  and answering with events lets the host move the work off the UI thread and keeps the window live.
+- **A correlated call has a deadline; real work does not.** The client's `invoke` defaults to a 30 s
+  timeout, which is meaningless for anything substantial.
+
+So: **request/response for quick, UI-thread-safe calls** (read a bit of state, toggle a window — what
+`WindowCommandFacade` uses it for); **post + event stream for everything else**, which is most of an
+app. The adapters in P6.4 must PRESERVE the target's model, not migrate it.
+
+What is genuinely wrong in the target is narrower than "it doesn't use request/response": it is the
+missing CORRELATION. With no id, a result or an error cannot be attributed to the invocation that
+caused it — its dispatcher emits a generic `error` event and the client cannot tell which action
+failed. That is worth fixing; the event-stream shape is not.
+
+**And this exposes a kit gap, found before the adoption rather than by it — fix it before 1.0:**
+`@shenora/react`'s bridge has exactly ONE outbound call, `invoke()`, which allocates a correlation
+entry, awaits, and times out. **There is no fire-and-forget send.** So the kit currently pushes every
+page→host call down the UI-thread-coupled, deadline-bearing path — i.e. it makes the wrong thing the
+default, which is precisely the complaint above. Design the missing half deliberately (a `post`/`send`
+that does not await, plus a documented convention for correlating a streamed result back to the
+invocation that started it — a handle returned by a quick request/response START is the obvious
+shape, and it also gives cancellation and progress somewhere to live). Per D21 the ADOPTER's shim
+still owns any wire-format compat; this item is about the kit lacking a first-class path, not about
+carrying someone's envelope.
 
 #### Increments (keep it runnable at every step — that is the phase's standing rule)
 
@@ -962,12 +990,24 @@ fix on its own merits, recorded as such.
   maps a virtual host name to a folder on disk, while the kit serves through `WebResourceRequested`
   with an embedded-resource provider and a dev-URL switch. The kit's own no-cache-HTML policy and the
   stale-bundle footgun the survey recorded both live at this seam.
-- [ ] **P6.4 — The IPC swap, via the two adapters.** A client shim mapping `post`/`onMessage` onto
-  the bridge, and a host adapter presenting its module interface to `MessageDispatcher` — so all 28
-  modules and all ~148 call-sites keep working while the substrate changes underneath. Correlated
-  request/response then gets adopted per-module, at whatever pace, with the shim as the fallback.
-  **This is the increment that tests D21 for real**; write down every "the framework almost fits,
-  but…" as it happens, because that list is the phase's most valuable output.
+- [ ] **P6.3a — KIT WORK, and it blocks P6.4: give the client a fire-and-forget send.** Today
+  `@shenora/react`'s bridge has exactly one outbound call, `invoke()`, which allocates a correlation
+  entry, awaits a response and times out at 30 s — so the kit makes the UI-thread-coupled,
+  deadline-bearing path the ONLY path, i.e. the wrong default (see the section above). Add the
+  missing half: a send that does not await, plus a documented convention for correlating a streamed
+  result back to the invocation that started it — a handle returned by a quick request/response START
+  is the obvious shape, and it gives progress and cancellation somewhere to live. Public surface, so
+  it must land before P7 freezes SemVer. Mirror it on the host side (a route that answers with
+  events rather than a response) and check `BaseFacade`/`Done()` still read correctly for it. A client shim
+  mapping `post`/`onMessage` onto the bridge, and a host adapter presenting its module interface to
+  `MessageDispatcher` — so all 28 modules and all ~148 call-sites keep working while the transport,
+  the error boundary, the batching and the ready gate change underneath. **Not a migration to
+  request/response:** per the section above, posting and answering with events is the right default
+  here, so the adapters preserve it and request/response is adopted only where a call is quick and
+  UI-thread-safe. What SHOULD change is the missing correlation, so a result or an error can be
+  attributed to the invocation that caused it. **This is the increment that tests D21 for real**;
+  write down every "the framework almost fits, but…" as it happens — that list is the phase's most
+  valuable output, and the item below is the first entry, found before the adoption even started.
 - [ ] **P6.5 — Portability (D20).** Its `Core` project is ALREADY `net10.0` while the 28 modules sit
   in the Windows host project, so the portable-facade pattern has a home waiting. Move facades there
   against the Core contracts (`H4.3` proves the pattern on this repo's sample). Feed the answer back
