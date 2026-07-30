@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 import { debounce, randomId } from './internal.js';
@@ -25,7 +25,12 @@ export interface DropZoneFileDrop {
  */
 export interface UseDropZoneOptions {
   /** The element the native overlay tracks. */
-  targetRef: React.RefObject<HTMLElement | null>;
+  // `RefObject` is IMPORTED, not read off the UMD global `React`. Writing `React.RefObject` here
+  // emitted a `.d.ts` that names `React` with no import, so it only resolved when the consumer's
+  // program happened to contain `@types/react` globally — a consumer with `"types": ["node"]` got
+  // TS2503 out of a declaration file they cannot edit. Found by the P6.4 adapter probe; P6.1's npm
+  // consumer missed it because its own tsconfig pulled `@types/react` in.
+  targetRef: RefObject<HTMLElement | null>;
   /** Called with the dropped OS file paths. */
   onDrop: (files: string[], drop: DropZoneFileDrop) => void;
   /** False = zone torn down (same as unmount). Default true. */

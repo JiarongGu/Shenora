@@ -313,6 +313,25 @@ at the first list and missed five more breaking changes.
   Re-send the rectangles whenever your layout changes; they are a snapshot, and a stale one moves the
   hit-test off the button the user can see. Opt-in throughout: register nothing and every message
   falls through exactly as before.
+- **`ShenoraEventBus.subscribeToAll` / `.subscribeToModule`** — the two broad subscription breadths
+  the client was missing (P6.4). The host's `IEventBus` had shipped `SubscribeToAll`/`SubscribeToModule`
+  from the start and `WebViewIpcBridge` itself consumes the former, so the client was the asymmetric
+  half of one concept: it could only subscribe to an exact `(module, type)`, which is unusable for any
+  observer that cannot enumerate the event vocabulary up front — a plug-in-contributed event stream, a
+  diagnostics or telemetry tap, a bridge folding the whole stream into another state library, or an
+  adoption shim keeping a legacy "every host message" handler alive. Both return an unsubscribe
+  function (React-effect friendly) and honour the same scope rule as `subscribe`.
+  **Delivery is narrowest-first — exact pair, then module, then catch-all** — so a broad observer never
+  runs ahead of the feature code it observes. Unlike the host, the breadths are NOT expressed as a `"*"`
+  sentinel inside the key: separate collections mean a module or type an app legitimately names `*`
+  can never silently become a catch-all (the `'\0'`-join lesson, applied before it could be earned
+  twice — there is a test pinning it). `getSubscriptionCount(module, type)` now answers "how many
+  listeners would receive this", counting the broad subscriptions that match; with no arguments it
+  still counts everything.
+  Found by building the two adoption adapters against the public surface and hitting the wall: the
+  workaround — tunnelling every event through one reserved `(module, type)` pair — is expressible, but
+  it makes adoption all-or-nothing per event, because tunnelled events are invisible to
+  `useShenoraEvent` and `createShenoraStore`.
 
 ### Changed
 
@@ -780,3 +799,14 @@ app's — frames out, input text back.
   snippet adopters copy. The sample also gained the CSS rule behind its `dropClassName`, which it had
   been passing with nothing to style it — so the e2e subject can finally demonstrate the drop zone's
   HOVER feedback and not only the drop.
+- **`@shenora/react`'s shipped types no longer require `@types/react` to be in your global program.**
+  `UseDropZoneOptions.targetRef` was declared as `React.RefObject<HTMLElement | null>` — the UMD global
+  `React` — while the source imported only the three hooks it used. The emitted
+  `dist/useDropZone.d.ts` therefore NAMED `React` with no import, so it resolved only when the
+  consumer's program happened to pull `@types/react` in globally. A consumer with `"types": ["node"]`
+  in their tsconfig — entirely reasonable, and the default for a non-React entry point — got
+  **TS2503 "Cannot find namespace 'React'" out of a declaration file they cannot edit**. Fixed by
+  importing `type RefObject`; the type is identical, so nothing source-breaking.
+  Found by P6.4's client-adapter probe. P6.1's npm consumer missed it because its own tsconfig
+  imports React in a `.tsx`, which loads the global — a consumer probe only ever tests the
+  configuration it happens to have, which is the transferable lesson here rather than the one-liner.

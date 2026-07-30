@@ -66,6 +66,22 @@ single component**. A failed `post` has no promise to reject, so it is reported 
 configureBridge({ onPostError: (failure) => log.error(failure.module, failure.type, failure.error) });
 ```
 
+### Observing the whole stream
+
+`useShenoraEvent` and `createShenoraStore` listen for an exact `(module, type)`. When the vocabulary
+isn't knowable up front — plug-in-contributed events, a diagnostics tap, or an adoption shim keeping
+a legacy "every host message" handler alive while features migrate one at a time — subscribe broadly
+instead. Both mirror the host's `IEventBus` and return an unsubscribe:
+
+```ts
+const off = eventBus.subscribeToAll((event) => log.debug(event.module, event.type, event.payload));
+eventBus.subscribeToModule('DEPLOY', (event) => audit(event));   // every type from one module
+```
+
+Delivery is narrowest-first — exact pair, then module, then catch-all — so a broad observer never
+runs ahead of the feature code it is observing. Prefer `subscribe` when you know the pair: a
+catch-all wakes for every event on the bus.
+
 Pure-UI development in a plain browser: pass a `fallback` to `configureBridge` (gated behind
 `import.meta.env.DEV`) to answer requests with canned data. Other shells (WebSocket,
 mobile/Capacitor) implement the small `ShenoraTransport` seam and speak the same envelopes.

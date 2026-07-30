@@ -5,6 +5,69 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P6.3 + P6.4: the adapters an adopter must write, written once — and what they found
+
+P6 promises an adopting app that swapping the IPC substrate is **two adapters, not hundreds of
+edits**: a client shim over its existing `post`/`subscribe` pair, and a host adapter presenting its
+own module interface to `IMessageDispatcher`. Per D21 those live in the adopter's repo, so what this
+repo owes is only that both are EXPRESSIBLE against the public surface. That was verified the way this
+project verifies things — by building them and running them, as throwaways under `devtools/_p6-adapters/`
+(gitignored, never packed): 17 assertions on the host side, 18 on the client, each naming what it read,
+with preconditions on a separate path that **refuses to judge on an empty read** rather than comparing
+nothing and reporting green. Both were sabotage-verified.
+
+They are expressible. The host adapter is ~40 lines over `BaseFacade` and needs **no Windows
+reference**, so it re-proves D20 for the adapter layer as a side effect. The client shim is ~40 lines
+over `ShenoraBridge`. Adoption also demonstrably *buys* something rather than merely preserving: a
+failed one-way send is now attributable to the action that caused it, which the flat uncorrelated wire
+could not do, and a throwing handler crosses as `UNKNOWN_ERROR` plus a type name instead of raw
+exception text.
+
+**Two real defects, both closed.** The shipped `@shenora/react` declarations named the UMD global
+`React` — `dist/useDropZone.d.ts` referenced a type it never imported, so it resolved only when the
+CONSUMER's program happened to contain `@types/react` globally, and a perfectly ordinary
+`"types": ["node"]` produced TS2503 out of a file the consumer cannot edit (`docs/FIX-LOG.md`). And
+`ShenoraEventBus` could only subscribe to an exact `(module, type)` while the host's `IEventBus` had
+shipped `SubscribeToAll`/`SubscribeToModule` from the start — the client was the asymmetric half of one
+concept, with no supported expression for any observer that cannot enumerate the event vocabulary up
+front. Both breadths are now public, delivered narrowest-first, with breadth held in separate
+collections rather than a `"*"` sentinel so an app string can never silently become a catch-all.
+
+**The finding underneath both:** P6.2's mapping guide, written against the API baselines, exposed no
+gap at all; the adapters exposed two. A document can be written from the list of names, so it only ever
+catches a name that does not exist. **Only code that has to EXPRESS something finds a capability that
+is missing** — which is the argument for keeping a throwaway consumer in every future phase that
+claims a surface is sufficient. The corollary cost this pass too: P6.1's npm consumer exists to catch
+exactly the `.d.ts` class and missed it, because its own tsconfig pulled `@types/react` in. A consumer
+probe only tests the configuration it happens to have.
+
+Three further "almost fits" were recorded rather than built, per the checkpoint discipline: there is no
+`CancellationToken` on the dispatch surface (an application-lifetime token in the facade's constructor
+covers the adapter, and per-request cancellation is deliberately an app-level CANCEL route carrying the
+`operationId` — what an operation IS belongs to the app); `IEventBus` has no synchronous emit, so an
+adapter discards a task at each emit site, which was CHECKED rather than assumed to be safe (every
+handler runs through an internal guard, so the task cannot fault from a subscriber); and
+`IpcErrorMapping` stays `internal`, because a `BaseFacade` subclass gets the whole error boundary free.
+The one thing the kit cannot fix from its side is also recorded: a foreign `HandleAsync` returning
+`Task` cannot say "I did not recognise this action", so the adapter must report success for a message
+nobody handled — pinned by a test so an adopter is not surprised by it.
+
+**The phase review found a defect in the new code itself** — worth recording because it only exists
+because of the new breadths. Delivering the three levels as three separate lookups meant a handler
+could subscribe broadly *while handling* and receive the very event it was handling: copying each set
+at iteration was sufficient while `emit` touched exactly one set, and silently stopped being
+sufficient at three. `emit` now snapshots all three before invoking anything, pinned by a test. That
+test then caught the reviewer out once more: the first sabotage written to prove it was itself
+vacuous — it rebuilt the array with `.concat`, which JavaScript evaluates just as eagerly, so it
+tested nothing and passed. Only restoring the genuinely lazy shape failed it.
+
+`docs/ADOPTION.md` gained the adapter shapes, the firehose guidance, and the trap worth more than the
+finding: **an `OperationException`'s message crosses the wire verbatim by design**, so wrapping a
+caught exception as `new OperationException(code, message: ex.Message)` bypasses the no-raw-exception-
+text boundary completely — and it is exactly the line an adopter would port from a dispatcher that
+emitted `$"{action} failed: {ex.Message}"`. Proven by sabotage: with the wrapper in, a planted
+connection string reached the client.
+
 ### 2026-07-31 — P5.6: frameless caption buttons that behave like real ones
 
 The page-drawn minimize/maximize/close had no hover affordance and no **Snap Layouts**, and the first
@@ -1334,12 +1397,24 @@ and a deployment stack, and its desktop side now carries 28 IPC modules against 
 call-sites. It is still the right first target, but not for the reason originally given. What makes
 it tractable is that both sides funnel through ONE seam each — a single client post/subscribe pair
 and a single host dispatcher behind a one-method module interface — so swapping the IPC substrate is
-two ADAPTERS rather than 28 rewrites. The itemised increments (consume → shell primitives → the
-WebView2 host → the IPC swap → portability → feed back) are in `TASKS.md` `### P6`, and the model
-mismatch they have to bridge is that the target speaks flat, uncorrelated, fire-and-forget IPC with
-an event stream back, against Shenora's correlated request/response. Per D21 that compat lives in
-the ADOPTER's shim and never in the kit's envelope — a question the 2026-07-30 extraction survey had
-deliberately left open until adoption time, now decided.
+two ADAPTERS rather than 28 rewrites — **both since written and run against the public surface**
+(P6.4, above): expressible, and the exercise found two real defects that the guide alone had not.
+
+**Reframed 2026-07-31 (user direction): this repo readies the LIBRARY and never edits the sibling.**
+The adopting app's own session does the adoption, working from `docs/ADOPTION.md`; a sibling is a
+CHECKPOINT that answers "is this capability present and safe?", never a spec to mirror. The staged
+increments that used to be listed here as work for THIS repo are now that guide's Stages 1–4.
+**P6.1/6.2/6.3/6.3a/6.4 are done; P6.5 (portability guidance) and P6.6 (feed back before P7 freezes
+SemVer) remain** — see `TASKS.md` `### P6`.
+
+On the model mismatch they bridge: the target speaks flat, uncorrelated, fire-and-forget IPC with an
+event stream back. That is **not** a legacy shape to migrate away from — for a desktop shell the event
+pipe is the correct DEFAULT and correlated request/response is the special case, because the dispatch
+pipeline preserves the caller's synchronization context by design (measured: the same 3 s of work
+stalls the UI thread 2 027 ms in-route, 0 ms handed off). So the adapters PRESERVE the model; what
+they add is the missing correlation. Per D21 any wire-format compat lives in the ADOPTER's shim and
+never in the kit's envelope — a question the 2026-07-30 extraction survey had deliberately left open
+until adoption time, now decided.
 
 ### P7 — Stabilisation + 1.0 (brief Phase 6)
 

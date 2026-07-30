@@ -14,6 +14,31 @@ entry template:
 
 ## 2026-07-31
 
+### P6.4: the npm package's shipped types needed `@types/react` in the CONSUMER's global program
+
+- **Symptom.** A consumer type-checking against the published `.d.ts` with `"types": ["node"]` in its
+  tsconfig failed with `error TS2503: Cannot find namespace 'React'` — pointing at
+  `dist/useDropZone.d.ts`, a declaration file the consumer cannot edit. Nothing in the consumer
+  mentioned drop zones; importing anything from the barrel was enough.
+- **Root cause.** `src/Shenora.React/src/useDropZone.ts` declared `UseDropZoneOptions.targetRef` as
+  `React.RefObject<HTMLElement | null>` — the **UMD global** `React` — while importing only
+  `useEffect`/`useRef`/`useState` from `'react'`. TypeScript emits that annotation into the `.d.ts`
+  verbatim, so the shipped declaration NAMES `React` with no import and resolves only when the
+  consumer's program happens to contain `@types/react` globally. Introduced in `43f18ad` (P4) and
+  invisible ever since, because every program that had looked at it also had React in it.
+- **Fix.** `import { type RefObject } from 'react'` and annotate with `RefObject<…>`
+  (`src/Shenora.React/src/useDropZone.ts`). The type is identical, so nothing source-breaking; the
+  emitted `dist/useDropZone.d.ts` now carries its own import and is self-contained.
+- **Verify.** Mechanism NAMED before the fix, not guessed: adding `"react"` to the probe's `types`
+  array made the error vanish and removing it brought it back. After the fix the probe type-checks and
+  RUNS under `"types": ["node"]` (`devtools/_p6-adapters/client`, 18 assertions), and
+  `dev.mjs verify` passes 507 dotnet + 84 vitest.
+- **Why five phases of gates missed it.** P6.1's npm consumer exists to catch exactly this class and
+  did not, because its own `tsconfig.json` type-checks a `.tsx` that imports React — which loads the
+  global. **A consumer probe only tests the configuration it happens to have.** The invariant is in
+  `.claude/knowledge/ipc-contracts.md`: a shipped `.d.ts` must not name a type it did not import.
+- **Commit:** _pending_
+
 ### P6.1: a consumer silently restored a months-old package from the NuGet global cache
 
 - **Symptom.** A scratch consumer referencing only the leaf package failed to compile with "the type

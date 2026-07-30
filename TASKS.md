@@ -1018,16 +1018,32 @@ Known capability LIMITS, recorded rather than guessed at:
   piece, in the order an app should adopt them (shell primitives first — they carry no IPC
   dependency), what stays the app's own, and the migration notes for each. This is the artefact the
   sibling's session works from, so it must stand alone without this conversation.
-- [ ] **P6.3 — Close whatever the guide exposes as missing.** Writing the mapping is what surfaces a
-  gap; fix it here rather than asking the adopter to work around it.
-- [ ] **P6.4 — Keep the IPC-substrate story honest.** The adapters an adopter writes (client
-  post/subscribe shim + a host adapter over their module interface) live in THEIR repo, per D21. What
-  the kit owes is that both are expressible against the public surface — verify by writing them once
-  as a throwaway, not by shipping them.
+- [x] **P6.3 — DONE (2026-07-31): close whatever the guide exposes as missing.** Writing the guide
+  (P6.2) exposed nothing; writing the ADAPTERS (P6.4) exposed two things and both are closed — see
+  below. That asymmetry is the finding worth carrying: a mapping table can be written from the API
+  list, so it only catches names that do not exist. Only code that must actually *express* something
+  finds a capability that is missing.
+- [x] **P6.4 — DONE (2026-07-31): both adapters written, RUN, and sabotage-verified.** Throwaways in
+  `devtools/_p6-adapters/{host,client}` (gitignored, never shipped — D21): a `BaseFacade` adapter over
+  a foreign one-method module contract (17 assertions) and a `post`/`onMessage` shim over the bridge
+  (18 assertions). The host adapter needs no Windows reference, so it re-proves D20 for the adapter
+  layer. **Two real findings, both fixed:** the shipped `.d.ts` named the UMD global `React` and so
+  required `@types/react` in the CONSUMER's global program (`FIX-LOG`), and the client event bus could
+  not express a catch-all subscription while the host's `IEventBus` had shipped `SubscribeToAll`/
+  `SubscribeToModule` all along — closed by adding both breadths (`CHANGELOG` `### Added`).
+  Recorded, deliberately NOT built: no `CancellationToken` on the dispatch surface (an app-lifetime
+  token in the facade constructor covers it; per-request cancellation is an app-level CANCEL route by
+  design), no synchronous `IEventBus` emit (discarding the task is safe by construction — checked, not
+  assumed), and `IpcErrorMapping` staying `internal` (a `BaseFacade` subclass gets the boundary free).
 - [ ] **P6.5 — Portability (D20).** Already proven through a PACKAGE reference in P6.1's `portable`
-  consumer. What remains is guidance: how an app moves its facades into a `net10.0` project.
+  consumer, and again by P6.4's host adapter compiling as `net10.0`. What remains is guidance: how an
+  app moves its facades into a `net10.0` project. Cheap for the surveyed target — its `Core` project
+  is ALREADY `net10.0` while its modules sit in the Windows host project, so the portable-facade
+  pattern has a home waiting. Feed the answer back as a D20 amendment: "are these the right portable
+  contracts?" becomes a concrete question answered by a real app.
 - [ ] **P6.6 — Feed back, then re-evaluate the other targets.** Every API change P6 argues for lands
-  BEFORE 1.0 (P7 freezes SemVer).
+  BEFORE 1.0 (P7 freezes SemVer). Then evaluate the other two desktop siblings and the server-backed
+  app (shell-only profile).
 
 #### Increments (keep it runnable at every step — that is the phase's standing rule)
 
@@ -1044,17 +1060,13 @@ Known capability LIMITS, recorded rather than guessed at:
   per `docs/RELEASING.md`, npm tarball for `@shenora/react`. Nothing adopted yet; this proves the
   consumption path end-to-end from outside this repo. **This is also P1.2's blocker in disguise** —
   a real external consumer is the dry run.
-- [ ] **P6.2 — Shell primitives only (`Shenora.WinForms`), zero IPC churn.** The package has no IPC
-  dependency, so this is the increment with all of the win and none of the risk: window-state
-  persistence (the survey found the same window-state code duplicated line-for-line across two
-  windows), `OptimizedForm`, tray, single-instance, clipboard, file dialogs. Delete the app's copies.
-  Its drop-zone trio is annotated as a port of the primary sibling's — that is the THIRD copy, and
-  retiring it is the clearest possible proof the kit is worth adopting.
-- [ ] **P6.3 — The WebView2 host (`Shenora.WebView2`), still no IPC swap.** `WebViewHost` +
-  options + the resource provider replace its hand-rolled init. **Decide the serving model here:** it
-  maps a virtual host name to a folder on disk, while the kit serves through `WebResourceRequested`
-  with an embedded-resource provider and a dev-URL switch. The kit's own no-cache-HTML policy and the
-  stale-bundle footgun the survey recorded both live at this seam.
+> ⚠ The staged-adoption increments that used to sit here — "shell primitives INTO the app", "the
+> WebView2 host INTO the app" — were **deleted on 2026-07-31**, not left as pending work. They
+> instructed this repo to edit the sibling, which the user direction above supersedes: Shenora readies
+> the LIBRARY and the adopting app's own session does the adoption, working from `docs/ADOPTION.md`
+> (whose Stages 1 and 2 are exactly those two increments, written for the adopter). A stale item that
+> contradicts a standing direction is worse than no item — the next session acts on it.
+
 - [x] **P6.3a — DONE (2026-07-31): the client can send one-way, and shares module state.**
   Landed `ShenoraBridge.post` + `onPostError`/`maxTrackedPosts` and `createShenoraStore`, with 13
   new vitest cases; ALL FIVE new tripwires sabotage-verified (one was vacuous first time — a
@@ -1101,14 +1113,7 @@ Known capability LIMITS, recorded rather than guessed at:
   attributed to the invocation that caused it. **This is the increment that tests D21 for real**;
   write down every "the framework almost fits, but…" as it happens — that list is the phase's most
   valuable output, and the item below is the first entry, found before the adoption even started.
-- [ ] **P6.5 — Portability (D20).** Its `Core` project is ALREADY `net10.0` while the 28 modules sit
-  in the Windows host project, so the portable-facade pattern has a home waiting. Move facades there
-  against the Core contracts (`H4.3` proves the pattern on this repo's sample). Feed the answer back
-  as a D20 amendment — "are these the right portable contracts?" becomes a concrete question answered
-  by a real app.
-- [ ] **P6.6 — Feed back, then re-evaluate the other targets.** Every API change P6.1–P6.5 argues for
-  lands BEFORE 1.0 (P7 freezes SemVer). Then evaluate the other two desktop siblings and the
-  server-backed app (shell-only profile).
+*(P6.5 and P6.6 are listed once, under “Still to do for adoption readiness” above.)*
 
 #### Standing constraints for the phase
 

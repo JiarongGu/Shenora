@@ -95,6 +95,37 @@ existing modules and call sites keep working while the transport, error boundary
 gate change underneath. **Those adapters belong in your repo, not in the kit** — the kit's envelope
 stays uncontaminated by any one app's wire format (D21).
 
+Both were written against this surface and run before this guide claimed they could be
+(P6.4) — the shapes below are what that produced, not a sketch.
+
+- **Host side.** Derive from `BaseFacade`, one instance per existing module, and let
+  `RouteMessageAsync` call your module's handler. `request.Type` is your action; rebuild whatever
+  document shape your handler expects from `request.Payload` (if your client spread the payload at
+  the top level, nest/unnest here — it is a few lines). Return `null`: your modules answer with
+  events, which is the `post` shape, and answering at all is what buys correlation. Emit through
+  `IEventBus.EmitAsync(module, type, payload)`. Nothing about this needs Windows, so the adapter can
+  live in a `net10.0` project (see Stage 4).
+- **Client side.** `bridge.post(module, type, { payload })` for the send; `eventBus.subscribeToAll`
+  for a legacy "every host message" handler. Emit real `(module, type)` pairs from the host adapter
+  rather than tunnelling everything through one reserved pair — that is what lets a migrated
+  component use `useShenoraEvent`/`createShenoraStore` while unmigrated stores still see the same
+  event through the firehose. Tunnelled events are invisible to both, which makes migration
+  all-or-nothing per event.
+
+> ⚠ **The trap that quietly undoes the error boundary.** Do NOT wrap a caught exception as
+> `throw new OperationException(code, message: ex.Message)`. An `OperationException`'s message crosses
+> the wire VERBATIM by design — it is *your* words for an expected failure — so that one line puts raw
+> exception text (paths, connection strings) back on the page. It is exactly the line you would port
+> if your old dispatcher emitted `$"{action} failed: {ex.Message}"`. Let the exception escape instead:
+> `BaseFacade` maps it to `UNKNOWN_ERROR` plus the exception's type name and logs the detail host-side.
+
+Two smaller things the adapters run into, so you don't have to discover them:
+**there is no `CancellationToken` on the dispatch surface** (pass your own application-lifetime token
+into the facade's constructor; per-request cancellation is an app-level CANCEL route carrying the
+`operationId`, see the one-way design), and **`IEventBus` has no synchronous emit** — discarding the
+`EmitAsync` task is safe by construction, because every handler runs through an internal guard, so the
+returned task cannot fault from a subscriber.
+
 What you gain immediately: correlated request/response where you want it, a structured error
 boundary that never leaks exception text, batched notifications, and a ready gate that buffers events
 until the page is listening.
@@ -107,7 +138,9 @@ until the page is listening.
 - **Shared, host-fed state** (progress, status — the many-watchers case): `createShenoraStore` opens
   ONE subscription per event type however many components read it, and takes a `snapshot` on the
   first subscriber so a component that mounts mid-operation is not empty. Use `useShenoraEvent` for a
-  one-off reaction in a single component.
+  one-off reaction in a single component, and `eventBus.subscribeToModule`/`subscribeToAll` when the
+  event vocabulary isn't knowable up front — plug-in-contributed types, a diagnostics tap, the legacy
+  firehose above.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.
 

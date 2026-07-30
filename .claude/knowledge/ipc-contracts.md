@@ -32,6 +32,33 @@ transport, or building the P6 adoption shims.
   `UseErrorHandler`, `BaseFacade`, `PayloadHelper` (the wire message carries only the key — the
   serializer's text lives in the inner exception), and the bridge's own fallback. New error
   paths get a `DoesNotContain` leak test (the suite has precedents).
+- **An `OperationException`'s MESSAGE crosses the wire verbatim — so never build one from
+  `ex.Message`.** The no-raw-exception-text rule above has exactly one sanctioned channel through it:
+  `OperationException` is the app describing an EXPECTED failure in its own words, and
+  `IpcErrorMapping` passes its code, parameters and message through untouched. That makes
+  `catch (Exception ex) { throw new OperationException(code, message: ex.Message); }` a complete
+  bypass of the boundary — and it is the natural line to write when porting a host whose dispatcher
+  did `$"{action} failed: {ex.Message}"`, which is how the P6.4 adapter probe found it (sabotage:
+  with the wrapper in place a planted connection string reached the client; without it, the response
+  carried only `UNKNOWN_ERROR` + the exception type name). Let unexpected exceptions ESCAPE to the
+  boundary; reserve `OperationException` for failures the app can name.
+- **The client event bus mirrors the host's `IEventBus` in BREADTH, not just in the wire types.**
+  Three levels — exact `(module, type)`, `subscribeToModule`, `subscribeToAll` — because an observer
+  that cannot enumerate the vocabulary up front (plug-in-contributed events, a diagnostics tap, an
+  adoption shim's legacy firehose) otherwise has no supported expression at all: the client shipped
+  only the exact pair for five phases while the host had all three from the start, and
+  `WebViewIpcBridge` itself consumes `SubscribeToAll`. Two rules that came with it: delivery is
+  **narrowest-first** (exact → module → all), so a broad observer never runs ahead of the feature
+  code it observes; and breadth is expressed as **separate collections, never a `"*"` sentinel in the
+  key**, or a module an app legitimately names `*` silently becomes a catch-all — the same class as
+  the `'\0'`-join collision below, pinned by a test before it could be earned twice.
+- **A shipped `.d.ts` must not name a type it did not import.** `UseDropZoneOptions.targetRef` was
+  written `React.RefObject<…>` — the UMD global — so the emitted declaration named `React` with no
+  import and compiled only when the CONSUMER's program happened to contain `@types/react` globally;
+  `"types": ["node"]` produced TS2503 out of a file the consumer cannot edit. Import the type
+  (`import { type RefObject } from 'react'`). The reusable half: **a consumer probe only tests the
+  configuration it happens to have** — P6.1's npm consumer missed this because its own tsconfig
+  pulled the global in, so vary the probe's tsconfig, don't just add another probe.
 - **The CLIENT's inbound handler must survive any valid JSON, not just any string.** A host message of
   literal `null` parses fine and then `parsed.category` throws a `TypeError` out of the transport
   listener — an uncaught page error with nothing above it to catch (P5.5 H2; the other primitives never

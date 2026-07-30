@@ -221,7 +221,9 @@ changes, noting them in `CHANGELOG.md`).
   `isShenoraAvailable`, `ShenoraBridge` (correlated `invoke` + timeout, one-way `post` +
   `onPostError` — no pending entry, no deadline, and a failed response reported rather than dropped;
   category routing, batch unbundling, `notifyReady` handshake, `fallback` seam for pure-UI browser
-  dev; lazy default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus`,
+  dev; lazy default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus` (three
+  subscription breadths mirroring the host's `IEventBus` — exact `(module, type)`,
+  `subscribeToModule`, `subscribeToAll` — delivered narrowest-first),
   `createShenoraStore` (a store fed by one module's event stream: ONE subscription however many
   components read it, `snapshot` on the first subscriber so a late mounter is not empty, built on
   React's `useSyncExternalStore` so the package imposes no state library),
