@@ -27,6 +27,16 @@ keeps the library reusable (adopted from the family's other library, where it's 
 - **Options records over magic values.** Every number/color/URL a source app hardcoded (dev port,
   background color, timeouts, batch intervals) becomes a documented option with the family-proven
   default.
+- **For a whole FEATURE: ship primitives + lifecycle hooks, not the product (D21).** The test —
+  *could a consumer build its own version of this product on our primitives, without adopting our
+  product decisions?* If not, we shipped too much, or too few hooks. Two symptoms to check for:
+  (a) a method that takes or returns **the source app's wire format** (an opaque JSON `string`
+  parameter is the tell — a consumer can't know what to pass without reading that app's client);
+  (b) a **UX decision** in the surface (which regions are "clickable", what the overlay looks like).
+  Both mean the product leaked in. And the mirror-image failure is just as real: no hook for
+  *ended/faulted*, so a consumer can't tell a dead session from a quiet one. Good in-repo examples:
+  `RenderSessionPool` (pool + session shipped, the app's render/analyze flows deliberately not) and
+  `LoginWindow` (window + protocol + driver SEAM, with one opt-in reference driver).
 - **Every public type earns its keep.** Default to `internal`; a type goes public when a consumer
   scenario needs it, not "for flexibility". Public surface is SemVer surface (API-surface
   baseline tests gate it from 1.0). **Cross-package consumption INSIDE the kit is a consumer

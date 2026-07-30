@@ -39,8 +39,11 @@ through, H6–H7 are pre-1.0 surface and consistency.
    a path-traversal fix must not wait behind a refactor.
 2. **The re-layer** (H4.1, its own commit) — `docs/2026-07-30-shenora-relayering-design.md`, D19+D20.
 3. **H4.2–H4.7** dedup on top — mechanical once the single owner exists.
-4. **H2 / H3 / H6 / H7** — several H2 items are marshal-related and DISSOLVE into step 2; re-check
-   them against the new code rather than fixing them twice.
+4. **H4.6 + H9** — the neutral session controller and the co-browse primitives/hooks redesign (D21).
+   Together, because H9.4 needs H4.6's base, and both are pre-1.0 breaking changes to the same types.
+5. **H2 / H3 / H6 / H7** — several H2 items are marshal-related and DISSOLVE into step 2; re-check
+   them against the new code rather than fixing them twice. Note H9.3 subsumes H2's co-browse
+   "root the screencast receiver / complete the channel" items — do them once, there.
 
 Standing rule for this phase: each batch ends with `dev.mjs verify` + a regression test per fixed
 defect, and every earned invariant lands in `.claude/knowledge/` (see H8) rather than only in a
@@ -551,6 +554,47 @@ would have argued a future session back to the pre-D19 position:
   the WinForms/sessions rule.
 - [ ] Then `node devtools/dev.mjs knowledge check` + `… knowledge footprint` (the always-loaded tier
   grew this pass — confirm the budget is still sane).
+
+**H9 — Co-browse: ship primitives + lifecycle hooks, not the product (D21) — AFTER the re-layer**
+
+User direction 2026-07-30: *"co-browse itself is a whole feature — you just need to provide enough
+interface for other systems to plug/hook onto its cycle; you don't really need to implement the entire
+business feature."* Rationale + the full surface audit: **D21**. Sequenced after H4.1/H4.6 on purpose —
+this is an API redesign and must not ride inside a package-boundary move. It is a **pre-1.0 breaking
+change** to `CoBrowseSession`, so it belongs in this phase, not after.
+
+Keep as primitives (the earned mechanics — do NOT churn these): `StartAsync`/`DisposeAsync`, `Frames`
+as the bounded latest-wins channel, the screencast ack protocol, and 1:1 viewport mirroring via
+`Emulation.setDeviceMetricsOverride` (NOT a physical resize).
+
+- [ ] **H9.1 — Replace `DispatchInputAsync(string)` with a typed input seam.** Today it takes the
+  source app's wire protocol as an opaque JSON string, so a consumer cannot know what to pass without
+  reading that app's client. Ship typed primitives instead (pointer move/down/up/wheel at FRACTION
+  coordinates, text insert, VK-mapped key) — the fraction-coordinate choice stays, it is what makes
+  the protocol resolution-independent. Keep the verbatim JSON mapping as an explicitly-named
+  **adoption shim** (e.g. a `CoBrowseInput.FromLegacyJson` parser) so the existing sibling migrates
+  mechanically, but the framework CONTRACT stops being one app's wire format. Also closes H6's
+  "`DispatchInputAsync` has no `CancellationToken`" item — add it while the signature changes anyway,
+  since adding it after 1.0 is binary-breaking.
+- [ ] **H9.2 — Move `ReadHotspotsAsync()` out of the core surface.** Returning a stringly-typed list
+  of "clickable rect fractions" is a co-browse UX decision, not a browser primitive. The app can run
+  its own script through the session controller. If a helper is still wanted, it ships as an
+  explicitly optional, TYPED extra — never as core surface, and never as `Task<string>`.
+- [ ] **H9.3 — Add the lifecycle hooks that are actually missing (this half is a live bug).** Nothing
+  signals the session ending or faulting: `ProcessFailed` is unwired (H4.4 wires it for pool
+  instances — do the same here), so a renderer crash leaves the frame channel never completed and the
+  app's reader **waiting forever**. Complete the channel on death and surface an ended/faulted hook
+  with a reason. Add frame geometry too (size/viewport, ideally per frame or via a viewport-changed
+  hook): today the app receives raw bytes with no geometry, so it cannot map input coordinates back —
+  which is why a caller ends up needing H9.1's protocol anyway.
+- [ ] **H9.4 — Land it on the neutral session controller from H4.6**, so `CoBrowseSession.Controller`
+  stops being typed `LoginWindowController`. That public member is the sharpest evidence for H4.6: a
+  co-browse consumer — nothing to do with signing in — must program against a login-named type, and
+  its busy-gate errors speak `LOGIN_BUSY`/`LOGIN_CANCELLED`. Free to fix now, breaking after 1.0.
+- [ ] **H9.5 — Prove the seam the way the render pool is proven:** the sample composes the *product*
+  (transport + a viewer) over the primitives, exactly as its `RENDER` route composes the pool. If the
+  sample cannot build a minimal co-browse product without reaching into internals, the seam is wrong.
+  Keep it small — this is a seam test, not a co-browse demo app.
 
 ### P1 — Skeleton tail
 

@@ -644,6 +644,15 @@ Consolidation has three strands:
    for and which is only cheap while nothing is published.
 3. **Roadmap revisit** — this section, plus the amendments to P6/P7/Later that follow from both.
 
+**And an API-shape correction** (user direction, 2026-07-30 — D21): for a whole application *feature*
+the kit ships **primitives + lifecycle hooks, not the product**. `CoBrowseSession` had it backwards —
+`DispatchInputAsync(string)` takes the source app's wire protocol as an opaque JSON string and
+`ReadHotspotsAsync` encodes a co-browse UX decision, while the hooks that make a feature extensible
+are missing (nothing signals the session ending or faulting, so a renderer crash leaves the frame
+channel never completed and the app's reader waiting forever). The kit's other two session families
+already got this right — the render pool ships the pool and the sample writes its own flow; the login
+window keeps policy in a driver seam. Tracked as `TASKS.md` H9, after the re-layer.
+
 **The phase also carries a structural change** (user direction after reading the review, approved
 2026-07-30): the two Windows shell packages become one layer — `Shenora.WebView2` depends on
 `Shenora.WinForms` — and the portable contracts plus the long-specified-never-built `IUiDispatcher`

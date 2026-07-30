@@ -164,3 +164,30 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   off Windows** — portable-in-signature is not the bar, which is why the whole window-state stack
   stays in `Shenora.WinForms` (window geometry is a desktop concept). Per D16 this pass ships NO
   mobile host or transport adapter — the seam, not the package.
+
+- **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns
+  the product.** (User direction, 2026-07-30: *"co-browse itself is a whole feature — you just need
+  to provide enough interface for other systems to plug/hook onto its cycle; you don't really need to
+  implement the entire business feature."*) The test for any feature-shaped addition: **could a
+  consumer build its own version of this product on our primitives, without adopting our product
+  decisions?** If not, we shipped too much — or we shipped too few hooks.
+  Shenora already followed this twice: `RenderSessionPool` ships the pool + session and deliberately
+  did NOT port the sibling's render/analyze flows (the sample writes its own `RENDER` route), and
+  `LoginWindow` keeps policy in a driver seam with `CookieLoginFlow` as ONE opt-in reference driver.
+  `CoBrowseSession` is the outlier, and the audit that produced this entry is concrete: `Frames`
+  (bounded latest-wins channel), `StartAsync`/`DisposeAsync` and the 1:1 device-metrics viewport
+  mirroring are genuine primitives — CDP screencast, its ack protocol and stale-frame dropping are
+  exactly what a library should absorb. But `DispatchInputAsync(string)` takes **the source app's wire
+  protocol as an opaque JSON string** (a consumer cannot know what to pass without reading that app's
+  client — "ship the consumer's shape" in its purest form, chosen for mechanical adoption), and
+  `ReadHotspotsAsync()` returns a stringly-typed clickable-rect list, which is a co-browse **UX**
+  decision. Meanwhile the hooks that make a feature extensible are MISSING: nothing signals the
+  session ending or faulting (`ProcessFailed` is unwired, so a renderer crash leaves the frame channel
+  never completed and the app's reader waiting forever) and frames carry no geometry, so an app cannot
+  map input coordinates. Target shape: session lifecycle + frames out + **typed** input in + hooks
+  (started / frame / navigated / ended-or-faulted) + the neutral session controller; transport,
+  viewer UI, hotspot UX, permissions and recording belong to the app.
+  Accepted cost: the sibling that already speaks the verbatim JSON protocol needs a thin mapping shim
+  at adoption — consistent with D15 (the app keeps a thin wrapper; the framework gains the proven
+  core). Tracked as `TASKS.md` P5.5 batch H9, deliberately AFTER the re-layer so an API redesign is
+  not mixed into a package-boundary move.
