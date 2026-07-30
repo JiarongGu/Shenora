@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ShenoraEventBus } from './eventBus';
+import { ShenoraEventBus } from './eventBus.js';
 
 describe('ShenoraEventBus', () => {
   it('delivers to exact module.type subscribers only', () => {

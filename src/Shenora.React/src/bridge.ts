@@ -1,6 +1,6 @@
-import { OperationError } from './errors';
-import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus';
-import { createWebView2Transport, type ShenoraTransport } from './transport';
+import { OperationError } from './errors.js';
+import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
+import { createWebView2Transport, type ShenoraTransport } from './transport.js';
 import {
   HANDSHAKE_MODULE,
   HANDSHAKE_TYPE,
@@ -9,7 +9,7 @@ import {
   type IpcNotificationBatch,
   type IpcRequest,
   type IpcResponse,
-} from './types';
+} from './types.js';
 
 /** Inputs for {@link ShenoraBridge}. */
 export interface ShenoraBridgeOptions {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isShenoraAvailable } from './index';
+import { isShenoraAvailable } from './index.js';
 
 describe('isShenoraAvailable', () => {
   it('is false outside a WebView2 host (node has no window)', () => {

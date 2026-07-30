@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getBridge, type ShenoraBridge } from './bridge';
-import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus';
-import type { EventMessage } from './types';
+import { getBridge, type ShenoraBridge } from './bridge.js';
+import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
+import type { EventMessage } from './types.js';
 
 /** Host access for components: the (default) bridge and whether a host transport exists. */
 export function useShenora(): { isAvailable: boolean; bridge: ShenoraBridge } {

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ShenoraBridge, configureBridge, getBridge } from './bridge';
-import { OperationError } from './errors';
-import { ShenoraEventBus } from './eventBus';
-import type { ShenoraTransport } from './transport';
-import { HANDSHAKE_MODULE, HANDSHAKE_TYPE, IpcErrorCodes, type EventMessage, type IpcRequest } from './types';
+import { ShenoraBridge, configureBridge, getBridge } from './bridge.js';
+import { OperationError } from './errors.js';
+import { ShenoraEventBus } from './eventBus.js';
+import type { ShenoraTransport } from './transport.js';
+import { HANDSHAKE_MODULE, HANDSHAKE_TYPE, IpcErrorCodes, type EventMessage, type IpcRequest } from './types.js';
 
 class FakeTransport implements ShenoraTransport {
   posted: string[] = [];

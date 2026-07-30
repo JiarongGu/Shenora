@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ShenoraBridge } from './bridge';
-import { installDevInterceptor, type DevIpcEntry } from './devInterceptor';
-import { ShenoraEventBus } from './eventBus';
-import type { ShenoraTransport } from './transport';
+import { ShenoraBridge } from './bridge.js';
+import { installDevInterceptor, type DevIpcEntry } from './devInterceptor.js';
+import { ShenoraEventBus } from './eventBus.js';
+import type { ShenoraTransport } from './transport.js';
 
 interface InterceptorGlobal {
   call: (module: string, type: string, payload?: unknown, scope?: string) => Promise<unknown>;

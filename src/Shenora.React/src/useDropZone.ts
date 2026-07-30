@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { getBridge, type ShenoraBridge } from './bridge';
-import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus';
+import { getBridge, type ShenoraBridge } from './bridge.js';
+import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 
 /** The reserved module the drop-zone stack speaks (host: `DropZoneManager`/`DropZoneFacade`). */
 export const DROP_ZONE_MODULE = 'DROP_ZONE';

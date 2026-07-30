@@ -31,11 +31,19 @@ burns no version:
 
 ## Consuming pre-release (in-house siblings)
 
-Until the first public release, siblings consume the local pack output:
+Until the first public release, siblings consume the local pack output. The recipe, smoke-proven
+2026-07-30 (P1.1; the rerunnable scratch consumer lives untracked in `devtools/_p11-consumer/`):
 
-- NuGet: `node devtools/dev.mjs pack`, then in the consumer add `publish/packages` (this repo)
-  as a local package source in its `nuget.config` and pin exact versions.
-- npm: `npm pack` output or a `file:` dependency on `src/Shenora.React`, pinned.
+- NuGet: `node devtools/dev.mjs pack`, then in the consumer's `nuget.config` add
+  `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the
+  WebView2 package come from there) and pin EXACT versions with the range syntax:
+  `<PackageReference Include="Shenora.WinForms" Version="[0.1.0]" />`. Referencing the two
+  leaf packages (`Shenora.WinForms` + `Shenora.WebView2`) pulls `Core`/`Ipc` transitively.
+  A consumer inside this repo's tree must set `ManagePackageVersionsCentrally=false`.
+- npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
+  with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
+  The tarball works under native Node ESM, not just bundlers (the emitted imports carry explicit
+  `.js` extensions; enforced by the package's NodeNext tsconfig — see `docs/FIX-LOG.md`).
 
 Pin exact versions and upgrade deliberately — the same model the family already uses for its
 other in-house library.

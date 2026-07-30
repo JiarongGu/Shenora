@@ -1,4 +1,4 @@
-import { getBridge, type ShenoraBridge } from './bridge';
+import { getBridge, type ShenoraBridge } from './bridge.js';
 
 /**
  * Base class for typed module services, ported from the primary desktop sibling: each backend

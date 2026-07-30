@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ShenoraBridge } from './bridge';
-import { BaseModuleService } from './moduleService';
+import type { ShenoraBridge } from './bridge.js';
+import { BaseModuleService } from './moduleService.js';
 
 /** The top resize edges — the only ones that exist: the frameless technique keeps the native
  * side/bottom resize borders, so only the top (covered by the WebView) needs page-side help. */

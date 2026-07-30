@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ShenoraBridge } from './bridge';
-import { ShenoraEventBus } from './eventBus';
-import { BaseModuleService } from './moduleService';
-import type { ShenoraTransport } from './transport';
-import type { IpcRequest } from './types';
+import { ShenoraBridge } from './bridge.js';
+import { ShenoraEventBus } from './eventBus.js';
+import { BaseModuleService } from './moduleService.js';
+import type { ShenoraTransport } from './transport.js';
+import type { IpcRequest } from './types.js';
 
 interface TodoRequests extends Record<string, unknown> {
   GET_ALL: void;

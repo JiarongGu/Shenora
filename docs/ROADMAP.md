@@ -5,6 +5,23 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P1.1: local-feed consumption smoke — and the real bug it caught
+
+The pack output was consumed like an external app would (the rerunnable scratch consumer lives
+untracked in `devtools/_p11-consumer/`): NuGet side — a standalone `net10.0-windows` console
+project with a `nuget.config` pointing at `publish/packages` + nuget.org, exact-pinned
+`[0.1.0]` references to the two leaf packages (Core/Ipc resolve transitively), CPM opted out —
+restored, built, and ran a live dispatch round-trip printing all four assembly versions at
+0.1.0. npm side — the packed tarball installed with `react` into a scratch project and imported
+under PLAIN NODE ESM… which FAILED, catching a real packaging bug the bundler-based dev loop
+structurally cannot see: the emitted `dist/*.js` carried extensionless relative imports
+(`from './types'`) because `moduleResolution: bundler` never requires extensions — fine in
+Vite/vitest, rejected by Node's own loader. Fixed with explicit `.js` extensions on every
+relative specifier and the package tsconfig moved to `NodeNext`, which makes a missing
+extension a build error (prevention; full entry in `docs/FIX-LOG.md`). Re-packed, the npm smoke
+now resolves every export under plain Node; full `verify` green (273 dotnet + 39 vitest). The
+consumption recipe is recorded in `docs/RELEASING.md`.
+
 ### 2026-07-30 — P4 increment 6: the P4 surface proven live (sample + e2e) — P4 feature-complete
 
 The samples become the full P4 reference composition. Desktop: `MainForm` is now a FRAMELESS

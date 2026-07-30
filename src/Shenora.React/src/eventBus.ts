@@ -1,4 +1,4 @@
-import type { EventMessage } from './types';
+import type { EventMessage } from './types.js';
 
 /**
  * The client-side event hub, ported from the primary desktop sibling: host notifications are

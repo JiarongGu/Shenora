@@ -12,9 +12,9 @@
  *   window.__shenora.waitEvent('TODO', 'ADDED')            // resolves on the next emit
  *   window.__shenora.recentIpc(20) / .recentEvents(20)     // inspect traffic
  */
-import { getBridge, type InvokeOptions, type ShenoraBridge } from './bridge';
-import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus';
-import type { EventMessage } from './types';
+import { getBridge, type InvokeOptions, type ShenoraBridge } from './bridge.js';
+import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
+import type { EventMessage } from './types.js';
 
 /** One recorded IPC call. */
 export interface DevIpcEntry {

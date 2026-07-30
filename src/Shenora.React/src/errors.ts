@@ -1,4 +1,4 @@
-import type { IpcError } from './types';
+import type { IpcError } from './types.js';
 
 /**
  * The rejection type for every failed bridge call — the client mirror of the host's

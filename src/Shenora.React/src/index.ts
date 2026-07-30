@@ -14,29 +14,29 @@ export {
   type IpcNotification,
   type IpcNotificationBatch,
   type EventMessage,
-} from './types';
-export { OperationError } from './errors';
-export { isShenoraAvailable, createWebView2Transport, type ShenoraTransport } from './transport';
-export { ShenoraEventBus, eventBus } from './eventBus';
+} from './types.js';
+export { OperationError } from './errors.js';
+export { isShenoraAvailable, createWebView2Transport, type ShenoraTransport } from './transport.js';
+export { ShenoraEventBus, eventBus } from './eventBus.js';
 export {
   ShenoraBridge,
   getBridge,
   configureBridge,
   type ShenoraBridgeOptions,
   type InvokeOptions,
-} from './bridge';
-export { BaseModuleService } from './moduleService';
-export { WindowCommands, useWindowMaximized, type WindowResizeEdge } from './windowCommands';
+} from './bridge.js';
+export { BaseModuleService } from './moduleService.js';
+export { WindowCommands, useWindowMaximized, type WindowResizeEdge } from './windowCommands.js';
 export {
   useDropZone,
   DROP_ZONE_MODULE,
   type DropZoneFileDrop,
   type UseDropZoneOptions,
-} from './useDropZone';
-export { useShenora, useShenoraEvent, useShenoraQuery, type ShenoraQueryResult } from './hooks';
+} from './useDropZone.js';
+export { useShenora, useShenoraEvent, useShenoraQuery, type ShenoraQueryResult } from './hooks.js';
 export {
   installDevInterceptor,
   type DevInterceptorOptions,
   type DevIpcEntry,
   type DevEventEntry,
-} from './devInterceptor';
+} from './devInterceptor.js';

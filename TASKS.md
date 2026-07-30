@@ -21,9 +21,6 @@ Pull the next item when between tasks. When an item is DONE: record it in `docs/
 
 ### P1 — Skeleton tail
 
-- [ ] **P1.1 — Local-feed consumption smoke.** `dev.mjs pack`, add `publish/packages` as a local
-  NuGet source in a scratch consumer + `file:` install of the npm tarball; prove restore/install
-  works and versions pin. Record the recipe in `docs/RELEASING.md` if anything differs.
 - [ ] **P1.2 — Release workflow dry-run readiness.** Once a GitHub remote exists: run the Release
   workflow with `draft=true` against test feeds (or `--skip-duplicate` into a throwaway version)
   to validate OIDC config; document the nuget.org/npmjs.com trusted-publisher setup steps taken.

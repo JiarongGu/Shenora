@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { ShenoraBridge } from './bridge';
-import { ShenoraEventBus } from './eventBus';
-import type { ShenoraTransport } from './transport';
-import type { IpcRequest } from './types';
-import { WindowCommands, useWindowMaximized } from './windowCommands';
+import { ShenoraBridge } from './bridge.js';
+import { ShenoraEventBus } from './eventBus.js';
+import type { ShenoraTransport } from './transport.js';
+import type { IpcRequest } from './types.js';
+import { WindowCommands, useWindowMaximized } from './windowCommands.js';
 
 class FakeTransport implements ShenoraTransport {
   posted: IpcRequest[] = [];

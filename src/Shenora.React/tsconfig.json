@@ -4,8 +4,11 @@
   // package.json `files` would then ship).
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    // NodeNext (not bundler): the emitted ESM must carry explicit .js extensions — bundlers
+    // tolerate extensionless relative imports, but native Node ESM rejects them (found live by
+    // the P1.1 consumption smoke). NodeNext makes a missing extension a BUILD error.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2020", "DOM"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
