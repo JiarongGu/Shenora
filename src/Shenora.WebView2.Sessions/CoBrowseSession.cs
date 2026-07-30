@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.WebView2.Sessions;
@@ -88,6 +89,14 @@ public sealed class CoBrowseSession : IAsyncDisposable
     private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Channel<byte[]> _frames;
+
+    // The screencast subscription, ROOTED for the session's lifetime (P5.5 H2). It used to live only
+    // in a local inside StartAsync: nothing referenced the receiver once that method returned, so the
+    // frame stream depended on the WebView2 SDK caching the receiver internally — unspecified
+    // behaviour, and a stream that stops after an arbitrary GC reports NO error at all (the app just
+    // sees a page that quietly went still). Held here, and detached in DisposeAsync.
+    private readonly CoreWebView2DevToolsProtocolEventReceiver _frameReceiver;
+    private readonly EventHandler<CoreWebView2DevToolsProtocolEventReceivedEventArgs> _onFrame;
     private int _disposed;
     // UI-thread-only state (mutated inside marshalled bodies; safe under the single-consumer
     // input contract): the current emulated viewport (so we never round-trip to read it) and
@@ -96,13 +105,17 @@ public sealed class CoBrowseSession : IAsyncDisposable
     private double _viewportHeight;
     private bool _buttonDown;
 
-    private CoBrowseSession(Form form, WebView2Control web, Channel<byte[]> frames, SessionController controller, CoBrowseViewport initial)
+    private CoBrowseSession(Form form, WebView2Control web, Channel<byte[]> frames, SessionController controller,
+        CoBrowseViewport initial, CoreWebView2DevToolsProtocolEventReceiver frameReceiver,
+        EventHandler<CoreWebView2DevToolsProtocolEventReceivedEventArgs> onFrame)
     {
         _form = form;
         _ui = new Shenora.WinForms.WinFormsUiDispatcher(form);
         _web = web;
         _frames = frames;
         Controller = controller;
+        _frameReceiver = frameReceiver;
+        _onFrame = onFrame;
         (_viewportWidth, _viewportHeight) = ClampViewport(initial.Width, initial.Height);
     }
 
@@ -157,9 +170,22 @@ public sealed class CoBrowseSession : IAsyncDisposable
                     await SessionBrowser.InitializeAsync(web, options.Browser,
                         onProcessFailed: _ => frames.Writer.TryComplete()).ConfigureAwait(true);
 
+                    // Re-check AFTER the multi-second init (P5.5 H2). The pre-check above was the only
+                    // one, so a start cancelled during those seconds still published nothing to the
+                    // caller while leaving behind a live off-screen window, a browser process holding
+                    // the profile lock, and — once the screencast started — frames being written into a
+                    // channel no reader would ever be handed.
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        try { form.Dispose(); } catch { }
+                        frames.Writer.TryComplete();
+                        tcs.TrySetCanceled(cancellationToken);
+                        return;
+                    }
+
                     var core = web.CoreWebView2;
                     var receiver = core.GetDevToolsProtocolEventReceiver("Page.screencastFrame");
-                    receiver.DevToolsProtocolEventReceived += (_, e) =>
+                    void OnFrame(object? _, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
                     {
                         try
                         {
@@ -170,7 +196,8 @@ public sealed class CoBrowseSession : IAsyncDisposable
                             _ = core.CallDevToolsProtocolMethodAsync("Page.screencastFrameAck", $"{{\"sessionId\":{sid}}}");
                         }
                         catch { /* one bad frame shouldn't sink the stream */ }
-                    };
+                    }
+                    receiver.DevToolsProtocolEventReceived += OnFrame;
                     // Reuse the SAME controller the login window uses (a BACKGROUND one — no
                     // hold-close, no reveal), so a driver's capture hooks run identically over
                     // the stream without the off-screen host ever vetoing app shutdown.
@@ -189,7 +216,20 @@ public sealed class CoBrowseSession : IAsyncDisposable
                         string.Create(CultureInfo.InvariantCulture,
                             $"{{\"format\":\"jpeg\",\"quality\":{options.JpegQuality},\"maxWidth\":{options.MaxFrameWidth},\"maxHeight\":{options.MaxFrameHeight},\"everyNthFrame\":1}}")).ConfigureAwait(true);
 
-                    tcs.TrySetResult(new CoBrowseSession(form, web, frames, controller, options.InitialViewport));
+                    // Last gate before publishing: the CDP round-trips above are cheap but not free,
+                    // and past this line the caller owns teardown — so anything cancelled up to here
+                    // must be torn down by US, not left running.
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        try { receiver.DevToolsProtocolEventReceived -= OnFrame; } catch { }
+                        try { form.Dispose(); } catch { }
+                        frames.Writer.TryComplete();
+                        tcs.TrySetCanceled(cancellationToken);
+                        return;
+                    }
+
+                    tcs.TrySetResult(new CoBrowseSession(form, web, frames, controller, options.InitialViewport,
+                        receiver, OnFrame));
                 }
                 catch (Exception ex)
                 {
@@ -321,13 +361,17 @@ return o;}catch(_){return [];}})()";
         Controller.Finish();          // (a background controller doesn't hold closes, but stay symmetric)
         RunOnUiFireAndForget(async () =>
         {
+            // Detach the screencast subscription before stopping it: the handler closes over the
+            // channel and the core, and leaving it attached to a receiver we still hold keeps both
+            // reachable from the SDK's event plumbing after this session is gone.
+            try { _frameReceiver.DevToolsProtocolEventReceived -= _onFrame; } catch { }
             try { if (TryGetCore() is { } core) await core.CallDevToolsProtocolMethodAsync("Page.stopScreencast", "{}").ConfigureAwait(true); } catch { }
             try { _form.Close(); _form.Dispose(); } catch { }
         });
         return ValueTask.CompletedTask;
     }
 
-    private Microsoft.Web.WebView2.Core.CoreWebView2? TryGetCore()
+    private CoreWebView2? TryGetCore()
     {
         try
         {

@@ -14,6 +14,153 @@ entry template:
 
 ## 2026-07-30
 
+### Shenora.WebView2.Sessions: a throwing app logger could hang a lease and leak a capacity permit
+- **Symptom:** found by the H2 sessions batch's own phase review, in code that batch had just written.
+  No observed incident. An app `ILogger` that throws — a file sink whose handle went away, a
+  scope-captured provider used after shutdown — could permanently hang a `LeaseAsync` caller, leak a
+  capacity permit for the process lifetime, or crash the UI thread, depending on which log line hit.
+- **Root cause:** an `ILogger` is APP CODE, so the package's own rule (no app-supplied callback runs
+  unguarded inside a WebView2/WinForms event handler or a posted UI-thread body) applies to it — and the
+  logging added in P5.5 H4.7 invoked it bare at all eight sites. Three of those turn a log line into a
+  real failure: inside the instance-creation `catch` the throw escaped BEFORE `tcs.TrySetException`, so
+  the lease's task never completed (a hung caller still holding its permit); inside the return-to-pool
+  body it escaped before `_capacity.Release()`; and inside `NewWindowRequested`/`PermissionRequested`/
+  `ProcessFailed` there is no caller on the stack at all, so it is an unhandled UI-thread exception.
+  Note this is the same finding class — "an app-supplied callback running unguarded inside a UI-thread
+  event handler or timer" — that the phase-review checklist was extended with after the first full
+  review; it caught it here on the first pass.
+- **Fix:** new internal `SessionLog.Try(ILogger?, Action<ILogger>)` — the one place that knows a lost
+  log line must never become a lost session — used at all eight sites in `RenderSession`,
+  `RenderSessionPool` and `SessionBrowser`. In `Return` the message's reason string is also computed
+  before the call so the interpolation can't throw inside the guarded body either.
+- **Verify:** `RenderSessionPoolTests.A_throwing_app_logger_cannot_hang_a_lease_or_leak_a_permit` — a
+  logger that throws on every call, driven down the discard path (the one that logs); the lease
+  completes, the instance is discarded, and the permit comes back. 382 dotnet + 39 vitest, `verify`
+  PASSED.
+- **Commit:** _pending (P5.5 H2 sessions batch)_
+
+### Shenora.WebView2.Sessions: a wedged page permanently poisoned the render pool
+- **Symptom:** found by the first full P0–P5 review, then re-verified. One page blocked in its own
+  script thread (a spin loop) made every later lease useless: with `Capacity=2`, two such pages
+  answered `RENDER_BUSY` for the rest of the process lifetime.
+- **Root cause:** TWO mechanisms, and fixing only the first (H4.2) was not enough.
+  (1) `RenderSession.OnUiAsync` accepted a `CancellationToken`, checked it once inside the posted
+  delegate, then awaited the body with no way to observe it again — so the caller could not escape, the
+  lease never returned, and the capacity permit was gone. H4.2 closed this by routing the marshal
+  through `WinFormsUiDispatcher`, whose `InvokeAsync` observes the token via `WaitAsync`.
+  (2) But `WaitAsync` hands the CALLER back; it cannot kill the outstanding operation. The wedged
+  instance was still returned to the pool by `DisposeAsync`, reset (see the next entry — the reset
+  reported success even when it timed out), and re-leased. So the pool healed its accounting and kept
+  handing out the same dead browser. Compounding both: no operation had a time cap at all, and every
+  parameterless overload passes `CancellationToken.None`, so the default caller had no escape either.
+- **Fix:** `RenderSession.RunBoundedAsync` wraps every marshalled op in a linked CTS with
+  `CancelAfter(OpTimeout)` (new option, 60 s) and poisons `PoolInstance` when the body did not complete,
+  which makes `RenderSessionPool.Return` discard it instead of re-pooling. Completion is TRACKED via a
+  flag set in the body's `finally`, not inferred from the exception type: a body that ran and threw (a
+  rejected URL, a guard refusal) leaves a reusable instance, and discarding it would cost a browser
+  startup on every ordinary error. An expiry becomes `TimeoutException`; a caller's own
+  `OperationCanceledException` is never rewritten, though it DOES poison — deliberately, since the
+  caller walked away while the renderer may still be mid-script. `NavigateAsync`'s hardcoded 30 s cap
+  became the `NavigationTimeout` option so the two budgets are coherent.
+- **Verify:** `RenderSessionPoolTests` — a new `StalledAnchor` (a handle realized on its own thread that
+  NEVER pumps) makes "the operation never completes" deterministic; note this detail, because an anchor
+  on the test thread runs bodies INLINE via the dispatcher's correct fast path and would have proven
+  nothing. Tests: an abandoned op throws `TimeoutException` and poisons; a cancelled caller gets
+  `OperationCanceledException` (not a timeout) and also poisons; an ordinary body failure does NOT
+  poison and is re-pooled; a poisoned instance is discarded without even attempting a reset. 381 dotnet
+  + 39 vitest, `verify` PASSED.
+- **Commit:** _pending (P5.5 H2 sessions batch)_
+
+### Shenora.WebView2.Sessions: a session that could not be reset was re-pooled forever
+- **Symptom:** found by review. A pooled instance whose renderer stopped answering was recycled
+  indefinitely; every lease that drew it burned the full navigation cap before failing.
+- **Root cause:** `RenderSessionPool.ResetToBlankAsync` awaited the blank navigation with
+  `WaitAsync(5s)` inside a `try`/`catch` that swallowed the outcome and then `return true`
+  unconditionally. Its own comment defended this — "slow blank nav — re-pool anyway; the next lease
+  navigates away regardless" — which is the actual error: a renderer that cannot complete a navigation
+  to `about:blank` cannot complete the next lease's navigation either. So the documented "a failed
+  reset DISCARDS the instance" invariant was only reachable if the navigation THREW. The test pinning
+  that invariant drove `ResetOverride`, never the real path, which is why it passed five phase reviews.
+- **Fix:** the wait's decision moved to `internal static AwaitResetNavigationAsync(Task, TimeSpan)`,
+  which returns false on timeout OR fault; `ResetToBlankAsync` returns it. The 5 s budget became the
+  validated `ResetTimeout` option. `Return`'s discard log now names WHICH invariant fired (a dead
+  renderer vs a reset the renderer never answered) — lumping them together is what made a wedged pool
+  opaque.
+- **Verify:** `RenderSessionPoolTests` — a theory over the REAL helper (a never-completing navigation →
+  false, a completed one → true) plus a faulted navigation → false, and the existing discard test still
+  pins the consequence.
+- **Commit:** _pending (P5.5 H2 sessions batch)_
+
+### Shenora.WebView2.Sessions: a cancelled session start left a live browser holding the profile lock
+- **Symptom:** found by review. A cancelled `LeaseAsync`/`StartAsync`, or a pool disposed while an
+  instance was being created, returned/threw to the caller while a realized off-screen window and its
+  browser process stayed alive — holding the profile's folder lock with no owner left to dispose it. For
+  co-browse a screencast could additionally start writing frames into a channel no reader would ever be
+  handed.
+- **Root cause:** both call sites checked `cancellationToken.IsCancellationRequested` exactly once, at
+  the TOP of the marshalled body — before the multi-second `SessionBrowser.InitializeAsync` (browser
+  process spawn + profile attach + settings). Nothing re-checked afterwards, so anything cancelled
+  during the expensive part still published a fully live instance. `LeaseAsync` also built a linked
+  token (caller + pool dispose) for the capacity wait but then passed the RAW caller token to the
+  instance factory, so pool disposal could not cancel a creation at all.
+- **Fix:** `RenderSessionPool.CreateInstanceAsync` re-checks after init and runs the same cleanup as the
+  failure path — extracted to a shared `TearDown()` local, which also stopped being silent (a leaked
+  control keeps the profile locked, the exact symptom the init-timeout message tries to explain).
+  `CoBrowseSession.StartAsync` re-checks twice: after init, and again before publishing, since past that
+  line the caller owns teardown. `LeaseAsync` now passes `linked.Token` to the factory.
+- **Verify:** `RenderSessionPoolTests.Dispose_cancels_an_in_flight_instance_creation` — a factory parked
+  on `Task.Delay(Infinite, ct)` proves the token it receives is the linked one, the lease throws
+  `OperationCanceledException`, and the capacity permit comes back. The post-init re-checks need a real
+  browser to exercise and are covered by the sample e2e, not a unit test.
+- **Commit:** _pending (P5.5 H2 sessions batch)_
+
+### Shenora.WebView2.Sessions: every retry against a locked profile orphaned another browser process
+- **Symptom:** found by review (carried over from H4.4). Repeated leases against a profile folder held
+  by a zombie `msedgewebview2` each added another browser process queued on that same lock — growing
+  the very lock the init-timeout's error message blames. Separately, a pool of N instances paid for N
+  environments on one profile.
+- **Root cause:** `SessionBrowser.InitializeAsync` called `CoreWebView2Environment.CreateAsync` per
+  instance, guarded by `.WaitAsync(InitTimeout)`. `WaitAsync` abandons the AWAIT, not the underlying
+  operation — so the timed-out creation kept running and the next attempt started an additional one.
+- **Fix:** new internal `SessionEnvironmentCache`, held by `RenderSessionPool` and passed to an internal
+  `InitializeAsync` overload (the public signature is unchanged). It reuses an IN-FLIGHT creation, which
+  is the anti-orphan half, and a completed one, which is the one-per-profile half. Two shape decisions
+  are load-bearing: (a) it is **owner-scoped, not static/profile-keyed** — a live environment keeps its
+  profile's browser process and therefore the folder lock alive, so a process-lifetime cache would have
+  made `LoginWindow.ClearProfile` fail every time rather than only while a window is open; a login
+  window opens one profile once and gains nothing from caching. Owner scoping also makes it
+  single-threaded by construction, which matters because `CoreWebView2Environment` is thread-affine.
+  (b) A faulted or cancelled creation is **not** cached — the trap `Shenora.WebView2`'s own
+  `WebViewEnvironment` still has (`TASKS.md` H3), where one transient failure is terminal for the
+  process. `RenderSessionPool.Dispose` clears the cache.
+- **Verify:** `SessionEnvironmentCacheTests` — in-flight reuse (creation delegate called once),
+  completed reuse, faulted and cancelled both retried, and `Clear` releasing. Real environment creation
+  needs a browser process, so the cache's DECISIONS are tested through the creation delegate.
+- **Commit:** _pending (P5.5 H2 sessions batch)_
+
+### Shenora.WebView2.Sessions: a co-browse frame stream could stop silently, and a late tap could read another lease
+- **Symptom:** two review findings in the same area, both silent by construction. (1) A co-browse
+  stream that freezes after an arbitrary GC, with no error anywhere — the consumer just sees a page that
+  went still. (2) A `RenderSession` interceptor installed after the lease returned received the NEXT
+  lease's JSON API responses and posted messages.
+- **Root cause:** (1) `CoBrowseSession.StartAsync` kept `GetDevToolsProtocolEventReceiver(...)` in a
+  local and subscribed to it there. Nothing referenced the receiver once the method returned, so the
+  subscription's survival depended on the WebView2 SDK caching it internally — unspecified behaviour —
+  and `DisposeAsync` never detached it either. (2) `OnNetwork`/`OnMessage` were the only public
+  `RenderSession` members with no `_disposed` check, and the only two that install a PERSISTENT tap;
+  after `DisposeAsync` the instance is back in the pool and handed to another lease, so a stale
+  reference or a continuation outliving its `await using` produced cross-lease disclosure — in a package
+  whose whole story is profile isolation.
+- **Fix:** (1) the receiver and its handler are now fields (`_frameReceiver`/`_onFrame`), passed into
+  the constructor, and `DisposeAsync` detaches before stopping the screencast. (2) both members call
+  `ThrowIfDisposed()` (the same `ObjectDisposedException` every other member already throws via
+  `OnUiAsync` — failing loudly, not silently no-op'ing) and the marshalled subscribe body re-checks
+  `_disposed`, closing the check-then-post race.
+- **Verify:** `RenderSessionPoolTests.Interceptors_cannot_be_installed_after_the_lease_is_returned`.
+  The receiver rooting is a lifetime fix with no unit-testable seam — it is compile-and-review verified,
+  and the co-browse sample seam (H9.5) is where it gets exercised live.
+- **Commit:** _pending (P5.5 H2 sessions batch)_
+
 ### Shenora.WebView2: file-mode frontend serving read any file the process could
 - **Symptom:** no observed incident — found by the first full P0–P5 review. A page (or any script in
   it) could request `https://<virtualHost>/%2e%2e%2f%2e%2e%2fWindows%2fwin.ini`, or a rooted

@@ -203,6 +203,12 @@ Shenora.WebView2.Sessions.RenderSessionPoolOptions
   System.Drawing.Size get_OffscreenClientSize()
   System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] NavigationGuard
   System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]] get_NavigationGuard()
+  System.TimeSpan NavigationTimeout
+  System.TimeSpan OpTimeout
+  System.TimeSpan ResetTimeout
+  System.TimeSpan get_NavigationTimeout()
+  System.TimeSpan get_OpTimeout()
+  System.TimeSpan get_ResetTimeout()
   System.Windows.Forms.Control Anchor
   System.Windows.Forms.Control get_Anchor()
   Void .ctor()
@@ -211,7 +217,10 @@ Shenora.WebView2.Sessions.RenderSessionPoolOptions
   Void set_Capacity(Int32)
   Void set_Log(Microsoft.Extensions.Logging.ILogger)
   Void set_NavigationGuard(System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]])
+  Void set_NavigationTimeout(System.TimeSpan)
   Void set_OffscreenClientSize(System.Drawing.Size)
+  Void set_OpTimeout(System.TimeSpan)
+  Void set_ResetTimeout(System.TimeSpan)
   Void set_VisiblePerSession(Boolean)
 Shenora.WebView2.Sessions.SessionApiCall
   Boolean Equals(Shenora.WebView2.Sessions.SessionApiCall)

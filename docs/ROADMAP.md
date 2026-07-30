@@ -5,6 +5,68 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H2 (sessions): the lifetime cluster in `Shenora.WebView2.Sessions`
+
+Six review findings that all live in the same three files, done together because they interlock. 381
+dotnet + 39 vitest, `verify` PASSED. No P0s remained anywhere before this batch; these are the P1/P2
+tail that a consuming app cannot work around.
+
+**The pool can now recover from a wedged page** — and this is the batch's real lesson. H4.2 had already
+made the *caller* escape a page blocked in its own script thread (the marshal observes its token), and
+that looked like the fix. It wasn't: `WaitAsync` hands the caller back but cannot kill the outstanding
+call, so `DisposeAsync` returned the dead instance to the pool, the reset reported success, and the
+next lease inherited the corpse. So the missing halves landed here — a per-operation cap (`OpTimeout`;
+note every parameterless overload passes `CancellationToken.None`, so the *default* caller had no
+escape at all) plus poisoning the instance so the return path discards it. Completion is tracked with a
+flag in the body's `finally` rather than inferred from the exception, because a body that ran and threw
+(a rejected URL, a guard refusal) leaves a perfectly reusable instance and discarding it would cost a
+browser startup on every ordinary error.
+
+**Two invariants were documented but unreachable.** The reset-to-`about:blank` swallowed its own
+timeout and returned `true` unconditionally — its comment even argued the case ("the next lease
+navigates away regardless"), which is the error: a renderer that can't answer `about:blank` can't
+answer the next lease either. So "a failed reset DISCARDS the instance" only fired if the navigation
+threw. The test pinning it drove the override, never the real path, which is precisely how it passed
+five phase reviews; the decision now sits in a seam the tests reach. Likewise a cancelled start: both
+the pool and co-browse checked the token only *before* the multi-second browser init, so anything
+cancelled during the expensive part still published a live off-screen window and a browser process
+holding the profile lock — with no owner left to dispose it, since the caller got a cancellation
+instead of a handle.
+
+**One environment per profile, and the shape is the interesting part.** `InitTimeout` abandons the
+*await* on `CreateAsync`, never the creation, so every retry against a profile a zombie process held
+queued another browser process onto that same lock — growing the lock the timeout's own message
+blames. A pool now shares one environment and a retry joins the in-flight creation. The cache is
+**owner-scoped, not static/profile-keyed**, for a reason worth keeping: a live environment keeps its
+profile's browser process and therefore the folder's OS lock alive, so a process-lifetime cache would
+have made `LoginWindow.ClearProfile` — the call that makes a logout a *real* logout — fail every time
+rather than only while a window is open. A login window opens one profile once and gains nothing from
+caching; a pool creates N instances on one profile, which is the case that does. Owner scoping also
+makes it single-threaded by construction, which matters because `CoreWebView2Environment` is
+thread-affine. And a faulted creation is deliberately not cached — the trap `WebViewEnvironment` still
+has, still tracked under H3.
+
+**Two silent-by-construction bugs.** The co-browse CDP screencast receiver lived only in a local, so
+the subscription's survival depended on the SDK caching it internally and a stream could stop after an
+arbitrary GC with no error at all. And `RenderSession.OnNetwork`/`OnMessage` were the only public
+members with no disposal check *and* the only two that install a persistent tap — so a late subscribe
+attached a live listener to a pooled instance the next lease owned, streaming its API responses and
+posted messages to the previous caller.
+
+**The phase review earned its keep on this batch's own code.** An `ILogger` is app code, so the
+"no app-supplied callback runs unguarded inside a UI-thread event handler" rule applies to it — and the
+logging added in H4.7 invoked it bare at all eight sites in the package. Three of those turn a log line
+into a real failure: in the instance-creation `catch` a throw escaped before `TrySetException`, hanging
+the lease and holding its permit; in the return body it escaped before `_capacity.Release()`; and in the
+three WebView2 event handlers there is no caller on the stack at all. All eight now go through an
+internal `SessionLog.Try`, with a regression test driving a logger that throws on every call. This is
+exactly the finding class the review checklist was extended with after the first full review, and it
+caught it on the first pass.
+
+Testing note carried forward: the new `StalledAnchor` helper realizes a handle on its own never-pumped
+thread. That detail is load-bearing — an anchor on the test thread runs bodies INLINE via the
+dispatcher's correct fast path, so "just don't pump" would have proven nothing.
+
 ### 2026-07-30 — P5.5 H4 COMPLETE: H4.2 (rest) + H4.3 + H4.4 + H4.5 + H4.6 + H4.7
 
 The re-layer's payoff, landed in three commits. **H4 is done.**

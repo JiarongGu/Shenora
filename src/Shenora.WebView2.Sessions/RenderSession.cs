@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
@@ -23,10 +24,12 @@ public sealed class RenderSession : IAsyncDisposable
 
     private readonly RenderSessionPool _pool;
     private readonly RenderSessionPool.PoolInstance _instance;
-    private readonly Control _anchor;
     private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
+    private readonly TimeSpan _opTimeout;
+    private readonly TimeSpan _navigationTimeout;
+    private readonly Microsoft.Extensions.Logging.ILogger? _log;
 
     // Live interceptors the caller installed (subscribe on the UI thread; the returned handle
     // unsubscribes there too).
@@ -34,22 +37,25 @@ public sealed class RenderSession : IAsyncDisposable
     private readonly List<EventHandler<CoreWebView2WebMessageReceivedEventArgs>> _msgHandlers = [];
     private int _disposed; // 0 live, 1 disposed — dispose is idempotent + gates every op
 
-    internal RenderSession(RenderSessionPool pool, RenderSessionPool.PoolInstance instance, Control anchor,
-        Func<Uri, CancellationToken, Task<bool>>? navigationGuard)
+    internal RenderSession(RenderSessionPool pool, RenderSessionPool.PoolInstance instance,
+        RenderSessionPoolOptions options)
     {
         _pool = pool;
         _instance = instance;
-        _anchor = anchor;
-        _ui = new Shenora.WinForms.WinFormsUiDispatcher(anchor);
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(options.Anchor);
         _web = instance.Web;
-        _navigationGuard = navigationGuard;
+        _navigationGuard = options.NavigationGuard;
+        _opTimeout = options.OpTimeout;
+        _navigationTimeout = options.NavigationTimeout;
+        _log = options.Log;
     }
 
     /// <summary>
     /// Navigate to an absolute http(s) URL and wait for the DOCUMENT to load only
     /// (NavigationCompleted) — NOT for JS to settle; the caller decides "settled" itself via
-    /// script polling and its interceptors. A 30 s hard cap keeps a hung load from wedging the
-    /// leased instance. When <see cref="RenderSessionPoolOptions.NavigationGuard"/> is set,
+    /// script polling and its interceptors. <see cref="RenderSessionPoolOptions.NavigationTimeout"/>
+    /// caps the wait so a hung load can't wedge the leased instance. When
+    /// <see cref="RenderSessionPoolOptions.NavigationGuard"/> is set,
     /// every navigation must pass it first — wire your SSRF/allowlist policy there: a session
     /// often navigates DATA-DRIVEN URLs, and services also reachable from localhost make an
     /// unguarded navigate a server-side request forgery.
@@ -73,10 +79,10 @@ public sealed class RenderSession : IAsyncDisposable
         try
         {
             using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            overall.CancelAfter(TimeSpan.FromSeconds(30)); // hard cap so a hung load can't wedge the lease
+            overall.CancelAfter(_navigationTimeout); // cap so a hung load can't wedge the lease
             _web.CoreWebView2.Navigate(uri.ToString());
             // WhenAny never throws; the cap firing and the CALLER cancelling both complete the
-            // Delay task — but they mean different things. The 30 s cap is a soft "return what's
+            // Delay task — but they mean different things. The cap is a soft "return what's
             // there" (the caller polls); the caller's own token means "I gave up", which MUST
             // surface so it can't be mistaken for a completed load.
             await Task.WhenAny(navDone.Task, Task.Delay(Timeout.Infinite, overall.Token)).ConfigureAwait(true);
@@ -129,6 +135,7 @@ public sealed class RenderSession : IAsyncDisposable
     public IDisposable OnNetwork(Action<SessionApiCall> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        ThrowIfDisposed();
         void OnResp(object? s, CoreWebView2WebResourceResponseReceivedEventArgs e)
         {
             try
@@ -148,6 +155,7 @@ public sealed class RenderSession : IAsyncDisposable
 
         OnUiFireAndForget(() =>
         {
+            if (Volatile.Read(ref _disposed) != 0) return; // disposed between the check and the post
             _web.CoreWebView2.WebResourceResponseReceived += OnResp;
             _netHandlers.Add(OnResp);
         });
@@ -166,6 +174,7 @@ public sealed class RenderSession : IAsyncDisposable
     public IDisposable OnMessage(Action<string> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        ThrowIfDisposed();
         void OnMsg(object? s, CoreWebView2WebMessageReceivedEventArgs e)
         {
             string payload;
@@ -183,6 +192,7 @@ public sealed class RenderSession : IAsyncDisposable
 
         OnUiFireAndForget(() =>
         {
+            if (Volatile.Read(ref _disposed) != 0) return; // disposed between the check and the post
             _web.CoreWebView2.WebMessageReceived += OnMsg;
             _msgHandlers.Add(OnMsg);
         });
@@ -216,20 +226,83 @@ public sealed class RenderSession : IAsyncDisposable
     /// <summary>
     /// Run <paramref name="work"/> ON THE UI THREAD and await its result — the one marshal every
     /// op uses. Fails gracefully: a disposed session, a dead message loop, or a thrown delegate
-    /// all surface as the delegate's own exception path, never a wedge.
+    /// all surface as the delegate's own exception path, never a wedge. Bounded by
+    /// <see cref="RenderSessionPoolOptions.OpTimeout"/>, and an operation the UI thread never
+    /// finishes POISONS the instance (see <see cref="RunBoundedAsync{T}"/>).
     /// </summary>
     private Task<T> OnUiAsync<T>(Func<Task<T>> work, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _disposed) != 0)
             return Task.FromException<T>(new ObjectDisposedException(nameof(RenderSession)));
 
-        // The ONE marshal owner (P5.5 H4.2). This replaces a hand-rolled BeginInvoke + TCS that
+        // The ONE marshal owner (P5.5 H4.2). This replaced a hand-rolled BeginInvoke + TCS that
         // checked the cancellation token ONCE, inside the posted delegate, and then awaited the body
         // with no way to observe it again — so an op against a page whose JS thread is blocked (an
         // alert(), a spin loop) could never be cancelled, the lease never returned, and the pool's
         // permit was gone for the process lifetime. The dispatcher observes the token via WaitAsync,
         // so the CALLER always escapes even when the UI thread never runs the body.
-        return _ui.InvokeAsync(work, cancellationToken);
+        return RunBoundedAsync(work, cancellationToken);
+    }
+
+    /// <summary>
+    /// The other half of that fix (P5.5 H2). Escaping the await was never enough on its own:
+    /// <c>WaitAsync</c> hands the CALLER back, but the wedged page is still sitting in the pool, so
+    /// <see cref="DisposeAsync"/> re-pooled it and the next lease inherited the same dead instance.
+    /// So this adds the two missing pieces:
+    /// <list type="bullet">
+    /// <item>a BOUNDED wait — <see cref="RenderSessionPoolOptions.OpTimeout"/> — because a caller that
+    /// passes no token (every parameterless overload does) had no escape at all; and</item>
+    /// <item>POISONING the instance when the body never completed, so
+    /// <see cref="RenderSessionPool.Return"/> discards it instead of re-pooling it.</item>
+    /// </list>
+    /// "Never completed" is tracked rather than inferred, and that distinction matters: a body that
+    /// ran and threw (a bad URL, a guard refusal, a caller token observed INSIDE the body) leaves the
+    /// instance perfectly reusable, and discarding it would cost seconds of browser startup on every
+    /// ordinary error.
+    /// </summary>
+    private async Task<T> RunBoundedAsync<T>(Func<Task<T>> work, CancellationToken cancellationToken)
+    {
+        var finished = 0;
+        async Task<T> Tracked()
+        {
+            try { return await work().ConfigureAwait(true); }
+            finally { Interlocked.Exchange(ref finished, 1); } // ran to an outcome — success or throw
+        }
+
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(_opTimeout);
+        try
+        {
+            return await _ui.InvokeAsync(Tracked, bounded.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Only a token that actually tripped means "we walked away while it was still running".
+            // A NotReady/Gone dispatcher failure is a composition problem, not a wedged page.
+            if (Volatile.Read(ref finished) == 0 && bounded.IsCancellationRequested)
+            {
+                _instance.Poisoned = true;
+                // Guarded: a throwing app logger here would REPLACE the diagnosis below with its own
+                // exception, so the caller would never learn the operation was abandoned.
+                SessionLog.Try(_log, l => l.LogWarning(
+                    "A render-session operation was abandoned after {Timeout}s with the operation still " +
+                    "outstanding; the instance is poisoned and will be discarded when the lease returns.",
+                    _opTimeout.TotalSeconds.ToString("0", System.Globalization.CultureInfo.InvariantCulture)));
+
+                // Report the WEDGE as a timeout, not as the caller's own cancellation — unless the
+                // caller really did cancel, in which case its OperationCanceledException must survive.
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    // Keep the original cancellation as the inner exception — the replacement message
+                    // is the diagnosis, not a reason to lose the stack that produced it.
+                    throw new TimeoutException(
+                        $"The render-session operation did not complete within {_opTimeout.TotalSeconds:0}s. " +
+                        "The page's script thread is most likely blocked; the session instance has been discarded.",
+                        ex);
+                }
+            }
+            throw;
+        }
     }
 
     /// <summary>
@@ -238,6 +311,23 @@ public sealed class RenderSession : IAsyncDisposable
     /// exactly what the dispatcher's <c>false</c> return means here.
     /// </summary>
     private void OnUiFireAndForget(Action work) => _ui.Post(work);
+
+    /// <summary>
+    /// Gate the interceptor subscribes on the lease still being held (P5.5 H2).
+    /// <para>
+    /// <see cref="OnNetwork"/> and <see cref="OnMessage"/> were the only public members that did NOT
+    /// check disposal, and they are the two that install a persistent tap. After
+    /// <see cref="DisposeAsync"/> the instance goes back to the pool and is handed to the NEXT lease,
+    /// so a late subscribe — from a caller holding a stale reference, or a fire-and-forget continuation
+    /// that outlived its <c>await using</c> — attached a live listener to another lease's page and
+    /// streamed its API responses and posted messages to the previous caller's handler. In a package
+    /// whose whole story is profile isolation, that is cross-lease disclosure, so it fails loudly
+    /// rather than silently no-op'ing: the same <see cref="ObjectDisposedException"/> every other
+    /// member already throws through <see cref="OnUiAsync"/>.
+    /// </para>
+    /// </summary>
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
     /// <summary>Bounded body-sample read, then deliver — best-effort throughout (UI thread).</summary>
     private static async Task DeliverAsync(CoreWebView2WebResourceResponseView response, string url, string method,

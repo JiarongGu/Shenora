@@ -5,7 +5,7 @@ using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.WebView2.Sessions;
 
-/// <summary>Inputs for <see cref="SessionBrowser.InitializeAsync"/>.</summary>
+/// <summary>Inputs for <see cref="SessionBrowser.InitializeAsync(WebView2Control, SessionBrowserOptions, Action{CoreWebView2ProcessFailedEventArgs})"/>.</summary>
 public sealed class SessionBrowserOptions
 {
     /// <summary>
@@ -99,8 +99,19 @@ public static class SessionBrowser
     /// dead renderer is INVISIBLE: a pooled instance was reset, re-pooled and re-leased forever, and
     /// a co-browse frame channel simply stopped with its reader still waiting (P5.5 H4.4).
     /// </param>
-    public static async Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
-                                             Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null)
+    public static Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
+                                       Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null) =>
+        InitializeAsync(web, options, onProcessFailed, environmentCache: null);
+
+    /// <summary>
+    /// As the public overload, but reusing <paramref name="environmentCache"/>'s shared environment
+    /// when the caller creates SEVERAL browsers on one profile (the render pool). Internal because
+    /// the cache is an ownership detail of that caller, not a consumer concept — see
+    /// <see cref="SessionEnvironmentCache"/> for why it is owner-scoped rather than static.
+    /// </summary>
+    internal static async Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
+                                               Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed,
+                                               SessionEnvironmentCache? environmentCache)
     {
         ArgumentNullException.ThrowIfNull(web);
         ArgumentNullException.ThrowIfNull(options);
@@ -120,14 +131,22 @@ public static class SessionBrowser
             additionalArguments: options.AdditionalBrowserArguments);
 
         var envOptions = new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = arguments };
+        Task<CoreWebView2Environment> CreateEnvironment() =>
+            CoreWebView2Environment.CreateAsync(null, options.ProfileDirectory, envOptions);
+
         CoreWebView2Environment env;
         try
         {
             // The timeout wraps BOTH steps: a profile-lock stall most often hangs environment
             // creation, not just the core attach — either must surface the same guidance, never
             // a bare "The operation has timed out."
-            env = await CoreWebView2Environment.CreateAsync(null, options.ProfileDirectory, envOptions)
-                .WaitAsync(options.InitTimeout).ConfigureAwait(true);
+            //
+            // WaitAsync abandons the AWAIT, not the creation. Without a cache the next attempt
+            // therefore started a SECOND CreateAsync against the same locked profile, orphaning
+            // another browser process onto the lock its own error message blames (P5.5 H2); with one,
+            // the retry joins the attempt already in flight.
+            var creation = environmentCache is null ? CreateEnvironment() : environmentCache.GetOrCreate(CreateEnvironment);
+            env = await creation.WaitAsync(options.InitTimeout).ConfigureAwait(true);
             await web.EnsureCoreWebView2Async(env).WaitAsync(options.InitTimeout).ConfigureAwait(true);
         }
         catch (TimeoutException)
@@ -169,10 +188,12 @@ public static class SessionBrowser
     {
         // A pooled/off-screen page calling window.open() used to get a REAL, visible WebView2 popup
         // in an app that has no session UI. Suppress it; a session navigates where it is told.
+        // Every diagnostic below goes through SessionLog: these bodies run inside WebView2 events with
+        // no caller on the stack, so an app logger that throws IS an unhandled UI-thread exception.
         core.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
-            options.Log?.LogDebug("Session browser suppressed a new-window request for {Uri}.", e.Uri);
+            SessionLog.Try(options.Log, l => l.LogDebug("Session browser suppressed a new-window request for {Uri}.", e.Uri));
         };
 
         // Deny every permission by default: an invisible page cannot meaningfully prompt, and an
@@ -181,19 +202,20 @@ public static class SessionBrowser
         {
             e.State = CoreWebView2PermissionState.Deny;
             e.Handled = true;
-            options.Log?.LogDebug("Session browser denied permission {Kind}.", e.PermissionKind);
+            SessionLog.Try(options.Log, l => l.LogDebug("Session browser denied permission {Kind}.", e.PermissionKind));
         };
 
         // A dead renderer is otherwise INVISIBLE here (see OnProcessFailed's docs).
         core.ProcessFailed += (_, e) =>
         {
-            options.Log?.LogWarning("Session browser process failed: {Kind} ({Reason}).",
-                e.ProcessFailedKind, e.Reason);
+            SessionLog.Try(options.Log, l => l.LogWarning("Session browser process failed: {Kind} ({Reason}).",
+                e.ProcessFailedKind, e.Reason));
             try { onProcessFailed?.Invoke(e); }
             catch (Exception ex)
             {
-                // Reporting a crash must not itself crash the UI thread.
-                options.Log?.LogError(ex, "OnProcessFailed callback threw.");
+                // Reporting a crash must not itself crash the UI thread — which is also why the report
+                // goes through SessionLog: an app logger that throws in this handler has no caller.
+                SessionLog.Try(options.Log, l => l.LogError(ex, "OnProcessFailed callback threw."));
             }
         };
     }

@@ -131,10 +131,16 @@ changes, noting them in `CHANGELOG.md`).
   background-throttling-off arguments, settings hardening, `RequestFilter` block seam,
   init-timeout guard, `GetHtmlAsync`); `RenderSessionPool(+Options)`/`RenderSession`/
   `SessionApiCall` (bounded LIFO-pooled off-screen sessions: lease → navigate (http/https-only
-  + `NavigationGuard` SSRF seam + nav cap)/execute/read/DevTools/network+message taps →
-  dispose returns to the pool; capacity waits queue, a creation failure releases the slot, a
-  failed about:blank reset DISCARDS the instance; one shared hidden host in runtime mode,
-  visible cascaded windows in dev mode); the login stack — `LoginWindow(+Options)` (modal
+  + `NavigationGuard` SSRF seam + `NavigationTimeout`)/execute/read/DevTools/network+message taps →
+  dispose returns to the pool; capacity waits queue, a creation failure or a cancelled-during-init
+  creation releases the slot and tears down, every operation is capped by `OpTimeout` and an
+  abandoned one POISONS its instance, a poisoned instance or a `ResetTimeout`-expired about:blank
+  reset DISCARDS it rather than re-pooling; one shared hidden host in runtime mode,
+  visible cascaded windows in dev mode; internal `SessionEnvironmentCache` gives the pool ONE
+  `CoreWebView2Environment` for its profile — owner-scoped, not static, because a live environment
+  holds the profile's folder lock and would defeat `ClearProfile`); internal `SessionLog` (the
+  package's one guarded-diagnostic path — an app `ILogger` is an app callback); the login stack —
+  `LoginWindow(+Options)` (modal
   driver-run logins over per-provider/per-sub-account persistent profiles — the sub scoping is
   a security boundary; busy-serialized with exactly-once completion incl. the token fallback,
   the user's close HELD for a final cookie read, silent-refresh off-screen shape, static

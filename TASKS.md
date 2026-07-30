@@ -95,17 +95,20 @@ code comment.
 
 **H2 — Hangs, crashes and lifetime (a consuming app cannot work around these)**
 
-- [~] **`RenderSession` must observe the tokens it accepts.** HALF DONE in H4.2 — the marshal now goes
-  through `WinFormsUiDispatcher`, whose `InvokeAsync` observes the token via `WaitAsync`, so the CALLER
-  always escapes. STILL OWED, and this is the part that actually frees the pool: an `OpTimeout` option,
-  and the pool discarding an instance whose op was abandoned (the wedged page keeps its browser). `OnUiAsync:213-235` checks the token
-  once inside the posted delegate then awaits with no `WaitAsync(ct)` and no cap (zero `WaitAsync`
-  in the file). Its sibling `LoginWindowController.cs:166-169,184` does it right AND documents it as
-  the source's known gap. A page blocked in JS (`alert()`, spin loop) makes
-  `GetHtmlAsync`/`ExecuteScriptAsync` never complete; the sample's RENDER route awaits those inside
-  `await using`, so the lease never returns and the permit never releases — with `Capacity=2`, two
-  such pages answer `RENDER_BUSY` for the process lifetime. FIX: `WaitAsync(ct)` + an `OpTimeout`
-  option; the pool discards an instance whose op was abandoned.
+- [x] **`RenderSession` must observe the tokens it accepts.** DONE across two batches. H4.2 routed the
+  marshal through `WinFormsUiDispatcher`, whose `InvokeAsync` observes the token via `WaitAsync`, so the
+  CALLER always escapes. This batch added the half that actually frees the pool:
+  `RenderSession.RunBoundedAsync` caps every marshalled op at the new
+  `RenderSessionPoolOptions.OpTimeout` (60 s) and POISONS the instance when the body never completed,
+  so `Return` discards it instead of re-pooling a wedged page. Two judgement calls worth reading:
+  (a) "never completed" is TRACKED (a flag set in the body's `finally`), not inferred from the
+  exception — a body that ran and threw (a rejected URL, a guard refusal) leaves a perfectly reusable
+  instance, and discarding it would cost a browser startup on every ordinary error; (b) a CALLER
+  cancellation also poisons, deliberately — the caller walked away while the op was outstanding, so
+  the renderer may still be mid-script and handing that page to the next lease is the real risk. The
+  expiry surfaces as `TimeoutException`, but a caller's own `OperationCanceledException` is never
+  rewritten. `NavigateAsync`'s hardcoded 30 s cap became `NavigationTimeout` so the two budgets are
+  coherent (`OpTimeout` must exceed it, documented on the option).
 - [x] **Suppress script dialogs on session browsers.** DONE in H4.4 (`AreDefaultScriptDialogsEnabled = false`). `SessionBrowser.cs:112-120` leaves
   `AreDefaultScriptDialogsEnabled` true while `OffscreenWindow` parks the host off-screen at
   opacity 0 — an `alert()` blocks the renderer behind a dialog nobody can see or dismiss, which
@@ -149,7 +152,20 @@ code comment.
   (`:146,174,218`, deliberate), so the process CWD moves after the first dialog and a relative
   `--app-root` re-resolves `DataDir` mid-session; it also defeats `SingleInstanceGuard.ChannelKey`
   hashing (two spellings of one install → two instances over the single-writer WebView2 folder).
-- [~] **No app callback runs unguarded inside a WebView2/WinForms event handler.** PARTLY DONE in H4.2
+- [ ] **A cancelled lease cannot escape DURING browser init**, only after it (the H2 sessions batch
+  closed the "publishes a live browser" half; this is the promptness half). `SessionBrowser.InitializeAsync`
+  takes no `CancellationToken` at all, so a cancelled `LeaseAsync` waits out `InitTimeout` (up to 2×25 s)
+  before the new post-init check fires. Deliberately NOT expanded into that batch: adding the parameter
+  is a public-surface change, and H6 proposes making these statics internal anyway — do both in one
+  move there. Note the token must gate the AWAIT only, never cancel the creation itself: the
+  environment task is now SHARED across a pool's instances (`SessionEnvironmentCache`), so cancelling it
+  for one caller would break the others.
+- [~] **No app callback runs unguarded inside a WebView2/WinForms event handler.** The SESSIONS half is
+  now done: an `ILogger` is app code too, and the H4.7 logging invoked it bare at all eight sites in the
+  package — including one where a throw escaped before `tcs.TrySetException` and hung the lease, and one
+  before `_capacity.Release()`. All eight now go through the internal `SessionLog.Try`, with a
+  regression test. Found by that batch's own phase review, which is the checklist working. Earlier,
+  PARTLY DONE in H4.2
   — `WindowCommandFacade` (SET_THEME's `ApplyTheme`, CLOSE's `FormClosing`) and `DropZoneManager` now
   post through the guarded dispatcher, and `LoginWindow`'s `OnLoading` is guarded (above). STILL OPEN:
   `WebViewHost`'s `OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` + its `_log?.Invoke`
@@ -162,20 +178,29 @@ code comment.
   `OptimizedForm.cs:242` (`WndProcHook` inside `WndProc` — before bootstrap that is the blocking-
   dialog failure mode), and the tap lists at `LoginWindowController.cs:32-38,58,241-247` (plain
   `List<T>` mutated off the UI thread while the UI thread `.ToArray()`s them).
-- [ ] **Pool reset must fail closed.** `RenderSessionPool.ResetToBlankAsync:240-259` swallows the
-  5 s `WaitAsync` outcome and returns `true` unconditionally, so the "a failed reset DISCARDS the
-  instance" invariant is only reachable via a throw — a dead renderer is re-pooled forever, each
-  later lease burning the 30 s nav cap. The test that pins the invariant only drives `ResetOverride`.
-- [ ] **Re-check cancellation after the multi-second init** (`RenderSessionPool.cs:131`,
-  `CoBrowseSession.cs:135`) and tear down instead of publishing — today a cancelled start still
-  yields a live off-screen window, a browser process holding the profile lock, and (co-browse) a
-  screencast writing into a channel nobody reads. Pass the linked token into the pool factory.
-- [ ] **Root the CDP screencast receiver.** `CoBrowseSession.cs:146-158` keeps
-  `GetDevToolsProtocolEventReceiver(...)` in a local; nothing holds it for the session's lifetime and
-  `DisposeAsync` never detaches it — a stream that freezes after an arbitrary GC, with no error.
-- [ ] **`RenderSession.OnNetwork`/`OnMessage` (`:121,158`) don't check `_disposed`,** so a
-  post-return call attaches a tap to an instance another lease now owns — cross-lease disclosure in
-  a package whose story is profile isolation.
+- [x] **Pool reset must fail closed.** DONE — `AwaitResetNavigationAsync` (internal, so the REAL path
+  is unit-testable; the old test could only drive `ResetOverride`, which is exactly why this survived
+  five reviews) returns the navigation's actual outcome, and the 5 s budget became the validated
+  `ResetTimeout` option. It swallowed the `WaitAsync` outcome and returned `true` unconditionally,
+  reasoning in a comment that "the next lease navigates away regardless" — it does not: a renderer that
+  can't answer a navigation to `about:blank` can't answer the next lease's either. So the documented
+  "a failed reset DISCARDS the instance" invariant was reachable only via a THROW.
+- [x] **Re-check cancellation after the multi-second init** DONE in `RenderSessionPool.CreateInstanceAsync`
+  (its failure cleanup became a shared `TearDown()` local, now used by the cancelled path too and no
+  longer silent) and at TWO points in `CoBrowseSession.StartAsync` — after init and again before
+  publishing, since past that line the caller owns teardown. `LeaseAsync` now passes `linked.Token`
+  (caller + pool-dispose) to the factory instead of the raw caller token, so disposing the pool
+  mid-creation cancels the creation rather than letting it publish a live off-screen window whose
+  browser process then holds the profile lock with nothing left to dispose it.
+- [x] **Root the CDP screencast receiver.** DONE — the receiver AND its handler are fields
+  (`_frameReceiver`/`_onFrame`), and `DisposeAsync` detaches before stopping the screencast. It lived
+  only in a local, so the frame stream depended on the WebView2 SDK caching the receiver internally —
+  unspecified behaviour, and a stream that stops after an arbitrary GC reports no error at all.
+- [x] **`RenderSession.OnNetwork`/`OnMessage` don't check `_disposed`.** DONE — both throw
+  `ObjectDisposedException` (matching every other member, via `OnUiAsync`) and the posted subscribe
+  body re-checks, closing the check-then-post race. They were the only public members without a
+  disposal check and the only two that install a PERSISTENT tap, so a late subscribe streamed the next
+  lease's API responses and posted messages to the previous caller's handler.
 - [ ] WinForms robustness tail: STA assertion + idempotence in `WinFormsBootstrap.Initialize:65-88`
   (a missing `[STAThread]` currently surfaces as a blocking dialog inside handle creation; a second
   call double-registers all three exception channels); re-entrancy guard on the last-resort crash
@@ -338,9 +363,18 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   as one environment per profile. Sharing those would have been coupling, not dedup. Also landed here:
   the three missing policies (`NewWindowRequested` suppressed, `PermissionRequested` denied,
   `ProcessFailed` surfaced → the pool poisons the instance, co-browse completes its frame channel),
-  script dialogs disabled, and the `Log` options (H4.7). STILL OPEN from the original bullet: one
-  cached environment per profile (H2's "each retry orphans another browser process") — it needs the
-  env cache to live somewhere with a profile concept, so it belongs with the H2 sessions pass. With
+  script dialogs disabled, and the `Log` options (H4.7). The last piece — one cached environment per
+  profile (H2's "each retry orphans another browser process") — LANDED with the H2 sessions pass as the
+  internal `SessionEnvironmentCache`, and the shape it took is the interesting part: **owner-scoped
+  (the pool holds one), never static/profile-keyed.** A live environment keeps its profile's browser
+  process and therefore the folder's OS lock alive, so a process-lifetime cache would have made
+  `LoginWindow.ClearProfile` — the call that makes a logout a REAL logout — fail every time instead of
+  only while a window is open. A login window opens one profile once and gains nothing from caching; a
+  pool creates N instances on ONE profile, which is the case that does. Owner scoping also makes it
+  single-threaded by construction, which matters because `CoreWebView2Environment` is thread-affine. It
+  reuses an IN-FLIGHT creation (that is the anti-orphan half: `InitTimeout` abandons the await, never
+  the `CreateAsync`) and deliberately does NOT cache a faulted/cancelled task — the trap
+  `WebViewEnvironment` still has, still listed under H3. With
   D19 the answer is settled: route Sessions through the edge (the alternative — dropping the
   reference — is off the table now that the layering is deliberate). VERIFIED:
   the `ProjectReference` exists (`Shenora.WebView2.Sessions.csproj:15`) and NO file in the package
@@ -613,9 +647,14 @@ would have argued a future session back to the pre-D19 position:
   known gate holes (`phase-workflow.md` + `CLAUDE.md`) and the guard's real coverage
   (`sensitive-info.md`); the five missed hunt classes + `FIX-LOG`/`REVIEW-GUIDE` doc-sync
   (`phase-review` skill); the router's two blind spots (`RULES_INDEX.md`).
-- [ ] Still owed, as the batches land: containment-checked static serving (H1) and
-  navigation-policy-enforced-at-`NavigationStarting` (H1) → extend `webview2-hosting.md` (rename its
-  scope line to cover WebView2 **and** WinForms hosting).
+- [x] DONE with the H2 sessions batch, all in `webview2-hosting.md` (on-demand tier, which has room —
+  the CORE tier is at 15.7/16.0 KB and must not grow): containment-checked static serving (H1) and
+  "an async navigation policy CANNOT be enforced in `NavigationStarting`" (H1, with the three-way
+  division of labour so nobody re-litigates it); plus this batch's own — owner-scoped per-profile
+  environment caching and never caching a faulted one, "escaping a wedged op is only HALF the fix"
+  (added under the marshalling rule it completes), re-check cancellation after a multi-second acquire,
+  a health probe must fail closed, a subscribe API on a pooled object needs a disposal check, and root
+  a CDP event receiver in a field.
 - [ ] **The one genuinely new file: `winforms-shell.md`** — `src/Shenora.WinForms/` has NO knowledge
   row at all, while its earned traps are real and expensive: the frameless-maximize ⇄ window-state
   seam, `TrayIcon` cancelling a programmatic `Close()` because WinForms reports `UserClosing`,

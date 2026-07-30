@@ -79,6 +79,13 @@ landing order (oldest first) because they narrate one version being built.
   file-name characters and Windows reserved device names. Per-provider/per-account scoping is the
   session stack's isolation boundary, and the library previously documented that boundary while
   shipping no safe way to construct the path.
+- **`RenderSessionPoolOptions.OpTimeout`, `NavigationTimeout` and `ResetTimeout`** (P5.5 H2) — the
+  three budgets a leased session runs on, all validated at construction. `OpTimeout` (60 s) caps ONE
+  marshalled operation (navigate / script / HTML read / CDP call) and is the piece that lets the pool
+  recover from a wedged page: see Fixed. `NavigationTimeout` (30 s) is the document-load cap that used
+  to be hardcoded — a SOFT cap, since the caller decides what "settled" means. `ResetTimeout` (5 s)
+  bounds the return-to-pool reset. Keep `OpTimeout` above `NavigationTimeout`, or a legitimately slow
+  load is reported as a wedge.
 
 ### Changed
 
@@ -104,6 +111,41 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Fixed
 
+- **A wedged page permanently poisoned the render pool** (P5.5 H2, the second half of the
+  unobserved-token fix). A page blocked in its own script thread never answers `ExecuteScriptAsync` or
+  `GetHtmlAsync`. H4.2 already made the CALLER escape (the marshal observes its token), but that alone
+  left the wedged instance going straight back into the pool, so every later lease inherited the
+  corpse. Operations are now bounded by `OpTimeout`, an expiry surfaces as `TimeoutException`, and the
+  instance is marked poisoned so returning the lease DISCARDS it and the next lease gets a fresh
+  browser. A body that ran and merely threw (a rejected URL, a guard refusal) does not poison anything
+  — completion is tracked, not inferred from the exception.
+- **A returned session that could not be reset was re-pooled forever.** The reset-to-`about:blank`
+  swallowed its own timeout and reported success unconditionally, so the documented "a failed reset
+  DISCARDS the instance" rule was reachable only if the navigation THREW. An unresponsive renderer was
+  therefore recycled indefinitely, each lease burning the full navigation cap before failing. The reset
+  now reports its real outcome.
+- **A cancelled session start left a live browser behind.** Both `RenderSessionPool` and
+  `CoBrowseSession` checked cancellation only BEFORE the multi-second browser init, so a lease
+  cancelled — or a pool disposed — during those seconds published nothing to the caller while leaving a
+  realized off-screen window and a browser process holding the profile lock, with no owner left to
+  dispose either. Both now re-check after init (co-browse also just before publishing) and tear down;
+  `LeaseAsync` additionally passes the pool's own dispose token into instance creation.
+- **Each retried lease against a locked profile orphaned another browser process.** `InitTimeout`
+  abandons the *await* on `CoreWebView2Environment.CreateAsync`, never the creation itself, and every
+  instance created its own environment — so a retry queued a second browser process onto the same
+  locked profile folder, adding to the very lock the timeout's error message blames. A pool now shares
+  ONE environment across its instances and a retry joins the creation already in flight. A failed
+  creation is deliberately not cached, so one transient failure is not terminal for the process.
+- **A co-browse frame stream could stop silently after a GC.** The CDP screencast receiver was held
+  only in a local inside `StartAsync`, so nothing referenced it for the session's lifetime and the
+  stream depended on the WebView2 SDK caching it internally. It is now rooted for the session and
+  detached in `DisposeAsync`.
+- **A late interceptor could read another lease's traffic.** `RenderSession.OnNetwork` and `OnMessage`
+  were the only public members with no disposal check, and the only two that install a persistent tap
+  — so a subscribe after `DisposeAsync` (a stale reference, a continuation outliving its `await using`)
+  attached a live listener to a pooled instance the NEXT lease now owned, streaming its API responses
+  and posted messages to the previous caller. Both now throw `ObjectDisposedException`, as every other
+  member already did.
 - **`AddMessageDispatcher` killed the process for an ordinary composition** (P5.5 H2). It resolved
   module facades INSIDE the `IMessageDispatcher` singleton factory, so any facade whose dependency
   graph reached `IMessageDispatcher` — the documented seam for cross-module `SendAsync` — re-entered
