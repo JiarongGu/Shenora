@@ -37,10 +37,18 @@ public sealed class WindowCommandOptions
 /// The frontend-triggered window commands, ported from the second desktop sibling's session
 /// routes: module <c>WINDOW</c>, types <c>MINIMIZE</c> / <c>TOGGLE_MAXIMIZE</c> / <c>CLOSE</c> /
 /// <c>IS_MAXIMIZED</c> / <c>START_DRAG</c> / <c>START_RESIZE</c> (+ optional <c>SET_THEME</c>).
-/// The client side is <c>WindowCommands</c> in @shenora/react. Register like any facade
-/// (<c>AddModuleFacade</c> needs a parameterless-constructible type, so typically
-/// <c>dispatcher.MapModule(new WindowCommandFacade(...))</c> from <c>AddMessageDispatcher</c>'s
-/// configure callback, once the form exists).
+/// The client side is <c>WindowCommands</c> in @shenora/react.
+///
+/// REGISTRATION: this facade needs the LIVE form, which does not exist when the container is built — so
+/// map it late, from wherever you create the window:
+/// <code>
+/// dispatcher.MapModule(new WindowCommandFacade(new WindowCommandOptions { Window = this, … }));
+/// </code>
+/// <c>dispatcher</c> there is the plain <see cref="IMessageDispatcher"/> resolved from DI; no cast is
+/// needed, and late mapping is safe while requests are in flight. This doc previously pointed at
+/// <c>AddMessageDispatcher</c>'s configure callback, which CANNOT work: that callback runs at
+/// provider-build time, before any form exists (P5.5 H6). It also required a downcast to
+/// <c>MessageDispatcher</c> until the mapping helpers moved onto the interface.
 ///
 /// Lives in Shenora.WebView2 (not Shenora.WinForms) because the commands arrive over the
 /// bridge and need Shenora.Ipc — which the WinForms package deliberately doesn't reference

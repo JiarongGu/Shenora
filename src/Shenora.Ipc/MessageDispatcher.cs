@@ -162,6 +162,16 @@ public sealed class MessageDispatcher : IMessageDispatcher
     /// Append a middleware. The pipeline rebuilds lazily before the next dispatch, and is safe to call
     /// while dispatches are in flight — late mapping is a supported pattern (see <see cref="Pipeline"/>).
     /// </summary>
+    /// <remarks>
+    /// Declared twice on purpose: the interface member returns <see cref="IMessageDispatcher"/> so every
+    /// helper in <see cref="MessageDispatcherExtensions"/> composes on the interface, while this one
+    /// returns the concrete type so existing fluent chains off <c>new MessageDispatcher()</c> keep their
+    /// precise type. C# does not allow a covariant return when implementing an interface, hence the
+    /// explicit implementation below rather than one method serving both.
+    /// </remarks>
+    IMessageDispatcher IMessageDispatcher.Use(MessageMiddleware middleware) => Use(middleware);
+
+    /// <inheritdoc cref="IMessageDispatcher.Use"/>
     public MessageDispatcher Use(MessageMiddleware middleware)
     {
         ArgumentNullException.ThrowIfNull(middleware);
@@ -177,108 +187,12 @@ public sealed class MessageDispatcher : IMessageDispatcher
     }
 
     /// <summary>
-    /// Give every request for <paramref name="module"/> (case-insensitive) to
-    /// <paramref name="handler"/>; a null result falls through to the rest of the pipeline.
+    /// The default logger for <see cref="MessageDispatcherExtensions.UseLogging"/> and
+    /// <see cref="MessageDispatcherExtensions.UseErrorHandler"/> when the caller passes none — the
+    /// dispatcher's own, so a pipeline composed without an explicit logger still reports through the
+    /// same sink it always did.
     /// </summary>
-    public MessageDispatcher UseModule(string module, Func<IpcRequest, Task<IpcResponse?>> handler)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(module);
-        ArgumentNullException.ThrowIfNull(handler);
-        return Use(async (request, next) =>
-        {
-            if (string.Equals(request.Module, module, StringComparison.OrdinalIgnoreCase))
-            {
-                var response = await handler(request);
-                if (response is not null)
-                    return response;
-            }
-            return await next();
-        });
-    }
-
-    /// <summary>Give requests matching module + type (both case-insensitive) to <paramref name="handler"/>.</summary>
-    public MessageDispatcher UseRoute(string module, string type, Func<IpcRequest, Task<IpcResponse>> handler)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(module);
-        ArgumentException.ThrowIfNullOrEmpty(type);
-        ArgumentNullException.ThrowIfNull(handler);
-        return Use(async (request, next) =>
-        {
-            if (string.Equals(request.Module, module, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(request.Type, type, StringComparison.OrdinalIgnoreCase))
-            {
-                return await handler(request);
-            }
-            return await next();
-        });
-    }
-
-    /// <summary>Middleware that logs every request and its outcome.</summary>
-    public MessageDispatcher UseLogging()
-    {
-        return Use(async (request, next) =>
-        {
-            _logger.LogDebug("Processing {Module}/{Type}", request.Module, request.Type);
-            var response = await next();
-            if (response is { Success: true })
-                _logger.LogDebug("Success {Module}/{Type}", request.Module, request.Type);
-            else if (response is { Success: false })
-                _logger.LogWarning("Failed {Module}/{Type}: [{Code}]", request.Module, request.Type,
-                    response.Error?.Code);
-            return response;
-        });
-    }
-
-    /// <summary>
-    /// Middleware that converts downstream exceptions into structured error responses — register
-    /// it FIRST so it wraps everything after it. <see cref="OperationException"/> crosses as its
-    /// structured error; anything else is logged host-side and crosses only as
-    /// <see cref="IpcErrorCodes.UnknownError"/> plus the exception type name (the source leaked
-    /// <c>ex.Message</c> across the bridge here). <see cref="DispatchAsync"/> keeps a last-resort
-    /// copy of this mapping for pipelines composed without it.
-    /// </summary>
-    public MessageDispatcher UseErrorHandler()
-    {
-        return Use(async (request, next) =>
-        {
-            try
-            {
-                return await next();
-            }
-            catch (Exception ex)
-            {
-                return IpcErrorMapping.ToErrorResponse(request, ex, _logger, "in");
-            }
-        });
-    }
-
-    /// <summary>Map one route to a simple handler; the result is wrapped in a success response.</summary>
-    public MessageDispatcher MapRoute(string module, string type, Func<IpcRequest, object?> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        return UseRoute(module, type,
-            request => Task.FromResult(IpcResponse.CreateSuccess(request.Id, handler(request))));
-    }
-
-    /// <summary>Map a route table for one module (see <see cref="ModuleRouteBuilder"/>).</summary>
-    public MessageDispatcher MapModule(string module, Action<ModuleRouteBuilder> configure)
-    {
-        ArgumentNullException.ThrowIfNull(configure);
-        configure(new ModuleRouteBuilder(this, module));
-        return this;
-    }
-
-    /// <summary>
-    /// Route a whole module to a facade. This replaces the source app's static mutable service
-    /// registry: facades live in DI (registered as <see cref="IModuleFacade"/>) and are mapped
-    /// here at composition time.
-    /// </summary>
-    public MessageDispatcher MapModule(IModuleFacade facade)
-    {
-        ArgumentNullException.ThrowIfNull(facade);
-        return UseModule(facade.ModuleName,
-            async request => await facade.HandleMessageAsync(request));
-    }
+    internal ILogger Logger => _logger;
 
     /// <summary>Compose an IMMUTABLE snapshot — never the live field, or this races <see cref="Use"/>.</summary>
     private static Func<IpcRequest, Task<IpcResponse?>> BuildPipeline(MessageMiddleware[] middlewares)
@@ -299,14 +213,15 @@ public sealed class MessageDispatcher : IMessageDispatcher
 }
 
 /// <summary>
-/// Route table for one module, used by <see cref="MessageDispatcher.MapModule(string, Action{ModuleRouteBuilder})"/>.
+/// Route table for one module, used by
+/// <see cref="MessageDispatcherExtensions.MapModule(IMessageDispatcher, string, Action{ModuleRouteBuilder})"/>.
 /// </summary>
 public sealed class ModuleRouteBuilder
 {
-    private readonly MessageDispatcher _dispatcher;
+    private readonly IMessageDispatcher _dispatcher;
     private readonly string _module;
 
-    internal ModuleRouteBuilder(MessageDispatcher dispatcher, string module)
+    internal ModuleRouteBuilder(IMessageDispatcher dispatcher, string module)
     {
         _dispatcher = dispatcher;
         _module = module;

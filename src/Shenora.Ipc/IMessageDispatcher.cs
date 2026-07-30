@@ -23,4 +23,24 @@ public interface IMessageDispatcher
     /// structured error as an <see cref="OperationException"/>.
     /// </summary>
     Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null);
+
+    /// <summary>
+    /// Append a middleware — the ONE composition primitive. Every mapping helper
+    /// (<see cref="MessageDispatcherExtensions.MapModule(IMessageDispatcher, IModuleFacade)"/> and
+    /// friends) is an extension method over this, so all of them work on the interface.
+    /// <para>
+    /// WHY THIS IS ON THE INTERFACE (P5.5 H6). The interface previously exposed only dispatch/send, so
+    /// a composition that maps a facade AFTER the container is built — the documented pattern for
+    /// anything needing the live window — had to DOWNCAST to <see cref="MessageDispatcher"/>. The
+    /// reference composition did exactly that, and its <c>if (dispatcher is MessageDispatcher concrete)</c>
+    /// had no <c>else</c>: registering a different <see cref="IMessageDispatcher"/>, or wrapping it in a
+    /// decorator, silently dropped three whole modules and the frameless title bar simply stopped
+    /// working, with no error anywhere. Adopters copy that branch.
+    /// </para>
+    /// <para>
+    /// Late mapping is safe while requests are in flight — see
+    /// <see cref="MessageDispatcher.Use"/> for the concurrency contract.
+    /// </para>
+    /// </summary>
+    IMessageDispatcher Use(MessageMiddleware middleware);
 }

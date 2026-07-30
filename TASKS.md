@@ -600,7 +600,25 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   ES2020 `lib` vs `.at()`). So `@ts-expect-error` assertions were inert. Fixed the lib, added a
   `typecheck` script, and wired it into `dev.mjs verify` — then proved it works by reintroducing the
   anti-pattern and watching TS2578 fire.
-- [ ] **Give form-dependent facades a first-class registration seam.** The reference composition has
+- [x] **Give form-dependent facades a first-class registration seam.** DONE — and NOT by either option
+  the review listed. The recommendation (facades resolve the form lazily via `IFormInteraction` and
+  register through `AddModuleFacade`) does not actually work for two of the three modules: `DropZoneFacade`
+  needs the live `DropZoneManager`, which needs the WebView2 control, and the RENDER route closes over the
+  form's session pool — neither is resolvable from DI before the form exists. And widening
+  `IMessageDispatcher` with the whole `Map*`/`Use*` family was rejected as too large.
+  What shipped is smaller than either: **`Use(MessageMiddleware)` — the ONE primitive every helper
+  already delegated to — moved onto the interface, and the six helpers became extension methods over it**
+  (`MessageDispatcherExtensions`). So the interface stays at the four things a dispatcher genuinely is
+  (dispatch, two sends, compose), a decorator has four members to write instead of ten, and every helper
+  works on any implementation. The sample's `if (dispatcher is MessageDispatcher concrete)` — which had no
+  `else` — is gone. `AddMessageDispatcher`'s configure callback now receives the INTERFACE, since taking
+  the concrete type would have kept propagating the downcast. Two tests pin it: late mapping through the
+  interface, and a pass-through decorator (the exact shape that used to make three modules vanish).
+  `MessageDispatcher.Use` is declared twice on purpose — C# forbids a covariant return when implementing
+  an interface, so the explicit impl returns `IMessageDispatcher` while the public one keeps the concrete
+  type for existing fluent chains. Also fixed the `WindowCommandFacade` doc, which pointed at
+  `AddMessageDispatcher`'s callback — a path that CANNOT work, since it runs before any form exists.
+  Original recommendation kept for context: The reference composition has
   to downcast — `MainForm.cs:85` `if (dispatcher is MessageDispatcher concrete)` — because
   `IMessageDispatcher` exposes only `DispatchAsync`/`SendAsync`, and `WindowCommandFacade.cs:41-43`
   documents a path (`AddMessageDispatcher`'s configure callback) that CANNOT work: that callback runs

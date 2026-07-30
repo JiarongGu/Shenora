@@ -31,7 +31,7 @@ public static class IpcServiceCollectionExtensions
     /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="AddMessageDispatcher"/>
     /// must use.
     /// </summary>
-    public static MessageDispatcher MapRegisteredModules(this MessageDispatcher dispatcher, IServiceProvider services)
+    public static IMessageDispatcher MapRegisteredModules(this IMessageDispatcher dispatcher, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(services);
@@ -59,7 +59,7 @@ public static class IpcServiceCollectionExtensions
     /// no log line. By the first dispatch the singleton is cached, so the same graph resolves fine.
     /// </para>
     /// </summary>
-    public static MessageDispatcher MapRegisteredModulesLazily(this MessageDispatcher dispatcher, IServiceProvider services)
+    public static IMessageDispatcher MapRegisteredModulesLazily(this IMessageDispatcher dispatcher, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(services);
@@ -117,19 +117,24 @@ public static class IpcServiceCollectionExtensions
 
     /// <summary>
     /// Register the app's <see cref="IMessageDispatcher"/> singleton composed in the proven
-    /// order: <see cref="MessageDispatcher.UseErrorHandler"/> FIRST (so it wraps everything),
+    /// order: <see cref="MessageDispatcherExtensions.UseErrorHandler"/> FIRST (so it wraps everything),
     /// then <paramref name="configure"/> (logging, app middleware, a scoped router, ad-hoc
     /// routes), then every DI-registered facade. Transports resolve <see cref="IMessageDispatcher"/>
     /// and feed requests in.
+    /// <para>
+    /// <paramref name="configure"/> receives the INTERFACE, not the concrete dispatcher (P5.5 H6): every
+    /// mapping helper now composes on <see cref="IMessageDispatcher"/>, so nothing needs the concrete
+    /// type — and taking it here would have kept propagating the very downcast this change removes.
+    /// </para>
     /// </summary>
     public static IServiceCollection AddMessageDispatcher(
-        this IServiceCollection services, Action<IServiceProvider, MessageDispatcher>? configure = null)
+        this IServiceCollection services, Action<IServiceProvider, IMessageDispatcher>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IMessageDispatcher>(sp =>
         {
-            var dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>())
-                .UseErrorHandler();
+            IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>());
+            dispatcher.UseErrorHandler();
             configure?.Invoke(sp, dispatcher);
             // LAZILY — resolving facades here would re-enter this very factory for any facade whose
             // graph reaches IMessageDispatcher, which is a StackOverflow with no diagnostic. See

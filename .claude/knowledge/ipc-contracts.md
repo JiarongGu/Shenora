@@ -46,6 +46,14 @@ transport, or building the P6 adoption shims.
   entirely, so an async fallback (a scripted preview harness usually is) that never settled hung the
   caller with none of the real path's diagnostics. Race a THENABLE only — a plain value has already
   settled and must not be made async.
+- **Composition helpers belong on `IMessageDispatcher`, via extensions over its ONE `Use` primitive.**
+  They were instance methods on `MessageDispatcher`, so late mapping required a DOWNCAST — and the
+  reference composition's `if (dispatcher is MessageDispatcher concrete)` had no `else`, so any decorator
+  or alternative registration silently dropped three whole modules (symptom: the frameless title bar just
+  stopped working). Keep the interface at the four things a dispatcher IS — dispatch, two sends,
+  compose — so a decorator has four members to write and every helper works on it for free. Anything
+  requiring the live window is mapped LATE, from wherever the window is created; a doc that says to do it
+  in `AddMessageDispatcher`'s configure callback is wrong, because that runs before any form exists.
 - **LATE MAPPING is supported, so the pipeline must be thread-safe** — "configure then serve" is not a
   safe assumption here (the WinForms host maps its window facades after the form exists). `Use` was a
   `Lazy` reassignment over a mutable `List<T>` with no synchronization: a dispatch could read the OLD

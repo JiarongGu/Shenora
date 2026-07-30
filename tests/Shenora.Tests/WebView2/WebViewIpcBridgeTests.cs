@@ -414,5 +414,9 @@ public class WebViewIpcBridgeTests
 
         public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null) =>
             throw new NotSupportedException();
+
+        // Part of the interface since P5.5 H6 so late mapping needs no downcast. This double exists only
+        // to prove the bridge never leaks exception text, so composing on it is not a scenario.
+        public IMessageDispatcher Use(MessageMiddleware middleware) => throw new NotSupportedException();
     }
 }

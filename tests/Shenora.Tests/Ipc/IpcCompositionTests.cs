@@ -24,6 +24,64 @@ public class IpcCompositionTests
     private static IpcRequest Request(string module, string type = "ANY") =>
         new() { Module = module, Type = type };
 
+    /// <summary>
+    /// A pass-through decorator — the shape that used to break composition silently (P5.5 H6). It must
+    /// be writable with FOUR members: dispatch, two sends, and compose.
+    /// </summary>
+    private sealed class CountingDispatcher(IMessageDispatcher inner) : IMessageDispatcher
+    {
+        public int Dispatched { get; private set; }
+
+        public Task<IpcResponse> DispatchAsync(IpcRequest request)
+        {
+            Dispatched++;
+            return inner.DispatchAsync(request);
+        }
+
+        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null) =>
+            inner.SendAsync(module, type, scope, payload);
+
+        public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null) =>
+            inner.SendAsync<T>(module, type, scope, payload);
+
+        public IMessageDispatcher Use(MessageMiddleware middleware) => inner.Use(middleware);
+    }
+
+    [Fact]
+    public async Task Late_mapping_works_through_the_interface_with_no_downcast()
+    {
+        // The reference composition had to write `if (dispatcher is MessageDispatcher concrete)` to map
+        // its window-facing facades after the form existed — and that `if` had NO else, so any
+        // composition that registered a different IMessageDispatcher silently lost three whole modules,
+        // with the only symptom being a title bar that stopped working (P5.5 H6). Every mapping helper is
+        // now an extension over the interface.
+        using var provider = new ServiceCollection().AddMessageDispatcher().BuildServiceProvider();
+        IMessageDispatcher dispatcher = provider.GetRequiredService<IMessageDispatcher>();
+
+        dispatcher.MapModule(new AlphaFacade());
+        dispatcher.MapRoute("LATE", "PING", _ => "pong");
+        dispatcher.MapModule("BUILDER", routes => routes.Route("ECHO", _ => "echoed"));
+
+        Assert.Equal("alpha", (await dispatcher.DispatchAsync(Request("ALPHA"))).Data);
+        Assert.Equal("pong", (await dispatcher.DispatchAsync(Request("LATE", "PING"))).Data);
+        Assert.Equal("echoed", (await dispatcher.DispatchAsync(Request("BUILDER", "ECHO"))).Data);
+    }
+
+    [Fact]
+    public async Task A_decorated_dispatcher_can_still_be_composed()
+    {
+        // The failure mode the downcast created: wrapping the dispatcher — for metrics, tracing, an
+        // app-side guard — made `is MessageDispatcher` false and every late-mapped module vanish.
+        var decorated = new CountingDispatcher(new MessageDispatcher());
+        decorated.UseErrorHandler();
+        decorated.MapModule(new AlphaFacade());
+
+        var response = await decorated.DispatchAsync(Request("ALPHA"));
+
+        Assert.Equal("alpha", response.Data);
+        Assert.Equal(1, decorated.Dispatched); // the decorator really is in the path
+    }
+
     [Fact]
     public async Task AddMessageDispatcher_maps_every_registered_facade()
     {

@@ -160,7 +160,7 @@ public sealed class ScopedContainerRouter : IDisposable
     /// from the scope container (an unresolved facade falls through, keeping composition open).
     /// Exceptions (incl. <see cref="ScopedContainerRouterOptions.ConfigureScope"/> validation)
     /// propagate to the pipeline's error mapping — register the router after
-    /// <see cref="MessageDispatcher.UseErrorHandler"/>.
+    /// <see cref="MessageDispatcherExtensions.UseErrorHandler"/>.
     /// </summary>
     public async Task<IpcResponse?> HandleAsync(IpcRequest request, Func<Task<IpcResponse?>> next)
     {
@@ -244,7 +244,7 @@ public static class ScopedContainerRouterExtensions
     /// Route scope-carrying requests through <paramref name="router"/>. Family order: error
     /// handler → logging → app middleware → THIS → global facades.
     /// </summary>
-    public static MessageDispatcher UseScopedRouter(this MessageDispatcher dispatcher, ScopedContainerRouter router)
+    public static IMessageDispatcher UseScopedRouter(this IMessageDispatcher dispatcher, ScopedContainerRouter router)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(router);

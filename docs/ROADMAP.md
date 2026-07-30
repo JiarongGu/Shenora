@@ -5,6 +5,36 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H6 (part 3): the facade registration seam — no more downcast
+
+The reference composition had to write `if (dispatcher is MessageDispatcher concrete)` to map its
+window-facing facades after the form existed, and that `if` had **no `else`**: any composition that
+registered a different `IMessageDispatcher`, or wrapped it in a decorator, silently dropped WINDOW,
+DROP_ZONE and RENDER — and the only symptom was a frameless title bar that stopped working. Adopters copy
+that branch.
+
+Neither option the review offered turned out to be right. Its recommendation — have the facades resolve
+the form lazily through `IFormInteraction` and register via `AddModuleFacade` — does not work for two of
+the three: `DropZoneFacade` needs the live `DropZoneManager` (which needs the WebView2 control) and the
+RENDER route closes over the form's session pool, so neither is resolvable from DI before the form exists.
+Its alternative — widen `IMessageDispatcher` with the whole `Map*`/`Use*` family — was correctly judged
+too large.
+
+What shipped is smaller than either: **`Use(MessageMiddleware)`, the one primitive every helper already
+delegated to, moved onto the interface, and the six helpers became extension methods over it.** So the
+interface stays at the four things a dispatcher genuinely is — dispatch, two sends, compose — a decorator
+has four members to write rather than ten, and every helper works on any implementation for free. Two
+tests pin it: late mapping straight through the interface, and a pass-through decorator, which is the
+exact shape that used to make three modules vanish.
+
+One deliberate oddity, documented at the site: `MessageDispatcher.Use` is declared twice. C# forbids a
+covariant return when implementing an interface, so the explicit implementation returns
+`IMessageDispatcher` while the public method keeps the concrete type for existing fluent chains.
+
+Also fixed here: `WindowCommandFacade`'s registration doc pointed at `AddMessageDispatcher`'s configure
+callback — a path that CANNOT work, because that callback runs at provider-build time, before any form
+exists.
+
 ### 2026-07-30 — P5.5 H6 (part): the gates that were supposed to be watching
 
 Four items, and the theme is that three separate gates existed but were not actually looking at anything.

@@ -8,7 +8,7 @@ namespace Shenora.Ipc;
 /// <para>
 /// This existed as four byte-identical <c>catch (OperationException) / catch (Exception)</c> pairs —
 /// two in <see cref="MessageDispatcher"/> (its transport entry point and
-/// <see cref="MessageDispatcher.UseErrorHandler"/>), one in <see cref="BaseFacade"/>, and a partial
+/// <see cref="MessageDispatcherExtensions.UseErrorHandler"/>), one in <see cref="BaseFacade"/>, and a partial
 /// one in the WebView2 bridge. Four copies of the rule that must never be broken is how it
 /// eventually gets broken: a fifth error path gets written by copy-paste, and the one that forgets
 /// <c>ex.GetType().Name</c> and passes <c>ex.Message</c> instead leaks a filesystem path or a

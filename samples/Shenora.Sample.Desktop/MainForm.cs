@@ -80,22 +80,27 @@ public sealed class MainForm : OptimizedForm
             NavigationGuard = (uri, _) => Task.FromResult(uri.IsLoopback),
         });
 
-        // The window-facing facades need the live form, so they map here (late registration is
-        // supported — the dispatcher rebuilds its pipeline lazily).
-        if (dispatcher is MessageDispatcher concrete)
+        // The window-facing facades need the live form, so they map HERE — late registration is
+        // supported and safe while requests are in flight (the dispatcher rebuilds its pipeline under a
+        // lock). No downcast: every mapping helper composes on IMessageDispatcher itself.
+        //
+        // This used to read `if (dispatcher is MessageDispatcher concrete) { … }` with no else, because
+        // the interface exposed only dispatch/send. That silently dropped all three modules below for
+        // any composition that registered a different IMessageDispatcher or wrapped it in a decorator —
+        // and the symptom was the frameless title bar simply not working, with no error anywhere.
         {
-            concrete.MapModule(new WindowCommandFacade(new WindowCommandOptions
+            dispatcher.MapModule(new WindowCommandFacade(new WindowCommandOptions
             {
                 Window = this,
                 ToggleMaximize = ToggleMaximize,      // the frameless manual work-area path
                 IsMaximized = () => IsAppMaximized,   // WindowState never reflects it
             }));
-            concrete.MapModule(new DropZoneFacade(_dropZones));
+            dispatcher.MapModule(new DropZoneFacade(_dropZones));
 
             // The route-builder shape (SampleFacade shows the BaseFacade shape): lease a pooled
             // off-screen session, render the requested page, and prove its JS ran (title + HTML
             // length come from the LIVE DOM, not the response bytes) — the e2e drives this.
-            concrete.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async request =>
+            dispatcher.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async request =>
             {
                 var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
                 // Bound the lease: with Capacity 2, two wedged sessions would otherwise hang every

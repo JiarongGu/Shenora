@@ -137,6 +137,22 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Breaking
 
+- **The dispatcher's composition helpers moved from `MessageDispatcher` onto `IMessageDispatcher`**
+  (P5.5 H6). `Use(MessageMiddleware)` — the single primitive all of them already delegated to — is now an
+  interface member, and `UseModule`/`UseRoute`/`UseLogging`/`UseErrorHandler`/`MapRoute`/`MapModule`/
+  `UseScopedRouter`/`MapRegisteredModules`(`Lazily`) are extension methods over the interface
+  (`MessageDispatcherExtensions`). **Why:** the interface exposed only dispatch/send, so a composition that
+  maps a facade AFTER the container is built — the documented pattern for anything needing the live
+  window — had to downcast. The reference composition did, and its `if (dispatcher is MessageDispatcher
+  concrete)` had no `else`: registering a different `IMessageDispatcher`, or wrapping it in any decorator,
+  silently dropped three whole modules and the frameless title bar just stopped working with no error.
+  Adopters copy that branch.
+  **What you must change:** almost certainly nothing — `dispatcher.MapModule(…)` etc. still compile
+  through extension resolution. A fluent chain whose result you assign to a `MessageDispatcher`-typed
+  variable now yields `IMessageDispatcher`; `AddMessageDispatcher`'s configure callback receives
+  `IMessageDispatcher` instead of `MessageDispatcher`; and a custom `IMessageDispatcher` implementation
+  must add `Use`. `UseLogging`/`UseErrorHandler` gained an optional `ILogger` and default to the
+  dispatcher's own logger, so behaviour is unchanged.
 - **`IpcResponse.CreateError`'s argument order now matches `OperationException`'s** (P5.5 H6):
   `(id, code, parameters, message)`, previously `(id, code, message, parameters)`. The two are siblings
   that build the same structured error from the same pieces, and they disagreed about the last two — so
