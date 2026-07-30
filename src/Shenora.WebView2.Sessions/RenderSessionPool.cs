@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
@@ -16,6 +17,14 @@ public sealed class RenderSessionPoolOptions
     /// Set <see cref="SessionBrowserOptions.KeepAliveInBackground"/> — the instances render
     /// off-screen and their JS must keep running.</summary>
     public required SessionBrowserOptions Browser { get; init; }
+    /// <summary>
+    /// Diagnostics. Null = silent. The sessions package shipped with NO logging of any kind against
+    /// ~30 swallowed catches, so a wedged pool was undiagnosable in production (P5.5 H4.7). Note the
+    /// browser-level events (init failure, suppressed popups, denied permissions, a dead renderer)
+    /// report through <see cref="SessionBrowserOptions.Log"/> on <see cref="Browser"/>.
+    /// </summary>
+    public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
+
 
     /// <summary>
     /// Max concurrent leased sessions (the family default: 3). Leases past the cap WAIT until
@@ -100,6 +109,14 @@ public sealed class RenderSessionPool : IDisposable
         /// return-to-pool so a recycled instance can't inherit the previous lease's approval.
         /// </summary>
         internal string? ApprovedHost { get; set; }
+
+        /// <summary>
+        /// Set when this instance's RENDER PROCESS died (P5.5 H4.4). Its browser object survives the
+        /// crash, so nothing else marks it unusable: without this the instance was reset, re-pooled
+        /// and re-leased forever, and every later lease burned the full navigation cap against a dead
+        /// renderer. <see cref="Return"/> discards a poisoned instance instead of re-pooling it.
+        /// </summary>
+        internal bool Poisoned { get; set; }
     }
 
     /// <summary>
@@ -175,8 +192,12 @@ public sealed class RenderSessionPool : IDisposable
 
                     web = new WebView2Control { Dock = DockStyle.Fill };
                     host.Controls.Add(web);
-                    await SessionBrowser.InitializeAsync(web, _options.Browser).ConfigureAwait(true);
+
+                    // The instance exists before init so the crash callback can mark it — a renderer
+                    // can die at any time, including during the very first navigation.
                     var instance = new PoolInstance(host, web);
+                    await SessionBrowser.InitializeAsync(web, _options.Browser,
+                        onProcessFailed: _ => instance.Poisoned = true).ConfigureAwait(true);
                     WireNavigationPolicy(instance);
                     tcs.TrySetResult(instance);
                 }
@@ -281,7 +302,10 @@ public sealed class RenderSessionPool : IDisposable
                 bool ok;
                 try
                 {
-                    ok = await (ResetOverride ?? ResetToBlankAsync)(instance).ConfigureAwait(true);
+                    // A crashed renderer can never be reset back to a usable state, so don't try —
+                    // discard it straight away (P5.5 H4.4).
+                    ok = !instance.Poisoned
+                         && await (ResetOverride ?? ResetToBlankAsync)(instance).ConfigureAwait(true);
                 }
                 catch
                 {
@@ -298,6 +322,12 @@ public sealed class RenderSessionPool : IDisposable
                 }
                 if (!repooled)
                 {
+                    if (!ok)
+                    {
+                        _options.Log?.LogInformation(
+                            "Discarding a session instance instead of re-pooling it (poisoned: {Poisoned}) — " +
+                            "a fresh one will be created on the next lease.", instance.Poisoned);
+                    }
                     DiscardInstance(instance);
                     if (!ok) lock (_lock) _created--; // a discarded (poisoned) instance frees room for a fresh one
                 }
@@ -356,9 +386,12 @@ public sealed class RenderSessionPool : IDisposable
                 instance.Web.Dispose();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // teardown best-effort
+            // Teardown stays best-effort, but no longer SILENT: a discard that fails leaks a browser
+            // process holding the profile lock, and the next launch's init hangs on it — the exact
+            // symptom the init-timeout message tries to explain (P5.5 H4.7).
+            _options.Log?.LogWarning(ex, "Discarding a pooled session instance failed.");
         }
     }
 

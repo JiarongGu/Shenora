@@ -16,6 +16,8 @@ Shenora.WebView2.Sessions.CoBrowseSessionOptions
   Int32 get_JpegQuality()
   Int32 get_MaxFrameHeight()
   Int32 get_MaxFrameWidth()
+  Microsoft.Extensions.Logging.ILogger Log
+  Microsoft.Extensions.Logging.ILogger get_Log()
   Shenora.WebView2.Sessions.CoBrowseViewport InitialViewport
   Shenora.WebView2.Sessions.CoBrowseViewport get_InitialViewport()
   Shenora.WebView2.Sessions.SessionBrowserOptions Browser
@@ -30,6 +32,7 @@ Shenora.WebView2.Sessions.CoBrowseSessionOptions
   Void set_FrameBuffer(Int32)
   Void set_InitialViewport(Shenora.WebView2.Sessions.CoBrowseViewport)
   Void set_JpegQuality(Int32)
+  Void set_Log(Microsoft.Extensions.Logging.ILogger)
   Void set_MaxFrameHeight(Int32)
   Void set_MaxFrameWidth(Int32)
   Void set_NavigationGuard(System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]])
@@ -205,6 +208,8 @@ Shenora.WebView2.Sessions.RenderSessionPoolOptions
   Boolean get_VisiblePerSession()
   Int32 Capacity
   Int32 get_Capacity()
+  Microsoft.Extensions.Logging.ILogger Log
+  Microsoft.Extensions.Logging.ILogger get_Log()
   Shenora.WebView2.Sessions.SessionBrowserOptions Browser
   Shenora.WebView2.Sessions.SessionBrowserOptions get_Browser()
   System.Drawing.Size OffscreenClientSize
@@ -217,6 +222,7 @@ Shenora.WebView2.Sessions.RenderSessionPoolOptions
   Void set_Anchor(System.Windows.Forms.Control)
   Void set_Browser(Shenora.WebView2.Sessions.SessionBrowserOptions)
   Void set_Capacity(Int32)
+  Void set_Log(Microsoft.Extensions.Logging.ILogger)
   Void set_NavigationGuard(System.Func`3[System.Uri,System.Threading.CancellationToken,System.Threading.Tasks.Task`1[System.Boolean]])
   Void set_OffscreenClientSize(System.Drawing.Size)
   Void set_VisiblePerSession(Boolean)
@@ -243,13 +249,17 @@ Shenora.WebView2.Sessions.SessionApiCall
   Void set_Method(System.String)
   Void set_Url(System.String)
 Shenora.WebView2.Sessions.SessionBrowser
-  System.Threading.Tasks.Task InitializeAsync(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.Sessions.SessionBrowserOptions)
+  System.Threading.Tasks.Task InitializeAsync(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.Sessions.SessionBrowserOptions, System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs])
   System.Threading.Tasks.Task`1[System.String] GetHtmlAsync(Microsoft.Web.WebView2.WinForms.WebView2)
 Shenora.WebView2.Sessions.SessionBrowserOptions
+  Boolean IsDevelopment
   Boolean KeepAliveInBackground
   Boolean MuteAudio
+  Boolean get_IsDevelopment()
   Boolean get_KeepAliveInBackground()
   Boolean get_MuteAudio()
+  Microsoft.Extensions.Logging.ILogger Log
+  Microsoft.Extensions.Logging.ILogger get_Log()
   System.Func`3[System.Uri,System.Uri,System.Boolean] RequestFilter
   System.Func`3[System.Uri,System.Uri,System.Boolean] get_RequestFilter()
   System.String AdditionalBrowserArguments
@@ -261,7 +271,9 @@ Shenora.WebView2.Sessions.SessionBrowserOptions
   Void .ctor()
   Void set_AdditionalBrowserArguments(System.String)
   Void set_InitTimeout(System.TimeSpan)
+  Void set_IsDevelopment(Boolean)
   Void set_KeepAliveInBackground(Boolean)
+  Void set_Log(Microsoft.Extensions.Logging.ILogger)
   Void set_MuteAudio(Boolean)
   Void set_ProfileDirectory(System.String)
   Void set_RequestFilter(System.Func`3[System.Uri,System.Uri,System.Boolean])

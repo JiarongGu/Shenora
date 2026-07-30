@@ -24,6 +24,14 @@ public sealed class CoBrowseSessionOptions
     /// bandwidth AND UX).
     /// </summary>
     public required SessionBrowserOptions Browser { get; init; }
+    /// <summary>
+    /// Diagnostics. Null = silent. The sessions package shipped with NO logging of any kind against
+    /// ~30 swallowed catches, so a wedged co-browse session was undiagnosable in production (P5.5 H4.7). Note the
+    /// browser-level events (init failure, suppressed popups, denied permissions, a dead renderer)
+    /// report through <see cref="SessionBrowserOptions.Log"/> on <see cref="Browser"/>.
+    /// </summary>
+    public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
+
 
     /// <summary>
     /// Consulted before every controller navigation (return false to refuse) — the same
@@ -140,7 +148,12 @@ public sealed class CoBrowseSession : IAsyncDisposable
                     form = OffscreenWindow.Create("Co-browse session", new Size(1600, 1100));
                     var web = new WebView2Control { Dock = DockStyle.Fill };
                     form.Controls.Add(web);
-                    await SessionBrowser.InitializeAsync(web, options.Browser).ConfigureAwait(true);
+                    // A dead renderer must COMPLETE the frame channel (P5.5 H4.4). Without this the
+                    // screencast simply stops and the app's `await foreach` over Frames waits forever
+                    // for a stream that can never resume — the consumer cannot tell a crashed session
+                    // from a quiet one, which is exactly the missing-lifecycle-hook problem D21 names.
+                    await SessionBrowser.InitializeAsync(web, options.Browser,
+                        onProcessFailed: _ => frames.Writer.TryComplete()).ConfigureAwait(true);
 
                     var core = web.CoreWebView2;
                     var receiver = core.GetDevToolsProtocolEventReceiver("Page.screencastFrame");

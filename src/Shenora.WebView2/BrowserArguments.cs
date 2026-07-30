@@ -62,16 +62,84 @@ public static class BrowserArguments
             "--disable-background-networking " +
             "--disable-breakpad";
 
-        if (!string.IsNullOrWhiteSpace(additionalArguments))
-        {
-            args += " " + additionalArguments.Trim();
-        }
+        return Compose(args, isDevelopment, devExtraArguments, additionalArguments);
+    }
 
-        if (isDevelopment && !string.IsNullOrWhiteSpace(devExtraArguments))
+    /// <summary>
+    /// Append caller-supplied switches to a <paramref name="preset"/> while keeping this file's two
+    /// hard invariants — the single place that knows them, so a second preset (the auxiliary session
+    /// browser) cannot get them subtly wrong (P5.5 H4.4).
+    /// <list type="number">
+    /// <item><b>Each features switch appears EXACTLY ONCE.</b> Chromium keeps only the LAST
+    /// occurrence, so an app appending its own <c>--enable-features=</c>/<c>--disable-features=</c>
+    /// silently discarded the whole preset — the measured incident this class documents. Caller
+    /// feature lists are MERGED into the preset's single occurrence instead of appended.</item>
+    /// <item><b>The dev CDP arguments are re-appended by hand.</b> Setting
+    /// <c>AdditionalBrowserArguments</c> at all makes WebView2 IGNORE
+    /// <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c>, which is how the devtools loop passes
+    /// <c>--remote-debugging-port</c>. Never in production.</item>
+    /// </list>
+    /// </summary>
+    public static string Compose(string preset, bool isDevelopment,
+                                 string? devExtraArguments = null, string? additionalArguments = null)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        var args = preset.Trim();
+
+        // Order matters only for the features merge: fold every caller list in, then append what is
+        // left over, so the result still carries one --enable-features and one --disable-features.
+        var extras = new List<string>();
+        if (!string.IsNullOrWhiteSpace(additionalArguments)) extras.Add(additionalArguments.Trim());
+        if (isDevelopment && !string.IsNullOrWhiteSpace(devExtraArguments)) extras.Add(devExtraArguments.Trim());
+
+        foreach (var extra in extras)
         {
-            args += " " + devExtraArguments.Trim();
+            var remainder = extra;
+            foreach (var switchName in new[] { "--enable-features=", "--disable-features=" })
+            {
+                remainder = MergeFeatureSwitch(ref args, remainder, switchName);
+            }
+            if (!string.IsNullOrWhiteSpace(remainder)) args += " " + remainder.Trim();
         }
 
         return args;
+    }
+
+    /// <summary>
+    /// Move any <paramref name="switchName"/> occurrence out of <paramref name="remainder"/> and fold
+    /// its values into the one already in <paramref name="args"/> (or append it if the preset has
+    /// none). Returns the remainder with that switch removed.
+    /// </summary>
+    private static string MergeFeatureSwitch(ref string args, string remainder, string switchName)
+    {
+        var at = remainder.IndexOf(switchName, StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return remainder;
+
+        var valueStart = at + switchName.Length;
+        var valueEnd = remainder.IndexOf(' ', valueStart);
+        if (valueEnd < 0) valueEnd = remainder.Length;
+        var values = remainder[valueStart..valueEnd];
+        remainder = (remainder[..at] + remainder[valueEnd..]).Trim();
+        if (string.IsNullOrWhiteSpace(values)) return remainder;
+
+        var presetAt = args.IndexOf(switchName, StringComparison.OrdinalIgnoreCase);
+        if (presetAt < 0)
+        {
+            args += " " + switchName + values;
+            return remainder;
+        }
+
+        var presetValueStart = presetAt + switchName.Length;
+        var presetValueEnd = args.IndexOf(' ', presetValueStart);
+        if (presetValueEnd < 0) presetValueEnd = args.Length;
+        var existing = args[presetValueStart..presetValueEnd]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        foreach (var value in values.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!existing.Contains(value, StringComparer.OrdinalIgnoreCase)) existing.Add(value);
+        }
+        args = args[..presetValueStart] + string.Join(',', existing) + args[presetValueEnd..];
+        return remainder;
     }
 }

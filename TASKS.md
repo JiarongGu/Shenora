@@ -297,7 +297,7 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   pre-handle. `CoBrowseSession`'s input/hotspot paths must not fault the session — they use the
   never-faulting `InvokeOrDefaultAsync` overload. This is why the contract is three-state
   (`NotReady`/`Ready`/`Gone`) plus `IsOnUiThread`, not one bool.
-- [ ] **H4.3 — The portability proof.** A `net10.0` project `samples/Shenora.Sample.Logic` with one
+- [x] **H4.3 — The portability proof.** A `net10.0` project `samples/Shenora.Sample.Logic` with one
   facade that picks a file, reads the clipboard and opens a URL, referenced by the desktop sample.
   Compiles with no Windows reference = the seam is real; a Windows type later dragged into a contract
   turns it red. Without this, portability is asserted rather than enforced. (~30 lines.) TWO
@@ -305,7 +305,18 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   `SampleFacade` injects the Windows extension, so the facade gets SPLIT — portable routes out,
   reveal-in-Explorer and secondary windows stay in the desktop sample); and it must be added to
   `Shenora.slnx` — a SECOND solution edit after H5's, or `verify` never compiles the proof.
-- [ ] **H4.4 — Make the declared `Sessions → Shenora.WebView2` edge actually carry something.** With
+- [x] **H4.4 — Make the declared `Sessions → Shenora.WebView2` edge actually carry something.** DONE,
+  with a scoping judgement worth reading: what crossed the edge is the **invariant**
+  (`BrowserArguments.Compose` — single-occurrence feature switches + the dev CDP re-append), not the
+  whole app-shell preset. The session ARGUMENT preset, the EVENT policies and the environment caching
+  legitimately differ from `WebViewHost`'s: an app shell opens external links in the system browser
+  while an unattended session must open nothing, and one shared app environment is not the same thing
+  as one environment per profile. Sharing those would have been coupling, not dedup. Also landed here:
+  the three missing policies (`NewWindowRequested` suppressed, `PermissionRequested` denied,
+  `ProcessFailed` surfaced → the pool poisons the instance, co-browse completes its frame channel),
+  script dialogs disabled, and the `Log` options (H4.7). STILL OPEN from the original bullet: one
+  cached environment per profile (H2's "each retry orphans another browser process") — it needs the
+  env cache to live somewhere with a profile concept, so it belongs with the H2 sessions pass. With
   D19 the answer is settled: route Sessions through the edge (the alternative — dropping the
   reference — is off the table now that the layering is deliberate). VERIFIED:
   the `ProjectReference` exists (`Shenora.WebView2.Sessions.csproj:15`) and NO file in the package
@@ -360,7 +371,7 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   script + taps + marshal). This is also the clean route to the deferred session-neutral rename: a
   neutral base with the login-flavoured type as the foreground subclass. Judgement call — only do it
   if the shared core is real after H4's earlier items land.
-- [ ] **H4.7 —** Add the missing `ILogger<T>?` + `NullLogger` convention to `Shenora.WebView2.Sessions` — it
+- [x] **H4.7 —** Add the missing `ILogger<T>?` + `NullLogger` convention to `Shenora.WebView2.Sessions` — it
   has ZERO logging of any kind against ~30 silent `catch { }` blocks, so a wedged pool or a failing
   request filter is undiagnosable in production. (`ILogger` is reachable transitively.) While there,
   reconcile the two logging conventions in `Shenora.WebView2` (11 sites use `ILogger`, 4 use an

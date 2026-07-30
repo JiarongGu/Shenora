@@ -1,5 +1,6 @@
 Shenora.WebView2.BrowserArguments
   System.String Build(Boolean, System.String, System.String)
+  System.String Compose(System.String, Boolean, System.String, System.String)
 Shenora.WebView2.DropZoneFacade
   System.String ModuleName
   System.String get_ModuleName()

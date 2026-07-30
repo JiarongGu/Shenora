@@ -14,5 +14,8 @@
        the sample could be red while `verify` reported green. Never packable (see their csproj). -->
   <Folder Name="/samples/">
     <Project Path="samples/Shenora.Sample.Desktop/Shenora.Sample.Desktop.csproj" />
+    <!-- The D20 portability guard: plain net10.0, Core + Ipc only. It must be in the solution or the
+         guard never runs (P5.5 H4.3). -->
+    <Project Path="samples/Shenora.Sample.Logic/Shenora.Sample.Logic.csproj" />
   </Folder>
 </Solution>

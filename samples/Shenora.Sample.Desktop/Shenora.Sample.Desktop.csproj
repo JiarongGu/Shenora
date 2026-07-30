@@ -20,6 +20,8 @@
     <ProjectReference Include="..\..\src\Shenora.WebView2\Shenora.WebView2.csproj" />
     <ProjectReference Include="..\..\src\Shenora.WebView2.Sessions\Shenora.WebView2.Sessions.csproj" />
     <ProjectReference Include="..\..\src\Shenora.WinForms\Shenora.WinForms.csproj" />
+    <!-- The app's own portable logic (net10.0, no Windows reference) — see that project's header. -->
+    <ProjectReference Include="..\Shenora.Sample.Logic\Shenora.Sample.Logic.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -76,6 +76,9 @@ internal static class Program
         // (WINDOW commands, DROP_ZONE) map later, in MainForm, once the form exists.
         builder.Services.AddSingleton<Shenora.WinForms.SecondaryWindows>();
         builder.Services.AddModuleFacade<SampleFacade>();
+        // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
+        // resolves the same implementations through their platform-neutral contracts.
+        builder.Services.AddModuleFacade<Shenora.Sample.Logic.PortableSampleFacade>();
         builder.Services.AddMessageDispatcher();
 
         builder.Services.AddSingleton<MainForm>();

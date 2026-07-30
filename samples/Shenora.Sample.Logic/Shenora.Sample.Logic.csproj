@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    THE PORTABILITY PROOF for D20, and it works by what it CANNOT reference.
+
+    This is plain `net10.0` — no `-windows`, no UseWindowsForms — and it references only
+    Shenora.Core + Shenora.Ipc. So an app facade here can pick a file, use the clipboard, open a URL
+    and marshal to the UI thread, and STILL compile with no Windows dependency: exactly the claim D20
+    makes, checked by the compiler on every build instead of asserted in a document.
+
+    If someone later drags a Windows type into one of those contracts, or moves a contract back into
+    Shenora.WinForms, THIS PROJECT GOES RED. That is the entire point — it is a guard, not a demo.
+    It is in Shenora.slnx so `dev.mjs build|verify` compiles it (P5.5 H5 put the samples in the
+    solution; without that this guard would never run).
+
+    Never packable, like every sample.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Deliberately NOT Shenora.WinForms or Shenora.WebView2. Adding either would defeat the guard. -->
+    <ProjectReference Include="..\..\src\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
+  </ItemGroup>
+
+</Project>

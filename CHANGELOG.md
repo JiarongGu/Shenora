@@ -30,6 +30,29 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Added
 
+- **The auxiliary session browser gained the three event policies it shipped without** (P5.5 H4.4):
+  `NewWindowRequested` is suppressed (a pooled page calling `window.open()` used to get a real,
+  visible popup in an app with no session UI), `PermissionRequested` is denied by default (an
+  invisible page cannot meaningfully prompt, and an unanswered request stalls whatever asked), and
+  `ProcessFailed` is now surfaced through a new `onProcessFailed` parameter on
+  `SessionBrowser.InitializeAsync`. That last one closes a hang: a dead renderer was previously
+  INVISIBLE, so the pool reset and re-leased the corpse forever, and a co-browse frame channel simply
+  stopped with its reader waiting for a stream that could never resume. The pool now marks such an
+  instance poisoned and discards it instead of re-pooling; co-browse completes its channel. Script
+  dialogs are also disabled — an `alert()` in an off-screen page blocked its JS thread behind a dialog
+  nobody could see or dismiss.
+- `SessionBrowserOptions.IsDevelopment`, which re-appends `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` so
+  a session browser is reachable over CDP. Setting `AdditionalBrowserArguments` at all makes WebView2
+  ignore that variable; the sessions package had re-introduced that gotcha by hand-building its
+  argument string.
+- `BrowserArguments.Compose(preset, isDevelopment, devExtraArguments, additionalArguments)` — the one
+  place that knows the two argument invariants, now shared by both presets: each features switch
+  appears exactly ONCE (caller lists are MERGED, so an app appending its own `--disable-features=`
+  can no longer silently discard the whole preset — the incident this class documents), and the dev
+  CDP arguments are re-appended by hand.
+- `Log` options on `SessionBrowserOptions`, `RenderSessionPoolOptions` and `CoBrowseSessionOptions`
+  (P5.5 H4.7). The sessions package shipped with no logging of any kind against ~30 swallowed
+  catches, so a wedged pool or a failing request filter was undiagnosable in production.
 - **`IUiDispatcher` + `UiTargetState` (`Shenora.Core`) and `WinFormsUiDispatcher` (`Shenora.WinForms`)**
   — the single UI-thread marshalling seam the design contract specified from the start and P2 never
   built, which is how the pattern ended up hand-rolled 14 times across three packages with five

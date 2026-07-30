@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
@@ -49,6 +50,18 @@ public sealed class SessionBrowserOptions
     /// seconds.
     /// </summary>
     public TimeSpan InitTimeout { get; init; } = TimeSpan.FromSeconds(25);
+
+    /// <summary>
+    /// True in development: re-appends <c>WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS</c> so a session
+    /// browser is reachable over CDP. Required because setting <c>AdditionalBrowserArguments</c> at
+    /// all makes WebView2 IGNORE that env var — the gotcha in
+    /// <c>.claude/rules/windows-dev-gotchas.md</c>, which the sessions package used to re-introduce
+    /// by hand-building its argument string (P5.5 H4.4).
+    /// </summary>
+    public bool IsDevelopment { get; init; }
+
+    /// <summary>Diagnostics. Null = silent (the package shipped with no logging at all — P5.5 H4.7).</summary>
+    public ILogger? Log { get; init; }
 }
 
 /// <summary>
@@ -77,18 +90,34 @@ public static class SessionBrowser
     /// Create the profile's environment, attach the core, and harden the settings. Call on the
     /// UI thread that owns the control.
     /// </summary>
-    public static async Task InitializeAsync(WebView2Control web, SessionBrowserOptions options)
+    /// <param name="web">The control to attach a configured browser to.</param>
+    /// <param name="options">Profile, hardening and diagnostics configuration.</param>
+    /// <param name="onProcessFailed">
+    /// Called when this browser's RENDER process dies (crash, OOM, kill). A per-INSTANCE callback
+    /// rather than an options field, because one options object is shared across a pool's instances
+    /// while this state belongs to one of them. Sessions run unattended off-screen, so without it a
+    /// dead renderer is INVISIBLE: a pooled instance was reset, re-pooled and re-leased forever, and
+    /// a co-browse frame channel simply stopped with its reader still waiting (P5.5 H4.4).
+    /// </param>
+    public static async Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
+                                             Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null)
     {
         ArgumentNullException.ThrowIfNull(web);
         ArgumentNullException.ThrowIfNull(options);
         Directory.CreateDirectory(options.ProfileDirectory);
 
-        var arguments = BaseArgs
-            + (options.MuteAudio ? MuteArgs : string.Empty)
-            + (options.KeepAliveInBackground ? BackgroundArgs : string.Empty)
-            + (string.IsNullOrWhiteSpace(options.AdditionalBrowserArguments)
-                ? string.Empty
-                : " " + options.AdditionalBrowserArguments);
+        // Compose through Shenora.WebView2's owner (P5.5 H4.4 — the edge D14 declared but nothing
+        // crossed). It keeps the two invariants this package used to re-implement and get wrong:
+        // each features switch appears exactly ONCE (so a caller's own --disable-features cannot
+        // silently discard the preset), and in dev the CDP arguments are re-appended by hand,
+        // without which a session browser is unreachable over CDP.
+        var arguments = BrowserArguments.Compose(
+            preset: BaseArgs
+                + (options.MuteAudio ? MuteArgs : string.Empty)
+                + (options.KeepAliveInBackground ? BackgroundArgs : string.Empty),
+            isDevelopment: options.IsDevelopment,
+            devExtraArguments: Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"),
+            additionalArguments: options.AdditionalBrowserArguments);
 
         var envOptions = new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = arguments };
         CoreWebView2Environment env;
@@ -109,15 +138,64 @@ public static class SessionBrowser
                 $"('{options.ProfileDirectory}') — end stray msedgewebview2 processes, or delete the folder.");
         }
 
-        var settings = web.CoreWebView2.Settings;
+        var core = web.CoreWebView2;
+        var settings = core.Settings;
         settings.AreDevToolsEnabled = false;
         settings.IsStatusBarEnabled = false;
         settings.IsPasswordAutosaveEnabled = false;
+        // Script dialogs OFF (P5.5 H2). A session browser is parked off-screen at opacity 0, so an
+        // alert()/confirm() renders inside an invisible window that nobody can dismiss — and it
+        // BLOCKS the page's JS thread, so every later script or CDP call for that instance never
+        // completes. The app shell can afford dialogs; an unattended session cannot.
+        settings.AreDefaultScriptDialogsEnabled = false;
         if (options.MuteAudio)
-            web.CoreWebView2.IsMuted = true; // belt-and-suspenders with --mute-audio
+            core.IsMuted = true; // belt-and-suspenders with --mute-audio
+
+        WireSessionPolicies(core, options, onProcessFailed);
 
         if (options.RequestFilter is { } filter)
-            AttachRequestFilter(web.CoreWebView2, env, filter);
+            AttachRequestFilter(core, env, filter);
+    }
+
+    /// <summary>
+    /// The three event policies <c>.claude/knowledge/extraction-sources.md</c> lists as must-fix
+    /// during a port, and which the P5 port shipped WITHOUT for pooled and co-browse instances
+    /// (P5.5 H4.4). <c>WebViewHost</c> has its own versions, but the POLICY differs and must not be
+    /// shared: an app shell opens external links in the system browser, whereas an unattended session
+    /// must open nothing at all.
+    /// </summary>
+    private static void WireSessionPolicies(CoreWebView2 core, SessionBrowserOptions options,
+                                            Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed)
+    {
+        // A pooled/off-screen page calling window.open() used to get a REAL, visible WebView2 popup
+        // in an app that has no session UI. Suppress it; a session navigates where it is told.
+        core.NewWindowRequested += (_, e) =>
+        {
+            e.Handled = true;
+            options.Log?.LogDebug("Session browser suppressed a new-window request for {Uri}.", e.Uri);
+        };
+
+        // Deny every permission by default: an invisible page cannot meaningfully prompt, and an
+        // un-answered permission request stalls the feature that asked.
+        core.PermissionRequested += (_, e) =>
+        {
+            e.State = CoreWebView2PermissionState.Deny;
+            e.Handled = true;
+            options.Log?.LogDebug("Session browser denied permission {Kind}.", e.PermissionKind);
+        };
+
+        // A dead renderer is otherwise INVISIBLE here (see OnProcessFailed's docs).
+        core.ProcessFailed += (_, e) =>
+        {
+            options.Log?.LogWarning("Session browser process failed: {Kind} ({Reason}).",
+                e.ProcessFailedKind, e.Reason);
+            try { onProcessFailed?.Invoke(e); }
+            catch (Exception ex)
+            {
+                // Reporting a crash must not itself crash the UI thread.
+                options.Log?.LogError(ex, "OnProcessFailed callback threw.");
+            }
+        };
     }
 
     /// <summary>
