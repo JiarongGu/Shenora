@@ -1,5 +1,5 @@
 import { getBridge, useShenoraEvent } from '@shenora/react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * THE SEAM TEST for the kit's StreamingSession (P5.5 H9.5 / D21).
@@ -81,8 +81,20 @@ export function StreamViewer({ hosted }: { hosted: boolean }) {
     setRunning(false);
   };
 
+  // Stop the host-side session when this component goes away. Found by RUNNING it: a page reload
+  // (Vite HMR, F5, a navigation) tears down the client while the session keeps streaming into a
+  // channel nobody reads, and the next START then answers STREAM_ALREADY_RUNNING. The host cannot
+  // see a reload — only the page knows, so only the page can say so.
+  useEffect(() => () => {
+    getBridge().invoke('STREAM', 'STOP').catch(() => {});
+  }, []);
+
   return (
-    <div style={{ margin: '1rem auto 0', maxWidth: '32rem' }}>
+    // An EXPLICIT width, not just max-width. Found by running it: this sits in a centered,
+    // shrink-to-fit column, and before the first frame the <img> has no src — so the box collapsed,
+    // start() measured ~0, and the viewport it sent was clamped up to the kit's 320x240 MINIMUM. The
+    // stream then rendered at 320x240 no matter how big the pane was.
+    <div style={{ width: '32rem', maxWidth: '100%', margin: '1rem auto 0' }}>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginBottom: '0.5rem' }}>
         <button type="button" onClick={start} disabled={!hosted || running} data-testid="stream-start">
           start stream
@@ -98,6 +110,7 @@ export function StreamViewer({ hosted }: { hosted: boolean }) {
         alt="streamed page"
         src={frame ? `data:image/jpeg;base64,${frame.jpeg}` : undefined}
         style={{
+          display: 'block', // an inline <img> with no src does not honour the height below
           width: '100%', height: '14rem', objectFit: 'contain',
           border: '1px dashed #555', borderRadius: 8, background: '#161616',
           // The pane must not fight the page it is mirroring for gestures.

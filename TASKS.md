@@ -923,6 +923,42 @@ reshaped one package and nothing else.
   The rule now lives in `.claude/knowledge/generic-library.md` so the next session catches this class
   unprompted.
 
+### P5.6 — Frameless caption buttons must behave like real ones (2026-07-31)
+
+> DIRECTION (user, 2026-07-31): *"the 'fake' window button at top still need to behave like regular
+> window button (hover style, docking) currently it does none"*
+
+The kit ships frameless chrome (`OptimizedForm` + `WindowCommandFacade`), so the page draws its own
+minimize/maximize/close. They ROUTE correctly — the WINDOW module works — but they are not yet
+*window buttons*: no hover/pressed affordance, and critically no **Snap Layouts**. Verified live in
+the sample this session.
+
+This is KIT work, not sample styling. Snap Layouts cannot be done by the page alone: Windows shows
+the flyout only when the window answers `WM_NCHITTEST` with `HTMAXBUTTON` for the point under the
+cursor, so the HOST must know where the page drew its maximize button.
+
+- [ ] **Snap Layouts on the page's maximize button.** Add a way for the page to report its maximize
+  button's rect (CSS px → physical via the existing `DpiHelper`), e.g. a `SET_CAPTION_BUTTONS` route
+  on `WindowCommandFacade` plus an `IAppMaximizable`-style seam on `OptimizedForm`. Then in the
+  `WndProcHook`: return `HTMAXBUTTON` from `WM_NCHITTEST` when the point is inside that rect, and
+  handle `WM_NCLBUTTONDOWN`/`WM_NCLBUTTONUP` for `HTMAXBUTTON` yourself (once you claim the hit-test,
+  the OS stops delivering ordinary clicks there — a button that shows the flyout but no longer
+  maximizes is the classic half-done version of this). `WM_NCMOUSELEAVE` clears the hover state.
+  Needs Windows 11 detection: on Windows 10 `HTMAXBUTTON` gives the tooltip but no flyout, and the
+  behaviour must degrade cleanly rather than break the button.
+- [ ] **Hover / pressed affordance.** The page can style this itself, and mostly should — but it must
+  be TOLD when the OS is hovering (the snap flyout keeps the button "hot" while the pointer is over
+  the flyout, which the page's own `:hover` cannot see). So the host needs to push a caption-button
+  hover state as a notification when it owns the hit-test. Ship it as a primitive (state out), not as
+  a stylesheet: headless (D13) — the kit provides no CSS, the app decides what hot/pressed look like.
+  The reference composition in `samples/Shenora.Sample.Web` then demonstrates one styling.
+- [ ] **Close-button hover red** is the same mechanism (`HTCLOSE`), and the family convention is that
+  only close goes red — leave the colour to the app, per above.
+- [ ] Prove it live (`dev.mjs sample` + `wgc`), not just by compiling: hover each button, hover
+  maximize long enough for the flyout, pick a snap zone, and confirm the window actually docks AND
+  that `IsAppMaximized`/`WindowStateManager` still agree afterwards — the frameless manual-maximize
+  path (P5.5 H2) is exactly the state a real OS dock will disagree with if this is wired naively.
+
 ### P1 — Skeleton tail
 
 - [ ] **P1.2 — Release workflow dry-run readiness.** Once a GitHub remote exists: run the Release

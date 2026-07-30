@@ -237,12 +237,27 @@ public sealed class MainForm : OptimizedForm
             Dispatcher = dispatcher,
             EventBus = eventBus,
             Log = Console.WriteLine,
-            OnClientReady = _ =>
+            // The parameter is NAMED rather than discarded: the body below needs  for a real
+            // discard, and a  lambda parameter shadows it (CS0029 on assignment).
+            OnClientReady = readyRequest =>
             {
                 // Every (re)load: stale overlays belong to the previous page — clear before the
                 // new page re-registers its own. Then start the tick source.
                 _dropZones.ClearAll();
                 _tickTimer.Start();
+
+                // A live stream belongs to the page that STARTED it, and the handshake means a new
+                // page just loaded — so tear it down here, exactly as the overlays above are.
+                //
+                // Found by RUNNING the sample: the viewer's React unmount cleanup is NOT enough,
+                // because effect cleanups DO NOT RUN on a full page reload (F5, a Vite HMR reload,
+                // a navigation) — the page simply goes away. The session kept streaming into a
+                // channel nobody read, and every later START answered STREAM_ALREADY_RUNNING for
+                // the rest of the process. The host is the only side that can observe a reload, via
+                // this handshake; the page can only report an in-page unmount.
+                var orphan = _stream;
+                _stream = null;
+                if (orphan is not null) _ = orphan.DisposeAsync();
             },
         });
 

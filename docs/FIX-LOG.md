@@ -14,6 +14,32 @@ entry template:
 
 ## 2026-07-31
 
+### Sample stream viewer: three defects that only RUNNING the app could find
+- **Symptom:** the H9.5 seam test compiled, passed `verify`, and was wrong in three ways the moment it
+  ran. (1) The stream reported `streaming 320x240` no matter how large the pane was. (2) After any page
+  reload, every later START answered `STREAM_ALREADY_RUNNING` for the rest of the process. (3) The
+  viewer pane collapsed to a single line of alt text before the first frame arrived.
+- **Root cause:** (3) is the origin of (1). The `<img>` is an inline replaced element with no `src`
+  until a frame lands, and its container had only `max-width` inside a centered, shrink-to-fit column —
+  so the box collapsed, `start()` measured ~0 via `getBoundingClientRect()`, and the viewport it sent
+  was clamped UP to `ClampViewport`'s 320x240 minimum. The stream then genuinely ran at the floor.
+  (2) is more interesting: the first fix attempt was a React unmount cleanup calling STOP, and it does
+  not work, because **effect cleanups do not run on a full page reload** — the page is simply gone.
+  Only the HOST can observe a reload, and it already has the signal: the ready handshake.
+- **Fix:** the container takes an explicit `width: 32rem` (+ `maxWidth: 100%`) and the image
+  `display: block`, so the first measurement is real. The host disposes any live session in
+  `OnClientReady` — the same place, and for the same reason, that it already calls
+  `_dropZones.ClearAll()`: per-page host state belongs to the page that created it, and a handshake
+  means a new page. The React unmount cleanup is kept as well, since it does cover an in-page unmount.
+  Files: `samples/Shenora.Sample.Web/src/StreamViewer.tsx`,
+  `samples/Shenora.Sample.Desktop/MainForm.cs`.
+- **Verify:** LIVE, via `dev.mjs sample --dev` + `wgc` captures. Before: `streaming 320x240`; after:
+  `streaming 514x240` (the pane's real width; 240 is the legitimate clamp floor for a 14rem box).
+  Reload case: an HMR reload mid-stream followed by START previously produced
+  `stream error: OperationError: STREAM_ALREADY_RUNNING` on screen, and now starts cleanly. `verify`
+  PASSED (476 dotnet + 63 vitest).
+- **Commit:** _pending_
+
 ### Sample STREAM route: three lifecycle bugs in the new co-browse composition
 - **Symptom:** found by this batch's own phase review, in code the batch had just written. None had
   shipped; all three are the kind an adopter would copy, since the sample is the reference composition.
