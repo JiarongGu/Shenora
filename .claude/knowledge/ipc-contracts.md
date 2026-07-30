@@ -100,16 +100,18 @@ transport, or building the P6 adoption shims.
   then silently dropped oldest for the process lifetime (H3). The residual window between
   `NavigationStarting` and `ContentLoading`, where a flush reaches the OUTGOING page, is deliberate
   and documented at the site: those listeners are still attached.
-- **`READY` must precede anything that registers per-page host state — the handshake is destructive.**
-  A host clears the previous page's drop-zone overlays on the handshake, so a `REGISTER` that arrives
-  BEFORE `READY` is wiped *after being acked*: the client believes the zone is live, the host has
-  forgotten it, and nothing is logged on either side. In React this is the DEFAULT outcome rather than
-  bad luck — CHILD effects run before PARENT effects, so the obvious reading of "call `notifyReady()`
-  once at startup" (a root-component effect) runs after every child's `useDropZone` has registered.
-  Either keep the handshake in the same component as, and declared above, whatever registers (what the
-  reference composition does), or clear on DOCUMENT CHANGE instead, which is order-independent because
-  it never races the client. Documented on `notifyReady`, `UseDropZoneOptions`, `DropZoneManager.ClearAll`
-  and the npm README, because a contract this sharp that lives only in one doc comment gets missed.
+- **Reset per-page host state on the DOCUMENT, never on the `READY` handshake.** A handshake-keyed
+  reset races the page it is resetting for: a `REGISTER` arriving before `READY` is wiped *after being
+  acked*, so the client believes its zone is live, the host has forgotten it, and nothing is logged on
+  either side. In React that is the DEFAULT outcome rather than bad luck — CHILD effects run before
+  PARENT effects, so the obvious reading of "call `notifyReady()` once at startup" (a root-component
+  effect) runs after every child's `useDropZone` has registered. `DropZoneManager` therefore clears on
+  `ContentLoading` (P5.6), which cannot race the client because it happens before the new page can
+  send anything. **The fix was to remove the contract, not to document it** — it had needed warnings
+  in four places (`notifyReady`, `UseDropZoneOptions`, `ClearAll`, the npm README) and a contract that
+  sharp gets missed wherever it is not repeated. Two features needing the same reset was the signal
+  that the kit should own it. `ContentLoading`, never `NavigationStarting`: the latter also fires for
+  navigations that never replace the document, which would destroy the live page's state.
 - **The dispatcher pipeline preserves the caller's synchronization context** (no
   `ConfigureAwait(false)` anywhere in `MessageDispatcher`) — that's the §5 threading model:
   transports dispatch on the UI thread and every handler's synchronous segment stays there, even

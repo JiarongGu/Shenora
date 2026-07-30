@@ -68,7 +68,51 @@ public sealed class DropZoneManager : IDisposable
         // physical bounds. The page's own resize path converges on the same result; this covers
         // the gap until it does.
         _options.ParentForm.DpiChanged += OnDpiChanged;
+
+        // Zones belong to the DOCUMENT that registered them, so they are cleared when a new document
+        // begins loading. The core may not exist yet — an app constructs this before the (slow)
+        // WebView2 init — so hook whichever is true now and let initialization finish the job.
+        if (_options.WebView.CoreWebView2 is not null) HookDocumentChange();
+        else _options.WebView.CoreWebView2InitializationCompleted += OnCoreInitialized;
     }
+
+    private void OnCoreInitialized(object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2InitializationCompletedEventArgs e)
+    {
+        // A failed init has no core to hook, and the host already surfaces that failure loudly.
+        if (e.IsSuccess) HookDocumentChange();
+    }
+
+    /// <summary>
+    /// Clear the zones when a new document starts loading, so overlay lifetime follows the PAGE.
+    /// <para>
+    /// <c>ContentLoading</c>, never <c>NavigationStarting</c> — the same choice, for the same reason,
+    /// as the IPC ready gate (P5.5 H3): <c>NavigationStarting</c> also fires for navigations that
+    /// never replace the document (one a policy cancels, one that fails before committing), and
+    /// destroying the live page's overlays for those would be a bug.
+    /// </para>
+    /// <para>
+    /// This replaces clearing on the READY handshake, which was ORDER-DEPENDENT and silently wrong:
+    /// a <c>REGISTER</c> that arrived before <c>READY</c> was wiped AFTER being acked, so the client
+    /// believed its zone was live while the host had forgotten it, with nothing logged on either
+    /// side. React runs CHILD effects before PARENT effects, so a root-component <c>notifyReady</c> —
+    /// the obvious reading of "call it once at startup" — produced exactly that. Keying on the
+    /// document instead cannot race the client at all, because the clear happens before the new page
+    /// can send anything.
+    /// </para>
+    /// </summary>
+    private void HookDocumentChange()
+    {
+        if (_options.WebView.CoreWebView2 is not { } core) return;
+        // Detach-then-attach so this is IDEMPOTENT: CoreWebView2InitializationCompleted can fire more
+        // than once (a retried init after a failure), and a double subscription would leak a handler
+        // and clear twice per navigation. Removing a handler that was never added is a no-op.
+        core.ContentLoading -= OnContentLoading;
+        core.ContentLoading += OnContentLoading;
+    }
+
+    private void OnContentLoading(object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2ContentLoadingEventArgs e) => ClearAll();
 
     /// <summary>Create (or re-bounds) the overlay for a zone. CSS (logical) pixels in.</summary>
     public void RegisterZone(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight)
@@ -129,20 +173,14 @@ public sealed class DropZoneManager : IDisposable
     }
 
     /// <summary>
-    /// Remove every zone (the ready handshake calls this — a reloaded page re-registers its own).
+    /// Remove every zone. You rarely need to call this: the manager clears itself whenever a new
+    /// document starts loading, so a reloaded or navigated page simply re-registers its own.
     /// <para>
-    /// ORDERING CONTRACT, and it is sharp enough that adopters need telling (P5.5 H7): calling this
-    /// from <c>OnClientReady</c> means every <c>REGISTER</c> that arrived BEFORE the client's
-    /// <c>READY</c> is destroyed, while the client — which got a successful ack — still believes its
-    /// zone is live. The result is a silently dead drop zone, with nothing logged on either side.
-    /// </para>
-    /// <para>
-    /// That is easy to hit, because React runs CHILD effects before PARENT effects: the natural
-    /// reading of "call <c>notifyReady()</c> once at startup" is a root-component effect, which runs
-    /// AFTER the child components' <c>useDropZone</c> effects have already registered. An app must
-    /// therefore either send <c>READY</c> before anything registers (the reference composition keeps
-    /// both calls in one component, handshake first) or clear on DOCUMENT CHANGE instead of on the
-    /// handshake, which is order-independent because it does not race the client at all.
+    /// It used to be the APP's job, from the ready handshake, and that carried an ordering contract
+    /// sharp enough to need documenting in four places: a <c>REGISTER</c> arriving before <c>READY</c>
+    /// was destroyed AFTER being acked, leaving the client sure its zone was live and the host with
+    /// no record of it — silent on both sides. Keying on the document removed the contract rather
+    /// than documenting it, so those warnings are gone; do not reintroduce a handshake-time clear.
     /// </para>
     /// </summary>
     public void ClearAll()
@@ -168,6 +206,18 @@ public sealed class DropZoneManager : IDisposable
         _options.ParentForm.Deactivate -= OnFormDeactivate;
         _options.ParentForm.Activated -= OnFormActivated;
         _options.ParentForm.DpiChanged -= OnDpiChanged;
+        _options.WebView.CoreWebView2InitializationCompleted -= OnCoreInitialized;
+        // Guarded: touching CoreWebView2 after the control is disposed throws, and a manager
+        // outliving its WebView is exactly the teardown order this runs in.
+        try
+        {
+            if (!_options.WebView.IsDisposed && _options.WebView.CoreWebView2 is { } core)
+                core.ContentLoading -= OnContentLoading;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Detaching the document-change handler failed (the browser is already gone).");
+        }
         ClearAll();
     }
 

@@ -14,6 +14,56 @@ entry template:
 
 ## 2026-07-31
 
+### Maximize+restore did not exit an Aero snap
+
+- **Symptom.** Snap the window to a screen edge, then maximize and restore it: it went straight back
+  into the dock. Every other Windows app leaves the snap. User-reported.
+- **Root cause.** `OptimizedForm.Maximize` captured its restore target with `GetWindowRect`, i.e. the
+  window's CURRENT rectangle — which, for a snapped window, is the docked half. Restoring therefore
+  restored the dock.
+- **Fix.** Capture `WINDOWPLACEMENT.rcNormalPosition` instead. That is Windows' own definition of
+  "where this window goes when restored", and Aero Snap deliberately leaves it at the PRE-snap
+  rectangle. `GetWindowRect` remains the fallback if the call fails.
+- **Why this beats the planned approach.** `TASKS.md` had budgeted for an is-this-window-snapped
+  heuristic (compare the rect against the work area's halves and quadrants) because Win32 has no clean
+  API for it. Probing first showed the question never has to be asked: Windows is already tracking the
+  answer. Measured before writing any code — Win+Left moved the rect from (783,413) 2560x1600 to
+  (-10,0) 1940x2314 while `rcNormalPosition` stayed byte-identical.
+- **Verified.** Live, with real input, because Aero Snap is an OS shell gesture no message can fake:
+  Win+Left, then SC_MAXIMIZE, then SC_RESTORE. Rects went pre-snap 2560x1600 → snapped 1940x2314 →
+  maximized 3840x2304 → **restored to the pre-snap 2560x1600**. The unit suite pins the ordinary
+  maximize/restore round-trip; the snapped case is e2e by construction (`rcNormalPosition` only
+  diverges from the live rect once the OS has actually docked the window), which `docs/REVIEW-GUIDE.md`
+  now records so it is not re-filed as a coverage gap.
+- **A probe trap on the way, worth its own line.** The first verification script named its helper
+  `R`, which collides with PowerShell's `Invoke-History` alias: every rect read failed, all four rects
+  came back empty, and the comparison then reported **PASS** — a vacuous pass, the exact thing the
+  standing rule warns about ("treat a passing check whose mechanism you cannot name as unverified").
+  The script now refuses to judge when any read returns nothing.
+
+### Drop zones were cleared on the ready handshake, which raced the page
+
+- **Symptom.** A drop zone registered before the client's `READY` was silently dead: the client had a
+  successful ack and believed the zone was live, the host had already destroyed the overlay, and
+  nothing was logged on either side.
+- **Root cause.** The reset was keyed on the HANDSHAKE, so it ran after anything the page sent first.
+  React runs CHILD effects before PARENT effects, so the obvious composition — `notifyReady()` in a
+  root-component effect — put the handshake AFTER every child's `useDropZone` registration, making the
+  bug the default outcome rather than bad luck.
+- **Fix.** `DropZoneManager` subscribes to `CoreWebView2.ContentLoading` itself and clears there, so
+  overlay lifetime follows the DOCUMENT. It hooks either immediately or via
+  `CoreWebView2InitializationCompleted`, because apps construct the manager before the (slow) WebView2
+  init. `ContentLoading`, never `NavigationStarting` — the same choice the IPC ready gate made in H3,
+  because `NavigationStarting` also fires for navigations that never replace the document.
+- **Why it is a fix and not a doc change.** P5.5 H7 had documented this contract in FOUR places
+  (`notifyReady`, `UseDropZoneOptions`, `ClearAll`, the npm README) precisely because it was sharp
+  enough to be missed anywhere it was not repeated. Removing the contract deleted all four warnings and
+  the app's `ClearAll()` call. The trigger to finally do it was a second feature needing the same
+  reset: the sample had to hand-roll it for its streaming session, right next to `_dropZones.ClearAll()`.
+- **Verified.** Live: the drop-zone overlay is a real child window, so it is countable. After startup
+  (two document loads) there is EXACTLY ONE overlay at the zone's position — zero would mean the clear
+  ate the registration, more than one would mean nothing cleared and overlays were accumulating.
+
 ### P5.6 hybrid: the hover state changed but nothing ever repainted
 
 - **Symptom.** With the window owning the caption-button pixels, the buttons rendered correctly but

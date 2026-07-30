@@ -272,9 +272,9 @@ public sealed class MainForm : OptimizedForm
             // discard, and a  lambda parameter shadows it (CS0029 on assignment).
             OnClientReady = readyRequest =>
             {
-                // Every (re)load: stale overlays belong to the previous page — clear before the
-                // new page re-registers its own. Then start the tick source.
-                _dropZones.ClearAll();
+                // No _dropZones.ClearAll() here any more: the kit clears zones on DOCUMENT CHANGE,
+                // which cannot race the page the way a handshake-time reset did. This is the same
+                // per-page-state reset the stream teardown below still has to do by hand.
                 _tickTimer.Start();
 
                 // The page measures its own title bar and reports the real rects from here on, so

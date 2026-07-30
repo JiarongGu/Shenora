@@ -36,6 +36,17 @@ the rects were reported never being clipped (`ControlAdded` fires before the han
 three probe traps that made correct code read as broken. All in `docs/FIX-LOG.md`; the durable
 lessons are in `.claude/knowledge/winforms-shell.md`.
 
+Two window-lifecycle items rode along and closed P5.6 completely. **Maximize+restore now exits an
+Aero snap**, as every other Windows app does: `Maximize()` captures `WINDOWPLACEMENT.rcNormalPosition`
+— Windows' own restore rectangle, which Aero Snap deliberately leaves at the PRE-snap geometry
+(measured) — instead of the live window rect, which is the docked half. That needs no "is this window
+snapped" test, for which Win32 has no clean API and which the plan had budgeted a heuristic for.
+**Drop zones now clear on DOCUMENT CHANGE** (`ContentLoading`, the signal the IPC ready gate already
+re-arms on) rather than on the ready handshake, which removes an ordering contract instead of
+documenting it: a `REGISTER` arriving before `READY` used to be wiped after being acked, and React's
+child-before-parent effect order made that the default outcome. The four warning sites H7 had to add
+are gone, and the app no longer calls `ClearAll` at all.
+
 ### 2026-07-31 — P5.5 H9: auxiliary sessions become primitives — and D22, name the mechanism
 
 The last P5.5 batch, and the one a reader changed mid-flight. Suite: **476 dotnet + 63 vitest**,

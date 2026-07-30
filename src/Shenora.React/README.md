@@ -10,11 +10,9 @@ system. Versioned in lockstep with the `Shenora.*` NuGet packages.
 ```ts
 import { getBridge, useShenoraEvent, useShenoraQuery, BaseModuleService } from '@shenora/react';
 
-// Once at startup, after your listeners are attached — and BEFORE anything registers per-page host
-// state (e.g. useDropZone). The host clears the previous page's drop zones on this handshake, so a
-// REGISTER that arrives first is silently discarded. React runs CHILD effects before PARENT effects,
-// so a root-component effect is NOT early enough: keep this in the same component as, and declared
-// above, any useDropZone — or await it before rendering the subtree that registers.
+// Once at startup, after your listeners are attached: it starts notification delivery (anything the
+// host buffered arrives in the first batch). Drop zones need no particular ordering against it — the
+// host clears them when a new DOCUMENT loads, not on this handshake.
 await getBridge().notifyReady();
 
 // a typed service per backend module:

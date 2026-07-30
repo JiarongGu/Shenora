@@ -18,9 +18,10 @@ export interface DropZoneFileDrop {
 /**
  * Inputs for {@link useDropZone}.
  *
- * ORDERING: the host clears all zones on the ready handshake, so this hook's `REGISTER` must not
- * outrun `notifyReady()` — see {@link ShenoraBridge.notifyReady} for why React's child-before-parent
- * effect order makes that the DEFAULT outcome rather than an unlucky one.
+ * No ordering constraint against `notifyReady()`: the host clears zones when a new DOCUMENT starts
+ * loading, not on the handshake, so this hook's `REGISTER` cannot be wiped by a reset that arrives
+ * after it. (It could, until the reset moved off the handshake — React runs CHILD effects before
+ * PARENT effects, which made losing the registration the default outcome rather than bad luck.)
  */
 export interface UseDropZoneOptions {
   /** The element the native overlay tracks. */

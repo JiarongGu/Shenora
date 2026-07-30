@@ -656,14 +656,62 @@ public class OptimizedForm : Form, IAppMaximizable
 
         if (_maximized) return;
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-        if (GetWindowRect(Handle, out var wr))
-            _restoreBounds = Rectangle.FromLTRB(wr.left, wr.top, wr.right, wr.bottom);
+        if (TryGetRestoreTarget(out var restore)) _restoreBounds = restore;
 
         if (!TryGetCurrentWorkArea(out var work)) return;
         _maximized = true;
         ApplyCornerPreference(); // square corners while maximized
         FillWorkArea(work);
         MaximizedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Where this window should go when it is restored — Windows' OWN answer, not its current rect.
+    /// <para>
+    /// <c>GetWindowRect</c> is wrong here whenever the window is SNAPPED: it returns the docked half,
+    /// so maximizing a snapped window and restoring it put the window straight back into the snap,
+    /// while every other Windows app exits it (user-reported). <c>WINDOWPLACEMENT.rcNormalPosition</c>
+    /// is by definition the window's restored position, and Aero Snap deliberately leaves it at the
+    /// PRE-SNAP rectangle — measured: Win+Left moved the rect to the left half of the desktop and left
+    /// <c>rcNormalPosition</c> byte-identical. So preferring it exits the snap exactly, and needs no
+    /// "is this window snapped" test — for which Win32 has no clean API, and which would otherwise
+    /// have to guess by comparing against the work area's halves and quadrants.
+    /// </para>
+    /// <para>
+    /// Caveat kept honest: <c>rcNormalPosition</c> is documented as WORKSPACE coordinates, which can
+    /// differ from screen coordinates when the taskbar is docked to the top or left (they were
+    /// identical on the measured setup, taskbar at the bottom). That is survivable rather than
+    /// silently wrong because <see cref="RestoreFromMax"/> already validates the target through
+    /// <see cref="WindowStateManager.IsVisible"/> and falls back to a centred work-area rect — so the
+    /// worst case is "restores somewhere reachable", never off-screen.
+    /// </para>
+    /// </summary>
+    private bool TryGetRestoreTarget(out Rectangle bounds)
+    {
+        bounds = default;
+        if (!IsHandleCreated) return false;
+
+        var placement = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+        if (GetWindowPlacement(Handle, ref placement))
+        {
+            var normal = Rectangle.FromLTRB(
+                placement.rcNormalPosition.left, placement.rcNormalPosition.top,
+                placement.rcNormalPosition.right, placement.rcNormalPosition.bottom);
+            if (normal.Width > 0 && normal.Height > 0)
+            {
+                bounds = normal;
+                return true;
+            }
+        }
+
+        // Fall back to the live rect rather than leaving the restore target unset: a stale one is a
+        // window that will not come back, which is worse than one that comes back still docked.
+        if (GetWindowRect(Handle, out var wr))
+        {
+            bounds = Rectangle.FromLTRB(wr.left, wr.top, wr.right, wr.bottom);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -1016,8 +1064,21 @@ public class OptimizedForm : Form, IAppMaximizable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+    [DllImport("user32.dll")] private static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public int dwFlags; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WINDOWPLACEMENT
+    {
+        public int length;
+        public int flags;
+        public int showCmd;
+        public Point ptMinPosition;
+        public Point ptMaxPosition;
+        public RECT rcNormalPosition;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int left, top, right, bottom; }

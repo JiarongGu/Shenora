@@ -144,7 +144,15 @@ public class OptimizedFormTests
         form.RestoreFromMax();
 
         Assert.False(form.IsAppMaximized);
-        Assert.Equal(original, form.Bounds); // the restore-bounds roundtrip
+        // The restore-bounds roundtrip. This also guards the restore TARGET, which now comes from
+        // WINDOWPLACEMENT.rcNormalPosition rather than the live window rect (so that maximizing a
+        // SNAPPED window and restoring it exits the snap, as every other Windows app does).
+        // The snapped case itself cannot be built in-process — Aero Snap is an OS shell gesture, and
+        // rcNormalPosition only diverges from the live rect once the OS has actually docked the
+        // window — so it is verified live: Win+Left, SC_MAXIMIZE, SC_RESTORE, asserting the window
+        // lands back on its PRE-snap rectangle. What this test pins is that the new source returns
+        // the right answer in the ordinary case.
+        Assert.Equal(original, form.Bounds);
         Assert.Equal(2, changes);
     });
 

@@ -135,8 +135,10 @@ changes, noting them in `CHANGELOG.md`).
   because the commands arrive over the bridge and need Ipc, which WinForms doesn't reference);
   the drop-zone stack — `DropZoneManager(+Options)` (transparent overlays over page elements
   capture real OS paths incl. background drags; non-blocking UI marshalling, activation sync,
-  DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; events on
-  `IEventBus`) + `DropZoneFacade` (module `DROP_ZONE`: REGISTER/UPDATE/UNREGISTER/SHOW).
+  DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; zones cleared on
+  `ContentLoading` so overlay lifetime follows the DOCUMENT, never the ready handshake, which used to
+  race the page that was registering; events on `IEventBus`) + `DropZoneFacade` (module `DROP_ZONE`:
+  REGISTER/UPDATE/UNREGISTER/SHOW).
 - `Shenora.Core` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
   where an escaping exception is fatal rather than catchable (a UI-thread event handler, a timer tick, a
   posted body, a dispose path). Public because `Shenora.WebView2`, `Shenora.WebView2.Sessions` and

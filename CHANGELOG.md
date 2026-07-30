@@ -274,6 +274,14 @@ at the first list and missed five more breaking changes.
 
 ### Changed
 
+- **`DropZoneManager` clears its zones on DOCUMENT CHANGE instead of on the ready handshake.** It
+  now subscribes to `ContentLoading` itself, so **apps should delete their `ClearAll()` call from
+  `OnClientReady`** — leaving it in is harmless but pointless. This removes an ordering contract
+  rather than documenting it: a `REGISTER` that arrived before `READY` was destroyed *after being
+  acked*, leaving a zone the client believed was live and the host had forgotten, silent on both
+  sides — and React's child-before-parent effect order made that the DEFAULT outcome for the obvious
+  "call `notifyReady()` once at startup" composition. `useDropZone` therefore has no ordering
+  constraint against `notifyReady()` any more. `ClearAll()` remains public for apps that want it.
 - **`ShenoraEventBus.subscribe` takes an options object with `scope`, and `useShenoraEvent` passes it
   through** (P5.5 H6). Additive — existing calls compile unchanged. The wire has always carried a scope
   and the host has always keyed on it, but the client had no way to express one, so a component in one
@@ -331,6 +339,11 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **Maximizing and restoring a SNAPPED frameless window now exits the snap**, matching every other
+  Windows app. `OptimizedForm.Maximize` captured the live window rect as its restore target, which
+  for a snapped window is the docked half — so restore put the window straight back into the dock. It
+  now captures `WINDOWPLACEMENT.rcNormalPosition`, which is Windows' own restore rectangle and which
+  Aero Snap leaves at the pre-snap geometry.
 - **A route mapped while requests were in flight could answer `NO_HANDLER`** (P5.5 H6). Late mapping is a
   supported, documented pattern — the WinForms host maps its window facades after the form exists — but
   `MessageDispatcher.Use` reassigned a `Lazy` field over an unsynchronized `List<T>` with no
