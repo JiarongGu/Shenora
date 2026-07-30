@@ -96,7 +96,11 @@ changes, noting them in `CHANGELOG.md`).
   chrome: WM_NCCALCSIZE top-only caption removal, manual work-area maximize —
   `IsAppMaximized`/`MaximizedChanged` are the truth, not `WindowState` — DWM
   dark-mode/border/corner handling, top resize strip, `ApplyChromeTheme` runtime resync; all
-  colors parameterized); the native services, TryAdd-registered by `UseWinForms` —
+  colors parameterized); native caption buttons (P5.6) — `NativeCaptionButtons` cuts the cluster
+  reported to `SetCaptionButtons` out of the window region of every covering child so the OS routes
+  real input to the form (Snap Layouts), and the form paints it with app-supplied
+  `CaptionButtonColors`; `CaptionButtonStateChanged` remains for the un-clipped mode where the app
+  draws them itself; the native services, TryAdd-registered by `UseWinForms` —
   `IFormInteraction`/`FormInteraction` (main-window registry, runner-wired; nested modal
   blocking), `IFileDialogs`/`FileDialogs(+Options)` + `FileDialogOptions`/`Filter`/`Result` +
   `IFileDialogPathStore` seam (dedicated-STA open/folder/save dialogs, owner-handle z-order,

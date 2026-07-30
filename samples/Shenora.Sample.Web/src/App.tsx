@@ -29,15 +29,15 @@ const row: React.CSSProperties = { margin: '0.25rem 0', fontSize: '1rem' };
 function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowCommands }) {
   const maximized = useWindowMaximized(commands);
   const buttons = useRef<HTMLDivElement>(null);
-  // Pushed BY THE HOST (P5.6). Claiming the caption hit-test is what buys Snap Layouts, and it costs
-  // this page every mouse event in those rects — so CSS :hover never fires there and the host has to
-  // tell us. It is also the only way to know the button is still "hot" while the pointer is over the
-  // snap flyout, which is a different window entirely.
-  const [caption, setCaption] = useState<{ hot?: string; pressed?: string }>({});
-  useShenoraEvent<{ hot?: string; pressed?: string }>('WINDOW', 'CAPTION_BUTTON_STATE', setCaption);
 
-  // Report where we drew them, in CSS px relative to the WebView2. Re-sent on resize because the
+  // Report where the buttons are, in CSS px relative to the WebView2. Re-sent on resize because the
   // rects are a snapshot: a stale one moves the hit-test off the button the user can see.
+  //
+  // WHEN HOSTED, THIS IS ALSO WHAT SIZES THE HOLE (P5.6 hybrid). The host cuts this exact union out
+  // of the WebView2's window region and paints the three buttons itself — so the OS finally routes
+  // real input to the window and offers Snap Layouts. Whatever we render inside these rects is
+  // clipped away and never appears on screen; we keep rendering it purely so an UNHOSTED browser
+  // preview still shows a usable title bar.
   useEffect(() => {
     if (!hosted) return;
     const report = () => {
@@ -55,19 +55,18 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
     return () => window.removeEventListener('resize', report);
   }, [hosted, commands]);
 
-  // Headless (D13): the kit pushes STATE and ships no CSS — what hot/pressed look like is ours.
-  const button = (kind: 'minimize' | 'maximize' | 'close'): React.CSSProperties => ({
-    background: caption.pressed === kind ? (kind === 'close' ? '#8b1a1a' : '#3a3a3a')
-      : caption.hot === kind ? (kind === 'close' ? '#c42b1c' : '#2f2f2f')
-      : 'none',
+  // No hover/pressed styling here any more: hosted, these pixels are the host's and ours are
+  // invisible; unhosted, there is no window to drive and plain buttons are the honest preview.
+  // Headless (D13) still holds — the COLOURS the host paints with come from MainForm, not the kit.
+  const button: React.CSSProperties = {
+    background: 'none',
     border: 'none',
-    color: caption.hot === kind && kind === 'close' ? '#ffffff' : '#eceaf2',
+    color: '#eceaf2',
     width: '2.6rem',
     height: '2rem',
     cursor: 'default',
     fontSize: '0.9rem',
-    transition: 'background 90ms linear',
-  });
+  };
   return (
     <>
       {/* The top resize strip: the host's WM_NCCALCSIZE keeps native side/bottom borders; the
@@ -90,11 +89,11 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
             has NOT claimed the hit-test; when it has, the host performs the action itself and these
             never fire, because the click is delivered to the window, not to the page. */}
         <div ref={buttons} onMouseDown={(e) => e.stopPropagation()}>
-          <button style={button('minimize')} data-testid="btn-minimize" onClick={() => void commands.minimize()}>─</button>
-          <button style={button('maximize')} data-testid="btn-maximize" onClick={() => void commands.toggleMaximize()}>
+          <button style={button} data-testid="btn-minimize" onClick={() => void commands.minimize()}>─</button>
+          <button style={button} data-testid="btn-maximize" onClick={() => void commands.toggleMaximize()}>
             {maximized ? '❐' : '☐'}
           </button>
-          <button style={button('close')} data-testid="btn-close" onClick={() => void commands.close()}>✕</button>
+          <button style={button} data-testid="btn-close" onClick={() => void commands.close()}>✕</button>
         </div>
       </header>
     </>

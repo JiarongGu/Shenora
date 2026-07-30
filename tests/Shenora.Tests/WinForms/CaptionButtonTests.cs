@@ -5,13 +5,18 @@ using Shenora.WinForms;
 namespace Shenora.Tests.WinForms;
 
 /// <summary>
-/// Page-drawn caption buttons (P5.6): the hit-test that buys Windows 11 Snap Layouts, and the
-/// click/hover handling that claiming the hit-test makes MANDATORY.
+/// Caption buttons (P5.6): the hit-test that buys Windows 11 Snap Layouts, the click/hover handling
+/// that claiming the hit-test makes MANDATORY, and the window-region clip that makes any of it reach
+/// the OS in the first place.
 /// <para>
-/// The real flyout needs a live interactive window and a human — that part is e2e/manual. What is
-/// tested here is everything the OS decides FROM: which code the window reports for a point, that a
-/// registered button beats the resize strip, that press-then-release-elsewhere does not activate,
-/// and that clearing the regions cannot leave the app painting a hover forever.
+/// ⚠ READ THIS BEFORE TRUSTING A GREEN RUN HERE. Every test below drives
+/// <c>SendMessage(form, …)</c>, which is the one step REAL input never takes — the OS picks the
+/// target with <c>WindowFromPoint</c>, and a WebView2 child covering the client area wins. P5.6
+/// shipped once with 10 green tests here, two sabotage runs and a live Win32 probe, having never
+/// worked: all of them bypassed the routing. So these tests pin the window's DECISIONS, and the
+/// routing itself is proven only by the clip tests (which assert the covering control's region is
+/// actually cut) plus a live <c>WindowFromPoint</c>/human pass. See
+/// <c>.claude/knowledge/winforms-shell.md</c>.
 /// </para>
 /// </summary>
 public class CaptionButtonTests
@@ -190,5 +195,189 @@ public class CaptionButtonTests
         SendNc(form, WM_NCMOUSEMOVE, HTMAXBUTTON);
 
         Assert.False(form.IsDisposed);
+    });
+
+    // ── The clip: what actually makes the OS route input here (P5.6 hybrid) ──────────────────────
+
+    /// <summary>The cluster the clipping tests register, as a union: x 700..790, y 0..30.</summary>
+    private static readonly CaptionButtonRegion[] Cluster =
+    [
+        new(CaptionButtonKind.Minimize, new Rectangle(700, 0, 30, 30)),
+        new(CaptionButtonKind.Maximize, new Rectangle(730, 0, 30, 30)),
+        new(CaptionButtonKind.Close, new Rectangle(760, 0, 30, 30)),
+    ];
+
+    private static readonly Point InsideCluster = new(775, 10);   // over the close button
+    private static readonly Point BesideCluster = new(400, 10);   // same strip, left of the cluster
+
+    private static OptimizedForm CreateClippingForm(bool nativeCaptionButtons = true)
+    {
+        var form = new OptimizedForm(new OptimizedFormOptions
+        {
+            FramelessChrome = true,
+            NativeCaptionButtons = nativeCaptionButtons,
+        })
+        {
+            StartPosition = FormStartPosition.Manual,
+            Bounds = new Rectangle(0, 0, 800, 600),
+            ShowInTaskbar = false,
+        };
+        _ = form.Handle;
+        return form;
+    }
+
+    private static Panel AddCover(OptimizedForm form)
+    {
+        var cover = new Panel { Dock = DockStyle.Fill };
+        form.Controls.Add(cover);
+        _ = cover.Handle; // a region can only be cut once the control is realized
+        return cover;
+    }
+
+    [Fact]
+    public void The_cluster_is_cut_out_of_a_covering_child() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        var cover = AddCover(form);
+
+        form.SetCaptionButtons(Cluster);
+
+        // THE mechanism: a child that does not COVER these pixels cannot receive their input, so the
+        // form's WM_NCHITTEST finally runs there and Windows offers Snap Layouts. Without this the
+        // hit-test above is answered into a void — which is exactly how P5.6 shipped broken once.
+        Assert.False(cover.Region!.IsVisible(InsideCluster));
+        Assert.True(cover.Region.IsVisible(BesideCluster));
+    });
+
+    [Fact]
+    public void EVERY_covering_child_is_cut_not_just_one() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        var splash = AddCover(form);   // covers the caption while the app boots
+        var webView = AddCover(form);  // covers it afterwards
+
+        form.SetCaptionButtons(Cluster);
+
+        // The reason this is not a single named control: a splash panel owns the caption pixels
+        // before any page exists, so naming the web view alone leaves the window unclosable for the
+        // whole of startup (user-reported). Both are cut, so the buttons work in both phases.
+        Assert.False(splash.Region!.IsVisible(InsideCluster));
+        Assert.False(webView.Region!.IsVisible(InsideCluster));
+    });
+
+    [Fact]
+    public void A_child_added_AFTER_the_rects_were_reported_is_cut_too() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        form.SetCaptionButtons(Cluster);
+
+        var late = AddCover(form); // e.g. a drop-zone overlay, or the web view built after startup
+
+        Assert.False(late.Region!.IsVisible(InsideCluster));
+    });
+
+    [Fact]
+    public void Clearing_the_regions_hands_every_pixel_back() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        var cover = AddCover(form);
+        form.SetCaptionButtons(Cluster);
+        Assert.False(cover.Region!.IsVisible(InsideCluster));
+
+        form.SetCaptionButtons(null);
+
+        // A hole nobody paints into is a dead rectangle, so the clip must be undone with the regions.
+        Assert.True(cover.Region is null || cover.Region.IsVisible(InsideCluster));
+    });
+
+    [Fact]
+    public void A_child_removed_from_the_form_does_not_keep_our_hole() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        var cover = AddCover(form);
+        form.SetCaptionButtons(Cluster);
+
+        form.Controls.Remove(cover);
+
+        // It may be re-parented or shown elsewhere; carrying our cut-out corner with it would be a
+        // hole in someone else's window.
+        Assert.True(cover.Region is null || cover.Region.IsVisible(InsideCluster));
+        cover.Dispose();
+    });
+
+    [Fact]
+    public void Without_the_option_nothing_is_clipped() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm(nativeCaptionButtons: false);
+        var cover = AddCover(form);
+
+        form.SetCaptionButtons(Cluster);
+
+        // The un-clipped mode is a real mode, not a broken one: the app draws the buttons itself and
+        // learns hot/pressed from CaptionButtonStateChanged. It must cost nothing here.
+        Assert.Null(cover.Region);
+    });
+
+    [Fact]
+    public void Asking_for_native_buttons_on_a_FRAMED_window_fails_loudly() => Sta.Run(() =>
+    {
+        // A framed window has real caption buttons and never reaches the custom hit-test, so the
+        // option could only ever do nothing — and "the buttons just don't work" with no error and
+        // nothing to grep is the failure mode P5.5 H3 exists to stop.
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new OptimizedForm(new OptimizedFormOptions { NativeCaptionButtons = true }));
+
+        Assert.Contains(nameof(OptimizedFormOptions.FramelessChrome), ex.Message);
+    });
+
+    [Fact]
+    public void The_hole_spans_the_WHOLE_cluster_not_one_button() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        var cover = AddCover(form);
+
+        form.SetCaptionButtons(Cluster);
+
+        // Driven from the UNION of the reported rects, never a constant: the cluster is ~250 physical
+        // px at 200% scaling, so a value guessed at 100% cuts straight THROUGH the buttons (measured
+        // during the spike). Every button, and the gaps between them, must be inside the hole.
+        Assert.False(cover.Region!.IsVisible(new Point(710, 10))); // minimize
+        Assert.False(cover.Region.IsVisible(new Point(745, 10)));  // maximize
+        Assert.False(cover.Region.IsVisible(new Point(775, 10)));  // close
+    });
+
+    [Fact]
+    public void Hovering_a_button_repaints_it() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        AddCover(form);
+        form.SetCaptionButtons(Cluster);
+
+        var invalidated = new List<Rectangle>();
+        form.Invalidated += (_, e) => invalidated.Add(e.InvalidRect);
+
+        SendNc(form, WM_NCMOUSEMOVE, HTMAXBUTTON);
+
+        // THE defect that only RUNNING the sample found: the state changed and the callback fired,
+        // but nothing ever asked for a repaint — so with the kit owning these pixels the buttons
+        // never visibly reacted. Everything else about the chain was already correct, which is why
+        // it survived a green suite. (The user reported it as "the hover style is not working".)
+        Assert.Contains(invalidated, r => r.Contains(new Point(745, 10)));
+    });
+
+    [Fact]
+    public void Releasing_a_press_repaints_the_button_it_left() => Sta.Run(() =>
+    {
+        using var form = CreateClippingForm();
+        AddCover(form);
+        form.SetCaptionButtons(Cluster);
+        SendNc(form, WM_NCLBUTTONDOWN, HTMINBUTTON);
+
+        var invalidated = new List<Rectangle>();
+        form.Invalidated += (_, e) => invalidated.Add(e.InvalidRect);
+        SendNc(form, WM_NCLBUTTONUP, HTMINBUTTON);
+
+        // Same class as the hover defect: a pressed button that never repaints stays visibly stuck.
+        Assert.Contains(invalidated, r => r.Contains(new Point(710, 10)));
     });
 }

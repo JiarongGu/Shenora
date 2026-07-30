@@ -57,9 +57,29 @@ owner, `IUiDispatcher`) — don't restate it here.
   the two checks that PASSED (clicks work, press-and-cancel works) were the page's own `onClick` and
   ordinary browser behaviour, i.e. passing for reasons that had nothing to do with the feature.
   **So: if the OS decides who receives an input, prove it with `WindowFromPoint`/a real cursor, and
-  treat a passing check whose mechanism you cannot name as unverified.** A page-drawn control that
-  needs OS treatment also needs the WebView2 child chain to answer `HTTRANSPARENT` for it — the
-  covering child is the default, not the exception.
+  treat a passing check whose mechanism you cannot name as unverified.**
+- **A page-drawn control that needs OS treatment must stop being COVERED — that is the only lever.**
+  Real input goes to whatever `WindowFromPoint` finds, and WebView2's children belong to the browser
+  PROCESS, so they cannot be subclassed into answering `HTTRANSPARENT` (`SetWindowSubclass` returns
+  FALSE for `Chrome_WidgetWin_1`, `Chrome_RenderWidgetHostHWND`, `Intermediate D3D Window`). The fix
+  that works is a window REGION: `OptimizedFormOptions.NativeCaptionButtons` excludes the caption
+  cluster from every covering child, so those pixels become the form's own and its `WM_NCHITTEST`
+  finally runs — which is what buys Snap Layouts. Three things this cost to learn: size the hole from
+  the UNION of the reported rects, never a constant (the cluster is ~250 physical px at 200%, so a
+  value picked at 100% cuts through the buttons); a window region is relative to the window's top-left
+  and SURVIVES a resize, so re-apply it on size/location/`HandleCreated` or the child stays clipped to
+  its old size; and clip EVERY covering child, because what is on top changes over a window's life
+  (splash → web view → overlays) and naming one leaves the buttons dead for the rest.
+  **`WS_CLIPCHILDREN` does let the parent paint into a child's excluded region** — verified live — so
+  paint on the FORM. Do not put a child control in the hole: it becomes what `WindowFromPoint` finds,
+  re-creating the coverage problem, and a child answering `HTTRANSPARENT` passes the hit DOWN the
+  z-order rather than up to the form.
+- **When the window owns pixels, changing their STATE is not enough — invalidate them.** The hover
+  and pressed states flipped, the callback fired, `WM_NCMOUSEMOVE` arrived and `OnPaint` was correct,
+  yet the buttons never visibly reacted, because nothing asked for a repaint. It was harmless while
+  the page drew them (the callback WAS the delivery) and became the whole bug the moment the kit
+  started painting. Pin this class with `Control.Invalidated` rather than by pumping messages — a test
+  that pumps can enter a modal loop and stall the suite.
 - **A drop target is registered PER HWND.** `OptimizedForm` deliberately does NOT set `AllowDrop`:
   `DropZoneOverlay` registers itself, nothing ever subscribed to the form's drag events, and the
   form-level flag only forced OLE/STA on every consumer of the base class while showing a copy cursor

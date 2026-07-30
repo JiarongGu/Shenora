@@ -155,6 +155,26 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **Frameless caption buttons now behave like real ones — Snap Layouts, hover and press (P5.6).**
+  New `OptimizedFormOptions.NativeCaptionButtons`: the cluster reported to
+  `OptimizedForm.SetCaptionButtons` is cut out of the window region of **every direct child that
+  covers it**, so those pixels become the form's own client area and the OS finally routes real mouse
+  input there — which is the only way Windows 11 offers the Snap Layouts flyout on a maximize button
+  a page drew. The window then paints the three buttons itself, with the standard Windows chrome
+  glyphs and the maximize↔restore swap.
+  New `CaptionButtonColors` (+ `OptimizedForm.CaptionButtonColors`) carries the palette: same split
+  as `TrayMenuColors` — the kit owns the renderer (glyphs, hit states, DPI), your app owns every
+  colour, because the kit ships no design (D13). Leave it null and a neutral palette is derived from
+  the form's `BackColor`, so a half-wired app sees buttons rather than an empty rectangle.
+  **Adopting it:** set the option, set the colours, and keep reporting the rectangles you already
+  report through `SET_CAPTION_BUTTONS`; the union of those rectangles IS the hole, which is what
+  makes it correct at every DPI (the cluster is ~250 physical px at 200% scaling, so any constant
+  guessed at 100% cuts through the buttons). Your page should keep RESERVING that space — whatever it
+  draws there is clipped away and invisible. Because the clip covers every child rather than one
+  named control, the buttons also work while a splash panel is up, i.e. the window is closable before
+  the frontend has loaded. `CaptionButtonStateChanged` is unchanged and still the right hook when the
+  option is OFF and your app draws the buttons itself.
+  This supersedes the previous release note that these types were NOT FUNCTIONAL over a WebView2.
 - **The auxiliary session browser gained the three event policies it shipped without** (P5.5 H4.4):
   `NewWindowRequested` is suppressed (a pooled page calling `window.open()` used to get a real,
   visible popup in an app with no session UI), `PermissionRequested` is denied by default (an

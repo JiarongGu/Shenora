@@ -923,133 +923,93 @@ reshaped one package and nothing else.
   The rule now lives in `.claude/knowledge/generic-library.md` so the next session catches this class
   unprompted.
 
-### P5.6 — Frameless caption buttons: HYBRID chosen (2026-07-31), blocked on a spike
+### P5.6 — Frameless caption buttons: the HYBRID SHIPPED (2026-07-31), two items still open
 
 > DIRECTION (user, 2026-07-31): *"the 'fake' window button at top still need to behave like regular
 > window button (hover style, docking)"* — then, on the fork: *"you can do hybrid (if you can make
 > this work perfectly (it usually doesn't work that well which I experienced before, because you have
-> to make an overlay form on top of existing form)"*.
+> to make an overlay form on top of existing form)"* — then, during implementation: *"its better if
+> you can show those control buttons during the splash screen too."*
 
-**DECISION: option (b), the hybrid** — the page keeps the title bar, its drag and its theme; only the
-three-button cluster stops being page-drawn. **Conditional on it working PERFECTLY; if the spike below
-does not, fall back to (c) accept the limitation and delete the P5.6 surface.**
+**DONE.** The hybrid works and is proven live: the window CLIPS the caption-button cluster out of
+every child that covers it, so the OS routes real mouse input to the form, and the window paints the
+three buttons itself. Snap Layouts, hover, press and the maximize↔restore glyph all behave natively.
 
-#### ⚠ Do NOT use an overlay FORM. The user has hit this before and is right.
+#### What shipped
 
-A second top-level window layered over the main one has to be kept in sync on every move, resize,
-z-order change, activation, DPI change and monitor change; it steals or loses focus; it flickers on
-resize; and it still would not deliver Snap Layouts, because the flyout is offered against the window
-the OS hit-tests — which would be the overlay, not the app window. **This whole approach is
-off the table.** The same objection kills a child-control overlay for the *Snap Layouts* half:
-a child answering `HTTRANSPARENT` passes the hit DOWN the z-order to the WebView2, never up to the
-form, and the flyout requires the TOP-LEVEL window to answer `WM_NCHITTEST`.
+- **`OptimizedFormOptions.NativeCaptionButtons`** (bool) — the opt-in. The cluster reported to
+  `SetCaptionButtons` is excluded from the window region of **every direct child that covers it**,
+  re-applied on `ControlAdded` / `HandleCreated` / size / location changes and in `OnShown`.
+- **`CaptionButtonColors`** — the palette the window paints with. Mirrors `TrayMenuColors` exactly:
+  the kit owns the renderer (Segoe Fluent glyphs, hit states, DPI, the restore-glyph swap), the app
+  owns every colour (D13 — the kit ships no design). A neutral fallback derived from `BackColor`
+  keeps the buttons visible if an app forgets, because silently invisible chrome is the worse failure.
+- `OptimizedForm.OnPaint` draws the cluster; `CaptionButtonKind`/`CaptionButtonRegion`/
+  `CaptionButtonState`/`SetCaptionButtons`/`CaptionButtonStateChanged`, the `SET_CAPTION_BUTTONS`
+  route and `WindowCommands.setCaptionButtons` are unchanged and no longer marked NOT-FUNCTIONAL.
+- Sample: `NativeCaptionButtons = true` + its palette; the page stops styling hover and the
+  `CAPTION_BUTTON_STATE` event is gone (invisible when hosted, redundant when not); it still renders
+  its buttons so an unhosted browser preview keeps a usable title bar.
 
-#### The one mechanism that can actually work: stop the WebView2 covering those pixels
+#### Two decisions worth not relitigating
 
-The constraint proven in `e9b85c1` is only ever about COVERAGE — real input is routed by
-`WindowFromPoint`, and WebView2's child windows belong to the browser PROCESS so they cannot be
-subclassed to decline. But if the WebView2's window does not *include* the button cluster, that area is
-the form's own client area and the form's `WM_NCHITTEST` governs it — which is exactly what the
-already-written P5.6 code needs, unchanged.
+- **The kit paints, the app supplies colours** (user's choice over an app paint-callback, and over
+  shipping both). `TrayIconOptions.MenuColors` is the in-repo precedent. **Do not add a paint
+  callback** — a second way to do one thing, with no consumer scenario.
+- **Every covering child, not one named control.** The user asked for the buttons to work during the
+  SPLASH; whatever is on top changes over a window's life (splash → web view → overlays), so naming
+  one control leaves the buttons dead for every other phase. A child that overlaps the cluster is by
+  definition covering the buttons.
+- **`CaptionButtonStateChanged` stays** because there are TWO coherent modes: with the option ON the
+  window paints and the state is its own business; with it OFF the app draws and the callback is the
+  only way it can learn hot/pressed (a form whose caption strip no web view covers). Both have a real
+  consumer — don't delete either as redundant.
 
-**✅ THE SPIKE PASSED (2026-07-31, verified live with the user).** Clipping works; the flyout appears.
-What follows is now implementation, not investigation. Evidence:
-- WebView2 renders correctly with a non-rectangular window — no artifacts, no tearing, clean fill.
-- `WindowFromPoint` inside the excluded rect returns **THE FORM**, and the form answers
-  `HTMAXBUTTON`/`HTCLOSE` there using the ALREADY-WRITTEN P5.6 code, unchanged.
-- **The user confirmed the Snap Layouts flyout appears.**
-- **NEVER GUESS THE RECT.** A hardcoded 130 px cut THROUGH the buttons — three of them are ~250 px at
-  200% DPI. Drive the hole from the union of the rects the page already reports via
-  `SET_CAPTION_BUTTONS`; that is correct at any DPI by construction. Measured union on a 2536×1588
-  client: `{X=2286,Y=-1,W=250,H=66}`.
-- ⚠ A probe process MUST call `SetProcessDPIAware()` first. Without it PowerShell saw a 2560 px window
-  as 1280 and the first run of this very spike looked like a FAILURE. Same lesson as `e9b85c1`, new
-  disguise: the tool lied, not the code.
+#### How it was verified (and why the method matters here more than anywhere)
 
-- [ ] ~~SPIKE: clip the WebView2's window region~~ — **DONE, passed.** Original plan kept for context:
-  `Control.Region` (→ `SetWindowRgn`) on the WebView2 control, set to the full client rect MINUS the
-  caption-button cluster. Then verify, IN THIS ORDER, and stop at the first failure:
-  1. Does the region survive at all — does WebView2 render correctly with a non-rectangular window?
-     **This is the real risk**: WebView2 composites through DirectComposition, and `SetWindowRgn` may
-     be ignored, may produce artifacts, or may be undone on resize/DPI change. Assume nothing.
-  2. Does `WindowFromPoint` inside the excluded rect now return the FORM? (That is the pass/fail
-     signal — the same probe that diagnosed the original failure.)
-  3. Does the form's existing hit-test then produce hover and the Snap Layouts flyout — **checked by a
-     HUMAN, not a `SendMessage` probe.** See the rule in `.claude/knowledge/winforms-shell.md`.
-  4. Does it survive resize, maximize, DPI change and a renderer crash (re-apply the region where the
-     maximized fill is re-applied — `RefreshMaximizedFill` is the precedent).
-- [ ] **Only if the spike passes:** draw the three buttons natively in the excluded rect (a plain
-  child control of the FORM — not an overlay window), keep the page reporting the cluster's rect
-  through the EXISTING `SET_CAPTION_BUTTONS` route (it already carries exactly this), and have the page
-  reserve that space in its title-bar layout. The kit keeps pushing `CaptionButtonState` so the app can
-  still theme the buttons; headless (D13) means the kit ships no colours.
-- [ ] **If the spike fails:** take option (c). Delete `CaptionButtonKind`/`CaptionButtonRegion`/
-  `CaptionButtonState`, `SetCaptionButtons`/`CaptionButtonStateChanged`, the `SET_CAPTION_BUTTONS`
-  route and `WindowCommands.setCaptionButtons`, and record here that Snap Layouts is out of scope for a
-  WebView2-covered caption. Page-drawn buttons keep working exactly as they do today (CSS `:hover`
-  included) — that is the status quo, and it is not broken, just not native.
+`WindowFromPoint` over each button returns **the form**, while the same probe 75 px to the left and
+mid-page returns `Chrome_RenderWidgetHostHWND` — so the hole is exactly the cluster. Hover was
+measured by SCREEN PIXEL sample (`#252525` → `#2F2F2F`, close → `#C42B1C`, back on leave), not by
+eye. The splash phase was proven with `Region.IsVisible` at the hole while the splash was still
+present. The user confirmed the Snap Layouts flyout. **A `SendMessage` probe proves none of this** —
+see `.claude/knowledge/winforms-shell.md`, and the probe traps in `docs/FIX-LOG.md`.
 
-#### Independent of the fork — approved to do (user, 2026-07-31)
+#### Still open — approved, independent of the above (user, 2026-07-31)
 
 - [ ] **Exit the snap on restore.** After the OS snaps the window, maximize+restore leaves it docked;
   other Windows apps exit the snap. The manual work-area maximize captures `_restoreBounds` from the
-  SNAPPED geometry. Note there is no clean Win32 "is this window snapped" API — budget for that before
-  starting; comparing the restore rect against the work area's halves/quadrants is the usual approach.
-- [ ] **Clear drop zones on DOCUMENT CHANGE rather than on the ready handshake** (P5.5's one deferral,
-  `ContentLoading` being the trigger the IPC ready gate already uses). Fresh evidence landed in
-  `f3a3f8e`: the sample had to hand-roll exactly this for its streaming session, in `OnClientReady`,
-  right next to `_dropZones.ClearAll()` — two features now needing the same reset means the kit should
-  own it. Doing it lets the four `notifyReady`→`ClearAll` ordering doc sites added in H7 be deleted.
+  SNAPPED geometry. Note there is no clean Win32 "is this window snapped" API — budget for that
+  before starting; comparing the restore rect against the work area's halves/quadrants is the usual
+  approach.
+- [ ] **Clear drop zones on DOCUMENT CHANGE rather than on the ready handshake** (P5.5's one
+  deferral, `ContentLoading` being the trigger the IPC ready gate already uses). Fresh evidence
+  landed in `f3a3f8e`: the sample had to hand-roll exactly this for its streaming session, in
+  `OnClientReady`, right next to `_dropZones.ClearAll()` — two features now needing the same reset
+  means the kit should own it. Doing it lets the four `notifyReady`→`ClearAll` ordering doc sites
+  added in H7 be deleted.
 
-#### Kept meanwhile
+#### The evidence behind the design (from `e9b85c1`, kept because it is why the shape is what it is)
 
-The P5.6 API stays, marked NOT-FUNCTIONAL in its own doc comments. Its hit-test decision,
-press/release pairing, hover de-duplication, guarded callback, CSS→client conversion and total parser
-are all correct and are exactly what the hybrid needs — the code is fine, the door is one the OS
-never knocks on until the region spike opens it.
+**ROOT CAUSE of the original failure.** WebView2 puts child windows over the whole client area. Real
+mouse input is routed by `WindowFromPoint`, which resolves to those children, so the form was never
+asked to hit-test the caption pixels — no `WM_NCMOUSEMOVE` (no hover) and no window claiming
+`HTMAXBUTTON` under the cursor (no flyout). The standard remedy — making those children answer
+`HTTRANSPARENT` — **is impossible**: `SetWindowSubclass` returns FALSE for `Chrome_WidgetWin_1`,
+`Chrome_RenderWidgetHostHWND` and `Intermediate D3D Window`, because those HWNDs belong to the
+WebView2 BROWSER PROCESS. Coverage is the only lever, which is why the answer is a window region.
 
-#### The evidence behind all of the above (from `e9b85c1`)
+**⚠ An overlay FORM was never on the table**, and the user was right to rule it out: it must be kept
+in sync on every move, resize, z-order change, activation and DPI change, it steals focus, and it
+would not deliver Snap Layouts anyway — the flyout is offered against the window the OS hit-tests,
+which would be the overlay. A child-control overlay fails too: a child answering `HTTRANSPARENT`
+passes the hit DOWN the z-order, not up to the form. **Painting on the FORM is what the shipped code
+does**, and the open question behind it — whether `WS_CLIPCHILDREN` lets the parent paint into a
+child's excluded region — is answered YES, live.
 
-**ROOT CAUSE, and why it cannot be worked around from the window side.** WebView2 puts child windows
-over the whole client area. Real mouse input is routed by `WindowFromPoint`, which resolves to those
-children, so the form is never asked to hit-test the caption pixels — no `WM_NCMOUSEMOVE` (no hover)
-and no window claiming `HTMAXBUTTON` under the cursor (no flyout).
-The standard remedy is to make those children answer `HTTRANSPARENT` so the search continues outward.
-**It was attempted and it is impossible:** `SetWindowSubclass` returns FALSE for
-`Chrome_WidgetWin_1`, `Chrome_RenderWidgetHostHWND` and `Intermediate D3D Window`, while succeeding
-for our own child windows — **those HWNDs belong to the WebView2 BROWSER PROCESS, and a process
-cannot subclass another process's window.** An overlay child of our own does not help either: a
-sibling returning `HTTRANSPARENT` passes the hit DOWN the z-order to the WebView2, not up to the
-form, and Snap Layouts requires the TOP-LEVEL window to answer the hit test.
-
-**WHY THE TESTS AND THE "LIVE PROOF" MISSED IT — worth more than the feature.** The 10 unit tests, two
-sabotage runs and a Win32 probe all drove `SendMessage(form, WM_NCHITTEST, …)` **straight at the
-form**, which is the one step real input never takes. All green, feature never worked. The tell was in
-the manual results: the two checks that PASSED did so for reasons unrelated to the feature.
-(Rule captured in `.claude/knowledge/winforms-shell.md`.)
-
-  - **(a) Native caption strip.** The WebView2 does not cover the top N px; the host renders the
-    caption buttons (WinForms) and the page styles nothing. Snap Layouts, hover and theming all work
-    for free because the strip is genuinely the form's. **Costs the "page draws its own chrome"
-    property**, which is currently a selling point of `OptimizedForm` + `WindowCommandFacade`.
-  - **(b) Hybrid.** WebView2 covers everything EXCEPT the button cluster at top-right, where the host
-    puts its own small native control (the `DropZoneOverlay` precedent). The page keeps the title bar,
-    drag and theme; only the three buttons become native. Needs the page to reserve that space and
-    report its width — which it already does via `SET_CAPTION_BUTTONS`, so the IPC route is reusable.
-    **Most likely the right answer**: it keeps the page in charge of layout and gives the OS a real
-    window to hit-test.
-  - **(c) Accept the limitation.** Keep page-drawn buttons; no Snap Layouts, and hover stays CSS-only
-    (which works fine today, since the page keeps its own mouse events). Delete the P5.6 surface as
-    dead weight and record that Snap Layouts is out of scope for a WebView2-covered caption.
-  way the fork goes: after the OS snaps the window and it is then maximized and restored, it stays
-  docked; other Windows apps exit the snap. The manual work-area maximize captures `_restoreBounds`
-  from the SNAPPED geometry, so restore returns into the snap.
-
-**Kept meanwhile, marked NOT-FUNCTIONAL in its own docs:** `CaptionButtonKind`/`CaptionButtonRegion`/
-`CaptionButtonState`, `OptimizedForm.SetCaptionButtons`/`CaptionButtonStateChanged`, the
-`SET_CAPTION_BUTTONS` route and `WindowCommands.setCaptionButtons`. The hit-test decision, press/release
-pairing, hover de-dup, guarded callback, CSS→client conversion and total parser are all correct and
-directly reusable by options (a) and (b) — the code is fine, the door is one the OS never knocks on.
+**WHY THE ORIGINAL TESTS AND "LIVE PROOF" MISSED IT — worth more than the feature.** 10 unit tests,
+two sabotage runs and a Win32 probe all drove `SendMessage(form, WM_NCHITTEST, …)` **straight at the
+form**, which is the one step real input never takes. All green, feature never worked. The tell was
+in the manual results: the two checks that PASSED did so for reasons unrelated to the feature.
 
 ### P1 — Skeleton tail
 

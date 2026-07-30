@@ -40,6 +40,26 @@ public sealed class OptimizedFormOptions
     /// is re-added by hit-testing this strip.
     /// </summary>
     public int TopResizeBorder { get; init; } = 8;
+
+    /// <summary>
+    /// Frameless: the window OWNS the caption-button pixels and paints them itself (P5.6). The
+    /// cluster reported to <see cref="OptimizedForm.SetCaptionButtons"/> is cut out of every child
+    /// control that would cover it, so those pixels become the form's own client area — which is the
+    /// only way the OS routes real mouse input there, and therefore the only way Windows 11 offers
+    /// **Snap Layouts** on the maximize button.
+    /// <para>
+    /// Why it clips EVERY covering child rather than one named control: whatever is on top changes
+    /// over a window's life. A splash panel covers the caption while the app boots, the web view
+    /// covers it afterwards, and an overlay may cover it in between — so naming one control leaves
+    /// the buttons dead for the others. A child that overlaps the cluster is, by definition, covering
+    /// the buttons; excluding it is the mechanism, not a heuristic.
+    /// </para>
+    /// <para>
+    /// Requires <see cref="FramelessChrome"/> and is inert until rectangles are reported. Pair it
+    /// with <see cref="OptimizedForm.CaptionButtonColors"/>.
+    /// </para>
+    /// </summary>
+    public bool NativeCaptionButtons { get; init; }
 }
 
 /// <summary>
@@ -84,11 +104,20 @@ public class OptimizedForm : Form, IAppMaximizable
     private bool _immersiveDarkMode;
     private bool _maximized;
     private Rectangle _restoreBounds;
-    // Page-drawn caption buttons, in CLIENT px. Empty = the app draws none, and every message below
+    // Caption-button regions, in CLIENT px. Empty = the app declares none, and every message below
     // falls through untouched — this feature costs nothing until it is used.
     private CaptionButtonRegion[] _captionButtons = [];
     private CaptionButtonKind? _hotCaptionButton;
     private CaptionButtonKind? _pressedCaptionButton;
+    // The bounding box of the whole cluster: what gets cut out of the clip control and what this
+    // form paints. Driven from the REPORTED rects, never guessed — see SetCaptionButtons.
+    private Rectangle _captionUnion;
+    // Children whose geometry we watch, and the subset we actually gave a region to. Two sets, not
+    // one: we must only ever null a region WE set (an app may give its own control one).
+    private readonly HashSet<Control> _trackedChildren = [];
+    private readonly HashSet<Control> _clippedChildren = [];
+    private CaptionButtonColors? _captionButtonColors;
+    private Font? _captionGlyphFont;
 
     public OptimizedForm() : this(null)
     {
@@ -97,6 +126,20 @@ public class OptimizedForm : Form, IAppMaximizable
     public OptimizedForm(OptimizedFormOptions? options)
     {
         _options = options ?? new OptimizedFormOptions();
+
+        // Fail at composition rather than degrading to silence (the P5.5 H3 lesson: an option that
+        // quietly does nothing is worse than one that throws). A framed window has real caption
+        // buttons and never reaches the hit-test this depends on, so the combination is always an
+        // app mistake — and the symptom would be "the buttons just don't work", with nothing to grep.
+        if (_options.NativeCaptionButtons && !_options.FramelessChrome)
+        {
+            throw new ArgumentException(
+                $"{nameof(OptimizedFormOptions.NativeCaptionButtons)} requires " +
+                $"{nameof(OptimizedFormOptions.FramelessChrome)}: a framed window already has real " +
+                "caption buttons, and none of the custom hit-testing runs for one.",
+                nameof(options));
+        }
+
         _dwmBorderColor = _options.DwmBorderColor;
         _immersiveDarkMode = _options.ImmersiveDarkMode;
 
@@ -130,6 +173,17 @@ public class OptimizedForm : Form, IAppMaximizable
         // form is leaked for the process lifetime.
         if (_options.FramelessChrome)
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+
+        // The maximize button's glyph is maximize-vs-restore, so it must be repainted whenever that
+        // state moves — including via Win+Up, the system menu and a snap, which all route through
+        // the manual path. Cheaper and less error-prone than touching all four raise sites.
+        MaximizedChanged += (_, _) => InvalidateCaptionButtons();
+
+        if (_options.FramelessChrome && _options.NativeCaptionButtons)
+        {
+            ControlAdded += OnCaptionChildAdded;
+            ControlRemoved += OnCaptionChildRemoved;
+        }
     }
 
     /// <inheritdoc />
@@ -138,7 +192,15 @@ public class OptimizedForm : Form, IAppMaximizable
         // Unconditional detach: SystemEvents is a static, process-lifetime publisher, so a missed
         // unsubscribe keeps this form (and its whole control tree) alive forever. Removing a handler
         // that was never added is a no-op, so this needs no matching condition.
-        if (disposing) Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        if (disposing)
+        {
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            ControlAdded -= OnCaptionChildAdded;
+            ControlRemoved -= OnCaptionChildRemoved;
+            foreach (var child in _trackedChildren.ToArray()) Untrack(child);
+            _captionGlyphFont?.Dispose();
+            _captionGlyphFont = null;
+        }
         base.Dispose(disposing);
     }
 
@@ -152,10 +214,15 @@ public class OptimizedForm : Form, IAppMaximizable
     public Func<int, bool>? WndProcHook { get; set; }
 
     /// <summary>
-    /// Called when the OS changes what it is doing to a page-drawn caption button (hover in/out,
-    /// press, release) — the app's cue to re-render the affordance. Never called unless
-    /// <see cref="SetCaptionButtons"/> registered regions. See <see cref="CaptionButtonState"/> for
-    /// why the page cannot observe this itself.
+    /// Called when the OS changes what it is doing to a caption button (hover in/out, press,
+    /// release). Never called unless <see cref="SetCaptionButtons"/> registered regions.
+    /// <para>
+    /// Only needed when <see cref="OptimizedFormOptions.NativeCaptionButtons"/> is OFF — with it on this window
+    /// paints the buttons itself and an app has nothing to do here. It stays because the other mode
+    /// is real: a form whose caption strip is NOT covered by a web view can draw its own buttons,
+    /// and claiming the hit-test costs it every mouse event in those rectangles, so this callback is
+    /// then the only way it can learn what to render. See <see cref="CaptionButtonState"/>.
+    /// </para>
     /// <para>App code, so it is invoked GUARDED — a throw here cannot take the window down.</para>
     /// </summary>
     [System.ComponentModel.Browsable(false)]
@@ -163,33 +230,209 @@ public class OptimizedForm : Form, IAppMaximizable
     public Action<CaptionButtonState>? CaptionButtonStateChanged { get; set; }
 
     /// <summary>
-    /// Tell the window where the page drew its caption buttons, in CLIENT px, so the OS can treat
-    /// them as the real thing — chiefly so Windows 11 offers Snap Layouts on the maximize button.
-    /// Pass an empty list (the default) to hand every pixel back to the page.
+    /// The palette this window paints the caption buttons with when
+    /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> is on. Null = a neutral fallback
+    /// derived from <see cref="Control.BackColor"/> — set it; the fallback exists only so a
+    /// half-wired app sees buttons rather than an empty rectangle.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public CaptionButtonColors? CaptionButtonColors
+    {
+        get => _captionButtonColors;
+        set { _captionButtonColors = value; InvalidateCaptionButtons(); }
+    }
+
+    /// <summary>
+    /// Tell the window where the caption buttons are, in CLIENT px, so the OS can treat them as the
+    /// real thing — chiefly so Windows 11 offers Snap Layouts on the maximize button. Pass an empty
+    /// list (the default) to hand every pixel back.
     /// <para>
-    /// ⚠ HAS NO EFFECT while a WebView2 covers these pixels, and that CANNOT be fixed from here —
-    /// see <see cref="CaptionButtonKind"/> and <c>TASKS.md</c> P5.6. The regions are stored and
-    /// hit-tested correctly; the OS simply never asks, because input is routed to the WebView2's
-    /// child windows, which belong to the browser PROCESS and cannot be subclassed. Useful today
-    /// only for a form whose caption strip is not covered by the WebView2.
+    /// With <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on, this also drives the clip: the hole is the
+    /// UNION of the rectangles given here. That is the only correct way to size it — the cluster is
+    /// ~250 physical px at 200% scaling, so any constant guessed at 100% cuts THROUGH the buttons.
+    /// Deriving it from the reported rects is right at every DPI by construction.
     /// </para>
     /// <para>
     /// Re-send this whenever the page's layout changes: the rectangles are a snapshot, and a stale
     /// one silently moves the hit-test away from the button the user can see.
     /// </para>
+    /// <para>
+    /// Call it on the UI THREAD. With <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on it
+    /// reshapes child controls, which is not safe cross-thread; the kit's own route already marshals
+    /// (<c>WindowCommandFacade</c> posts through <c>IUiDispatcher</c>). Calling it before the handle
+    /// exists is fine and supported — the rectangles are stored and the clip is applied once the
+    /// window is shown, which is what lets an app declare its buttons early enough to be usable
+    /// behind a splash screen.
+    /// </para>
     /// </summary>
     /// <param name="regions">The button rectangles; null or empty clears them.</param>
     public void SetCaptionButtons(IReadOnlyList<CaptionButtonRegion>? regions)
     {
+        var previousUnion = _captionUnion;
         _captionButtons = regions is { Count: > 0 } ? [.. regions] : [];
+        _captionUnion = UnionOf(_captionButtons);
+
         if (_captionButtons.Length == 0 && (_hotCaptionButton is not null || _pressedCaptionButton is not null))
         {
-            // Clearing the regions must also clear any state the app is currently rendering, or it
-            // is left painting a hover that can never end.
+            // Clearing the regions must also clear any state currently being rendered, or whoever
+            // draws is left painting a hover that can never end.
             _hotCaptionButton = null;
             _pressedCaptionButton = null;
             RaiseCaptionButtonState();
         }
+
+        ApplyCaptionButtonClip();
+        // Repaint what the cluster LEFT as well as where it landed, or a shrinking layout leaves
+        // the old buttons painted on pixels the web view has just been handed back.
+        if (!previousUnion.IsEmpty) Invalidate(previousUnion);
+        InvalidateCaptionButtons();
+    }
+
+    private static Rectangle UnionOf(CaptionButtonRegion[] regions)
+    {
+        var union = Rectangle.Empty;
+        var any = false;
+        foreach (var region in regions)
+        {
+            // Not seeded with Rectangle.Empty: Union against an empty rect at the ORIGIN stretches
+            // the result all the way to (0,0), which would clip out the entire title bar.
+            union = any ? Rectangle.Union(union, region.Bounds) : region.Bounds;
+            any = true;
+        }
+        return union;
+    }
+
+    /// <summary>True when this window owns and paints the caption-button pixels.</summary>
+    private bool NativeCaptionButtonsEnabled => _options.FramelessChrome && _options.NativeCaptionButtons;
+
+    private void OnClippedChildGeometryChanged(object? sender, EventArgs e)
+    {
+        // A window region is in coordinates relative to the window's top-left and SURVIVES a resize,
+        // so it goes stale the moment the control changes size: the "everything except the hole"
+        // part would keep the OLD size and leave a dead strip where the child stopped rendering.
+        // Recompute from the stored union; whoever reports the rects corrects the hole's position a
+        // moment later. (Same class of staleness as the manual maximized fill — RefreshMaximizedFill.)
+        ApplyCaptionButtonClip();
+        InvalidateCaptionButtons();
+    }
+
+    private void OnCaptionChildAdded(object? sender, ControlEventArgs e)
+    {
+        // A control added AFTER the cluster was reported would cover the buttons — the splash panel
+        // and the web view are typically added at different moments, and drop-zone overlays appear
+        // later still.
+        ApplyCaptionButtonClip();
+        InvalidateCaptionButtons();
+    }
+
+    private void OnCaptionChildRemoved(object? sender, ControlEventArgs e)
+    {
+        if (e.Control is not { } child) return;
+        Untrack(child);
+    }
+
+    /// <summary>
+    /// Watch a child's geometry so its hole stays correct — including <c>HandleCreated</c>.
+    /// <para>
+    /// A region cannot be applied before the control is realized, and <c>ControlAdded</c> fires
+    /// BEFORE the handle exists, so without this a control added after startup (a drop-zone overlay,
+    /// a web view built lazily) would be skipped once and never revisited: it would cover the buttons
+    /// with nothing to un-cover them. Caught by <c>A_child_added_AFTER_the_rects_were_reported…</c>.
+    /// </para>
+    /// </summary>
+    private void Track(Control child)
+    {
+        if (!_trackedChildren.Add(child)) return;
+        child.SizeChanged += OnClippedChildGeometryChanged;
+        child.LocationChanged += OnClippedChildGeometryChanged;
+        child.HandleCreated += OnClippedChildGeometryChanged;
+    }
+
+    private void Untrack(Control child)
+    {
+        if (_trackedChildren.Remove(child))
+        {
+            child.SizeChanged -= OnClippedChildGeometryChanged;
+            child.LocationChanged -= OnClippedChildGeometryChanged;
+            child.HandleCreated -= OnClippedChildGeometryChanged;
+        }
+        ClearOurRegion(child);
+    }
+
+    /// <summary>
+    /// Hand the pixels back — but only if WE took them. An app is free to give its own control a
+    /// region, and nulling that because it happens to sit on this form would be our bug, not theirs.
+    /// </summary>
+    private void ClearOurRegion(Control child)
+    {
+        if (!_clippedChildren.Remove(child)) return;
+        if (!child.IsDisposed) child.Region = null;
+    }
+
+    /// <summary>
+    /// Cut the cluster out of every direct child that would cover it (and restore any that no longer
+    /// does). See <see cref="OptimizedFormOptions.NativeCaptionButtons"/> for why it is every child
+    /// rather than one named control.
+    /// </summary>
+    private void ApplyCaptionButtonClip()
+    {
+        if (!NativeCaptionButtonsEnabled || IsDisposed) return;
+
+        // Snapshot: clearing a region can run layout, which may mutate Controls underneath us.
+        var children = new Control[Controls.Count];
+        Controls.CopyTo(children, 0);
+
+        foreach (var child in children)
+        {
+            if (child is null || child.IsDisposed) continue;
+
+            // Watch it FIRST and unconditionally: a child with no handle yet has no hole to compute,
+            // and HandleCreated is the event that brings us back to finish the job.
+            Track(child);
+
+            var hole = HoleFor(child);
+            if (hole.IsEmpty)
+            {
+                ClearOurRegion(child);
+                continue;
+            }
+
+            var full = new Rectangle(Point.Empty, child.Size);
+            var region = new Region(full);
+            region.Exclude(hole);
+            child.Region = region; // Control.Region disposes the previous one
+            _clippedChildren.Add(child);
+        }
+
+        // A child that has since left Controls still holds our region and our subscriptions.
+        foreach (var tracked in _trackedChildren.ToArray())
+            if (!Controls.Contains(tracked)) Untrack(tracked);
+    }
+
+    /// <summary>
+    /// The cluster in <paramref name="child"/>'s own client px, or empty when it does not cover it.
+    /// </summary>
+    private Rectangle HoleFor(Control child)
+    {
+        if (_captionUnion.IsEmpty || child.Width <= 0 || child.Height <= 0) return Rectangle.Empty;
+        // The union is in this FORM's client px; a window region is in the CHILD's own. Via screen
+        // coordinates for the same reason WindowCommandFacade converts that way: identical whenever
+        // the child fills the form, and correct when it does not.
+        if (!IsHandleCreated || !child.IsHandleCreated) return Rectangle.Empty;
+        var topLeft = child.PointToClient(PointToScreen(_captionUnion.Location));
+        var hole = new Rectangle(topLeft, _captionUnion.Size);
+        // The reported top edge can sit a pixel ABOVE the client origin (measured: y = -1), so the
+        // hole is intersected with the child rather than trusted to be inside it.
+        hole.Intersect(new Rectangle(Point.Empty, child.Size));
+        return hole;
+    }
+
+    private void InvalidateCaptionButtons()
+    {
+        if (!NativeCaptionButtonsEnabled || _captionUnion.IsEmpty) return;
+        if (IsDisposed || !IsHandleCreated) return;
+        Invalidate(_captionUnion);
     }
 
     // No public `HotCaptionButton` property: CaptionButtonStateChanged already delivers it, and a
@@ -212,6 +455,11 @@ public class OptimizedForm : Form, IAppMaximizable
         if (_hotCaptionButton == hot && _pressedCaptionButton == pressed) return;
         _hotCaptionButton = hot;
         _pressedCaptionButton = pressed;
+        // Repaint BEFORE telling the app: when this window owns the pixels (a clip target is set),
+        // the state change IS the affordance, and without this the buttons never visibly react —
+        // found by running the sample, with everything else about the chain already correct.
+        // No-ops in the un-clipped mode, where the callback below is the whole point.
+        InvalidateCaptionButtons();
         RaiseCaptionButtonState();
     }
 
@@ -220,6 +468,135 @@ public class OptimizedForm : Form, IAppMaximizable
         if (CaptionButtonStateChanged is not { } handler) return;
         var state = new CaptionButtonState(_hotCaptionButton, _pressedCaptionButton);
         Shenora.Core.AppCallback.Run(() => handler(state));
+    }
+
+    /// <summary>
+    /// Paint the caption buttons into the hole cut out of the covering children.
+    /// <para>
+    /// On the FORM, deliberately — not in a child control placed in the hole. A child would become
+    /// the window <c>WindowFromPoint</c> finds, putting back exactly the coverage problem the clip
+    /// exists to remove; it would then have to answer <c>HTTRANSPARENT</c> and hope the hit search
+    /// walks outward to this form. The form's own client area needs none of that: it is already the
+    /// window the OS asks, which is what the clip proved.
+    /// </para>
+    /// </summary>
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if (!NativeCaptionButtonsEnabled || _captionButtons.Length == 0 || _captionUnion.IsEmpty) return;
+
+        var colors = _captionButtonColors ?? FallbackCaptionButtonColors();
+        var g = e.Graphics;
+
+        // The whole union, so the GAPS between buttons are filled too — the web view no longer
+        // renders any of it, and an unpainted gap shows as a tear beside the buttons.
+        using (var surface = new SolidBrush(colors.Surface))
+            g.FillRectangle(surface, _captionUnion);
+
+        var font = CaptionGlyphFont();
+        foreach (var region in _captionButtons)
+        {
+            var hot = _hotCaptionButton == region.Kind;
+            var pressed = _pressedCaptionButton == region.Kind;
+            var isClose = region.Kind == CaptionButtonKind.Close;
+
+            if (hot || pressed)
+            {
+                var back = pressed
+                    ? (isClose ? colors.ClosePressed : colors.Pressed)
+                    : (isClose ? colors.CloseHover : colors.Hover);
+                using var brush = new SolidBrush(back);
+                g.FillRectangle(brush, region.Bounds);
+            }
+
+            var glyph = isClose && (hot || pressed) ? colors.CloseGlyphHot ?? colors.Glyph : colors.Glyph;
+            TextRenderer.DrawText(g, CaptionGlyph(region.Kind), font, region.Bounds, glyph,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping);
+        }
+    }
+
+    /// <summary>
+    /// The Windows chrome glyphs — the same codepoints the OS draws in a real caption, so the
+    /// buttons match every other window on the desktop. Maximize swaps to RESTORE while maximized,
+    /// which is behaviour, not styling: a maximize glyph on a maximized window is simply wrong.
+    /// </summary>
+    /// <remarks>
+    /// ESCAPE SEQUENCES, never the literal characters. These are Private Use Area codepoints, and a
+    /// BOM-less UTF-8 source on this repo's CJK-locale build machine is a documented mojibake trap
+    /// (the CodePage note in <c>src/Directory.Build.props</c>). An escape is plain ASCII in the file,
+    /// so nothing between an editor and the compiler can mangle it. Unlike a mangled glyph, a
+    /// mangled escape fails to COMPILE instead of silently painting an empty button.
+    /// </remarks>
+    private string CaptionGlyph(CaptionButtonKind kind) => kind switch
+    {
+        CaptionButtonKind.Minimize => "\uE921",                             // ChromeMinimize
+        CaptionButtonKind.Maximize => IsAppMaximized ? "\uE923" : "\uE922", // ChromeRestore / ChromeMaximize
+        _ => "\uE8BB",                                                      // ChromeClose
+    };
+
+    /// <summary>
+    /// The icon font at this monitor's scale, cached until the scale changes.
+    /// <para>
+    /// "Segoe Fluent Icons" is Windows 11's; Windows 10 ships only "Segoe MDL2 Assets". Both carry
+    /// these four glyphs at the SAME codepoints, so the fallback is exact rather than approximate,
+    /// and one of the two is present on every Windows this package targets.
+    /// </para>
+    /// </summary>
+    private Font CaptionGlyphFont()
+    {
+        // 10 logical px is the size Windows itself draws caption glyphs at.
+        var size = (float)(10 * DpiHelper.ScaleFromDeviceDpi(DeviceDpi));
+        if (_captionGlyphFont is { } cached && Math.Abs(cached.Size - size) < 0.01f) return cached;
+        _captionGlyphFont?.Dispose();
+        _captionGlyphFont = new Font(CaptionGlyphFamily(), size, GraphicsUnit.Pixel);
+        return _captionGlyphFont;
+    }
+
+    private static string? _captionGlyphFamily;
+
+    private static string CaptionGlyphFamily()
+    {
+        if (_captionGlyphFamily is not null) return _captionGlyphFamily;
+        foreach (var candidate in new[] { "Segoe Fluent Icons", "Segoe MDL2 Assets" })
+        {
+            // FontFamily throws when the family is not installed; there is no TryGet.
+            try
+            {
+                using var family = new FontFamily(candidate);
+                return _captionGlyphFamily = candidate;
+            }
+            catch (ArgumentException)
+            {
+                // Not on this machine — try the older name.
+            }
+        }
+        return _captionGlyphFamily = FontFamily.GenericSansSerif.Name;
+    }
+
+    /// <summary>
+    /// A last-resort palette derived from the form's own fill, used only when an app set
+    /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> without <see cref="CaptionButtonColors"/>. Refusing to paint
+    /// would be worse: the clip has already taken those pixels away from the page, so the buttons
+    /// would silently vanish — the same "degrades to silence" failure the resource-prefix check
+    /// exists to prevent.
+    /// </summary>
+    private CaptionButtonColors FallbackCaptionButtonColors()
+    {
+        var back = BackColor;
+        var dark = back.GetBrightness() <= 0.5;
+        return new CaptionButtonColors
+        {
+            Surface = back,
+            Hover = dark ? ControlPaint.Light(back, 0.4f) : ControlPaint.Dark(back, 0.06f),
+            Pressed = dark ? ControlPaint.Light(back, 0.8f) : ControlPaint.Dark(back, 0.12f),
+            Glyph = dark ? Color.White : Color.Black,
+            // Close goes red on hover on every Windows app; that is the platform convention users
+            // read as "this closes", not a design choice of ours.
+            CloseHover = Color.FromArgb(196, 43, 28),
+            ClosePressed = Color.FromArgb(163, 36, 23),
+            CloseGlyphHot = Color.White,
+        };
     }
 
     /// <summary>
@@ -248,6 +625,12 @@ public class OptimizedForm : Form, IAppMaximizable
             Tag = null;
             if (!IsAppMaximized) Maximize();
         }
+
+        // A hole can only be cut once the child has a handle, and an app that reports its rectangles
+        // during construction (so the buttons are live behind a SPLASH, before any page has loaded)
+        // does so long before that. Re-apply here, where every child is realized.
+        ApplyCaptionButtonClip();
+        InvalidateCaptionButtons();
     }
 
     /// <summary>Raised after the maximize/restore state changes (chrome glyphs resync on it).</summary>

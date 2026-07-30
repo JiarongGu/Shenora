@@ -14,6 +14,68 @@ entry template:
 
 ## 2026-07-31
 
+### P5.6 hybrid: the hover state changed but nothing ever repainted
+
+- **Symptom.** With the window owning the caption-button pixels, the buttons rendered correctly but
+  never reacted to the pointer — no hover, no pressed. Reported by the user as "the functionalities
+  kind working, but the hover style is not".
+- **Root cause.** `OptimizedForm.SetCaptionButtonState` updated `_hotCaptionButton`/
+  `_pressedCaptionButton` and raised `CaptionButtonStateChanged`, but never called `Invalidate`. That
+  was harmless while the PAGE drew the buttons (the callback was the whole delivery mechanism) and
+  became the entire bug the moment the kit started painting them.
+- **Why it survived everything.** Every other link in the chain was already correct — the clip, the
+  hit-test, `WM_NCMOUSEMOVE` arriving, the state flipping, the callback firing. Instrumenting proved
+  the message arrived (`hot=Close`) and that `OnPaint` ran with the right clip rectangle and the right
+  state, which is what narrowed it to "the repaint was never requested".
+- **Fix.** `SetCaptionButtonState` invalidates the cluster before raising the callback. It is a no-op
+  in the un-clipped mode, where the callback is the point.
+- **Verified.** Screen-pixel sample over each button: `#252525` idle → `#2F2F2F` hovered, close →
+  `#C42B1C`, and back to `#252525` on leave. Pinned by `Hovering_a_button_repaints_it` and
+  `Releasing_a_press_repaints_the_button_it_left`, which watch `Control.Invalidated` — no message
+  pumping, so they cannot stall the suite the way a modal loop once did.
+
+### P5.6 hybrid: a child added after the rects were reported was never clipped
+
+- **Symptom.** A control added to the form AFTER `SetCaptionButtons` had run kept covering the caption
+  buttons, killing the feature for it. Latent in the sample (a drop-zone overlay is exactly this
+  shape); found by a new test, not by running.
+- **Root cause.** `ControlAdded` fires BEFORE the child's handle exists, and a window region cannot be
+  applied to an unrealized control — so the hole was skipped once and nothing ever came back to it.
+- **Fix.** Track every direct child's `HandleCreated` as well as `SizeChanged`/`LocationChanged`, and
+  compute the hole when the handle appears. Tracking is now unconditional and separate from the set of
+  children we actually gave a region to, so the kit only ever nulls a region IT set — an app is free
+  to give its own control one.
+- **Verified.** `A_child_added_AFTER_the_rects_were_reported_is_cut_too`, which failed before the fix.
+
+### P5.6 review: NativeCaptionButtons without FramelessChrome did nothing, silently
+
+- **Symptom.** None — which is the problem. A framed window never reaches the custom hit-test, so
+  the option could only ever be a no-op; an app that set it would see "the caption buttons just
+  don't work", with no error, no log and nothing to grep for.
+- **Root cause.** The clip and paint paths were gated on `FramelessChrome && NativeCaptionButtons`
+  and simply returned when the combination was wrong.
+- **Fix.** `OptimizedForm`'s constructor throws `ArgumentException` naming both options. Fail at
+  composition, not at the pixel — the same call the P5.5 H3 option-validation batch made.
+- **Verified.** `Asking_for_native_buttons_on_a_FRAMED_window_fails_loudly`. Found by the phase
+  review, under the "a gate that fails OPEN" heading of the standing checklist.
+
+### Probe traps that made correct code look broken (P5.6, three of them)
+
+Not product bugs — measurement bugs, each of which produced a confident wrong reading. Recorded
+because the P5.6 feature was already shipped once on the strength of a probe that lied.
+
+- **`WindowFromPoint` returns the TOPMOST window, so the target must be foregrounded first.** The
+  first routing probe answered `CASCADIA_HOSTING_WINDOW_CLASS` — Windows Terminal, the console the
+  probe itself ran in — which reads exactly like "the clip failed". Same for `GetPixel` on the screen
+  DC. **WGC capture works while occluded and these do not**, which is why a screenshot can look right
+  while the probe reports nonsense.
+- **A region's `GetBounds` still spans the full rectangle when only a corner is excluded.** Probing
+  bounds "confirmed" a hole whose existence had not been shown at all; `Region.IsVisible(point)` is
+  the real check.
+- **WGC capture is far too slow to catch a ~1 s splash.** Racing it wasted several runs; asserting the
+  mechanism instead (`IsVisible` at the hole while the splash is still in `Controls`) is
+  deterministic. The DPI rule from the earlier spike still stands: a probe process must call
+  `SetProcessDPIAware()` first or every coordinate is the wrong pixel.
 ### Sample stream viewer: three defects that only RUNNING the app could find
 - **Symptom:** the H9.5 seam test compiled, passed `verify`, and was wrong in three ways the moment it
   ran. (1) The stream reported `streaming 320x240` no matter how large the pane was. (2) After any page

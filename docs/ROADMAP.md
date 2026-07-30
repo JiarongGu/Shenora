@@ -5,6 +5,37 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P5.6: frameless caption buttons that behave like real ones
+
+The page-drawn minimize/maximize/close had no hover affordance and no **Snap Layouts**, and the first
+attempt at fixing it shipped broken: it answered `WM_NCHITTEST` with `HTMAXBUTTON` on a door the OS
+never knocks on, because WebView2 covers the client area with child windows that belong to the
+browser PROCESS and cannot be subclassed. Real input goes wherever `WindowFromPoint` lands, so
+**coverage was the only lever** — and the answer is a window REGION.
+
+`OptimizedFormOptions.NativeCaptionButtons` cuts the cluster reported through the existing
+`SET_CAPTION_BUTTONS` route out of **every direct child that covers it**, making those pixels the
+form's own client area; the already-correct hit-test, press/release pairing and hover de-duplication
+then run for the first time, and the form paints the three buttons with the standard Windows chrome
+glyphs. `CaptionButtonColors` carries the palette on the `TrayMenuColors` split — the kit owns the
+renderer, the app owns every colour (D13). The page keeps its title bar, its drag and its theme.
+
+Two shapes were decided rather than assumed. **The kit paints and the app colours it** (chosen by the
+user over an app paint-callback; the tray menu was the precedent). And the clip covers **every**
+child rather than one named control, because the user asked for the buttons to work behind the
+SPLASH — whatever is on top changes over a window's life, so naming one control leaves them dead for
+every other phase. `CaptionButtonStateChanged` survives on its own merit: with the option off, an app
+that draws its own buttons has no other way to learn hot/pressed.
+
+Verified the way this feature has to be. `WindowFromPoint` over each button returns the FORM while
+the same probe beside the cluster returns `Chrome_RenderWidgetHostHWND`; hover was read as SCREEN
+PIXELS (`#252525` → `#2F2F2F`, close → `#C42B1C`); the splash phase was proven by asserting the hole
+while the splash was still mounted; the user confirmed the flyout. Two defects surfaced that no
+compile could find — a hover state that changed without ever invalidating, and a child added after
+the rects were reported never being clipped (`ControlAdded` fires before the handle exists) — plus
+three probe traps that made correct code read as broken. All in `docs/FIX-LOG.md`; the durable
+lessons are in `.claude/knowledge/winforms-shell.md`.
+
 ### 2026-07-31 — P5.5 H9: auxiliary sessions become primitives — and D22, name the mechanism
 
 The last P5.5 batch, and the one a reader changed mid-flight. Suite: **476 dotnet + 63 vitest**,

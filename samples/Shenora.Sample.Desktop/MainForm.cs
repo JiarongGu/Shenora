@@ -42,6 +42,8 @@ public sealed class MainForm : OptimizedForm
             FramelessChrome = true,
             BackColor = Background,
             DwmBorderColor = Background, // border line matches the app edge → no visible frame
+            // P5.6 hybrid chrome: the window owns the three caption-button pixels and paints them.
+            NativeCaptionButtons = true,
         })
     {
         Text = "Shenora Sample";
@@ -49,6 +51,30 @@ public sealed class MainForm : OptimizedForm
 
         _webView = new WebView2Control { Dock = DockStyle.Fill };
         Controls.Add(_webView);
+
+        // P5.6 hybrid chrome. The page keeps its title bar, its drag and its theme; only the
+        // three-button cluster stops being page-drawn — the window cuts that rect out of whatever
+        // covers it, so the OS routes real mouse input to the form, which is the whole reason Snap
+        // Layouts works at all.
+        //
+        // The kit paints the buttons; these colours are ours (D13 — same split as TrayMenuColors).
+        // Surface MUST match the page's title-bar background (#252525 in App.tsx) or the cut-out
+        // shows as a visible seam beside the buttons.
+        CaptionButtonColors = new CaptionButtonColors
+        {
+            Surface = Color.FromArgb(37, 37, 37),
+            Hover = Color.FromArgb(47, 47, 47),
+            Pressed = Color.FromArgb(58, 58, 58),
+            Glyph = Color.FromArgb(236, 234, 242),
+            CloseHover = Color.FromArgb(196, 43, 28),
+            ClosePressed = Color.FromArgb(163, 36, 23),
+            CloseGlyphHot = Color.White,
+        };
+        // Declare the cluster NOW, so the buttons are live behind the SPLASH — the window must be
+        // closable while the page is still loading (or failing to). The page re-reports the real
+        // rects on its ready handshake; until then these are the host's own estimate of the layout
+        // it knows the page uses. Kept in sync by ReportSplashCaptionButtons on resize.
+        Resize += (_, _) => ReportSplashCaptionButtons();
 
         _splash = new SplashPanel(new SplashPanelOptions { BackColor = Background });
         Controls.Add(_splash);
@@ -251,6 +277,10 @@ public sealed class MainForm : OptimizedForm
                 _dropZones.ClearAll();
                 _tickTimer.Start();
 
+                // The page measures its own title bar and reports the real rects from here on, so
+                // the host's splash-time estimate must stop competing with it on resize.
+                _pageOwnsCaptionButtons = true;
+
                 // A live stream belongs to the page that STARTED it, and the handshake means a new
                 // page just loaded — so tear it down here, exactly as the overlays above are.
                 //
@@ -260,19 +290,13 @@ public sealed class MainForm : OptimizedForm
                 // channel nobody read, and every later START answered STREAM_ALREADY_RUNNING for
                 // the rest of the process. The host is the only side that can observe a reload, via
                 // this handshake; the page can only report an in-page unmount.
-                // Claiming the caption hit-test costs the page its CSS :hover there, so the host
-                // pushes the state instead. Re-sent on every handshake because a reloaded page has
-                // no idea what the pointer was doing.
-                // LOWERCASE on the wire: the client type is `'minimize' | 'maximize' | 'close'`, and the
-                // enum's ToString() is "Close" — so the page compared "Close" === "close" and never
-                // matched. Found by running it; the styling simply never appeared, with no error.
-                CaptionButtonStateChanged = state => _ = eventBus.EmitAsync("WINDOW", "CAPTION_BUTTON_STATE",
-                    new
-                    {
-                        Hot = state.Hot?.ToString().ToLowerInvariant(),
-                        Pressed = state.Pressed?.ToString().ToLowerInvariant(),
-                    });
-
+                //
+                // There used to be a CaptionButtonStateChanged handler here, pushing hot/pressed to
+                // the page as a CAPTION_BUTTON_STATE event so its CSS could render the affordance.
+                // P5.6's hybrid retired it: the window now CLIPS those pixels out of the WebView2 and
+                // paints the buttons itself (see CaptionButtonClip below), so anything the page drew
+                // there is invisible and the state is the window's own business. The kit keeps the
+                // callback for the un-clipped mode — a form whose caption strip no web view covers.
                 var orphan = _stream;
                 _stream = null;
                 if (orphan is not null) _ = orphan.DisposeAsync();
@@ -299,8 +323,42 @@ public sealed class MainForm : OptimizedForm
         Load += OnLoadAsync;
     }
 
+    /// <summary>
+    /// Set once the page has taken over reporting its own caption-button rects. Until then the host
+    /// supplies an estimate so the buttons work behind the splash — after, the host must never
+    /// overwrite the page's real measurement with a guess.
+    /// </summary>
+    private bool _pageOwnsCaptionButtons;
+
+    /// <summary>
+    /// The pre-page caption cluster: three 2.6rem buttons in a 2rem bar at the top right, which is
+    /// the layout <c>App.tsx</c> uses. Duplicated here deliberately and ONLY for the window's first
+    /// moments — without it the splash covers the caption and a slow or failing frontend leaves a
+    /// window the user cannot minimise or close.
+    /// </summary>
+    private void ReportSplashCaptionButtons()
+    {
+        if (_pageOwnsCaptionButtons || !IsHandleCreated || IsDisposed) return;
+        // CSS px -> physical px through the control's own DPI, exactly as WindowCommandFacade does
+        // for the page's report; a constant here would be wrong on any scaled display.
+        var scale = DpiHelper.ScaleFromDeviceDpi(DeviceDpi);
+        var w = (int)Math.Round(2.6 * 16 * scale);
+        var h = (int)Math.Round(2.0 * 16 * scale);
+        var right = ClientSize.Width;
+        if (w <= 0 || h <= 0 || right <= 0) return;
+        SetCaptionButtons(
+        [
+            new CaptionButtonRegion(CaptionButtonKind.Minimize, new Rectangle(right - (3 * w), 0, w, h)),
+            new CaptionButtonRegion(CaptionButtonKind.Maximize, new Rectangle(right - (2 * w), 0, w, h)),
+            new CaptionButtonRegion(CaptionButtonKind.Close, new Rectangle(right - w, 0, w, h)),
+        ]);
+    }
+
     private async void OnLoadAsync(object? sender, EventArgs e)
     {
+        // Before anything slow: make the window closable while the splash is up.
+        ReportSplashCaptionButtons();
+
         // Actionable install prompt instead of an obscure EnsureCoreWebView2Async failure.
         if (!WebViewEnvironment.IsRuntimeAvailable())
         {

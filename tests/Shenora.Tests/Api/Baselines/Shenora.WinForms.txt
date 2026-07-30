@@ -1,3 +1,11 @@
+sealed class Shenora.WinForms.CaptionButtonColors
+  public System.Drawing.Color? CloseGlyphHot { get; init; }
+  public required System.Drawing.Color CloseHover { get; init; }
+  public required System.Drawing.Color ClosePressed { get; init; }
+  public required System.Drawing.Color Glyph { get; init; }
+  public required System.Drawing.Color Hover { get; init; }
+  public required System.Drawing.Color Pressed { get; init; }
+  public required System.Drawing.Color Surface { get; init; }
 enum Shenora.WinForms.CaptionButtonKind (int)
   public const Shenora.WinForms.CaptionButtonKind Close = 2
   public const Shenora.WinForms.CaptionButtonKind Maximize = 1
@@ -71,11 +79,13 @@ sealed class Shenora.WinForms.JsonFileWindowStateStore : Shenora.WinForms.IWindo
   public Shenora.WinForms.WindowState? Load()
   public void Save(Shenora.WinForms.WindowState state)
 class Shenora.WinForms.OptimizedForm : System.Windows.Forms.Form, Shenora.WinForms.IAppMaximizable
+  [Browsable(false)] [DesignerSerializationVisibility(0)] public Shenora.WinForms.CaptionButtonColors? CaptionButtonColors { get; set; }
   [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Action<Shenora.WinForms.CaptionButtonState>? CaptionButtonStateChanged { get; set; }
   [Browsable(false)] [DesignerSerializationVisibility(0)] public System.Func<int, bool>? WndProcHook { get; set; }
   protected override System.Windows.Forms.CreateParams CreateParams { get; }
   protected override void Dispose(bool disposing)
   protected override void OnHandleCreated(System.EventArgs e)
+  protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
   protected override void OnShown(System.EventArgs e)
   protected override void WndProc(ref System.Windows.Forms.Message m)
   public .ctor()
@@ -94,6 +104,7 @@ sealed class Shenora.WinForms.OptimizedFormOptions
   public System.Drawing.Color? DwmBorderColor { get; init; }
   public bool FramelessChrome { get; init; }
   public bool ImmersiveDarkMode { get; init; }
+  public bool NativeCaptionButtons { get; init; }
   public bool RoundedCorners { get; init; }
   public int TopResizeBorder { get; init; }
 sealed class Shenora.WinForms.SecondaryWindowOptions
