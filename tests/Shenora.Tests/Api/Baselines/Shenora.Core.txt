@@ -142,6 +142,7 @@ Shenora.Core.ShenoraApplication
   System.IServiceProvider get_Services()
   System.String ApplicationName
   System.String get_ApplicationName()
+  System.Threading.Tasks.ValueTask DisposeAsync()
   Void Dispose()
   Void Run()
 Shenora.Core.ShenoraApplicationBuilder

@@ -26,7 +26,11 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     public void Apply(Form form)
     {
         var scale = DpiHelper.SystemScale();
-        form.MinimumSize = new Size(DpiHelper.Scale(_options.MinWidth, scale), DpiHelper.Scale(_options.MinHeight, scale));
+        // Don't clobber a minimum the FORM set for itself (P5.5 H2). The runner creates the form and
+        // then calls Apply, so an app that sets MinimumSize in its constructor had it silently
+        // replaced by these defaults — the reference composition's own 640x420 was dead code.
+        if (form.MinimumSize == Size.Empty)
+            form.MinimumSize = new Size(DpiHelper.Scale(_options.MinWidth, scale), DpiHelper.Scale(_options.MinHeight, scale));
 
         var (width, height, x, y, maximized) = ToPhysical(store.Load(), scale, _options);
         form.Size = new Size(width, height);
@@ -45,8 +49,23 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
         }
         if (!placed) form.StartPosition = FormStartPosition.CenterScreen;
 
-        if (maximized) form.WindowState = FormWindowState.Maximized;
+        // Restore the maximized state through the window's OWN mechanism when it has one: setting
+        // WindowState.Maximized on frameless chrome is exactly the ~6px-gap-per-edge bug its manual
+        // work-area path exists to avoid (P5.5 H2). The form is not shown yet, so a manual maximize is
+        // deferred to its first Shown — IAppMaximizable implementors apply it there.
+        if (maximized && form is not IAppMaximizable)
+            form.WindowState = FormWindowState.Maximized;
+        else if (maximized)
+            form.Tag = RestoreMaximizedTag;   // picked up by OptimizedForm on Shown
     }
+
+    /// <summary>
+    /// Marker <see cref="Control.Tag"/> value meaning "the saved state was maximized — apply your own
+    /// maximize once you are shown". Deliberately a marker rather than a direct call: <c>Apply</c> runs
+    /// BEFORE the window is realized, and a manual work-area maximize needs a real handle and a
+    /// monitor to measure against.
+    /// </summary>
+    internal const string RestoreMaximizedTag = "shenora:restore-maximized";
 
     /// <summary>
     /// Attach the full lifecycle to <paramref name="form"/>: apply the saved geometry NOW and save it
@@ -74,8 +93,26 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     {
         try
         {
-            var maximized = form.WindowState == FormWindowState.Maximized;
-            var bounds = form.WindowState == FormWindowState.Normal ? form.Bounds : form.RestoreBounds;
+            // Prefer the window's OWN maximize truth when it manages maximizing itself (P5.5 H2).
+            // Frameless chrome maximizes by hand and keeps WindowState.Normal, so reading
+            // Form.WindowState/RestoreBounds persisted "not maximized" plus the WORK-AREA rect as the
+            // normal size — which made restore a permanent no-op on the next launch. See
+            // IAppMaximizable for the full failure chain.
+            bool maximized;
+            Rectangle bounds;
+            if (form is IAppMaximizable app)
+            {
+                maximized = app.IsAppMaximized;
+                bounds = maximized && app.AppRestoreBounds.Width > 0 ? app.AppRestoreBounds : form.Bounds;
+                // Minimized still hides the real geometry behind RestoreBounds, whatever the chrome.
+                if (form.WindowState == FormWindowState.Minimized && form.RestoreBounds.Width > 0)
+                    bounds = form.RestoreBounds;
+            }
+            else
+            {
+                maximized = form.WindowState == FormWindowState.Maximized;
+                bounds = form.WindowState == FormWindowState.Normal ? form.Bounds : form.RestoreBounds;
+            }
             WindowState state;
             if (bounds.Width > 0 && bounds.Height > 0)
             {

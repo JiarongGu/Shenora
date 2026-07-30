@@ -109,6 +109,90 @@ public class WindowStateManagerTests
         public void Save(WindowState state) => State = state;
     }
 
+    // ── The app-maximized seam (P5.5 H2) ──────────────────────────────────────────────────────────
+    // Frameless chrome maximizes by hand and keeps WindowState.Normal, so reading Form.WindowState /
+    // Form.RestoreBounds persisted "not maximized" together with the WORK-AREA rect as the normal
+    // size. Next launch: the window filled the work area believing it wasn't maximized, the border gap
+    // came back, the chrome glyph was wrong, and clicking maximize captured the work-area rect as the
+    // restore bounds — making RESTORE A PERMANENT NO-OP. Live in the reference composition.
+
+    /// <summary>A window that manages its own maximize, like frameless <c>OptimizedForm</c>.</summary>
+    private sealed class AppMaximizedForm : Form, IAppMaximizable
+    {
+        // DesignerSerializationVisibility.Hidden: WFO1000 treats a settable public property on a
+        // Form-derived type as designer-serializable state (the same reason OptimizedForm marks its
+        // WndProcHook). These are test inputs, not designer properties.
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool IsAppMaximized { get; set; }
+
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public Rectangle AppRestoreBounds { get; set; }
+    }
+
+    [Fact]
+    public void Save_prefers_the_windows_own_maximize_truth_over_WindowState()
+    {
+        var store = new MemoryStore();
+        using var form = new AppMaximizedForm
+        {
+            StartPosition = FormStartPosition.Manual,
+            // What a manually-maximized window looks like: filling the work area, WindowState.Normal.
+            Bounds = new Rectangle(0, 0, 1920, 1040),
+            IsAppMaximized = true,
+            AppRestoreBounds = new Rectangle(120, 80, 900, 700),
+        };
+        Assert.Equal(FormWindowState.Normal, form.WindowState); // the property that used to be read
+
+        new WindowStateManager(store, new WindowStateOptions()).Save(form);
+
+        Assert.NotNull(store.State);
+        Assert.True(store.State!.Maximized);            // …not false, as WindowState would have said
+        // …and the persisted size is the WINDOWED geometry, not the work area — this is what made
+        // restore a no-op on the next launch.
+        var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
+        Assert.Equal(DpiHelper.Scale(900, 1 / scale), store.State.Width);
+        Assert.Equal(DpiHelper.Scale(700, 1 / scale), store.State.Height);
+    }
+
+    [Fact]
+    public void Save_falls_back_to_WindowState_for_an_ordinary_form()
+    {
+        var store = new MemoryStore();
+        using var form = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(50, 60, 800, 600) };
+
+        new WindowStateManager(store, new WindowStateOptions()).Save(form);
+
+        Assert.NotNull(store.State);
+        Assert.False(store.State!.Maximized);   // a framed window's WindowState IS the truth
+    }
+
+    [Fact]
+    public void Apply_does_not_clobber_a_minimum_size_the_form_set_itself()
+    {
+        // The runner creates the form and THEN applies state, so an app that sets MinimumSize in its
+        // constructor had it silently replaced — the reference composition's own 640x420 was dead code.
+        var store = new MemoryStore();
+        using var form = new Form { MinimumSize = new Size(640, 420) };
+
+        new WindowStateManager(store, new WindowStateOptions()).Apply(form);
+
+        Assert.Equal(new Size(640, 420), form.MinimumSize);
+    }
+
+    [Fact]
+    public void Apply_still_sets_a_minimum_when_the_form_has_none()
+    {
+        var store = new MemoryStore();
+        using var form = new Form();
+        var options = new WindowStateOptions();
+
+        new WindowStateManager(store, options).Apply(form);
+
+        var scale = DpiHelper.SystemScale();
+        Assert.Equal(new Size(DpiHelper.Scale(options.MinWidth, scale), DpiHelper.Scale(options.MinHeight, scale)),
+                     form.MinimumSize);
+    }
+
     [Fact]
     public void Apply_places_the_saved_position_even_when_maximized()
     {

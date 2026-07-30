@@ -104,6 +104,42 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Fixed
 
+- **`AddMessageDispatcher` killed the process for an ordinary composition** (P5.5 H2). It resolved
+  module facades INSIDE the `IMessageDispatcher` singleton factory, so any facade whose dependency
+  graph reached `IMessageDispatcher` — the documented seam for cross-module `SendAsync` — re-entered
+  that factory. Microsoft DI's cycle detection is call-site based and cannot see a factory delegate
+  re-entering the provider, and the singleton is not cached yet, so it simply ran again: unbounded
+  recursion, `StackOverflowException`, process death with no exception and no log line. Facades are
+  now mapped through one terminal middleware that resolves them on the first dispatch, by which point
+  the singleton is cached. Two facades claiming the same module name are also rejected instead of the
+  second one's whole route table being silently unreachable.
+- **`app.Dispose()` threw on a clean shutdown** whenever a singleton implemented only
+  `IAsyncDisposable` — which Shenora's own `RenderSession` and `CoBrowseSession` do, so this was
+  latent against the kit's own types. `ShenoraApplication` now implements `IAsyncDisposable`; prefer
+  `await using var app = builder.Build();`.
+- **A relative app root silently re-resolved mid-session.** `ShenoraPaths` returned the resolved root
+  and data override verbatim, so a launcher passing `--app-root ..\install` left every derived path
+  following the process working directory — and this kit MOVES that directory: the file dialogs set
+  `RestoreDirectory = false` on purpose (per-key directory memory is ours), so the first Open/Save
+  dialog relocated the CWD and the same `DataDir` string then pointed somewhere else, splitting the
+  app's data. It also defeated `SingleInstanceGuard`'s channel hashing. Both paths are now absolute.
+- **A throwing app `OnLoading` callback made the login window unclosable** (P5.5 H2). The completion
+  block ran the app callback BEFORE `controller.Finish()`, inside an `async void` handler — so a
+  throw (an already-disposed splash is the obvious case) meant `Finish()` never ran, and the
+  foreground controller HOLDS the user's close until then, so its `FormClosing` handler cancelled
+  every close including `Application.Exit`. `Finish()` + `Close()` now come first and the callback is
+  guarded.
+- **A maximized frameless window lost its state and became unrestorable.** `WindowStateManager` read
+  `Form.WindowState`/`RestoreBounds`, but frameless chrome maximizes by hand and keeps
+  `WindowState.Normal` — so closing while maximized persisted `Maximized: false` plus the WORK-AREA
+  rect as the normal size. On the next launch the window filled the work area believing it was not
+  maximized: the border gap the technique exists to remove came back, the chrome glyph was wrong, and
+  clicking maximize captured the work-area rect as the restore bounds, making restore a PERMANENT
+  no-op. New `IAppMaximizable` seam (implemented by `OptimizedForm`) is now preferred over the
+  WinForms properties, and a saved maximized state is restored through the window's own mechanism.
+  Live in the reference composition.
+- `WindowStateManager.Apply` no longer overwrites a `MinimumSize` the form set for itself — the
+  reference composition's own 640×420 minimum was dead code.
 - **Arbitrary file read through file-mode frontend serving.** The resource provider applied no path
   containment, and the host unescapes the request path before calling it (it must, so bundle
   filenames with spaces or CJK characters resolve) — so `%2e%2e%2f…` arrived as `../` and walked out

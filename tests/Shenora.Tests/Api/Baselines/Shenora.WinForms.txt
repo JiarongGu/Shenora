@@ -32,6 +32,11 @@ Shenora.WinForms.FormInteraction
   Void BlockInteraction()
   Void SetMainForm(System.Windows.Forms.Form)
   Void UnblockInteraction()
+Shenora.WinForms.IAppMaximizable
+  Boolean IsAppMaximized
+  Boolean get_IsAppMaximized()
+  System.Drawing.Rectangle AppRestoreBounds
+  System.Drawing.Rectangle get_AppRestoreBounds()
 Shenora.WinForms.IFormInteraction
   IntPtr GetMainFormHandle()
   System.Windows.Forms.Form GetMainForm()
@@ -50,6 +55,8 @@ Shenora.WinForms.JsonFileWindowStateStore
 Shenora.WinForms.OptimizedForm
   Boolean IsAppMaximized
   Boolean get_IsAppMaximized()
+  System.Drawing.Rectangle AppRestoreBounds
+  System.Drawing.Rectangle get_AppRestoreBounds()
   System.EventHandler MaximizedChanged
   System.Func`2[System.Int32,System.Boolean] WndProcHook
   System.Func`2[System.Int32,System.Boolean] get_WndProcHook()

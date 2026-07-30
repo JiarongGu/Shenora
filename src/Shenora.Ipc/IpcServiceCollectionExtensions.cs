@@ -25,14 +25,94 @@ public static class IpcServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>Map every DI-registered <see cref="IModuleFacade"/> onto the dispatcher, in registration order.</summary>
+    /// <summary>
+    /// Map every DI-registered <see cref="IModuleFacade"/> onto the dispatcher, in registration order.
+    /// Resolves the facades NOW — safe from application code that already holds a built provider, but
+    /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="AddMessageDispatcher"/>
+    /// must use.
+    /// </summary>
     public static MessageDispatcher MapRegisteredModules(this MessageDispatcher dispatcher, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(services);
+        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var facade in services.GetServices<IModuleFacade>())
+        {
+            GuardDuplicateModule(seen, facade);
             dispatcher.MapModule(facade);
+        }
         return dispatcher;
+    }
+
+    /// <summary>
+    /// Map the DI-registered facades through ONE terminal middleware that resolves them on the FIRST
+    /// dispatch instead of at composition time.
+    /// <para>
+    /// This is not a micro-optimization, it is a deadlock fix (P5.5 H2). Resolving facades inside the
+    /// <see cref="IMessageDispatcher"/> singleton factory means calling back into the provider WHILE
+    /// that singleton is still being constructed. Any facade whose dependency graph reaches
+    /// <see cref="IMessageDispatcher"/> — the documented seam for cross-module <c>SendAsync</c>, so a
+    /// perfectly ordinary thing to inject — re-enters the same factory. Microsoft DI's cycle detection
+    /// is call-site based and cannot see a factory delegate re-entering the provider, and the
+    /// singleton is not in the resolved-services cache yet, so the factory simply runs again:
+    /// unbounded recursion, <see cref="StackOverflowException"/>, process death with no exception and
+    /// no log line. By the first dispatch the singleton is cached, so the same graph resolves fine.
+    /// </para>
+    /// </summary>
+    public static MessageDispatcher MapRegisteredModulesLazily(this MessageDispatcher dispatcher, IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        ArgumentNullException.ThrowIfNull(services);
+
+        // Lazy<T> is thread-safe by default: concurrent first dispatches resolve the facade set once.
+        var facades = new Lazy<IReadOnlyDictionary<string, IModuleFacade>>(() =>
+        {
+            var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var map = new Dictionary<string, IModuleFacade>(StringComparer.OrdinalIgnoreCase);
+            foreach (var facade in services.GetServices<IModuleFacade>())
+            {
+                GuardDuplicateModule(seen, facade);
+                map[facade.ModuleName] = facade;
+            }
+            return map;
+        });
+
+        return dispatcher.Use(async (request, next) =>
+        {
+            if (facades.Value.TryGetValue(request.Module, out var facade))
+            {
+                var response = await facade.HandleMessageAsync(request);
+                if (response is not null) return response;
+            }
+            return await next();
+        });
+    }
+
+    /// <summary>
+    /// Reject two facades claiming the same module name. Mapping is first-match-wins, so the second
+    /// facade's ENTIRE route table was silently unreachable and nothing logged it (P5.5 H2) — a
+    /// library module and an app module both called "APP" would have looked like a routing mystery.
+    /// <para>
+    /// Where this surfaces depends on the path, and the difference is worth knowing:
+    /// <see cref="MapRegisteredModules"/> throws at COMPOSITION, while
+    /// <see cref="MapRegisteredModulesLazily"/> cannot detect it until the first dispatch — and since
+    /// <see cref="MessageDispatcher.DispatchAsync"/> never throws by contract, it arrives there as a
+    /// logged <see cref="IpcErrorCodes.UnknownError"/> response with the detail kept host-side. So on
+    /// the lazy path the guarantee is "diagnosable", not "fails at startup".
+    /// </para>
+    /// </summary>
+    private static void GuardDuplicateModule(Dictionary<string, string> seen, IModuleFacade facade)
+    {
+        var name = facade.ModuleName;
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException($"{facade.GetType().Name} has an empty ModuleName.");
+        if (seen.TryGetValue(name, out var existing))
+        {
+            throw new InvalidOperationException(
+                $"Two module facades both claim module '{name}': {existing} and {facade.GetType().Name}. " +
+                "Dispatch is first-match-wins, so the second facade's routes would be unreachable.");
+        }
+        seen[name] = facade.GetType().Name;
     }
 
     /// <summary>
@@ -51,7 +131,10 @@ public static class IpcServiceCollectionExtensions
             var dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>())
                 .UseErrorHandler();
             configure?.Invoke(sp, dispatcher);
-            return dispatcher.MapRegisteredModules(sp);
+            // LAZILY — resolving facades here would re-enter this very factory for any facade whose
+            // graph reaches IMessageDispatcher, which is a StackOverflow with no diagnostic. See
+            // MapRegisteredModulesLazily.
+            return dispatcher.MapRegisteredModulesLazily(sp);
         });
         return services;
     }

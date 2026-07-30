@@ -92,7 +92,19 @@ public sealed class ShenoraPaths
             ? dataOverride
             : Path.Combine(root, opt.DataFolderName);
 
-        return new ShenoraPaths(root, data, Path.Combine(root, opt.ResourcesFolderName));
+        // ABSOLUTIZE both, once, here (P5.5 H2). A relative root or data override — a launcher passing
+        // `--app-root ..\install`, or an app config holding a relative path — otherwise makes every
+        // derived path follow the PROCESS WORKING DIRECTORY. That matters because this kit moves the
+        // CWD itself: the file dialogs deliberately set RestoreDirectory = false (directory memory is
+        // ours, per-key and cross-session), so the first Open/Save dialog relocates the CWD to whatever
+        // the user browsed to — and from then on the SAME DataDir string resolves to a different
+        // physical folder, splitting the app's data mid-session. It also defeats
+        // SingleInstanceGuard's channel hashing: two spellings of one install hash differently, so a
+        // second instance can start against the single-writer WebView2 folder.
+        return new ShenoraPaths(
+            Path.GetFullPath(root),
+            Path.GetFullPath(data),
+            Path.GetFullPath(Path.Combine(root, opt.ResourcesFolderName)));
     }
 
     private static string ResolveRoot(ShenoraPathsOptions opt, string baseDir, Func<string, string?> env)

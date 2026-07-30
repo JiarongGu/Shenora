@@ -43,7 +43,7 @@ public sealed class ShenoraApplicationOptions
 /// app.Run();
 /// </code>
 /// </summary>
-public sealed class ShenoraApplication : IDisposable
+public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
 {
     private readonly ServiceProvider _provider;
 
@@ -128,6 +128,31 @@ public sealed class ShenoraApplication : IDisposable
         runner.Run(this);
     }
 
-    /// <summary>Dispose the service provider (and with it every owned singleton).</summary>
+    /// <summary>
+    /// Dispose the service provider (and with it every owned singleton).
+    /// <para>
+    /// Prefer <see cref="DisposeAsync"/> when any singleton might be async-only: Microsoft DI's
+    /// synchronous <c>Dispose</c> THROWS <see cref="InvalidOperationException"/> for a captured
+    /// disposable that implements only <see cref="IAsyncDisposable"/>. Shenora's own
+    /// <c>RenderSession</c> and <c>CoBrowseSession</c> are exactly that shape, so registering one as a
+    /// singleton used to crash the documented <c>using var app = builder.Build(); app.Run();</c>
+    /// shutdown — after the message loop had already exited, i.e. a crash dialog on every clean quit
+    /// with no way for a consumer to work around it (P5.5 H2).
+    /// </para>
+    /// </summary>
     public void Dispose() => _provider.Dispose();
+
+    /// <summary>
+    /// Dispose the service provider asynchronously — the safe shutdown for an app whose singletons may
+    /// be <see cref="IAsyncDisposable"/>-only. Use <c>await using var app = builder.Build();</c>.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_provider is IAsyncDisposable asyncProvider)
+        {
+            await asyncProvider.DisposeAsync().ConfigureAwait(false);
+            return;
+        }
+        _provider.Dispose();
+    }
 }

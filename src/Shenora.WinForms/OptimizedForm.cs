@@ -59,7 +59,7 @@ public sealed class OptimizedFormOptions
 /// exactly AND keeps the Win11 rounded corners; SC_MAXIMIZE (Win+Up / system menu) routes
 /// through the same path so all maximize routes are consistent.
 /// </summary>
-public class OptimizedForm : Form
+public class OptimizedForm : Form, IAppMaximizable
 {
     private const int WS_THICKFRAME = 0x00040000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000;
     private const int WM_NCCALCSIZE = 0x0083, WM_SYSCOMMAND = 0x0112, WM_NCACTIVATE = 0x0086, WM_NCHITTEST = 0x0084;
@@ -117,6 +117,28 @@ public class OptimizedForm : Form
     /// area) so <see cref="Form.WindowState"/> is NOT the source of truth — this property is.
     /// </summary>
     public bool IsAppMaximized => _options.FramelessChrome ? _maximized : WindowState == FormWindowState.Maximized;
+
+    /// <summary>
+    /// The windowed geometry to restore to — what <see cref="WindowStateManager"/> must PERSIST while
+    /// this window is maximized, since a manual work-area maximize leaves <c>Bounds</c> showing the
+    /// work area and <see cref="Form.RestoreBounds"/> showing nothing useful (P5.5 H2).
+    /// </summary>
+    public Rectangle AppRestoreBounds => _options.FramelessChrome ? _restoreBounds : RestoreBounds;
+
+    /// <summary>
+    /// Apply a saved maximized state once the window is realized. <see cref="WindowStateManager.Apply"/>
+    /// runs BEFORE the form is shown, and a manual work-area maximize needs a live handle and a monitor
+    /// to measure — so it leaves a marker and this consumes it.
+    /// </summary>
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        if (ReferenceEquals(Tag, WindowStateManager.RestoreMaximizedTag))
+        {
+            Tag = null;
+            if (!IsAppMaximized) Maximize();
+        }
+    }
 
     /// <summary>Raised after the maximize/restore state changes (chrome glyphs resync on it).</summary>
     public event EventHandler? MaximizedChanged;

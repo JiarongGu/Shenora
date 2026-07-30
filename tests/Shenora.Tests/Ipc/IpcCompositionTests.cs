@@ -85,4 +85,100 @@ public class IpcCompositionTests
 
         Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
     }
+
+    // ── Lazy facade resolution (P5.5 H2) ──────────────────────────────────────────────────────────
+    // AddMessageDispatcher used to resolve facades INSIDE the IMessageDispatcher singleton factory.
+    // Any facade whose graph reaches IMessageDispatcher — the documented cross-module SendAsync seam —
+    // re-entered that factory: DI's cycle detection is call-site based and cannot see a factory
+    // delegate re-entering the provider, and the singleton isn't cached yet, so it simply ran again.
+    // Unbounded recursion, StackOverflowException, process death with no exception and no log. That is
+    // NOT catchable, so a test cannot assert the old behaviour — reaching the assert IS the assert.
+
+    [Fact]
+    public async Task A_facade_that_injects_the_dispatcher_resolves_instead_of_killing_the_process()
+    {
+        using var provider = new ServiceCollection()
+            .AddModuleFacade<SelfDispatchingFacade>()
+            .AddMessageDispatcher()
+            .BuildServiceProvider();
+
+        // Before the fix this line never returned — it overflowed the stack.
+        var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
+
+        var response = await dispatcher.DispatchAsync(Request("SELF", "PING"));
+        Assert.True(response.Success);
+
+        // And the facade really can use the dispatcher it injected — the whole point of the seam.
+        var viaFacade = await dispatcher.DispatchAsync(Request("SELF", "ROUNDTRIP"));
+        Assert.True(viaFacade.Success);
+    }
+
+    [Fact]
+    public void Two_facades_claiming_one_module_are_rejected_when_mapped_eagerly()
+    {
+        // Dispatch is first-match-wins, so the second facade's ENTIRE route table used to be
+        // unreachable with nothing logged anywhere. On the eager path the composition now refuses
+        // outright, naming both facades.
+        using var provider = new ServiceCollection()
+            .AddModuleFacade<DupOneFacade>()
+            .AddModuleFacade<DupTwoFacade>()   // both claim "DUP"
+            .BuildServiceProvider();
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => new MessageDispatcher().MapRegisteredModules(provider));
+
+        Assert.Contains("DUP", error.Message);
+        Assert.Contains(nameof(DupOneFacade), error.Message);
+        Assert.Contains(nameof(DupTwoFacade), error.Message);
+    }
+
+    [Fact]
+    public async Task A_duplicate_module_under_lazy_mapping_surfaces_as_a_logged_error_not_a_silent_shadow()
+    {
+        // AddMessageDispatcher maps LAZILY (it must — see the recursion test above), so the duplicate
+        // cannot be caught until the first dispatch. And DispatchAsync's contract is that it NEVER
+        // throws, so this arrives as a structured error response with the detail kept host-side. The
+        // fix here is "diagnosable instead of silent", not "fails at startup" — worth being precise
+        // about, because the eager path above genuinely does fail at composition.
+        using var provider = new ServiceCollection()
+            .AddModuleFacade<DupOneFacade>()
+            .AddModuleFacade<DupTwoFacade>()
+            .AddMessageDispatcher()
+            .BuildServiceProvider();
+
+        var response = await provider.GetRequiredService<IMessageDispatcher>()
+            .DispatchAsync(Request("DUP", "PING"));
+
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.UnknownError, response.Error!.Code);
+        // The composition detail names types and must not cross the wire.
+        Assert.DoesNotContain(nameof(DupTwoFacade), IpcJson.Serialize(response));
+    }
+
+    /// <summary>A facade that injects the dispatcher — ordinary, and previously fatal.</summary>
+    private sealed class SelfDispatchingFacade(IMessageDispatcher dispatcher) : BaseFacade
+    {
+        public override string ModuleName => "SELF";
+
+        protected override async Task<object?> RouteMessageAsync(IpcRequest request) => request.Type switch
+        {
+            "PING" => "pong",
+            // Cross-module send through the injected dispatcher (the documented use).
+            "ROUNDTRIP" => await dispatcher.SendAsync<string>("SELF", "PING"),
+            _ => throw UnknownType(request),
+        };
+    }
+
+    // Two facades claiming one module, with no dependencies — so the guard is what fails, not DI.
+    private sealed class DupOneFacade : BaseFacade
+    {
+        public override string ModuleName => "DUP";
+        protected override Task<object?> RouteMessageAsync(IpcRequest request) => Task.FromResult<object?>("one");
+    }
+
+    private sealed class DupTwoFacade : BaseFacade
+    {
+        public override string ModuleName => "DUP";
+        protected override Task<object?> RouteMessageAsync(IpcRequest request) => Task.FromResult<object?>("two");
+    }
 }

@@ -106,6 +106,7 @@ Shenora.Ipc.IpcServiceCollectionExtensions
   Microsoft.Extensions.DependencyInjection.IServiceCollection AddMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection, System.Action`2[System.IServiceProvider,Shenora.Ipc.MessageDispatcher])
   Microsoft.Extensions.DependencyInjection.IServiceCollection AddModuleFacade[TFacade](Microsoft.Extensions.DependencyInjection.IServiceCollection)
   Shenora.Ipc.MessageDispatcher MapRegisteredModules(Shenora.Ipc.MessageDispatcher, System.IServiceProvider)
+  Shenora.Ipc.MessageDispatcher MapRegisteredModulesLazily(Shenora.Ipc.MessageDispatcher, System.IServiceProvider)
 Shenora.Ipc.MessageDispatcher
   Shenora.Ipc.MessageDispatcher MapModule(Shenora.Ipc.IModuleFacade)
   Shenora.Ipc.MessageDispatcher MapModule(System.String, System.Action`1[Shenora.Ipc.ModuleRouteBuilder])

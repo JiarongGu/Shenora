@@ -266,14 +266,35 @@ public sealed class LoginWindow
             }
             finally
             {
-                fallback?.Dispose();
+                // ORDER IS LOAD-BEARING (P5.5 H2). Finish() + Close() go FIRST, and the app callback
+                // goes last inside its own try/catch.
+                //
+                // This block used to run OnLoading BEFORE Finish(), and OnLoading is APP code — a
+                // splash toggle, so ObjectDisposedException is the obvious way for it to throw. This
+                // whole handler is `async void`, so a throw here escaped as an unhandled UI-thread
+                // exception and Finish() never ran. The foreground controller HOLDS the user's close
+                // until Finish() (so a driver gets its last cookie read), which means its FormClosing
+                // handler then cancelled EVERY close — the user's, and Application.Exit's. Result: an
+                // unclosable modal login window, ShowDialog never returning, and the busy gate held
+                // for the process lifetime. One throwing app callback bricked the app.
+                controller?.Finish();               // allow the real close (a user close was held)
+                if (!form.IsDisposed) form.Close(); // ends ShowDialog → RunOnUi returns outcome
+
+                try { fallback?.Dispose(); } catch (Exception) { /* timer teardown is best-effort */ }
+
                 // Drop the splash unconditionally: a driver that threw before its own
                 // SetLoading(false) (e.g. SessionBrowser init failed) would otherwise leave the
                 // app's overlay up for the process lifetime — the measured incident the fallback
                 // timer guards, which the timer's own disposal here would defeat.
-                _options.OnLoading?.Invoke(false);
-                controller?.Finish();               // allow the real close (a user close was held)
-                if (!form.IsDisposed) form.Close(); // ends ShowDialog → RunOnUi returns outcome
+                try
+                {
+                    _options.OnLoading?.Invoke(false);
+                }
+                catch (Exception)
+                {
+                    // An app splash that throws on the way down must not become the crash that
+                    // prevents the window from closing.
+                }
             }
         };
 
