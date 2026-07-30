@@ -83,7 +83,12 @@ export function useShenoraQuery<TData = unknown, TPayload = unknown>(
       .invoke<TData, TPayload>(module, type, { payload: payloadRef.current, scope })
       .then(
         (data) => { if (!stale) setState({ data, error: undefined, loading: false }); },
-        (error: Error) => { if (!stale) setState({ data: undefined, error, loading: false }); },
+        // KEEP the previous data alongside the error (P5.5 H2). This used to set `data: undefined`, so
+        // a failed REFETCH — a transient host hiccup, one timed-out call — blanked data the UI was
+        // already showing correctly, turning a recoverable error into an empty screen. The caller has
+        // both fields and can decide: render stale data with an error banner, or hide it. Blanking it
+        // for them removes that choice. (A first fetch has no previous data, so it is unaffected.)
+        (error: Error) => { if (!stale) setState((previous) => ({ data: previous.data, error, loading: false })); },
       );
     return () => { stale = true; };
   }, [module, type, scope, enabled, bridge, payloadKey, fetchToken]);

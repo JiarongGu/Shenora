@@ -131,6 +131,23 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Fixed
 
+- **`@shenora/react`'s robustness tail** (P5.5 H2). A host message of literal `null` — valid JSON —
+  survived the parse and then threw a `TypeError` out of the transport listener: an uncaught page error
+  with no caller to catch it. `bridge.isAvailable` ignored `disposed`, so a stale reference to a bridge
+  that `configureBridge` replaced reported itself available while every `invoke` on it rejected. The
+  `fallback` path bypassed the timeout entirely, so an async fallback that never settled hung the caller
+  forever. `BaseModuleService` captured the bridge in a constructor default, i.e. at construction — so a
+  module-level service singleton (the normal way to write one) built before `configureBridge()` held the
+  bridge that call then DISPOSED, and every request from it rejected with "Bridge disposed" for the rest
+  of the session; the bridge is now resolved per call, and `this.bridge` still works in subclasses.
+  `useDropZone` never registered a target that wasn't mounted on the first effect run — a `RefObject` is
+  a stable object and a ref mutation triggers no render, so a conditionally-rendered target was silently
+  dead for the component's whole life; the effect now keys on the element itself. `useWindowMaximized`
+  fired one un-debounced IPC round-trip per `resize` event (~180 over a 3-second drag, each arming a
+  30-second timer) and is now debounced, which is also the correct semantics since the state only
+  changes when a resize ends. And `useShenoraQuery` no longer blanks good data when a REFETCH fails —
+  one transient hiccup used to turn a recoverable error into an empty screen; both fields are now
+  reported so the caller can render stale data with an error banner.
 - **The WinForms shell's robustness tail** (P5.5 H2). `WinFormsBootstrap.Initialize` now fails fast on a
   non-STA thread with the fix in the message (a missing `[STAThread]` otherwise surfaced much later as a
   BLOCKING modal dialog inside window creation) and is idempotent (a second call re-registered all three

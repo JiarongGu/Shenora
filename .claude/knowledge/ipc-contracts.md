@@ -19,6 +19,20 @@ transport, or building the P6 adoption shims.
   `UseErrorHandler`, `BaseFacade`, `PayloadHelper` (the wire message carries only the key — the
   serializer's text lives in the inner exception), and the bridge's own fallback. New error
   paths get a `DoesNotContain` leak test (the suite has precedents).
+- **The CLIENT's inbound handler must survive any valid JSON, not just any string.** A host message of
+  literal `null` parses fine and then `parsed.category` throws a `TypeError` out of the transport
+  listener — an uncaught page error with nothing above it to catch (P5.5 H2; the other primitives never
+  threw, since property access on them just yields `undefined`). Narrow to a non-null object before
+  reading the envelope, and treat every unknown shape as "not ours" for forward compatibility.
+- **A `getBridge()` DEFAULT must be resolved per call, never captured at construction.**
+  `configureBridge` DISPOSES the bridge it replaces, so anything that captured the previous default —
+  a `BaseModuleService` singleton built at module scope, the normal way to write one — rejects every
+  later request with "Bridge disposed" for the rest of the session. `isAvailable` must include
+  `!disposed` too, or a stale reference reports itself usable while rejecting everything.
+- **Every request path is bounded, including the browser `fallback`.** That branch bypassed the timeout
+  entirely, so an async fallback (a scripted preview harness usually is) that never settled hung the
+  caller with none of the real path's diagnostics. Race a THENABLE only — a plain value has already
+  settled and must not be made async.
 - **The dispatch boundary never throws and never returns null** (`DispatchAsync`): unhandled →
   `NO_HANDLER` (+`{module,type}` params), `OperationException` → its structured error, else →
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so

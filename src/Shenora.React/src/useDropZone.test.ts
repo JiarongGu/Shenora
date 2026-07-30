@@ -85,6 +85,46 @@ describe('useDropZone', () => {
     expect(element.hasAttribute('data-drop-zone-id')).toBe(false);
   });
 
+  it('registers a target that mounts AFTER the first effect run', async () => {
+    // The effect's deps were [enabled, targetRef], and targetRef is a STABLE object — so the effect ran
+    // once, and if targetRef.current was null on that run (a conditionally-rendered target) it bailed
+    // out and NEVER re-ran: the zone was silently dead for the component's whole life (P5.5 H2).
+    const { transport, bus, bridge } = createFixture();
+    const targetRef = { current: null as HTMLElement | null };
+
+    const { rerender } = renderHook(() =>
+      useDropZone({ targetRef, onDrop: () => {}, zoneId: 'late', bridge, bus }));
+
+    await flush();
+    expect(transport.routes()).toEqual([]); // nothing to track yet — correct
+
+    // The target appears (the conditional branch renders and React attaches the ref).
+    const element = document.createElement('div');
+    document.body.appendChild(element);
+    targetRef.current = element;
+    await act(async () => { rerender(); await Promise.resolve(); });
+    await flush();
+
+    expect(transport.routes()).toEqual(['REGISTER']);
+    expect(element.getAttribute('data-drop-zone-id')).toBe('late');
+  });
+
+  it('tears the zone down when the target unmounts', async () => {
+    // The mirror case: the element going away must unregister, not leave an orphaned overlay.
+    const { transport, bus, bridge, element, targetRef } = createFixture();
+    const { rerender } = renderHook(() =>
+      useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z1', bridge, bus }));
+    await flush();
+    expect(transport.routes()).toEqual(['REGISTER']);
+
+    element.remove();
+    targetRef.current = null;
+    await act(async () => { rerender(); await Promise.resolve(); });
+    await flush();
+
+    expect(transport.routes()).toEqual(['REGISTER', 'UNREGISTER']);
+  });
+
   it('delivers file drops for its own zone only', async () => {
     const { bus, bridge, targetRef } = createFixture();
     const drops: string[][] = [];

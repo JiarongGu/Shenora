@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
+import { debounce, randomId } from './internal.js';
 
 /** The reserved module the drop-zone stack speaks (host: `DropZoneManager`/`DropZoneFacade`). */
 export const DROP_ZONE_MODULE = 'DROP_ZONE';
@@ -35,25 +36,7 @@ export interface UseDropZoneOptions {
   bus?: ShenoraEventBus;
 }
 
-const newZoneId = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? `drop-zone-${crypto.randomUUID()}`
-    : `drop-zone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-
-interface Debounced {
-  (): void;
-  cancel(): void;
-}
-
-function debounce(fn: () => void, ms: number): Debounced {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const wrapped = (() => {
-    clearTimeout(timer);
-    timer = setTimeout(fn, ms);
-  }) as Debounced;
-  wrapped.cancel = () => clearTimeout(timer);
-  return wrapped;
-}
+const newZoneId = (): string => randomId('drop-zone-');
 
 /**
  * Sync a native drop-zone overlay to a page element, ported from the primary desktop sibling
@@ -76,6 +59,18 @@ export function useDropZone(options: UseDropZoneOptions): void {
   const bridgeRef = useRef(options.bridge);
   bridgeRef.current = options.bridge;
   const bus = options.bus ?? defaultEventBus;
+
+  // Make the ref's CONTENT reactive (P5.5 H2). `targetRef` is a stable object, so effects keyed on it
+  // run exactly once — and if `targetRef.current` was null on that run (a conditionally-rendered
+  // target, or any order where the ref is attached after the first commit) the effect bailed out and
+  // NEVER re-ran: the zone was silently dead for the component's whole life, with no error anywhere.
+  // A ref mutation triggers no render, so this effect deliberately has NO dependency array — it
+  // observes `current` after every commit. `setElement` with an unchanged value is a no-op in React,
+  // so this cannot loop.
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setElement(targetRef.current ?? null);
+  });
 
   const isRegisteredRef = useRef(false);
   // Whether a REGISTER has ever been SENT for this zone (even if not yet acked). The cleanup
@@ -137,9 +132,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
 
   // Track the element and keep the native overlay in sync.
   useEffect(() => {
-    if (!enabled) return;
-    const element = targetRef.current;
-    if (!element) return;
+    if (!enabled || !element) return;
 
     // The host's occlusion check finds the element through this attribute.
     element.setAttribute('data-drop-zone-id', zoneIdRef.current);
@@ -198,13 +191,11 @@ export function useDropZone(options: UseDropZoneOptions): void {
         attemptedRef.current = false;
       }
     };
-  }, [enabled, targetRef]);
+  }, [enabled, element]);
 
   // Drag-hover CSS feedback.
   useEffect(() => {
-    if (!enabled) return;
-    const element = targetRef.current;
-    if (!element) return;
+    if (!enabled || !element) return;
     const dropClass = dropClassRef.current;
 
     const offEnter = bus.subscribe<{ zoneId: string }>(DROP_ZONE_MODULE, 'DRAG_ENTER', (event) => {
@@ -218,7 +209,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
       offLeave();
       element.classList.remove(dropClass);
     };
-  }, [enabled, targetRef, bus]);
+  }, [enabled, element, bus]);
 
   // File drops.
   useEffect(() => {

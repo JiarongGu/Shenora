@@ -137,6 +137,55 @@ describe('ShenoraBridge', () => {
     expect(() => transport.emitFromHost({ category: 'ipc' })).not.toThrow(); // no id
   });
 
+  it('survives a host message that is a bare JSON value', () => {
+    const { transport } = createBridge();
+
+    // `null` is VALID JSON, so it survived the parse and then `parsed.category` threw a TypeError out
+    // of a transport listener — an uncaught page error, with no caller to catch it (P5.5 H2). The other
+    // primitives never threw (property access on them just yields undefined); null and only null did.
+    expect(() => transport.emitFromHost('null')).not.toThrow();
+    expect(() => transport.emitFromHost('123')).not.toThrow();
+    expect(() => transport.emitFromHost('"a string"')).not.toThrow();
+    expect(() => transport.emitFromHost('true')).not.toThrow();
+    expect(() => transport.emitFromHost('[]')).not.toThrow();
+  });
+
+  it('isAvailable turns false once disposed', () => {
+    const { bridge } = createBridge();
+    expect(bridge.isAvailable).toBe(true);
+
+    bridge.dispose();
+
+    // It used to keep reporting true while every invoke rejected with NO_TRANSPORT — the exact state a
+    // stale reference is in after configureBridge replaced (and disposed) the default.
+    expect(bridge.isAvailable).toBe(false);
+  });
+
+  it('a fallback that never settles still times out', async () => {
+    // This path used to bypass the timeout entirely, so a hanging async fallback (a scripted preview
+    // harness is commonly async) hung the caller forever with none of the real path's diagnostics.
+    const bridge = new ShenoraBridge({
+      transport: null,
+      eventBus: new ShenoraEventBus(),
+      fallback: () => new Promise(() => { /* never settles */ }),
+    });
+
+    await expect(bridge.invoke('TODO', 'GET_ALL', { timeoutMs: 20 }))
+      .rejects.toMatchObject({ code: IpcErrorCodes.timeout });
+  });
+
+  it('a synchronous fallback value is returned without waiting', async () => {
+    // Only a thenable needs racing — a plain value has already settled, so the timeout must not make
+    // this path async or slower.
+    const bridge = new ShenoraBridge({
+      transport: null,
+      eventBus: new ShenoraEventBus(),
+      fallback: () => ({ ok: true }),
+    });
+
+    await expect(bridge.invoke('TODO', 'GET_ALL', { timeoutMs: 20 })).resolves.toEqual({ ok: true });
+  });
+
   it('notifyReady sends the reserved handshake route', async () => {
     const { transport, bridge } = createBridge();
 

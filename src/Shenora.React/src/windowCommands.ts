@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ShenoraBridge } from './bridge.js';
+import { debounce } from './internal.js';
 import { BaseModuleService } from './moduleService.js';
 
 /** The top resize edges — the only ones that exist: the frameless technique keeps the native
@@ -76,7 +77,7 @@ export function useWindowMaximized(commands?: WindowCommands): boolean {
   useEffect(() => {
     const target = commands ?? (defaultCommands.current ??= new WindowCommands());
     let stale = false;
-    const refresh = () => {
+    const query = () => {
       target.isMaximized().then(
         (value) => {
           if (!stale) setMaximized(value);
@@ -84,10 +85,18 @@ export function useWindowMaximized(commands?: WindowCommands): boolean {
         () => {},
       );
     };
-    refresh();
+
+    // DEBOUNCED (P5.5 H2). `resize` fires continuously while a window is dragged — roughly 180 events
+    // over a 3-second drag — and each one used to start a full IPC round-trip, every one of them
+    // arming a 30-second timeout timer. The state that matters only changes at the END of a resize
+    // (maximize/restore is a single step), so the trailing edge is not just cheaper, it is the correct
+    // semantics. 100 ms matches the drop-zone bounds sync.
+    const refresh = debounce(query, 100);
+    query(); // the initial read is immediate — nothing to coalesce yet
     window.addEventListener('resize', refresh);
     return () => {
       stale = true;
+      refresh.cancel(); // a pending timer must not fire against an unmounted component
       window.removeEventListener('resize', refresh);
     };
   }, [commands]);

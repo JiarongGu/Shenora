@@ -85,6 +85,25 @@ describe('useShenoraQuery', () => {
     await waitFor(() => expect(result.current.data).toEqual({ n: 2 }));
   });
 
+  it('keeps the previous data when a refetch fails', async () => {
+    // It used to set `data: undefined` on any error, so one transient host hiccup blanked data the UI
+    // was already showing correctly — turning a recoverable error into an empty screen (P5.5 H2). The
+    // caller gets both fields and decides: stale data with an error banner, or hide it.
+    const { transport, bridge } = createBridge();
+    const { result } = renderHook(() => useShenoraQuery<{ n: number }>('APP', 'GET', { bridge }));
+
+    act(() => transport.respond(transport.posted[0]!.id, { n: 1 }));
+    await waitFor(() => expect(result.current.data).toEqual({ n: 1 }));
+
+    act(() => result.current.refetch());
+    await waitFor(() => expect(transport.posted.length).toBe(2));
+    act(() => transport.fail(transport.posted[1]!.id, 'GET_FAILED'));
+
+    await waitFor(() => expect(result.current.error).toMatchObject({ code: 'GET_FAILED' }));
+    expect(result.current.data).toEqual({ n: 1 }); // still there
+    expect(result.current.loading).toBe(false);
+  });
+
   it('surfaces structured errors', async () => {
     const { transport, bridge } = createBridge();
     const { result } = renderHook(() => useShenoraQuery('APP', 'GET', { bridge }));

@@ -14,6 +14,39 @@ entry template:
 
 ## 2026-07-30
 
+### @shenora/react: the client robustness tail (seven defects, two silent by construction)
+- **Symptom:** found by review. An uncaught page error from one host message; a bridge reporting itself
+  available while rejecting everything; a hung caller with no diagnostics; every request from a service
+  singleton rejecting "Bridge disposed" for the rest of the session; a drop zone that silently never
+  existed; ~180 IPC round-trips per window drag; and a recoverable refetch error blanking the screen.
+- **Root cause:** seven independent mechanisms. The two that were silent by construction:
+  `JSON.parse('null')` returns `null` — valid JSON — so `parsed.category` threw a `TypeError` out of the
+  transport listener, where nothing catches it (the other primitives never threw, since property access
+  on them just yields `undefined`; null and only null did). And `BaseModuleService`'s
+  `bridge: ShenoraBridge = getBridge()` is a constructor default, evaluated at CONSTRUCTION, while
+  `configureBridge` disposes the bridge it replaces — so any service constructed before startup
+  configuration held a corpse. `useDropZone`'s effect keyed on `targetRef`, a stable object: the effect
+  ran once, and a null `current` on that run meant it bailed out and never re-ran. `isAvailable` checked
+  only the transport. The `fallback` branch returned `Promise.resolve(...)` with no timeout race.
+  `useWindowMaximized` bound `resize` straight to a full IPC query. `useShenoraQuery`'s error handler set
+  `data: undefined` unconditionally.
+- **Fix:** guard the parse to non-null objects; `isAvailable` includes `!disposed`; race the fallback
+  against the timeout but ONLY when it returns a thenable (a plain value has already settled and must not
+  be made async); `BaseModuleService` resolves through a `protected get bridge` so subclasses keep using
+  `this.bridge` and an explicit bridge is still honoured; `useDropZone` mirrors the ref into `useState`
+  via a deliberately dep-array-less effect and keys its effects on the ELEMENT (a ref mutation triggers
+  no render, so there is nothing a dep array could observe — this is why it isn't just a deps fix); the
+  resize query is debounced with a `cancel` on teardown; the query hook keeps previous data alongside the
+  error. New non-exported `internal.ts` holds the now twice-needed `debounce`/`randomId`.
+- **Verify:** +10 vitest (49 total), 404 dotnet, `verify` PASSED. Including: a bare-JSON-value message of
+  each primitive shape; `isAvailable` after dispose; a never-settling fallback timing out and a
+  synchronous one still resolving; a service constructed BEFORE `configureBridge` reaching the new
+  default, and an explicit bridge still winning; a target that mounts after the first effect registering,
+  and its unmount unregistering; 50 resize events coalescing to one query; a failed refetch keeping data.
+  One test-only trap worth noting: the new `afterEach` bridge reset rejects still-pending requests, so
+  fire-and-forget calls in those tests need a `.catch` or vitest fails the run on an unhandled rejection.
+- **Commit:** _pending (P5.5 H2 client tail)_
+
 ### Shenora.WinForms: the shell robustness tail (nine defects under everything else)
 - **Symptom:** found by review. All of them present as something other than a window bug: a resident
   process with a tray icon and a window that can never load; a stale WebView2 profile lock that hangs the

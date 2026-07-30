@@ -5,6 +5,36 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H2 (client): the `@shenora/react` tail — **H2 IS COMPLETE**
+
+Seven client-side defects, +10 vitest (49 total). The two that needed thought rather than a patch:
+
+`useDropZone` never registered a target that wasn't mounted on its first effect run. The tempting read
+is "wrong dependency array", but a `RefObject` is a stable object and a ref mutation triggers no render
+at all — so there is nothing for a dep array to observe. The fix makes the ref's CONTENT reactive: a
+`useState` element mirrored by a deliberately dep-array-less effect (`setElement` with an unchanged
+value is a React no-op, so it cannot loop). The public API stayed exactly as it was, and a
+conditionally-rendered target now works instead of being silently dead for the component's whole life.
+
+`BaseModuleService` captured its bridge in a constructor default — evaluated at construction — while
+`configureBridge` DISPOSES the bridge it replaces. So a module-level service singleton, which is the
+normal way to write one, held a bridge that startup then killed, and every request from it rejected with
+"Bridge disposed" for the rest of the session. Now resolved per call through a `protected get`, so
+subclasses keep using `this.bridge` unchanged; there is a test that an explicitly-passed bridge is still
+honoured, because lazy resolution quietly ignoring it would break the multi-transport case.
+
+The rest: a literal `null` host message (valid JSON) threw a `TypeError` out of the transport listener;
+`isAvailable` ignored `disposed`; the `fallback` path bypassed the timeout (and only a THENABLE is raced
+— a plain value has already settled and must not be made async); `useWindowMaximized` fired one IPC
+round-trip per `resize` event, ~180 over a 3-second drag, each arming a 30-second timer; and
+`useShenoraQuery` blanked good data when a refetch failed, turning a recoverable error into an empty
+screen — it now reports both so the caller can show stale data with a banner.
+
+Also here: the `debounce`/`randomUUID` helpers H4.5 deliberately left duplicated moved into a new
+non-exported `internal.ts`. H4.5's reason for waiting was that the package had no shared-internals home
+and inventing one for a single consumer is speculation; `useWindowMaximized` needing the same debounce
+is the second consumer that justifies it.
+
 ### 2026-07-30 — P5.5 H2 (WinForms): the shell robustness tail + the `winforms-shell` rule
 
 Nine items in `src/Shenora.WinForms/`, the layer under everything else — which is why its failures look

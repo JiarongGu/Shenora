@@ -1,5 +1,6 @@
 import { OperationError } from './errors.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
+import { randomId } from './internal.js';
 import { createWebView2Transport, type ShenoraTransport } from './transport.js';
 import {
   HANDSHAKE_MODULE,
@@ -51,11 +52,12 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
-const newId = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    // Ancient-environment fallback — correlation ids only need uniqueness, not entropy.
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+const newId = (): string => randomId();
+
+/** A promise-like: only these need racing against a timeout — a plain value has already settled. */
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  typeof value === 'object' && value !== null
+  && typeof (value as { then?: unknown }).then === 'function';
 
 /**
  * The client side of the Shenora IPC contract, ported from the primary desktop sibling:
@@ -83,9 +85,14 @@ export class ShenoraBridge {
     this.unsubscribe = this.transport?.subscribe((message) => this.onHostMessage(message));
   }
 
-  /** True when a transport to a host exists (false in a plain browser). */
+  /**
+   * True when this bridge can actually send: a transport to a host exists AND the bridge has not been
+   * disposed. It used to ignore `disposed`, so a stale reference to a bridge that `configureBridge`
+   * replaced still reported itself available while every `invoke` on it rejected with `NO_TRANSPORT` —
+   * the exact case the disposed check in `invoke` exists for (P5.5 H2).
+   */
   get isAvailable(): boolean {
-    return this.transport !== null;
+    return !this.disposed && this.transport !== null;
   }
 
   /**
@@ -117,13 +124,31 @@ export class ShenoraBridge {
       timestamp: new Date().toISOString(),
     };
 
+    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+
     if (!this.transport) {
       if (this.fallback) {
+        let result: unknown;
         try {
-          return Promise.resolve(this.fallback(request as IpcRequest) as TData);
+          result = this.fallback(request as IpcRequest);
         } catch (error) {
           return Promise.reject(error);
         }
+        // A fallback may be async (a scripted preview harness commonly is), and this path used to
+        // bypass the timeout entirely — so a fallback that never settled hung the caller forever, with
+        // none of the diagnostics the real path gives (P5.5 H2). Only a thenable needs racing; a plain
+        // value is already settled.
+        if (!isThenable(result)) return Promise.resolve(result as TData);
+        return Promise.race([
+          Promise.resolve(result) as Promise<TData>,
+          new Promise<TData>((_, reject) => {
+            setTimeout(() => reject(new OperationError({
+              code: IpcErrorCodes.timeout,
+              message: `${module}.${type} timed out after ${timeoutMs} ms (in the configured fallback).`,
+              parameters: { module, type },
+            })), timeoutMs);
+          }),
+        ]);
       }
       return Promise.reject(new OperationError({
         code: IpcErrorCodes.noTransport,
@@ -132,7 +157,6 @@ export class ShenoraBridge {
     }
 
     return new Promise<TData>((resolve, reject) => {
-      const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
       const timer = setTimeout(() => {
         this.pending.delete(request.id);
         reject(new OperationError({
@@ -183,15 +207,22 @@ export class ShenoraBridge {
   }
 
   private onHostMessage(message: string): void {
-    let parsed: { category?: string };
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(message) as { category?: string };
+      parsed = JSON.parse(message) as unknown;
     } catch (error) {
       console.error('[shenora] ignored unparseable host message:', error);
       return;
     }
 
-    if (parsed.category === IpcCategories.ipc) {
+    // A literal `null` is VALID JSON, so it survives the parse and then `parsed.category` threw a
+    // TypeError — out of a transport listener, i.e. an uncaught page error with no caller to catch it
+    // (P5.5 H2). Primitives (`"str"`, `123`, `true`) never threw because property access on them just
+    // yields undefined; null and only null did. Anything that isn't an object simply isn't ours.
+    if (parsed === null || typeof parsed !== 'object') return;
+    const envelope = parsed as { category?: string };
+
+    if (envelope.category === IpcCategories.ipc) {
       const response = parsed as IpcResponse;
       if (typeof response.id !== 'string') return;
       const entry = this.pending.get(response.id);
@@ -206,7 +237,7 @@ export class ShenoraBridge {
       return;
     }
 
-    if (parsed.category === IpcCategories.notification) {
+    if (envelope.category === IpcCategories.notification) {
       // Always a batch (a single notification is a batch of one) — unbundle in order.
       const batch = parsed as IpcNotificationBatch;
       if (!Array.isArray(batch.payload)) return;

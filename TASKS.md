@@ -246,7 +246,20 @@ code comment.
   `ClipboardService.SetTextAsync("")` throws (`:32-40`) where a no-op/clear is meant;
   `OptimizedForm` manual maximize has no DPI/display-change handling, so `_restoreBounds` (raw
   physical px) goes stale across a monitor move and the fill is never refreshed.
-- [ ] Client-side robustness tail (`@shenora/react`): a host message of literal `null` throws an
+- [x] **Client-side robustness tail (`@shenora/react`) — DONE**, all seven items, +10 vitest tests.
+  Notes worth keeping: (a) `useDropZone`'s dead-zone bug needed the REF'S CONTENT made reactive, not a
+  dep-array tweak — a `RefObject` is a stable object and a ref mutation triggers no render, so the fix
+  is a `useState` element mirrored by a deliberately dep-array-less effect (`setElement` with an
+  unchanged value is a React no-op, so it can't loop); the API stayed as it was. (b) `BaseModuleService`
+  now resolves the bridge through a `protected get bridge` rather than a constructor default —
+  subclasses keep using `this.bridge` unchanged, and an explicitly-passed bridge is still honoured
+  (tested, because lazy resolution silently ignoring it would break the multi-transport case).
+  (c) The fallback timeout only races a THENABLE — a plain value has already settled and must not be
+  made async. (d) `useShenoraQuery` now keeps previous data alongside the error, so the caller chooses
+  between stale-with-banner and hiding it. (e) The `debounce`/`randomUUID` helpers H4.5 deferred moved
+  into a new non-exported `internal.ts` — a second consumer finally justified the shared home
+  (`useWindowMaximized` needed the same debounce), which is the trigger H4.5 said to wait for.
+  Original list: a host message of literal `null` throws an
   uncaught page error (`bridge.ts:186-192` — `JSON.parse('null')` then `parsed.category`);
   `BaseModuleService` captures the bridge eagerly (`moduleService.ts:26`), so a later
   `configureBridge` permanently kills every service built before it — resolve inside `send` the way

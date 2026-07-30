@@ -83,6 +83,25 @@ describe('useWindowMaximized', () => {
     await waitFor(() => expect(result.current).toBe(false));
   });
 
+  it('coalesces a burst of resize events into one query', async () => {
+    // A window drag fires `resize` continuously — roughly 180 events over 3 seconds — and each one used
+    // to start a full IPC round-trip, every one arming a 30-second timeout timer (P5.5 H2). The state
+    // only changes at the END of a resize, so the trailing edge is also the correct semantics.
+    const { transport, commands } = createCommands();
+    renderHook(() => useWindowMaximized(commands));
+    act(() => transport.respondToLast({ maximized: false }));
+    expect(transport.posted).toHaveLength(1); // the initial read is immediate
+
+    act(() => {
+      for (let i = 0; i < 50; i++) window.dispatchEvent(new Event('resize'));
+    });
+
+    // Still one: every event landed inside the debounce window.
+    expect(transport.posted).toHaveLength(1);
+    await waitFor(() => expect(transport.posted).toHaveLength(2));
+    expect(transport.posted).toHaveLength(2); // exactly one follow-up for the whole burst
+  });
+
   it('unsubscribes the resize listener on unmount', async () => {
     const { transport, commands } = createCommands();
     const { unmount } = renderHook(() => useWindowMaximized(commands));
