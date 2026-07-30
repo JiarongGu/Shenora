@@ -13,6 +13,7 @@ update the relevant entry HERE — this file is the durable index.
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
 | Picking the next piece of work | `TASKS.md` (root — pending only), `docs/ROADMAP.md` `## Remaining` |
 | What shipped already / verifying history | `docs/ROADMAP.md` `## Done`, `CHANGELOG.md` |
+| Reviewing the codebase (full/whole-tree review) | `docs/REVIEW-GUIDE.md` (orientation: invariants by area, risk hotspots, settled decisions, coverage map) |
 | Extracting code from a sibling app | `.claude/knowledge/extraction-sources.md` (tracked, de-identified) + `local/EXTRACTION-MAP.md` (private, named) |
 | Keeping the library generic | `.claude/knowledge/generic-library.md` |
 | When did this break? | `docs/FIX-LOG.md` (use `/fix-log` to append) |
@@ -41,5 +42,6 @@ update the relevant entry HERE — this file is the durable index.
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |
 | `FIX-LOG.md` | Notable fixes: symptom / root cause / fix / verify / commit | Append-only |
 | `RELEASING.md` | How releases are cut and consumed pre-release | Keep in sync with reality |
+| `REVIEW-GUIDE.md` | Orientation for a whole-codebase review: invariants by area, risk hotspots, settled decisions, coverage map | Keep in sync with reality |
 | `../CHANGELOG.md` | Per-version release log (Breaking/Added/Changed) | Append per release |
 | `../TASKS.md` | Pending backlog only (done ⇒ ROADMAP, removed here) | Living |

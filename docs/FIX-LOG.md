@@ -32,7 +32,7 @@ entry template:
   fast instead of stalling the suite. File: `src/Shenora.WebView2.Sessions/RenderSessionPool.cs`.
 - **Verify:** the isolated test went from a >10-min hang to passing in ~0.3 s; full `verify`
   green (318 dotnet + 39 vitest).
-- **Commit:** _pending_
+- **Commit:** 4ebb8e0
 
 ### @shenora/react packaging: the published tarball was unusable under native Node ESM
 - **Symptom:** `npm install <tarball>` then `import('@shenora/react')` in plain Node failed with
