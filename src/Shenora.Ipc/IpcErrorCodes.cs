@@ -16,6 +16,9 @@ public static class IpcErrorCodes
     /// <summary>Nothing in the dispatch pipeline handled the request. Parameters: <c>module</c>, <c>type</c>.</summary>
     public const string NoHandler = "NO_HANDLER";
 
+    /// <summary>A scope-routed module was called without <see cref="IpcRequest.Scope"/>. Parameters: <c>module</c>.</summary>
+    public const string ScopeRequired = "SCOPE_REQUIRED";
+
     /// <summary>A required payload value is absent or JSON null. Parameters: <c>key</c>.</summary>
     public const string MissingPayloadValue = "MISSING_PAYLOAD_VALUE";
 

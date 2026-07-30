@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using Shenora.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.WinForms;
 
@@ -99,6 +101,20 @@ public static class WinFormsHostExtensions
         ArgumentNullException.ThrowIfNull(options);
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<IShenoraRunner, WinFormsRunner>();
+
+        // The native desktop services every WinForms app gets (TryAdd — an app registration
+        // wins). The runner registers the main form on IFormInteraction; dialogs pick up an
+        // app-registered IFileDialogPathStore for cross-session directory memory.
+        builder.Services.TryAddSingleton<IFormInteraction, FormInteraction>();
+        builder.Services.TryAddSingleton<IShellLauncher, ShellLauncher>();
+        builder.Services.TryAddSingleton<IClipboardService, ClipboardService>();
+        builder.Services.TryAddSingleton<IFileDialogs>(sp => new FileDialogs(
+            new FileDialogsOptions
+            {
+                Interaction = sp.GetService<IFormInteraction>(),
+                PathStore = sp.GetService<IFileDialogPathStore>(),
+            },
+            sp.GetService<ILogger<FileDialogs>>()));
         return builder;
     }
 }
@@ -148,6 +164,9 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 foreach (var hook in hooks) hook.OnStarting(app);
 
                 using var form = options.MainForm(app.Services);
+
+                // The native services need the main window (dialog ownership + modal blocking).
+                app.Services.GetService<IFormInteraction>()?.SetMainForm(form);
 
                 if (options.WindowState is { } windowState)
                 {

@@ -19,3 +19,7 @@
   mouse messages to the WebView2 render surface (no focus steal, works occluded); `shot`/`wgc`
   capture the window (WGC works even when hidden). Target process comes from
   `devtools/project.config.mjs` (`processName` → `DEVTOOL_PROC`).
+- **Tests creating WinForms handles with `AllowDrop = true` (or any OLE feature) must run on a
+  dedicated STA thread** — xunit workers are MTA, and the failure is NOT a clean test failure:
+  handle creation throws inside WndProc and WinForms pops a BLOCKING unhandled-exception dialog
+  that stalls the whole suite (found live; see `OptimizedFormTests.RunSta`).

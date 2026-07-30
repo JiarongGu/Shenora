@@ -4,14 +4,15 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state (P3 IPC extraction complete)
+## Current state (P4 modules + native services complete)
 
-The P2 core host is extracted (increments 1–6): pure seams, application builder + WinForms host
-composition, WebView2 host + packaged-frontend serving + splash, and the sample apps that serve
-as the e2e subject. P3 (increments 1–5) delivered the full IPC stack: the transport-neutral wire
-contract in `Shenora.Ipc`, the dispatch pipeline + facades, the in-process event bus in Core,
-the WebView2 postMessage transport, the `@shenora/react` client, and the live round-trip proven
-in both frontend modes plus a CDP-driven assert. Next: P4 (modules + native services).
+P2 delivered the core host (builder, WinForms runner, WebView2 hosting + serving, samples). P3
+delivered the full IPC stack (wire contract, dispatcher + facades, event bus, postMessage
+transport, `@shenora/react` client, live round-trip). P4 delivered the native desktop surface:
+the scoped-container router + standard IPC composition, frameless chrome + frontend window
+commands, STA dialogs/shell/clipboard/interaction services, drag-drop zones + `useDropZone`
+(+ per-monitor DPI handling), secondary windows + tray — all proven live in the samples.
+Next: P5 (auxiliary browser sessions, `Shenora.WebView2.Sessions`).
 
 ```
 Shenora.slnx
@@ -26,13 +27,17 @@ Shenora.slnx
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
     ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWinForms →
     │                                            prewarm → WebViewHost + provider + SplashPanel +
+    │                                            frameless OptimizedForm + WindowCommandFacade +
+    │                                            DropZoneManager/Facade + SecondaryWindows + TrayIcon +
     │                                            SampleFacade → MessageDispatcher → WebViewIpcBridge,
     │                                            1 Hz IEventBus tick source); embeds wwwroot
     │                                            (built by the web sample, gitignored)
     └── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
-                                                 into the desktop sample's wwwroot; notifyReady +
-                                                 useShenoraQuery echo + useShenoraEvent tick + dev
-                                                 interceptor (the e2e round-trip subject)
+                                                 into the desktop sample's wwwroot; page-owned title
+                                                 bar (WindowCommands + useWindowMaximized), notifyReady,
+                                                 useShenoraQuery echo, useShenoraEvent tick, useDropZone
+                                                 target, secondary-window controls, dev interceptor
+                                                 (the e2e subject)
 ```
 
 - Version: single `<VersionPrefix>` in `src/Directory.Build.props`; npm + README synced by
@@ -74,7 +79,21 @@ changes, noting them in `CHANGELOG.md`).
   argument/wait/losing-launch callback) and `WindowStateHostOptions` (store factory + options),
   backed by an internal runner (gate → bootstrap → starting hooks → form factory → window state →
   activate-message filter → loop → reverse-order stopping hooks → release); `SplashPanel(+Options)`
-  (startup marquee overlay, app-chosen colors — headless per D13, debounced recenter).
+  (startup marquee overlay, app-chosen colors — headless per D13, debounced recenter);
+  `OptimizedForm(+Options)` (double-buffered base + `WndProcHook` seam; optional frameless
+  chrome: WM_NCCALCSIZE top-only caption removal, manual work-area maximize —
+  `IsAppMaximized`/`MaximizedChanged` are the truth, not `WindowState` — DWM
+  dark-mode/border/corner handling, top resize strip, `ApplyChromeTheme` runtime resync; all
+  colors parameterized); the native services, TryAdd-registered by `UseWinForms` —
+  `IFormInteraction`/`FormInteraction` (main-window registry, runner-wired; nested modal
+  blocking), `IFileDialogs`/`FileDialogs(+Options)` + `FileDialogOptions`/`Filter`/`Result` +
+  `IFileDialogPathStore` seam (dedicated-STA open/folder/save dialogs, owner-handle z-order,
+  per-key directory memory; failures throw), `IShellLauncher`/`ShellLauncher` (reveal/open-dir/
+  http-https-`OpenUrl`/launch — Win11 handle-leak fixes), `IClipboardService`/`ClipboardService`
+  (STA text + image-file ops); `SecondaryWindows(+SecondaryWindowOptions)` (named windows on
+  own-STA-thread pumps, per-name `IWindowStateStore` geometry, activate-on-existing,
+  non-blocking close); `TrayIcon(+Options)`/`TrayMenuColors` (NotifyIcon + composed menu,
+  double-click restore, close-to-tray, optional app-colored renderer).
 - `Shenora.WebView2` — `BrowserArguments` (the measured Chromium display-optimization preset;
   single-occurrence feature lists; dev CDP-args append); `WebViewEnvironment(+Options)`
   (runtime presence probe, idempotent prewarm, thread-affine shared environment +
@@ -93,7 +112,14 @@ changes, noting them in `CHANGELOG.md`).
   `IMessageDispatcher`, `IsHandleCreated`-guarded `BeginInvoke` posts, bounded drop-oldest
   notification queue buffering from construction + ~50 ms batch flush after the reserved
   `SHENORA`/`READY` client handshake, optional `IEventBus` wildcard forwarding,
-  `SendNotification`, `OnClientReady` per-handshake callback).
+  `SendNotification`, `OnClientReady` per-handshake callback); `WindowCommandFacade(+Options)`
+  (module `WINDOW`: MINIMIZE/TOGGLE_MAXIMIZE/CLOSE/IS_MAXIMIZED/START_DRAG/START_RESIZE +
+  optional SET_THEME; `ToggleMaximize`/`IsMaximized` delegate seams for frameless apps — here
+  because the commands arrive over the bridge and need Ipc, which WinForms doesn't reference);
+  the drop-zone stack — `DropZoneManager(+Options)` (transparent overlays over page elements
+  capture real OS paths incl. background drags; non-blocking UI marshalling, activation sync,
+  DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; events on
+  `IEventBus`) + `DropZoneFacade` (module `DROP_ZONE`: REGISTER/UPDATE/UNREGISTER/SHOW).
 - `Shenora.Ipc` — the transport-neutral wire contract (design §5, D11/D16; names pinned with
   `JsonPropertyName` so envelopes hold under any serializer options): `IpcRequest`
   (`{id, module, type, scope?, payload?, timestamp}` — `scope` is the app-defined routing
@@ -111,7 +137,12 @@ changes, noting them in `CHANGELOG.md`).
   with details kept host-side; programmatic `SendAsync`/`SendAsync<T>` over the same pipeline,
   typed failures rethrow `OperationException`), `MessageMiddleware` delegate,
   `ModuleRouteBuilder`, `IModuleFacade` (carries `ModuleName` — facade objects route via DI +
-  `MapModule`, no static registry) / `BaseFacade` (standardized error boundary).
+  `MapModule`, no static registry) / `BaseFacade` (standardized error boundary);
+  `ScopedContainerRouter(+Options)` (per-scope child containers: app `ConfigureScope` +
+  `OnScopeCreated`, single-flight creation, `MapModule<TFacade>` declarations, structured
+  `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`;
+  composition helpers `AddModuleFacade<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher`
+  (error handler → app middleware → DI-registered facades).
 - `@shenora/react` — the client side of the contract: wire types mirroring `Shenora.Ipc`
   name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError`
   (structured code + parameters; client-side `TIMEOUT`/`NO_TRANSPORT` reject the same way),
@@ -120,6 +151,8 @@ changes, noting them in `CHANGELOG.md`).
   batch unbundling, `notifyReady` handshake, `fallback` seam for pure-UI browser dev; lazy
   default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus`,
   `BaseModuleService<TRequests>`, hooks (`useShenora`/`useShenoraEvent`/`useShenoraQuery`),
+  `WindowCommands` typed service + `useWindowMaximized` (resize-triggered resync), `useDropZone`
+  (native drop zones synced to elements — real OS paths, unstyled drag feedback),
   `installDevInterceptor` (`window.__shenora` CDP-testing global). react ≥18 required peer.
 
 ## Dependency rules (enforced by review)

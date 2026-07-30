@@ -71,15 +71,12 @@ internal static class Program
             },
         });
 
-        // The IPC pipeline — facades live in DI, the dispatcher maps each at composition time
-        // (error handler FIRST so it wraps everything after it).
-        builder.Services.AddSingleton<IModuleFacade, SampleFacade>();
-        builder.Services.AddSingleton<IMessageDispatcher>(sp =>
-        {
-            var dispatcher = new MessageDispatcher().UseErrorHandler();
-            foreach (var facade in sp.GetServices<IModuleFacade>()) dispatcher.MapModule(facade);
-            return dispatcher;
-        });
+        // The IPC pipeline — facades live in DI; AddMessageDispatcher composes the family order
+        // (error handler → app middleware → registered facades). The window-facing facades
+        // (WINDOW commands, DROP_ZONE) map later, in MainForm, once the form exists.
+        builder.Services.AddSingleton<Shenora.WinForms.SecondaryWindows>();
+        builder.Services.AddModuleFacade<SampleFacade>();
+        builder.Services.AddMessageDispatcher();
 
         builder.Services.AddSingleton<MainForm>();
 

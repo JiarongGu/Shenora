@@ -13,12 +13,13 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.1.0 — pre-release, core host + IPC extracted.** The application builder, WinForms host,
-WebView2 hosting (prewarm, packaged/dev frontend serving, event policies), and the full typed IPC
-stack (envelopes, middleware dispatcher, event bus, postMessage transport, `@shenora/react`
-client) are extracted from the proven in-house applications and verified end-to-end against the
-sample app (see `docs/ROADMAP.md`). Modules + native desktop services are next. Not yet published
-to NuGet/npm.
+**v0.1.0 — pre-release, core host + IPC + native services extracted.** The application builder,
+WinForms host, WebView2 hosting, the full typed IPC stack (envelopes, middleware dispatcher,
+scoped-container router, event bus, postMessage transport, `@shenora/react` client), and the
+native desktop surface (frameless chrome + frontend window commands, STA dialogs, shell/clipboard,
+drag-drop zones, secondary windows, tray) are extracted from the proven in-house applications and
+verified end-to-end against the sample app (see `docs/ROADMAP.md`). Auxiliary browser sessions
+(P5) are next. Not yet published to NuGet/npm.
 
 ## Packages
 

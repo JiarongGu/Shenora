@@ -1,0 +1,232 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Shenora.Core;
+// Inside namespace Shenora.WebView2 the bare identifier "WebView2" resolves to the namespace, so
+// the control type needs an alias.
+using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+
+namespace Shenora.WebView2;
+
+/// <summary>Inputs for <see cref="DropZoneManager"/>.</summary>
+public sealed class DropZoneManagerOptions
+{
+    /// <summary>The WebView the zone elements live in (coordinate anchor + DOM occlusion checks).</summary>
+    public required WebView2Control WebView { get; init; }
+
+    /// <summary>The form the overlays are parented to (usually the WebView's form).</summary>
+    public required Form ParentForm { get; init; }
+
+    /// <summary>
+    /// Where drop events are emitted (module <see cref="DropZoneManager.Module"/>, types
+    /// DRAG_ENTER / DRAG_LEAVE / FILE_DROP). A <see cref="WebViewIpcBridge"/> wired to the same
+    /// bus forwards them to the page, where <c>useDropZone</c> consumes them.
+    /// </summary>
+    public required IEventBus EventBus { get; init; }
+}
+
+/// <summary>
+/// Native drag-drop zones synced to page elements, ported from the primary desktop sibling (its
+/// third copy was already annotated "ported from…" — this ends that): transparent overlays are
+/// positioned over the page's zone elements to capture REAL OS file paths (the page only ever
+/// sees blob URLs), including drags from other apps while this one is in the background.
+/// The client side is <c>useDropZone</c> in @shenora/react; the routes arrive through
+/// <see cref="DropZoneFacade"/>.
+///
+/// Placed in Shenora.WebView2 (the design sketch said WinForms) because it drives the WebView —
+/// coordinates anchor on the control and occlusion checks run DOM scripts — and the facade
+/// needs Ipc, which the WinForms package deliberately doesn't reference.
+/// </summary>
+public sealed class DropZoneManager : IDisposable
+{
+    /// <summary>The reserved module name (mirrored by the client's <c>useDropZone</c>).</summary>
+    public const string Module = "DROP_ZONE";
+
+    private readonly DropZoneManagerOptions _options;
+    private readonly ILogger<DropZoneManager> _logger;
+    private readonly Dictionary<string, DropZoneOverlay> _overlays = [];
+    // Last CSS bounds per zone — so a DPI change (window moved to another monitor) can re-derive
+    // every overlay's physical bounds without waiting for the page to resend them (P2.3b).
+    private readonly Dictionary<string, (int X, int Y, int Width, int Height)> _cssBounds = [];
+    private bool _disposed;
+
+    public DropZoneManager(DropZoneManagerOptions options, ILogger<DropZoneManager>? logger = null)
+    {
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? NullLogger<DropZoneManager>.Instance;
+
+        // Overlay visibility tracks form activation: an inactive form shows every overlay —
+        // that's what makes background drag-drop from other apps work.
+        _options.ParentForm.Deactivate += OnFormDeactivate;
+        _options.ParentForm.Activated += OnFormActivated;
+        // Window moved to a monitor with a different DPI: every stored CSS rect maps to new
+        // physical bounds. The page's own resize path converges on the same result; this covers
+        // the gap until it does.
+        _options.ParentForm.DpiChanged += OnDpiChanged;
+    }
+
+    /// <summary>Create (or re-bounds) the overlay for a zone. CSS (logical) pixels in.</summary>
+    public void RegisterZone(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight)
+    {
+        if (MarshalToUi(() => RegisterZone(zoneId, cssX, cssY, cssWidth, cssHeight))) return;
+        ArgumentException.ThrowIfNullOrEmpty(zoneId);
+        _cssBounds[zoneId] = (cssX, cssY, cssWidth, cssHeight);
+
+        if (_overlays.TryGetValue(zoneId, out var existing))
+        {
+            var (x, y, w, h) = ToFormBounds(cssX, cssY, cssWidth, cssHeight);
+            existing.UpdateOverlayBounds(x, y, w, h);
+            return;
+        }
+
+        try
+        {
+            var overlay = new DropZoneOverlay(zoneId, _options.WebView, _logger,
+                (files, pos) => NotifyFileDrop(zoneId, files, pos),
+                () => NotifyDragEnter(zoneId),
+                () => NotifyDragLeave(zoneId));
+            var (x, y, w, h) = ToFormBounds(cssX, cssY, cssWidth, cssHeight);
+            overlay.SetBounds(x, y, w, h);
+            _options.ParentForm.Controls.Add(overlay);
+            overlay.BringToFront();
+            _overlays[zoneId] = overlay;
+            _logger.LogDebug("Drop zone registered: {ZoneId} ({Count} total)", zoneId, _overlays.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create drop-zone overlay {ZoneId}", zoneId);
+        }
+    }
+
+    /// <summary>Alias of <see cref="RegisterZone"/> — updating is registering with new bounds.</summary>
+    public void UpdateZoneBounds(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight) =>
+        RegisterZone(zoneId, cssX, cssY, cssWidth, cssHeight);
+
+    /// <summary>Tear a zone's overlay down.</summary>
+    public void UnregisterZone(string zoneId)
+    {
+        if (MarshalToUi(() => UnregisterZone(zoneId))) return;
+        _cssBounds.Remove(zoneId);
+        if (_overlays.Remove(zoneId, out var overlay))
+        {
+            _options.ParentForm.Controls.Remove(overlay);
+            overlay.Dispose();
+            _logger.LogDebug("Drop zone unregistered: {ZoneId}", zoneId);
+        }
+    }
+
+    /// <summary>The page's mouse left the zone element — show the overlay again (see the overlay's visibility logic).</summary>
+    public void ShowOverlay(string zoneId)
+    {
+        if (MarshalToUi(() => ShowOverlay(zoneId))) return;
+        if (_overlays.TryGetValue(zoneId, out var overlay))
+            overlay.OnFrontendMouseLeave();
+    }
+
+    /// <summary>Remove every zone (the ready handshake calls this — a reloaded page re-registers its own).</summary>
+    public void ClearAll()
+    {
+        if (MarshalToUi(ClearAll)) return;
+        foreach (var (_, overlay) in _overlays.ToList())
+        {
+            _options.ParentForm.Controls.Remove(overlay);
+            overlay.Dispose();
+        }
+        _overlays.Clear();
+        _cssBounds.Clear();
+        _logger.LogDebug("All drop zones cleared");
+    }
+
+    /// <summary>Detach the form handlers and destroy every overlay.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        // Unhook FIRST: the source's handlers lingered when the form outlived the session and
+        // fired on disposed overlays.
+        _options.ParentForm.Deactivate -= OnFormDeactivate;
+        _options.ParentForm.Activated -= OnFormActivated;
+        _options.ParentForm.DpiChanged -= OnDpiChanged;
+        ClearAll();
+    }
+
+    private void OnFormDeactivate(object? sender, EventArgs e)
+    {
+        foreach (var overlay in _overlays.Values) overlay.SetFormActive(false);
+    }
+
+    private void OnFormActivated(object? sender, EventArgs e)
+    {
+        foreach (var overlay in _overlays.Values) overlay.SetFormActive(true);
+    }
+
+    private void OnDpiChanged(object? sender, DpiChangedEventArgs e) => ReapplyAllZoneBounds();
+
+    /// <summary>Re-derive every overlay's physical bounds from the stored CSS rects. Internal seam for tests.</summary>
+    internal void ReapplyAllZoneBounds()
+    {
+        if (MarshalToUi(ReapplyAllZoneBounds)) return;
+        foreach (var (zoneId, css) in _cssBounds)
+        {
+            if (!_overlays.TryGetValue(zoneId, out var overlay)) continue;
+            var (x, y, w, h) = ToFormBounds(css.X, css.Y, css.Width, css.Height);
+            overlay.UpdateOverlayBounds(x, y, w, h);
+        }
+    }
+
+    /// <summary>
+    /// CSS (logical) pixels from getBoundingClientRect → physical pixels → parent-form client
+    /// coordinates. PointToScreen/PointToClient are raw Win32 calls working in PHYSICAL pixels;
+    /// at 150 % each CSS pixel is 1.5 physical. Uses the CONTROL's DeviceDpi — per-monitor under
+    /// PerMonitorV2 (the source used a process-global scale factor, wrong on mixed-DPI setups).
+    /// </summary>
+    private (int X, int Y, int Width, int Height) ToFormBounds(int cssX, int cssY, int cssWidth, int cssHeight)
+    {
+        var scale = _options.WebView.DeviceDpi / 96.0;
+        var physX = (int)Math.Round(cssX * scale);
+        var physY = (int)Math.Round(cssY * scale);
+        var physW = (int)Math.Round(cssWidth * scale);
+        var physH = (int)Math.Round(cssHeight * scale);
+        var screen = _options.WebView.PointToScreen(new Point(physX, physY));
+        var form = _options.ParentForm.PointToClient(screen);
+        return (form.X, form.Y, physW, physH);
+    }
+
+    // Marshal to the UI thread NON-BLOCKING (BeginInvoke). Overlay management uses Win32/
+    // WinForms calls (PointToScreen, Controls.Add) that are UI-thread-only — and a BLOCKING
+    // Invoke from a worker thread can deadlock the UI (this caused an AppHang in the source when
+    // IPC was dispatched off the UI thread). BeginInvoke never blocks the caller, so the manager
+    // is safe to call from any thread. IsHandleCreated FIRST — pre-handle, InvokeRequired lies,
+    // AND there is nothing to marshal to yet: return false so the caller proceeds inline
+    // (re-invoking the caller here recursed without end — found in review).
+    private bool MarshalToUi(Action action)
+    {
+        var form = _options.ParentForm;
+        if (!form.IsHandleCreated) return false;
+        if (form.InvokeRequired)
+        {
+            form.BeginInvoke(action);
+            return true;
+        }
+        return false; // already on the UI thread — caller proceeds inline
+    }
+
+    // Wire events (the bridge forwards the bus to the page). Fire-and-forget: emission must
+    // never block the drag/drop handlers.
+    internal void NotifyDragEnter(string zoneId) =>
+        _ = _options.EventBus.EmitAsync(Module, "DRAG_ENTER", new { ZoneId = zoneId });
+
+    internal void NotifyDragLeave(string zoneId) =>
+        _ = _options.EventBus.EmitAsync(Module, "DRAG_LEAVE", new { ZoneId = zoneId });
+
+    internal void NotifyFileDrop(string zoneId, string[] files, Point position) =>
+        _ = _options.EventBus.EmitAsync(Module, "FILE_DROP",
+            new { ZoneId = zoneId, Files = files, Position = new { position.X, position.Y } });
+
+    /// <summary>Internal seams for tests.</summary>
+    internal bool HasZone(string zoneId) => _overlays.ContainsKey(zoneId);
+
+    internal int ZoneCount => _overlays.Count;
+
+    internal DropZoneOverlay? TryGetOverlay(string zoneId) =>
+        _overlays.TryGetValue(zoneId, out var overlay) ? overlay : null;
+}

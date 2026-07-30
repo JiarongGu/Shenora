@@ -1,0 +1,213 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Shenora.WinForms;
+
+/// <summary>Inputs for one <see cref="SecondaryWindows.Open"/> call.</summary>
+public sealed class SecondaryWindowOptions
+{
+    /// <summary>
+    /// Creates the window — runs ON the window's own STA thread (every control it creates gets
+    /// that thread's message pump). Create it, don't show it: the pump shows it, after geometry
+    /// is applied. A WebView2-hosting window initializes its host from its own <c>Load</c> with
+    /// <c>UseSharedEnvironment = false</c> (the thread-affinity contract).
+    /// </summary>
+    public required Func<Form> CreateForm { get; init; }
+
+    /// <summary>
+    /// Geometry persistence for this named window — the same window-state stack the main window
+    /// uses (logical-px store, physical restore, off-screen recovery): one store per name (e.g.
+    /// a <c>JsonFileWindowStateStore("windows/{name}.json")</c>). Null = no persistence. This is
+    /// the seam that replaces the source app's profile-config coupling.
+    /// </summary>
+    public IWindowStateStore? StateStore { get; init; }
+
+    /// <summary>Sizing defaults/minimums for <see cref="StateStore"/>. Null = defaults.</summary>
+    public WindowStateOptions? StateOptions { get; init; }
+}
+
+/// <summary>
+/// Named secondary windows, each on its OWN STA thread with its own message pump — ported from
+/// the primary desktop sibling's secondary-window service, decomposed to its generic core (the
+/// source interleaved profile config, session wiring, and theme loading; those belong to the
+/// app's <see cref="SecondaryWindowOptions.CreateForm"/> factory). One window per name;
+/// <see cref="Open"/> on an existing name ACTIVATES it instead of the source's close-and-recreate
+/// (its login-window sibling proved the focus-existing shape; recreate churned visibly).
+///
+/// Threading: everything here marshals to the window's thread with non-blocking
+/// <c>BeginInvoke</c> — the source's blocking <c>Invoke</c> from the IPC thread deadlocked the
+/// UI during scope switches (measured). Window threads are background: an app exit never hangs
+/// on a forgotten window; dispose (or <see cref="CloseAll"/>) closes them gracefully first so
+/// geometry saves run.
+/// </summary>
+public sealed class SecondaryWindows : IDisposable
+{
+    private sealed class WindowEntry
+    {
+        public volatile Form? Form;
+        public volatile bool CloseRequested;
+    }
+
+    private readonly ILogger<SecondaryWindows> _logger;
+    private readonly ConcurrentDictionary<string, WindowEntry> _windows = new();
+    private bool _disposed;
+
+    public SecondaryWindows(ILogger<SecondaryWindows>? logger = null)
+    {
+        _logger = logger ?? NullLogger<SecondaryWindows>.Instance;
+    }
+
+    /// <summary>
+    /// Open the named window on its own STA thread. Returns false (and activates the existing
+    /// window) when the name is already open.
+    /// </summary>
+    public bool Open(string name, SecondaryWindowOptions options)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var entry = new WindowEntry();
+        if (!_windows.TryAdd(name, entry))
+        {
+            Activate(name);
+            return false;
+        }
+
+        var thread = new Thread(() => RunWindow(name, entry, options))
+        {
+            Name = $"SecondaryWindow:{name}",
+            IsBackground = true,
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return true;
+    }
+
+    private void RunWindow(string name, WindowEntry entry, SecondaryWindowOptions options)
+    {
+        Form form;
+        try
+        {
+            form = options.CreateForm();
+
+            if (options.StateStore is { } store)
+            {
+                // Apply BEFORE the pump shows the form (post-show geometry jumps visibly);
+                // save on FormClosed, while the bounds are still readable.
+                var manager = new WindowStateManager(store, options.StateOptions);
+                manager.Apply(form);
+                form.FormClosed += (_, _) => manager.Save(form);
+            }
+
+            form.FormClosed += (_, _) => _windows.TryRemove(name, out _);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Secondary window '{Name}' failed to create", name);
+            _windows.TryRemove(name, out _);
+            return;
+        }
+
+        entry.Form = form;
+        // A Close(name) that raced window creation lands here instead of being lost…
+        if (entry.CloseRequested)
+        {
+            form.Dispose();
+            _windows.TryRemove(name, out _);
+            return;
+        }
+        // …and one that lands between this check and the pump creating the handle lands here
+        // (Post is a deliberate no-op pre-handle — see below).
+        form.HandleCreated += (_, _) =>
+        {
+            if (entry.CloseRequested) form.BeginInvoke(form.Close);
+        };
+
+        _logger.LogDebug("Secondary window '{Name}' opened on thread {Thread}", name, Environment.CurrentManagedThreadId);
+        try
+        {
+            Application.Run(form); // this thread's own pump — returns when the form closes
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Secondary window '{Name}' pump faulted", name);
+        }
+        finally
+        {
+            _windows.TryRemove(name, out _);
+            _logger.LogDebug("Secondary window '{Name}' closed", name);
+        }
+    }
+
+    /// <summary>True while the named window is open (or opening).</summary>
+    public bool HasWindow(string name) => _windows.ContainsKey(name);
+
+    /// <summary>Bring the named window to the front (no-op when it isn't open).</summary>
+    public void Activate(string name)
+    {
+        if (!_windows.TryGetValue(name, out var entry) || entry.Form is not { } form) return;
+        Post(form, () =>
+        {
+            if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
+            form.Show();
+            form.Activate();
+            form.BringToFront();
+        });
+    }
+
+    /// <summary>Close the named window (non-blocking; safe from any thread).</summary>
+    public void Close(string name)
+    {
+        if (!_windows.TryGetValue(name, out var entry)) return;
+        entry.CloseRequested = true;
+        if (entry.Form is { } form) Post(form, form.Close);
+    }
+
+    /// <summary>Close every window.</summary>
+    public void CloseAll()
+    {
+        foreach (var name in _windows.Keys.ToArray()) Close(name);
+    }
+
+    /// <summary>
+    /// Close every window and WAIT (bounded) for their pumps to finish — the window threads are
+    /// background, so an unwaited dispose at app exit would kill them before their
+    /// FormClosed-driven geometry saves ran (found in review). The wait is bounded so a wedged
+    /// window can never hang shutdown.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        CloseAll();
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (!_windows.IsEmpty && DateTime.UtcNow < deadline)
+            Thread.Sleep(20);
+    }
+
+    internal int WindowCount => _windows.Count;
+
+    internal Form? TryGetForm(string name) =>
+        _windows.TryGetValue(name, out var entry) ? entry.Form : null;
+
+    // Non-blocking marshal to the window's own thread — a blocking Invoke from the IPC thread
+    // deadlocked the source app during scope switches. Pre-handle this is a deliberate NO-OP:
+    // the caller is never the window's own thread here, so running inline would CREATE the
+    // handle on the wrong thread and kill the pump (found in review); pre-handle intent is
+    // carried by flags instead (CloseRequested + the HandleCreated re-check).
+    private static void Post(Form form, Action action)
+    {
+        try
+        {
+            if (form.IsDisposed || !form.IsHandleCreated) return;
+            if (form.InvokeRequired) form.BeginInvoke(action);
+            else action();
+        }
+        catch
+        {
+            // window tearing down mid-post
+        }
+    }
+}

@@ -1,5 +1,29 @@
 Shenora.WebView2.BrowserArguments
   System.String Build(Boolean, System.String, System.String)
+Shenora.WebView2.DropZoneFacade
+  System.String ModuleName
+  System.String get_ModuleName()
+  Void .ctor(Shenora.WebView2.DropZoneManager, Microsoft.Extensions.Logging.ILogger`1[Shenora.WebView2.DropZoneFacade])
+Shenora.WebView2.DropZoneManager
+  System.String Module
+  Void .ctor(Shenora.WebView2.DropZoneManagerOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WebView2.DropZoneManager])
+  Void ClearAll()
+  Void Dispose()
+  Void RegisterZone(System.String, Int32, Int32, Int32, Int32)
+  Void ShowOverlay(System.String)
+  Void UnregisterZone(System.String)
+  Void UpdateZoneBounds(System.String, Int32, Int32, Int32, Int32)
+Shenora.WebView2.DropZoneManagerOptions
+  Microsoft.Web.WebView2.WinForms.WebView2 WebView
+  Microsoft.Web.WebView2.WinForms.WebView2 get_WebView()
+  Shenora.Core.IEventBus EventBus
+  Shenora.Core.IEventBus get_EventBus()
+  System.Windows.Forms.Form ParentForm
+  System.Windows.Forms.Form get_ParentForm()
+  Void .ctor()
+  Void set_EventBus(Shenora.Core.IEventBus)
+  Void set_ParentForm(System.Windows.Forms.Form)
+  Void set_WebView(Microsoft.Web.WebView2.WinForms.WebView2)
 Shenora.WebView2.EmbeddedResourceProvider
   Boolean Exists(System.String)
   Boolean IsEmbedded
@@ -184,3 +208,22 @@ Shenora.WebView2.WebViewIpcBridgeOptions
   Void set_MaxQueuedNotifications(Int32)
   Void set_NotificationInterval(System.TimeSpan)
   Void set_OnClientReady(System.Action`1[Shenora.Ipc.IpcRequest])
+Shenora.WebView2.WindowCommandFacade
+  System.String Module
+  System.String ModuleName
+  System.String get_ModuleName()
+  Void .ctor(Shenora.WebView2.WindowCommandOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WebView2.WindowCommandFacade])
+Shenora.WebView2.WindowCommandOptions
+  System.Action ToggleMaximize
+  System.Action get_ToggleMaximize()
+  System.Action`1[System.Boolean] ApplyTheme
+  System.Action`1[System.Boolean] get_ApplyTheme()
+  System.Func`1[System.Boolean] IsMaximized
+  System.Func`1[System.Boolean] get_IsMaximized()
+  System.Windows.Forms.Form Window
+  System.Windows.Forms.Form get_Window()
+  Void .ctor()
+  Void set_ApplyTheme(System.Action`1[System.Boolean])
+  Void set_IsMaximized(System.Func`1[System.Boolean])
+  Void set_ToggleMaximize(System.Action)
+  Void set_Window(System.Windows.Forms.Form)

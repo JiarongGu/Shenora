@@ -7,27 +7,37 @@ using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 namespace Shenora.Sample.Desktop;
 
 /// <summary>
-/// The sample main window: WebView2 filling the form, a <see cref="SplashPanel"/> on top until
-/// the first navigation completes, the runtime presence check surfaced as an actionable prompt
-/// (the gap every source app shipped with), and the IPC bridge wired in its intended order —
-/// construct before init (event buffering), attach after init, before navigation.
+/// The sample main window — since P4 a FRAMELESS <see cref="OptimizedForm"/>: the page renders
+/// its own title bar and drives the window over the <c>WINDOW</c> IPC module
+/// (<see cref="WindowCommandFacade"/>); drop zones overlay page elements
+/// (<see cref="DropZoneManager"/>); a tray icon (launcher-style, no close-to-tray so the e2e's
+/// graceful close still exits) rounds out the native surface. The IPC bridge keeps its intended
+/// order — construct before init (event buffering), attach after init, before navigation.
 /// </summary>
-public sealed class MainForm : Form
+public sealed class MainForm : OptimizedForm
 {
-    /// <summary>One background everywhere — form, WebView2, splash, and the page's own CSS.</summary>
+    /// <summary>One background everywhere — form, WebView2, splash, page CSS, and the DWM border.</summary>
     public static readonly Color Background = Color.FromArgb(31, 31, 31);
 
     private readonly WebViewHost _host;
     private readonly SplashPanel _splash;
     private readonly WebView2Control _webView;
     private readonly WebViewIpcBridge _bridge;
+    private readonly DropZoneManager _dropZones;
+    private readonly TrayIcon _tray;
     private readonly System.Windows.Forms.Timer _tickTimer;
     private int _tickCount;
 
     public MainForm(WebViewHostOptions hostOptions, IMessageDispatcher dispatcher, IEventBus eventBus)
+        : base(new OptimizedFormOptions
+        {
+            FramelessChrome = true,
+            BackColor = Background,
+            DwmBorderColor = Background, // border line matches the app edge → no visible frame
+        })
     {
         Text = "Shenora Sample";
-        BackColor = Background;
+        MinimumSize = new Size(640, 420);
 
         _webView = new WebView2Control { Dock = DockStyle.Fill };
         Controls.Add(_webView);
@@ -43,6 +53,27 @@ public sealed class MainForm : Form
         _tickTimer.Tick += (_, _) => _ = eventBus.EmitAsync("SAMPLE", "TICK",
             new { Count = ++_tickCount, At = DateTimeOffset.Now.ToString("HH:mm:ss") });
 
+        // Drop zones: transparent overlays synced to the page's zone elements (real OS paths).
+        _dropZones = new DropZoneManager(new DropZoneManagerOptions
+        {
+            WebView = _webView,
+            ParentForm = this,
+            EventBus = eventBus,
+        });
+
+        // The window-facing facades need the live form, so they map here (late registration is
+        // supported — the dispatcher rebuilds its pipeline lazily).
+        if (dispatcher is MessageDispatcher concrete)
+        {
+            concrete.MapModule(new WindowCommandFacade(new WindowCommandOptions
+            {
+                Window = this,
+                ToggleMaximize = ToggleMaximize,      // the frameless manual work-area path
+                IsMaximized = () => IsAppMaximized,   // WindowState never reflects it
+            }));
+            concrete.MapModule(new DropZoneFacade(_dropZones));
+        }
+
         // Construct the bridge BEFORE InitializeAsync — bus buffering starts here, so events
         // emitted during the (slow) WebView2 init survive to the first post-ready batch.
         _bridge = new WebViewIpcBridge(_webView, new WebViewIpcBridgeOptions
@@ -50,7 +81,29 @@ public sealed class MainForm : Form
             Dispatcher = dispatcher,
             EventBus = eventBus,
             Log = Console.WriteLine,
-            OnClientReady = _ => _tickTimer.Start(), // fires on the UI thread, per handshake
+            OnClientReady = _ =>
+            {
+                // Every (re)load: stale overlays belong to the previous page — clear before the
+                // new page re-registers its own. Then start the tick source.
+                _dropZones.ClearAll();
+                _tickTimer.Start();
+            },
+        });
+
+        // Launcher-style tray (no close-to-tray: closing exits — keeps the e2e's graceful close).
+        _tray = new TrayIcon(new TrayIconOptions
+        {
+            Window = this,
+            CloseToTray = false,
+            MenuColors = new TrayMenuColors
+            {
+                Surface = Background,
+                Hover = Color.FromArgb(50, 50, 50),
+                Border = Color.FromArgb(60, 60, 60),
+                Accent = Color.FromArgb(127, 209, 140),
+                Text = Color.FromArgb(236, 237, 242),
+                DisabledText = Color.FromArgb(150, 151, 168),
+            },
         });
 
         _host = new WebViewHost(_webView, hostOptions);
@@ -110,7 +163,9 @@ public sealed class MainForm : Form
             // Stop the flush timer + detach before the WebView goes down (the source app's
             // transport once kept posting into a torn-down WebView for the process lifetime).
             _tickTimer.Dispose();
+            _dropZones.Dispose();
             _bridge.Dispose();
+            _tray.Dispose();
         }
         base.Dispose(disposing);
     }

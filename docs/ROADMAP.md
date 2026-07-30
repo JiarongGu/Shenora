@@ -5,6 +5,177 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P4 increment 6: the P4 surface proven live (sample + e2e) — P4 feature-complete
+
+The samples become the full P4 reference composition. Desktop: `MainForm` is now a FRAMELESS
+`OptimizedForm` (chrome colors = the app background, DWM border matched — no visible frame), the
+window-facing facades map late in the form's constructor (`WindowCommandFacade` wired to the
+manual maximize path, `DropZoneFacade` over a `DropZoneManager`), the ready handshake clears
+stale drop zones before starting the tick source, a launcher-style `TrayIcon` (no close-to-tray,
+so the e2e's graceful close still exits), `SecondaryWindows` + `SampleFacade` routes
+(OPEN/HAS/CLOSE_PANEL + PICK_FILE/REVEAL for the manual dialog/shell demos). Web: the page
+renders its own title bar (drag via `startDrag`, min/max/close buttons, a top resize strip,
+`useWindowMaximized` glyph), a `useDropZone` target, and the secondary-window controls.
+PROVEN LIVE (screenshots gitignored in `devtools/screenshots/`): dev (`p46-dev-frameless.png`)
+and packaged (`p46-packaged.png`) both show the frameless window with page-owned chrome and
+every status line green. CDP drive (`window.__shenora`): `WINDOW IS_MAXIMIZED` false →
+`TOGGLE_MAXIMIZE` → true → restored (the manual work-area maximize end-to-end);
+`SAMPLE OPEN_PANEL` → `HAS_PANEL` true → `CLOSE_PANEL` → false; the page's drop zone
+auto-registered (`DROP_ZONE REGISTER:ok` + bounds UPDATEs + SHOW traffic — StrictMode's
+mount-unmount-remount sequence handled exactly as the ported fix comments promise). Native
+input drive: `dev.mjs click` on the page's panel button fired `OPEN_PANEL` (win-input works
+against the new UI), and `input list` showed BOTH top-level windows — the frameless main window
+and `Shenora Sample — panel` on its own STA thread. Graceful closes exit code 0 in both modes.
+
+**Phase review (adversarial subagent over the full diff) — 10 real findings, all fixed:**
+(1) the drop-zone manager's pre-handle marshal re-invoked its caller → unbounded recursion →
+uncatchable StackOverflow (reachable via startup-failure disposal) — pre-handle now proceeds
+inline; (2) `FormInteraction` held its lock across a blocking `Invoke` — the classic pool↔UI
+deadlock the family already documented — now `BeginInvoke`; (3) frameless `SC_RESTORE` was
+swallowed while minimized+maximized, stranding the window in the taskbar — the intercept now
+defers to `DefWindowProc` when minimized and `RestoreFromMax` un-minimizes first; (4)
+`SecondaryWindows.Post` ran inline on the CALLER's thread pre-handle — an `Activate` racing
+creation would create the handle on the wrong thread and kill the pump — pre-handle is now a
+no-op with flag-carried intent (`HandleCreated` re-checks `CloseRequested`); (5) `useDropZone`'s
+in-flight REGISTER ack could land after teardown and mark the destroyed zone registered
+(StrictMode's default sequence!) — epoch-guarded now; (6) `SecondaryWindows.Dispose` didn't
+wait for the pumps, losing geometry saves at exit — bounded drain added; (7) `TrayIcon`'s
+`_exiting` wedged after a canceled close (next user close would EXIT) and the icon hid before
+the close was certain — reset-on-cancel + hide moved to `FormClosed` (+ a Font handle leak);
+(8) `ScopedContainerRouter` invalidate/dispose racing an in-flight creation leaked the built
+provider — `DisposeScope` now observes the `Lazy` (waiting out in-flight builds) and `Dispose`
+drains; (9) the occlusion check interpolated the app-supplied zone id raw into a script —
+JSON-injected + `CSS.escape`d per the injection rule; (10) `START_DRAG` while manually
+maximized dragged a work-area-sized window with stale restore bounds — the facade refuses it.
+Regression tests cover 1, 3, 5, 6, 7, 8. Re-verified: 273 dotnet + 39 vitest green; `verify`
+PASSED. **P4 (modules + native services) is complete.**
+
+### 2026-07-30 — P4 increment 5: secondary windows + tray
+
+`Shenora.WinForms` gains `SecondaryWindows` — the primary sibling's ~630-line secondary-window
+service decomposed to its generic core: named windows, each opened on its OWN STA thread with
+its own message pump (the source's preload/sync-create split existed only because callers ran
+the thread; the registry now owns it), with the app's `CreateForm` factory holding everything
+the source hardcoded (content, sessions, theme). Geometry persistence reuses the P2
+window-state stack per name (`IWindowStateStore` per window — the extraction map's
+"IWindowGeometryStore seam" realized; logical store / physical restore / off-screen recovery
+come along free). Kept post-mortems: the non-blocking close discipline (a blocking `Invoke`
+from the IPC thread deadlocked the source during scope switches). Deviations: opening an
+existing name ACTIVATES it (the source's close-and-recreate churned; its login-window sibling
+proof focuses), and a close racing window creation is caught by a flag instead of being lost.
+`TrayIcon(+Options)` generalizes the server-backed sibling's tray: NotifyIcon lifecycle,
+Open/app-items/Exit menu composition (`ConfigureMenu` gives the app the raw
+`ContextMenuStrip` — no DSL), double-click restore, the close-to-tray FormClosing dance, and
+`TrayMenuColors` — the parameterized port of its dark menu renderer (disabled-text legibility
+on dark surfaces was its measured reason to exist); null colors = stock renderer, the palette
+is the app's (D13). Verified: 268 dotnet + 38 vitest green (+10: own-STA-thread pumps with
+polling, activate-on-existing, raced close, state-store save-on-close, failing-factory cleanup,
+close-all; tray menu composition/order, close-to-tray → hide then real exit, opt-out, dispose
+detach); WinForms baseline promoted (additions only); `verify` PASSED.
+
+### 2026-07-30 — P4 increment 4: drag-drop zones + `useDropZone` (+ the P2.3b DPI tail)
+
+The third-most-copied component in the family (one sibling's copy was literally annotated
+"ported from…" another) lands once: `Shenora.WebView2` gains `DropZoneManager(+Options)` —
+transparent `WS_EX_TRANSPARENT` overlays positioned over page elements to capture REAL OS file
+paths (the DOM only ever sees blob URLs), including drags from other apps while the window is in
+the background (an inactive form always shows its overlays). Ported with the measured
+discipline: non-blocking `MarshalToUi` (a blocking `Invoke` off the UI thread caused an AppHang
+in the source), form-activation visibility sync, the DOM occlusion check (a covered zone must
+not light up), the disposed-during-async `Dead` guard, and event-handler detach on dispose.
+Events emit on `IEventBus` (`DROP_ZONE`: DRAG_ENTER/DRAG_LEAVE/FILE_DROP) — the bridge's
+wildcard forwarding ships them to the page, decoupling the manager from the transport.
+`DropZoneFacade` provides the REGISTER/UPDATE/UNREGISTER/SHOW routes. The P2.3b DPI tail lands
+here: CSS→physical conversion now uses the CONTROL's per-monitor `DeviceDpi` (the source used a
+process-global scale — wrong on mixed-DPI setups), and the manager stores each zone's CSS rect
+and re-applies all bounds on `Form.DpiChanged`. Placed in the WebView2 package (the design
+sketch said WinForms) because it drives the WebView and needs Ipc — same dependency reality as
+the window commands. `@shenora/react` gains `useDropZone` with the source's fix-history kept
+(unregister-on-attempted so a fast unmount tears down an in-flight REGISTER; duplicate-REGISTER
+guard; teardown on `enabled` flip) and generalized: zero dependencies (local debounce, no uuid
+lib) and NO CSS shipped (headless D13 — the drop class is applied, the app styles it).
+Verified: 258 dotnet + 38 vitest green (+12: overlay lifecycle/parenting/bounds on STA threads,
+DPI re-apply from stored rects, bus wire shapes, facade route matrix incl. structured missing
+payload, hook register/unregister/drop-routing/class-toggle/SHOW/disabled/flip); real drags +
+occlusion are the P4.6 e2e's subject; WebView2 baseline promoted (additions only); `verify`
+PASSED.
+
+### 2026-07-30 — P4 increment 3: the native desktop services
+
+`Shenora.WinForms` gains the service layer the source apps hand-rolled, all TryAdd-registered by
+`UseWinForms` so every app gets them and any registration can be replaced:
+`IFormInteraction`/`FormInteraction` (the main-window registry — the runner registers the form
+automatically — plus nested modal blocking via the native `Enabled` property; the handle read is
+fixed to answer `Zero` before creation, where the source's `Invoke` dance would have CREATED the
+handle on the wrong thread), `IFileDialogs`/`FileDialogs(+Options)` with the wire-friendly
+`FileDialogOptions`/`Filter`/`Result` models and the `IFileDialogPathStore` seam (generalizing
+the source's settings-service coupling): every dialog on a DEDICATED STA thread (the measured
+WebView2 conflict), owned by the main window for z-order, main window blocked while up, per-key
+last-directory memory with stale-entry fallthrough, the folder-or-file `OpenFileDialog` trick
+kept, and a NEW `SaveFileAsync` in the same pattern — failures now THROW (the source flattened
+exception text into a wire-bound string, the exact leak shape §5 forbids);
+`IShellLauncher`/`ShellLauncher` (reveal-in-Explorer with the Windows 11 handle-leak fix, shell
+"open"-verb directories — not `explorer.exe`, which orphaned processes — http/https-only
+`OpenUrl` matching the new-window policy, `LaunchProcess`);
+`IClipboardService`/`ClipboardService` (STA-marshalled text get/set + the family's two
+image-file operations, centralizing its ad-hoc clipboard threads). A shared internal
+`StaThread.RunAsync` carries the STA post-mortem once. Verified: 252 dotnet + 32 vitest green
+(+20: nested blocking, handle states, filter strings, initial-path chain incl. stale cleanup and
+a throwing store, remember-path guards, shell validation throws, registration + runner wiring);
+real dialogs/shell launches are e2e/manual territory; WinForms baseline promoted (additions
+only); `verify` PASSED.
+
+### 2026-07-30 — P4 increment 2: the window manager — frameless chrome + frontend window commands
+
+`Shenora.WinForms` gains `OptimizedForm(+Options)`, merged from both desktop siblings with the
+measured lessons kept: the double-buffered base + `WndProcHook` seam (first sibling) and the
+optional frameless custom chrome (second sibling) — WM_NCCALCSIZE removes ONLY the top caption
+(native invisible side/bottom resize borders stay; returning 0 for all sides needs a visible
+inset), no `ControlStyles.UserPaint` (an unpainted WHITE frame otherwise), MANUAL work-area
+maximize via `MonitorFromWindow`+`GetMonitorInfo` (never `Screen.WorkingArea` — DPI-mis-scaled
+~12 px short; `WindowState.Maximized` left a ~6 px gap and squared the corners) with
+`SC_MAXIMIZE`/`SC_RESTORE` routed through it, `WM_NCACTIVATE` lParam −1 (the grey caption
+strip), DWM dark-mode/border-color/corner preference (rounded windowed, square maximized — the
+clipping report), a DPI-scaled top resize strip re-added via WM_NCHITTEST, and
+`ApplyChromeTheme` for runtime light↔dark resync. All colors are options (headless, D13).
+`Shenora.WebView2` gains `WindowCommandFacade(+Options)` — module `WINDOW` (generalized from the
+siblings' `APP`): MINIMIZE / TOGGLE_MAXIMIZE / CLOSE / IS_MAXIMIZED / START_DRAG (ReleaseCapture
++ WM_NCLBUTTONDOWN/HTCAPTION — the reliable WebView2 drag) / START_RESIZE (top edges only by
+design; lParam MUST be the cursor screen pos or the size loop tracks from (0,0)) / optional
+SET_THEME, with delegate seams (`ToggleMaximize`/`IsMaximized`) so frameless apps wire the
+manual path — placed in the WebView2 package because the commands arrive over the bridge and
+need Ipc, which WinForms deliberately doesn't reference. `@shenora/react` gains the
+`WindowCommands` typed service + `useWindowMaximized` (the max-glyph resync pattern: re-query on
+window resize). Verified: 232 dotnet + 32 vitest green; a live test-harness incident became a
+rule — OptimizedForm's OLE drag-drop registration requires STA, and on xunit's MTA workers the
+failure is a BLOCKING WinForms exception dialog, not a red test (tests now run bodies on a
+dedicated STA thread; recorded in `windows-dev-gotchas`). WinForms + WebView2 baselines promoted
+(additions only); `verify` PASSED. The frameless visuals + native drag/resize loops are the
+P4.6 sample e2e's subject.
+
+### 2026-07-30 — P4 increment 1: scoped-container router + the standard IPC composition
+
+`Shenora.Ipc` gains `ScopedContainerRouter(+Options)` — the generalization of the primary
+desktop sibling's per-profile service router (generic-library: an app-defined scope +
+scoped-container router, no domain id). Each scope id lazily gets its own child
+`ServiceProvider` from the app's `ConfigureScope` callback (validation throws structured
+`OperationException`s), with `OnScopeCreated` for post-build init (the migrations/plugin-loading
+the source hardcoded), `MapModule<TFacade>` routing declarations, `GetScopeServices`/
+`InvalidateScope`/`ActiveScopes` (the sweep seam replacing the source's hardcoded
+close-all-windows walk), and full disposal. Deliberate fixes over the source: single-flight
+creation (`Lazy` per id — the source's bare `GetOrAdd` could build two providers under a
+first-request race and leak one undisposed; failed creations don't poison the cache),
+exceptions flow to the pipeline's error mapping instead of a leaking local catch, and a scoped
+module called without a scope answers a structured `SCOPE_REQUIRED` (the source's equivalent
+check was unreachable through its own wiring — why its client grew a hand-rolled guard).
+Composition helpers formalize the sample's proven loop: `AddModuleFacade<TFacade>` +
+`MapRegisteredModules` + `AddMessageDispatcher` (the §5 order encoded: error handler → app
+middleware → DI-registered facades); the sample now composes through them. Verified: 216 tests
+green (+15: routing matrix, `SCOPE_REQUIRED`, caching + single-flight under concurrency,
+failed-creation retry, half-built-scope disposal, invalidate/dispose, structured validation
+errors end-to-end, composition ordering); Ipc baseline promoted (additions only); `verify`
+PASSED.
+
 ### 2026-07-30 — P3 increment 5: the IPC round-trip proven live (sample + e2e) — P3 closed
 
 The sample apps become the IPC reference composition and the phase's proof. Desktop:
@@ -283,14 +454,12 @@ the live round-trip e2e. Carried forward on purpose:
   assets vs the no-cache HTML policy) → lands with the P6 adoption docs, where a real consumer
   exercises it. Drop-zone hook + window-command helpers were always P4 surface.
 
-### P4 — Modules + native services (brief Phase 4)
+### P4 — Modules + native services (brief Phase 4) — COMPLETE
 
-- `IShenoraModule` registration (services + IPC handlers + lifecycle hooks); scoped-container
-  router seam (generalized from the profile router).
-- Window manager + frontend window commands (frameless-chrome option, minimize/maximize/close/
-  drag/resize routes); secondary windows with `IWindowGeometryStore`.
-- STA file/folder/save dialogs, clipboard, shell open/reveal, drag-drop overlay manager +
-  `useDropZone`, single-instance surface, tray icon support.
+Everything landed (increments 1–6 + phase review, see Done): scoped-container router + the
+standard IPC composition, frameless chrome + frontend window commands, the native services
+(dialogs/shell/clipboard/interaction), drag-drop zones + `useDropZone` (+ the P2.3b DPI tail),
+secondary windows + tray, and the live sample/e2e proof.
 
 ### P5 — Auxiliary browser sessions (`Shenora.WebView2.Sessions`, D14)
 

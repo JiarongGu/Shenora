@@ -28,13 +28,6 @@ Pull the next item when between tasks. When an item is DONE: record it in `docs/
   workflow with `draft=true` against test feeds (or `--skip-duplicate` into a throwaway version)
   to validate OIDC config; document the nuget.org/npmjs.com trusted-publisher setup steps taken.
 
-### P4 carry-overs from P2 (land with the components that need them)
-
-- [ ] **P2.3b — DPI tail**: `OnDpiChanged` handling and the CSS-px→physical-px conversion used
-  by overlay positioning (drop zones, login windows — lands with those P4 components). — The
-  window-state stack + `DpiHelper` core DONE in increment 1 (logical store/physical restore,
-  pure conversions, off-screen recovery, `IWindowStateStore` seam).
-
 ### Standing
 
 - [ ] Keep `docs/ARCHITECTURE.md` + `docs/README.md` inventory in sync as pieces land.

@@ -28,6 +28,7 @@ Shenora.Ipc.IpcErrorCodes
   System.String InvalidPayloadValue
   System.String MissingPayloadValue
   System.String NoHandler
+  System.String ScopeRequired
   System.String UnknownError
 Shenora.Ipc.IpcJson
   System.String Serialize[T](T)
@@ -101,6 +102,10 @@ Shenora.Ipc.IpcResponse
   Void set_Error(Shenora.Ipc.IpcError)
   Void set_Id(System.String)
   Void set_Success(Boolean)
+Shenora.Ipc.IpcServiceCollectionExtensions
+  Microsoft.Extensions.DependencyInjection.IServiceCollection AddMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection, System.Action`2[System.IServiceProvider,Shenora.Ipc.MessageDispatcher])
+  Microsoft.Extensions.DependencyInjection.IServiceCollection AddModuleFacade[TFacade](Microsoft.Extensions.DependencyInjection.IServiceCollection)
+  Shenora.Ipc.MessageDispatcher MapRegisteredModules(Shenora.Ipc.MessageDispatcher, System.IServiceProvider)
 Shenora.Ipc.MessageDispatcher
   Shenora.Ipc.MessageDispatcher MapModule(Shenora.Ipc.IModuleFacade)
   Shenora.Ipc.MessageDispatcher MapModule(System.String, System.Action`1[Shenora.Ipc.ModuleRouteBuilder])
@@ -133,3 +138,23 @@ Shenora.Ipc.OperationException
 Shenora.Ipc.PayloadHelper
   T GetOptionalValue[T](System.Nullable`1[System.Text.Json.JsonElement], System.String)
   T GetRequiredValue[T](System.Nullable`1[System.Text.Json.JsonElement], System.String)
+Shenora.Ipc.ScopedContainerRouter
+  Boolean IsScopedModule(System.String)
+  Shenora.Ipc.ScopedContainerRouter MapModule[TFacade](System.String)
+  System.Collections.Generic.IReadOnlyCollection`1[System.String] ActiveScopes
+  System.Collections.Generic.IReadOnlyCollection`1[System.String] get_ActiveScopes()
+  System.IServiceProvider GetScopeServices(System.String)
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] HandleAsync(Shenora.Ipc.IpcRequest, System.Func`1[System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
+  Void .ctor(Shenora.Ipc.ScopedContainerRouterOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.Ipc.ScopedContainerRouter])
+  Void Dispose()
+  Void InvalidateScope(System.String)
+Shenora.Ipc.ScopedContainerRouterExtensions
+  Shenora.Ipc.MessageDispatcher UseScopedRouter(Shenora.Ipc.MessageDispatcher, Shenora.Ipc.ScopedContainerRouter)
+Shenora.Ipc.ScopedContainerRouterOptions
+  System.Action`2[System.String,Microsoft.Extensions.DependencyInjection.IServiceCollection] ConfigureScope
+  System.Action`2[System.String,Microsoft.Extensions.DependencyInjection.IServiceCollection] get_ConfigureScope()
+  System.Action`2[System.String,System.IServiceProvider] OnScopeCreated
+  System.Action`2[System.String,System.IServiceProvider] get_OnScopeCreated()
+  Void .ctor()
+  Void set_ConfigureScope(System.Action`2[System.String,Microsoft.Extensions.DependencyInjection.IServiceCollection])
+  Void set_OnScopeCreated(System.Action`2[System.String,System.IServiceProvider])

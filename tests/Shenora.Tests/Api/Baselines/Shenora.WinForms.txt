@@ -1,3 +1,9 @@
+Shenora.WinForms.ClipboardService
+  System.Threading.Tasks.Task SetImageFromFileAsync(System.String)
+  System.Threading.Tasks.Task SetTextAsync(System.String)
+  System.Threading.Tasks.Task`1[System.Boolean] TrySaveImageToFileAsync(System.String)
+  System.Threading.Tasks.Task`1[System.String] GetTextAsync()
+  Void .ctor()
 Shenora.WinForms.DpiHelper
   Double BaseDpi
   Double ScaleFromDeviceDpi(Int32)
@@ -6,6 +12,102 @@ Shenora.WinForms.DpiHelper
   Int32 ScalePixels(Int32)
   System.Drawing.Point ScalePoint(Int32, Int32)
   System.Drawing.Size ScaleSize(Int32, Int32)
+Shenora.WinForms.FileDialogFilter
+  System.Collections.Generic.IReadOnlyList`1[System.String] Extensions
+  System.Collections.Generic.IReadOnlyList`1[System.String] get_Extensions()
+  System.String Name
+  System.String get_Name()
+  Void .ctor()
+  Void set_Extensions(System.Collections.Generic.IReadOnlyList`1[System.String])
+  Void set_Name(System.String)
+Shenora.WinForms.FileDialogOptions
+  Boolean AllowFileSelection
+  Boolean OverwritePrompt
+  Boolean get_AllowFileSelection()
+  Boolean get_OverwritePrompt()
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WinForms.FileDialogFilter] Filters
+  System.Collections.Generic.IReadOnlyList`1[Shenora.WinForms.FileDialogFilter] get_Filters()
+  System.Nullable`1[System.Boolean] CheckFileExists
+  System.Nullable`1[System.Boolean] CheckPathExists
+  System.Nullable`1[System.Boolean] ValidateNames
+  System.Nullable`1[System.Boolean] get_CheckFileExists()
+  System.Nullable`1[System.Boolean] get_CheckPathExists()
+  System.Nullable`1[System.Boolean] get_ValidateNames()
+  System.String DefaultExtension
+  System.String DefaultPath
+  System.String FileName
+  System.String RememberPathKey
+  System.String Title
+  System.String get_DefaultExtension()
+  System.String get_DefaultPath()
+  System.String get_FileName()
+  System.String get_RememberPathKey()
+  System.String get_Title()
+  Void .ctor()
+  Void set_AllowFileSelection(Boolean)
+  Void set_CheckFileExists(System.Nullable`1[System.Boolean])
+  Void set_CheckPathExists(System.Nullable`1[System.Boolean])
+  Void set_DefaultExtension(System.String)
+  Void set_DefaultPath(System.String)
+  Void set_FileName(System.String)
+  Void set_Filters(System.Collections.Generic.IReadOnlyList`1[Shenora.WinForms.FileDialogFilter])
+  Void set_OverwritePrompt(Boolean)
+  Void set_RememberPathKey(System.String)
+  Void set_Title(System.String)
+  Void set_ValidateNames(System.Nullable`1[System.Boolean])
+Shenora.WinForms.FileDialogResult
+  Boolean Success
+  Boolean get_Success()
+  Shenora.WinForms.FileDialogResult Cancelled()
+  Shenora.WinForms.FileDialogResult Selected(System.String)
+  System.String FilePath
+  System.String get_FilePath()
+  Void .ctor()
+  Void set_FilePath(System.String)
+  Void set_Success(Boolean)
+Shenora.WinForms.FileDialogs
+  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFileAsync(Shenora.WinForms.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFolderAsync(Shenora.WinForms.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] SaveFileAsync(Shenora.WinForms.FileDialogOptions)
+  Void .ctor(Shenora.WinForms.FileDialogsOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WinForms.FileDialogs])
+Shenora.WinForms.FileDialogsOptions
+  Shenora.WinForms.IFileDialogPathStore PathStore
+  Shenora.WinForms.IFileDialogPathStore get_PathStore()
+  Shenora.WinForms.IFormInteraction Interaction
+  Shenora.WinForms.IFormInteraction get_Interaction()
+  Void .ctor()
+  Void set_Interaction(Shenora.WinForms.IFormInteraction)
+  Void set_PathStore(Shenora.WinForms.IFileDialogPathStore)
+Shenora.WinForms.FormInteraction
+  IntPtr GetMainFormHandle()
+  System.Windows.Forms.Form GetMainForm()
+  Void .ctor()
+  Void BlockInteraction()
+  Void SetMainForm(System.Windows.Forms.Form)
+  Void UnblockInteraction()
+Shenora.WinForms.IClipboardService
+  System.Threading.Tasks.Task SetImageFromFileAsync(System.String)
+  System.Threading.Tasks.Task SetTextAsync(System.String)
+  System.Threading.Tasks.Task`1[System.Boolean] TrySaveImageToFileAsync(System.String)
+  System.Threading.Tasks.Task`1[System.String] GetTextAsync()
+Shenora.WinForms.IFileDialogPathStore
+  System.Threading.Tasks.Task SavePathAsync(System.String, System.String)
+  System.Threading.Tasks.Task`1[System.String] GetPathAsync(System.String)
+Shenora.WinForms.IFileDialogs
+  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFileAsync(Shenora.WinForms.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] OpenFolderAsync(Shenora.WinForms.FileDialogOptions)
+  System.Threading.Tasks.Task`1[Shenora.WinForms.FileDialogResult] SaveFileAsync(Shenora.WinForms.FileDialogOptions)
+Shenora.WinForms.IFormInteraction
+  IntPtr GetMainFormHandle()
+  System.Windows.Forms.Form GetMainForm()
+  Void BlockInteraction()
+  Void SetMainForm(System.Windows.Forms.Form)
+  Void UnblockInteraction()
+Shenora.WinForms.IShellLauncher
+  Void LaunchProcess(System.String, System.String, System.String)
+  Void OpenDirectory(System.String)
+  Void OpenUrl(System.String)
+  Void RevealInExplorer(System.String)
 Shenora.WinForms.IWindowStateStore
   Shenora.WinForms.WindowState Load()
   Void Save(Shenora.WinForms.WindowState)
@@ -13,6 +115,66 @@ Shenora.WinForms.JsonFileWindowStateStore
   Shenora.WinForms.WindowState Load()
   Void .ctor(System.String)
   Void Save(Shenora.WinForms.WindowState)
+Shenora.WinForms.OptimizedForm
+  Boolean IsAppMaximized
+  Boolean get_IsAppMaximized()
+  System.EventHandler MaximizedChanged
+  System.Func`2[System.Int32,System.Boolean] WndProcHook
+  System.Func`2[System.Int32,System.Boolean] get_WndProcHook()
+  Void .ctor()
+  Void .ctor(Shenora.WinForms.OptimizedFormOptions)
+  Void ApplyChromeTheme(System.Drawing.Color, System.Nullable`1[System.Drawing.Color], Boolean)
+  Void Maximize()
+  Void RestoreFromMax()
+  Void ToggleMaximize()
+  Void add_MaximizedChanged(System.EventHandler)
+  Void remove_MaximizedChanged(System.EventHandler)
+  Void set_WndProcHook(System.Func`2[System.Int32,System.Boolean])
+Shenora.WinForms.OptimizedFormOptions
+  Boolean FramelessChrome
+  Boolean ImmersiveDarkMode
+  Boolean RoundedCorners
+  Boolean get_FramelessChrome()
+  Boolean get_ImmersiveDarkMode()
+  Boolean get_RoundedCorners()
+  Int32 TopResizeBorder
+  Int32 get_TopResizeBorder()
+  System.Nullable`1[System.Drawing.Color] BackColor
+  System.Nullable`1[System.Drawing.Color] DwmBorderColor
+  System.Nullable`1[System.Drawing.Color] get_BackColor()
+  System.Nullable`1[System.Drawing.Color] get_DwmBorderColor()
+  Void .ctor()
+  Void set_BackColor(System.Nullable`1[System.Drawing.Color])
+  Void set_DwmBorderColor(System.Nullable`1[System.Drawing.Color])
+  Void set_FramelessChrome(Boolean)
+  Void set_ImmersiveDarkMode(Boolean)
+  Void set_RoundedCorners(Boolean)
+  Void set_TopResizeBorder(Int32)
+Shenora.WinForms.SecondaryWindowOptions
+  Shenora.WinForms.IWindowStateStore StateStore
+  Shenora.WinForms.IWindowStateStore get_StateStore()
+  Shenora.WinForms.WindowStateOptions StateOptions
+  Shenora.WinForms.WindowStateOptions get_StateOptions()
+  System.Func`1[System.Windows.Forms.Form] CreateForm
+  System.Func`1[System.Windows.Forms.Form] get_CreateForm()
+  Void .ctor()
+  Void set_CreateForm(System.Func`1[System.Windows.Forms.Form])
+  Void set_StateOptions(Shenora.WinForms.WindowStateOptions)
+  Void set_StateStore(Shenora.WinForms.IWindowStateStore)
+Shenora.WinForms.SecondaryWindows
+  Boolean HasWindow(System.String)
+  Boolean Open(System.String, Shenora.WinForms.SecondaryWindowOptions)
+  Void .ctor(Microsoft.Extensions.Logging.ILogger`1[Shenora.WinForms.SecondaryWindows])
+  Void Activate(System.String)
+  Void Close(System.String)
+  Void CloseAll()
+  Void Dispose()
+Shenora.WinForms.ShellLauncher
+  Void .ctor()
+  Void LaunchProcess(System.String, System.String, System.String)
+  Void OpenDirectory(System.String)
+  Void OpenUrl(System.String)
+  Void RevealInExplorer(System.String)
 Shenora.WinForms.SingleInstanceGuard
   Boolean TryAcquire()
   Boolean TryAcquire(System.TimeSpan)
@@ -63,6 +225,59 @@ Shenora.WinForms.SplashPanelOptions
   Void set_BarHeight(Int32)
   Void set_BarMaxWidth(Int32)
   Void set_BarWidthFraction(Double)
+Shenora.WinForms.TrayIcon
+  System.Windows.Forms.ContextMenuStrip Menu
+  System.Windows.Forms.ContextMenuStrip get_Menu()
+  Void .ctor(Shenora.WinForms.TrayIconOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WinForms.TrayIcon])
+  Void Dispose()
+  Void ExitApplication()
+  Void ShowWindow()
+Shenora.WinForms.TrayIconOptions
+  Boolean CloseToTray
+  Boolean get_CloseToTray()
+  Shenora.WinForms.TrayMenuColors MenuColors
+  Shenora.WinForms.TrayMenuColors get_MenuColors()
+  System.Action`1[System.Windows.Forms.ContextMenuStrip] ConfigureMenu
+  System.Action`1[System.Windows.Forms.ContextMenuStrip] get_ConfigureMenu()
+  System.Drawing.Icon Icon
+  System.Drawing.Icon get_Icon()
+  System.String ExitMenuItemText
+  System.String OpenMenuItemText
+  System.String Text
+  System.String get_ExitMenuItemText()
+  System.String get_OpenMenuItemText()
+  System.String get_Text()
+  System.Windows.Forms.Form Window
+  System.Windows.Forms.Form get_Window()
+  Void .ctor()
+  Void set_CloseToTray(Boolean)
+  Void set_ConfigureMenu(System.Action`1[System.Windows.Forms.ContextMenuStrip])
+  Void set_ExitMenuItemText(System.String)
+  Void set_Icon(System.Drawing.Icon)
+  Void set_MenuColors(Shenora.WinForms.TrayMenuColors)
+  Void set_OpenMenuItemText(System.String)
+  Void set_Text(System.String)
+  Void set_Window(System.Windows.Forms.Form)
+Shenora.WinForms.TrayMenuColors
+  System.Drawing.Color Accent
+  System.Drawing.Color Border
+  System.Drawing.Color DisabledText
+  System.Drawing.Color Hover
+  System.Drawing.Color Surface
+  System.Drawing.Color Text
+  System.Drawing.Color get_Accent()
+  System.Drawing.Color get_Border()
+  System.Drawing.Color get_DisabledText()
+  System.Drawing.Color get_Hover()
+  System.Drawing.Color get_Surface()
+  System.Drawing.Color get_Text()
+  Void .ctor()
+  Void set_Accent(System.Drawing.Color)
+  Void set_Border(System.Drawing.Color)
+  Void set_DisabledText(System.Drawing.Color)
+  Void set_Hover(System.Drawing.Color)
+  Void set_Surface(System.Drawing.Color)
+  Void set_Text(System.Drawing.Color)
 Shenora.WinForms.UnhandledExceptionReport
   Boolean Equals(Shenora.WinForms.UnhandledExceptionReport)
   Boolean Equals(System.Object)

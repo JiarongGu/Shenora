@@ -26,6 +26,13 @@ export {
   type InvokeOptions,
 } from './bridge';
 export { BaseModuleService } from './moduleService';
+export { WindowCommands, useWindowMaximized, type WindowResizeEdge } from './windowCommands';
+export {
+  useDropZone,
+  DROP_ZONE_MODULE,
+  type DropZoneFileDrop,
+  type UseDropZoneOptions,
+} from './useDropZone';
 export { useShenora, useShenoraEvent, useShenoraQuery, type ShenoraQueryResult } from './hooks';
 export {
   installDevInterceptor,

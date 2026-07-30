@@ -61,6 +61,47 @@ queue (buffering starts at construction; delivery starts at the client's `SHENOR
 handshake, which also fires `OnClientReady` per occurrence), optional `IEventBus`
 wildcard-forwarding, `SendNotification` for direct pushes.
 
+P4.1 — `Shenora.Ipc` gains the scoped-container router and the standard IPC composition:
+`ScopedContainerRouter(+Options)` (per-scope child service containers, single-flight creation,
+`MapModule<TFacade>` routing declarations, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`,
+structured `SCOPE_REQUIRED` for scoped modules called without a scope — `IpcErrorCodes.ScopeRequired`)
+with `UseScopedRouter`, plus `AddModuleFacade<TFacade>`/`MapRegisteredModules`/
+`AddMessageDispatcher` (the §5 pipeline order encoded: error handler → app middleware →
+DI-registered facades).
+
+P4.2 — the window manager: `Shenora.WinForms` `OptimizedForm(+Options)` (double-buffered base +
+`WndProcHook` seam; optional frameless custom chrome — WM_NCCALCSIZE top-only caption removal,
+manual work-area maximize with `IsAppMaximized`/`MaximizedChanged`, DWM dark border/rounded
+corners, `ApplyChromeTheme` runtime resync — all colors parameterized); `Shenora.WebView2`
+`WindowCommandFacade(+Options)` (module `WINDOW`: MINIMIZE/TOGGLE_MAXIMIZE/CLOSE/IS_MAXIMIZED/
+START_DRAG/START_RESIZE + optional SET_THEME; delegate seams for the frameless paths);
+`@shenora/react` `WindowCommands` service + `useWindowMaximized` hook.
+
+P4.3 — the native desktop services in `Shenora.WinForms`, all TryAdd-registered by
+`UseWinForms`: `IFormInteraction`/`FormInteraction` (main-window registry — the runner sets it —
+plus nested modal blocking; handle read answers `Zero` before creation instead of creating it on
+the wrong thread), `IFileDialogs`/`FileDialogs(+Options)` + `FileDialogOptions`/`Filter`/`Result`
++ the `IFileDialogPathStore` memory seam (STA-thread open/folder/save dialogs, owner-handle
+z-order, per-key last-directory memory; failures throw instead of the source's wire-bound error
+strings), `IShellLauncher`/`ShellLauncher` (reveal-in-Explorer, open directory, http/https-only
+`OpenUrl`, `LaunchProcess` — the Windows 11 handle-leak/orphan-process fixes kept),
+`IClipboardService`/`ClipboardService` (STA-marshalled text + image-file operations).
+
+P4.4 — the drag-drop zone stack: `Shenora.WebView2` `DropZoneManager(+Options)` +
+`DropZoneFacade` (module `DROP_ZONE`: transparent overlays synced to page elements capture real
+OS file paths — including background drags; non-blocking UI marshalling, form-activation sync,
+DOM occlusion checks; per-monitor `DeviceDpi` CSS→physical conversion + `DpiChanged` re-apply
+from stored CSS rects — the P2.3b DPI tail; events emitted on `IEventBus`, forwarded by the
+bridge); `@shenora/react` `useDropZone` (bounds auto-sync via observers, drag CSS feedback —
+unstyled/headless, real-path `onDrop`, in-flight-REGISTER and fast-unmount teardown guards).
+
+P4.5 — `Shenora.WinForms` gains `SecondaryWindows` + `SecondaryWindowOptions` (named windows,
+each on its own STA thread with its own pump; geometry persistence reuses the window-state
+stack per name via `IWindowStateStore`; open-on-existing activates; non-blocking close
+discipline) and `TrayIcon(+Options)`/`TrayMenuColors` (NotifyIcon + Open/app-items/Exit menu,
+double-click restore, close-to-tray, optional app-colored menu renderer — colors are the app's,
+headless).
+
 P3.4 — `@shenora/react` becomes the real client: wire-contract types mirroring `Shenora.Ipc`
 (`IpcRequest`/`IpcResponse`/`IpcError`/`IpcNotification`/`IpcNotificationBatch`/`EventMessage`
 + `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError` (structured
