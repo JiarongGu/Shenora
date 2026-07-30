@@ -111,6 +111,9 @@ landing order (oldest first) because they narrate one version being built.
   type compiled and every payload collapsed to `unknown`: the typed-service feature checked nothing.
   Drop `extends Record<string, unknown>` from your request interfaces — with it, you keep the old
   no-checking behaviour.
+- **The npm tarball now ships its LICENSE**, and `"./package.json"` is exported (P5.5 H6). The manifest
+  declared MIT while shipping no license text; `dev.mjs doctor` now checks the package's copy byte-matches
+  the repository root's, so the two cannot drift.
 - `IpcErrorCodes.scopeRequired` (`SCOPE_REQUIRED`) is now exported from `@shenora/react`; it was emitted
   by the host but missing from the client, so a scoped app had to hard-code the string. A new
   `ClientOnlyIpcErrorCodes` export names the codes that exist only client-side (`TIMEOUT`,
@@ -137,6 +140,15 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Breaking
 
+- **`DpiHelper.ScalePixels`, `ScaleSize` and `ScalePoint` are removed** (P5.5 H6). They had no callers,
+  and they were worse than unused: each baked in the PRIMARY monitor's scale, so any code that adopted
+  them would silently mis-scale on a secondary monitor. Use `DpiHelper.Scale` with the DPI you mean —
+  `ScaleFromDeviceDpi(control.DeviceDpi)` for anything attached to a control, `SystemScale()` only when no
+  control exists yet.
+- **`@shenora/react` no longer augments the global `Window` type** (P5.5 H6). The package shipped
+  `declare global { interface Window { chrome?: … } }` in its `.d.ts`, which collides with `@types/chrome`
+  in a consumer's program as an unfixable TS2717 in a file they do not own. A library must not claim
+  global names; the transport now reads `window` through a local interface. No runtime change.
 - **The dispatcher's composition helpers moved from `MessageDispatcher` onto `IMessageDispatcher`**
   (P5.5 H6). `Use(MessageMiddleware)` — the single primitive all of them already delegated to — is now an
   interface member, and `UseModule`/`UseRoute`/`UseLogging`/`UseErrorHandler`/`MapRoute`/`MapModule`/

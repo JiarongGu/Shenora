@@ -5,11 +5,21 @@ interface ChromeWebView {
   removeEventListener(type: 'message', listener: (event: { data: string }) => void): void;
 }
 
-declare global {
-  interface Window {
-    chrome?: { webview?: ChromeWebView };
-  }
+/**
+ * The shape we need off `window`, read through a local cast rather than a global augmentation.
+ *
+ * `declare global { interface Window { chrome?: … } }` is what this used to do, and shipping it in a
+ * `.d.ts` is hostile to consumers (P5.5 H6): any app that also has `@types/chrome` in its program gets
+ * TS2717 ("subsequent property declarations must have the same type") from a declaration file it does not
+ * own and cannot edit. A library must not claim global names — the augmentation bought nothing here
+ * beyond two casts.
+ */
+interface WebViewWindow {
+  chrome?: { webview?: ChromeWebView };
 }
+
+const webViewWindow = (): WebViewWindow | undefined =>
+  typeof window === 'undefined' ? undefined : (window as unknown as WebViewWindow);
 
 /**
  * A message channel the bridge speaks over — the transport-pluggable seam (design D16): WebView2
@@ -28,13 +38,13 @@ export interface ShenoraTransport {
  * In a plain browser this is false — callers should fall back to browser-only behavior.
  */
 export function isShenoraAvailable(): boolean {
-  return typeof window !== 'undefined' && !!window.chrome?.webview;
+  return !!webViewWindow()?.chrome?.webview;
 }
 
 /** The WebView2 postMessage transport, or null outside a WebView2 host. */
 export function createWebView2Transport(): ShenoraTransport | null {
-  if (!isShenoraAvailable()) return null;
-  const webview = window.chrome!.webview!;
+  const webview = webViewWindow()?.chrome?.webview;
+  if (!webview) return null;
   return {
     post: (message) => webview.postMessage(message),
     subscribe: (listener) => {

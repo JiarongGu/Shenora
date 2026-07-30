@@ -6,12 +6,9 @@ sealed class Shenora.WinForms.ClipboardService : Shenora.Core.IClipboardService
   public System.Threading.Tasks.Task<string> GetTextAsync()
 static class Shenora.WinForms.DpiHelper
   public const double BaseDpi = 96
-  public static System.Drawing.Point ScalePoint(int x, int y)
-  public static System.Drawing.Size ScaleSize(int width, int height)
   public static double ScaleFromDeviceDpi(int deviceDpi)
   public static double SystemScale()
   public static int Scale(int logicalPixels, double scale)
-  public static int ScalePixels(int logicalPixels)
 sealed class Shenora.WinForms.FileDialogs : Shenora.Core.IFileDialogs
   public .ctor(Shenora.WinForms.FileDialogsOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.WinForms.FileDialogs>? logger = null)
   public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)

@@ -78,7 +78,25 @@ function doctor({ fix = false } = {}) {
     } else fail(`README.md status headline v${headline[1]} != VersionPrefix ${config.version}`);
   }
 
-  if (problems === 0) console.log(`  ok  version ${config.version} consistent (props · npm · README)`);
+  // The npm tarball must SHIP the license text, not just declare MIT in the manifest (P5.5 H6). The
+  // package needs its own copy because npm packs only files under the package directory — so the root
+  // LICENSE is the source and this is checked against it, rather than trusting two files to stay equal.
+  const rootLicense = path.join(repo, 'LICENSE');
+  const npmLicense = path.join(npmDirAbs, 'LICENSE');
+  if (fs.existsSync(rootLicense)) {
+    const expected = fs.readFileSync(rootLicense, 'utf8');
+    const actual = fs.existsSync(npmLicense) ? fs.readFileSync(npmLicense, 'utf8') : null;
+    if (actual !== expected) {
+      if (fix) {
+        // readFileSync/writeFileSync, never fs.cpSync — it hard-crashes Node 24 on this machine
+        // (see .claude/rules/windows-dev-gotchas.md).
+        fs.writeFileSync(npmLicense, expected);
+        console.log(`  fixed ${config.npmDir}/LICENSE (copied from the root LICENSE)`);
+      } else fail(`${config.npmDir}/LICENSE ${actual === null ? 'is missing' : 'differs from'} the root LICENSE`);
+    }
+  }
+
+  if (problems === 0) console.log(`  ok  version ${config.version} consistent (props · npm · README · LICENSE)`);
   return problems === 0;
 }
 

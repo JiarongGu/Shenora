@@ -655,14 +655,23 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   - `BaseFacade`'s lone `ConfigureAwait(false)` REMOVED: it was the only one in the dispatch path and it
     contradicted the documented context-preserving model, discarding the very context a WINDOW facade
     needs. It survived only because every in-repo facade marshals internally anyway.
-  **STILL OPEN (the surface-trim half):** `DpiHelper.ScalePixels`/`ScaleSize`/`ScalePoint` (zero
-  callers); `SessionBrowser`'s public statics → internal, WITH the H2-deferred `CancellationToken`;
-  `CoBrowseSession.DispatchInputAsync`/`ReadHotspotsAsync` cancellation tokens (H9 reshapes both — do it
-  there); bridging Sessions' `LoginErrorCodes` into the IPC contract; rejecting duplicate `ModuleName`s
-  in the EAGER `MapRegisteredModules` (the lazy path already does); the npm items (drop
-  `declare global { Window.chrome }`, `EventMessage<T>` as an alias of `IpcNotification<T>`,
-  `"./package.json"` in `exports`, a LICENSE in the tarball); and the form-dependent-facade registration
-  seam. **NOTE `IWebViewResourceProvider.Exists` must NOT be removed** — H3 gave it a real consumer (the
+  **The TRIM half is now done too (2026-07-30):**
+  - `DpiHelper.ScalePixels`/`ScaleSize`/`ScalePoint` REMOVED (zero callers). Worth noting WHY they were
+    worse than merely unused: each hardcoded the PRIMARY monitor's scale, so anything that adopted them
+    would silently mis-scale on a secondary monitor. `Scale` + the DPI you actually mean replaces them,
+    and the consumer their own docs named (the drop-zone overlay) already converts from the control's
+    `DeviceDpi`, which is the correct source.
+  - npm: the `declare global { Window.chrome }` augmentation is GONE (it collided with `@types/chrome` as
+    an unfixable TS2717 in a `.d.ts` the consumer doesn't own — a library must not claim global names; a
+    local interface + one cast replaces it); `"./package.json"` added to `exports`; and the tarball now
+    ships the LICENSE, with `doctor` checking it byte-matches the root one (verified by breaking it).
+  **STILL OPEN, all deliberately deferred:** `SessionBrowser`'s public statics → internal WITH the
+  H2-deferred `CancellationToken`; `CoBrowseSession`'s two token-less async members (H9 reshapes both
+  signatures — doing it here would mean changing them twice); bridging Sessions' `LoginErrorCodes` into
+  the IPC contract (same reason — H9 owns that vocabulary); duplicate `ModuleName` rejection in the EAGER
+  `MapRegisteredModules` (the lazy path, which is what `AddMessageDispatcher` uses, already rejects them);
+  and `EventMessage<T>` as an alias of `IpcNotification<T>`.
+  **NOTE `IWebViewResourceProvider.Exists` must NOT be removed** — H3 gave it a real consumer (the
   startup bundle sanity check), which is the option the review offered as the alternative.
   Original list: `DpiHelper.ScalePixels`/
   `ScaleSize`/`ScalePoint` have ZERO callers and their documented consumer (the drop-zone overlay)

@@ -9,9 +9,16 @@ namespace Shenora.WinForms;
 /// outer size/position set in code is DEVICE px and is NOT auto-scaled from a logical baseline —
 /// so window size/position always need an explicit logical↔physical conversion (see
 /// <see cref="WindowStateManager"/>, which stores logical and restores physical).
-/// <see cref="ScalePixels"/>/<see cref="ScaleSize"/>/<see cref="ScalePoint"/> are for internal
-/// physical-pixel elements (overlay borders, hit areas) — NOT for laying out managed controls,
-/// and NOT for window bounds (use the window-state conversion for those).
+/// <para>
+/// The surface is deliberately small: <see cref="SystemScale"/> (primary monitor, usable before any
+/// form exists), <see cref="ScaleFromDeviceDpi"/> (a specific control's DPI — the right one when a form
+/// may sit on a secondary monitor), and the pure <see cref="Scale"/>. <c>ScalePixels</c>/<c>ScaleSize</c>/
+/// <c>ScalePoint</c> were removed in P5.5 H6: they had ZERO callers, and the consumer their own docs
+/// named — the drop-zone overlay — lives in <c>Shenora.WebView2</c> and does its conversion from the
+/// control's <c>DeviceDpi</c> instead, which is the correct source. They also baked in the WRONG default
+/// by being convenient: they used the PRIMARY monitor's scale, so anything that adopted them would
+/// silently mis-scale on a secondary monitor. Compose <see cref="Scale"/> with the DPI you actually mean.
+/// </para>
 /// </summary>
 public static class DpiHelper
 {
@@ -56,23 +63,10 @@ public static class DpiHelper
     /// </summary>
     public static double ScaleFromDeviceDpi(int deviceDpi) => deviceDpi > 0 ? deviceDpi / BaseDpi : 1.0;
 
-    /// <summary>Pure scaling: logical px × scale, rounded. The unit-testable core of the helpers below.</summary>
+    /// <summary>
+    /// Pure scaling: logical px × scale, rounded. Pair it with the DPI you mean —
+    /// <see cref="ScaleFromDeviceDpi"/> for a control, <see cref="SystemScale"/> only when no control
+    /// exists yet.
+    /// </summary>
     public static int Scale(int logicalPixels, double scale) => (int)Math.Round(logicalPixels * scale);
-
-    /// <summary>Scale a pixel value by the current primary-monitor DPI (internal elements only — see class docs).</summary>
-    public static int ScalePixels(int logicalPixels) => Scale(logicalPixels, SystemScale());
-
-    /// <summary>Scale a size by the current primary-monitor DPI (internal elements only — see class docs).</summary>
-    public static Size ScaleSize(int width, int height)
-    {
-        var scale = SystemScale();
-        return new Size(Scale(width, scale), Scale(height, scale));
-    }
-
-    /// <summary>Scale a point by the current primary-monitor DPI (internal elements only — see class docs).</summary>
-    public static Point ScalePoint(int x, int y)
-    {
-        var scale = SystemScale();
-        return new Point(Scale(x, scale), Scale(y, scale));
-    }
 }
