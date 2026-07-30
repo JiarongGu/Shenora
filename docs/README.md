@@ -19,6 +19,7 @@ update the relevant entry HERE — this file is the durable index.
 | Extracting code from a sibling app | `.claude/knowledge/extraction-sources.md` (tracked, de-identified) + `local/EXTRACTION-MAP.md` (private, named) |
 | Keeping the library generic | `.claude/knowledge/generic-library.md` |
 | When did this break? | `docs/FIX-LOG.md` (use `/fix-log` to append) |
+| Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
@@ -45,6 +46,7 @@ update the relevant entry HERE — this file is the durable index.
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |
 | `FIX-LOG.md` | Notable fixes: symptom / root cause / fix / verify / commit | Append-only |
+| `ADOPTION.md` | The staged adoption guide for an existing app: order, primitive-by-primitive mapping, migration traps, and the permanent "stays yours" list | Keep in sync with the public surface |
 | `RELEASING.md` | How releases are cut and consumed pre-release | Keep in sync with reality |
 | `REVIEW-GUIDE.md` | Orientation for a whole-codebase review: invariants by area, risk hotspots, settled decisions, coverage map | Keep in sync with reality |
 | `../CHANGELOG.md` | Per-version release log (Breaking/Added/Changed/Fixed) | Append per release |

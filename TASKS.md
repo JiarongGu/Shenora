@@ -1005,7 +1005,16 @@ Known capability LIMITS, recorded rather than guessed at:
 
 #### Still to do for adoption readiness
 
-- [ ] **P6.2 — Write the adoption guide** (`docs/`): which kit primitive replaces which hand-rolled
+- [x] **P6.2 — DONE (2026-07-31): `docs/ADOPTION.md`.** Four stages ordered by risk (consume ->
+  shell primitives, which carry no IPC dependency -> the WebView2 host -> the IPC substrate), a
+  primitive-by-primitive mapping table, the migration traps that cost real debugging here, and a
+  permanent "stays yours" list. Every one of the 48 kit names it promises was checked against the API
+  baselines and the client barrel — a guide that names a member the library lacks is worse than none.
+  Writing it exposed NO further capability gap: the three the earlier plan called open questions were
+  already covered (serving via `FolderMappings`, paths via `ShenoraPaths`, window state via
+  `WindowStateManager`), and the one real gap (dynamic module claim/query) was closed first. Original
+  note follows.
+- [x] ~~P6.2 original~~ Write the adoption guide (`docs/`): which kit primitive replaces which hand-rolled
   piece, in the order an app should adopt them (shell primitives first — they carry no IPC
   dependency), what stays the app's own, and the migration notes for each. This is the artefact the
   sibling's session works from, so it must stand alone without this conversation.
