@@ -1,4 +1,5 @@
 using Shenora.Core;
+using Shenora.Ipc;
 using Shenora.WebView2;
 using Shenora.WinForms;
 using Microsoft.Extensions.DependencyInjection;
@@ -68,6 +69,16 @@ internal static class Program
                     Version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
                 },
             },
+        });
+
+        // The IPC pipeline — facades live in DI, the dispatcher maps each at composition time
+        // (error handler FIRST so it wraps everything after it).
+        builder.Services.AddSingleton<IModuleFacade, SampleFacade>();
+        builder.Services.AddSingleton<IMessageDispatcher>(sp =>
+        {
+            var dispatcher = new MessageDispatcher().UseErrorHandler();
+            foreach (var facade in sp.GetServices<IModuleFacade>()) dispatcher.MapModule(facade);
+            return dispatcher;
         });
 
         builder.Services.AddSingleton<MainForm>();

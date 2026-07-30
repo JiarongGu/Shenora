@@ -1,3 +1,5 @@
+using Shenora.Core;
+using Shenora.Ipc;
 using Shenora.WebView2;
 using Shenora.WinForms;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -6,8 +8,9 @@ namespace Shenora.Sample.Desktop;
 
 /// <summary>
 /// The sample main window: WebView2 filling the form, a <see cref="SplashPanel"/> on top until
-/// the first navigation completes, and the runtime presence check surfaced as an actionable
-/// prompt (the gap every source app shipped with).
+/// the first navigation completes, the runtime presence check surfaced as an actionable prompt
+/// (the gap every source app shipped with), and the IPC bridge wired in its intended order —
+/// construct before init (event buffering), attach after init, before navigation.
 /// </summary>
 public sealed class MainForm : Form
 {
@@ -17,8 +20,11 @@ public sealed class MainForm : Form
     private readonly WebViewHost _host;
     private readonly SplashPanel _splash;
     private readonly WebView2Control _webView;
+    private readonly WebViewIpcBridge _bridge;
+    private readonly System.Windows.Forms.Timer _tickTimer;
+    private int _tickCount;
 
-    public MainForm(WebViewHostOptions hostOptions)
+    public MainForm(WebViewHostOptions hostOptions, IMessageDispatcher dispatcher, IEventBus eventBus)
     {
         Text = "Shenora Sample";
         BackColor = Background;
@@ -29,6 +35,23 @@ public sealed class MainForm : Form
         _splash = new SplashPanel(new SplashPanelOptions { BackColor = Background });
         Controls.Add(_splash);
         _splash.BringToFront();
+
+        // Native events → React: a 1 Hz tick emitted on the app's event bus; the bridge forwards
+        // it to the page as a batched notification. Started on the client's ready handshake so
+        // the first tick is never wasted on an unsubscribed page.
+        _tickTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _tickTimer.Tick += (_, _) => _ = eventBus.EmitAsync("SAMPLE", "TICK",
+            new { Count = ++_tickCount, At = DateTimeOffset.Now.ToString("HH:mm:ss") });
+
+        // Construct the bridge BEFORE InitializeAsync — bus buffering starts here, so events
+        // emitted during the (slow) WebView2 init survive to the first post-ready batch.
+        _bridge = new WebViewIpcBridge(_webView, new WebViewIpcBridgeOptions
+        {
+            Dispatcher = dispatcher,
+            EventBus = eventBus,
+            Log = Console.WriteLine,
+            OnClientReady = _ => _tickTimer.Start(), // fires on the UI thread, per handshake
+        });
 
         _host = new WebViewHost(_webView, hostOptions);
         Load += OnLoadAsync;
@@ -50,6 +73,9 @@ public sealed class MainForm : Form
         try
         {
             await _host.InitializeAsync();
+            // Attach after init (the core must exist), BEFORE Navigate — hooking after
+            // navigation would lose the page's earliest messages.
+            _bridge.Attach();
             _webView.CoreWebView2.NavigationCompleted += (_, args) =>
             {
                 if (_splash.IsDisposed) return;
@@ -75,5 +101,17 @@ public sealed class MainForm : Form
             MessageBox.Show(ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // Stop the flush timer + detach before the WebView goes down (the source app's
+            // transport once kept posting into a torn-down WebView for the process lifetime).
+            _tickTimer.Dispose();
+            _bridge.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

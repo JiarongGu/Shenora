@@ -31,3 +31,45 @@ serving, `WebViewFolderMapping`) + `IWebViewResourceProvider`/`EmbeddedResourceP
 (lazy-with-warmup, file-fallback mode) + `WebViewDeferredScheme`.
 Dependency note: `Shenora.Core` now depends on `Microsoft.Extensions.DependencyInjection`
 (the implementation — the builder needs `BuildServiceProvider`), not only the abstractions (D17).
+
+`Shenora.Ipc` first surface (P3.1 — the transport-neutral wire contract, design contract §5 +
+D11/D16): `IpcRequest`/`IpcResponse`/`IpcError`/`IpcNotification`/`IpcNotificationBatch`
+envelopes (names pinned with `JsonPropertyName`; optional app-defined `scope` field),
+`IpcCategories` (lowercase `ipc`/`notification` discriminators), `OperationException`
+(code + parameters, i18n-ready, `ToError()`), `IpcErrorCodes` (framework-reserved codes),
+`PayloadHelper` (structured missing/invalid errors; JSON null == absent), and `IpcJson`
+(frozen camelCase/camelCase-enums/null-omitting wire serializer defaults). Replaces the
+assembly marker.
+
+P3.2 — the dispatch pipeline and the in-process event bus. `Shenora.Ipc`:
+`IMessageDispatcher`/`MessageDispatcher` (composable middleware pipeline —
+`Use`/`UseModule`/`UseRoute`/`UseLogging`/`UseErrorHandler`/`MapRoute`/`MapModule`, incl.
+facade-object mapping — plus `DispatchAsync` for transports, never throws/never null, and
+programmatic `SendAsync`/`SendAsync<T>` sharing the same pipeline; failed typed sends rethrow
+the structured `OperationException`; unknown exceptions cross the bridge as `UNKNOWN_ERROR`
+only — details stay in the host log), `MessageMiddleware`, `ModuleRouteBuilder`,
+`IModuleFacade`/`BaseFacade` (standardized error boundary), `IpcErrorCodes.NoHandler`.
+`Shenora.Core`: `EventMessage`/`IEventBus`/`EventBus` (wildcard patterns + per-subscription
+match cache; scoped subscribers also receive global events; handler failures isolated) —
+auto-registered by `ShenoraApplicationBuilder.Build()` (`TryAdd`, replaceable).
+
+P3.3 — `Shenora.WebView2` gains `WebViewIpcBridge(+Options)`: the postMessage transport —
+incoming requests parsed and dispatched on the UI thread via async interleaving (never
+`Task.Run`-per-message), responses/notifications posted with `IsHandleCreated`-guarded
+non-blocking `BeginInvoke`, host→page pushes batched every ~50 ms through a bounded drop-oldest
+queue (buffering starts at construction; delivery starts at the client's `SHENORA`/`READY`
+handshake, which also fires `OnClientReady` per occurrence), optional `IEventBus`
+wildcard-forwarding, `SendNotification` for direct pushes.
+
+P3.4 — `@shenora/react` becomes the real client: wire-contract types mirroring `Shenora.Ipc`
+(`IpcRequest`/`IpcResponse`/`IpcError`/`IpcNotification`/`IpcNotificationBatch`/`EventMessage`
++ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError` (structured
+code + parameters, incl. client-side `TIMEOUT`/`NO_TRANSPORT`), the `ShenoraTransport` seam +
+`createWebView2Transport` (transport-pluggable, D16), `ShenoraBridge` (correlated `invoke` with
+per-call timeout, category routing, batch unbundling into the event bus, `notifyReady`
+handshake, `fallback` seam for pure-UI browser dev) with lazy `getBridge`/`configureBridge`,
+`ShenoraEventBus` + `eventBus`, `BaseModuleService<TRequests>` (typed per-module services),
+hooks `useShenora`/`useShenoraEvent` (latest-ref, no resubscribe churn)/`useShenoraQuery`
+(minimal fetch state, headless per D13), and `installDevInterceptor` (`window.__shenora` ring
+buffers for CDP-driven testing). `react` is now a REQUIRED peer (hooks import it);
+`isShenoraAvailable()` unchanged.

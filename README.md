@@ -13,9 +13,12 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.1.0 — pre-release skeleton.** The design contract, extraction map, package/versioning/release
-infrastructure, and dev loop exist; the framework code is being extracted from four proven
-in-house desktop applications (see `docs/ROADMAP.md`). Not yet published to NuGet/npm.
+**v0.1.0 — pre-release, core host + IPC extracted.** The application builder, WinForms host,
+WebView2 hosting (prewarm, packaged/dev frontend serving, event policies), and the full typed IPC
+stack (envelopes, middleware dispatcher, event bus, postMessage transport, `@shenora/react`
+client) are extracted from the proven in-house applications and verified end-to-end against the
+sample app (see `docs/ROADMAP.md`). Modules + native desktop services are next. Not yet published
+to NuGet/npm.
 
 ## Packages
 
@@ -38,26 +41,20 @@ speaking the same envelope. Planned areas beyond the initial packages: auxiliary
 (offscreen render pool, login windows, co-browse streaming) and server-hosting helpers — see
 `docs/ROADMAP.md`.
 
-## Target ergonomics
+## Ergonomics (as built — the sample app is the full reference)
 
 ```csharp
-ShenoraApplication
-    .CreateBuilder(args)
-    .UseWinForms()
-    .UseWebView2()
-    .UseFrontend(options =>
-    {
-        options.DevelopmentUrl = "http://localhost:5173";
-        options.ProductionPath = "wwwroot";
-    })
-    .AddModule<SettingsModule>()
-    .Build()
-    .Run();
+var builder = ShenoraApplication.CreateBuilder(args);
+builder.Services.AddSingleton<IModuleFacade, SettingsFacade>();   // your typed IPC module
+builder.PrewarmWebView2(app => new WebViewEnvironmentOptions { /* … */ });
+builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) });
+using var app = builder.Build();
+app.Run();
 ```
 
 ```tsx
-const settings = await shenora.invoke<Settings>("settings.get");
-useShenoraEvent("jobs.progress", e => setProgress(e.percent));
+const settings = await getBridge().invoke<Settings>('SETTINGS', 'GET');
+useShenoraEvent<JobProgress>('JOBS', 'PROGRESS', p => setProgress(p.percent));
 ```
 
 ## Dev loop

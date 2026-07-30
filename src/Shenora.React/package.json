@@ -10,7 +10,15 @@
     "directory": "src/Shenora.React"
   },
   "homepage": "https://github.com/JiarongGu/Shenora#readme",
-  "keywords": ["shenora", "webview2", "desktop", "ipc", "react", "winforms", "dotnet"],
+  "keywords": [
+    "shenora",
+    "webview2",
+    "desktop",
+    "ipc",
+    "react",
+    "winforms",
+    "dotnet"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +28,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
@@ -33,12 +44,12 @@
   "peerDependencies": {
     "react": ">=18"
   },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
-  },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.17",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }

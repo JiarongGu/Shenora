@@ -4,12 +4,14 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state (P2 extraction in progress)
+## Current state (P3 IPC extraction complete)
 
 The P2 core host is extracted (increments 1–6): pure seams, application builder + WinForms host
 composition, WebView2 host + packaged-frontend serving + splash, and the sample apps that serve
-as the e2e subject (both frontend modes proven live via the devtools capture loop).
-`Shenora.Ipc` is still an empty placeholder until P3.
+as the e2e subject. P3 (increments 1–5) delivered the full IPC stack: the transport-neutral wire
+contract in `Shenora.Ipc`, the dispatch pipeline + facades, the in-process event bus in Core,
+the WebView2 postMessage transport, the `@shenora/react` client, and the live round-trip proven
+in both frontend modes plus a CDP-driven assert. Next: P4 (modules + native services).
 
 ```
 Shenora.slnx
@@ -23,10 +25,14 @@ Shenora.slnx
 │   └── Shenora.Tests       net10.0-windows  — xunit; references all four src projects
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
     ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWinForms →
-    │                                            prewarm → WebViewHost + provider + SplashPanel);
-    │                                            embeds wwwroot (built by the web sample, gitignored)
+    │                                            prewarm → WebViewHost + provider + SplashPanel +
+    │                                            SampleFacade → MessageDispatcher → WebViewIpcBridge,
+    │                                            1 Hz IEventBus tick source); embeds wwwroot
+    │                                            (built by the web sample, gitignored)
     └── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
-                                                 into the desktop sample's wwwroot
+                                                 into the desktop sample's wwwroot; notifyReady +
+                                                 useShenoraQuery echo + useShenoraEvent tick + dev
+                                                 interceptor (the e2e round-trip subject)
 ```
 
 - Version: single `<VersionPrefix>` in `src/Directory.Build.props`; npm + README synced by
@@ -50,7 +56,12 @@ changes, noting them in `CHANGELOG.md`).
   `Run()` executes the registered runner; `Dispose` owns the provider),
   `ShenoraApplicationBuilder` (`Services`, `AddModule`, `OnStarting`/`OnStopping`, build-once),
   `IShenoraModule` (per-feature service registration), `IShenoraRunner` (the host-loop seam),
-  `IShenoraLifecycleHook` (DI-registered start/stop participation; runners invoke post-gate).
+  `IShenoraLifecycleHook` (DI-registered start/stop participation; runners invoke post-gate);
+  the in-process event bus — `EventMessage` (`{id, module, type, scope?, payload?, timestamp}`,
+  host-side; the wire form is `Shenora.Ipc`'s notification envelope), `IEventBus`/`EventBus`
+  (`"*"` wildcards + per-subscription match cache; unscoped subscriptions see every scope and
+  global events reach scoped subscribers; handler failures logged + isolated; auto-registered
+  by `Build()` via `TryAdd` — replaceable).
 - `Shenora.WinForms` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
   internal-element helpers); `WindowState`/`WindowStateOptions`/`IWindowStateStore`/
   `JsonFileWindowStateStore`/`WindowStateManager` (logical-px persistence, physical restore,
@@ -77,8 +88,39 @@ changes, noting them in `CHANGELOG.md`).
   event policies: new-window→system browser, downloads canceled, permissions denied except
   allowlist, guarded renderer-crash reload); `IWebViewResourceProvider` seam +
   `EmbeddedResourceProvider(+Options)` (assembly+prefix, lazy-with-warmup, file-fallback mode,
-  path→name lookups; no-cache HTML / immutable hashed-asset headers).
-- `Shenora.Ipc` — none yet (P3).
+  path→name lookups; no-cache HTML / immutable hashed-asset headers); `WebViewIpcBridge(+Options)`
+  (the postMessage transport: UI-thread async-interleaved request dispatch into an
+  `IMessageDispatcher`, `IsHandleCreated`-guarded `BeginInvoke` posts, bounded drop-oldest
+  notification queue buffering from construction + ~50 ms batch flush after the reserved
+  `SHENORA`/`READY` client handshake, optional `IEventBus` wildcard forwarding,
+  `SendNotification`, `OnClientReady` per-handshake callback).
+- `Shenora.Ipc` — the transport-neutral wire contract (design §5, D11/D16; names pinned with
+  `JsonPropertyName` so envelopes hold under any serializer options): `IpcRequest`
+  (`{id, module, type, scope?, payload?, timestamp}` — `scope` is the app-defined routing
+  field), `IpcResponse` (`{category:"ipc", id, success, data?, error?}` + `CreateSuccess`/
+  `CreateError`), `IpcError` (`{code, message?, parameters?}` — code is the client-side i18n
+  key), `IpcNotification`/`IpcNotificationBatch` (`{category:"notification", id, payload:[…],
+  timestamp}` — always-batched host→client push; the same envelope any transport carries),
+  `IpcCategories`, `OperationException` (the one exception whose details cross the bridge;
+  `ToError()`), `IpcErrorCodes` (framework-reserved codes), `PayloadHelper`
+  (`GetRequiredValue`/`GetOptionalValue` with structured errors; JSON null == absent), `IpcJson`
+  (frozen camelCase/camelCase-enum/null-omitting wire serializer defaults); the dispatch
+  pipeline — `IMessageDispatcher`/`MessageDispatcher` (`Use`/`UseModule`/`UseRoute`/`UseLogging`/
+  `UseErrorHandler` + `MapRoute`/`MapModule(name, routes)`/`MapModule(facade)`; `DispatchAsync`
+  transport entry: never throws, never null — `NO_HANDLER`/structured/`UNKNOWN_ERROR` mapping
+  with details kept host-side; programmatic `SendAsync`/`SendAsync<T>` over the same pipeline,
+  typed failures rethrow `OperationException`), `MessageMiddleware` delegate,
+  `ModuleRouteBuilder`, `IModuleFacade` (carries `ModuleName` — facade objects route via DI +
+  `MapModule`, no static registry) / `BaseFacade` (standardized error boundary).
+- `@shenora/react` — the client side of the contract: wire types mirroring `Shenora.Ipc`
+  name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError`
+  (structured code + parameters; client-side `TIMEOUT`/`NO_TRANSPORT` reject the same way),
+  `ShenoraTransport` seam + `createWebView2Transport` (D16 pluggability) +
+  `isShenoraAvailable`, `ShenoraBridge` (correlated `invoke` + timeout, category routing,
+  batch unbundling, `notifyReady` handshake, `fallback` seam for pure-UI browser dev; lazy
+  default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus`,
+  `BaseModuleService<TRequests>`, hooks (`useShenora`/`useShenoraEvent`/`useShenoraQuery`),
+  `installDevInterceptor` (`window.__shenora` CDP-testing global). react ≥18 required peer.
 
 ## Dependency rules (enforced by review)
 

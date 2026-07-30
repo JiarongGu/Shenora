@@ -155,3 +155,32 @@ Shenora.WebView2.WebViewHostOptions
   Void set_ResourceProvider(Shenora.WebView2.IWebViewResourceProvider)
   Void set_UseSharedEnvironment(Boolean)
   Void set_VirtualHost(System.String)
+Shenora.WebView2.WebViewIpcBridge
+  Boolean IsClientReady
+  Boolean get_IsClientReady()
+  System.String HandshakeModule
+  System.String HandshakeType
+  Void .ctor(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.WebViewIpcBridgeOptions)
+  Void Attach()
+  Void Dispose()
+  Void SendNotification(System.String, System.String, System.Object, System.String)
+Shenora.WebView2.WebViewIpcBridgeOptions
+  Int32 MaxQueuedNotifications
+  Int32 get_MaxQueuedNotifications()
+  Shenora.Core.IEventBus EventBus
+  Shenora.Core.IEventBus get_EventBus()
+  Shenora.Ipc.IMessageDispatcher Dispatcher
+  Shenora.Ipc.IMessageDispatcher get_Dispatcher()
+  System.Action`1[Shenora.Ipc.IpcRequest] OnClientReady
+  System.Action`1[Shenora.Ipc.IpcRequest] get_OnClientReady()
+  System.Action`1[System.String] Log
+  System.Action`1[System.String] get_Log()
+  System.TimeSpan NotificationInterval
+  System.TimeSpan get_NotificationInterval()
+  Void .ctor()
+  Void set_Dispatcher(Shenora.Ipc.IMessageDispatcher)
+  Void set_EventBus(Shenora.Core.IEventBus)
+  Void set_Log(System.Action`1[System.String])
+  Void set_MaxQueuedNotifications(Int32)
+  Void set_NotificationInterval(System.TimeSpan)
+  Void set_OnClientReady(System.Action`1[Shenora.Ipc.IpcRequest])

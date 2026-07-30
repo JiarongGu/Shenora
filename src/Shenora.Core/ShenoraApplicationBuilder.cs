@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Shenora.Core;
 
@@ -36,8 +37,9 @@ public sealed class ShenoraApplicationBuilder
     /// <summary>The resolved on-disk layout authority.</summary>
     public ShenoraPaths Paths { get; }
 
-    /// <summary>The service registrations. <see cref="Environment"/> and <see cref="Paths"/> are
-    /// added automatically at <see cref="Build"/>.</summary>
+    /// <summary>The service registrations. <see cref="Environment"/>, <see cref="Paths"/>, and
+    /// the event bus (<see cref="IEventBus"/>, replaceable) are added automatically at
+    /// <see cref="Build"/>.</summary>
     public IServiceCollection Services { get; } = new ServiceCollection();
 
     /// <summary>Add a module (applied at <see cref="Build"/>, in registration order).</summary>
@@ -76,6 +78,10 @@ public sealed class ShenoraApplicationBuilder
         Services.AddSingleton(Environment);
         Services.AddSingleton(Paths);
         foreach (var module in _modules) module.ConfigureServices(Services);
+        // Framework plumbing every app gets — the in-process pub/sub bus that modules, services,
+        // and the transport bridges share (design §4). TryAdd LAST so an app or module
+        // registration wins.
+        Services.TryAddSingleton<IEventBus, EventBus>();
 
         return new ShenoraApplication(ApplicationName, Args, Environment, Paths,
             Services.BuildServiceProvider());

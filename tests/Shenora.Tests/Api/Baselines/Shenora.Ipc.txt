@@ -1,0 +1,135 @@
+Shenora.Ipc.BaseFacade
+  System.String ModuleName
+  System.String get_ModuleName()
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] HandleMessageAsync(Shenora.Ipc.IpcRequest)
+Shenora.Ipc.IMessageDispatcher
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] DispatchAsync(Shenora.Ipc.IpcRequest)
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] SendAsync(System.String, System.String, System.String, System.Object)
+  System.Threading.Tasks.Task`1[T] SendAsync[T](System.String, System.String, System.String, System.Object)
+Shenora.Ipc.IModuleFacade
+  System.String ModuleName
+  System.String get_ModuleName()
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] HandleMessageAsync(Shenora.Ipc.IpcRequest)
+Shenora.Ipc.IpcCategories
+  System.String Ipc
+  System.String Notification
+Shenora.Ipc.IpcError
+  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Parameters
+  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] get_Parameters()
+  System.String Code
+  System.String Message
+  System.String get_Code()
+  System.String get_Message()
+  Void .ctor()
+  Void set_Code(System.String)
+  Void set_Message(System.String)
+  Void set_Parameters(System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String])
+Shenora.Ipc.IpcErrorCodes
+  System.String InvalidPayloadValue
+  System.String MissingPayloadValue
+  System.String NoHandler
+  System.String UnknownError
+Shenora.Ipc.IpcJson
+  System.String Serialize[T](T)
+  System.Text.Json.JsonElement SerializeToElement[T](T)
+  System.Text.Json.JsonSerializerOptions Options
+  System.Text.Json.JsonSerializerOptions get_Options()
+  T Deserialize[T](System.String)
+Shenora.Ipc.IpcNotification
+  System.Object Payload
+  System.Object get_Payload()
+  System.String Module
+  System.String Scope
+  System.String Type
+  System.String get_Module()
+  System.String get_Scope()
+  System.String get_Type()
+  Void .ctor()
+  Void set_Module(System.String)
+  Void set_Payload(System.Object)
+  Void set_Scope(System.String)
+  Void set_Type(System.String)
+Shenora.Ipc.IpcNotificationBatch
+  System.Collections.Generic.IReadOnlyList`1[Shenora.Ipc.IpcNotification] Payload
+  System.Collections.Generic.IReadOnlyList`1[Shenora.Ipc.IpcNotification] get_Payload()
+  System.DateTimeOffset Timestamp
+  System.DateTimeOffset get_Timestamp()
+  System.String Category
+  System.String Id
+  System.String get_Category()
+  System.String get_Id()
+  Void .ctor()
+  Void set_Id(System.String)
+  Void set_Payload(System.Collections.Generic.IReadOnlyList`1[Shenora.Ipc.IpcNotification])
+  Void set_Timestamp(System.DateTimeOffset)
+Shenora.Ipc.IpcRequest
+  System.DateTimeOffset Timestamp
+  System.DateTimeOffset get_Timestamp()
+  System.Nullable`1[System.Text.Json.JsonElement] Payload
+  System.Nullable`1[System.Text.Json.JsonElement] get_Payload()
+  System.String Id
+  System.String Module
+  System.String Scope
+  System.String Type
+  System.String get_Id()
+  System.String get_Module()
+  System.String get_Scope()
+  System.String get_Type()
+  Void .ctor()
+  Void set_Id(System.String)
+  Void set_Module(System.String)
+  Void set_Payload(System.Nullable`1[System.Text.Json.JsonElement])
+  Void set_Scope(System.String)
+  Void set_Timestamp(System.DateTimeOffset)
+  Void set_Type(System.String)
+Shenora.Ipc.IpcResponse
+  Boolean Success
+  Boolean get_Success()
+  Shenora.Ipc.IpcError Error
+  Shenora.Ipc.IpcError get_Error()
+  Shenora.Ipc.IpcResponse CreateError(System.String, Shenora.Ipc.IpcError)
+  Shenora.Ipc.IpcResponse CreateError(System.String, System.String, System.String, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String])
+  Shenora.Ipc.IpcResponse CreateSuccess(System.String, System.Object)
+  System.Object Data
+  System.Object get_Data()
+  System.String Category
+  System.String Id
+  System.String get_Category()
+  System.String get_Id()
+  Void .ctor()
+  Void set_Data(System.Object)
+  Void set_Error(Shenora.Ipc.IpcError)
+  Void set_Id(System.String)
+  Void set_Success(Boolean)
+Shenora.Ipc.MessageDispatcher
+  Shenora.Ipc.MessageDispatcher MapModule(Shenora.Ipc.IModuleFacade)
+  Shenora.Ipc.MessageDispatcher MapModule(System.String, System.Action`1[Shenora.Ipc.ModuleRouteBuilder])
+  Shenora.Ipc.MessageDispatcher MapRoute(System.String, System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Object])
+  Shenora.Ipc.MessageDispatcher Use(Shenora.Ipc.MessageMiddleware)
+  Shenora.Ipc.MessageDispatcher UseErrorHandler()
+  Shenora.Ipc.MessageDispatcher UseLogging()
+  Shenora.Ipc.MessageDispatcher UseModule(System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
+  Shenora.Ipc.MessageDispatcher UseRoute(System.String, System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] DispatchAsync(Shenora.Ipc.IpcRequest)
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] SendAsync(System.String, System.String, System.String, System.Object)
+  System.Threading.Tasks.Task`1[T] SendAsync[T](System.String, System.String, System.String, System.Object)
+  Void .ctor(Microsoft.Extensions.Logging.ILogger`1[Shenora.Ipc.MessageDispatcher])
+Shenora.Ipc.MessageMiddleware
+  System.IAsyncResult BeginInvoke(Shenora.Ipc.IpcRequest, System.Func`1[System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]], System.AsyncCallback, System.Object)
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] EndInvoke(System.IAsyncResult)
+  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] Invoke(Shenora.Ipc.IpcRequest, System.Func`1[System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
+  Void .ctor(System.Object, IntPtr)
+Shenora.Ipc.ModuleRouteBuilder
+  Shenora.Ipc.ModuleRouteBuilder Route(System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Object])
+  Shenora.Ipc.ModuleRouteBuilder RouteAsync(System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Threading.Tasks.Task`1[System.Object]])
+Shenora.Ipc.OperationException
+  Shenora.Ipc.IpcError ToError()
+  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Parameters
+  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] get_Parameters()
+  System.String Code
+  System.String get_Code()
+  Void .ctor(System.String, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String], System.String, System.Exception)
+  Void .ctor(System.String, System.String, System.String, System.String)
+Shenora.Ipc.PayloadHelper
+  T GetOptionalValue[T](System.Nullable`1[System.Text.Json.JsonElement], System.String)
+  T GetRequiredValue[T](System.Nullable`1[System.Text.Json.JsonElement], System.String)

@@ -1,6 +1,46 @@
 Shenora.Core.AppRootArgument
   System.String Flag
   System.String Resolve(System.String[], System.String)
+Shenora.Core.EventBus
+  Int32 GetHandlerCount()
+  System.String Subscribe(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String Subscribe(System.String, System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String SubscribeToAll(System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String SubscribeToModule(System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String SubscribeToModule(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage)
+  System.Threading.Tasks.Task EmitAsync(System.String, System.String, System.Object, System.String)
+  Void .ctor(Microsoft.Extensions.Logging.ILogger`1[Shenora.Core.EventBus])
+  Void Unsubscribe(System.String)
+Shenora.Core.EventMessage
+  System.DateTimeOffset Timestamp
+  System.DateTimeOffset get_Timestamp()
+  System.Object Payload
+  System.Object get_Payload()
+  System.String Id
+  System.String Module
+  System.String Scope
+  System.String Type
+  System.String get_Id()
+  System.String get_Module()
+  System.String get_Scope()
+  System.String get_Type()
+  Void .ctor()
+  Void set_Id(System.String)
+  Void set_Module(System.String)
+  Void set_Payload(System.Object)
+  Void set_Scope(System.String)
+  Void set_Timestamp(System.DateTimeOffset)
+  Void set_Type(System.String)
+Shenora.Core.IEventBus
+  System.String Subscribe(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String Subscribe(System.String, System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String SubscribeToAll(System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String SubscribeToModule(System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.String SubscribeToModule(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
+  System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage)
+  System.Threading.Tasks.Task EmitAsync(System.String, System.String, System.Object, System.String)
+  Void Unsubscribe(System.String)
 Shenora.Core.IShenoraLifecycleHook
   Void OnStarting(Shenora.Core.ShenoraApplication)
   Void OnStopping(Shenora.Core.ShenoraApplication)

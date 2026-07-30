@@ -5,6 +5,135 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P3 increment 5: the IPC round-trip proven live (sample + e2e) — P3 closed
+
+The sample apps become the IPC reference composition and the phase's proof. Desktop:
+`SampleFacade` (`BaseFacade`, module `SAMPLE`: `ECHO` reads its payload through `PayloadHelper`
+and returns a typed object; `FAIL` throws a structured `OperationException`), facades registered
+in DI and mapped onto a `MessageDispatcher` (`UseErrorHandler` first) at composition time,
+`WebViewIpcBridge` wired in its intended order (constructed before `InitializeAsync` so bus
+buffering covers init; attached after init, before `Navigate`; disposed with the form) with
+`OnClientReady` starting a 1 Hz `SAMPLE.TICK` emitter on the app's `IEventBus`. Web: the page
+calls `notifyReady()` from an effect, runs `useShenoraQuery('SAMPLE','ECHO')` and renders the
+typed response, streams `SAMPLE.TICK` via `useShenoraEvent`, and installs the dev interceptor in
+dev builds. PROVEN LIVE with the devtools loop (screenshots in `devtools/screenshots/`,
+gitignored): packaged mode shows `SAMPLE.ECHO("shenora") → SHENORA (7)` and `SAMPLE.TICK`
+advancing #19→#23 across two captures 4 s apart (`p35-packaged-a/b.png`); dev mode the same over
+Vite (`p35-dev.png`, TICK #38). CDP-driven assert (dev, via `window.__shenora` + the `.cdp-port`
+loop): `call('SAMPLE','ECHO',{text:'cdp drive'})` returned `{echoed:"CDP DRIVE", length:9}`,
+`call('SAMPLE','FAIL')` rejected as `OperationError` `{code:"SAMPLE_FAILURE",
+parameters:{reason}}` (raw exception text never crossed), `waitEvent('SAMPLE','TICK')` resolved
+with a live tick, and the ring buffer showed the full exchange. **P3 (IPC extraction) is
+complete**: contracts → dispatcher/event bus → WebView2 transport → React client → live
+round-trip, all verified (`verify` PASSED at every increment).
+
+**Phase review (adversarial subagent over the full diff) — 9 real findings, all addressed:**
+(1) an unserializable handler result (or a throwing app dispatcher) escaped the transport's
+async-void handler → process death; the bridge now wraps dispatch + serialize and always answers
+`UNKNOWN_ERROR`; (2) the ready gate never re-closed, so a renderer-crash reload drained
+notifications into a listener-less page → `NavigationStarting` now resets it; (3) the event
+bus's `'.'`-joined match-cache key let arbitrary app names collide and permanently poison
+results → `'\0'`-joined; (4) `useShenoraQuery` left `loading: true` forever when `enabled`
+flipped false mid-flight; (5) `PayloadHelper` put raw serializer text on the wire (design §5) —
+now only the key crosses, details stay in the inner exception; (6) a disposed TS bridge burned
+the full timeout per call → fails fast with `NO_TRANSPORT`; (7) the match cache's unbounded key
+space is now a documented cardinality contract; (8) `ConfigureAwait(false)` inside the
+dispatcher pipeline broke the §5 stay-on-caller-context model after async fall-throughs —
+removed, documented; (9) the sample's `NO_HANDLER` was missing its documented `module`
+parameter. New tests cover 1–6; the earned invariants became `.claude/knowledge/ipc-contracts.md`.
+Re-verified: 201 dotnet + 28 vitest green, `verify` PASSED.
+
+### 2026-07-30 — P3 increment 4: `@shenora/react` becomes the real client
+
+The placeholder package becomes the client side of the contract, ported from the primary desktop
+sibling's bridge/event-bus/module-service trio and generalized where the source carried app
+schema. `types.ts` mirrors the `Shenora.Ipc` envelopes name-for-name; `OperationError` carries
+the structured code + parameters (client-side failures — `TIMEOUT`, `NO_TRANSPORT` — reject
+through the same shape, so error handling is uniform). The transport is a two-method seam
+(`ShenoraTransport`) with `createWebView2Transport` as the desktop default — the D16
+pluggability point a WebSocket or Capacitor shell implements later. `ShenoraBridge`: correlated
+`invoke` (uuid ids, per-call timeout over a 30 s default), category routing, batch unbundling
+into `ShenoraEventBus`, `notifyReady()` (the `SHENORA`/`READY` handshake that starts host
+notification delivery), and a `fallback` option generalizing the source's hardcoded dev mocks —
+the app supplies canned answers for pure-UI browser development; the library ships none (no app
+schema in the kit). The default instance is LAZY (`getBridge`/`configureBridge` — no import-time
+side effects, honest `sideEffects: false`). `BaseModuleService<TRequests>` keeps the typed-send
+core and drops the source's boolean/array/optional wrappers (pure casts). Hooks: `useShenora`,
+`useShenoraEvent` (latest-ref pattern replaces the source's deps param — no resubscribe churn,
+no stale closures), `useShenoraQuery` (deliberately minimal fetch state — headless, D13).
+`installDevInterceptor` ports the CDP-testing global (`window.__shenora`: `call`/`waitEvent`/
+ring buffers), idempotent across HMR. `react` becomes a required peer (hooks import it
+statically). Verified: 26 vitest tests green (wire shape, resolve/structured-reject/timeout,
+batch order, malformed-message tolerance, handshake, fallback + `NO_TRANSPORT`, dispose,
+event-bus semantics, typed service, hook lifecycle via renderHook incl. the latest-ref
+guarantee, interceptor recording/idempotence); `doctor` consistent; full `verify` PASSED.
+
+### 2026-07-30 — P3 increment 3: the WebView2 postMessage transport
+
+`Shenora.WebView2` gains `WebViewIpcBridge(+Options)` — the transport tying a WebView2 window to
+the dispatch pipeline and the event bus, merged from the two family transports with their
+post-mortem comments kept. Incoming: `WebMessageReceived` requests parse (`IpcJson`) and
+dispatch async ON the UI thread — each await yields the message pump so concurrent IPC
+interleaves without a pool thread per call (the measured incident: `Task.Run`-per-message under
+heavy backend load starved the pool and froze the app; heavy work belongs in the backend's own
+bounded queues). Outgoing: responses and ~50 ms-batched `IpcNotificationBatch` pushes via
+`PostWebMessageAsString`, guarded by the family marshalling discipline (`IsHandleCreated`
+checked before `InvokeRequired` — the pre-handle lie — then non-blocking `BeginInvoke`).
+Notifications flow through a bounded drop-oldest queue (cap 10k — telemetry-like events; OOM is
+worse than losing stale progress ticks) that buffers from CONSTRUCTION (events emitted during
+the slow WebView2 init survive) and delivers only after the client's ready handshake (reserved
+`SHENORA`/`READY` route, intercepted before the dispatcher; `OnClientReady` fires per occurrence
+— reloads included — as the cue to reset per-page state). Optional `IEventBus` wildcard
+forwarding; `SendNotification` for direct pushes; `Dispose` stops the flush timer (the source's
+timer once outlived its window, posting into a torn-down WebView). Verified: 197 tests green
+(+12 protocol tests over internal seams — handshake semantics, dispatcher pass-through +
+interception, malformed-input drops, ready-gated batching, wire shape/order, drop-oldest cap,
+bus forwarding/unsubscribe); the live transport is the P3.5 sample e2e's subject; WebView2
+baseline promoted (additions only); `verify` PASSED.
+
+### 2026-07-30 — P3 increment 2: dispatch pipeline + facade base + in-process event bus
+
+`Shenora.Ipc` gains the middleware dispatcher ported from the primary desktop sibling:
+`MessageDispatcher` behind the `IMessageDispatcher` seam — `Use`/`UseModule`/`UseRoute`/
+`UseLogging`/`UseErrorHandler` middleware composition (family order: error handler → logging →
+app middleware → facades), `MapRoute`/`MapModule` route tables, a lazily rebuilt pipeline, and
+`DispatchAsync` as the transport entry point that never throws and never returns null (unhandled
+→ structured `NO_HANDLER`; escaped `OperationException` → its structured error; anything else →
+`UNKNOWN_ERROR` with details kept host-side — the source leaked `ex.Message` across the bridge,
+design §5 forbids it). Programmatic `SendAsync`/`SendAsync<T>` share that exact pipeline; failed
+typed sends rethrow the structured `OperationException` (the source flattened to
+`InvalidOperationException`), and data conversion uses the wire options (the source's default
+options would have broken camelCase round-trips). `IModuleFacade` (now carrying `ModuleName`, so
+facade objects route without the source's static mutable registry — DI + `MapModule(facade)`
+replace it) + `BaseFacade` with the standardized error boundary. `Shenora.Core` gains the
+in-process event bus per the design's package split (§4): `EventMessage`/`IEventBus`/`EventBus`
+(scope generalizes the per-profile field) with `"*"` wildcards, the per-subscription match
+cache, isolated handler failures, concurrent fan-out — auto-registered by
+`ShenoraApplicationBuilder.Build()` (`TryAdd` last, so app/module registrations win). All
+logging is `ILogger<T>`, optional so composition works without `AddLogging`. Verified: 184 tests
+green (+30: matching semantics incl. the scoped/global rules, middleware ordering,
+post-dispatch registration, error mapping incl. no-leak assertions, all three typed-data
+conversion paths, facade routing); Core + Ipc baselines promoted (reviewed, additions only);
+`verify` PASSED.
+
+### 2026-07-30 — P3 increment 1: the IPC wire contract (`Shenora.Ipc` first surface)
+
+The envelope contract two family apps already speak (D11), shipped transport-neutral (D16) and
+pinned with `JsonPropertyName` so the wire shape survives any serializer options: `IpcRequest`
+(`{id, module, type, scope?, payload?, timestamp}` — `scope` generalizes the source's per-profile
+routing field), category-wrapped `IpcResponse` with a structured `IpcError` (`{code, message?,
+parameters?}` — the source's JSON-string error + duplicated error data collapsed into one i18n-ready
+object), and the always-batched `IpcNotification(Batch)` push envelope (~50 ms flush upstream;
+`category` alone discriminates, so the same envelope rides postMessage, WebSocket, or a mobile
+channel — the source's synthetic batch module/type wrapper is gone). `OperationException`
+(code + parameters, `ToError()`), framework-reserved `IpcErrorCodes`, static `PayloadHelper`
+(structured missing/invalid failures instead of `ArgumentException`; JSON null == absent per the
+family wire convention), and `IpcJson` — ONE frozen camelCase/camelCase-enums/null-omitting
+options instance, ending the source's three drifting private copies. Replaces the Ipc assembly
+marker. Verified: 152 tests green (25 new: wire shapes incl. attribute pinning under foreign
+options, exception mapping, payload reads, serializer defaults); Ipc API baseline promoted
+(reviewed); `verify` PASSED.
+
 ### 2026-07-30 — P2 increment 6: samples + the desktop e2e loop, both frontend modes proven live
 
 `samples/Shenora.Sample.Desktop` + `samples/Shenora.Sample.Web` — the reference composition and,
@@ -145,16 +274,14 @@ Everything above landed (increments 1–6, see Done). Carried forward on purpose
 - **Stable-chunk frontend build guidance** (docs) → written with the P3 `@shenora/react` docs,
   where frontend build advice naturally lives.
 
-### P3 — IPC extraction (brief Phase 3)
+### P3 — IPC extraction (brief Phase 3) — COMPLETE
 
-- `Shenora.Ipc`: envelopes, middleware dispatcher, facade base, structured errors, serializer
-  defaults. `Shenora.WebView2`: postMessage bridge + 50 ms batched notifications.
-- `@shenora/react`: bridge (correlation, timeout, category routing, batch unbundle, ready
-  handshake, browser fallback), typed module-service base, event hub + hooks (event
-  subscription, drop zone, and the harvested behavior hooks — stable refs, delayed loading,
-  scroll position…), dev interceptor. Headless throughout (D13) — no component library.
-- Sample round-trip: React → typed .NET handler → typed response; native events in React.
-- e2e: drive the sample over CDP/win-input; assert the round-trip.
+Everything landed (increments 1–5, see Done): envelopes/errors/serializer defaults, dispatcher +
+facade base + event bus, the WebView2 postMessage transport, the `@shenora/react` client, and
+the live round-trip e2e. Carried forward on purpose:
+- **Stable-chunk frontend build guidance** (docs for consuming apps: vite `manualChunks`, hashed
+  assets vs the no-cache HTML policy) → lands with the P6 adoption docs, where a real consumer
+  exercises it. Drop-zone hook + window-command helpers were always P4 surface.
 
 ### P4 — Modules + native services (brief Phase 4)
 
