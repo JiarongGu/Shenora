@@ -24,7 +24,16 @@ export {
   configureBridge,
   type ShenoraBridgeOptions,
   type InvokeOptions,
+  type PostOptions,
+  type PostFailure,
 } from './bridge.js';
+export {
+  createShenoraStore,
+  type ShenoraStore,
+  type ShenoraStoreOptions,
+  type ShenoraStoreIo,
+  type ShenoraStoreSnapshot,
+} from './store.js';
 export { BaseModuleService } from './moduleService.js';
 export {
   WindowCommands,

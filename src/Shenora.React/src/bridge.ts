@@ -7,6 +7,7 @@ import {
   HANDSHAKE_TYPE,
   IpcCategories,
   IpcErrorCodes,
+  type IpcError,
   type IpcNotificationBatch,
   type IpcRequest,
   type IpcResponse,
@@ -35,6 +36,31 @@ export interface ShenoraBridgeOptions {
    * production stays hard-failing.
    */
   fallback?: (request: IpcRequest) => unknown;
+
+  /**
+   * Where a FAILED {@link ShenoraBridge.post} is reported. Default: `console.error`.
+   *
+   * A one-way send has no promise to reject, so without this its failures would be invisible — and an
+   * unmatched response is dropped silently by the inbound handler, which is exactly how a feature
+   * "just stops working" with nothing to grep for. Route it into the app's logger/toast instead.
+   */
+  onPostError?: (error: PostFailure) => void;
+
+  /**
+   * How many unawaited {@link ShenoraBridge.post} ids to remember for error reporting. Default 256.
+   * Capped (drop-oldest) so a host that never answers cannot grow the set without bound — the same
+   * shape as the host's own bounded notification queue. Evicting an id only loses its error report.
+   */
+  maxTrackedPosts?: number;
+}
+
+/** A one-way {@link ShenoraBridge.post} whose host handler answered with a failure. */
+export interface PostFailure {
+  module: string;
+  type: string;
+  /** The request id, so it can be tied to a host log line. */
+  id: string;
+  error: IpcError;
 }
 
 /** Per-call inputs for {@link ShenoraBridge.invoke}. */
@@ -44,6 +70,13 @@ export interface InvokeOptions<TPayload = unknown> {
   scope?: string;
   /** Overrides the bridge's default timeout. */
   timeoutMs?: number;
+}
+
+/** Per-call inputs for {@link ShenoraBridge.post}. */
+export interface PostOptions<TPayload = unknown> {
+  payload?: TPayload;
+  /** Optional app-defined routing scope. */
+  scope?: string;
 }
 
 interface PendingRequest {
@@ -74,6 +107,11 @@ export class ShenoraBridge {
   private readonly defaultTimeoutMs: number;
   private readonly fallback?: (request: IpcRequest) => unknown;
   private readonly pending = new Map<string, PendingRequest>();
+  // Ids of one-way sends, kept ONLY so a failed response can be reported instead of vanishing.
+  // Insertion-ordered and capped: a Map is used for its ordered keys, not for the values.
+  private readonly unawaited = new Map<string, { module: string; type: string }>();
+  private readonly maxTrackedPosts: number;
+  private readonly onPostError: (failure: PostFailure) => void;
   private readonly unsubscribe?: () => void;
   private disposed = false;
 
@@ -82,6 +120,12 @@ export class ShenoraBridge {
     this.eventBus = options.eventBus ?? defaultEventBus;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
     this.fallback = options.fallback;
+    this.maxTrackedPosts = options.maxTrackedPosts ?? 256;
+    this.onPostError = options.onPostError
+      ?? ((failure) => console.error(
+        `[shenora] ${failure.module}.${failure.type} (post) failed: ${failure.error.code}`,
+        failure.error,
+      ));
     this.unsubscribe = this.transport?.subscribe((message) => this.onHostMessage(message));
   }
 
@@ -183,6 +227,64 @@ export class ShenoraBridge {
   }
 
   /**
+   * Send WITHOUT awaiting a reply, and return the request id.
+   *
+   * This is the default shape for a desktop shell, and {@link invoke} is the special case — see
+   * `docs/2026-07-31-shenora-oneway-ipc-design.md`. Two reasons: a correlated call carries a deadline
+   * (30 s by default) and real work does not; and request/response is UI-THREAD-COUPLED here by
+   * design, because the dispatch pipeline preserves the caller's synchronization context so facades
+   * can touch the window. Reserve `invoke` for calls that are quick AND safe on the UI thread — the
+   * window commands are the model — and post everything else, streaming results back as notifications.
+   *
+   * ⚠ Posting is only HALF of freeing the UI thread. The host still dispatches on the UI thread
+   * whether or not the client awaits, so a handler that does heavy work synchronously stalls the
+   * window either way. The other half is the host's: return from the route immediately and stream.
+   *
+   * Failures are not silent. There is no promise to reject, so a failed response is reported through
+   * `onPostError` (default `console.error`) rather than being dropped the way an unmatched response
+   * otherwise is. Nothing is queued and no timer is set, so there is nothing to leak and no deadline.
+   *
+   * No transport (a plain browser tab) is a silent no-op, matching the fire-and-forget contract —
+   * unlike `invoke`, there is no caller waiting to be told.
+   */
+  post<TPayload = unknown>(module: string, type: string, options: PostOptions<TPayload> = {}): string {
+    const request: IpcRequest<TPayload> = {
+      id: newId(),
+      module,
+      type,
+      scope: options.scope,
+      payload: options.payload,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (this.disposed || !this.transport) return request.id;
+
+    // Remember it ONLY to report a failure. Drop-oldest at the cap so a host that never answers
+    // cannot grow this without bound; an evicted id simply loses its error report.
+    if (this.unawaited.size >= this.maxTrackedPosts) {
+      const oldest = this.unawaited.keys().next();
+      if (!oldest.done) this.unawaited.delete(oldest.value);
+    }
+    this.unawaited.set(request.id, { module, type });
+
+    try {
+      this.transport.post(JSON.stringify(request));
+    } catch (error) {
+      this.unawaited.delete(request.id);
+      this.onPostError({
+        module,
+        type,
+        id: request.id,
+        error: {
+          code: IpcErrorCodes.noTransport,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+    return request.id;
+  }
+
+  /**
    * The ready handshake: tells the host the page's listeners are attached, which starts
    * notification delivery (events buffered host-side arrive in the first batch). Call once the
    * app shell has subscribed — a reloaded page calls it again on its fresh startup, which is
@@ -215,6 +317,9 @@ export class ShenoraBridge {
       entry.reject(new OperationError({ code: IpcErrorCodes.noTransport, message: 'Bridge disposed.' }));
       this.pending.delete(id);
     }
+    // Unawaited ids are pure bookkeeping with nothing to settle — drop them so a disposed bridge
+    // holds no references (this is the instance `configureBridge` replaces).
+    this.unawaited.clear();
   }
 
   private onHostMessage(message: string): void {
@@ -237,7 +342,25 @@ export class ShenoraBridge {
       const response = parsed as IpcResponse;
       if (typeof response.id !== 'string') return;
       const entry = this.pending.get(response.id);
-      if (!entry) return; // timed out (or not ours) — the reject already happened
+      if (!entry) {
+        // No pending call. Either this answers a one-way `post` — in which case a FAILURE must be
+        // surfaced, because there is no promise to reject and dropping it here is exactly how a
+        // feature "just stops working" with nothing to grep for — or it is a late/foreign response,
+        // which stays ignored.
+        const posted = this.unawaited.get(response.id);
+        if (posted) {
+          this.unawaited.delete(response.id);
+          if (!response.success) {
+            this.onPostError({
+              module: posted.module,
+              type: posted.type,
+              id: response.id,
+              error: response.error ?? { code: IpcErrorCodes.unknownError },
+            });
+          }
+        }
+        return;
+      }
       this.pending.delete(response.id);
       clearTimeout(entry.timer);
       if (response.success) {

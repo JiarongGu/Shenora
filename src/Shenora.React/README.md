@@ -8,7 +8,9 @@ developed in a plain browser. Headless by design — no UI components, bring you
 system. Versioned in lockstep with the `Shenora.*` NuGet packages.
 
 ```ts
-import { getBridge, useShenoraEvent, useShenoraQuery, BaseModuleService } from '@shenora/react';
+import {
+  getBridge, useShenoraEvent, useShenoraQuery, BaseModuleService, createShenoraStore,
+} from '@shenora/react';
 
 // Once at startup, after your listeners are attached: it starts notification delivery (anything the
 // host buffered arrives in the first batch). Drop zones need no particular ordering against it — the
@@ -30,6 +32,34 @@ useShenoraEvent<Note>('NOTES', 'ADDED', (note) => refetch());
 
 Failed calls reject with `OperationError` — a structured `code` (an i18n key: translate
 `errors.{code}`) plus interpolation `parameters`, never raw host exception text.
+
+### Long-running work: post, then read a store
+
+`invoke` awaits a correlated reply and carries a timeout, and its handler's synchronous segment runs
+on the host's **UI thread** — so it is for calls that are quick and UI-thread-safe. Everything else
+posts and streams results back as events:
+
+```ts
+const useDeploy = createShenoraStore('DEPLOY', {
+  initial: { status: 'idle', lines: [] as string[] },
+  // Loaded on the FIRST subscriber, so a component that mounts mid-run isn't empty:
+  // events it missed cannot be replayed.
+  snapshot: { type: 'GET_STATE', apply: (s, d) => ({ ...s, ...(d as object) }) },
+  on: {
+    PROGRESS: (s, p: { line: string }) => ({ ...s, lines: [...s.lines, p.line] }),
+    ENDED: (s, p: { ok: boolean }) => ({ ...s, status: p.ok ? 'done' : 'failed' }),
+  },
+  actions: ({ post }) => ({ start: (cfg: unknown) => post('START', { payload: cfg }) }),
+});
+
+// any number of components share ONE subscription:
+const status = useDeploy((s) => s.status);
+useDeploy.actions.start({ env: 'prod' });
+```
+
+Use the **store for shared or long-lived state** and **`useShenoraEvent` for a one-off reaction in a
+single component**. A failed `post` has no promise to reject, so it is reported through the bridge's
+`onPostError` (default `console.error`) rather than vanishing.
 
 Pure-UI development in a plain browser: pass a `fallback` to `configureBridge` (gated behind
 `import.meta.env.DEV`) to answer requests with canned data. Other shells (WebSocket,

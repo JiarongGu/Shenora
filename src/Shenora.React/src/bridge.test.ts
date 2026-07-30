@@ -220,4 +220,79 @@ describe('ShenoraBridge', () => {
     expect(getBridge()).toBe(configured);
     expect(getBridge()).not.toBe(first);
   });
+
+  describe('post (one-way)', () => {
+    it('sends the SAME envelope as invoke, with no pending call and no timer', () => {
+      vi.useFakeTimers();
+      const { transport, bridge } = createBridge();
+
+      const id = bridge.post('DEPLOY', 'START', { payload: { env: 'prod' }, scope: 's1' });
+
+      const request = transport.lastRequest<{ env: string }>();
+      expect(request).toMatchObject({ id, module: 'DEPLOY', type: 'START', scope: 's1', payload: { env: 'prod' } });
+      // No wire change is the whole point: a transport (or the host) cannot tell this from an invoke.
+      expect(typeof request.timestamp).toBe('string');
+
+      // Nothing is queued and nothing is scheduled — so there is no leak and no deadline. If a timer
+      // had been set, advancing past the default timeout would fire it.
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+    });
+
+    it('reports a FAILED response instead of dropping it silently', () => {
+      const onPostError = vi.fn();
+      const transport = new FakeTransport();
+      const bridge = new ShenoraBridge({ transport, eventBus: new ShenoraEventBus(), onPostError });
+
+      const id = bridge.post('DEPLOY', 'START');
+      transport.fail(id, 'DEPLOY_REFUSED');
+
+      // There is no promise to reject, and an unmatched response is otherwise dropped by the inbound
+      // handler — which is exactly how a feature "just stops working" with nothing to grep for.
+      expect(onPostError).toHaveBeenCalledTimes(1);
+      expect(onPostError).toHaveBeenCalledWith({
+        module: 'DEPLOY',
+        type: 'START',
+        id,
+        error: { code: 'DEPLOY_REFUSED' },
+      });
+    });
+
+    it('stays quiet on a successful response', () => {
+      const onPostError = vi.fn();
+      const transport = new FakeTransport();
+      const bridge = new ShenoraBridge({ transport, eventBus: new ShenoraEventBus(), onPostError });
+
+      const id = bridge.post('DEPLOY', 'START');
+      transport.respond(id, { ok: true });
+
+      expect(onPostError).not.toHaveBeenCalled();
+    });
+
+    it('caps the ids it remembers so a silent host cannot grow them without bound', () => {
+      const onPostError = vi.fn();
+      const transport = new FakeTransport();
+      const bridge = new ShenoraBridge({
+        transport, eventBus: new ShenoraEventBus(), onPostError, maxTrackedPosts: 2,
+      });
+
+      const first = bridge.post('DEPLOY', 'START');
+      bridge.post('DEPLOY', 'START');
+      bridge.post('DEPLOY', 'START'); // evicts `first` (drop-oldest)
+
+      transport.fail(first, 'TOO_LATE');
+
+      // The trade, stated: an evicted id loses its error report. That is strictly better than an
+      // unbounded set, and still better than today's behaviour for every call that fits.
+      expect(onPostError).not.toHaveBeenCalled();
+    });
+
+    it('is a silent no-op with no transport, unlike invoke', () => {
+      const bridge = new ShenoraBridge({ transport: null, eventBus: new ShenoraEventBus() });
+
+      // Fire-and-forget has no caller waiting to be told, so a plain browser tab must not throw —
+      // `invoke` rejects with NO_TRANSPORT precisely because someone IS waiting.
+      expect(() => bridge.post('DEPLOY', 'START')).not.toThrow();
+    });
+  });
 });

@@ -155,6 +155,27 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`ShenoraBridge.post` — send without awaiting a reply**, and `createShenoraStore` — a store fed by
+  one module's host event stream (P6.3a; design:
+  `docs/2026-07-31-shenora-oneway-ipc-design.md`). Until now `invoke` was the ONLY outbound call, so
+  every page→host message paid a correlation entry and a 30 s deadline, and — because the dispatch
+  pipeline preserves the caller's synchronization context by design — ran its handler's synchronous
+  segment on the UI THREAD. That made the wrong shape the only shape for a desktop app. `post` sends
+  the same envelope with no pending entry and no timer (so no wire change: a transport and the host
+  cannot tell the two apart), returns the request id so a caller can correlate, and reports a FAILED
+  response through the new `onPostError` option instead of dropping it — an unmatched response was
+  previously discarded silently. Reserve `invoke` for calls that are quick AND UI-thread-safe (the
+  window commands are the model) and post everything else.
+  `createShenoraStore(module, { initial, snapshot, on, actions })` returns one hook that declares a
+  feature's sends, its event reducers and its shared state together. It opens ONE subscription per
+  event type however many components read it, and takes a **snapshot on the first subscriber** so a
+  component that mounts while work is already running sees current state — a stream cannot be
+  replayed, which is the case a progress strip hits every time its tab is opened. Built on React's
+  `useSyncExternalStore`, so the package still depends on nothing but React. Reducers are pure and a
+  throwing one is reported rather than corrupting shared state. `useShenoraEvent` is unchanged and
+  remains the counterpart: **shared or long-lived state → the store; a one-off reaction in one
+  component → the hook.** Deliberately no job/queue/progress type — what an operation IS stays in the
+  app.
 - **Frameless caption buttons now behave like real ones — Snap Layouts, hover and press (P5.6).**
   New `OptimizedFormOptions.NativeCaptionButtons`: the cluster reported to
   `OptimizedForm.SetCaptionButtons` is cut out of the window region of **every direct child that

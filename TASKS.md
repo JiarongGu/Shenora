@@ -990,7 +990,12 @@ carrying someone's envelope.
   maps a virtual host name to a folder on disk, while the kit serves through `WebResourceRequested`
   with an embedded-resource provider and a dev-URL switch. The kit's own no-cache-HTML policy and the
   stale-bundle footgun the survey recorded both live at this seam.
-- [ ] **P6.3a — KIT WORK, and it blocks P6.4: give the client a fire-and-forget send.**
+- [x] **P6.3a — DONE (2026-07-31): the client can send one-way, and shares module state.**
+  Landed `ShenoraBridge.post` + `onPostError`/`maxTrackedPosts` and `createShenoraStore`, with 13
+  new vitest cases; ALL FIVE new tripwires sabotage-verified (one was vacuous first time — a
+  primitive-returning selector cannot prove the getSnapshot cache). The host side needed no new API,
+  as designed. Still open from the design: the `ConfigureAwait(false)` rule text, and measuring the
+  UI-thread claim against the running sample. Original note follows.
   **DESIGNED 2026-07-31 → `docs/2026-07-31-shenora-oneway-ipc-design.md`** (read it before
   implementing; it carries the three constraints that decide the shape, the two things it
   deliberately does NOT ship, and a verification plan). Summary of what it lands: a `post` that sends

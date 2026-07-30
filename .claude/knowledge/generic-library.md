@@ -32,6 +32,36 @@ keeps the library reusable (adopted from the family's other library, where it's 
   `tests/Shenora.Tests/Api/Baselines/*.txt` for domain words and triage by hand. That is how the
   whole-library audit ran; it found the Login cluster was the ONLY real leak, plus one PARAMETER name
   (`driveLogin`) — parameter names count, because the baselines pin them as a source contract.
+- **Design against how a real consumer would USE it — then generalize, never absorb (user direction,
+  2026-07-31).** Two halves, and both are load-bearing:
+  **(a) Go and look.** Before designing a surface, read how the sibling apps solve that problem today
+  and what they would need from the kit. The kit exists to stop them re-solving the same thing, so a
+  design that has never been checked against a real usage is a guess. Their approach may differ from
+  what you would write — that is fine and often informative — but the API still has to MEET the need.
+  **(b) Meet the need; do not solve their business.** Shenora is a library, not a business-logic
+  solver. Ship the mechanism they can build their product on; leave the product — its domain types,
+  its policy, its workflow — with them. The test is D21's: *could a consumer build their own version
+  on our primitives without adopting our decisions?*
+  Worked example (P6.3a): three siblings had each hand-built "subscribe once to the host's events,
+  fold them into state many components read", one of them factoring it out twice after "every
+  host-backed store repeated" the same wiring. The kit harvested the MECHANISM — a store fed by a
+  module's event stream, snapshot-then-deltas, one subscription regardless of watcher count — and
+  deliberately shipped no job/queue/progress TYPE, because what an operation IS belongs to the app.
+  It also refused their state library: all three chose the same one, and imposing it would have been
+  solving their stack, not their problem.
+  **The failure this prevents is BOTH directions.** Designing without looking ships something nobody
+  can adopt; looking and then copying ships their business logic into `src/`.
+- **Borrow the family library's PACKAGING model, not its design or verification model (user
+  direction, 2026-07-31).** Lyntai is the repo template — versioning, release, docs discipline,
+  API-surface baselines — and that is all it is. It is a pure backend, process-driven library:
+  functions in, values out, no UI thread, no window, no two-language wire, no browser process.
+  **Shenora is substantially more complex**, and the differences are exactly where its bugs live: a
+  UI thread everything marshals through, a C#⇄TS contract that must mirror, OS input routing that
+  decides who receives a click, real browser processes with profile locks, and now shared client
+  state many components read. So "it worked for the other library" justifies a csproj shape or a
+  CHANGELOG convention — never a claim that something is tested, safe, or simple here. That is why
+  this repo's gate insists on running the sample and on live probes, and why a green unit suite has
+  twice been the wrong answer (P5.6's caption buttons; the vacuous containment cases).
 - **Seams over flags.** Extension points are interfaces the app implements
   (`IWindowStateStore`, injected scripts, custom schemes, transports), not boolean options
   that switch between two consumers' behaviors.
