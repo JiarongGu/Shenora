@@ -973,6 +973,53 @@ shape, and it also gives cancellation and progress somewhere to live). Per D21 t
 still owns any wire-format compat; this item is about the kit lacking a first-class path, not about
 carrying someone's envelope.
 
+#### How this phase works (user direction, 2026-07-31 — supersedes the increment framing below)
+
+**This repo does NOT edit the sibling.** Shenora readies the LIBRARY; the sibling's own session does
+the adoption once it is ready. So every P6 item here is library work plus the guide an adopter needs.
+
+**And a sibling is a CHECKPOINT, not the spec** (`.claude/knowledge/generic-library.md`): read it to
+answer *"is this capability present and safe?"*, never *"what method did they write?"*. Shenora is
+generic and must serve apps that do not exist yet; the surveyed apps only tell you which capabilities
+are REAL and which are speculation. Copying their method is how a consumer's shape gets shipped.
+
+#### Capability findings from the survey (2026-07-31)
+
+Already covered — no work needed, and the earlier plan was wrong to call these open questions:
+- **Multi-origin static serving.** `WebViewHostOptions.FolderMappings` + `WebViewFolderMapping`
+  (with `AccessKind`) already covers several virtual hosts, including a deliberately DIFFERENT origin
+  for cross-origin ES-module imports. P6.3 does not need a serving-model decision.
+- **Portable app paths.** `ShenoraPaths` (root/data/resources + `DataArea` + env override) matches the
+  portable-layout shape an adopter hand-rolls.
+- **Window state.** `WindowStateManager` covers logical-px persistence, DPI scaling, on-screen
+  validation and restore-bounds-when-maximized — and fixes a latent bug on the way, since a hand-rolled
+  version reaches for `Screen.WorkingArea`, which is DPI-mis-scaled (use `GetMonitorInfo`).
+- **Dynamic module composition.** CLOSED 2026-07-31: `IModuleRegistry` + `TryMapModule`.
+
+Known capability LIMITS, recorded rather than guessed at:
+- [ ] **A mapped module cannot be RELEASED — the dispatcher's pipeline only grows.** Disabling a
+  dynamically composed module therefore needs a restart. Not built because no consumer has needed it
+  (the surveyed app applies plug-in enable/disable at startup, so it never unmaps). Build it when a
+  consumer genuinely cannot express what they need — a capability nobody has needed is speculation,
+  one someone needs and cannot express is a gap.
+
+#### Still to do for adoption readiness
+
+- [ ] **P6.2 — Write the adoption guide** (`docs/`): which kit primitive replaces which hand-rolled
+  piece, in the order an app should adopt them (shell primitives first — they carry no IPC
+  dependency), what stays the app's own, and the migration notes for each. This is the artefact the
+  sibling's session works from, so it must stand alone without this conversation.
+- [ ] **P6.3 — Close whatever the guide exposes as missing.** Writing the mapping is what surfaces a
+  gap; fix it here rather than asking the adopter to work around it.
+- [ ] **P6.4 — Keep the IPC-substrate story honest.** The adapters an adopter writes (client
+  post/subscribe shim + a host adapter over their module interface) live in THEIR repo, per D21. What
+  the kit owes is that both are expressible against the public surface — verify by writing them once
+  as a throwaway, not by shipping them.
+- [ ] **P6.5 — Portability (D20).** Already proven through a PACKAGE reference in P6.1's `portable`
+  consumer. What remains is guidance: how an app moves its facades into a `net10.0` project.
+- [ ] **P6.6 — Feed back, then re-evaluate the other targets.** Every API change P6 argues for lands
+  BEFORE 1.0 (P7 freezes SemVer).
+
 #### Increments (keep it runnable at every step — that is the phase's standing rule)
 
 - [x] **P6.1 — DONE (2026-07-31): the consumption path is proven, and it was BROKEN.**

@@ -279,4 +279,87 @@ public class MessageDispatcherTests
         Assert.True(response.Success);
         Assert.Equal("pong", response.Data);
     }
+
+    // ── Dynamically composed modules: claim, and know what is claimed ────────────────────────────
+    // The capability an app needs when it maps modules it did not write and cannot check at compile
+    // time (plug-ins, licence-gated features, per-tenant or lazily loaded areas).
+
+    private sealed class StubFacade(string module, string answer) : IModuleFacade
+    {
+        public string ModuleName => module;
+        public Task<IpcResponse> HandleMessageAsync(IpcRequest request) =>
+            Task.FromResult(IpcResponse.CreateSuccess(request.Id, answer));
+    }
+
+    [Fact]
+    public void A_dispatcher_reports_the_modules_it_routes()
+    {
+        var dispatcher = new MessageDispatcher().MapModule(new StubFacade("APP", "a"));
+
+        var registry = Assert.IsAssignableFrom<IModuleRegistry>(dispatcher);
+        Assert.True(registry.IsModuleMapped("APP"));
+        Assert.True(registry.IsModuleMapped("app")); // routing is case-insensitive, so this must be too
+        Assert.False(registry.IsModuleMapped("OTHER"));
+        Assert.Equal(["APP"], registry.MappedModules);
+    }
+
+    [Fact]
+    public void Mapping_a_module_twice_now_FAILS_instead_of_silently_doing_nothing()
+    {
+        var dispatcher = new MessageDispatcher().MapModule(new StubFacade("APP", "first"));
+
+        // A facade answers every request for its module, so the second mapping could never run. It
+        // used to be accepted silently — a dead facade with no error and nothing to grep for.
+        var ex = Assert.Throws<InvalidOperationException>(() => dispatcher.MapModule(new StubFacade("APP", "second")));
+        Assert.Contains("already mapped", ex.Message);
+        Assert.Contains(nameof(MessageDispatcherExtensions.TryMapModule), ex.Message);
+    }
+
+    [Fact]
+    public async Task TryMapModule_refuses_a_taken_name_and_leaves_the_owner_answering()
+    {
+        var dispatcher = new MessageDispatcher().MapModule(new StubFacade("APP", "owner"));
+
+        var mapped = dispatcher.TryMapModule(new StubFacade("APP", "intruder"));
+
+        // The boundary case: a module arriving from outside the app must not be able to take a name
+        // an earlier module owns — silently shadowing it would hand over that channel.
+        Assert.False(mapped);
+        var response = await dispatcher.DispatchAsync(Request("APP", "ANY"));
+        Assert.Equal("owner", response.Data);
+    }
+
+    [Fact]
+    public async Task TryMapModule_maps_a_free_name_and_reports_true()
+    {
+        var dispatcher = new MessageDispatcher().MapModule(new StubFacade("APP", "owner"));
+
+        Assert.True(dispatcher.TryMapModule(new StubFacade("PLUGIN", "extra")));
+
+        var response = await dispatcher.DispatchAsync(Request("PLUGIN", "ANY"));
+        Assert.Equal("extra", response.Data);
+    }
+
+    [Fact]
+    public void TryMapModule_THROWS_rather_than_guessing_when_the_dispatcher_cannot_answer()
+    {
+        // Never "false", and never a silent map: a dispatcher that does not know what it routes must
+        // not be able to report a name as free. The permissive wrong answer is the dangerous one.
+        var opaque = new OpaqueDispatcher();
+
+        var ex = Assert.Throws<NotSupportedException>(() => opaque.TryMapModule(new StubFacade("APP", "x")));
+        Assert.Contains(nameof(IModuleRegistry), ex.Message);
+    }
+
+    /// <summary>A conforming dispatcher that does NOT opt into the registry seam — e.g. a decorator.</summary>
+    private sealed class OpaqueDispatcher : IMessageDispatcher
+    {
+        public IMessageDispatcher Use(MessageMiddleware middleware) => this;
+        public Task<IpcResponse> DispatchAsync(IpcRequest request) =>
+            Task.FromResult(IpcResponse.CreateSuccess(request.Id, null));
+        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null) =>
+            DispatchAsync(new IpcRequest { Module = module, Type = type });
+        public Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null) =>
+            Task.FromResult(default(T)!);
+    }
 }

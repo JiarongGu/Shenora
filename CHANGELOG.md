@@ -16,6 +16,13 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- **`MapModule(IModuleFacade)` now THROWS when the module is already mapped**, instead of accepting
+  it silently. A facade answers every request for its module, so a second mapping was always dead
+  code — it simply never ran, with no error and nothing to grep for. This matches the eager DI path
+  (`MapRegisteredModules`), which has always guarded duplicates. **Migration:** if a taken name is a
+  normal outcome for you rather than a composition bug — dynamically composed modules — call
+  `TryMapModule`, which returns false instead. Nothing in a static composition is affected: every
+  module is mapped once.
 - **`LoginWindowController` is now `SessionController`** (P5.5 H4.6). It was never login-specific:
   `CoBrowseSession.Controller` is typed with it and exposes it publicly, so a co-browse consumer —
   streaming a page for remote viewing, nothing to do with signing in — had to program against a
@@ -155,6 +162,20 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`IModuleRegistry` + `IMessageDispatcher.TryMapModule` — a dispatcher can say what it routes.**
+  Module ownership used to be implicit: nothing recorded that a name was taken, so mapping the same
+  module twice was silent (the second facade never ran, with no error). Any app composing its IPC
+  surface DYNAMICALLY needs to know — plug-ins, features behind a licence or flag, per-tenant
+  modules, lazily loaded areas — and for a module arriving from outside the app it is a boundary
+  question: a late mapping that quietly shadowed an earlier one would take over that channel.
+  `MessageDispatcher` now implements `IModuleRegistry` (`MappedModules`, `IsModuleMapped`,
+  `TrackMappedModule`), kept OFF `IMessageDispatcher` so that interface stays the four things a
+  dispatcher IS and a decorator still has four members to write. `TryMapModule` maps unless the name
+  is taken; it **throws** rather than answering when the dispatcher does not implement the registry,
+  because reporting a name as free is the dangerous wrong answer.
+  KNOWN LIMIT, stated rather than papered over: a mapped module cannot be RELEASED — the pipeline
+  only grows, so disabling a dynamic module needs a restart. No consumer has needed runtime removal
+  yet, so the kit does not guess at that surface (`TASKS.md`).
 - **`ShenoraBridge.post` — send without awaiting a reply**, and `createShenoraStore` — a store fed by
   one module's host event stream (P6.3a; design:
   `docs/2026-07-31-shenora-oneway-ipc-design.md`). Until now `invoke` was the ONLY outbound call, so

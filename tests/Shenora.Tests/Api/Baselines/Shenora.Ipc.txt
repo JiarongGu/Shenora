@@ -13,6 +13,10 @@ interface Shenora.Ipc.IMessageDispatcher
 interface Shenora.Ipc.IModuleFacade
   public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleMessageAsync(Shenora.Ipc.IpcRequest request)
   public abstract string ModuleName { get; }
+interface Shenora.Ipc.IModuleRegistry
+  public abstract System.Collections.Generic.IReadOnlyCollection<string> MappedModules { get; }
+  public abstract bool IsModuleMapped(string module)
+  public abstract void TrackMappedModule(string module)
 static class Shenora.Ipc.IpcCategories
   public const string Ipc = "ipc"
   public const string Notification = "notification"
@@ -63,12 +67,15 @@ static class Shenora.Ipc.IpcServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddModuleFacade<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Ipc.IModuleFacade
   public static Shenora.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
   public static Shenora.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
-sealed class Shenora.Ipc.MessageDispatcher : Shenora.Ipc.IMessageDispatcher
+sealed class Shenora.Ipc.MessageDispatcher : Shenora.Ipc.IMessageDispatcher, Shenora.Ipc.IModuleRegistry
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.MessageDispatcher>? logger = null)
   public Shenora.Ipc.MessageDispatcher Use(Shenora.Ipc.MessageMiddleware middleware)
+  public System.Collections.Generic.IReadOnlyCollection<string> MappedModules { get; }
   public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> DispatchAsync(Shenora.Ipc.IpcRequest request)
   public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null)
   public System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null)
+  public bool IsModuleMapped(string module)
+  public void TrackMappedModule(string module)
 static class Shenora.Ipc.MessageDispatcherExtensions
   public static Shenora.Ipc.IMessageDispatcher MapModule(Shenora.Ipc.IMessageDispatcher dispatcher, Shenora.Ipc.IModuleFacade facade)
   public static Shenora.Ipc.IMessageDispatcher MapModule(Shenora.Ipc.IMessageDispatcher dispatcher, string module, System.Action<Shenora.Ipc.ModuleRouteBuilder> configure)
@@ -77,6 +84,7 @@ static class Shenora.Ipc.MessageDispatcherExtensions
   public static Shenora.Ipc.IMessageDispatcher UseLogging(Shenora.Ipc.IMessageDispatcher dispatcher, Microsoft.Extensions.Logging.ILogger? logger = null)
   public static Shenora.Ipc.IMessageDispatcher UseModule(Shenora.Ipc.IMessageDispatcher dispatcher, string module, System.Func<Shenora.Ipc.IpcRequest, System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> handler)
   public static Shenora.Ipc.IMessageDispatcher UseRoute(Shenora.Ipc.IMessageDispatcher dispatcher, string module, string type, System.Func<Shenora.Ipc.IpcRequest, System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> handler)
+  public static bool TryMapModule(Shenora.Ipc.IMessageDispatcher dispatcher, Shenora.Ipc.IModuleFacade facade)
 delegate Shenora.Ipc.MessageMiddleware
   public .ctor(object object, System.IntPtr method)
   public virtual System.IAsyncResult BeginInvoke(Shenora.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> next, System.AsyncCallback callback, object object)

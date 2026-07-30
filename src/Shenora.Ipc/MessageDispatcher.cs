@@ -25,7 +25,7 @@ public delegate Task<IpcResponse?> MessageMiddleware(IpcRequest request, Func<Ta
 /// thread every handler's synchronous segment runs there too (design §5's async-interleaving
 /// threading model) — including handlers reached AFTER an asynchronous fall-through.
 /// </summary>
-public sealed class MessageDispatcher : IMessageDispatcher
+public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
 {
     private readonly ILogger<MessageDispatcher> _logger;
 
@@ -34,6 +34,10 @@ public sealed class MessageDispatcher : IMessageDispatcher
     private readonly object _pipelineLock = new();
     private volatile MessageMiddleware[] _middlewares = [];
     private volatile Func<IpcRequest, Task<IpcResponse?>>? _pipeline;
+    // Claimed module names. Case-insensitive because routing is. Guarded by _pipelineLock rather
+    // than a concurrent set: LATE MAPPING is supported, so this is written while requests are in
+    // flight, and it must move in step with the pipeline it describes.
+    private readonly HashSet<string> _mappedModules = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The logger is optional so composition works without <c>AddLogging</c>.</summary>
     public MessageDispatcher(ILogger<MessageDispatcher>? logger = null)
@@ -184,6 +188,27 @@ public sealed class MessageDispatcher : IMessageDispatcher
             _pipeline = null;
         }
         return this;
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> MappedModules
+    {
+        // A snapshot under the lock: late mapping means this can be read while another thread maps.
+        get { lock (_pipelineLock) { return _mappedModules.ToArray(); } }
+    }
+
+    /// <inheritdoc />
+    public bool IsModuleMapped(string module)
+    {
+        if (string.IsNullOrEmpty(module)) return false;
+        lock (_pipelineLock) { return _mappedModules.Contains(module); }
+    }
+
+    /// <inheritdoc />
+    public void TrackMappedModule(string module)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(module);
+        lock (_pipelineLock) { _mappedModules.Add(module); }
     }
 
     /// <summary>

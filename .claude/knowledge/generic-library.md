@@ -51,6 +51,19 @@ keeps the library reusable (adopted from the family's other library, where it's 
   solving their stack, not their problem.
   **The failure this prevents is BOTH directions.** Designing without looking ships something nobody
   can adopt; looking and then copying ships their business logic into `src/`.
+- **Read a sibling to analyse the library's CAPABILITY, not to mirror its implementation (user
+  direction, 2026-07-31, after correcting this twice).** A sibling is a CHECKPOINT, never the spec —
+  the library is generic and must serve apps that do not exist yet, so the question its code answers
+  is *"is this capability present and safe?"*, not *"what method did they write?"*. Turn every
+  finding into a capability question one level up before designing:
+  their plug-in loader calls `IsRegistered` → **can an app compose its IPC surface dynamically and
+  safely at runtime?**; their store helper wires host events once → **can many components share
+  host-fed state without each re-wiring it?** Ship the answer to the capability question; their
+  method is one instance of it, and copying the method is how a consumer's shape gets shipped.
+  **The checkpoint also tells you what NOT to build.** Same survey: runtime UNMAPPING is a real
+  capability gap (the pipeline only grows), but no consumer needs it — the surveyed app applies
+  plug-in enable/disable at startup — so it is RECORDED as a known limit instead of guessed at. A
+  capability nobody has needed is speculation; a capability someone needs and cannot express is a gap.
 - **Borrow the family library's PACKAGING model, not its design or verification model (user
   direction, 2026-07-31).** Lyntai is the repo template — versioning, release, docs discipline,
   API-surface baselines — and that is all it is. It is a pure backend, process-driven library:

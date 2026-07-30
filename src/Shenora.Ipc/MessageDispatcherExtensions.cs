@@ -138,10 +138,69 @@ public static class MessageDispatcherExtensions
     /// <summary>
     /// Route a whole module to a facade. This replaces the source app's static mutable service
     /// registry: facades live in DI (registered as <see cref="IModuleFacade"/>) and are mapped here.
+    /// <para>
+    /// THROWS if the module is already mapped, matching the eager DI path
+    /// (<c>MapRegisteredModules</c>) which has always guarded this. A facade answers every request
+    /// for its module, so a second mapping is dead code — it used to be accepted silently and simply
+    /// never run. Use <see cref="TryMapModule"/> when a name being taken is a normal outcome rather
+    /// than a composition bug.
+    /// </para>
     /// </summary>
     public static IMessageDispatcher MapModule(this IMessageDispatcher dispatcher, IModuleFacade facade)
     {
+        ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(facade);
+        if (dispatcher is IModuleRegistry registry)
+        {
+            if (registry.IsModuleMapped(facade.ModuleName))
+            {
+                throw new InvalidOperationException(
+                    $"Module '{facade.ModuleName}' is already mapped. A facade answers every request for its "
+                    + $"module, so this mapping would never run. Use {nameof(TryMapModule)} if a taken name is "
+                    + "an expected outcome (dynamically composed modules).");
+            }
+            registry.TrackMappedModule(facade.ModuleName);
+        }
         return dispatcher.UseModule(facade.ModuleName, async request => await facade.HandleMessageAsync(request));
+    }
+
+    /// <summary>
+    /// Map <paramref name="facade"/> unless its module name is already taken; returns false if it is.
+    /// <para>
+    /// The primitive for a DYNAMICALLY composed IPC surface — modules an app does not write itself
+    /// and cannot check at compile time: plug-ins, optional features behind a licence or flag,
+    /// per-tenant modules, lazily loaded areas. For anything arriving from outside the app this is a
+    /// boundary, not tidiness: without it a late mapping could quietly take a name an earlier module
+    /// owns. Map the app's own modules FIRST, then offer the rest through this.
+    /// </para>
+    /// <para>
+    /// Throws <see cref="NotSupportedException"/> when the dispatcher cannot answer the question —
+    /// never "false", and never a silent map. A dispatcher that does not know what it routes must not
+    /// be able to report a name as free; a permissive wrong answer is the dangerous one. Custom
+    /// dispatchers and decorators opt in by implementing <see cref="IModuleRegistry"/>.
+    /// </para>
+    /// <para>
+    /// KNOWN LIMIT, stated rather than worked around: a mapped module cannot be RELEASED — the
+    /// pipeline only grows, so disabling a dynamic module needs a restart. No consumer has yet needed
+    /// runtime removal (the surveyed app applies plug-in enable/disable at startup), so the kit does
+    /// not guess at that surface; it is a real capability gap, recorded in <c>TASKS.md</c>.
+    /// </para>
+    /// </summary>
+    /// <returns>True if the module was mapped; false if the name was already claimed.</returns>
+    public static bool TryMapModule(this IMessageDispatcher dispatcher, IModuleFacade facade)
+    {
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        ArgumentNullException.ThrowIfNull(facade);
+        if (dispatcher is not IModuleRegistry registry)
+        {
+            throw new NotSupportedException(
+                $"This {nameof(IMessageDispatcher)} does not implement {nameof(IModuleRegistry)}, so it cannot "
+                + "say whether a module name is already taken. Implement it (a decorator must forward all three "
+                + "members) rather than assuming the name is free.");
+        }
+        if (registry.IsModuleMapped(facade.ModuleName)) return false;
+        registry.TrackMappedModule(facade.ModuleName);
+        dispatcher.UseModule(facade.ModuleName, async request => await facade.HandleMessageAsync(request));
+        return true;
     }
 }
