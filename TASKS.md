@@ -95,7 +95,10 @@ code comment.
 
 **H2 — Hangs, crashes and lifetime (a consuming app cannot work around these)**
 
-- [ ] **`RenderSession` must observe the tokens it accepts.** `OnUiAsync:213-235` checks the token
+- [~] **`RenderSession` must observe the tokens it accepts.** HALF DONE in H4.2 — the marshal now goes
+  through `WinFormsUiDispatcher`, whose `InvokeAsync` observes the token via `WaitAsync`, so the CALLER
+  always escapes. STILL OWED, and this is the part that actually frees the pool: an `OpTimeout` option,
+  and the pool discarding an instance whose op was abandoned (the wedged page keeps its browser). `OnUiAsync:213-235` checks the token
   once inside the posted delegate then awaits with no `WaitAsync(ct)` and no cap (zero `WaitAsync`
   in the file). Its sibling `LoginWindowController.cs:166-169,184` does it right AND documents it as
   the source's known gap. A page blocked in JS (`alert()`, spin loop) makes
@@ -103,18 +106,21 @@ code comment.
   `await using`, so the lease never returns and the permit never releases — with `Capacity=2`, two
   such pages answer `RENDER_BUSY` for the process lifetime. FIX: `WaitAsync(ct)` + an `OpTimeout`
   option; the pool discards an instance whose op was abandoned.
-- [ ] **Suppress script dialogs on session browsers.** `SessionBrowser.cs:112-120` leaves
+- [x] **Suppress script dialogs on session browsers.** DONE in H4.4 (`AreDefaultScriptDialogsEnabled = false`). `SessionBrowser.cs:112-120` leaves
   `AreDefaultScriptDialogsEnabled` true while `OffscreenWindow` parks the host off-screen at
   opacity 0 — an `alert()` blocks the renderer behind a dialog nobody can see or dismiss, which
   compounds the item above.
-- [ ] **Unclosable login modal.** `LoginWindow.cs:274` finally order is
+- [x] **Unclosable login modal.** DONE — `Finish()`+`Close()` moved first, app callback guarded. `LoginWindow.cs:274` finally order is
   `fallback.Dispose(); OnLoading?.Invoke(false); controller?.Finish(); form.Close();` — `OnLoading`
   is app code, so a throw (splash already disposed) escapes the `async void` handler, `Finish()`
   never runs, and the foreground `FormClosing` handler (`LoginWindowController.cs:67-72`) then
   cancels EVERY close including the user's and `Application.Exit`; `ShowDialog` never returns and
   the busy gate stays set. FIX: try/catch the callback; `Finish()`+`Close()` FIRST. Same for
   `:234` and the posted body behind `SetLoading` (`LoginWindowController.cs:239`).
-- [ ] **The frameless-maximize ⇄ window-state seam (live in the reference composition).**
+- [x] **The frameless-maximize ⇄ window-state seam (live in the reference composition).** DONE via the
+  new `IAppMaximizable` seam (`OptimizedForm` implements it; `WindowStateManager.Save`/`Apply` prefer
+  it over `Form.WindowState`/`RestoreBounds`), + 4 regression tests. The `MinimumSize` clobber below
+  was fixed in the same pass.
   `WindowStateManager.Save:60-61` reads `form.WindowState`, but frameless `OptimizedForm.Maximize()`
   (`:142-157`) only sets `_maximized` (pinned: `OptimizedFormTests:91` asserts `Normal`). Closing
   maximized persists `maximized:false` WITH the work-area rect as normal bounds → next launch fills
@@ -123,7 +129,11 @@ code comment.
   the work-area rect as `_restoreBounds` so RESTORE IS A PERMANENT NO-OP. FIX: an app-maximized
   seam (`IsAppMaximized` + app restore bounds) that `Save`/`Apply` prefer over
   `Form.WindowState`/`RestoreBounds`.
-- [ ] **`AddMessageDispatcher` DI recursion → StackOverflow, no diagnostic.**
+- [x] **`AddMessageDispatcher` DI recursion → StackOverflow, no diagnostic.** DONE —
+  `MapRegisteredModulesLazily` + a duplicate-module guard. NOTE the honest asymmetry, documented at the
+  site: the eager `MapRegisteredModules` throws at composition, but the lazy path can't detect a
+  duplicate until the first dispatch, and `DispatchAsync` never throws by contract — so there it is a
+  logged error response. "Diagnosable", not "fails at startup".
   `IpcServiceCollectionExtensions.cs:49-55` enumerates facades (`sp.GetServices<IModuleFacade>()`)
   INSIDE the `IMessageDispatcher` singleton factory. Any facade whose graph injects
   `IMessageDispatcher` — the documented cross-module `SendAsync` seam — re-enters the same factory;
@@ -131,15 +141,21 @@ code comment.
   provider, and the cache entry isn't published yet → unbounded recursion, process death. FIX: map
   facades lazily (terminal middleware over a `Lazy<IModuleFacade[]>`) so the singleton is cached
   before enumeration; test the exact composition (`class F(IMessageDispatcher) : BaseFacade`).
-- [ ] **`app.Dispose()` throws on a clean quit** when any singleton is `IAsyncDisposable`-only
+- [x] **`app.Dispose()` throws on a clean quit** when any singleton is `IAsyncDisposable`-only
   (`ShenoraApplication.cs:46,132`; MS DI throws for async-only captured disposables). Latent against
   Shenora's OWN `RenderSession`/`CoBrowseSession`. FIX: add `IAsyncDisposable` → `_provider.DisposeAsync()`.
-- [ ] **Absolutize the resolved root/data paths** in `ShenoraPaths.Resolve`/`ResolveRoot:90-101`
+- [x] **Absolutize the resolved root/data paths** in `ShenoraPaths.Resolve`/`ResolveRoot:90-101`
   (returned verbatim today). `FileDialogs` sets `RestoreDirectory = false` on all three dialogs
   (`:146,174,218`, deliberate), so the process CWD moves after the first dialog and a relative
   `--app-root` re-resolves `DataDir` mid-session; it also defeats `SingleInstanceGuard.ChannelKey`
   hashing (two spellings of one install → two instances over the single-writer WebView2 folder).
-- [ ] **No app callback runs unguarded inside a WebView2/WinForms event handler.** Unguarded today:
+- [~] **No app callback runs unguarded inside a WebView2/WinForms event handler.** PARTLY DONE in H4.2
+  — `WindowCommandFacade` (SET_THEME's `ApplyTheme`, CLOSE's `FormClosing`) and `DropZoneManager` now
+  post through the guarded dispatcher, and `LoginWindow`'s `OnLoading` is guarded (above). STILL OPEN:
+  `WebViewHost`'s `OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` + its `_log?.Invoke`
+  calls, `OptimizedForm.WndProcHook` (a throwing hook inside `WndProc` is the blocking-dialog failure
+  mode), and `SessionController`'s tap lists (plain `List<T>` mutated off the UI thread while the UI
+  thread copies them). Original list:
   `WebViewHost.cs:335-374` (`OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` + every
   `_log?.Invoke`), the posted bodies in `DropZoneManager.cs:201-211` and
   `WindowCommandFacade.cs:147-158` (a throwing `ApplyTheme` or `form.Close()` takes the app down),
