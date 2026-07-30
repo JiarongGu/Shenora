@@ -118,7 +118,7 @@ public sealed class RenderSessionPool : IDisposable
 
     // ONE environment for the pool's single profile, instead of one per instance. Owner-scoped on
     // purpose — see SessionEnvironmentCache for why a static, profile-keyed cache would break
-    // LoginWindow.ClearProfile.
+    // InteractiveSession.ClearProfile.
     private readonly SessionEnvironmentCache _environment = new();
     private int _created;                                // total instances realized (≤ cap; grows, shrinks on discard)
     private Form? _sharedHost;                           // the ONE hidden form runtime-mode webviews share (lazy)
@@ -260,8 +260,13 @@ public sealed class RenderSessionPool : IDisposable
                     // The instance exists before init so the crash callback can mark it — a renderer
                     // can die at any time, including during the very first navigation.
                     var instance = new PoolInstance(host, web);
+                    // The linked token (caller + pool dispose) now reaches INIT itself (P5.5 H9.6):
+                    // a cancelled lease used to wait out the full InitTimeout before the re-check below
+                    // could fire. It gates the await only — the environment task is shared across this
+                    // pool's instances, so cancelling creation for one caller would break the others.
                     await SessionBrowser.InitializeAsync(web, _options.Browser,
-                        onProcessFailed: _ => instance.Poisoned = true, environmentCache: _environment)
+                        onProcessFailed: _ => instance.Poisoned = true, environmentCache: _environment,
+                        cancellationToken: cancellationToken)
                         .ConfigureAwait(true);
 
                     // Re-check AFTER the multi-second init (P5.5 H2). The pre-check above was the only
@@ -346,8 +351,8 @@ public sealed class RenderSessionPool : IDisposable
     /// enforcement seam. Documented on both options.
     /// </para>
     /// <para>
-    /// NOT applied to <c>LoginWindow</c> deliberately: an interactive sign-in legitimately redirects
-    /// across hosts (OAuth), so cancelling unvetted hops there would break real logins. A login
+    /// NOT applied to <c>InteractiveSession</c> deliberately: a human-in-the-loop flow legitimately redirects
+    /// across hosts (OAuth), so cancelling unvetted hops there would break real sign-in flows. A
     /// window is human-driven, not a data-driven SSRF surface.
     /// </para>
     /// </summary>

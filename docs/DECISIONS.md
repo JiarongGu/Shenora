@@ -191,3 +191,33 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   at adoption — consistent with D15 (the app keeps a thin wrapper; the framework gains the proven
   core). Tracked as `TASKS.md` P5.5 batch H9, deliberately AFTER the re-layer so an API redesign is
   not mixed into a package-boundary move.
+
+- **D22 — Name every public type for its MECHANISM, never for a scenario, product or business need.**
+  (User direction, 2026-07-31: *"why we have a really specific business logic for login??"* … *"this is
+  more than behavior leak, its about what we currently building — we should build a generic library,
+  so for co-browser it should be focus on browser hook, life cycle, events instead a single business
+  need."*) D21 said ship primitives, not the product. This is the naming half of the same idea, and it
+  needed saying separately because the kit passed D21 on SHAPE while failing it on NAME — twice.
+  **The test:** could a consumer whose use case is nothing like the one in the name still recognise
+  this type as the thing they need? If not, it is named for a scenario.
+  Two worked examples, both fixed in P5.5 H9.7/H9.8 and both caught only because a reader asked:
+  `LoginWindow` contained NO login logic — it is a busy-gated, profile-isolated browser window that
+  runs an app-supplied driver until it captures a blob (→ `InteractiveSession`); and
+  `CoBrowseSession` was an off-screen browser that streams frames and accepts input, which is
+  co-browsing, remote support, visual capture or a preview pane depending on who wires it
+  (→ `StreamingSession`). Neither was a behaviour bug: both worked. The cost is subtler and worse —
+  a scenario name makes the kit LOOK like it ships that product, so the next contributor adds more of
+  the product to it, and consumers with a different use case never find the primitive at all. It also
+  leaks: `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`, so a consumer
+  streaming a page for remote viewing had to program against a login type.
+  **Scope and the deliberate exception.** This governs the CORE surface. A REFERENCE DRIVER may name
+  the scenario it demonstrates — `CookieLoginFlow` keeps its name on purpose, because naming the
+  recipe is the entire point of shipping one (D21 already blesses it as the one opt-in driver). Sibling
+  vocabulary that is genuinely mechanism is likewise fine and must not be "fixed":
+  `ProfileDirectory` is a Chromium user-data folder, `Module` is the kit's composition unit,
+  `ImmersiveDarkMode`/`UserDataFolder` are platform SDK terms.
+  **How to enforce it:** the API-surface baselines already enumerate every public type and member, so a
+  domain-vocabulary sweep over `tests/Shenora.Tests/Api/Baselines/*.txt` is the cheap periodic check —
+  that is how the whole-library audit was done, and it found the Login cluster was the only real leak
+  plus one PARAMETER name (`driveLogin`), which the baselines pin because named arguments are a source
+  contract. Recorded as a rule in `.claude/knowledge/generic-library.md`.

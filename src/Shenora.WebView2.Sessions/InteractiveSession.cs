@@ -1,9 +1,10 @@
+using Shenora.Ipc;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.WebView2.Sessions;
 
-/// <summary>Outcome of a <see cref="LoginWindow.RunAsync"/> flow.</summary>
-public sealed class LoginResult
+/// <summary>Outcome of a <see cref="InteractiveSession.RunAsync"/> flow.</summary>
+public sealed class SessionResult
 {
     /// <summary>True when the driver captured a session.</summary>
     public required bool Success { get; init; }
@@ -11,56 +12,84 @@ public sealed class LoginResult
     /// <summary>The driver's captured session blob (its own format — commonly serialized cookies).</summary>
     public string? Blob { get; init; }
 
-    /// <summary>A <see cref="LoginErrorCodes"/> value when <see cref="Success"/> is false.</summary>
+    /// <summary>A <see cref="SessionErrorCodes"/> value when <see cref="Success"/> is false.</summary>
     public string? ErrorCode { get; init; }
 
-    internal static LoginResult Ok(string blob) => new() { Success = true, Blob = blob };
+    internal static SessionResult Ok(string blob) => new() { Success = true, Blob = blob };
 
-    internal static LoginResult Fail(string errorCode) => new() { Success = false, ErrorCode = errorCode };
+    internal static SessionResult Fail(string errorCode) => new() { Success = false, ErrorCode = errorCode };
+
+    /// <summary>
+    /// Throw this outcome's failure as an <see cref="OperationException"/> — the bridge from
+    /// <see cref="SessionErrorCodes"/> into the IPC error contract (P5.5 H9.4). No-op on success.
+    /// <para>
+    /// The two vocabularies were never really separate: these codes are already SCREAMING_SNAKE i18n
+    /// keys in the shape <c>IpcErrorCodes</c> uses, so the only thing missing was a typed path between
+    /// them — and without one, every app routing a session over IPC hand-wrote the same
+    /// <c>if (!result.Success) throw new OperationException(result.ErrorCode!)</c>. Throwing (rather
+    /// than returning an error object) is what plugs into the dispatcher's documented boundary:
+    /// <c>BaseFacade</c> and <c>MessageDispatcher</c> already turn an <see cref="OperationException"/>
+    /// into the structured wire error, so a facade route becomes a single call.
+    /// </para>
+    /// <code>
+    /// var result = await session.RunAsync(flow.DriveAsync, cancellationToken);
+    /// result.ThrowIfFailed();          // SESSION_BUSY / SESSION_CANCELLED / … cross as the wire code
+    /// return new { blob = result.Blob };
+    /// </code>
+    /// </summary>
+    /// <exception cref="OperationException">When <see cref="Success"/> is false.</exception>
+    public void ThrowIfFailed()
+    {
+        if (Success) return;
+        // A failure with no code should be impossible (every Fail site passes one), but reporting
+        // UNKNOWN_ERROR beats throwing a NullReference out of an error path.
+        throw new OperationException(ErrorCode ?? IpcErrorCodes.UnknownError);
+    }
 }
 
-/// <summary>Error codes <see cref="LoginWindow"/> reports (wire-friendly i18n keys, the family shape).</summary>
-public static class LoginErrorCodes
+/// <summary>Error codes <see cref="InteractiveSession"/> reports (wire-friendly i18n keys, the family shape).</summary>
+public static class SessionErrorCodes
 {
-    /// <summary>Another login window is already open — logins serialize.</summary>
-    public const string Busy = "LOGIN_BUSY";
+    /// <summary>Another session is already open — interactive sessions serialize.</summary>
+    public const string Busy = "SESSION_BUSY";
 
     /// <summary>The caller's token tripped, or the user closed before the driver captured.</summary>
-    public const string Cancelled = "LOGIN_CANCELLED";
+    public const string Cancelled = "SESSION_CANCELLED";
 
-    /// <summary>The driver completed without a session (e.g. window closed while signed out).</summary>
-    public const string Incomplete = "LOGIN_INCOMPLETE";
+    /// <summary>The driver finished without capturing anything (e.g. the user closed the window).</summary>
+    public const string Incomplete = "SESSION_INCOMPLETE";
 
     /// <summary>The driver (or the window) threw — details stay in the host log.</summary>
-    public const string Error = "LOGIN_ERROR";
+    public const string Error = "SESSION_ERROR";
 
     /// <summary>The UI-thread anchor is gone (headless / teardown).</summary>
-    public const string Unavailable = "LOGIN_UNAVAILABLE";
+    public const string Unavailable = "SESSION_UNAVAILABLE";
 }
 
-/// <summary>Inputs for <see cref="LoginWindow"/>.</summary>
-public sealed class LoginWindowOptions
+/// <summary>Inputs for <see cref="InteractiveSession"/>.</summary>
+public sealed class InteractiveSessionOptions
 {
     /// <summary>A live UI-thread control (typically the main window) window work marshals onto.</summary>
     public required Control Anchor { get; init; }
 
     /// <summary>
-    /// The login's persistent profile directory — one per provider, AND per sub-account where a
+    /// The session's persistent profile directory — one per provider, AND per sub-account where a
     /// provider serves multiple accounts. The sub scoping is a SECURITY boundary, not tidiness
     /// (measured in the source): definitions under one provider id shared a cookie jar, so one
     /// hostile or sloppy definition could name another's cookie domain and lift the session the
     /// user established there. Compose the path per (provider, sub) and each account's cookies
-    /// live in a store the others cannot open. Wipe it on logout (<see cref="LoginWindow.ClearProfile"/>).
+    /// live in a store the others cannot open. Wipe it to discard the captured session for real
+    /// (<see cref="InteractiveSession.ClearProfile"/>).
     /// </summary>
     public required string ProfileDirectory { get; init; }
 
     /// <summary>Window title.</summary>
-    public string Title { get; init; } = "Sign in";
+    public string Title { get; init; } = "Session";
 
     /// <summary>
-    /// Initial client size — desktop-width by default ON PURPOSE: responsive login pages reflow
-    /// to a mobile layout in a narrow window, and at least one family provider renders NO login
-    /// UI at all below desktop width (measured). The driver shrinks to the login box afterwards
+    /// Initial client size — desktop-width by default ON PURPOSE: responsive pages reflow
+    /// to a mobile layout in a narrow window, and at least one measured provider renders NO
+    /// interactive UI at all below desktop width. The driver shrinks to the real content box afterwards
     /// via <see cref="SessionController.FitToBox"/>.
     /// </summary>
     public Size ClientSize { get; init; } = new(680, 780);
@@ -78,7 +107,7 @@ public sealed class LoginWindowOptions
     public Form? Owner { get; init; }
 
     /// <summary>
-    /// True (default): the window shows immediately and <see cref="LoginWindow.RunAsync"/>
+    /// True (default): the window shows immediately and <see cref="InteractiveSession.RunAsync"/>
     /// behaves like the server-backed sibling's modal flow. False: the SILENT-REFRESH shape from
     /// the primary sibling — the window is created REALIZED BUT OFF-SCREEN, and only a driver
     /// call to <see cref="SessionController.Reveal"/> brings it on screen; a driver that
@@ -89,7 +118,7 @@ public sealed class LoginWindowOptions
 
     /// <summary>
     /// Consulted before every controller navigation (return false to refuse) — the same
-    /// SSRF-shaped seam as the session pool: login URLs are data-driven (provider definitions),
+    /// SSRF-shaped seam as the session pool: the URLs are data-driven (provider definitions),
     /// and this window both discloses the rendered page and accepts input.
     /// </summary>
     public Func<Uri, CancellationToken, Task<bool>>? NavigationGuard { get; init; }
@@ -108,91 +137,102 @@ public sealed class LoginWindowOptions
 }
 
 /// <summary>
-/// The interactive login window, merged from both family proofs: a real WebView2 window over a
-/// per-provider persistent profile whose DRIVER (your <c>DriveLoginAsync</c>-shaped callback, or
-/// the built-in <see cref="CookieLoginFlow"/>) navigates, watches, and returns the captured
-/// session blob. Runs the flow inside a MODAL <c>ShowDialog</c> nested message loop (so the
-/// window pumps reliably even when triggered from a background thread) with the sibling-proven
-/// mechanics: one login at a time, exactly-once completion (a dropped post or a tripped token
-/// can't wedge the busy gate), the user's close is HELD so the driver gets a final cookie read,
-/// and optional silent-refresh (see <see cref="LoginWindowOptions.RevealImmediately"/>).
+/// A HUMAN-IN-THE-LOOP browser session: a real WebView2 window over a persistent, isolated profile,
+/// whose DRIVER — app code — navigates, watches, and returns whatever it captured.
+/// <para>
+/// The kit owns the MECHANICS, not the scenario (D21). Those mechanics, merged from both family
+/// proofs: a modal <c>ShowDialog</c> nested message loop so the window pumps reliably even when
+/// triggered from a background thread; one session at a time; exactly-once completion (a dropped
+/// post or a tripped token cannot wedge the busy gate); the user's close is HELD so the driver gets
+/// a final read; and reveal-on-demand, so a driver that finishes without help never shows a window
+/// at all (see <see cref="InteractiveSessionOptions.RevealImmediately"/>).
+/// </para>
+/// <para>
+/// WHAT IT IS FOR is the driver's business: signing in, clearing a captcha or an interstitial,
+/// accepting terms, completing a checkout step — anything that needs a real browser and, sometimes,
+/// a real person. This type was called <c>LoginWindow</c> until P5.5 H9.7 and contained no login
+/// logic even then; the name was the last of the login vocabulary H4.6 started removing when it made
+/// the controller neutral. <see cref="CookieLoginFlow"/> remains as ONE opt-in reference driver, and
+/// it keeps its name because a reference driver naming the scenario it demonstrates is the point of
+/// it.
+/// </para>
 /// </summary>
-public sealed class LoginWindow
+public sealed class InteractiveSession
 {
-    private readonly LoginWindowOptions _options;
-    private int _busy; // 0 idle, 1 a login window is open (logins serialize)
+    private readonly InteractiveSessionOptions _options;
+    private int _busy; // 0 idle, 1 a session window is open (they serialize)
 
-    public LoginWindow(LoginWindowOptions options)
+    public InteractiveSession(InteractiveSessionOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
-    /// <summary>True when a login window is currently open.</summary>
+    /// <summary>True when a session window is currently open.</summary>
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
 
     /// <summary>
-    /// Run one login. <paramref name="driveLogin"/> receives the controller and returns the
-    /// captured session blob (null = incomplete). The whole login is awaited — desktop callers
+    /// Run one interactive session. <paramref name="driver"/> receives the controller and returns
+    /// the captured blob (null = incomplete). The whole session is awaited — desktop callers
     /// long-poll it by design.
     /// </summary>
-    public async Task<LoginResult> RunAsync(
-        Func<SessionController, CancellationToken, Task<string?>> driveLogin,
+    public async Task<SessionResult> RunAsync(
+        Func<SessionController, CancellationToken, Task<string?>> driver,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(driveLogin);
+        ArgumentNullException.ThrowIfNull(driver);
         var anchor = _options.Anchor;
-        if (anchor.IsDisposed) return LoginResult.Fail(LoginErrorCodes.Unavailable);
+        if (anchor.IsDisposed) return SessionResult.Fail(SessionErrorCodes.Unavailable);
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
-            return LoginResult.Fail(LoginErrorCodes.Busy);
+            return SessionResult.Fail(SessionErrorCodes.Busy);
 
-        var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<SessionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         // Release the busy gate + complete EXACTLY ONCE, whoever finishes first: the UI
         // delegate, or the token if that delegate is never pumped (host teardown between the
         // post and the message loop) — otherwise a dropped post would wedge the gate at busy
-        // for the whole session (every future login answers LOGIN_BUSY) and hang the caller
+        // for the whole process (every future session answers SESSION_BUSY) and hang the caller
         // (the source's measured incident).
-        void Finish(LoginResult result)
+        void Finish(SessionResult result)
         {
             if (tcs.TrySetResult(result)) Interlocked.Exchange(ref _busy, 0);
         }
 
-        using var registration = cancellationToken.Register(() => Finish(LoginResult.Fail(LoginErrorCodes.Cancelled)));
+        using var registration = cancellationToken.Register(() => Finish(SessionResult.Fail(SessionErrorCodes.Cancelled)));
         try
         {
             anchor.BeginInvoke(new Action(() =>
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    Finish(LoginResult.Fail(LoginErrorCodes.Cancelled));
+                    Finish(SessionResult.Fail(SessionErrorCodes.Cancelled));
                     return;
                 }
-                LoginResult result;
+                SessionResult result;
                 try
                 {
-                    result = RunOnUi(driveLogin, cancellationToken);
+                    result = RunOnUi(driver, cancellationToken);
                 }
                 catch
                 {
                     // Details stay host-side; the wire learns only the code (the error contract).
-                    result = LoginResult.Fail(LoginErrorCodes.Error);
+                    result = SessionResult.Fail(SessionErrorCodes.Error);
                 }
                 Finish(result);
             }));
         }
         catch
         {
-            Finish(LoginResult.Fail(LoginErrorCodes.Unavailable));
+            Finish(SessionResult.Fail(SessionErrorCodes.Unavailable));
         }
         return await tcs.Task.ConfigureAwait(false);
     }
 
     /// <summary>
     /// Runs on the UI thread. Shows the window MODALLY (ShowDialog → its own nested message
-    /// loop) and drives the login inside it: on <c>Shown</c> the WebView2 comes up, the driver
+    /// loop) and drives the session inside it: on <c>Shown</c> the WebView2 comes up, the driver
     /// runs over the controller, and when it returns the window closes (ending ShowDialog).
     /// </summary>
-    private LoginResult RunOnUi(
-        Func<SessionController, CancellationToken, Task<string?>> driveLogin,
+    private SessionResult RunOnUi(
+        Func<SessionController, CancellationToken, Task<string?>> driver,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_options.ProfileDirectory);
@@ -236,7 +276,7 @@ public sealed class LoginWindow
             }
         }
 
-        var outcome = LoginResult.Fail(LoginErrorCodes.Cancelled);
+        var outcome = SessionResult.Fail(SessionErrorCodes.Cancelled);
         form.Shown += async (_, _) =>
         {
             if (cancellationToken.IsCancellationRequested) { form.Close(); return; }
@@ -251,18 +291,18 @@ public sealed class LoginWindow
 
                 controller = new SessionController(form, web, _options.NavigationGuard, _options.OnLoading, foreground: true);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, controller.WindowClosed);
-                var blob = await driveLogin(controller, linked.Token);
+                var blob = await driver(controller, linked.Token);
                 outcome = !string.IsNullOrEmpty(blob)
-                    ? LoginResult.Ok(blob)
-                    : LoginResult.Fail(LoginErrorCodes.Incomplete);
+                    ? SessionResult.Ok(blob)
+                    : SessionResult.Fail(SessionErrorCodes.Incomplete);
             }
             catch (OperationCanceledException)
             {
-                outcome = LoginResult.Fail(LoginErrorCodes.Cancelled);
+                outcome = SessionResult.Fail(SessionErrorCodes.Cancelled);
             }
             catch
             {
-                outcome = LoginResult.Fail(LoginErrorCodes.Error);
+                outcome = SessionResult.Fail(SessionErrorCodes.Error);
             }
             finally
             {
@@ -275,7 +315,7 @@ public sealed class LoginWindow
                 // exception and Finish() never ran. The foreground controller HOLDS the user's close
                 // until Finish() (so a driver gets its last cookie read), which means its FormClosing
                 // handler then cancelled EVERY close — the user's, and Application.Exit's. Result: an
-                // unclosable modal login window, ShowDialog never returning, and the busy gate held
+                // unclosable modal window, ShowDialog never returning, and the busy gate held
                 // for the process lifetime. One throwing app callback bricked the app.
                 controller?.Finish();               // allow the real close (a user close was held)
                 if (!form.IsDisposed) form.Close(); // ends ShowDialog → RunOnUi returns outcome
@@ -300,17 +340,18 @@ public sealed class LoginWindow
 
         // A silent-refresh window (created off-screen) must be OWNERLESS: ShowDialog disables its
         // owner, so an owned invisible dialog would silently disable the app's main window for the
-        // whole refresh. A visible login window owns the main window normally (modal z-order).
+        // whole refresh. A visible session window owns the main window normally (modal z-order).
         var owner = _options.RevealImmediately ? (_options.Owner ?? _options.Anchor.FindForm()) : null;
         form.ShowDialog(owner is { Visible: true, IsDisposed: false } ? owner : null); // nested loop until the flow closes it
         return outcome;
     }
 
     /// <summary>
-    /// Wipe a login's persistent profile so logout is a REAL logout — clearing only the stored
-    /// session blob would still let the next login window silently auto-sign-in from the cached
-    /// profile cookies (both siblings' measured lesson). Wipe the provider's whole tree (subs
-    /// included) on a provider-level logout — a sub's cookies left behind auto-sign-in too.
+    /// Wipe a session's persistent profile so discarding it is REAL — deleting only the captured
+    /// blob would still let the next session silently re-establish itself from the cached profile
+    /// cookies (both siblings' measured lesson: the user "signed out" and came back already signed
+    /// in). Wipe the provider's whole tree, sub-accounts included, when the whole provider is being
+    /// discarded — a sub's cookies left behind re-establish too.
     /// Best-effort: a locked folder (a window still open) just isn't cleared.
     /// </summary>
     public static void ClearProfile(string profileDirectory)

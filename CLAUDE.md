@@ -11,7 +11,7 @@ applications, shipped as NuGet packages (`Shenora.Core|Ipc|WebView2|WebView2.Ses
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
 (postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See
-`docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D20) before
+`docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D22) before
 relitigating anything.
 
 **Read first:** `docs/README.md` — the memory map that routes any task to the right doc or rule.

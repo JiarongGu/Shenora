@@ -151,23 +151,29 @@ changes, noting them in `CHANGELOG.md`).
   visible cascaded windows in dev mode; internal `SessionEnvironmentCache` gives the pool ONE
   `CoreWebView2Environment` for its profile — owner-scoped, not static, because a live environment
   holds the profile's folder lock and would defeat `ClearProfile`); internal `SessionLog` (the
-  package's one guarded-diagnostic path — an app `ILogger` is an app callback); the login stack —
-  `LoginWindow(+Options)` (modal
-  driver-run logins over per-provider/per-sub-account persistent profiles — the sub scoping is
-  a security boundary; busy-serialized with exactly-once completion incl. the token fallback,
-  the user's close HELD for a final cookie read, silent-refresh off-screen shape, static
-  `ClearProfile` = real logout), `SessionController` (guarded `NavigateAsync`,
+  package's one guarded-diagnostic path — an app `ILogger` is an app callback); the human-in-the-loop
+  stack — `InteractiveSession(+Options)` (a modal, driver-run browser window over
+  per-provider/per-sub-account persistent profiles — the sub scoping is a security boundary;
+  busy-serialized with exactly-once completion incl. the token fallback, the user's close HELD so the
+  driver gets a final read, silent-refresh off-screen shape, static `ClearProfile` so discarding a
+  session is real), `SessionController` (guarded `NavigateAsync`,
   `ExecuteScriptAsync`, origin-scoped `GetCookiesAsync`, `OnMessage`/`OnDownload`/
   `OnNewWindow`/`OnNavigation` taps, `FitToBox` CSS→physical, `SetLoading`, idempotent
-  `Reveal`, `WindowClosed`), `LoginResult`/`LoginErrorCodes`, and `CookieLoginFlow(+Options)`/
-  `LoginCookie`/`DownloadHit` (the built-in driver: fresh-set auth-cookie detection against a
-  pre-navigation baseline — a stale cookie never captures, not even on close; separate
-  `CookieReadUrl` origin; `ReadBlob`); `CoBrowseSession(+Options)`/`CoBrowseViewport`
-  (co-browse an off-screen page: screencast JPEGs into a bounded latest-wins
-  `ChannelReader<byte[]>`, `DispatchInputAsync` for the client's input JSON — 1:1
-  device-metrics viewport mirroring, fraction-coordinate mouse/wheel, text insert, VK-mapped
-  special keys — `ReadHotspotsAsync` clickable-rect fractions, the same controller primitives
-  over the stream; transport is the app's, wire protocol identical to the source).
+  `Reveal`, `WindowClosed`), `SessionResult` (+ `ThrowIfFailed` bridging into the IPC error
+  contract)/`SessionErrorCodes`, and `CookieLoginFlow(+Options)`/
+  `SessionCookie`/`DownloadHit` (the one opt-in REFERENCE DRIVER, which keeps its scenario name on
+  purpose — D22: fresh-set auth-cookie detection against a
+  pre-navigation baseline, so a stale cookie never captures, not even on close; separate
+  `CookieReadUrl` origin; `ReadBlob`); and `StreamingSession(+Options)`/`SessionViewport`
+  (an off-screen browser that STREAMS what it renders and ACCEPTS synthetic input: screencast JPEGs
+  into a bounded latest-wins `ChannelReader<SessionFrame>` — each frame carrying the CSS viewport it
+  depicts — `DispatchAsync(SessionInput, …)` for typed input (`SessionPointerInput`/`SessionWheelInput`/
+  `SessionTextInput`/`SessionKeyInput`/`SessionViewportInput` + `SessionPointerAction`, plus
+  `SessionInput.TryParseLegacyJson` as the adoption shim), 1:1 device-metrics viewport mirroring,
+  fraction coordinates, and `OnEnded`/`SessionEnded`/`SessionEndReason` as the exactly-once lifecycle
+  hook. The LIFECYCLE is the contract — started / navigated / frames / ended-or-faulted; the transport,
+  viewer UI, hover affordances and what any of it is FOR belong to the app (D21/D22), which is what the
+  sample's `STREAM` route + `StreamViewer` demonstrate).
 - `Shenora.Ipc` — the transport-neutral wire contract (design §5, D11/D16; names pinned with
   `JsonPropertyName` so envelopes hold under any serializer options): `IpcRequest`
   (`{id, module, type, scope?, payload?, timestamp}` — `scope` is the app-defined routing

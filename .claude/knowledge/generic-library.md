@@ -13,6 +13,25 @@ keeps the library reusable (adopted from the family's other library, where it's 
 - **No app/domain vocabulary in `src/`** — no mods, skins, videos, profiles-as-domain, libraries,
   recipes. The generalization of "profile-scoped services" is "an app-defined scope field +
   scoped-container router", not a `ProfileId`.
+- **Name every public type for its MECHANISM, never for a scenario or product (D22).** The test:
+  *could a consumer whose use case is nothing like the name still recognise this as the thing they
+  need?* This is the naming half of D21 and it needs checking SEPARATELY, because the kit twice passed
+  D21 on shape while failing it on name. `LoginWindow` held no login logic — it is a busy-gated,
+  profile-isolated window running an app-supplied driver until it captures a blob (→
+  `InteractiveSession`). `CoBrowseSession` was an off-screen browser that streams frames and takes
+  input, i.e. co-browsing OR remote support OR visual capture OR a preview pane (→ `StreamingSession`).
+  Neither was a behaviour bug; both worked. The damage is that a scenario name makes the kit look like
+  it ships that product, so the next contributor adds more of the product — and it LEAKS across
+  features: `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`, forcing a
+  streaming consumer to program against a login type.
+  **Exception, deliberate:** a REFERENCE DRIVER may name the scenario it demonstrates
+  (`CookieLoginFlow` keeps its name — naming the recipe is why it ships). And do not "fix" genuine
+  mechanism vocabulary: `ProfileDirectory` is a Chromium user-data folder, `Module` is the kit's
+  composition unit, `ImmersiveDarkMode`/`UserDataFolder` are platform SDK terms.
+  **Audit it cheaply:** the API baselines already list every public type and member, so sweep
+  `tests/Shenora.Tests/Api/Baselines/*.txt` for domain words and triage by hand. That is how the
+  whole-library audit ran; it found the Login cluster was the ONLY real leak, plus one PARAMETER name
+  (`driveLogin`) — parameter names count, because the baselines pin them as a source contract.
 - **Seams over flags.** Extension points are interfaces the app implements
   (`IWindowStateStore`, injected scripts, custom schemes, transports), not boolean options
   that switch between two consumers' behaviors.

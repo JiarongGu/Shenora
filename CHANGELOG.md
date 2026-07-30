@@ -89,6 +89,69 @@ at the first list and missed five more breaking changes.
   base class, and show a copy cursor for a drop it then silently discarded, since there was no
   `DragDrop` handler. If your app relies on form-level drops, set `AllowDrop = true` and wire your own
   handlers — plain WinForms, nothing needed from us. The IPC drop zones are unaffected.
+- **The auxiliary-session surface is named for MECHANISM, not for scenarios** (P5.5 H9.7 + H9.8, D22).
+  Two clusters of the public API were named after ONE use case each while containing no logic specific
+  to it, which made the kit look like it shipped those products and forced unrelated consumers to
+  program against their vocabulary. Renames only — no behaviour changed.
+
+  | Was | Is |
+  |---|---|
+  | `LoginWindow` | `InteractiveSession` |
+  | `LoginWindowOptions` | `InteractiveSessionOptions` |
+  | `LoginResult` | `SessionResult` |
+  | `LoginErrorCodes` | `SessionErrorCodes` |
+  | `LOGIN_BUSY` / `LOGIN_CANCELLED` / `LOGIN_INCOMPLETE` / `LOGIN_ERROR` / `LOGIN_UNAVAILABLE` | `SESSION_BUSY` / `SESSION_CANCELLED` / `SESSION_INCOMPLETE` / `SESSION_ERROR` / `SESSION_UNAVAILABLE` |
+  | `LoginCookie` | `SessionCookie` |
+  | `CoBrowseSession` | `StreamingSession` |
+  | `CoBrowseSessionOptions` | `StreamingSessionOptions` |
+  | `CoBrowseInput` (+ `Pointer`/`Wheel`/`Text`/`Key`/`Viewport` variants, `CoBrowsePointerAction`) | `SessionInput` (+ `SessionPointerInput`/`SessionWheelInput`/`SessionTextInput`/`SessionKeyInput`/`SessionViewportInput`, `SessionPointerAction`) |
+  | `CoBrowseFrame` | `SessionFrame` |
+  | `CoBrowseEnded` / `CoBrowseEndReason` | `SessionEnded` / `SessionEndReason` |
+  | `CoBrowseViewport` | `SessionViewport` |
+  | `RunAsync`'s `driveLogin` parameter | `driver` |
+
+  **`InteractiveSessionOptions.Title` now defaults to `"Session"`, not `"Sign in"`** — a default value,
+  so this one is behavioural: set it explicitly if your window said "Sign in".
+  **Why it mattered beyond tidiness:** `SessionController.GetCookiesAsync` returned
+  `IReadOnlyList<LoginCookie>`, so a consumer streaming a page for remote viewing — nothing to do with
+  signing in — had to name a login type. `LoginWindow` held no login logic at all: it is a busy-gated,
+  profile-isolated browser window that runs an app-supplied driver until it captures a blob (a captcha,
+  a terms acceptance, a checkout step). `CoBrowseSession` was an off-screen browser that streams frames
+  and accepts input — co-browsing, remote support, visual capture or a preview pane, depending only on
+  who wires it. **`CookieLoginFlow` deliberately keeps its name**: naming the scenario is the point of a
+  reference driver (D21).
+- **`StreamingSession` (was `CoBrowseSession`) takes TYPED input instead of an opaque JSON string**
+  (P5.5 H9.1, D21). `DispatchInputAsync(string json)` → `DispatchAsync(SessionInput, CancellationToken)`.
+  The old signature took the ORIGINATING APP'S wire protocol verbatim, so a consumer could not know what
+  to pass without reading that app's client — the framework's contract was one application's message
+  format. Construct `SessionPointerInput`/`SessionWheelInput`/`SessionTextInput`/`SessionKeyInput`/
+  `SessionViewportInput`; coordinates stay FRACTIONS of the viewport, which is what keeps the protocol
+  resolution-independent. **Migration is mechanical:** `SessionInput.TryParseLegacyJson(json, out var
+  input)` parses the old shape, so an existing client keeps its frontend unchanged — it also now reports
+  `false` on a malformed message instead of throwing it away silently.
+- **`StreamingSession.Frames` is `ChannelReader<SessionFrame>`, not `ChannelReader<byte[]>`**
+  (P5.5 H9.3). Each frame now carries the CSS viewport it depicts (`Jpeg`, `Width`, `Height`), read from
+  that frame's own screencast metadata. Frames used to arrive as bare bytes with no geometry, so an app
+  receiving fraction-coordinate input could not map a click back without inventing a side-channel —
+  which is how a consumer ends up needing its own protocol anyway.
+- **`StreamingSession.ReadHotspotsAsync()` is removed** (P5.5 H9.2). Returning a stringly-typed list of
+  clickable-element rects is a co-browse UX decision, not a browser primitive — and it was
+  `Task<string>`. Run it yourself through `session.Controller.ExecuteScriptAsync(...)`; the script that
+  shipped is below verbatim, so nothing is lost:
+  ```js
+  (function(){try{
+  var q='a[href],button,input[type=submit],input[type=button],input[type=image],[role=button],[onclick],label[for],select,summary';
+  var els=document.querySelectorAll(q),W=innerWidth,H=innerHeight,o=[];
+  for(var i=0;i<els.length&&o.length<80;i++){var e=els[i],r=e.getBoundingClientRect();
+  if(r.width<8||r.height<8||r.right<0||r.bottom<0||r.left>W||r.top>H)continue;
+  var s=getComputedStyle(e);if(s.visibility=='hidden'||s.display=='none'||s.pointerEvents=='none'||+s.opacity===0)continue;
+  o.push([+(r.left/W).toFixed(4),+(r.top/H).toFixed(4),+(r.width/W).toFixed(4),+(r.height/H).toFixed(4)]);}
+  return o;}catch(_){return [];}})()
+  ```
+- **`SessionBrowser.InitializeAsync` and `SessionBrowser.GetHtmlAsync` are now `internal`**
+  (P5.5 H9.6). Both took a raw WinForms `WebView2` and had no consumer scenario — they mainly invited
+  bypassing the render pool's accounting. Use `RenderSessionPool`, `InteractiveSession` or
+  `StreamingSession`; `RenderSession.GetHtmlAsync()` is the supported way to read a rendered page.
 
 ### Added
 
@@ -147,6 +210,22 @@ at the first list and missed five more breaking changes.
   to be hardcoded — a SOFT cap, since the caller decides what "settled" means. `ResetTimeout` (5 s)
   bounds the return-to-pool reset. Keep `OpTimeout` above `NavigationTimeout`, or a legitimately slow
   load is reported as a wedge.
+- **`StreamingSessionOptions.OnEnded` — the session lifecycle hook** (P5.5 H9.3, D21). Called exactly
+  once with a `SessionEnded(SessionEndReason, string? Detail)` when the session ends. A dead renderer
+  and a clean `DisposeAsync` both complete the frame channel, so a reader alone could never tell a
+  crash from a shutdown; now it can. Fired through a shared latch because the two paths genuinely race,
+  and invoked GUARDED — a throwing handler cannot take down the session or the UI thread.
+- **`SessionResult.ThrowIfFailed()`** (P5.5 H9.4) — throws the outcome's failure as an
+  `OperationException`, bridging `SessionErrorCodes` into the IPC error contract. The codes were always
+  SCREAMING_SNAKE i18n keys in the shape `IpcErrorCodes` uses; what was missing was a typed path, so
+  every app routing a session over IPC hand-wrote the same throw. Throwing (rather than returning an
+  error object) is what plugs into the dispatcher's documented boundary — `BaseFacade` and
+  `MessageDispatcher` already map an `OperationException` to the structured wire error.
+- **`SessionBrowser` initialization observes a `CancellationToken`** (P5.5 H9.6), wired through the
+  render pool and the streaming session. A cancelled lease used to wait out the full `InitTimeout`
+  (up to 2×25 s) before anything noticed. The token gates the AWAIT only, never the creation — with the
+  per-profile environment cache that task is SHARED across a pool's instances, so cancelling it for one
+  caller would break the others.
 
 ### Changed
 

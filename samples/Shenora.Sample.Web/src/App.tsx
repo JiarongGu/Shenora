@@ -8,6 +8,7 @@ import {
   WindowCommands,
 } from '@shenora/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { StreamViewer } from './StreamViewer';
 
 // Injected by the desktop host (WebViewHostOptions.InjectedGlobals — camelCase JSON).
 declare global {
@@ -214,6 +215,9 @@ export function App() {
               {probe ?? 'sessions: idle'}
             </span>
           </p>
+          {/* The kit ships the streaming PRIMITIVE; this pane is the product built on it, and it
+              lives here in the sample precisely because the library must not decide it (D21/D22). */}
+          <StreamViewer hosted={hosted} />
         </div>
       </main>
     </>

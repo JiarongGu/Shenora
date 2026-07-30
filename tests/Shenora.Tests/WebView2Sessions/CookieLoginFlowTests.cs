@@ -13,7 +13,7 @@ public class CookieLoginFlowTests
 {
     private sealed class FakeBrowser
     {
-        public List<LoginCookie> Jar = [];
+        public List<SessionCookie> Jar = [];
         public readonly List<string> Navigated = [];
         public readonly List<bool> Loading = [];
         public int Reveals;
@@ -26,7 +26,7 @@ public class CookieLoginFlowTests
             {
                 Reads++;
                 OnRead?.Invoke(this);
-                return Task.FromResult((IReadOnlyList<LoginCookie>)Jar.ToList());
+                return Task.FromResult((IReadOnlyList<SessionCookie>)Jar.ToList());
             },
             Navigate = (url, _) => { Navigated.Add(url); return Task.CompletedTask; },
             Reveal = () => Reveals++,
@@ -46,7 +46,7 @@ public class CookieLoginFlowTests
             CaptureAllCookies = captureAll,
         });
 
-    private static LoginCookie Auth(string value, string domain = ".example.com") =>
+    private static SessionCookie Auth(string value, string domain = ".example.com") =>
         new("auth_token", value, domain, "/");
 
     [Fact]
@@ -70,7 +70,7 @@ public class CookieLoginFlowTests
     {
         // Silent refresh: the profile's auto-sign-in re-sets the cookie → success while the
         // window is still off-screen ("no interaction ⇒ no window").
-        var browser = new FakeBrowser { Jar = [Auth("old"), new LoginCookie("theme", "dark", ".example.com", "/")] };
+        var browser = new FakeBrowser { Jar = [Auth("old"), new SessionCookie("theme", "dark", ".example.com", "/")] };
         browser.OnRead = b => { if (b.Reads == 2) b.Jar[0] = Auth("fresh"); };
 
         var blob = await CreateFlow(revealDelay: TimeSpan.FromHours(1)).DriveAsync(browser.Hooks, CancellationToken.None);
@@ -132,7 +132,7 @@ public class CookieLoginFlowTests
     [Fact]
     public async Task CaptureAllCookies_false_captures_only_the_matching_cookies()
     {
-        var browser = new FakeBrowser { Jar = [new LoginCookie("theme", "dark", ".example.com", "/")] };
+        var browser = new FakeBrowser { Jar = [new SessionCookie("theme", "dark", ".example.com", "/")] };
         browser.OnRead = b => { if (b.Reads == 2) b.Jar.Add(Auth("v1")); };
 
         var blob = await CreateFlow(captureAll: false).DriveAsync(browser.Hooks, CancellationToken.None);
@@ -145,7 +145,7 @@ public class CookieLoginFlowTests
     public async Task Patterns_match_the_name_case_insensitively_as_regex()
     {
         var browser = new FakeBrowser();
-        browser.OnRead = b => { if (b.Reads == 2) b.Jar.Add(new LoginCookie("JSESSIONID", "v", ".example.com", "/")); };
+        browser.OnRead = b => { if (b.Reads == 2) b.Jar.Add(new SessionCookie("JSESSIONID", "v", ".example.com", "/")); };
 
         var blob = await CreateFlow(patterns: "session").DriveAsync(browser.Hooks, CancellationToken.None);
 

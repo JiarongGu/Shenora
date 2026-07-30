@@ -28,8 +28,10 @@ Windows apps, shipped as NuGet (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|Win
   component library, anywhere.
 
 Design contract: `docs/2026-07-30-shenora-design.md`. Load-bearing choices: `docs/DECISIONS.md`
-(D1–D20 — numbered; don't relitigate, they record *why*). **D19 + D20 are the newest and the most
-likely to look like violations:** the package layering was deliberately changed
+(D1–D22 — numbered; don't relitigate, they record *why*). **D21 + D22 are the newest and the most
+likely to look like violations:** a feature ships as primitives + lifecycle hooks rather than the
+product, and every public type is named for its MECHANISM (so `InteractiveSession`/`StreamingSession`
+are deliberately not named after logging in or co-browsing). D19 + D20 changed the package layering
 (`docs/2026-07-30-shenora-relayering-design.md`), and the tree still predates it. As-built map + full public surface:
 `docs/ARCHITECTURE.md`. Phase-by-phase narrative of what changed and how it was verified:
 `docs/ROADMAP.md` `## Done`.
@@ -80,7 +82,7 @@ a finding that contradicts one of these is either a real regression or a rule th
    and event subscriptions (`WebMessageReceived`, `NavigationCompleted`, DevTools receivers,
    `DownloadStarting`, `NewWindowRequested`) — is every subscription detached and every
    `IDisposable` honored on every path incl. exceptions? The session pool's create/return/discard/
-   dispose paths and `CoBrowseSession.DisposeAsync` are the densest.
+   dispose paths and `StreamingSession.DisposeAsync` are the densest.
 4. **Packaging & versioning.** One `<VersionPrefix>` in `src/Directory.Build.props` is the only
    version source (npm/README synced by tooling, never hand-edited); `devtools/project.config.mjs`
    `packableProjects` must list every packable project; the npm package must resolve under **native
@@ -109,7 +111,7 @@ a finding that contradicts one of these is either a real regression or a rule th
   `Shenora.WinForms` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
   `ProjectReference` does not grant `internal` access, so the alternative was `InternalsVisibleTo` for
   two packages.
-- `CoBrowseSession` reuses `SessionController` as a **background** controller (the source's own
+- `StreamingSession` reuses `SessionController` as a **background** controller (the source's own
   pattern); its window-managing calls are gated inert by a `foreground` flag.
 - `PayloadHelper` is static; `IpcResponse.category` is lowercase; notifications are always batched —
   all documented deviations from the source shapes.
@@ -122,12 +124,15 @@ cached co-browse viewport; request-filter `about:blank` page-source; init-timeou
 sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
 **Deliberately deferred** (recorded in the private notes; not defects to file):
-- Renaming the login-named types (`SessionController`/`LoginCookie`/`DownloadHit`) to
-  session-neutral names — a documented pre-1.0 option, revisit only if a pure co-browse consumer
-  finds it awkward.
-- STA-wrapping the new pool/login tests — the earned STA rule's trigger (`AllowDrop`/OLE) does not
+- ~~Renaming the login-named types to session-neutral names~~ — **DONE, and it was not optional after
+  all** (P5.5 H4.6 then H9.7/H9.8, now **D22**). A reader asked why the library had login-specific
+  business logic; it did not — `LoginWindow` held no login logic — but the NAMES made it look like it
+  shipped that product, and `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`,
+  forcing a streaming consumer to name a login type. See D22 for the rule and the audit method; do NOT
+  re-raise `CookieLoginFlow`, which keeps its scenario name deliberately as the one reference driver.
+- STA-wrapping the new pool/session tests — the earned STA rule's trigger (`AllowDrop`/OLE) does not
   apply to those forms, and the tests are deterministically green.
-- `LoginWindow`'s busy gate can be released by the cancellation fallback a beat before `ShowDialog`
+- `InteractiveSession`'s busy gate can be released by the cancellation fallback a beat before `ShowDialog`
   returns — the driver's linked token closes the window promptly, so the stacked-dialog race window
   is tiny.
 
@@ -151,8 +156,7 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   `SessionController`'s constructor subscribes to `_web.CoreWebView2.WebMessageReceived`, so the type
   cannot be INSTANTIATED without a real browser core. Everything reachable only through an instance is
   therefore e2e/manual territory by construction, not by neglect: `SessionController`'s public members
-  (bar `ComputeFitSize`, which is tested), `CoBrowseSession.DispatchInputAsync`/`ReadHotspotsAsync`/
-  `Frames`/`DisposeAsync`, `RenderSession`'s tap BOOKKEEPING (its disposal checks *are* tested), and
+  (bar `ComputeFitSize`, which is tested), `StreamingSession.DispatchAsync`/`Frames`/`DisposeAsync`, `RenderSession`'s tap BOOKKEEPING (its disposal checks *are* tested), and
   `CookieLoginFlow`'s four-line `SessionController` → `Hooks` mapping (the flow's own poll/capture
   logic is covered through the internal `Hooks` overload, 8 cases). The lesson H7 applied where it
   COULD: pure decisions get lifted out of live-object lambdas so the real rule is testable — that is

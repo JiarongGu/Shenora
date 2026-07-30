@@ -5,14 +5,14 @@ using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.WebView2.Sessions;
 
-/// <summary>Inputs for <see cref="SessionBrowser.InitializeAsync(WebView2Control, SessionBrowserOptions, Action{CoreWebView2ProcessFailedEventArgs})"/>.</summary>
+/// <summary>Configuration for a session browser (see <see cref="SessionBrowser"/>).</summary>
 public sealed class SessionBrowserOptions
 {
     /// <summary>
     /// The persistent profile (user-data folder) this browser runs in. Sessions key their whole
-    /// isolation story on this directory: a login window scopes it per provider (and per
-    /// sub-account — a SECURITY boundary, see <see cref="LoginWindow"/>), a pool
-    /// shares one across its instances, and wiping it is what makes a logout real.
+    /// isolation story on this directory: an interactive session scopes it per provider (and per
+    /// sub-account — a SECURITY boundary, see <see cref="InteractiveSession"/>), a pool
+    /// shares one across its instances, and wiping it is what really discards the session.
     /// </summary>
     public required string ProfileDirectory { get; init; }
 
@@ -25,7 +25,7 @@ public sealed class SessionBrowserOptions
 
     /// <summary>
     /// Mute all audio + block autoplay without a user gesture (default true): session browsers
-    /// are for fetch/render/login work, never playback — a page that autoplays media must not
+    /// are for fetch/render/interaction work, never playback — a page that autoplays media must not
     /// make noise or waste decode while it renders off-screen.
     /// </summary>
     public bool MuteAudio { get; init; } = true;
@@ -99,19 +99,25 @@ public static class SessionBrowser
     /// dead renderer is INVISIBLE: a pooled instance was reset, re-pooled and re-leased forever, and
     /// a co-browse frame channel simply stopped with its reader still waiting (P5.5 H4.4).
     /// </param>
-    public static Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
-                                       Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null) =>
-        InitializeAsync(web, options, onProcessFailed, environmentCache: null);
+    /// <param name="cancellationToken">
+    /// Abandons the WAIT for initialization. NOT the creation itself — see the body for why that
+    /// distinction is load-bearing.
+    /// </param>
+    internal static Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
+                                         Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null,
+                                         CancellationToken cancellationToken = default) =>
+        InitializeAsync(web, options, onProcessFailed, environmentCache: null, cancellationToken);
 
     /// <summary>
-    /// As the public overload, but reusing <paramref name="environmentCache"/>'s shared environment
-    /// when the caller creates SEVERAL browsers on one profile (the render pool). Internal because
-    /// the cache is an ownership detail of that caller, not a consumer concept — see
+    /// As the overload above, but reusing <paramref name="environmentCache"/>'s shared environment
+    /// when the caller creates SEVERAL browsers on one profile (the render pool). The cache is an
+    /// ownership detail of that caller, not a consumer concept — see
     /// <see cref="SessionEnvironmentCache"/> for why it is owner-scoped rather than static.
     /// </summary>
     internal static async Task InitializeAsync(WebView2Control web, SessionBrowserOptions options,
                                                Action<CoreWebView2ProcessFailedEventArgs>? onProcessFailed,
-                                               SessionEnvironmentCache? environmentCache)
+                                               SessionEnvironmentCache? environmentCache,
+                                               CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(web);
         ArgumentNullException.ThrowIfNull(options);
@@ -153,9 +159,16 @@ public static class SessionBrowser
             // therefore started a SECOND CreateAsync against the same locked profile, orphaning
             // another browser process onto the lock its own error message blames (P5.5 H2); with one,
             // the retry joins the attempt already in flight.
+            //
+            // The TOKEN GATES THE AWAIT ONLY, and that is a correctness requirement, not a style
+            // choice (P5.5 H9.6): with a cache the environment task is SHARED across every instance
+            // the pool is building on that profile, so cancelling the creation for one caller would
+            // break all the others. A cancelled lease walks away from the wait; the creation finishes
+            // for whoever still wants it, and the cache hands it over. Before this, a cancelled lease
+            // could not escape DURING init at all — it waited out the full InitTimeout twice over.
             var creation = environmentCache is null ? CreateEnvironment() : environmentCache.GetOrCreate(CreateEnvironment);
-            env = await creation.WaitAsync(options.InitTimeout).ConfigureAwait(true);
-            await web.EnsureCoreWebView2Async(env).WaitAsync(options.InitTimeout).ConfigureAwait(true);
+            env = await creation.WaitAsync(options.InitTimeout, cancellationToken).ConfigureAwait(true);
+            await web.EnsureCoreWebView2Async(env).WaitAsync(options.InitTimeout, cancellationToken).ConfigureAwait(true);
         }
         catch (TimeoutException)
         {
@@ -284,7 +297,7 @@ public static class SessionBrowser
     /// ExecuteScriptAsync returns the value JSON-encoded (a quoted string) — this decodes it
     /// back to raw HTML. Call on the UI thread.
     /// </summary>
-    public static async Task<string?> GetHtmlAsync(WebView2Control web)
+    internal static async Task<string?> GetHtmlAsync(WebView2Control web)
     {
         try
         {

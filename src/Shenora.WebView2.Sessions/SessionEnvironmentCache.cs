@@ -20,8 +20,8 @@ namespace Shenora.WebView2.Sessions;
 /// <list type="number">
 /// <item>A live environment keeps its profile's browser process — and therefore the folder's OS lock
 /// — alive. A process-lifetime cache would root the lock for every profile ever opened, so
-/// <see cref="LoginWindow.ClearProfile"/> (the call that makes a logout a REAL logout) would fail
-/// every time instead of only while a window is open. A login window opens one profile once, so it
+/// <see cref="InteractiveSession.ClearProfile"/> (the call that REALLY discards a session) would fail
+/// every time instead of only while a window is open. An interactive session opens one profile once, so it
 /// gains nothing from caching; a pool creates N instances on ONE profile, which is the case that
 /// does.</item>
 /// <item><see cref="CoreWebView2Environment"/> is THREAD-AFFINE (see

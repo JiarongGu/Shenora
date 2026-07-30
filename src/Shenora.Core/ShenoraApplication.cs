@@ -129,7 +129,7 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
     /// Prefer <see cref="DisposeAsync"/> when any singleton might be async-only: Microsoft DI's
     /// synchronous <c>Dispose</c> THROWS <see cref="InvalidOperationException"/> for a captured
     /// disposable that implements only <see cref="IAsyncDisposable"/>. Shenora's own
-    /// <c>RenderSession</c> and <c>CoBrowseSession</c> are exactly that shape, so registering one as a
+    /// <c>RenderSession</c> and <c>StreamingSession</c> are exactly that shape, so registering one as a
     /// singleton used to crash the documented <c>using var app = builder.Build(); app.Run();</c>
     /// shutdown — after the message loop had already exited, i.e. a crash dialog on every clean quit
     /// with no way for a consumer to work around it (P5.5 H2).

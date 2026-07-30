@@ -32,7 +32,7 @@ public sealed class CookieLoginFlowOptions
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(800);
 
     /// <summary>
-    /// How long a hidden window (<see cref="LoginWindowOptions.RevealImmediately"/> = false)
+    /// How long a hidden window (<see cref="InteractiveSessionOptions.RevealImmediately"/> = false)
     /// waits after navigation for the profile's auto-sign-in to set a fresh cookie before
     /// revealing itself — the silent-refresh grace: long enough for a redirect chain, short
     /// enough that a user who must interact isn't staring at nothing. Zero reveals right after
@@ -49,10 +49,10 @@ public sealed class CookieLoginFlowOptions
 }
 
 /// <summary>
-/// The built-in <see cref="LoginWindow"/> driver, ported from the primary sibling's cookie login:
+/// The built-in <see cref="InteractiveSession"/> driver, ported from the primary sibling's cookie login:
 /// snapshot the jar, navigate to the login page, and poll until an auth cookie is FRESHLY set —
 /// by the profile's silent auto-sign-in (no interaction, the window never reveals) or by the user
-/// logging in. The blob is a JSON array of <see cref="LoginCookie"/> (camelCase; read it back
+/// logging in. The blob is a JSON array of <see cref="SessionCookie"/> (camelCase; read it back
 /// with <see cref="ReadBlob"/>).
 ///
 /// <code>
@@ -90,7 +90,7 @@ public sealed class CookieLoginFlow
         }
     }
 
-    /// <summary>Drive one login over the window's controller (pass this to <see cref="LoginWindow.RunAsync"/>).</summary>
+    /// <summary>Drive one login over the window's controller (pass this to <see cref="InteractiveSession.RunAsync"/>).</summary>
     public Task<string?> DriveAsync(SessionController controller, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(controller);
@@ -104,17 +104,17 @@ public sealed class CookieLoginFlow
     }
 
     /// <summary>Deserialize a blob this flow captured.</summary>
-    public static IReadOnlyList<LoginCookie> ReadBlob(string blob)
+    public static IReadOnlyList<SessionCookie> ReadBlob(string blob)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(blob);
-        return JsonSerializer.Deserialize<List<LoginCookie>>(blob, BlobJson) ?? [];
+        return JsonSerializer.Deserialize<List<SessionCookie>>(blob, BlobJson) ?? [];
     }
 
     /// <summary>The controller surface the flow actually uses — a seam so the poll/capture logic
     /// is testable without a live browser (the pool-seam precedent).</summary>
     internal sealed class Hooks
     {
-        public required Func<string, CancellationToken, Task<IReadOnlyList<LoginCookie>>> ReadCookies { get; init; }
+        public required Func<string, CancellationToken, Task<IReadOnlyList<SessionCookie>>> ReadCookies { get; init; }
         public required Func<string, CancellationToken, Task> Navigate { get; init; }
         public required Action Reveal { get; init; }
         public required Action<bool> SetLoading { get; init; }
@@ -174,17 +174,17 @@ public sealed class CookieLoginFlow
 
     /// <summary>Identity-keyed values of the whole jar (freshness is judged per cookie identity —
     /// same name on two domains is two cookies).</summary>
-    private static Dictionary<string, string> Snapshot(IReadOnlyList<LoginCookie> cookies)
+    private static Dictionary<string, string> Snapshot(IReadOnlyList<SessionCookie> cookies)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var cookie in cookies) map[Key(cookie)] = cookie.Value;
         return map;
     }
 
-    private static string Key(LoginCookie cookie) =>
+    private static string Key(SessionCookie cookie) =>
         string.Join('\0', cookie.Domain, cookie.Path, cookie.Name); // '\0' join — a delimiter no cookie field contains (the EventBus key precedent)
 
-    private bool TryCapture(IReadOnlyList<LoginCookie> cookies, Dictionary<string, string> baseline, out string? blob)
+    private bool TryCapture(IReadOnlyList<SessionCookie> cookies, Dictionary<string, string> baseline, out string? blob)
     {
         var fresh = cookies.Where(c => IsAuthCookie(c.Name)
             && (!baseline.TryGetValue(Key(c), out var previous) || previous != c.Value)).ToList();

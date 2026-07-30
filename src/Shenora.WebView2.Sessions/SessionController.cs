@@ -4,18 +4,18 @@ using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 namespace Shenora.WebView2.Sessions;
 
 /// <summary>One captured browser cookie (see <see cref="SessionController.GetCookiesAsync"/>).</summary>
-public sealed record LoginCookie(string Name, string Value, string Domain, string Path);
+public sealed record SessionCookie(string Name, string Value, string Domain, string Path);
 
 /// <summary>A page-initiated download the browser reported (and cancelled) — the app fetches it itself.</summary>
 public sealed record DownloadHit(string Url, string? FileName);
 
 /// <summary>
-/// The primitives a login driver drives over the live window, ported from the server-backed
+/// The primitives a session driver drives over the live window, ported from the server-backed
 /// sibling (its co-browse reuses the SAME controller over an off-screen form — it doesn't care).
 /// Every browser call marshals to the form's UI thread, so the driver can call them from any
 /// continuation with plain await.
 ///
-/// A FOREGROUND controller (a real login window) adds two window behaviours the off-screen
+/// A FOREGROUND controller (a real interactive window) adds two window behaviours the off-screen
 /// co-browse host must NOT have: the user's close is HELD (cancelled) so the driver gets a final
 /// cookie read — <see cref="WindowClosed"/> fires instead — and <see cref="Reveal"/>/
 /// <see cref="FitToBox"/> manage the on-screen window. On a background host those are inert: a
@@ -29,7 +29,7 @@ public sealed class SessionController
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly Action<bool>? _onLoading;
-    private readonly bool _foreground; // a real login window (true) vs an off-screen co-browse host (false)
+    private readonly bool _foreground; // a real interactive window (true) vs an off-screen co-browse host (false)
     // The DRIVER's taps — they accumulate so composed drivers don't silently drop each other's, and
     // the host just reports what the browser does (the driver decides which URL is "the download").
     //
@@ -73,7 +73,7 @@ public sealed class SessionController
         };
         if (_foreground)
         {
-            // A real login window: HOLD the user's close so the flow can do its final cookie read.
+            // A real interactive window: HOLD the user's close so the driver can do its final read.
             // A background co-browse host must NEVER do this — it would veto Application.Exit.
             _form.FormClosing += (_, e) =>
             {
@@ -142,7 +142,7 @@ public sealed class SessionController
 
     /// <summary>
     /// Navigate the window — http(s) only, and through the options' navigation guard when set:
-    /// login URLs are data-driven, and this window both DISCLOSES the rendered page and accepts
+    /// the URLs are data-driven, and this window both DISCLOSES the rendered page and accepts
     /// input, so an unguarded navigate at a loopback/LAN host is full interactive exposure (the
     /// source's measured SSRF rationale). Completes when the navigation completes.
     /// </summary>
@@ -181,24 +181,24 @@ public sealed class SessionController
 
     /// <summary>
     /// The cookies visible from <paramref name="origin"/>. NOTE the origin is a SEPARATE knob
-    /// from the login URL on purpose: session cookies often live on a PARENT domain the login
+    /// from the navigated URL on purpose: session cookies often live on a PARENT domain the
     /// host can't see (the primary sibling's original capture bug — verified against the
     /// profile's cookie DB) — read from the API origin the app will actually call.
     /// </summary>
-    public Task<IReadOnlyList<LoginCookie>> GetCookiesAsync(string origin, CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<SessionCookie>> GetCookiesAsync(string origin, CancellationToken cancellationToken = default) =>
         OnUiAsync(async () =>
         {
-            var list = new List<LoginCookie>();
+            var list = new List<SessionCookie>();
             foreach (var cookie in await _web.CoreWebView2.CookieManager.GetCookiesAsync(origin).ConfigureAwait(true))
-                list.Add(new LoginCookie(cookie.Name, cookie.Value, cookie.Domain, cookie.Path));
-            return (IReadOnlyList<LoginCookie>)list;
+                list.Add(new SessionCookie(cookie.Name, cookie.Value, cookie.Domain, cookie.Path));
+            return (IReadOnlyList<SessionCookie>)list;
         }).WaitAsync(cancellationToken);
 
     /// <summary>
     /// Bring a silent-refresh window on screen — interaction is needed after all. Idempotent, and
     /// INERT on a background co-browse host (it has no on-screen presence to reveal). Centers on
     /// the working area, activates, and focuses the WebView so keyboard/QR-scan input goes to the
-    /// login page immediately (the primary sibling's reveal mechanics).
+    /// page immediately (the primary sibling's reveal mechanics).
     /// </summary>
     public void Reveal()
     {
@@ -217,7 +217,7 @@ public sealed class SessionController
     }
 
     /// <summary>
-    /// Shrink the window to the login box the driver measured IN THE PAGE (CSS px) — WebView2
+    /// Shrink the window to the content box the driver measured IN THE PAGE (CSS px) — WebView2
     /// reports CSS px (DPI-independent), WinForms ClientSize is PHYSICAL px, so this converts by
     /// the window's own DeviceDpi and clamps to the working area. Sub-plausible sizes are
     /// ignored (wait for a full box, not a partial). INERT on a background co-browse host — its
@@ -248,7 +248,7 @@ public sealed class SessionController
             Math.Min((int)Math.Round(cssHeight * scale), workArea.Height - 60));
     }
 
-    /// <summary>Toggle the app's loading overlay (routes to <see cref="LoginWindowOptions.OnLoading"/>).</summary>
+    /// <summary>Toggle the app's loading overlay (routes to <see cref="InteractiveSessionOptions.OnLoading"/>).</summary>
     public void SetLoading(bool loading) => PostUi(() => _onLoading?.Invoke(loading));
 
     /// <summary>

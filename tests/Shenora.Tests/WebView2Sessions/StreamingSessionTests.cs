@@ -9,12 +9,12 @@ namespace Shenora.Tests.WebView2Sessions;
 /// source for mechanical adoption, so these pin them (clamps, modifier bitmask, VK map,
 /// invariant-culture formatting). The live screencast/dispatch loop is the sample-e2e's subject.
 /// </summary>
-public class CoBrowseSessionTests
+public class StreamingSessionTests
 {
     [Fact]
     public void Metrics_json_clamps_and_defaults_the_dpr()
     {
-        using var doc = JsonDocument.Parse(CoBrowseSession.BuildMetricsOverrideJson(5000, 100, null));
+        using var doc = JsonDocument.Parse(StreamingSession.BuildMetricsOverrideJson(5000, 100, null));
         var root = doc.RootElement;
 
         Assert.Equal(1560, root.GetProperty("width").GetInt32());   // clamped to the source bounds
@@ -32,7 +32,7 @@ public class CoBrowseSessionTests
         try
         {
             CultureInfo.CurrentCulture = new CultureInfo("de-DE");
-            var json = CoBrowseSession.BuildMetricsOverrideJson(800, 600, 1.5);
+            var json = StreamingSession.BuildMetricsOverrideJson(800, 600, 1.5);
 
             // The invariant is that the number is written with a DOT and parses back to the value it
             // was given — not that it renders in one particular way. This used to assert
@@ -50,13 +50,13 @@ public class CoBrowseSessionTests
     }
 
     [Theory]
-    [InlineData("pressed", false, "mousePressed", 1)]
-    [InlineData("released", false, "mouseReleased", 0)]
-    [InlineData("moved", false, "mouseMoved", 0)]   // a free move — no button held
-    [InlineData("moved", true, "mouseMoved", 1)]    // a DRAG move — the held button carries through (else drags can't work)
-    public void Mouse_json_maps_events_and_scales_fractions_to_css_px(string clientEvent, bool buttonHeld, string cdpType, int buttons)
+    [InlineData(SessionPointerAction.Down, false, "mousePressed", 1)]
+    [InlineData(SessionPointerAction.Up, false, "mouseReleased", 0)]
+    [InlineData(SessionPointerAction.Move, false, "mouseMoved", 0)]   // a free move — no button held
+    [InlineData(SessionPointerAction.Move, true, "mouseMoved", 1)]    // a DRAG move — the held button carries through (else drags can't work)
+    public void Mouse_json_maps_events_and_scales_fractions_to_css_px(SessionPointerAction action, bool buttonHeld, string cdpType, int buttons)
     {
-        using var doc = JsonDocument.Parse(CoBrowseSession.BuildMouseEventJson(clientEvent, 0.5, 0.25, 1280, 860, buttonHeld));
+        using var doc = JsonDocument.Parse(StreamingSession.BuildMouseEventJson(action, 0.5, 0.25, 1280, 860, buttonHeld));
         var root = doc.RootElement;
 
         Assert.Equal(cdpType, root.GetProperty("type").GetString());
@@ -69,7 +69,7 @@ public class CoBrowseSessionTests
     [Fact]
     public void Wheel_json_carries_the_delta()
     {
-        using var doc = JsonDocument.Parse(CoBrowseSession.BuildWheelEventJson(0.1, 0.9, -120, 1000, 750));
+        using var doc = JsonDocument.Parse(StreamingSession.BuildWheelEventJson(0.1, 0.9, -120, 1000, 750));
         var root = doc.RootElement;
 
         Assert.Equal("mouseWheel", root.GetProperty("type").GetString());
@@ -82,7 +82,7 @@ public class CoBrowseSessionTests
     [Fact]
     public void Key_jsons_are_a_down_up_pair_with_the_modifier_bitmask_and_vk()
     {
-        var pair = CoBrowseSession.BuildKeyEventJsons("a", alt: false, ctrl: true, meta: false, shift: true);
+        var pair = StreamingSession.BuildKeyEventJsons("a", alt: false, ctrl: true, meta: false, shift: true);
 
         Assert.Equal(2, pair.Length);
         using var down = JsonDocument.Parse(pair[0]);
@@ -99,7 +99,7 @@ public class CoBrowseSessionTests
     public void An_unknown_key_omits_the_vk_and_code_so_cdp_infers_from_key()
     {
         using var doc = JsonDocument.Parse(
-            CoBrowseSession.BuildKeyEventJsons("F13", alt: false, ctrl: false, meta: false, shift: false)[0]);
+            StreamingSession.BuildKeyEventJsons("F13", alt: false, ctrl: false, meta: false, shift: false)[0]);
         var root = doc.RootElement;
 
         Assert.False(root.TryGetProperty("windowsVirtualKeyCode", out _));
@@ -117,14 +117,14 @@ public class CoBrowseSessionTests
     [InlineData("7", '7', "Digit7")]
     public void The_vk_map_covers_navigation_editing_letters_and_digits(string key, int vk, string code)
     {
-        Assert.Equal((vk, code), CoBrowseSession.KeyInfo(key));
+        Assert.Equal((vk, code), StreamingSession.KeyInfo(key));
     }
 
     [Fact]
     public async Task Start_validates_the_options_before_touching_the_ui()
     {
         using var anchor = new Form { ShowInTaskbar = false };
-        CoBrowseSessionOptions Options(int quality = 72, int buffer = 2, int maxW = 2560) => new()
+        StreamingSessionOptions Options(int quality = 72, int buffer = 2, int maxW = 2560) => new()
         {
             Anchor = anchor,
             Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"), KeepAliveInBackground = true },
@@ -133,8 +133,8 @@ public class CoBrowseSessionTests
             MaxFrameWidth = maxW,
         };
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CoBrowseSession.StartAsync(Options(quality: 0)));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CoBrowseSession.StartAsync(Options(buffer: 0)));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CoBrowseSession.StartAsync(Options(maxW: 0)));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(quality: 0)));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(buffer: 0)));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(maxW: 0)));
     }
 }

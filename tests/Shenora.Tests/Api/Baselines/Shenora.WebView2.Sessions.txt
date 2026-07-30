@@ -1,36 +1,7 @@
-sealed class Shenora.WebView2.Sessions.CoBrowseSession : System.IAsyncDisposable
-  public Shenora.WebView2.Sessions.SessionController Controller { get; }
-  public System.Threading.Channels.ChannelReader<byte[]> Frames { get; }
-  public System.Threading.Tasks.Task DispatchInputAsync(string json)
-  public System.Threading.Tasks.Task<string> ReadHotspotsAsync()
-  public System.Threading.Tasks.ValueTask DisposeAsync()
-  public static System.Threading.Tasks.Task<Shenora.WebView2.Sessions.CoBrowseSession> StartAsync(Shenora.WebView2.Sessions.CoBrowseSessionOptions options, System.Threading.CancellationToken cancellationToken = null)
-sealed class Shenora.WebView2.Sessions.CoBrowseSessionOptions
-  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
-  public Shenora.WebView2.Sessions.CoBrowseViewport InitialViewport { get; init; }
-  public System.Func<System.Uri, System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>>? NavigationGuard { get; init; }
-  public int FrameBuffer { get; init; }
-  public int JpegQuality { get; init; }
-  public int MaxFrameHeight { get; init; }
-  public int MaxFrameWidth { get; init; }
-  public required Shenora.WebView2.Sessions.SessionBrowserOptions Browser { get; init; }
-  public required System.Windows.Forms.Control Anchor { get; init; }
-struct Shenora.WebView2.Sessions.CoBrowseViewport : System.IEquatable<Shenora.WebView2.Sessions.CoBrowseViewport>
-  public .ctor(int Width, int Height, double DeviceScaleFactor)
-  public bool Equals(Shenora.WebView2.Sessions.CoBrowseViewport other)
-  public double DeviceScaleFactor { get; init; }
-  public int Height { get; init; }
-  public int Width { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.WebView2.Sessions.CoBrowseViewport left, Shenora.WebView2.Sessions.CoBrowseViewport right)
-  public static bool op_Inequality(Shenora.WebView2.Sessions.CoBrowseViewport left, Shenora.WebView2.Sessions.CoBrowseViewport right)
-  public void Deconstruct(out int Width, out int Height, out double DeviceScaleFactor)
 sealed class Shenora.WebView2.Sessions.CookieLoginFlow
   public .ctor(Shenora.WebView2.Sessions.CookieLoginFlowOptions options)
   public System.Threading.Tasks.Task<string> DriveAsync(Shenora.WebView2.Sessions.SessionController controller, System.Threading.CancellationToken cancellationToken = null)
-  public static System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.LoginCookie> ReadBlob(string blob)
+  public static System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.SessionCookie> ReadBlob(string blob)
 sealed class Shenora.WebView2.Sessions.CookieLoginFlowOptions
   public System.TimeSpan PollInterval { get; init; }
   public System.TimeSpan RevealDelay { get; init; }
@@ -50,37 +21,13 @@ sealed class Shenora.WebView2.Sessions.DownloadHit : System.IEquatable<Shenora.W
   public string Url { get; init; }
   public string? FileName { get; init; }
   public void Deconstruct(out string Url, out string? FileName)
-sealed class Shenora.WebView2.Sessions.LoginCookie : System.IEquatable<Shenora.WebView2.Sessions.LoginCookie>
-  public .ctor(string Name, string Value, string Domain, string Path)
-  public Shenora.WebView2.Sessions.LoginCookie <Clone>$()
-  public bool Equals(Shenora.WebView2.Sessions.LoginCookie? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.WebView2.Sessions.LoginCookie? left, Shenora.WebView2.Sessions.LoginCookie? right)
-  public static bool op_Inequality(Shenora.WebView2.Sessions.LoginCookie? left, Shenora.WebView2.Sessions.LoginCookie? right)
-  public string Domain { get; init; }
-  public string Name { get; init; }
-  public string Path { get; init; }
-  public string Value { get; init; }
-  public void Deconstruct(out string Name, out string Value, out string Domain, out string Path)
-static class Shenora.WebView2.Sessions.LoginErrorCodes
-  public const string Busy = "LOGIN_BUSY"
-  public const string Cancelled = "LOGIN_CANCELLED"
-  public const string Error = "LOGIN_ERROR"
-  public const string Incomplete = "LOGIN_INCOMPLETE"
-  public const string Unavailable = "LOGIN_UNAVAILABLE"
-sealed class Shenora.WebView2.Sessions.LoginResult
-  public required bool Success { get; init; }
-  public string? Blob { get; init; }
-  public string? ErrorCode { get; init; }
-sealed class Shenora.WebView2.Sessions.LoginWindow
-  public .ctor(Shenora.WebView2.Sessions.LoginWindowOptions options)
-  public System.Threading.Tasks.Task<Shenora.WebView2.Sessions.LoginResult> RunAsync(System.Func<Shenora.WebView2.Sessions.SessionController, System.Threading.CancellationToken, System.Threading.Tasks.Task<string>> driveLogin, System.Threading.CancellationToken cancellationToken = null)
+sealed class Shenora.WebView2.Sessions.InteractiveSession
+  public .ctor(Shenora.WebView2.Sessions.InteractiveSessionOptions options)
+  public System.Threading.Tasks.Task<Shenora.WebView2.Sessions.SessionResult> RunAsync(System.Func<Shenora.WebView2.Sessions.SessionController, System.Threading.CancellationToken, System.Threading.Tasks.Task<string>> driver, System.Threading.CancellationToken cancellationToken = null)
   public bool IsBusy { get; }
   public static string ComposeProfileDirectory(string root, params string[] segments)
   public static void ClearProfile(string profileDirectory)
-sealed class Shenora.WebView2.Sessions.LoginWindowOptions
+sealed class Shenora.WebView2.Sessions.InteractiveSessionOptions
   public System.Action<bool>? OnLoading { get; init; }
   public System.Drawing.Color? BackColor { get; init; }
   public System.Drawing.Icon? Icon { get; init; }
@@ -131,8 +78,6 @@ sealed class Shenora.WebView2.Sessions.SessionApiCall : System.IEquatable<Shenor
   public string Url { get; init; }
   public void Deconstruct(out string Url, out string Method, out string ContentType, out string BodySample)
 static class Shenora.WebView2.Sessions.SessionBrowser
-  public static System.Threading.Tasks.Task InitializeAsync(Microsoft.Web.WebView2.WinForms.WebView2 web, Shenora.WebView2.Sessions.SessionBrowserOptions options, System.Action<Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs>? onProcessFailed = null)
-  public static System.Threading.Tasks.Task<string> GetHtmlAsync(Microsoft.Web.WebView2.WinForms.WebView2 web)
 sealed class Shenora.WebView2.Sessions.SessionBrowserOptions
   public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
   public System.Func<System.Uri, System.Uri, bool>? RequestFilter { get; init; }
@@ -145,7 +90,7 @@ sealed class Shenora.WebView2.Sessions.SessionBrowserOptions
 sealed class Shenora.WebView2.Sessions.SessionController
   public System.Threading.CancellationToken WindowClosed { get; }
   public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.LoginCookie>> GetCookiesAsync(string origin, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.SessionCookie>> GetCookiesAsync(string origin, System.Threading.CancellationToken cancellationToken = null)
   public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = null)
   public void FitToBox(int cssWidth, int cssHeight)
   public void OnDownload(System.Action<Shenora.WebView2.Sessions.DownloadHit> handler)
@@ -154,3 +99,182 @@ sealed class Shenora.WebView2.Sessions.SessionController
   public void OnNewWindow(System.Action<string> handler)
   public void Reveal()
   public void SetLoading(bool loading)
+sealed class Shenora.WebView2.Sessions.SessionCookie : System.IEquatable<Shenora.WebView2.Sessions.SessionCookie>
+  public .ctor(string Name, string Value, string Domain, string Path)
+  public Shenora.WebView2.Sessions.SessionCookie <Clone>$()
+  public bool Equals(Shenora.WebView2.Sessions.SessionCookie? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionCookie? left, Shenora.WebView2.Sessions.SessionCookie? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionCookie? left, Shenora.WebView2.Sessions.SessionCookie? right)
+  public string Domain { get; init; }
+  public string Name { get; init; }
+  public string Path { get; init; }
+  public string Value { get; init; }
+  public void Deconstruct(out string Name, out string Value, out string Domain, out string Path)
+enum Shenora.WebView2.Sessions.SessionEndReason (int)
+  public const Shenora.WebView2.Sessions.SessionEndReason Disposed = 0
+  public const Shenora.WebView2.Sessions.SessionEndReason RendererFailed = 1
+  public int value__
+sealed class Shenora.WebView2.Sessions.SessionEnded : System.IEquatable<Shenora.WebView2.Sessions.SessionEnded>
+  public .ctor(Shenora.WebView2.Sessions.SessionEndReason Reason, string? Detail = null)
+  public Shenora.WebView2.Sessions.SessionEndReason Reason { get; init; }
+  public Shenora.WebView2.Sessions.SessionEnded <Clone>$()
+  public bool Equals(Shenora.WebView2.Sessions.SessionEnded? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionEnded? left, Shenora.WebView2.Sessions.SessionEnded? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionEnded? left, Shenora.WebView2.Sessions.SessionEnded? right)
+  public string? Detail { get; init; }
+  public void Deconstruct(out Shenora.WebView2.Sessions.SessionEndReason Reason, out string? Detail)
+static class Shenora.WebView2.Sessions.SessionErrorCodes
+  public const string Busy = "SESSION_BUSY"
+  public const string Cancelled = "SESSION_CANCELLED"
+  public const string Error = "SESSION_ERROR"
+  public const string Incomplete = "SESSION_INCOMPLETE"
+  public const string Unavailable = "SESSION_UNAVAILABLE"
+struct Shenora.WebView2.Sessions.SessionFrame : System.IEquatable<Shenora.WebView2.Sessions.SessionFrame>
+  public .ctor(byte[] Jpeg, int Width, int Height)
+  public bool Equals(Shenora.WebView2.Sessions.SessionFrame other)
+  public byte[] Jpeg { get; init; }
+  public int Height { get; init; }
+  public int Width { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionFrame left, Shenora.WebView2.Sessions.SessionFrame right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionFrame left, Shenora.WebView2.Sessions.SessionFrame right)
+  public void Deconstruct(out byte[] Jpeg, out int Width, out int Height)
+abstract class Shenora.WebView2.Sessions.SessionInput : System.IEquatable<Shenora.WebView2.Sessions.SessionInput>
+  protected .ctor(Shenora.WebView2.Sessions.SessionInput original)
+  protected virtual System.Type EqualityContract { get; }
+  protected virtual bool PrintMembers(System.Text.StringBuilder builder)
+  public abstract Shenora.WebView2.Sessions.SessionInput <Clone>$()
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool TryParseLegacyJson(string? json, out Shenora.WebView2.Sessions.SessionInput? input)
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionInput? left, Shenora.WebView2.Sessions.SessionInput? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionInput? left, Shenora.WebView2.Sessions.SessionInput? right)
+  public virtual bool Equals(Shenora.WebView2.Sessions.SessionInput? other)
+sealed class Shenora.WebView2.Sessions.SessionKeyInput : Shenora.WebView2.Sessions.SessionInput, System.IEquatable<Shenora.WebView2.Sessions.SessionKeyInput>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string Key)
+  public bool Alt { get; init; }
+  public bool Ctrl { get; init; }
+  public bool Equals(Shenora.WebView2.Sessions.SessionKeyInput? other)
+  public bool Meta { get; init; }
+  public bool Shift { get; init; }
+  public override bool Equals(Shenora.WebView2.Sessions.SessionInput? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionKeyInput? left, Shenora.WebView2.Sessions.SessionKeyInput? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionKeyInput? left, Shenora.WebView2.Sessions.SessionKeyInput? right)
+  public string Key { get; init; }
+  public virtual Shenora.WebView2.Sessions.SessionKeyInput <Clone>$()
+  public void Deconstruct(out string Key)
+enum Shenora.WebView2.Sessions.SessionPointerAction (int)
+  public const Shenora.WebView2.Sessions.SessionPointerAction Down = 1
+  public const Shenora.WebView2.Sessions.SessionPointerAction Move = 0
+  public const Shenora.WebView2.Sessions.SessionPointerAction Up = 2
+  public int value__
+sealed class Shenora.WebView2.Sessions.SessionPointerInput : Shenora.WebView2.Sessions.SessionInput, System.IEquatable<Shenora.WebView2.Sessions.SessionPointerInput>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(Shenora.WebView2.Sessions.SessionPointerAction Action, double X, double Y)
+  public Shenora.WebView2.Sessions.SessionPointerAction Action { get; init; }
+  public bool Equals(Shenora.WebView2.Sessions.SessionPointerInput? other)
+  public double X { get; init; }
+  public double Y { get; init; }
+  public override bool Equals(Shenora.WebView2.Sessions.SessionInput? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionPointerInput? left, Shenora.WebView2.Sessions.SessionPointerInput? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionPointerInput? left, Shenora.WebView2.Sessions.SessionPointerInput? right)
+  public virtual Shenora.WebView2.Sessions.SessionPointerInput <Clone>$()
+  public void Deconstruct(out Shenora.WebView2.Sessions.SessionPointerAction Action, out double X, out double Y)
+sealed class Shenora.WebView2.Sessions.SessionResult
+  public required bool Success { get; init; }
+  public string? Blob { get; init; }
+  public string? ErrorCode { get; init; }
+  public void ThrowIfFailed()
+sealed class Shenora.WebView2.Sessions.SessionTextInput : Shenora.WebView2.Sessions.SessionInput, System.IEquatable<Shenora.WebView2.Sessions.SessionTextInput>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string Text)
+  public bool Equals(Shenora.WebView2.Sessions.SessionTextInput? other)
+  public override bool Equals(Shenora.WebView2.Sessions.SessionInput? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionTextInput? left, Shenora.WebView2.Sessions.SessionTextInput? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionTextInput? left, Shenora.WebView2.Sessions.SessionTextInput? right)
+  public string Text { get; init; }
+  public virtual Shenora.WebView2.Sessions.SessionTextInput <Clone>$()
+  public void Deconstruct(out string Text)
+struct Shenora.WebView2.Sessions.SessionViewport : System.IEquatable<Shenora.WebView2.Sessions.SessionViewport>
+  public .ctor(int Width, int Height, double DeviceScaleFactor)
+  public bool Equals(Shenora.WebView2.Sessions.SessionViewport other)
+  public double DeviceScaleFactor { get; init; }
+  public int Height { get; init; }
+  public int Width { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionViewport left, Shenora.WebView2.Sessions.SessionViewport right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionViewport left, Shenora.WebView2.Sessions.SessionViewport right)
+  public void Deconstruct(out int Width, out int Height, out double DeviceScaleFactor)
+sealed class Shenora.WebView2.Sessions.SessionViewportInput : Shenora.WebView2.Sessions.SessionInput, System.IEquatable<Shenora.WebView2.Sessions.SessionViewportInput>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(double Width, double Height)
+  public bool Equals(Shenora.WebView2.Sessions.SessionViewportInput? other)
+  public double Height { get; init; }
+  public double Width { get; init; }
+  public double? DeviceScaleFactor { get; init; }
+  public override bool Equals(Shenora.WebView2.Sessions.SessionInput? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionViewportInput? left, Shenora.WebView2.Sessions.SessionViewportInput? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionViewportInput? left, Shenora.WebView2.Sessions.SessionViewportInput? right)
+  public virtual Shenora.WebView2.Sessions.SessionViewportInput <Clone>$()
+  public void Deconstruct(out double Width, out double Height)
+sealed class Shenora.WebView2.Sessions.SessionWheelInput : Shenora.WebView2.Sessions.SessionInput, System.IEquatable<Shenora.WebView2.Sessions.SessionWheelInput>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(double X, double Y, double DeltaY)
+  public bool Equals(Shenora.WebView2.Sessions.SessionWheelInput? other)
+  public double DeltaY { get; init; }
+  public double X { get; init; }
+  public double Y { get; init; }
+  public override bool Equals(Shenora.WebView2.Sessions.SessionInput? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.WebView2.Sessions.SessionWheelInput? left, Shenora.WebView2.Sessions.SessionWheelInput? right)
+  public static bool op_Inequality(Shenora.WebView2.Sessions.SessionWheelInput? left, Shenora.WebView2.Sessions.SessionWheelInput? right)
+  public virtual Shenora.WebView2.Sessions.SessionWheelInput <Clone>$()
+  public void Deconstruct(out double X, out double Y, out double DeltaY)
+sealed class Shenora.WebView2.Sessions.StreamingSession : System.IAsyncDisposable
+  public Shenora.WebView2.Sessions.SessionController Controller { get; }
+  public System.Threading.Channels.ChannelReader<Shenora.WebView2.Sessions.SessionFrame> Frames { get; }
+  public System.Threading.Tasks.Task DispatchAsync(Shenora.WebView2.Sessions.SessionInput input, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.ValueTask DisposeAsync()
+  public static System.Threading.Tasks.Task<Shenora.WebView2.Sessions.StreamingSession> StartAsync(Shenora.WebView2.Sessions.StreamingSessionOptions options, System.Threading.CancellationToken cancellationToken = null)
+sealed class Shenora.WebView2.Sessions.StreamingSessionOptions
+  public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
+  public Shenora.WebView2.Sessions.SessionViewport InitialViewport { get; init; }
+  public System.Action<Shenora.WebView2.Sessions.SessionEnded>? OnEnded { get; init; }
+  public System.Func<System.Uri, System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>>? NavigationGuard { get; init; }
+  public int FrameBuffer { get; init; }
+  public int JpegQuality { get; init; }
+  public int MaxFrameHeight { get; init; }
+  public int MaxFrameWidth { get; init; }
+  public required Shenora.WebView2.Sessions.SessionBrowserOptions Browser { get; init; }
+  public required System.Windows.Forms.Control Anchor { get; init; }

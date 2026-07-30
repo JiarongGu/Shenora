@@ -152,7 +152,13 @@ code comment.
   (`:146,174,218`, deliberate), so the process CWD moves after the first dialog and a relative
   `--app-root` re-resolves `DataDir` mid-session; it also defeats `SingleInstanceGuard.ChannelKey`
   hashing (two spellings of one install → two instances over the single-writer WebView2 folder).
-- [ ] **A cancelled lease cannot escape DURING browser init**, only after it (the H2 sessions batch
+- [x] **A cancelled lease cannot escape DURING browser init — DONE in H9.6 (2026-07-31)**, exactly as
+  planned: bundled with making the statics internal, since it is the same signature.
+  `SessionBrowser.InitializeAsync` now takes a `CancellationToken` passed to BOTH `WaitAsync` calls and
+  wired from the render pool and the streaming session, so a cancelled lease escapes during init instead
+  of waiting out `InitTimeout` twice. The token gates the AWAIT only — never the creation — because the
+  environment task is shared across the pool's instances. Original note follows.
+  (the H2 sessions batch
   closed the "publishes a live browser" half; this is the promptness half). `SessionBrowser.InitializeAsync`
   takes no `CancellationToken` at all, so a cancelled `LeaseAsync` waits out `InitTimeout` (up to 2×25 s)
   before the new post-init check fires. Deliberately NOT expanded into that batch: adding the parameter
@@ -863,46 +869,59 @@ would have argued a future session back to the pre-D19 position:
   correction, `webview2-hosting` semaphore bullet) are both there, so the always-loaded budget is
   untouched. **The next `.claude/rules/` (core) addition still needs a trim, not an append.**
 
-**H9 — Co-browse: ship primitives + lifecycle hooks, not the product (D21) — AFTER the re-layer**
+**H9 — Auxiliary sessions: primitives + lifecycle hooks, not the product (D21/D22) — COMPLETE (2026-07-31)**
 
-User direction 2026-07-30: *"co-browse itself is a whole feature — you just need to provide enough
-interface for other systems to plug/hook onto its cycle; you don't really need to implement the entire
-business feature."* Rationale + the full surface audit: **D21**. Sequenced after H4.1/H4.6 on purpose —
-this is an API redesign and must not ride inside a package-boundary move. It is a **pre-1.0 breaking
-change** to `CoBrowseSession`, so it belongs in this phase, not after.
+Suite **476 dotnet + 63 vitest**, `verify` PASSED. Only the `Shenora.WebView2.Sessions` baseline moved
+across the whole batch — the other four stayed byte-identical, which is the evidence that this
+reshaped one package and nothing else.
 
-Keep as primitives (the earned mechanics — do NOT churn these): `StartAsync`/`DisposeAsync`, `Frames`
-as the bounded latest-wins channel, the screencast ack protocol, and 1:1 viewport mirroring via
-`Emulation.setDeviceMetricsOverride` (NOT a physical resize).
-
-- [ ] **H9.1 — Replace `DispatchInputAsync(string)` with a typed input seam.** Today it takes the
-  source app's wire protocol as an opaque JSON string, so a consumer cannot know what to pass without
-  reading that app's client. Ship typed primitives instead (pointer move/down/up/wheel at FRACTION
-  coordinates, text insert, VK-mapped key) — the fraction-coordinate choice stays, it is what makes
-  the protocol resolution-independent. Keep the verbatim JSON mapping as an explicitly-named
-  **adoption shim** (e.g. a `CoBrowseInput.FromLegacyJson` parser) so the existing sibling migrates
-  mechanically, but the framework CONTRACT stops being one app's wire format. Also closes H6's
-  "`DispatchInputAsync` has no `CancellationToken`" item — add it while the signature changes anyway,
-  since adding it after 1.0 is binary-breaking.
-- [ ] **H9.2 — Move `ReadHotspotsAsync()` out of the core surface.** Returning a stringly-typed list
-  of "clickable rect fractions" is a co-browse UX decision, not a browser primitive. The app can run
-  its own script through the session controller. If a helper is still wanted, it ships as an
-  explicitly optional, TYPED extra — never as core surface, and never as `Task<string>`.
-- [ ] **H9.3 — Add the lifecycle hooks that are actually missing (this half is a live bug).** Nothing
-  signals the session ending or faulting: `ProcessFailed` is unwired (H4.4 wires it for pool
-  instances — do the same here), so a renderer crash leaves the frame channel never completed and the
-  app's reader **waiting forever**. Complete the channel on death and surface an ended/faulted hook
-  with a reason. Add frame geometry too (size/viewport, ideally per frame or via a viewport-changed
-  hook): today the app receives raw bytes with no geometry, so it cannot map input coordinates back —
-  which is why a caller ends up needing H9.1's protocol anyway.
-- [ ] **H9.4 — Land it on the neutral session controller from H4.6**, so `CoBrowseSession.Controller`
-  stops being typed `LoginWindowController`. That public member is the sharpest evidence for H4.6: a
-  co-browse consumer — nothing to do with signing in — must program against a login-named type, and
-  its busy-gate errors speak `LOGIN_BUSY`/`LOGIN_CANCELLED`. Free to fix now, breaking after 1.0.
-- [ ] **H9.5 — Prove the seam the way the render pool is proven:** the sample composes the *product*
-  (transport + a viewer) over the primitives, exactly as its `RENDER` route composes the pool. If the
-  sample cannot build a minimal co-browse product without reaching into internals, the seam is wrong.
-  Keep it small — this is a seam test, not a co-browse demo app.
+- [x] **H9.1 — typed input seam.** `DispatchInputAsync(string json)` →
+  `DispatchAsync(SessionInput, CancellationToken)`, with `SessionPointerInput`/`SessionWheelInput`/
+  `SessionTextInput`/`SessionKeyInput`/`SessionViewportInput` + a `SessionPointerAction` enum, and
+  `SessionInput.TryParseLegacyJson` as the explicitly-named adoption shim (D21's accepted cost —
+  an existing client keeps its frontend). Fraction coordinates kept: that is what makes the protocol
+  resolution-independent. `BuildMouseEventJson` takes the enum now, so there is ONE vocabulary.
+  **One correction worth keeping:** the record hierarchy is NOT airtight — a record's compiler-generated
+  COPY constructor is `protected`, so `private protected` on the base does not seal it. `DispatchAsync`
+  therefore keeps an explicit default arm that LOGS rather than assuming exhaustiveness; without it an
+  unknown input vanishes silently, which on a watched stream looks like the page hung.
+- [x] **H9.2 — `ReadHotspotsAsync()` removed.** A stringly-typed list of clickable rects is a co-browse
+  UX decision, not a browser primitive. Apps run their own script through `Controller` — the proven
+  script ships verbatim in the CHANGELOG's breaking entry so nothing is lost.
+- [x] **H9.3 — the lifecycle hooks. RE-VERIFIED FIRST, and half this item was already stale:** H4.4 had
+  wired `onProcessFailed` to complete the frame channel, so the "reader waits forever" bug was gone.
+  Genuinely missing and now shipped: `SessionEnded`/`SessionEndReason` + `StreamingSessionOptions.OnEnded`
+  (guarded, fired EXACTLY ONCE through a shared latch — dispose and a renderer crash genuinely race),
+  and frame GEOMETRY — `Frames` is `ChannelReader<SessionFrame>` carrying the viewport read from THAT
+  FRAME'S own metadata, not the session's current viewport (a resize in flight would otherwise mislabel
+  the frame, which is exactly when a mis-mapped click hurts).
+- [x] **H9.4 — the error-vocabulary bridge.** `SessionResult.ThrowIfFailed()` → `OperationException`,
+  so the codes cross as wire codes verbatim and plug into the dispatcher's documented boundary. NOTE
+  the "neutral session controller" half of this item was ALREADY DONE by H4.6's rename.
+- [x] **H9.5 — the seam is PROVEN, compile-wise.** The sample composes the product over the primitives
+  exactly as its RENDER route composes the pool: a `STREAM` facade (START/INPUT/STOP) pumping `Frames`
+  out as base64 IPC notifications, plus `StreamViewer.tsx` sending pointer/wheel input back. **Every
+  call is public API — no internals — which is the seam test passing.** The transport being the
+  interesting part is the point: frames are BINARY and the bridge is JSON, so the sample base64s them;
+  a server-backed profile would push the same bytes down a WebSocket and the session would not know.
+  **Compile-verified only — the sample has NOT been run** (see the note under P1).
+- [x] **H9.6 — `SessionBrowser` statics internal + a `CancellationToken`** (the H2/H6 deferral, bundled
+  here because it is the same signatures). `InitializeAsync`/`GetHtmlAsync` are `internal`; the token
+  gates the AWAIT ONLY and is wired from the pool and the streaming session. Cancelling the CREATION
+  would break other callers — the environment task is SHARED via `SessionEnvironmentCache`.
+- [x] **H9.7 + H9.8 — the naming, on user direction (2026-07-31) → D22.** The kit had passed D21 on
+  SHAPE while failing it on NAME, twice. `LoginWindow` contained no login logic; `CoBrowseSession` was
+  named for one product built on generic mechanics. Renamed to `InteractiveSession` and
+  `StreamingSession` with their whole type families (see the CHANGELOG table), `driveLogin` → `driver`
+  (parameter names are a source contract the baseline pins), and
+  `InteractiveSessionOptions.Title`'s `"Sign in"` default → `"Session"`. `CookieLoginFlow` KEEPS its
+  name on purpose — naming the scenario is the point of a reference driver.
+  **A whole-library audit ran** by sweeping the API baselines for domain vocabulary: the Login cluster
+  was the ONLY genuine leak across all five packages, and the npm barrel is clean. The false positives
+  are listed in D22 so nobody re-raises them (`ProfileDirectory` is a Chromium user-data folder,
+  `Module` is the kit's composition unit, `ImmersiveDarkMode`/`UserDataFolder` are platform SDK terms).
+  The rule now lives in `.claude/knowledge/generic-library.md` so the next session catches this class
+  unprompted.
 
 ### P1 — Skeleton tail
 

@@ -28,6 +28,11 @@ public sealed class MainForm : OptimizedForm
     private readonly DropZoneManager _dropZones;
     private readonly TrayIcon _tray;
     private readonly RenderSessionPool _renderPool;
+
+    // The streaming session and its frame pump are the SAMPLE's state, not the kit's: one
+    // at a time here purely to keep the seam test small (the kit imposes no such limit).
+    private StreamingSession? _stream;
+    private Task? _streamPump;
     private readonly System.Windows.Forms.Timer _tickTimer;
     private int _tickCount;
 
@@ -127,6 +132,102 @@ public sealed class MainForm : OptimizedForm
                     return new { Length = html.Length, Title = JsonSerializer.Deserialize<string>(titleJson) };
                 }
             }));
+
+            // ── P5.5 H9.5: the SEAM TEST for StreamingSession ────────────────────────────────────
+            // The kit ships an off-screen browser that streams frames and takes synthetic input. It
+            // ships NO transport, NO viewer and no opinion about what that is for. So the sample
+            // builds the product — here, a co-browse pane — the same way the RENDER route above
+            // builds a render service over the pool.
+            //
+            // If any of this needed an `internal`, the seam would be wrong (D21). It does not: every
+            // call below is public API. The transport being the interesting part is the point —
+            // frames are BINARY and this bridge is JSON, so the app base64s them into notifications.
+            // A server-backed profile would push the same bytes down a WebSocket instead, and the
+            // session would not know the difference.
+            dispatcher.MapModule("STREAM", routes => routes
+                .RouteAsync("START", async request =>
+                {
+                    var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
+                    if (_stream is not null) throw new OperationException("STREAM_ALREADY_RUNNING");
+
+                    var session = await StreamingSession.StartAsync(new StreamingSessionOptions
+                    {
+                        Anchor = this,
+                        Browser = new SessionBrowserOptions
+                        {
+                            ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "stream"),
+                            KeepAliveInBackground = true, // off-screen, but it must keep painting
+                        },
+                        NavigationGuard = (uri, _) => Task.FromResult(uri.IsLoopback),
+                        // The lifecycle hook the app plugs into: tell the page WHY the stream
+                        // stopped, so a crash and a deliberate STOP look different in the UI.
+                        // It must also CLEAR our handle — a dead renderer ends the session without
+                        // anyone calling STOP, and leaving `_stream` set would make every later
+                        // START answer STREAM_ALREADY_RUNNING for the rest of the process.
+                        OnEnded = ended =>
+                        {
+                            _stream = null;
+                            _ = eventBus.EmitAsync("STREAM", "ENDED",
+                                new { Reason = ended.Reason.ToString(), ended.Detail });
+                        },
+                    });
+
+                    try
+                    {
+                        await session.Controller.NavigateAsync(url);
+                    }
+                    catch
+                    {
+                        // The guard refused the URL (or navigation failed) AFTER a browser was
+                        // already live. Without this the session leaks: a real off-screen window and
+                        // a browser process holding the profile lock, with no handle left to reach it.
+                        await session.DisposeAsync();
+                        throw new OperationException("STREAM_REFUSED", "url", url);
+                    }
+
+                    _stream = session;
+                    // The app owns the pump. Frames out as base64 notifications; the channel
+                    // completing (dispose OR renderer death) ends the loop on its own. The try/catch
+                    // is not decoration: a fault in here would otherwise surface only as an
+                    // UNOBSERVED task exception, long after the fact and with no route to the page.
+                    _streamPump = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await foreach (var frame in session.Frames.ReadAllAsync())
+                                await eventBus.EmitAsync("STREAM", "FRAME", new
+                                {
+                                    Jpeg = Convert.ToBase64String(frame.Jpeg),
+                                    frame.Width,
+                                    frame.Height,
+                                });
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[sample] stream pump stopped: {ex}");
+                        }
+                    });
+                    return new { Started = true };
+                })
+                .RouteAsync("INPUT", async request =>
+                {
+                    if (_stream is null) throw new OperationException("STREAM_NOT_RUNNING");
+                    // The client speaks the kit's legacy wire shape here ON PURPOSE: it exercises
+                    // the documented adoption shim, which is the migration path a real consumer
+                    // takes. A greenfield app would build SessionInput records directly.
+                    var json = PayloadHelper.GetRequiredValue<string>(request.Payload, "input");
+                    if (!SessionInput.TryParseLegacyJson(json, out var input))
+                        throw new OperationException("STREAM_BAD_INPUT");
+                    await _stream.DispatchAsync(input!);
+                    return null;
+                })
+                .RouteAsync("STOP", async _ =>
+                {
+                    var session = _stream;
+                    _stream = null;
+                    if (session is not null) await session.DisposeAsync();
+                    return new { Stopped = true };
+                }));
         }
 
         // Construct the bridge BEFORE InitializeAsync — bus buffering starts here, so events
@@ -222,6 +323,12 @@ public sealed class MainForm : OptimizedForm
             _bridge.Dispose();
             _tray.Dispose();
             _renderPool.Dispose();
+            // Fire-and-forget is right on the UI teardown path: DisposeAsync completes the frame
+            // channel FIRST (so the pump below unwinds) and only then posts the UI cleanup, which a
+            // stopped message loop may never run — awaiting it here could hang the close.
+            _ = _stream?.DisposeAsync();
+            _stream = null;
+            _streamPump = null;
         }
         base.Dispose(disposing);
     }

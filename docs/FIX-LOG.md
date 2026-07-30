@@ -12,6 +12,27 @@ entry template:
 - **Commit:** <hash>
 ```
 
+## 2026-07-31
+
+### Sample STREAM route: three lifecycle bugs in the new co-browse composition
+- **Symptom:** found by this batch's own phase review, in code the batch had just written. None had
+  shipped; all three are the kind an adopter would copy, since the sample is the reference composition.
+- **Root cause:** (1) `OnEnded` did not clear the sample's `_stream` handle, so a renderer death — which
+  ends a session with nobody calling STOP — left it non-null and every later START answered
+  `STREAM_ALREADY_RUNNING` for the rest of the process. (2) `NavigateAsync` was awaited AFTER `_stream`
+  was assigned but with no try/catch, so a URL the navigation guard refused left a live off-screen
+  window and a browser process holding the profile lock, with the handle already published and no path
+  that would dispose it. (3) the frame pump's `Task.Run` body was unguarded, so any fault inside it
+  (an `EmitAsync` throw, a malformed frame) became an UNOBSERVED task exception — surfacing late,
+  through the bootstrap's global handler, with no route back to the page.
+- **Fix:** `OnEnded` nulls the handle before emitting; the session is created into a LOCAL, navigated
+  inside a try/catch that disposes and reports a structured `STREAM_REFUSED`, and only then published
+  to `_stream`; the pump body is wrapped and logs. File: `samples/Shenora.Sample.Desktop/MainForm.cs`.
+- **Verify:** compile + review only — like the rest of the sample's session code, exercising these
+  paths needs a live browser. `verify` PASSED (476 dotnet + 63 vitest). Stated rather than implied:
+  the sample has NOT been run this session.
+- **Commit:** _pending (P5.5 H9 batch)_
+
 ## 2026-07-30
 
 ### Shenora.Tests: one test entered the OS modal size loop and hung, hidden by test parallelism

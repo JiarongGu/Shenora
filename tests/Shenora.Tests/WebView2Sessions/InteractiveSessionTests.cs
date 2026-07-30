@@ -1,20 +1,21 @@
+using Shenora.Ipc;
 using Shenora.WebView2.Sessions;
 
 namespace Shenora.Tests.WebView2Sessions;
 
 /// <summary>
-/// The gate mechanics around <see cref="LoginWindow.RunAsync"/> — busy serialization,
+/// The gate mechanics around <see cref="InteractiveSession.RunAsync"/> — busy serialization,
 /// exactly-once completion via the token fallback (the dropped-post wedge post-mortem), and
 /// anchor-gone outcomes — WITHOUT pumping the anchor's queue, so the posted UI delegate
 /// deliberately never runs (a real login window is e2e territory, the family precedent).
 /// Plus the ComputeFitSize DPI math and ClearProfile.
 /// </summary>
-public class LoginWindowTests
+public class InteractiveSessionTests
 {
     private static Task<string?> NeverDriver(SessionController controller, CancellationToken ct) =>
         Task.FromResult<string?>("unreached");
 
-    private static LoginWindowOptions OptionsFor(Control anchor) => new()
+    private static InteractiveSessionOptions OptionsFor(Control anchor) => new()
     {
         Anchor = anchor,
         ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "login-tests", "unused-profile"),
@@ -25,7 +26,7 @@ public class LoginWindowTests
     {
         using var anchor = new Form { ShowInTaskbar = false };
         _ = anchor.Handle; // BeginInvoke needs a created handle; the queue is never pumped
-        var window = new LoginWindow(OptionsFor(anchor));
+        var window = new InteractiveSession(OptionsFor(anchor));
         using var cts = new CancellationTokenSource();
 
         var first = window.RunAsync(NeverDriver, cts.Token);
@@ -33,13 +34,13 @@ public class LoginWindowTests
         Assert.True(window.IsBusy);
 
         var second = await window.RunAsync(NeverDriver);
-        Assert.Equal(LoginErrorCodes.Busy, second.ErrorCode); // logins serialize
+        Assert.Equal(SessionErrorCodes.Busy, second.ErrorCode); // logins serialize
 
         // The UI delegate never runs (= the measured dropped-post shape) — the token
         // registration must complete the login AND release the gate anyway.
         cts.Cancel();
         var result = await first;
-        Assert.Equal(LoginErrorCodes.Cancelled, result.ErrorCode);
+        Assert.Equal(SessionErrorCodes.Cancelled, result.ErrorCode);
         Assert.False(window.IsBusy);
     }
 
@@ -48,11 +49,11 @@ public class LoginWindowTests
     {
         using var anchor = new Form { ShowInTaskbar = false };
         _ = anchor.Handle;
-        var window = new LoginWindow(OptionsFor(anchor));
+        var window = new InteractiveSession(OptionsFor(anchor));
 
         var result = await window.RunAsync(NeverDriver, new CancellationToken(canceled: true));
 
-        Assert.Equal(LoginErrorCodes.Cancelled, result.ErrorCode);
+        Assert.Equal(SessionErrorCodes.Cancelled, result.ErrorCode);
         Assert.False(window.IsBusy);
     }
 
@@ -61,11 +62,11 @@ public class LoginWindowTests
     {
         var anchor = new Form { ShowInTaskbar = false };
         anchor.Dispose();
-        var window = new LoginWindow(OptionsFor(anchor));
+        var window = new InteractiveSession(OptionsFor(anchor));
 
         var result = await window.RunAsync(NeverDriver);
 
-        Assert.Equal(LoginErrorCodes.Unavailable, result.ErrorCode);
+        Assert.Equal(SessionErrorCodes.Unavailable, result.ErrorCode);
         Assert.False(window.IsBusy);
     }
 
@@ -73,11 +74,11 @@ public class LoginWindowTests
     public async Task An_anchor_without_a_handle_is_unavailable()
     {
         using var anchor = new Form { ShowInTaskbar = false }; // handle never created → BeginInvoke throws
-        var window = new LoginWindow(OptionsFor(anchor));
+        var window = new InteractiveSession(OptionsFor(anchor));
 
         var result = await window.RunAsync(NeverDriver);
 
-        Assert.Equal(LoginErrorCodes.Unavailable, result.ErrorCode);
+        Assert.Equal(SessionErrorCodes.Unavailable, result.ErrorCode);
         Assert.False(window.IsBusy);
     }
 
@@ -100,10 +101,10 @@ public class LoginWindowTests
         Directory.CreateDirectory(Path.Combine(dir, "sub"));
         File.WriteAllText(Path.Combine(dir, "sub", "Cookies"), "x");
 
-        LoginWindow.ClearProfile(dir);
+        InteractiveSession.ClearProfile(dir);
         Assert.False(Directory.Exists(dir)); // a real logout wipes the cookie store, not just the blob
 
-        LoginWindow.ClearProfile(dir); // already gone — best-effort, no throw
+        InteractiveSession.ClearProfile(dir); // already gone — best-effort, no throw
     }
 
     // ── Profile-path containment (P5.5 H1) ────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ public class LoginWindowTests
     public void ClearProfile_refuses_a_path_with_traversal_segments(string relative)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "login-tests", relative);
-        Assert.Throws<ArgumentException>(() => LoginWindow.ClearProfile(path));
+        Assert.Throws<ArgumentException>(() => InteractiveSession.ClearProfile(path));
     }
 
     [Fact]
@@ -127,11 +128,11 @@ public class LoginWindowTests
     {
         var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "profiles");
 
-        var composed = LoginWindow.ComposeProfileDirectory(root, "provider-a", "account-1");
+        var composed = InteractiveSession.ComposeProfileDirectory(root, "provider-a", "account-1");
 
         Assert.Equal(Path.Combine(Path.GetFullPath(root), "provider-a", "account-1"), composed);
         // …and the result is safe to hand straight to ClearProfile.
-        LoginWindow.ClearProfile(composed);
+        InteractiveSession.ClearProfile(composed);
     }
 
     [Theory]
@@ -147,7 +148,7 @@ public class LoginWindowTests
     public void ComposeProfileDirectory_rejects_an_unsafe_segment(string segment)
     {
         var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "profiles");
-        Assert.Throws<ArgumentException>(() => LoginWindow.ComposeProfileDirectory(root, segment));
+        Assert.Throws<ArgumentException>(() => InteractiveSession.ComposeProfileDirectory(root, segment));
     }
 
     [Fact]
@@ -155,8 +156,50 @@ public class LoginWindowTests
     {
         // The isolation boundary the docs promise: distinct accounts must not collide on one directory.
         var root = Path.Combine(AppContext.BaseDirectory, "login-tests", "profiles");
-        var a = LoginWindow.ComposeProfileDirectory(root, "provider", "account-1");
-        var b = LoginWindow.ComposeProfileDirectory(root, "provider", "account-2");
+        var a = InteractiveSession.ComposeProfileDirectory(root, "provider", "account-1");
+        var b = InteractiveSession.ComposeProfileDirectory(root, "provider", "account-2");
         Assert.NotEqual(a, b);
+    }
+
+    // ── The bridge into the IPC error contract (P5.5 H9.4) ────────────────────────────────────────
+    // SessionErrorCodes was a parallel vocabulary with no typed path to the wire, so every adopting app
+    // hand-wrote the same throw. These pin that the codes cross UNCHANGED — the whole point is that
+    // an app's i18n keys keep working.
+
+    [Fact]
+    public void ThrowIfFailed_is_a_no_op_on_success()
+    {
+        var result = new SessionResult { Success = true, Blob = "{}" };
+
+        result.ThrowIfFailed();  // must not throw
+        Assert.Equal("{}", result.Blob);
+    }
+
+    [Theory]
+    [InlineData(SessionErrorCodes.Busy)]
+    [InlineData(SessionErrorCodes.Cancelled)]
+    [InlineData(SessionErrorCodes.Incomplete)]
+    [InlineData(SessionErrorCodes.Error)]
+    [InlineData(SessionErrorCodes.Unavailable)]
+    public void ThrowIfFailed_surfaces_the_login_code_verbatim_as_the_wire_code(string code)
+    {
+        var ex = Assert.Throws<OperationException>(
+            () => new SessionResult { Success = false, ErrorCode = code }.ThrowIfFailed());
+
+        Assert.Equal(code, ex.Code);
+        // The dispatcher's boundary maps an OperationException to its structured error, so this is
+        // exactly what a client receives — no re-mapping table anywhere in between.
+        Assert.Equal(code, ex.ToError().Code);
+    }
+
+    [Fact]
+    public void ThrowIfFailed_reports_unknown_rather_than_a_null_reference()
+    {
+        // Should be unreachable — every Fail() site passes a code — but an error path that throws
+        // NullReferenceException replaces the real diagnosis with a worse one.
+        var ex = Assert.Throws<OperationException>(
+            () => new SessionResult { Success = false, ErrorCode = null }.ThrowIfFailed());
+
+        Assert.Equal(IpcErrorCodes.UnknownError, ex.Code);
     }
 }

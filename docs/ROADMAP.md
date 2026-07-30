@@ -5,6 +5,76 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P5.5 H9: auxiliary sessions become primitives — and D22, name the mechanism
+
+The last P5.5 batch, and the one a reader changed mid-flight. Suite: **476 dotnet + 63 vitest**,
+`verify` PASSED. Only the `Shenora.WebView2.Sessions` baseline moved — the other four stayed
+byte-identical, which is the evidence this reshaped one package and nothing else.
+
+**The planned work (D21).** `DispatchInputAsync(string json)` took the ORIGINATING APP'S wire protocol
+as an opaque string, so a consumer could not know what to pass without reading that app's client — the
+framework's contract was one application's message format. It is now
+`DispatchAsync(SessionInput, CancellationToken)` over typed records, with fraction coordinates kept
+because that is what makes the protocol resolution-independent, and
+`SessionInput.TryParseLegacyJson` as an explicitly-named adoption shim so an existing client keeps its
+frontend. `ReadHotspotsAsync()` — a stringly-typed list of clickable rects, i.e. a UX decision — is
+gone, its script preserved verbatim in the CHANGELOG so nothing is lost. Frames carry geometry now
+(`ChannelReader<SessionFrame>`), read from each frame's own metadata rather than the session's current
+viewport: a resize in flight would otherwise mislabel a frame, which is exactly when a mis-mapped click
+hurts. And the missing lifecycle hook shipped — `OnEnded` with a reason, fired exactly once through a
+shared latch because dispose and a renderer crash genuinely race.
+
+Half of one item was already stale and re-verification caught it: H4.4 had wired `ProcessFailed` to
+complete the frame channel, so "the reader waits forever" was fixed months before the item was read.
+
+**The unplanned work, and the better half.** Asked *"why do we have really specific business logic for
+login?"*, the honest answer was that we did — and that H4.6 had only half-fixed it. `LoginWindow`
+contained **no login logic**: it is a busy-gated, profile-isolated browser window that runs an
+app-supplied driver until it captures a blob, which is equally a captcha, a terms acceptance or a
+checkout step. H4.6 had renamed the CONTROLLER for exactly this reason and stopped there, so
+`SessionController.GetCookiesAsync` still returned `IReadOnlyList<LoginCookie>` — a consumer streaming a
+page for remote viewing forced to name a login type.
+
+Pressed further — *"it's about what we're building; for co-browse it should focus on browser hooks,
+lifecycle, events instead of a single business need"* — the same fault appeared one level up. The kit
+had passed D21 on SHAPE while failing it on FRAMING: `CoBrowseSession` named a type after one product
+built on generic mechanics. An off-screen browser that streams frames and accepts synthetic input is
+co-browsing OR remote support OR visual capture OR a preview pane, depending only on who wires it. It
+also made the package incoherent, since `RenderSession` and `InteractiveSession` are named for what
+they do.
+
+So: `LoginWindow` → `InteractiveSession`, `CoBrowseSession` → `StreamingSession`, and both type
+families with them (the CHANGELOG carries the full table). `driveLogin` → `driver`, because parameter
+names are a source contract the baseline pins. `InteractiveSessionOptions.Title` stopped defaulting to
+`"Sign in"` — the one item in that sweep that was behaviour, not prose. `CookieLoginFlow` keeps its
+name deliberately: naming the scenario is the entire point of a reference driver. `StreamingSession`'s
+doc was rewritten so the LIFECYCLE is the contract — started, navigating/navigated, frames,
+ended-or-faulted — followed by what the kit owns versus what the app owns.
+
+**A whole-library audit ran** rather than a spot fix, by sweeping the API baselines (they already
+enumerate every public type and member across all five packages) for domain vocabulary and triaging by
+hand. Result: the Login cluster was the ONLY genuine leak, and the npm barrel is clean. The false
+positives are recorded in **D22** so nobody re-raises them — `ProfileDirectory` is a Chromium
+user-data folder, `Module` is the kit's composition unit, `ImmersiveDarkMode`/`UserDataFolder` are
+platform SDK terms. D22 states the rule this class needed all along: **name every public type for its
+mechanism, never for a scenario, product or business need** — with the reference-driver exception, and
+the audit method. It is mirrored into `.claude/knowledge/generic-library.md` so a future session
+catches it unprompted.
+
+**The seam is proven, compile-wise.** The sample composes the product over the primitives exactly as
+its RENDER route composes the pool: a `STREAM` facade (START/INPUT/STOP) pumping `Frames` out as base64
+IPC notifications, plus a `StreamViewer` component sending pointer and wheel input back. Every call is
+public API — no internals — which is the seam test passing. The transport being the interesting part is
+the point: frames are binary and the bridge is JSON, so the sample base64s them; a server-backed
+profile would push the same bytes down a WebSocket and the session would not know the difference. The
+sample has not been RUN, so this is a composability proof, not a behavioural one.
+
+Also closed here: the H2/H6-deferred `SessionBrowser` work — the public statics are `internal` (they
+took a raw WinForms control and mainly invited bypassing the pool's accounting) and initialization
+observes a `CancellationToken`, so a cancelled lease escapes during init rather than waiting out
+`InitTimeout` twice. The token gates the AWAIT only: the per-profile environment task is shared across
+a pool's instances, so cancelling the creation for one caller would break the others.
+
 ### 2026-07-30 — P5.5 H7: tests, docs and dead weight — and a 17-second hang parallelism was hiding
 
 The hygiene batch found a real defect, which is the argument for doing hygiene at all. Suite:
