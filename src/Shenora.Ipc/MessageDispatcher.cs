@@ -10,7 +10,13 @@ namespace Shenora.Ipc;
 /// </summary>
 /// <param name="request">The request travelling the pipeline.</param>
 /// <param name="next">Invokes the remaining pipeline; returns null when nothing handled it.</param>
-public delegate Task<IpcResponse?> MessageMiddleware(IpcRequest request, Func<Task<IpcResponse?>> next);
+/// <param name="cancellationToken">
+/// The caller's lifetime — see <see cref="IMessageDispatcher.DispatchAsync"/>. Middleware that
+/// awaits anything should observe it and pass it on; middleware that only inspects and forwards can
+/// ignore it, since <paramref name="next"/> already carries it.
+/// </param>
+public delegate Task<IpcResponse?> MessageMiddleware(IpcRequest request, Func<Task<IpcResponse?>> next,
+                                                     CancellationToken cancellationToken);
 
 /// <summary>
 /// The middleware-pipeline dispatcher routing IPC requests to module handlers/facades, ported
@@ -33,7 +39,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     // concurrently and by design (P5.5 H6). See Use() and Pipeline for why this shape.
     private readonly object _pipelineLock = new();
     private volatile MessageMiddleware[] _middlewares = [];
-    private volatile Func<IpcRequest, Task<IpcResponse?>>? _pipeline;
+    private volatile Func<IpcRequest, CancellationToken, Task<IpcResponse?>>? _pipeline;
     // Claimed module names. Case-insensitive because routing is. Guarded by _pipelineLock rather
     // than a concurrent set: LATE MAPPING is supported, so this is written while requests are in
     // flight, and it must move in step with the pipeline it describes.
@@ -59,7 +65,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// cannot see a stale pipeline after the swap, and invalidate-then-rebuild happens under one lock.
     /// </para>
     /// </summary>
-    private Func<IpcRequest, Task<IpcResponse?>> Pipeline
+    private Func<IpcRequest, CancellationToken, Task<IpcResponse?>> Pipeline
     {
         get
         {
@@ -80,12 +86,17 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// exceptions never cross the bridge (design contract §5; the source leaked
     /// <c>ex.Message</c> here).
     /// </summary>
-    public async Task<IpcResponse> DispatchAsync(IpcRequest request)
+    public async Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         try
         {
-            var response = await Pipeline(request);
+            // Thrown INSIDE the try on purpose: the catch below maps it, so an already-cancelled
+            // token produces the same structured OPERATION_CANCELLED that a handler's own
+            // cancellation does. The boundary still never throws to its caller, and the transport
+            // has one code to render rather than two shapes for one outcome.
+            cancellationToken.ThrowIfCancellationRequested();
+            var response = await Pipeline(request, cancellationToken);
             if (response is not null)
                 return response;
 
@@ -102,7 +113,8 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     }
 
     /// <inheritdoc />
-    public async Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null)
+    public async Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null,
+                                             CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(module);
         ArgumentException.ThrowIfNullOrEmpty(type);
@@ -116,7 +128,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
         };
 
         _logger.LogTrace("Programmatic send: {Module}/{Type} (scope: {Scope})", module, type, scope ?? "none");
-        return await DispatchAsync(request);
+        return await DispatchAsync(request, cancellationToken);
     }
 
     /// <summary>
@@ -125,9 +137,10 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// response is rethrown as its structured <see cref="OperationException"/>, so a
     /// programmatic caller sees exactly the failure a client would.
     /// </summary>
-    public async Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null)
+    public async Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null,
+                                       CancellationToken cancellationToken = default)
     {
-        var response = await SendAsync(module, type, scope, payload);
+        var response = await SendAsync(module, type, scope, payload, cancellationToken);
 
         if (!response.Success)
         {
@@ -220,17 +233,18 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     internal ILogger Logger => _logger;
 
     /// <summary>Compose an IMMUTABLE snapshot — never the live field, or this races <see cref="Use"/>.</summary>
-    private static Func<IpcRequest, Task<IpcResponse?>> BuildPipeline(MessageMiddleware[] middlewares)
+    private static Func<IpcRequest, CancellationToken, Task<IpcResponse?>> BuildPipeline(MessageMiddleware[] middlewares)
     {
         // Terminal: nothing handled the request.
-        Func<IpcRequest, Task<IpcResponse?>> pipeline = _ => Task.FromResult<IpcResponse?>(null);
+        Func<IpcRequest, CancellationToken, Task<IpcResponse?>> pipeline =
+            (_, _) => Task.FromResult<IpcResponse?>(null);
 
         // Compose in reverse so middlewares run in registration order.
         for (var i = middlewares.Length - 1; i >= 0; i--)
         {
             var middleware = middlewares[i];
             var next = pipeline;
-            pipeline = request => middleware(request, () => next(request));
+            pipeline = (request, ct) => middleware(request, () => next(request, ct), ct);
         }
 
         return pipeline;
@@ -259,12 +273,16 @@ public sealed class ModuleRouteBuilder
         return this;
     }
 
-    /// <summary>Map an async route; the result is wrapped in a success response.</summary>
-    public ModuleRouteBuilder RouteAsync(string type, Func<IpcRequest, Task<object?>> handler)
+    /// <summary>
+    /// Map an async route; the result is wrapped in a success response. The handler receives the
+    /// caller's lifetime token (see <see cref="IMessageDispatcher.DispatchAsync"/>) — ignore it for
+    /// quick work, observe it for anything that awaits.
+    /// </summary>
+    public ModuleRouteBuilder RouteAsync(string type, Func<IpcRequest, CancellationToken, Task<object?>> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _dispatcher.UseRoute(_module, type, async request =>
-            IpcResponse.CreateSuccess(request.Id, await handler(request)));
+        _dispatcher.UseRoute(_module, type, async (request, ct) =>
+            IpcResponse.CreateSuccess(request.Id, await handler(request, ct)));
         return this;
     }
 }

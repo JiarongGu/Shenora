@@ -159,6 +159,35 @@ at the first list and missed five more breaking changes.
   (P5.5 H9.6). Both took a raw WinForms `WebView2` and had no consumer scenario — they mainly invited
   bypassing the render pool's accounting. Use `RenderSessionPool`, `InteractiveSession` or
   `StreamingSession`; `RenderSession.GetHtmlAsync()` is the supported way to read a rendered page.
+- **The dispatch surface now carries a `CancellationToken`** (P6.4). The whole IPC pipeline was
+  uncancellable: `DispatchAsync`, `SendAsync`, `MessageMiddleware`, `IModuleFacade.HandleMessageAsync`
+  and `BaseFacade.RouteMessageAsync` took no token, so a handler could not observe one it was never
+  given, and work still awaiting when the page navigated away or the host shut down had no way to
+  learn that nobody was listening. `WebViewIpcBridge` now owns a lifetime CTS and cancels it in
+  `Dispose`, so that signal reaches every handler.
+  **What the token means, and what it does not:** it is the CALLER's lifetime, not per-request client
+  cancellation. A one-way `post` has nobody waiting, so "the client changed its mind" remains an
+  app-level CANCEL route carrying an operation id — what an operation IS belongs to the app (D21).
+  Cancellation still surfaces as `OPERATION_CANCELLED`; `DispatchAsync`'s never-throws contract is
+  unchanged, including for a token that is already cancelled on entry.
+  **Migration.** Every parameter is optional (`= default`), so CALL sites compile untouched. What must
+  change is anything that IMPLEMENTS or OVERRIDES:
+  * `protected override Task<object?> RouteMessageAsync(IpcRequest request)` →
+    `(IpcRequest request, CancellationToken cancellationToken)` — every facade. Ignore the parameter
+    for quick synchronous work; observe it for anything that awaits.
+  * a custom `IMessageDispatcher` or a decorator: add the parameter to `DispatchAsync` and both
+    `SendAsync` overloads, and FORWARD it (a decorator that drops it silently disables cancellation
+    for everything behind it).
+  * a custom `IModuleFacade`: add it to `HandleMessageAsync`.
+  * `Use(async (request, next) => …)` → `Use(async (request, next, ct) => …)`; `UseModule`/`UseRoute`
+    handlers and `ModuleRouteBuilder.RouteAsync` take `(request, ct)`. `MapRoute`'s synchronous
+    handler is unchanged.
+  ⚠ **A lambda parameter named `_` shadows the discard.** Writing `async (request, _) =>` and then
+  `_ = SomethingAsync();` inside it assigns to the token parameter instead of discarding — it is a
+  compile error here, but only because the types happen to differ. Name it `ct`.
+- **`IEventBus` gained `Emit`** (two overloads, fire-and-forget). Additive for CALLERS; **breaking for
+  anyone who implements `IEventBus` themselves** — a test double or a substitute registered over the
+  built-in one needs the two new members. See `### Added` for why it exists.
 
 ### Added
 
@@ -332,6 +361,24 @@ at the first list and missed five more breaking changes.
   workaround — tunnelling every event through one reserved `(module, type)` pair — is expressible, but
   it makes adoption all-or-nothing per event, because tunnelled events are invisible to
   `useShenoraEvent` and `createShenoraStore`.
+- **`IpcErrorMapping` is public** — `ToError(exception, …)` for a wire error and
+  `ToErrorResponse(request, exception, …)` for a full response. It was internal, on the reasoning that
+  a facade gets the error boundary free from `BaseFacade`. True, and beside the point for the case
+  that found it (P6.4): an app whose IPC surface reports failures as EVENTS has no response to attach
+  an error to, so it had to retype the policy — which is precisely the fifth copy this type was
+  created to prevent, and its own doc says the copy that forgets `ex.GetType().Name` and passes
+  `ex.Message` is how a path or a connection string reaches the page. Now it is surface rather than a
+  rule people are told about.
+  Note the sharp edge it documents and a test pins: an `OperationException`'s MESSAGE crosses the wire
+  verbatim, because those are the app's own words for an expected failure — so never build one from an
+  arbitrary `ex.Message`. That turns the one sanctioned channel into a bypass of the whole boundary.
+- **`IEventBus.Emit(…)`** — emit without awaiting the handlers, for a caller that has no `await` to
+  offer: a synchronous `Action`-shaped callback, a timer tick, a UI event handler. It is deliberately
+  not "just" `_ = EmitAsync(…)` at the call site even though that is what it does. Discarding a task
+  is normally a hazard, and whether it is safe here depends on an internal guarantee — every handler
+  runs inside the bus's own guard, so the task cannot fault because of a subscriber. A caller could
+  only learn that by reading the implementation, which is the actual finding: the guarantee is the
+  API's to state, so it states it. Argument errors still throw synchronously — those are caller bugs.
 
 ### Changed
 

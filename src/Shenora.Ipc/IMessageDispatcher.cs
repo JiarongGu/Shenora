@@ -12,17 +12,31 @@ public interface IMessageDispatcher
     /// Run a request through the pipeline. Never throws and never returns null — unhandled
     /// requests and escaped exceptions become structured error responses (see
     /// <see cref="MessageDispatcher.DispatchAsync"/>). This is the transports' entry point.
+    /// <para>
+    /// WHAT THE TOKEN IS FOR, and what it is NOT (added P6.4). It carries the caller's
+    /// LIFETIME — a transport passes one tied to its own, so handlers still running when the page
+    /// navigates away or the host shuts down learn that nobody is listening any more. Before this
+    /// existed the whole pipeline was uncancellable, and a handler could not observe a token it was
+    /// never given. It is deliberately NOT per-request client cancellation: a one-way
+    /// <c>post</c> has no caller waiting, so "the client changed its mind" is an app-level CANCEL
+    /// route carrying the operation id, not a transport concern (see
+    /// <c>docs/2026-07-31-shenora-oneway-ipc-design.md</c>). Cancellation surfaces to the client as
+    /// <see cref="IpcErrorCodes.OperationCancelled"/>, never as a thrown exception — the
+    /// never-throws contract holds.
+    /// </para>
     /// </summary>
-    Task<IpcResponse> DispatchAsync(IpcRequest request);
+    Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Send a programmatic request and get the full response envelope.</summary>
-    Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null);
+    Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null,
+                                CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Send a programmatic request and get typed response data. A failed response throws its
     /// structured error as an <see cref="OperationException"/>.
     /// </summary>
-    Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null);
+    Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null,
+                          CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Append a middleware — the ONE composition primitive. Every mapping helper

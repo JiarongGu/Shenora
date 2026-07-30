@@ -136,7 +136,7 @@ public sealed class MainForm : OptimizedForm
             // The route-builder shape (SampleFacade shows the BaseFacade shape): lease a pooled
             // off-screen session, render the requested page, and prove its JS ran (title + HTML
             // length come from the LIVE DOM, not the response bytes) — the e2e drives this.
-            dispatcher.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async request =>
+            dispatcher.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async (request, ct) =>
             {
                 var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
                 // Bound the lease: with Capacity 2, two wedged sessions would otherwise hang every
@@ -176,7 +176,7 @@ public sealed class MainForm : OptimizedForm
             // A server-backed profile would push the same bytes down a WebSocket instead, and the
             // session would not know the difference.
             dispatcher.MapModule("STREAM", routes => routes
-                .RouteAsync("START", async request =>
+                .RouteAsync("START", async (request, ct) =>
                 {
                     var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
                     if (_stream is not null) throw new OperationException("STREAM_ALREADY_RUNNING");
@@ -240,7 +240,7 @@ public sealed class MainForm : OptimizedForm
                     });
                     return new { Started = true };
                 })
-                .RouteAsync("INPUT", async request =>
+                .RouteAsync("INPUT", async (request, ct) =>
                 {
                     if (_stream is null) throw new OperationException("STREAM_NOT_RUNNING");
                     // The client speaks the kit's legacy wire shape here ON PURPOSE: it exercises
@@ -252,7 +252,7 @@ public sealed class MainForm : OptimizedForm
                     await _stream.DispatchAsync(input!);
                     return null;
                 })
-                .RouteAsync("STOP", async _ =>
+                .RouteAsync("STOP", async (_, ct) =>
                 {
                     var session = _stream;
                     _stream = null;

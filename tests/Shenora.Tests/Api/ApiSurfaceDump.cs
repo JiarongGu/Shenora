@@ -286,7 +286,7 @@ internal static class ApiSurfaceDump
         // Parameter NAMES are a source contract — a consumer may pass named arguments.
         sb.Append(' ').Append(parameter.Name);
         // The DEFAULT is what makes a call site compile; dropping one breaks every caller that omitted it.
-        if (parameter.HasDefaultValue) sb.Append(" = ").Append(Literal(parameter.RawDefaultValue));
+        if (parameter.HasDefaultValue) sb.Append(" = ").Append(DefaultValue(parameter));
         return sb.ToString();
     }
 
@@ -358,6 +358,25 @@ internal static class ApiSurfaceDump
             if (parts.Count > 0) clauses.Add($"where {argument.Name} : {string.Join(", ", parts)}");
         }
         return clauses.Count == 0 ? "" : " " + string.Join(" ", clauses);
+    }
+
+    /// <summary>
+    /// A parameter's default, as a C# author would write it.
+    /// <para>
+    /// Reflection reports <c>default(T)</c> for a non-nullable VALUE type as a null
+    /// <c>RawDefaultValue</c>, which the literal renderer would print as <c>= null</c> — and a human
+    /// reviews this file on every surface change, so <c>CancellationToken cancellationToken = null</c>
+    /// reads as "this parameter is nullable", which is not a thing a struct parameter can be. Print
+    /// <c>= default</c> there instead. Reference types keep <c>= null</c>, which is both accurate and
+    /// what the source says.
+    /// </para>
+    /// </summary>
+    private static string DefaultValue(ParameterInfo parameter)
+    {
+        var type = parameter.ParameterType;
+        if (parameter.RawDefaultValue is null && type.IsValueType && Nullable.GetUnderlyingType(type) is null)
+            return "default";
+        return Literal(parameter.RawDefaultValue);
     }
 
     private static string Literal(object? value) => value switch

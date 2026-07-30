@@ -14,6 +14,8 @@ sealed class Shenora.Core.EventBus : Shenora.Core.IEventBus
   public string SubscribeToAll(System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
   public string SubscribeToModule(string module, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
   public string SubscribeToModule(string module, string scope, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public void Emit(Shenora.Core.EventMessage message)
+  public void Emit(string module, string type, object? payload = null, string? scope = null)
   public void Unsubscribe(string subscriptionId)
 sealed class Shenora.Core.EventMessage
   public System.DateTimeOffset Timestamp { get; init; }
@@ -56,6 +58,8 @@ interface Shenora.Core.IEventBus
   public abstract string SubscribeToAll(System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
   public abstract string SubscribeToModule(string module, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
   public abstract string SubscribeToModule(string module, string scope, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public abstract void Emit(Shenora.Core.EventMessage message)
+  public abstract void Emit(string module, string type, object? payload = null, string? scope = null)
   public abstract void Unsubscribe(string subscriptionId)
 interface Shenora.Core.IFileDialogPathStore
   public abstract System.Threading.Tasks.Task SavePathAsync(string key, string path)
@@ -73,10 +77,10 @@ interface Shenora.Core.IShenoraRunner
   public abstract void Run(Shenora.Core.ShenoraApplication app)
 interface Shenora.Core.IUiDispatcher
   public abstract Shenora.Core.UiTargetState State { get; }
-  public abstract System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = null)
-  public abstract System.Threading.Tasks.Task InvokeAsync(System.Func<System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = null)
-  public abstract System.Threading.Tasks.Task<T> InvokeAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, System.Threading.CancellationToken cancellationToken = null)
-  public abstract System.Threading.Tasks.Task<T> InvokeOrDefaultAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, T fallback, System.Threading.CancellationToken cancellationToken = null)
+  public abstract System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task InvokeAsync(System.Func<System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task<T> InvokeAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task<T> InvokeOrDefaultAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, T fallback, System.Threading.CancellationToken cancellationToken = default)
   public abstract bool IsOnUiThread { get; }
   public abstract bool Post(System.Action work)
   public abstract bool Post(System.Func<System.Threading.Tasks.Task> work)

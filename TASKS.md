@@ -1031,10 +1031,14 @@ Known capability LIMITS, recorded rather than guessed at:
   required `@types/react` in the CONSUMER's global program (`FIX-LOG`), and the client event bus could
   not express a catch-all subscription while the host's `IEventBus` had shipped `SubscribeToAll`/
   `SubscribeToModule` all along — closed by adding both breadths (`CHANGELOG` `### Added`).
-  Recorded, deliberately NOT built: no `CancellationToken` on the dispatch surface (an app-lifetime
-  token in the facade constructor covers it; per-request cancellation is an app-level CANCEL route by
-  design), no synchronous `IEventBus` emit (discarding the task is safe by construction — checked, not
-  assumed), and `IpcErrorMapping` staying `internal` (a `BaseFacade` subclass gets the boundary free).
+  **The three "almost fits" it recorded are now CLOSED too** (user direction, 2026-07-31: *"you really
+  need to close those gaps"* — my triage had deferred them as workaroundable, and workaroundable is not
+  the bar before a SemVer freeze). A `CancellationToken` flows the whole dispatch surface, supplied by
+  the transport as a LIFETIME and cancelled on its dispose (**breaking** for implementers/overriders);
+  `IEventBus.Emit` is the fire-and-forget twin so a synchronous caller need not discard a task and read
+  kit source to know it is safe; `IpcErrorMapping` is public so an app whose failures travel as EVENTS
+  can reuse the leak policy instead of retyping it. All three were re-verified from the ADAPTER's side,
+  not just by unit tests — the throwaway probe now uses each and its 22 checks pass.
 - [ ] **P6.5 — Portability (D20).** Already proven through a PACKAGE reference in P6.1's `portable`
   consumer, and again by P6.4's host adapter compiling as `net10.0`. What remains is guidance: how an
   app moves its facades into a `net10.0` project. Cheap for the surveyed target — its `Core` project

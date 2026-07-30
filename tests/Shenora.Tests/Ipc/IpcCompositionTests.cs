@@ -10,7 +10,7 @@ public class IpcCompositionTests
     {
         public override string ModuleName => "ALPHA";
 
-        protected override Task<object?> RouteMessageAsync(IpcRequest request) =>
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) =>
             Task.FromResult<object?>("alpha");
     }
 
@@ -18,7 +18,7 @@ public class IpcCompositionTests
     {
         public override string ModuleName => "BETA";
 
-        protected override Task<object?> RouteMessageAsync(IpcRequest request) =>
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) =>
             Task.FromResult<object?>("beta");
     }
 
@@ -33,16 +33,16 @@ public class IpcCompositionTests
     {
         public int Dispatched { get; private set; }
 
-        public Task<IpcResponse> DispatchAsync(IpcRequest request)
+        public Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default)
         {
             Dispatched++;
             return inner.DispatchAsync(request);
         }
 
-        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null) =>
+        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null, CancellationToken cancellationToken = default) =>
             inner.SendAsync(module, type, scope, payload);
 
-        public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null) =>
+        public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, CancellationToken cancellationToken = default) =>
             inner.SendAsync<T>(module, type, scope, payload);
 
         public IMessageDispatcher Use(MessageMiddleware middleware) => inner.Use(middleware);
@@ -104,7 +104,7 @@ public class IpcCompositionTests
         var order = new List<string>();
         using var provider = new ServiceCollection()
             .AddModuleFacade<AlphaFacade>()
-            .AddMessageDispatcher((_, dispatcher) => dispatcher.Use(async (_, next) =>
+            .AddMessageDispatcher((_, dispatcher) => dispatcher.Use(async (_, next, _) =>
             {
                 order.Add("app-middleware");
                 return await next();
@@ -219,7 +219,7 @@ public class IpcCompositionTests
     {
         public override string ModuleName => "SELF";
 
-        protected override async Task<object?> RouteMessageAsync(IpcRequest request) => request.Type switch
+        protected override async Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) => request.Type switch
         {
             "PING" => "pong",
             // Cross-module send through the injected dispatcher (the documented use).
@@ -232,12 +232,12 @@ public class IpcCompositionTests
     private sealed class DupOneFacade : BaseFacade
     {
         public override string ModuleName => "DUP";
-        protected override Task<object?> RouteMessageAsync(IpcRequest request) => Task.FromResult<object?>("one");
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) => Task.FromResult<object?>("one");
     }
 
     private sealed class DupTwoFacade : BaseFacade
     {
         public override string ModuleName => "DUP";
-        protected override Task<object?> RouteMessageAsync(IpcRequest request) => Task.FromResult<object?>("two");
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) => Task.FromResult<object?>("two");
     }
 }

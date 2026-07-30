@@ -5,6 +5,65 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P6.4 follow-up: close the three gaps, instead of recording them
+
+The adapter probes above produced three "the framework almost fits, but…" notes, and the first pass
+filed all three as recorded-not-built: each had a workaround, none blocked an adopter. **User
+direction reversed that** — *"you really need to close those gaps"* — and the reasoning holds better
+than mine did: workaroundable is not the bar when P7 freezes SemVer, and two of the three were
+breaking changes that get expensive the moment 1.0 ships.
+
+**A `CancellationToken` now flows the whole dispatch surface** (breaking). `DispatchAsync`,
+`SendAsync`, `MessageMiddleware`, `IModuleFacade.HandleMessageAsync` and
+`BaseFacade.RouteMessageAsync` had none, so the IPC pipeline was uncancellable end to end and a
+handler could not observe a token it was never given. `WebViewIpcBridge` owns a lifetime CTS and
+cancels it FIRST in `Dispose`, so work still awaiting when the page goes away finally learns it. The
+scoping is the part worth keeping: it is the CALLER's lifetime, **not** per-request client
+cancellation — a one-way `post` has nobody waiting, so "stop that operation" stays an app-level CANCEL
+route carrying an operation id (D21: what an operation IS belongs to the app). An already-cancelled
+token throws INSIDE the try so it maps to `OPERATION_CANCELLED` like any other cancel: one code for
+one outcome, and `DispatchAsync`'s never-throws contract is untouched.
+
+**`IEventBus.Emit`** is the fire-and-forget twin of `EmitAsync`. It does exactly `_ = EmitAsync(…)`,
+and that is the point: discarding a task is normally a hazard, and whether it is safe here rests on an
+internal guarantee (every handler runs inside the bus's guard, so the task cannot fault because of a
+subscriber). A caller could only learn that by reading the implementation. The guarantee is the API's
+to state.
+
+**`IpcErrorMapping` is public** — `ToError` / `ToErrorResponse`. It was internal because a facade gets
+the boundary free from `BaseFacade`; true, and beside the point for the case that found it. An app
+whose failures travel as EVENTS has no response to attach an error to, so it had to retype the policy
+— which is exactly the fifth copy that type exists to prevent, the one whose doc already warns that
+forgetting `ex.GetType().Name` puts a connection string on the page.
+
+**Verified from the consumer's side, not just by unit tests.** 15 new tests (522 dotnet, 85 vitest,
+`verify` green), and the throwaway adapter was rewritten to USE all three — its worked-around
+constructor token, its discarded task and its hand-rolled error event are gone, and its checks grew
+from 17 to 22, including one that cancels a foreign module mid-await through the real dispatcher.
+
+**Two things the work itself taught.** Sabotaging the pipeline to swallow the token did not fail the
+suite — it HUNG it, because a handler awaiting `Task.Delay(Timeout.Infinite, ct)` on a token nobody
+can cancel waits forever. That is the worst failure mode available here (parallelism once masked a
+17-second hang, which is why the suite runs serially at all), so the cancellation tests are bounded
+with `WaitAsync`; with the bound, the same sabotage failed five tests in five seconds. And a lambda
+parameter named `_` SHADOWS the discard: after `async (request, _) =>`, an inner `_ = SomethingAsync()`
+assigns to the token instead of discarding it. It surfaced as a type error in the sample only because
+the types happened to differ.
+
+**The review of this batch found one real defect, in the new code.** `WebViewIpcBridge` read
+`_lifetime.Token` at dispatch time, which throws `ObjectDisposedException` once `Dispose` has run —
+and a message arriving during teardown is the NORMAL case here, not a corner one, because teardown is
+exactly when the page is going away. The token is captured once at construction now (a
+`CancellationToken` is a struct that stays readable, and still reports the cancellation, after its
+source is disposed), pinned by a test that dispatches after `Dispose` and asserts a structured
+`OPERATION_CANCELLED` rather than a crash. Sabotage-verified.
+
+Also fixed while promoting the baselines: the API dump rendered `default(CancellationToken)` as
+`= null`, because reflection reports a value type's default that way. A human reviews that file on
+every surface change, and `CancellationToken cancellationToken = null` reads as "this is nullable",
+which a struct parameter cannot be. It renders `= default` now — a rendering-only change, proven so by
+normalising the two untouched baselines and requiring an exact match.
+
 ### 2026-07-31 — P6.3 + P6.4: the adapters an adopter must write, written once — and what they found
 
 P6 promises an adopting app that swapping the IPC substrate is **two adapters, not hundreds of

@@ -32,6 +32,23 @@ transport, or building the P6 adoption shims.
   `UseErrorHandler`, `BaseFacade`, `PayloadHelper` (the wire message carries only the key — the
   serializer's text lives in the inner exception), and the bridge's own fallback. New error
   paths get a `DoesNotContain` leak test (the suite has precedents).
+- **The dispatch token is a LIFETIME, not a per-request cancel — and the boundary still never
+  throws.** `DispatchAsync`/`SendAsync`/`MessageMiddleware`/`IModuleFacade`/`BaseFacade.RouteMessageAsync`
+  all carry a `CancellationToken` (P6.4; before that the whole pipeline was uncancellable, so a handler
+  could not observe a token it was never given). The transport supplies it — `WebViewIpcBridge` owns a
+  CTS and cancels it in `Dispose`, FIRST, before tearing anything else down. Three rules that follow:
+  an already-cancelled token is thrown INSIDE the try so it maps to `OPERATION_CANCELLED` like any
+  other cancel (one code for one outcome, and the never-throws contract holds); a decorator MUST
+  forward the token, since dropping it silently disables cancellation for everything behind it; and
+  work a route hands OFF to the background outlives the request, so it needs its own token — capturing
+  this one kills long work the moment the page navigates. What the client "cancel this operation" case
+  needs is an app-level CANCEL route carrying the operation id, never a transport concern: a one-way
+  `post` has no caller waiting.
+- **A test that awaits a cancellable operation must be BOUNDED (`WaitAsync`), not bare.** If the token
+  ever stops flowing, `await Task.Delay(Timeout.Infinite, ct)` waits on something nobody can cancel and
+  the test HANGS instead of failing — the worst outcome here, and the reason the dotnet suite runs
+  serially at all (parallelism once masked a 17-second hang). Found by sabotage: swallowing the token
+  in `BuildPipeline` hung the whole run; with the bound, five tests failed in five seconds.
 - **An `OperationException`'s MESSAGE crosses the wire verbatim — so never build one from
   `ex.Message`.** The no-raw-exception-text rule above has exactly one sanctioned channel through it:
   `OperationException` is the app describing an EXPECTED failure in its own words, and

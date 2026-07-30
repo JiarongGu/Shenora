@@ -189,4 +189,43 @@ public class EventBusTests
 
         Assert.Same(custom, app.Services.GetRequiredService<IEventBus>());
     }
+
+    // Emit (fire-and-forget) — added P6.4 so a caller with a synchronous Action-shaped callback does
+    // not have to discard a Task and learn from kit SOURCE that discarding is safe here.
+    [Fact]
+    public async Task Emit_delivers_without_the_caller_awaiting()
+    {
+        var bus = new EventBus();
+        var delivered = new TaskCompletionSource<EventMessage>();
+        bus.Subscribe("APP", "TICK", message => { delivered.SetResult(message); return Task.CompletedTask; });
+
+        bus.Emit("APP", "TICK", new { N = 1 });
+
+        // Awaited by the TEST, not by the caller — that is the distinction being pinned.
+        var received = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("TICK", received.Type);
+    }
+
+    [Fact]
+    public void Emit_does_not_surface_a_throwing_subscriber_to_the_caller()
+    {
+        // The guarantee the interface now STATES rather than leaves to be discovered: handler
+        // failures are contained, so a fire-and-forget emit cannot come back at the emitter.
+        var bus = new EventBus();
+        bus.Subscribe("APP", "TICK", _ => throw new InvalidOperationException("boom"));
+
+        var exception = Record.Exception(() => bus.Emit("APP", "TICK"));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void Emit_still_throws_on_a_caller_bug()
+    {
+        // Argument validation is NOT swallowed: an empty module builds an event no subscription can
+        // ever match, which is the silently-undeliverable class this bus exists to make impossible.
+        var bus = new EventBus();
+
+        Assert.Throws<ArgumentException>(() => bus.Emit("", "TICK"));
+    }
 }

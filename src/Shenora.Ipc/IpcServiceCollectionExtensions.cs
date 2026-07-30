@@ -77,11 +77,11 @@ public static class IpcServiceCollectionExtensions
             return map;
         });
 
-        return dispatcher.Use(async (request, next) =>
+        return dispatcher.Use(async (request, next, ct) =>
         {
             if (facades.Value.TryGetValue(request.Module, out var facade))
             {
-                var response = await facade.HandleMessageAsync(request);
+                var response = await facade.HandleMessageAsync(request, ct);
                 if (response is not null) return response;
             }
             return await next();

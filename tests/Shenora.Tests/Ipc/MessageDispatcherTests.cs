@@ -20,7 +20,7 @@ public class MessageDispatcherTests
         // read the OLD cached Lazy and answer NO_HANDLER for a route that was already registered — and a
         // build enumerating the list while Add grew it is a plain data race (P5.5 H6).
         var dispatcher = new MessageDispatcher();
-        dispatcher.UseRoute("APP", "FIRST", _ => Task.FromResult(IpcResponse.CreateSuccess("1")));
+        dispatcher.UseRoute("APP", "FIRST", (_, _) => Task.FromResult(IpcResponse.CreateSuccess("1")));
 
         // Force the pipeline to be built and cached — the precondition for the stale read.
         Assert.True((await dispatcher.DispatchAsync(Request("APP", "FIRST"))).Success);
@@ -31,7 +31,7 @@ public class MessageDispatcherTests
             for (var i = 0; i < 200; i++)
             {
                 var type = $"LATE{i}";
-                dispatcher.UseRoute("APP", type, _ => Task.FromResult(IpcResponse.CreateSuccess("ok")));
+                dispatcher.UseRoute("APP", type, (_, _) => Task.FromResult(IpcResponse.CreateSuccess("ok")));
                 Interlocked.Increment(ref added);
             }
         });
@@ -57,7 +57,7 @@ public class MessageDispatcherTests
         // reference composition had already hand-rolled this arm, which is the tell that every adopting
         // app would have to (P5.5 H6).
         var dispatcher = new MessageDispatcher();
-        dispatcher.UseRoute("APP", "SLOW", _ => throw new OperationCanceledException());
+        dispatcher.UseRoute("APP", "SLOW", (_, _) => throw new OperationCanceledException());
 
         var response = await dispatcher.DispatchAsync(Request("APP", "SLOW"));
 
@@ -71,7 +71,7 @@ public class MessageDispatcherTests
         // The cancellation arm sits AFTER OperationException on purpose: an app that describes the
         // outcome in its own words must not have them replaced by ours.
         var dispatcher = new MessageDispatcher();
-        dispatcher.UseRoute("APP", "SLOW", _ => throw new OperationException("IMPORT_ABORTED"));
+        dispatcher.UseRoute("APP", "SLOW", (_, _) => throw new OperationException("IMPORT_ABORTED"));
 
         var response = await dispatcher.DispatchAsync(Request("APP", "SLOW"));
 
@@ -129,8 +129,8 @@ public class MessageDispatcherTests
     {
         var order = new List<string>();
         var dispatcher = new MessageDispatcher()
-            .Use(async (_, next) => { order.Add("first"); return await next(); })
-            .Use(async (_, next) => { order.Add("second"); return await next(); })
+            .Use(async (_, next, _) => { order.Add("first"); return await next(); })
+            .Use(async (_, next, _) => { order.Add("second"); return await next(); })
             .MapRoute("APP", "PING", _ => { order.Add("route"); return null; });
 
         await dispatcher.DispatchAsync(Request("APP", "PING"));
@@ -153,7 +153,7 @@ public class MessageDispatcherTests
     public async Task UseModule_null_result_falls_through()
     {
         var dispatcher = new MessageDispatcher()
-            .UseModule("APP", _ => Task.FromResult<IpcResponse?>(null))
+            .UseModule("APP", (_, _) => Task.FromResult<IpcResponse?>(null))
             .MapRoute("APP", "PING", _ => "pong");
 
         var response = await dispatcher.DispatchAsync(Request("APP", "PING"));
@@ -261,7 +261,7 @@ public class MessageDispatcherTests
     {
         var dispatcher = new MessageDispatcher().MapModule("APP", routes => routes
             .Route("SYNC", _ => "s")
-            .RouteAsync("ASYNC", _ => Task.FromResult<object?>("a")));
+            .RouteAsync("ASYNC", (_, _) => Task.FromResult<object?>("a")));
 
         Assert.Equal("s", (await dispatcher.DispatchAsync(Request("APP", "SYNC"))).Data);
         Assert.Equal("a", (await dispatcher.DispatchAsync(Request("APP", "ASYNC"))).Data);
@@ -287,7 +287,7 @@ public class MessageDispatcherTests
     private sealed class StubFacade(string module, string answer) : IModuleFacade
     {
         public string ModuleName => module;
-        public Task<IpcResponse> HandleMessageAsync(IpcRequest request) =>
+        public Task<IpcResponse> HandleMessageAsync(IpcRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(IpcResponse.CreateSuccess(request.Id, answer));
     }
 
@@ -355,11 +355,11 @@ public class MessageDispatcherTests
     private sealed class OpaqueDispatcher : IMessageDispatcher
     {
         public IMessageDispatcher Use(MessageMiddleware middleware) => this;
-        public Task<IpcResponse> DispatchAsync(IpcRequest request) =>
+        public Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(IpcResponse.CreateSuccess(request.Id, null));
-        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null) =>
+        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null, CancellationToken cancellationToken = default) =>
             DispatchAsync(new IpcRequest { Module = module, Type = type });
-        public Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null) =>
-            Task.FromResult(default(T)!);
+        public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<T?>(default);
     }
 }

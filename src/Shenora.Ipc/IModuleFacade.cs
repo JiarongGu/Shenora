@@ -12,6 +12,10 @@ public interface IModuleFacade
     /// <summary>The module this facade owns (matched case-insensitively against <see cref="IpcRequest.Module"/>).</summary>
     string ModuleName { get; }
 
-    /// <summary>Handle one request for this module. Always produces a response (see <see cref="BaseFacade"/>).</summary>
-    Task<IpcResponse> HandleMessageAsync(IpcRequest request);
+    /// <summary>
+    /// Handle one request for this module. Always produces a response (see <see cref="BaseFacade"/>).
+    /// The token carries the DISPATCHER's caller lifetime — see
+    /// <see cref="IMessageDispatcher.DispatchAsync"/> for what it does and does not mean.
+    /// </summary>
+    Task<IpcResponse> HandleMessageAsync(IpcRequest request, CancellationToken cancellationToken = default);
 }

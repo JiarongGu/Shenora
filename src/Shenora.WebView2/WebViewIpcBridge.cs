@@ -84,6 +84,24 @@ public sealed class WebViewIpcBridge : IDisposable
     private bool _attached;
     private bool _disposed;
 
+    /// <summary>
+    /// The lifetime handed to every dispatch, cancelled in <see cref="Dispose"/> (P6.4). Before this
+    /// the whole pipeline was uncancellable: a handler still awaiting when the window closed had no
+    /// way to learn that the page it was answering is gone, because it was never given a token to
+    /// observe. This is the CALLER's lifetime, not per-request client cancellation — a one-way
+    /// <c>post</c> has nobody waiting, so "stop that operation" stays an app-level route.
+    /// </summary>
+    private readonly CancellationTokenSource _lifetime = new();
+
+    /// <summary>
+    /// The token, captured ONCE. Reading <c>_lifetime.Token</c> at dispatch time would throw
+    /// <see cref="ObjectDisposedException"/> for a message that arrives after <see cref="Dispose"/> —
+    /// and messages arriving during teardown is the normal case, not a corner one, since that is
+    /// exactly when the page is going away. A <see cref="CancellationToken"/> is a struct that stays
+    /// readable after its source is disposed, and still reports the cancellation.
+    /// </summary>
+    private readonly CancellationToken _lifetimeToken;
+
     public WebViewIpcBridge(WebView2Control webView, WebViewIpcBridgeOptions options)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
@@ -110,6 +128,7 @@ public sealed class WebViewIpcBridge : IDisposable
                 $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must fit in an int32 millisecond count (the WinForms timer's limit).");
 
         _log = options.Log;
+        _lifetimeToken = _lifetime.Token;
         // The one marshalling owner (D19/D20) — reachable because Shenora.WebView2 layers on
         // Shenora.WinForms. A posted body that throws is reported here instead of becoming an
         // unhandled UI-thread exception.
@@ -298,7 +317,7 @@ public sealed class WebViewIpcBridge : IDisposable
                 return IpcJson.Serialize(HandleHandshake(request));
             }
 
-            var response = await _options.Dispatcher.DispatchAsync(request).ConfigureAwait(true);
+            var response = await _options.Dispatcher.DispatchAsync(request, _lifetimeToken).ConfigureAwait(true);
             return IpcJson.Serialize(response);
         }
         catch (Exception ex)
@@ -421,6 +440,14 @@ public sealed class WebViewIpcBridge : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        // Signal FIRST, before anything is torn down: an in-flight handler should learn the page is
+        // gone while its await can still act on it, not after the timer and the subscriptions have
+        // already been pulled out from under it. Cancel is guarded because it runs app continuations
+        // synchronously — one of them throwing must not stop the rest of this method disposing.
+        try { _lifetime.Cancel(); }
+        catch (Exception ex) { Log(() => $"[Shenora.WebView2] Bridge dispose: cancellation callback threw ({ex.Message})"); }
+        _lifetime.Dispose();
 
         _flushTimer?.Stop();
         _flushTimer?.Dispose();

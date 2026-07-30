@@ -162,7 +162,8 @@ public sealed class ScopedContainerRouter : IDisposable
     /// propagate to the pipeline's error mapping — register the router after
     /// <see cref="MessageDispatcherExtensions.UseErrorHandler"/>.
     /// </summary>
-    public async Task<IpcResponse?> HandleAsync(IpcRequest request, Func<Task<IpcResponse?>> next)
+    public async Task<IpcResponse?> HandleAsync(IpcRequest request, Func<Task<IpcResponse?>> next,
+                                                CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(next);
@@ -200,7 +201,7 @@ public sealed class ScopedContainerRouter : IDisposable
             return await next();
 
         _logger.LogTrace("Routing {Module}/{Type} to scope {Scope}", request.Module, request.Type, request.Scope);
-        return await facade.HandleMessageAsync(request);
+        return await facade.HandleMessageAsync(request, cancellationToken);
     }
 
     /// <summary>Dispose every scope container.</summary>

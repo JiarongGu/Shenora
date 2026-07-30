@@ -213,10 +213,10 @@ sealed class Shenora.WinForms.WinFormsHostOptions
 sealed class Shenora.WinForms.WinFormsUiDispatcher : Shenora.Core.IUiDispatcher
   public .ctor(System.Windows.Forms.Control owner, System.Action<System.Exception>? onPostFailure = null)
   public Shenora.Core.UiTargetState State { get; }
-  public System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task InvokeAsync(System.Func<System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<T> InvokeAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<T> InvokeOrDefaultAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, T fallback, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task InvokeAsync(System.Func<System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<T> InvokeAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<T> InvokeOrDefaultAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, T fallback, System.Threading.CancellationToken cancellationToken = default)
   public bool IsOnUiThread { get; }
   public bool Post(System.Action work)
   public bool Post(System.Func<System.Threading.Tasks.Task> work)

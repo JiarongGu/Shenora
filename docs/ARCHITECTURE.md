@@ -77,7 +77,8 @@ changes, noting them in `CHANGELOG.md`).
   the in-process event bus — `EventMessage` (`{id, module, type, scope?, payload?, timestamp}`,
   host-side; the wire form is `Shenora.Ipc`'s notification envelope), `IEventBus`/`EventBus`
   (`"*"` wildcards + per-subscription match cache; unscoped subscriptions see every scope and
-  global events reach scoped subscribers; handler failures logged + isolated; auto-registered
+  global events reach scoped subscribers; handler failures logged + isolated; `EmitAsync` awaits
+  every handler, `Emit` is the fire-and-forget twin for a synchronous caller; auto-registered
   by `Build()` via `TryAdd` — replaceable).
 - `Shenora.WinForms` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
   internal-element helpers); `WindowState`/`WindowStateOptions`/`IWindowStateStore`/
@@ -197,7 +198,11 @@ changes, noting them in `CHANGELOG.md`).
   with details kept host-side; programmatic `SendAsync`/`SendAsync<T>` over the same pipeline,
   typed failures rethrow `OperationException`), `MessageMiddleware` delegate,
   `ModuleRouteBuilder`, `IModuleFacade` (carries `ModuleName` — facade objects route via DI +
-  `MapModule`, no static registry) / `BaseFacade` (standardized error boundary);
+  `MapModule`, no static registry) / `BaseFacade` (standardized error boundary) /
+  `IpcErrorMapping` (that boundary as public surface: `ToError`/`ToErrorResponse`, for an app whose
+  failures travel as events and so has no response to attach one to); a `CancellationToken` flows
+  the whole pipeline — the CALLER's lifetime, supplied by the transport and cancelled on its dispose,
+  not a per-request client cancel;
   `ScopedContainerRouter(+Options)` (per-scope child containers: app `ConfigureScope` +
   `OnScopeCreated`, single-flight creation, `MapModule<TFacade>` declarations, structured
   `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`

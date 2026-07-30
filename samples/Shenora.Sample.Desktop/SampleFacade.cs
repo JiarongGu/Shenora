@@ -17,7 +17,7 @@ internal sealed class SampleFacade(
 {
     public override string ModuleName => "SAMPLE";
 
-    protected override async Task<object?> RouteMessageAsync(IpcRequest request)
+    protected override async Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
     {
         switch (request.Type)
         {
@@ -84,6 +84,11 @@ internal sealed class SampleFacade(
                 // notifications. The background body must NOT capture the UI context (see
                 // .claude/knowledge/ipc-contracts.md) or it would put the work back on the thread
                 // this exists to free.
+                //
+                // And note what it does NOT do: it ignores `cancellationToken`, deliberately. That
+                // token is the REQUEST's lifetime, and this work outlives the request by design —
+                // capturing it would kill a long operation the moment the page navigated. A route
+                // that hands work off owns that work's lifetime and gives it its own token.
                 _ = Task.Run(async () =>
                 {
                     try

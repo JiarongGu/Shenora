@@ -1,6 +1,6 @@
 sealed class Shenora.WebView2.Sessions.CookieLoginFlow
   public .ctor(Shenora.WebView2.Sessions.CookieLoginFlowOptions options)
-  public System.Threading.Tasks.Task<string> DriveAsync(Shenora.WebView2.Sessions.SessionController controller, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task<string> DriveAsync(Shenora.WebView2.Sessions.SessionController controller, System.Threading.CancellationToken cancellationToken = default)
   public static System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.SessionCookie> ReadBlob(string blob)
 sealed class Shenora.WebView2.Sessions.CookieLoginFlowOptions
   public System.TimeSpan PollInterval { get; init; }
@@ -23,7 +23,7 @@ sealed class Shenora.WebView2.Sessions.DownloadHit : System.IEquatable<Shenora.W
   public void Deconstruct(out string Url, out string? FileName)
 sealed class Shenora.WebView2.Sessions.InteractiveSession
   public .ctor(Shenora.WebView2.Sessions.InteractiveSessionOptions options)
-  public System.Threading.Tasks.Task<Shenora.WebView2.Sessions.SessionResult> RunAsync(System.Func<Shenora.WebView2.Sessions.SessionController, System.Threading.CancellationToken, System.Threading.Tasks.Task<string>> driver, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task<Shenora.WebView2.Sessions.SessionResult> RunAsync(System.Func<Shenora.WebView2.Sessions.SessionController, System.Threading.CancellationToken, System.Threading.Tasks.Task<string>> driver, System.Threading.CancellationToken cancellationToken = default)
   public bool IsBusy { get; }
   public static string ComposeProfileDirectory(string root, params string[] segments)
   public static void ClearProfile(string profileDirectory)
@@ -43,14 +43,14 @@ sealed class Shenora.WebView2.Sessions.InteractiveSessionOptions
 sealed class Shenora.WebView2.Sessions.RenderSession : System.IAsyncDisposable
   public System.IDisposable OnMessage(System.Action<string> handler)
   public System.IDisposable OnNetwork(System.Action<Shenora.WebView2.Sessions.SessionApiCall> handler)
-  public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<string> CallDevToolsAsync(string method, string parametersJson, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<string> GetHtmlAsync(System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<string> CallDevToolsAsync(string method, string parametersJson, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<string> GetHtmlAsync(System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.ValueTask DisposeAsync()
 sealed class Shenora.WebView2.Sessions.RenderSessionPool : System.IDisposable
   public .ctor(Shenora.WebView2.Sessions.RenderSessionPoolOptions options)
-  public System.Threading.Tasks.Task<Shenora.WebView2.Sessions.RenderSession> LeaseAsync(System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task<Shenora.WebView2.Sessions.RenderSession> LeaseAsync(System.Threading.CancellationToken cancellationToken = default)
   public void Dispose()
 sealed class Shenora.WebView2.Sessions.RenderSessionPoolOptions
   public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
@@ -89,9 +89,9 @@ sealed class Shenora.WebView2.Sessions.SessionBrowserOptions
   public string? AdditionalBrowserArguments { get; init; }
 sealed class Shenora.WebView2.Sessions.SessionController
   public System.Threading.CancellationToken WindowClosed { get; }
-  public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.SessionCookie>> GetCookiesAsync(string origin, System.Threading.CancellationToken cancellationToken = null)
-  public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.SessionCookie>> GetCookiesAsync(string origin, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<string> ExecuteScriptAsync(string javaScript, System.Threading.CancellationToken cancellationToken = default)
   public void FitToBox(int cssWidth, int cssHeight)
   public void OnDownload(System.Action<Shenora.WebView2.Sessions.DownloadHit> handler)
   public void OnMessage(System.Action<string> handler)
@@ -264,9 +264,9 @@ sealed class Shenora.WebView2.Sessions.SessionWheelInput : Shenora.WebView2.Sess
 sealed class Shenora.WebView2.Sessions.StreamingSession : System.IAsyncDisposable
   public Shenora.WebView2.Sessions.SessionController Controller { get; }
   public System.Threading.Channels.ChannelReader<Shenora.WebView2.Sessions.SessionFrame> Frames { get; }
-  public System.Threading.Tasks.Task DispatchAsync(Shenora.WebView2.Sessions.SessionInput input, System.Threading.CancellationToken cancellationToken = null)
+  public System.Threading.Tasks.Task DispatchAsync(Shenora.WebView2.Sessions.SessionInput input, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.ValueTask DisposeAsync()
-  public static System.Threading.Tasks.Task<Shenora.WebView2.Sessions.StreamingSession> StartAsync(Shenora.WebView2.Sessions.StreamingSessionOptions options, System.Threading.CancellationToken cancellationToken = null)
+  public static System.Threading.Tasks.Task<Shenora.WebView2.Sessions.StreamingSession> StartAsync(Shenora.WebView2.Sessions.StreamingSessionOptions options, System.Threading.CancellationToken cancellationToken = default)
 sealed class Shenora.WebView2.Sessions.StreamingSessionOptions
   public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
   public Shenora.WebView2.Sessions.SessionViewport InitialViewport { get; init; }

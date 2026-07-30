@@ -27,16 +27,16 @@ public static class MessageDispatcherExtensions
     /// <paramref name="handler"/>; a null result falls through to the rest of the pipeline.
     /// </summary>
     public static IMessageDispatcher UseModule(this IMessageDispatcher dispatcher, string module,
-                                               Func<IpcRequest, Task<IpcResponse?>> handler)
+                                               Func<IpcRequest, CancellationToken, Task<IpcResponse?>> handler)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentException.ThrowIfNullOrEmpty(module);
         ArgumentNullException.ThrowIfNull(handler);
-        return dispatcher.Use(async (request, next) =>
+        return dispatcher.Use(async (request, next, ct) =>
         {
             if (string.Equals(request.Module, module, StringComparison.OrdinalIgnoreCase))
             {
-                var response = await handler(request);
+                var response = await handler(request, ct);
                 if (response is not null)
                     return response;
             }
@@ -46,18 +46,18 @@ public static class MessageDispatcherExtensions
 
     /// <summary>Give requests matching module + type (both case-insensitive) to <paramref name="handler"/>.</summary>
     public static IMessageDispatcher UseRoute(this IMessageDispatcher dispatcher, string module, string type,
-                                             Func<IpcRequest, Task<IpcResponse>> handler)
+                                             Func<IpcRequest, CancellationToken, Task<IpcResponse>> handler)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentException.ThrowIfNullOrEmpty(module);
         ArgumentException.ThrowIfNullOrEmpty(type);
         ArgumentNullException.ThrowIfNull(handler);
-        return dispatcher.Use(async (request, next) =>
+        return dispatcher.Use(async (request, next, ct) =>
         {
             if (string.Equals(request.Module, module, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(request.Type, type, StringComparison.OrdinalIgnoreCase))
             {
-                return await handler(request);
+                return await handler(request, ct);
             }
             return await next();
         });
@@ -73,7 +73,7 @@ public static class MessageDispatcherExtensions
         var log = logger
             ?? (dispatcher as MessageDispatcher)?.Logger
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
-        return dispatcher.Use(async (request, next) =>
+        return dispatcher.Use(async (request, next, ct) =>
         {
             log.LogDebug("Processing {Module}/{Type}", request.Module, request.Type);
             var response = await next();
@@ -102,7 +102,7 @@ public static class MessageDispatcherExtensions
         var log = logger
             ?? (dispatcher as MessageDispatcher)?.Logger
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
-        return dispatcher.Use(async (request, next) =>
+        return dispatcher.Use(async (request, next, ct) =>
         {
             try
             {
@@ -121,7 +121,7 @@ public static class MessageDispatcherExtensions
     {
         ArgumentNullException.ThrowIfNull(handler);
         return dispatcher.UseRoute(module, type,
-            request => Task.FromResult(IpcResponse.CreateSuccess(request.Id, handler(request))));
+            (request, _) => Task.FromResult(IpcResponse.CreateSuccess(request.Id, handler(request))));
     }
 
     /// <summary>Map a route table for one module (see <see cref="ModuleRouteBuilder"/>).</summary>
@@ -161,7 +161,7 @@ public static class MessageDispatcherExtensions
             }
             registry.TrackMappedModule(facade.ModuleName);
         }
-        return dispatcher.UseModule(facade.ModuleName, async request => await facade.HandleMessageAsync(request));
+        return dispatcher.UseModule(facade.ModuleName, async (request, ct) => await facade.HandleMessageAsync(request, ct));
     }
 
     /// <summary>
@@ -200,7 +200,7 @@ public static class MessageDispatcherExtensions
         }
         if (registry.IsModuleMapped(facade.ModuleName)) return false;
         registry.TrackMappedModule(facade.ModuleName);
-        dispatcher.UseModule(facade.ModuleName, async request => await facade.HandleMessageAsync(request));
+        dispatcher.UseModule(facade.ModuleName, async (request, ct) => await facade.HandleMessageAsync(request, ct));
         return true;
     }
 }

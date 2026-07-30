@@ -129,6 +129,40 @@ public sealed class EventBus : IEventBus
         return EmitAsync(new EventMessage { Module = module, Type = type, Payload = payload, Scope = scope });
     }
 
+    /// <inheritdoc />
+    public void Emit(EventMessage message) => Forget(EmitAsync(message));
+
+    /// <inheritdoc />
+    public void Emit(string module, string type, object? payload = null, string? scope = null)
+        => Forget(EmitAsync(module, type, payload, scope));
+
+    /// <summary>
+    /// The whole body of the fire-and-forget contract, in one place so it cannot be half-kept.
+    /// <see cref="InvokeSafely"/> already contains every handler failure, so the task cannot fault
+    /// because of a subscriber — but "cannot fault" is a claim about TODAY's implementation, and the
+    /// interface now promises it to callers. So observe the task anyway: if this bus ever grows a
+    /// path that faults, it surfaces as a log line instead of an unobserved-task crash on the
+    /// finalizer thread. Argument validation is NOT swallowed — it throws synchronously out of
+    /// <c>Emit</c>, before there is a task at all, because an empty module is a caller bug.
+    /// </summary>
+    private void Forget(Task emitting)
+    {
+        if (emitting.IsCompletedSuccessfully) return;
+        _ = Observe(emitting);
+
+        async Task Observe(Task task)
+        {
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Fire-and-forget emit failed.");
+            }
+        }
+    }
+
     private async Task InvokeSafely(Func<EventMessage, Task> handler, EventMessage message)
     {
         try

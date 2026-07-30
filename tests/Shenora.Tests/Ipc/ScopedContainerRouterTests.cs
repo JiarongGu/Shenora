@@ -10,7 +10,7 @@ public class ScopedContainerRouterTests
     {
         public override string ModuleName => "SCOPED";
 
-        protected override Task<object?> RouteMessageAsync(IpcRequest request) =>
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) =>
             Task.FromResult<object?>($"handled-by-{scopeId}");
     }
 

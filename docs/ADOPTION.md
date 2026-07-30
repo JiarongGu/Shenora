@@ -119,12 +119,20 @@ Both were written against this surface and run before this guide claimed they co
 > if your old dispatcher emitted `$"{action} failed: {ex.Message}"`. Let the exception escape instead:
 > `BaseFacade` maps it to `UNKNOWN_ERROR` plus the exception's type name and logs the detail host-side.
 
-Two smaller things the adapters run into, so you don't have to discover them:
-**there is no `CancellationToken` on the dispatch surface** (pass your own application-lifetime token
-into the facade's constructor; per-request cancellation is an app-level CANCEL route carrying the
-`operationId`, see the one-way design), and **`IEventBus` has no synchronous emit** — discarding the
-`EmitAsync` task is safe by construction, because every handler runs through an internal guard, so the
-returned task cannot fault from a subscriber.
+Three things the adapters lean on that are worth knowing before you write yours:
+
+- **The dispatch surface carries a `CancellationToken`**, and it is the CALLER's lifetime —
+  `WebViewIpcBridge` ties it to its own and cancels on `Dispose`, so a handler still awaiting when the
+  page goes away learns it. Pass it straight into your module's own `ct` parameter. It is *not*
+  per-request client cancellation: a one-way `post` has nobody waiting, so "stop that operation" stays
+  an app-level CANCEL route carrying an `operationId` (see the one-way design). Work you deliberately
+  hand OFF to the background outlives the request — give that its own token.
+- **`IEventBus.Emit`** is the fire-and-forget twin of `EmitAsync`, for bridging a synchronous
+  `Action`-shaped emit callback without discarding a task.
+- **`IpcErrorMapping.ToError`** gives you the kit's exception → wire-error policy where there is no
+  response to attach one to — the case you hit if your client watches an event stream for failures.
+  Use it rather than retyping the policy; that copy is how raw exception text eventually reaches a
+  page.
 
 What you gain immediately: correlated request/response where you want it, a structured error
 boundary that never leaks exception text, batched notifications, and a ready gate that buffers events

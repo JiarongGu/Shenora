@@ -16,6 +16,30 @@ public class WebViewIpcBridgeTests
     private static WebViewIpcBridge CreateBridge(WebViewIpcBridgeOptions options) =>
         new(new WebView2Control(), options);
 
+    [Fact]
+    public async Task A_message_arriving_after_dispose_is_answered_not_thrown()
+    {
+        // The bridge hands every dispatch a lifetime token (P6.4). Reading `_lifetime.Token` at
+        // dispatch time would throw ObjectDisposedException once Dispose has run — and a message
+        // arriving during teardown is the NORMAL case, not a corner one, because teardown is exactly
+        // when the page is going away. Capturing the token once at construction avoids it: a
+        // CancellationToken is a struct that stays readable after its source is disposed.
+        var dispatcher = new MessageDispatcher();
+        dispatcher.MapRoute("APP", "PING", _ => "pong");
+        var bridge = CreateBridge(new WebViewIpcBridgeOptions { Dispatcher = dispatcher });
+
+        bridge.Dispose();
+
+        var response = await bridge.HandleIncomingAsync(IpcJson.Serialize(
+            new IpcRequest { Id = "r1", Module = "APP", Type = "PING" }));
+
+        // It answers — with the cancellation the disposed lifetime implies, never with a crash.
+        using var doc = JsonDocument.Parse(response!);
+        Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(IpcErrorCodes.OperationCancelled,
+            doc.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
     private static string ReadyJson(string id = "h1") =>
         IpcJson.Serialize(new IpcRequest
         {
@@ -83,7 +107,7 @@ public class WebViewIpcBridgeTests
     {
         var reached = false;
         var dispatcher = new MessageDispatcher()
-            .UseModule(WebViewIpcBridge.HandshakeModule, _ =>
+            .UseModule(WebViewIpcBridge.HandshakeModule, (_, _) =>
             {
                 reached = true;
                 return Task.FromResult<IpcResponse?>(null);
@@ -406,13 +430,13 @@ public class WebViewIpcBridgeTests
 
     private sealed class ThrowingDispatcher : IMessageDispatcher
     {
-        public Task<IpcResponse> DispatchAsync(IpcRequest request) =>
+        public Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("secret detail");
 
-        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null) =>
+        public Task<IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null) =>
+        public Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         // Part of the interface since P5.5 H6 so late mapping needs no downcast. This double exists only

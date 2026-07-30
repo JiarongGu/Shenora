@@ -9,7 +9,7 @@ public class BaseFacadeTests
     {
         public override string ModuleName => "ECHO";
 
-        protected override Task<object?> RouteMessageAsync(IpcRequest request) => request.Type switch
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken) => request.Type switch
         {
             "PING" => Task.FromResult<object?>("pong"),
             "NONE" => Task.FromResult<object?>(null),
