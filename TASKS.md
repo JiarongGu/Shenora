@@ -952,7 +952,21 @@ subclassed to decline. But if the WebView2's window does not *include* the butto
 the form's own client area and the form's `WM_NCHITTEST` governs it — which is exactly what the
 already-written P5.6 code needs, unchanged.
 
-- [ ] **SPIKE FIRST, before any API work: clip the WebView2's window region.**
+**✅ THE SPIKE PASSED (2026-07-31, verified live with the user).** Clipping works; the flyout appears.
+What follows is now implementation, not investigation. Evidence:
+- WebView2 renders correctly with a non-rectangular window — no artifacts, no tearing, clean fill.
+- `WindowFromPoint` inside the excluded rect returns **THE FORM**, and the form answers
+  `HTMAXBUTTON`/`HTCLOSE` there using the ALREADY-WRITTEN P5.6 code, unchanged.
+- **The user confirmed the Snap Layouts flyout appears.**
+- **NEVER GUESS THE RECT.** A hardcoded 130 px cut THROUGH the buttons — three of them are ~250 px at
+  200% DPI. Drive the hole from the union of the rects the page already reports via
+  `SET_CAPTION_BUTTONS`; that is correct at any DPI by construction. Measured union on a 2536×1588
+  client: `{X=2286,Y=-1,W=250,H=66}`.
+- ⚠ A probe process MUST call `SetProcessDPIAware()` first. Without it PowerShell saw a 2560 px window
+  as 1280 and the first run of this very spike looked like a FAILURE. Same lesson as `e9b85c1`, new
+  disguise: the tool lied, not the code.
+
+- [ ] ~~SPIKE: clip the WebView2's window region~~ — **DONE, passed.** Original plan kept for context:
   `Control.Region` (→ `SetWindowRgn`) on the WebView2 control, set to the full client rect MINUS the
   caption-button cluster. Then verify, IN THIS ORDER, and stop at the first failure:
   1. Does the region survive at all — does WebView2 render correctly with a non-rectangular window?
