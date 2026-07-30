@@ -212,7 +212,24 @@ Per `generic-library` (primitives + hooks, not the product; every public type ea
   first draft would have shipped without.
 - **Not silent:** a failed one-way call reaches the error sink with its module, type and code, and a
   throwing reducer does not corrupt the store. Verify by BREAKING each (the standing tripwire rule).
-- **The UI-thread claim, measured not asserted:** drive a deliberately slow route in the sample both
-  ways and show the window still repaints during the posted one. A claim about the UI thread that is
-  only reasoned about is exactly the P5.6 mistake in a new costume.
+- **The UI-thread claim — MEASURED 2026-07-31, and it holds.** A claim about the UI thread that is
+  only reasoned about is exactly the P5.6 mistake in a new costume, so the sample gained a `SAMPLE.SLOW`
+  route with both shapes (`mode: 'block' | 'stream'`, same 3 s of work) and responsiveness was sampled
+  with `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` — which returns only when the target thread
+  PUMPS, so a failure means the UI thread is busy:
+
+  | shape | samples | unresponsive | longest stall |
+  |---|---|---|---|
+  | work left in the route's synchronous segment | 61 | 13 | **2 027 ms** |
+  | work handed off, results streamed as events | 95 | **0** | **0 ms** |
+
+  Identical work and duration; only the shape differs. The streamed run also reports
+  `onUiThread: false` from its background body, so the handoff is confirmed rather than assumed, and
+  the page renders "streaming 3/6 (off the UI thread)" while the 1 Hz tick keeps advancing.
+  **Note what this does and does not prove** (§1.1): the dispatch is on the UI thread either way —
+  what frees it is the HOST returning immediately, not the client declining to await.
+  ⚠ Two vacuous readings were caught on the way, both by reading the output instead of the summary
+  line: a first pass where `Start-Process` failed so the click never landed (0 stalls, i.e. a PASS for
+  the wrong reason), and screenshots at ~1 s intervals being far too coarse to see a 3 s freeze. The
+  probe now refuses to report unless the click confirms it landed.
 - **Baseline:** any host-side surface change reviewed BY TYPE SECTION before promotion.

@@ -994,8 +994,10 @@ carrying someone's envelope.
   Landed `ShenoraBridge.post` + `onPostError`/`maxTrackedPosts` and `createShenoraStore`, with 13
   new vitest cases; ALL FIVE new tripwires sabotage-verified (one was vacuous first time — a
   primitive-returning selector cannot prove the getSnapshot cache). The host side needed no new API,
-  as designed. Still open from the design: the `ConfigureAwait(false)` rule text, and measuring the
-  UI-thread claim against the running sample. Original note follows.
+  as designed. The two open items are now DONE too: the `ConfigureAwait(false)` rule text says which
+  half is the dispatch path, and **the UI-thread claim is MEASURED** — a `SAMPLE.SLOW` route in both
+  shapes, sampled with `SendMessageTimeout`: work left in the route stalls the UI thread 2 027 ms,
+  the same work handed off stalls it 0 ms. Original note follows.
   **DESIGNED 2026-07-31 → `docs/2026-07-31-shenora-oneway-ipc-design.md`** (read it before
   implementing; it carries the three constraints that decide the shape, the two things it
   deliberately does NOT ship, and a verification plan). Summary of what it lands: a `post` that sends

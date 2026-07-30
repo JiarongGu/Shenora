@@ -65,10 +65,19 @@ transport, or building the P6 adoption shims.
   from a real fault. Map it AFTER `OperationException` so an app that models cancellation in its own
   words keeps them. Same shape for a scope invalidated mid-request: that is a race with a documented
   app-facing call, so retry once rather than reporting a fault.
-- **`ConfigureAwait(false)` does NOT belong in the dispatch path.** The pipeline preserves the
-  synchronization context BY DESIGN, because a facade routing a window command touches WinForms and must
-  resume on the UI thread. One stray `ConfigureAwait(false)` in `BaseFacade` contradicted that for two
-  phases and survived only because every in-repo facade marshals internally anyway.
+- **`ConfigureAwait(false)` does NOT belong in the dispatch path — and "the dispatch path" is a
+  BOUNDARY, not the whole handler.** The pipeline preserves the synchronization context BY DESIGN,
+  because a facade routing a window command touches WinForms and must resume on the UI thread. One
+  stray `ConfigureAwait(false)` in `BaseFacade` contradicted that for two phases and survived only
+  because every in-repo facade marshals internally anyway.
+  **The other half, which the rule used to omit and which reads as a blanket ban without it:** work a
+  route deliberately hands OFF — a long operation whose results stream back as notifications — is no
+  longer the dispatch path and must NOT capture the UI context. Requiring it to would keep long work
+  on the UI thread, which is the exact stall the one-way path exists to avoid
+  (`docs/2026-07-31-shenora-oneway-ipc-design.md`). So: the route's own synchronous segment and its
+  awaits stay context-preserving; the background body it starts does not. This does not conflict with
+  the never-`Task.Run`-per-message rule below — that is about the TRANSPORT spawning per inbound
+  message (a measured pool-starvation freeze), not a handler offloading one long operation.
 - **The dispatch boundary never throws and never returns null** (`DispatchAsync`): unhandled →
   `NO_HANDLER` (+`{module,type}` params), `OperationException` → its structured error, else →
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so

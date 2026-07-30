@@ -1,4 +1,5 @@
 import {
+  createShenoraStore,
   getBridge,
   isShenoraAvailable,
   useDropZone,
@@ -97,6 +98,68 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
         </div>
       </header>
     </>
+  );
+}
+
+/**
+ * The one-way path (P6.3a): `post` + a store fed by the module's event stream — the shape a desktop
+ * app uses for anything that is not a quick, UI-thread-safe call.
+ *
+ * ONE subscription is opened here no matter how many components read `useSlow`, and a component
+ * mounting mid-run would be caught up by a `snapshot` (this demo has no prior state to fetch, so it
+ * declares none). The two buttons drive the SAME route in its two shapes so the difference is
+ * visible rather than argued: `block` leaves the work in the route's synchronous segment, which runs
+ * on the host's UI thread and freezes the window — watch the tick above stop — while `stream` hands
+ * off and reports progress.
+ */
+const useSlow = createShenoraStore<
+  { running: boolean; step: number; steps: number; workLeftUiThread?: boolean },
+  { block: () => void; stream: () => void }
+>('SAMPLE', {
+  initial: { running: false, step: 0, steps: 0 },
+  on: {
+    // `onUiThread` is reported by the host's BACKGROUND body: false is the proof the work really
+    // left the UI thread, rather than the design merely claiming it does.
+    SLOW_PROGRESS: (s, p: { step: number; steps: number; onUiThread: boolean }) =>
+      ({ ...s, running: true, step: p.step, steps: p.steps, workLeftUiThread: !p.onUiThread }),
+    SLOW_DONE: (s) => ({ ...s, running: false }),
+  },
+  actions: ({ post }) => ({
+    // The anti-example. Its evidence is the frozen window, so nothing needs to come back.
+    block: () => post('SLOW', { payload: { mode: 'block', ms: 3000 } }),
+    stream: () => post('SLOW', { payload: { mode: 'stream', ms: 3000 } }),
+  }),
+});
+
+/** Reads the store above — one of possibly many components doing so, on one subscription. */
+function SlowPanel({ hosted }: { hosted: boolean }) {
+  const slow = useSlow();
+  return (
+    <p style={row} data-testid="slow-state">
+      <button
+        style={{ padding: '0.35rem 0.75rem' }}
+        disabled={!hosted}
+        data-testid="btn-slow-block"
+        onClick={() => useSlow.actions.block()}
+      >
+        block the UI thread (3s)
+      </button>
+      {' '}
+      <button
+        style={{ padding: '0.35rem 0.75rem' }}
+        disabled={!hosted}
+        data-testid="btn-slow-stream"
+        onClick={() => useSlow.actions.stream()}
+      >
+        stream it instead
+      </button>
+      {' '}
+      <span style={slow.running ? value : { color: '#9a9a9a' }}>
+        {slow.running
+          ? `streaming ${slow.step}/${slow.steps}${slow.workLeftUiThread ? ' (off the UI thread)' : ''}`
+          : 'slow route: idle'}
+      </span>
+    </p>
   );
 }
 
@@ -244,6 +307,7 @@ export function App() {
               {probe ?? 'sessions: idle'}
             </span>
           </p>
+          <SlowPanel hosted={hosted} />
           {/* The kit ships the streaming PRIMITIVE; this pane is the product built on it, and it
               lives here in the sample precisely because the library must not decide it (D21/D22). */}
           <StreamViewer hosted={hosted} />

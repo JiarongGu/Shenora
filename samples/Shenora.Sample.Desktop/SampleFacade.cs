@@ -12,7 +12,8 @@ namespace Shenora.Sample.Desktop;
 internal sealed class SampleFacade(
     IFileDialogs dialogs,
     IShellLauncher shell,
-    SecondaryWindows windows) : BaseFacade
+    SecondaryWindows windows,
+    IEventBus events) : BaseFacade
 {
     public override string ModuleName => "SAMPLE";
 
@@ -57,6 +58,54 @@ internal sealed class SampleFacade(
             case "CLOSE_PANEL":
                 windows.Close("panel");
                 return null;
+
+            // ── The two shapes of a slow route, side by side (P6.3a) ─────────────────────────────
+            // This exists to MEASURE the claim the one-way path rests on, not to assert it: a
+            // route's synchronous segment runs on the host's UI THREAD, because the dispatch
+            // pipeline preserves the caller's synchronization context by design. `Application
+            // .MessageLoop` is true only on a thread running a WinForms message pump, so the flag
+            // below is the proof, reported to the page rather than reasoned about.
+            case "SLOW":
+                var mode = PayloadHelper.GetOptionalValue<string>(request.Payload, "mode") ?? "stream";
+                var totalMs = PayloadHelper.GetOptionalValue<int?>(request.Payload, "ms") ?? 3000;
+                var onUiThread = Application.MessageLoop;
+
+                if (mode == "block")
+                {
+                    // DELIBERATELY THE WRONG SHAPE, kept as the demonstration: heavy work left in the
+                    // route's synchronous segment. The window stops repainting for the duration —
+                    // including the 1 Hz tick — which is exactly why `invoke` is reserved for calls
+                    // that are quick AND UI-thread-safe. Do not copy this into an app.
+                    Thread.Sleep(totalMs);
+                    return new { Mode = mode, RanOnUiThread = onUiThread };
+                }
+
+                // The right shape: hand the work OFF, return immediately, stream progress as
+                // notifications. The background body must NOT capture the UI context (see
+                // .claude/knowledge/ipc-contracts.md) or it would put the work back on the thread
+                // this exists to free.
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        const int steps = 6;
+                        for (var step = 1; step <= steps; step++)
+                        {
+                            await Task.Delay(totalMs / steps).ConfigureAwait(false);
+                            await events.EmitAsync("SAMPLE", "SLOW_PROGRESS",
+                                new { Step = step, Steps = steps, OnUiThread = Application.MessageLoop })
+                                .ConfigureAwait(false);
+                        }
+                        await events.EmitAsync("SAMPLE", "SLOW_DONE", new { Ok = true }).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // An unguarded Task.Run body makes any fault an UNOBSERVED task exception —
+                        // the same defect the streaming sample route was fixed for in P5.5 H9.
+                        Console.Error.WriteLine($"[sample] SLOW stream failed: {ex}");
+                    }
+                });
+                return new { Mode = mode, RanOnUiThread = onUiThread };
 
             default:
                 // BaseFacade owns the unknown-type shape now — an app no longer retypes it.
