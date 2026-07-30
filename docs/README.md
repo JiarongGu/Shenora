@@ -11,6 +11,7 @@ update the relevant entry HERE — this file is the durable index.
 | Getting oriented / new session | This file, then `docs/ARCHITECTURE.md` + `local/PROJECT_NOTES.md` (private status) |
 | Understanding what Shenora is and why | `docs/2026-07-30-shenora-design.md` (the design contract), `docs/BRIEF.md` (originating requirements) |
 | Package layering / where a contract belongs / mobile-shareable logic | `docs/2026-07-30-shenora-relayering-design.md` (D19+D20: one Windows shell layer, portable contracts in Core) |
+| Sending IPC without awaiting / long-running work / correlating streamed results | `docs/2026-07-31-shenora-oneway-ipc-design.md` (why the event pipe is the default, not request/response) |
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
 | Picking the next piece of work | `TASKS.md` (root — pending only), `docs/ROADMAP.md` `## Remaining` |
 | What shipped already / verifying history | `docs/ROADMAP.md` `## Done`, `CHANGELOG.md` |
@@ -39,6 +40,7 @@ update the relevant entry HERE — this file is the durable index.
 | `BRIEF.md` | The originating project brief (requirements + suggested API sketches) | Historical + intent |
 | `2026-07-30-shenora-design.md` | The design contract: profiles, packages, IPC contract, gaps to fix, phasing | Keep in sync with reality (dated amendments) |
 | `2026-07-30-shenora-relayering-design.md` | The approved re-layering: one Windows shell layer (`WebView2` → `WinForms`), portable contracts + `IUiDispatcher` in Core, sequencing | Design spec — retire into `ARCHITECTURE.md` once implemented |
+| `2026-07-31-shenora-oneway-ipc-design.md` | One-way `post` + the operation-correlation convention: why the event pipe is the desktop default, and why the correlation id goes in the PAYLOAD | Design spec — retire into `ARCHITECTURE.md` once implemented (P6.3a) |
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |

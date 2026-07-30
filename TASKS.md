@@ -990,7 +990,18 @@ carrying someone's envelope.
   maps a virtual host name to a folder on disk, while the kit serves through `WebResourceRequested`
   with an embedded-resource provider and a dev-URL switch. The kit's own no-cache-HTML policy and the
   stale-bundle footgun the survey recorded both live at this seam.
-- [ ] **P6.3a — KIT WORK, and it blocks P6.4: give the client a fire-and-forget send.** Today
+- [ ] **P6.3a — KIT WORK, and it blocks P6.4: give the client a fire-and-forget send.**
+  **DESIGNED 2026-07-31 → `docs/2026-07-31-shenora-oneway-ipc-design.md`** (read it before
+  implementing; it carries the three constraints that decide the shape, the two things it
+  deliberately does NOT ship, and a verification plan). Summary of what it lands: a `post` that sends
+  the SAME envelope with no pending entry and no timer (so no wire change and the mirror test stays
+  untouched), reporting a FAILED response through a bridge-level error sink because an unmatched
+  response is silently dropped today; the documented convention that a long operation is START via
+  `invoke` returning `{ operationId }` + notifications carrying that id **in the PAYLOAD, never in
+  `module`/`type`/`scope`** (the EventBus match cache keys on those and would grow unbounded); and a
+  fix to the `ConfigureAwait(false)` rule text, which currently reads as blanket when it only ever
+  applied to the dispatch path — as written it would argue a future session into keeping long work on
+  the UI thread. Original note follows. Today
   `@shenora/react`'s bridge has exactly one outbound call, `invoke()`, which allocates a correlation
   entry, awaits a response and times out at 30 s — so the kit makes the UI-thread-coupled,
   deadline-bearing path the ONLY path, i.e. the wrong default (see the section above). Add the
