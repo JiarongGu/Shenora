@@ -6,6 +6,14 @@ namespace Shenora.WinForms;
 /// Which system caption button a page-drawn region stands in for. "Caption button" is Windows'
 /// own name for the minimize/maximize/close group, so this is the mechanism's vocabulary, not a
 /// scenario's (D22).
+/// <para>
+/// ⚠ NOT YET FUNCTIONAL OVER A WEBVIEW2 (P5.6). This type and everything around it is in place and
+/// correct, but the OS never exercises it: WebView2 puts a child window over the whole client area,
+/// so <c>WindowFromPoint</c> — which is how real mouse input is routed — resolves to that child and
+/// the form is never asked to hit-test these regions. No hover, no Snap Layouts. The fix (making the
+/// WebView2 child chain answer <c>HTTRANSPARENT</c> for these rectangles) is tracked in
+/// <c>TASKS.md</c> P5.6. Do not rely on this yet.
+/// </para>
 /// </summary>
 public enum CaptionButtonKind
 {

@@ -167,6 +167,13 @@ public class OptimizedForm : Form, IAppMaximizable
     /// them as the real thing — chiefly so Windows 11 offers Snap Layouts on the maximize button.
     /// Pass an empty list (the default) to hand every pixel back to the page.
     /// <para>
+    /// ⚠ HAS NO EFFECT while a WebView2 covers these pixels, and that CANNOT be fixed from here —
+    /// see <see cref="CaptionButtonKind"/> and <c>TASKS.md</c> P5.6. The regions are stored and
+    /// hit-tested correctly; the OS simply never asks, because input is routed to the WebView2's
+    /// child windows, which belong to the browser PROCESS and cannot be subclassed. Useful today
+    /// only for a form whose caption strip is not covered by the WebView2.
+    /// </para>
+    /// <para>
     /// Re-send this whenever the page's layout changes: the rectangles are a snapshot, and a stale
     /// one silently moves the hit-test away from the button the user can see.
     /// </para>

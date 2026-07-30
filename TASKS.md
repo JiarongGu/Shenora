@@ -923,63 +923,66 @@ reshaped one package and nothing else.
   The rule now lives in `.claude/knowledge/generic-library.md` so the next session catches this class
   unprompted.
 
-### P5.6 — Frameless caption buttons behave like real ones — DONE (2026-07-31)
+### P5.6 — Frameless caption buttons: BLOCKED on an architectural wall (2026-07-31)
 
 > DIRECTION (user, 2026-07-31): *"the 'fake' window button at top still need to behave like regular
 > window button (hover style, docking) currently it does none"*
 
-Suite **492 dotnet + 63 vitest**, `verify` PASSED. Both API baselines that moved are purely
-ADDITIVE — no removals, so nothing here is breaking.
+**STATUS: the plumbing shipped (`757660e`) and IS NOT REACHABLE over a WebView2.** Not a bug to fix —
+a design fork that needs a decision. Manual verification by the user against the running sample:
 
-- [x] **Snap Layouts on the page's maximize button.** New `CaptionButtonKind` /
-  `CaptionButtonRegion` / `CaptionButtonState` in `Shenora.WinForms`, plus
-  `OptimizedForm.SetCaptionButtons(...)`: the app reports where the PAGE drew its buttons (client px)
-  and `WM_NCHITTEST` answers `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` inside them. `HTMAXBUTTON` is the
-  entire mechanism — Windows offers the flyout over whatever reports itself as the maximize button,
-  and a frameless window has no real caption for it to find.
-  **Claiming the hit-test COSTS the page every mouse event in those rects**, so three more messages
-  had to be handled or the buttons would show the flyout and STOP WORKING (the half-done version this
-  task warned about): `WM_NCLBUTTONDOWN` swallowed + recorded, `WM_NCLBUTTONUP` acting only if the
-  press started on the SAME button (press, drag off, release must not activate), and
-  `WM_NCMOUSEMOVE`/`WM_NCMOUSELEAVE` tracking hover.
-  Two judgement calls: caption buttons WIN over the top resize strip and are hit-tested while
-  MAXIMIZED too (losing a few px of resize border beats a close button that resizes the window); and
-  the click routes through the SAME public `ToggleMaximize()`/`Close()` the IPC commands use, so the
-  frameless manual-maximize bookkeeping (`IsAppMaximized`, P5.5 H2) cannot diverge between the two
-  paths.
-- [x] **Hover / pressed affordance pushed from the host.** `OptimizedForm.CaptionButtonStateChanged`
-  (guarded — it runs inside `WndProc`) → the sample forwards it as a `WINDOW`/`CAPTION_BUTTON_STATE`
-  notification → the page styles from it. Necessary because the page's own CSS `:hover` no longer
-  fires there, and because the button must stay hot while the pointer is over the snap FLYOUT, which
-  is a different window the page could never observe. De-duplicated: `WM_NCMOUSEMOVE` fires per mouse
-  move, so re-pushing an unchanged state would put a notification on the wire per pixel.
-  **Headless (D13): the kit pushes STATE and ships no CSS.** The sample decides what hot/pressed look
-  like, including the close-button red.
-- [x] **The IPC route.** `SET_CAPTION_BUTTONS` on `WindowCommandFacade` (optional, enabled by wiring
-  `SetCaptionButtons`, same shape as `SET_THEME`), taking CSS-px rects and converting through
-  `DpiHelper` + `PointToScreen`/`PointToClient` — the same conversion `DropZoneManager` uses, not a
-  new one. The parser is TOTAL: an unknown kind or a zero-size entry is SKIPPED rather than failing
-  the batch, because the page re-sends on every layout change and dropping the good buttons'
-  hit-tests as collateral is invisible until someone clicks. Client side:
-  `WindowCommands.setCaptionButtons` + exported `CaptionButtonKind`/`CaptionButtonRect`.
-- [x] **Proven LIVE** (`dev.mjs sample --dev` + Win32 probes), not just compiled:
-  - the window really reports `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` at the page-drawn rects — which
-    proves the whole chain: `getBoundingClientRect()` → IPC → DPI conversion → hit-test;
-  - a real caption click took the window from **1280×800 at (303,184) to 1920×1152 at (0,0)** — the
-    manual work-area maximize, so the click path is not the half-done version;
-  - the hit-test still resolves while MAXIMIZED, which also proves the page's resize re-report;
-  - the hover push fires with the right kind and clears on leave.
-  **NOT verifiable without a human: the flyout itself.** A synthetic `WM_NCMOUSEMOVE` cannot hold a
-  hover — Windows sends `WM_NCMOUSELEAVE` immediately because the real cursor is elsewhere (observed).
-  So the OS rendering the Snap Layouts flyout, and the CSS actually painting hot/pressed, still want
-  one human pass: hover each button, hold over maximize for the flyout, pick a zone, and confirm the
-  window docks AND that `IsAppMaximized`/`WindowStateManager` still agree afterwards.
-- [x] **Close-button red** — the same mechanism (`HTCLOSE`); the colour is the app's, demonstrated in
-  the sample.
+| Check | Result |
+|---|---|
+| Hover / pressed affordance | ❌ nothing |
+| Snap Layouts flyout on maximize | ❌ nothing |
+| Clicks still maximize/minimize/close | ✅ — **the page's own `onClick`, not our code** |
+| Press, drag off, release does not activate | ✅ — **ordinary browser behaviour, not our code** |
+| Maximize/restore geometry | ✅ correct |
+| Exiting a snap on restore | ❌ stays docked; other Windows apps exit |
 
-**One integration bug found by running it:** the host emitted the enum's `ToString()` (`"Close"`)
-while the client type is `'minimize' | 'maximize' | 'close'`, so the page compared `"Close" === "close"`
-and never matched — the styling simply never appeared, with no error anywhere. The wire is lowercase now.
+**ROOT CAUSE, and why it cannot be worked around from the window side.** WebView2 puts child windows
+over the whole client area. Real mouse input is routed by `WindowFromPoint`, which resolves to those
+children, so the form is never asked to hit-test the caption pixels — no `WM_NCMOUSEMOVE` (no hover)
+and no window claiming `HTMAXBUTTON` under the cursor (no flyout).
+The standard remedy is to make those children answer `HTTRANSPARENT` so the search continues outward.
+**It was attempted and it is impossible:** `SetWindowSubclass` returns FALSE for
+`Chrome_WidgetWin_1`, `Chrome_RenderWidgetHostHWND` and `Intermediate D3D Window`, while succeeding
+for our own child windows — **those HWNDs belong to the WebView2 BROWSER PROCESS, and a process
+cannot subclass another process's window.** An overlay child of our own does not help either: a
+sibling returning `HTTRANSPARENT` passes the hit DOWN the z-order to the WebView2, not up to the
+form, and Snap Layouts requires the TOP-LEVEL window to answer the hit test.
+
+**WHY THE TESTS AND THE "LIVE PROOF" MISSED IT — worth more than the feature.** The 10 unit tests, two
+sabotage runs and a Win32 probe all drove `SendMessage(form, WM_NCHITTEST, …)` **straight at the
+form**, which is the one step real input never takes. All green, feature never worked. The tell was in
+the manual results: the two checks that PASSED did so for reasons unrelated to the feature.
+(Rule captured in `.claude/knowledge/winforms-shell.md`.)
+
+- [ ] **DECIDE THE FORK — this is a product decision, not a fix.**
+  - **(a) Native caption strip.** The WebView2 does not cover the top N px; the host renders the
+    caption buttons (WinForms) and the page styles nothing. Snap Layouts, hover and theming all work
+    for free because the strip is genuinely the form's. **Costs the "page draws its own chrome"
+    property**, which is currently a selling point of `OptimizedForm` + `WindowCommandFacade`.
+  - **(b) Hybrid.** WebView2 covers everything EXCEPT the button cluster at top-right, where the host
+    puts its own small native control (the `DropZoneOverlay` precedent). The page keeps the title bar,
+    drag and theme; only the three buttons become native. Needs the page to reserve that space and
+    report its width — which it already does via `SET_CAPTION_BUTTONS`, so the IPC route is reusable.
+    **Most likely the right answer**: it keeps the page in charge of layout and gives the OS a real
+    window to hit-test.
+  - **(c) Accept the limitation.** Keep page-drawn buttons; no Snap Layouts, and hover stays CSS-only
+    (which works fine today, since the page keeps its own mouse events). Delete the P5.6 surface as
+    dead weight and record that Snap Layouts is out of scope for a WebView2-covered caption.
+- [ ] **Exiting snap on restore** (user check #5) — INDEPENDENT of the above and worth doing whichever
+  way the fork goes: after the OS snaps the window and it is then maximized and restored, it stays
+  docked; other Windows apps exit the snap. The manual work-area maximize captures `_restoreBounds`
+  from the SNAPPED geometry, so restore returns into the snap.
+- [ ] **Whatever ships, re-verify with a HUMAN.** A `SendMessage` probe cannot see any of this.
+
+**Kept meanwhile, marked NOT-FUNCTIONAL in its own docs:** `CaptionButtonKind`/`CaptionButtonRegion`/
+`CaptionButtonState`, `OptimizedForm.SetCaptionButtons`/`CaptionButtonStateChanged`, the
+`SET_CAPTION_BUTTONS` route and `WindowCommands.setCaptionButtons`. The hit-test decision, press/release
+pairing, hover de-dup, guarded callback, CSS→client conversion and total parser are all correct and
+directly reusable by options (a) and (b) — the code is fine, the door is one the OS never knocks on.
 
 ### P1 — Skeleton tail
 

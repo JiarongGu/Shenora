@@ -226,8 +226,14 @@ at the first list and missed five more breaking changes.
   (up to 2×25 s) before anything noticed. The token gates the AWAIT only, never the creation — with the
   per-profile environment cache that task is SHARED across a pool's instances, so cancelling it for one
   caller would break the others.
-- **Page-drawn caption buttons can behave like real ones — including Windows 11 Snap Layouts**
-  (P5.6). A frameless app draws its own minimize/maximize/close, and until now they were buttons the
+- **Page-drawn caption buttons: the plumbing for Snap Layouts and hover state — NOT YET FUNCTIONAL**
+  (P5.6). **Do not adopt this yet.** The API below is in place and correct, but the feature does not
+  work over a WebView2 and cannot be made to from the window side: WebView2 covers the client area with
+  child windows owned by the BROWSER PROCESS, so real mouse input routes to them, the form is never
+  asked to hit-test those pixels, and they cannot be subclassed to decline. No hover, no snap flyout.
+  `TASKS.md` P5.6 has the evidence and the three options; this entry will be rewritten once one is
+  chosen and a human has seen it work.
+  A frameless app draws its own minimize/maximize/close, and until now they were buttons the
   OS knew nothing about: no snap flyout, and no hover affordance the page could render faithfully.
   New in `Shenora.WinForms`: `CaptionButtonKind`, `CaptionButtonRegion`, `CaptionButtonState`,
   `OptimizedForm.SetCaptionButtons(...)` and `OptimizedForm.CaptionButtonStateChanged`. New in

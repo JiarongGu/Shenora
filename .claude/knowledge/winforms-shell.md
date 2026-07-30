@@ -47,6 +47,19 @@ owner, `IUiDispatcher`) — don't restate it here.
   lifetime. It also raises on its own thread: marshal it.
 - **`GetMonitorInfo`, never `Screen.WorkingArea`, for physical geometry.** The managed value is
   DPI-mis-scaled on a HiDPI monitor (~12 px short per edge, measured); the P/Invoke rect is exact.
+- **A `SendMessage` probe validates your CODE, never a feature that depends on OS input ROUTING.**
+  P5.6 claimed the page-drawn caption buttons for Snap Layouts by answering `WM_NCHITTEST` with
+  `HTMAXBUTTON`. It shipped with 10 green unit tests, TWO sabotage verifications, and a live Win32
+  probe printing `HTMAXBUTTON` at each button — and the feature had never worked once. Every one of
+  those drove `SendMessage(form, …)` **straight at the form**, which is exactly the step real input
+  does not take: WebView2 puts a `Chrome_RenderWidgetHostHWND` child over the whole client area, so
+  `WindowFromPoint` resolves there and the form is never asked. The tell was in the manual results —
+  the two checks that PASSED (clicks work, press-and-cancel works) were the page's own `onClick` and
+  ordinary browser behaviour, i.e. passing for reasons that had nothing to do with the feature.
+  **So: if the OS decides who receives an input, prove it with `WindowFromPoint`/a real cursor, and
+  treat a passing check whose mechanism you cannot name as unverified.** A page-drawn control that
+  needs OS treatment also needs the WebView2 child chain to answer `HTTRANSPARENT` for it — the
+  covering child is the default, not the exception.
 - **A drop target is registered PER HWND.** `OptimizedForm` deliberately does NOT set `AllowDrop`:
   `DropZoneOverlay` registers itself, nothing ever subscribed to the form's drag events, and the
   form-level flag only forced OLE/STA on every consumer of the base class while showing a copy cursor
