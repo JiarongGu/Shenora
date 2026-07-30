@@ -17,7 +17,10 @@ afterEach(() => {
   configureBridge({ transport: null, eventBus: new ShenoraEventBus() });
 });
 
-interface TodoRequests extends Record<string, unknown> {
+// A PLAIN interface, exactly as the TSDoc example and the README show it — which is the point: this
+// used to require `extends Record<string, unknown>` to satisfy the base class, so the documented example
+// did not compile (TS2344), and the workaround silently disabled the type checking (P5.5 H6).
+interface TodoRequests {
   GET_ALL: void;
   ADD: { title: string };
 }
@@ -46,6 +49,29 @@ describe('BaseModuleService', () => {
     expect(posted[0]?.module).toBe('TODO');
     expect(posted[0]?.type).toBe('ADD');
     expect(posted[0]?.payload).toEqual({ title: 'write tests' });
+  });
+
+  it('rejects an unknown request type and a mismatched payload at COMPILE time', () => {
+    // The point of TRequests. Before H6 the constraint forced callers to write
+    // `extends Record<string, unknown>`, which widened `keyof TRequests & string` to `string` — so both
+    // errors below compiled happily and every payload collapsed to `unknown`. These are @ts-expect-error
+    // assertions: the build FAILS if the errors stop occurring, which is what pins the feature.
+    class TodoService extends BaseModuleService<TodoRequests> {
+      constructor() {
+        super('TODO', new ShenoraBridge({ transport: null, eventBus: new ShenoraEventBus() }));
+      }
+
+      // @ts-expect-error NO_SUCH_ROUTE is not a key of TodoRequests
+      typo() { return this.send('NO_SUCH_ROUTE'); }
+
+      // @ts-expect-error ADD's payload is { title: string }, not { name: string }
+      wrongPayload() { return this.send('ADD', { payload: { name: 'x' } }); }
+
+      correct() { return this.send<{ id: string }>('ADD', { payload: { title: 'x' } }); }
+    }
+
+    // The positive case must still work — a constraint that rejects everything is not a fix.
+    expect(typeof new TodoService().correct).toBe('function');
   });
 
   it('a service built BEFORE configureBridge still speaks over the new default', async () => {

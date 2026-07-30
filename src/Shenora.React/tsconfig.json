@@ -9,7 +9,12 @@
     // the P1.1 consumption smoke). NodeNext makes a missing extension a BUILD error.
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2020", "DOM"],
+    // ES2022 LIB with an ES2020 TARGET, deliberately: `lib` is what built-ins may be called, `target`
+    // is what syntax is emitted. The runtime is WebView2 (modern Chromium), so ES2022 built-ins are
+    // available — and `Array.prototype.at`, which the tests use, is a method rather than syntax, so
+    // there is nothing for a lower target to downlevel. Raised because this config had never actually
+    // been RUN: it is the only one that type-checks the tests, and it was red on `.at()` (P5.5 H6).
+    "lib": ["ES2022", "DOM"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,

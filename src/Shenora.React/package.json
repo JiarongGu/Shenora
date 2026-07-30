@@ -39,6 +39,8 @@
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
+    "//typecheck": "The ONLY thing that type-checks the tests — `build` excludes them and vitest transpiles without checking, so `@ts-expect-error` assertions (which pin the typed-service generic) are inert without this. Run by dev.mjs verify.",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },

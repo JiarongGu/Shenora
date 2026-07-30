@@ -116,6 +116,14 @@ switch (cmd) {
     const steps = [
       ['build', () => spawnSync('node', [import.meta.filename, 'build'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['test', () => spawnSync('node', [import.meta.filename, 'test'], { stdio: 'inherit', cwd: repo }).status === 0],
+      ['react typecheck (incl. tests)', () => {
+        // `build` uses tsconfig.build.json, which EXCLUDES the tests, and vitest transpiles without
+        // type-checking — so nothing checked the test files at all, and the tsconfig that was written to
+        // do it had never been run (it was red on a lib version). That matters beyond tidiness: the
+        // typed-service generic is pinned by `@ts-expect-error` assertions, which are inert unless
+        // something type-checks them (P5.5 H6).
+        return runNpm('run typecheck', { cwd: path.join(repo, ...config.npmDir.split('/')) });
+      }],
       ['sample web typecheck', () => {
         // The e2e subject's TS was never type-checked by any gate (P5.5 H5). Skipped only when the
         // sample web app doesn't exist yet.

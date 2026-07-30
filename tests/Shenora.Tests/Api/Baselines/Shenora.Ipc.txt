@@ -1,161 +1,107 @@
-Shenora.Ipc.BaseFacade
-  System.String ModuleName
-  System.String get_ModuleName()
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] HandleMessageAsync(Shenora.Ipc.IpcRequest)
-Shenora.Ipc.IMessageDispatcher
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] DispatchAsync(Shenora.Ipc.IpcRequest)
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] SendAsync(System.String, System.String, System.String, System.Object)
-  System.Threading.Tasks.Task`1[T] SendAsync[T](System.String, System.String, System.String, System.Object)
-Shenora.Ipc.IModuleFacade
-  System.String ModuleName
-  System.String get_ModuleName()
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] HandleMessageAsync(Shenora.Ipc.IpcRequest)
-Shenora.Ipc.IpcCategories
-  System.String Ipc
-  System.String Notification
-Shenora.Ipc.IpcError
-  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Parameters
-  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] get_Parameters()
-  System.String Code
-  System.String Message
-  System.String get_Code()
-  System.String get_Message()
-  Void .ctor()
-  Void set_Code(System.String)
-  Void set_Message(System.String)
-  Void set_Parameters(System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String])
-Shenora.Ipc.IpcErrorCodes
-  System.String InvalidPayloadValue
-  System.String MissingPayloadValue
-  System.String NoHandler
-  System.String ScopeRequired
-  System.String UnknownError
-Shenora.Ipc.IpcJson
-  System.String Serialize[T](T)
-  System.Text.Json.JsonElement SerializeToElement[T](T)
-  System.Text.Json.JsonSerializerOptions Options
-  System.Text.Json.JsonSerializerOptions get_Options()
-  T Deserialize[T](System.String)
-Shenora.Ipc.IpcNotification
-  System.Object Payload
-  System.Object get_Payload()
-  System.String Module
-  System.String Scope
-  System.String Type
-  System.String get_Module()
-  System.String get_Scope()
-  System.String get_Type()
-  Void .ctor()
-  Void set_Module(System.String)
-  Void set_Payload(System.Object)
-  Void set_Scope(System.String)
-  Void set_Type(System.String)
-Shenora.Ipc.IpcNotificationBatch
-  System.Collections.Generic.IReadOnlyList`1[Shenora.Ipc.IpcNotification] Payload
-  System.Collections.Generic.IReadOnlyList`1[Shenora.Ipc.IpcNotification] get_Payload()
-  System.DateTimeOffset Timestamp
-  System.DateTimeOffset get_Timestamp()
-  System.String Category
-  System.String Id
-  System.String get_Category()
-  System.String get_Id()
-  Void .ctor()
-  Void set_Id(System.String)
-  Void set_Payload(System.Collections.Generic.IReadOnlyList`1[Shenora.Ipc.IpcNotification])
-  Void set_Timestamp(System.DateTimeOffset)
-Shenora.Ipc.IpcRequest
-  System.DateTimeOffset Timestamp
-  System.DateTimeOffset get_Timestamp()
-  System.Nullable`1[System.Text.Json.JsonElement] Payload
-  System.Nullable`1[System.Text.Json.JsonElement] get_Payload()
-  System.String Id
-  System.String Module
-  System.String Scope
-  System.String Type
-  System.String get_Id()
-  System.String get_Module()
-  System.String get_Scope()
-  System.String get_Type()
-  Void .ctor()
-  Void set_Id(System.String)
-  Void set_Module(System.String)
-  Void set_Payload(System.Nullable`1[System.Text.Json.JsonElement])
-  Void set_Scope(System.String)
-  Void set_Timestamp(System.DateTimeOffset)
-  Void set_Type(System.String)
-Shenora.Ipc.IpcResponse
-  Boolean Success
-  Boolean get_Success()
-  Shenora.Ipc.IpcError Error
-  Shenora.Ipc.IpcError get_Error()
-  Shenora.Ipc.IpcResponse CreateError(System.String, Shenora.Ipc.IpcError)
-  Shenora.Ipc.IpcResponse CreateError(System.String, System.String, System.String, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String])
-  Shenora.Ipc.IpcResponse CreateSuccess(System.String, System.Object)
-  System.Object Data
-  System.Object get_Data()
-  System.String Category
-  System.String Id
-  System.String get_Category()
-  System.String get_Id()
-  Void .ctor()
-  Void set_Data(System.Object)
-  Void set_Error(Shenora.Ipc.IpcError)
-  Void set_Id(System.String)
-  Void set_Success(Boolean)
-Shenora.Ipc.IpcServiceCollectionExtensions
-  Microsoft.Extensions.DependencyInjection.IServiceCollection AddMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection, System.Action`2[System.IServiceProvider,Shenora.Ipc.MessageDispatcher])
-  Microsoft.Extensions.DependencyInjection.IServiceCollection AddModuleFacade[TFacade](Microsoft.Extensions.DependencyInjection.IServiceCollection)
-  Shenora.Ipc.MessageDispatcher MapRegisteredModules(Shenora.Ipc.MessageDispatcher, System.IServiceProvider)
-  Shenora.Ipc.MessageDispatcher MapRegisteredModulesLazily(Shenora.Ipc.MessageDispatcher, System.IServiceProvider)
-Shenora.Ipc.MessageDispatcher
-  Shenora.Ipc.MessageDispatcher MapModule(Shenora.Ipc.IModuleFacade)
-  Shenora.Ipc.MessageDispatcher MapModule(System.String, System.Action`1[Shenora.Ipc.ModuleRouteBuilder])
-  Shenora.Ipc.MessageDispatcher MapRoute(System.String, System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Object])
-  Shenora.Ipc.MessageDispatcher Use(Shenora.Ipc.MessageMiddleware)
-  Shenora.Ipc.MessageDispatcher UseErrorHandler()
-  Shenora.Ipc.MessageDispatcher UseLogging()
-  Shenora.Ipc.MessageDispatcher UseModule(System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
-  Shenora.Ipc.MessageDispatcher UseRoute(System.String, System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] DispatchAsync(Shenora.Ipc.IpcRequest)
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] SendAsync(System.String, System.String, System.String, System.Object)
-  System.Threading.Tasks.Task`1[T] SendAsync[T](System.String, System.String, System.String, System.Object)
-  Void .ctor(Microsoft.Extensions.Logging.ILogger`1[Shenora.Ipc.MessageDispatcher])
-Shenora.Ipc.MessageMiddleware
-  System.IAsyncResult BeginInvoke(Shenora.Ipc.IpcRequest, System.Func`1[System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]], System.AsyncCallback, System.Object)
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] EndInvoke(System.IAsyncResult)
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] Invoke(Shenora.Ipc.IpcRequest, System.Func`1[System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
-  Void .ctor(System.Object, IntPtr)
-Shenora.Ipc.ModuleRouteBuilder
-  Shenora.Ipc.ModuleRouteBuilder Route(System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Object])
-  Shenora.Ipc.ModuleRouteBuilder RouteAsync(System.String, System.Func`2[Shenora.Ipc.IpcRequest,System.Threading.Tasks.Task`1[System.Object]])
-Shenora.Ipc.OperationException
-  Shenora.Ipc.IpcError ToError()
-  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Parameters
-  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] get_Parameters()
-  System.String Code
-  System.String get_Code()
-  Void .ctor(System.String, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String], System.String, System.Exception)
-  Void .ctor(System.String, System.String, System.String, System.String)
-Shenora.Ipc.PayloadHelper
-  T GetOptionalValue[T](System.Nullable`1[System.Text.Json.JsonElement], System.String)
-  T GetRequiredValue[T](System.Nullable`1[System.Text.Json.JsonElement], System.String)
-Shenora.Ipc.ScopedContainerRouter
-  Boolean IsScopedModule(System.String)
-  Shenora.Ipc.ScopedContainerRouter MapModule[TFacade](System.String)
-  System.Collections.Generic.IReadOnlyCollection`1[System.String] ActiveScopes
-  System.Collections.Generic.IReadOnlyCollection`1[System.String] get_ActiveScopes()
-  System.IServiceProvider GetScopeServices(System.String)
-  System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse] HandleAsync(Shenora.Ipc.IpcRequest, System.Func`1[System.Threading.Tasks.Task`1[Shenora.Ipc.IpcResponse]])
-  Void .ctor(Shenora.Ipc.ScopedContainerRouterOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.Ipc.ScopedContainerRouter])
-  Void Dispose()
-  Void InvalidateScope(System.String)
-Shenora.Ipc.ScopedContainerRouterExtensions
-  Shenora.Ipc.MessageDispatcher UseScopedRouter(Shenora.Ipc.MessageDispatcher, Shenora.Ipc.ScopedContainerRouter)
-Shenora.Ipc.ScopedContainerRouterOptions
-  System.Action`2[System.String,Microsoft.Extensions.DependencyInjection.IServiceCollection] ConfigureScope
-  System.Action`2[System.String,Microsoft.Extensions.DependencyInjection.IServiceCollection] get_ConfigureScope()
-  System.Action`2[System.String,System.IServiceProvider] OnScopeCreated
-  System.Action`2[System.String,System.IServiceProvider] get_OnScopeCreated()
-  Void .ctor()
-  Void set_ConfigureScope(System.Action`2[System.String,Microsoft.Extensions.DependencyInjection.IServiceCollection])
-  Void set_OnScopeCreated(System.Action`2[System.String,System.IServiceProvider])
+abstract class Shenora.Ipc.BaseFacade : Shenora.Ipc.IModuleFacade
+  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null)
+  protected Shenora.Ipc.OperationException UnknownType(Shenora.Ipc.IpcRequest request)
+  protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request)
+  protected static System.Threading.Tasks.Task<object> Done()
+  public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleMessageAsync(Shenora.Ipc.IpcRequest request)
+  public abstract string ModuleName { get; }
+interface Shenora.Ipc.IMessageDispatcher
+  public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> DispatchAsync(Shenora.Ipc.IpcRequest request)
+  public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null)
+  public abstract System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null)
+interface Shenora.Ipc.IModuleFacade
+  public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleMessageAsync(Shenora.Ipc.IpcRequest request)
+  public abstract string ModuleName { get; }
+static class Shenora.Ipc.IpcCategories
+  public const string Ipc = "ipc"
+  public const string Notification = "notification"
+sealed class Shenora.Ipc.IpcError
+  [JsonPropertyName("code")] public required string Code { get; init; }
+  [JsonPropertyName("message")] public string? Message { get; init; }
+  [JsonPropertyName("parameters")] public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; init; }
+static class Shenora.Ipc.IpcErrorCodes
+  public const string InvalidPayloadValue = "INVALID_PAYLOAD_VALUE"
+  public const string MissingPayloadValue = "MISSING_PAYLOAD_VALUE"
+  public const string NoHandler = "NO_HANDLER"
+  public const string ScopeRequired = "SCOPE_REQUIRED"
+  public const string UnknownError = "UNKNOWN_ERROR"
+static class Shenora.Ipc.IpcJson
+  public static System.Text.Json.JsonElement SerializeToElement<T>(T value)
+  public static System.Text.Json.JsonSerializerOptions Options { get; }
+  public static T Deserialize<T>(string json)
+  public static string Serialize<T>(T value)
+sealed class Shenora.Ipc.IpcNotification
+  [JsonPropertyName("module")] public required string Module { get; init; }
+  [JsonPropertyName("payload")] public object? Payload { get; init; }
+  [JsonPropertyName("scope")] public string? Scope { get; init; }
+  [JsonPropertyName("type")] public required string Type { get; init; }
+sealed class Shenora.Ipc.IpcNotificationBatch
+  [JsonPropertyName("category")] public string Category { get; }
+  [JsonPropertyName("id")] public string Id { get; init; }
+  [JsonPropertyName("payload")] public required System.Collections.Generic.IReadOnlyList<Shenora.Ipc.IpcNotification> Payload { get; init; }
+  [JsonPropertyName("timestamp")] public System.DateTimeOffset Timestamp { get; init; }
+sealed class Shenora.Ipc.IpcRequest
+  [JsonPropertyName("id")] public string Id { get; init; }
+  [JsonPropertyName("module")] public required string Module { get; init; }
+  [JsonPropertyName("payload")] public System.Text.Json.JsonElement? Payload { get; init; }
+  [JsonPropertyName("scope")] public string? Scope { get; init; }
+  [JsonPropertyName("timestamp")] public System.DateTimeOffset Timestamp { get; init; }
+  [JsonPropertyName("type")] public required string Type { get; init; }
+sealed class Shenora.Ipc.IpcResponse
+  [JsonPropertyName("category")] public string Category { get; }
+  [JsonPropertyName("data")] public object? Data { get; init; }
+  [JsonPropertyName("error")] public Shenora.Ipc.IpcError? Error { get; init; }
+  [JsonPropertyName("id")] public required string Id { get; init; }
+  [JsonPropertyName("success")] public bool Success { get; init; }
+  public static Shenora.Ipc.IpcResponse CreateError(string id, Shenora.Ipc.IpcError error)
+  public static Shenora.Ipc.IpcResponse CreateError(string id, string code, string? message = null, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null)
+  public static Shenora.Ipc.IpcResponse CreateSuccess(string id, object? data = null)
+static class Shenora.Ipc.IpcServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<System.IServiceProvider, Shenora.Ipc.MessageDispatcher>? configure = null)
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddModuleFacade<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Ipc.IModuleFacade
+  public static Shenora.Ipc.MessageDispatcher MapRegisteredModules(Shenora.Ipc.MessageDispatcher dispatcher, System.IServiceProvider services)
+  public static Shenora.Ipc.MessageDispatcher MapRegisteredModulesLazily(Shenora.Ipc.MessageDispatcher dispatcher, System.IServiceProvider services)
+sealed class Shenora.Ipc.MessageDispatcher : Shenora.Ipc.IMessageDispatcher
+  public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.MessageDispatcher>? logger = null)
+  public Shenora.Ipc.MessageDispatcher MapModule(Shenora.Ipc.IModuleFacade facade)
+  public Shenora.Ipc.MessageDispatcher MapModule(string module, System.Action<Shenora.Ipc.ModuleRouteBuilder> configure)
+  public Shenora.Ipc.MessageDispatcher MapRoute(string module, string type, System.Func<Shenora.Ipc.IpcRequest, object> handler)
+  public Shenora.Ipc.MessageDispatcher Use(Shenora.Ipc.MessageMiddleware middleware)
+  public Shenora.Ipc.MessageDispatcher UseErrorHandler()
+  public Shenora.Ipc.MessageDispatcher UseLogging()
+  public Shenora.Ipc.MessageDispatcher UseModule(string module, System.Func<Shenora.Ipc.IpcRequest, System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> handler)
+  public Shenora.Ipc.MessageDispatcher UseRoute(string module, string type, System.Func<Shenora.Ipc.IpcRequest, System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> handler)
+  public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> DispatchAsync(Shenora.Ipc.IpcRequest request)
+  public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null)
+  public System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null)
+delegate Shenora.Ipc.MessageMiddleware
+  public .ctor(object object, System.IntPtr method)
+  public virtual System.IAsyncResult BeginInvoke(Shenora.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> next, System.AsyncCallback callback, object object)
+  public virtual System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> EndInvoke(System.IAsyncResult result)
+  public virtual System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> Invoke(Shenora.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> next)
+sealed class Shenora.Ipc.ModuleRouteBuilder
+  public Shenora.Ipc.ModuleRouteBuilder Route(string type, System.Func<Shenora.Ipc.IpcRequest, object> handler)
+  public Shenora.Ipc.ModuleRouteBuilder RouteAsync(string type, System.Func<Shenora.Ipc.IpcRequest, System.Threading.Tasks.Task<object>> handler)
+class Shenora.Ipc.OperationException : System.Exception
+  public .ctor(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null, System.Exception? innerException = null)
+  public .ctor(string code, string paramKey, string paramValue, string? message = null)
+  public Shenora.Ipc.IpcError ToError()
+  public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; }
+  public string Code { get; }
+static class Shenora.Ipc.PayloadHelper
+  public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)
+  public static T GetRequiredValue<T>(System.Text.Json.JsonElement? payload, string key)
+sealed class Shenora.Ipc.ScopedContainerRouter : System.IDisposable
+  public .ctor(Shenora.Ipc.ScopedContainerRouterOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.ScopedContainerRouter>? logger = null)
+  public Shenora.Ipc.ScopedContainerRouter MapModule<TFacade>(string module) where TFacade : class, Shenora.Ipc.IModuleFacade
+  public System.Collections.Generic.IReadOnlyCollection<string> ActiveScopes { get; }
+  public System.IServiceProvider GetScopeServices(string scopeId)
+  public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleAsync(Shenora.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse>> next)
+  public bool IsScopedModule(string module)
+  public void Dispose()
+  public void InvalidateScope(string scopeId)
+static class Shenora.Ipc.ScopedContainerRouterExtensions
+  public static Shenora.Ipc.MessageDispatcher UseScopedRouter(Shenora.Ipc.MessageDispatcher dispatcher, Shenora.Ipc.ScopedContainerRouter router)
+sealed class Shenora.Ipc.ScopedContainerRouterOptions
+  public System.Action<string, System.IServiceProvider>? OnScopeCreated { get; init; }
+  public required System.Action<string, Microsoft.Extensions.DependencyInjection.IServiceCollection> ConfigureScope { get; init; }

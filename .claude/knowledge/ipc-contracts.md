@@ -7,12 +7,25 @@ transport, or building the P6 adoption shims.
 
 ## The rules
 
-- **The C# and TS wire types are mirrors — change them in lockstep.** Names are pinned with
-  `[JsonPropertyName]` (host) and interface fields (client); category values are lowercase
-  `"ipc"`/`"notification"`; the handshake route is `SHENORA`/`READY` (`WebViewIpcBridge`
-  consts ⇄ `HANDSHAKE_MODULE/TYPE`). A one-sided edit ships a silent protocol break — the
-  envelope tests in `tests/Shenora.Tests/Ipc/IpcEnvelopeTests.cs` and
-  `src/Shenora.React/src/bridge.test.ts` are the tripwire; keep both updated together.
+- **The C# and TS wire types are mirrors — and a TRIPWIRE, not care, keeps them so.**
+  `WireMirrorTests` parses the TS source and asserts set equality for the error codes, the handshake
+  route and the envelope categories. It exists because "both sides are tested" was FALSE comfort:
+  each suite asserted its own hand-written literals and nothing compared the SETS, so `SCOPE_REQUIRED`
+  lived in the host and was emitted for two phases while missing from `types.ts`. A code that is
+  genuinely client-only goes in the exported `ClientOnlyIpcErrorCodes` — declare the exception on the
+  client, never as a second list inside the test. Names are pinned with `[JsonPropertyName]` (host) —
+  now inside the API baseline, so a rename is a gate failure — and interface fields (client).
+- **A green tripwire that cannot fail is worth nothing.** After adding one, BREAK the thing it watches
+  and confirm the message it prints (both mirror checks and the `@ts-expect-error` generic pins were
+  verified that way). And make a parser self-check (`Assert.NotEmpty`) so a regex that silently matched
+  nothing can't pass for the wrong reason.
+- **`@ts-expect-error` assertions are INERT unless something type-checks the tests.** The npm build
+  config excludes test files and vitest transpiles without checking, so the client's typed-service pins
+  proved nothing until `npm run typecheck` (the full tsconfig) was wired into `dev.mjs verify`.
+- **A typed request map is constrained to `object`, never `Record<string, unknown>`.** The stricter
+  bound is unsatisfiable by a plain `interface` (no implicit index signature), so the documented example
+  did not compile; and satisfying it widens `keyof TRequests & string` back to `string`, which makes
+  typos compile and collapses every payload to `unknown` — the feature silently checking nothing.
 - **Raw exception text never crosses the bridge (design §5) — EVERY error path.** Wire errors are
   `{code, message?, parameters?}`; unknown exceptions cross as `UNKNOWN_ERROR` + the exception
   TYPE name only, details go to the host log. This holds in `MessageDispatcher.DispatchAsync`/

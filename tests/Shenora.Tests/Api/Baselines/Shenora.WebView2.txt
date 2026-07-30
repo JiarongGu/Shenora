@@ -1,237 +1,115 @@
-Shenora.WebView2.BrowserArguments
-  System.String Build(Boolean, System.String, System.String)
-  System.String Compose(System.String, Boolean, System.String, System.String)
-Shenora.WebView2.DropZoneFacade
-  System.String ModuleName
-  System.String get_ModuleName()
-  Void .ctor(Shenora.WebView2.DropZoneManager, Microsoft.Extensions.Logging.ILogger`1[Shenora.WebView2.DropZoneFacade])
-Shenora.WebView2.DropZoneManager
-  System.String Module
-  Void .ctor(Shenora.WebView2.DropZoneManagerOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WebView2.DropZoneManager])
-  Void ClearAll()
-  Void Dispose()
-  Void RegisterZone(System.String, Int32, Int32, Int32, Int32)
-  Void ShowOverlay(System.String)
-  Void UnregisterZone(System.String)
-  Void UpdateZoneBounds(System.String, Int32, Int32, Int32, Int32)
-Shenora.WebView2.DropZoneManagerOptions
-  Microsoft.Web.WebView2.WinForms.WebView2 WebView
-  Microsoft.Web.WebView2.WinForms.WebView2 get_WebView()
-  Shenora.Core.IEventBus EventBus
-  Shenora.Core.IEventBus get_EventBus()
-  System.Windows.Forms.Form ParentForm
-  System.Windows.Forms.Form get_ParentForm()
-  Void .ctor()
-  Void set_EventBus(Shenora.Core.IEventBus)
-  Void set_ParentForm(System.Windows.Forms.Form)
-  Void set_WebView(Microsoft.Web.WebView2.WinForms.WebView2)
-Shenora.WebView2.EmbeddedResourceProvider
-  Boolean CanServe
-  Boolean Exists(System.String)
-  Boolean IsEmbedded
-  Boolean get_CanServe()
-  Boolean get_IsEmbedded()
-  System.IO.Stream GetResourceStream(System.String)
-  Void .ctor(Shenora.WebView2.EmbeddedResourceProviderOptions)
-  Void BeginWarmup()
-Shenora.WebView2.EmbeddedResourceProviderOptions
-  Boolean PreferFiles
-  Boolean get_PreferFiles()
-  System.Action`1[System.String] Log
-  System.Action`1[System.String] get_Log()
-  System.Reflection.Assembly Assembly
-  System.Reflection.Assembly get_Assembly()
-  System.String FileFallbackDirectory
-  System.String ResourcePrefix
-  System.String get_FileFallbackDirectory()
-  System.String get_ResourcePrefix()
-  Void .ctor()
-  Void set_Assembly(System.Reflection.Assembly)
-  Void set_FileFallbackDirectory(System.String)
-  Void set_Log(System.Action`1[System.String])
-  Void set_PreferFiles(Boolean)
-  Void set_ResourcePrefix(System.String)
-Shenora.WebView2.IWebViewResourceProvider
-  Boolean Exists(System.String)
-  System.IO.Stream GetResourceStream(System.String)
-Shenora.WebView2.WebView2BuilderExtensions
-  Shenora.Core.ShenoraApplicationBuilder PrewarmWebView2(Shenora.Core.ShenoraApplicationBuilder, System.Func`2[Shenora.Core.ShenoraApplication,Shenora.WebView2.WebViewEnvironmentOptions])
-Shenora.WebView2.WebViewDeferredScheme
-  System.Func`2[System.Uri,System.Threading.Tasks.Task`1[System.ValueTuple`2[System.Byte[],System.String]]] Handler
-  System.Func`2[System.Uri,System.Threading.Tasks.Task`1[System.ValueTuple`2[System.Byte[],System.String]]] get_Handler()
-  System.String CacheControl
-  System.String Scheme
-  System.String get_CacheControl()
-  System.String get_Scheme()
-  Void .ctor()
-  Void set_CacheControl(System.String)
-  Void set_Handler(System.Func`2[System.Uri,System.Threading.Tasks.Task`1[System.ValueTuple`2[System.Byte[],System.String]]])
-  Void set_Scheme(System.String)
-Shenora.WebView2.WebViewEnvironment
-  Boolean IsRuntimeAvailable(System.String)
-  System.String GetAvailableRuntimeVersion(System.String)
-  System.Threading.Tasks.Task`1[Microsoft.Web.WebView2.Core.CoreWebView2Environment] CreateForCurrentThreadAsync(Shenora.WebView2.WebViewEnvironmentOptions)
-  System.Threading.Tasks.Task`1[Microsoft.Web.WebView2.Core.CoreWebView2Environment] GetSharedAsync(Shenora.WebView2.WebViewEnvironmentOptions)
-  Void Prewarm(Shenora.WebView2.WebViewEnvironmentOptions)
-Shenora.WebView2.WebViewEnvironmentOptions
-  Boolean IsDevelopment
-  Boolean get_IsDevelopment()
-  System.Action`1[System.String] Log
-  System.Action`1[System.String] get_Log()
-  System.String AdditionalArguments
-  System.String BrowserExecutableFolder
-  System.String DevExtraArguments
-  System.String UserDataFolder
-  System.String get_AdditionalArguments()
-  System.String get_BrowserExecutableFolder()
-  System.String get_DevExtraArguments()
-  System.String get_UserDataFolder()
-  Void .ctor()
-  Void set_AdditionalArguments(System.String)
-  Void set_BrowserExecutableFolder(System.String)
-  Void set_DevExtraArguments(System.String)
-  Void set_IsDevelopment(Boolean)
-  Void set_Log(System.Action`1[System.String])
-  Void set_UserDataFolder(System.String)
-Shenora.WebView2.WebViewFolderMapping
-  Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind AccessKind
-  Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind get_AccessKind()
-  System.String FolderPath
-  System.String HostName
-  System.String get_FolderPath()
-  System.String get_HostName()
-  Void .ctor()
-  Void set_AccessKind(Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind)
-  Void set_FolderPath(System.String)
-  Void set_HostName(System.String)
-Shenora.WebView2.WebViewHost
-  Boolean IsDevelopment
-  Boolean get_IsDevelopment()
-  System.Threading.Tasks.Task InitializeAsync()
-  Void .ctor(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.WebViewHostOptions)
-  Void Navigate()
-Shenora.WebView2.WebViewHostOptions
-  Boolean AllowExternalDrop
-  Boolean BlockBrowserShortcutsInProduction
-  Boolean OpenExternalLinksInSystemBrowser
-  Boolean PreventDefaultFileDrop
-  Boolean ReloadOnRenderProcessFailure
-  Boolean UseSharedEnvironment
-  Boolean get_AllowExternalDrop()
-  Boolean get_BlockBrowserShortcutsInProduction()
-  Boolean get_OpenExternalLinksInSystemBrowser()
-  Boolean get_PreventDefaultFileDrop()
-  Boolean get_ReloadOnRenderProcessFailure()
-  Boolean get_UseSharedEnvironment()
-  Int32 MaxAutoReloads
-  Int32 get_MaxAutoReloads()
-  Shenora.WebView2.IWebViewResourceProvider ResourceProvider
-  Shenora.WebView2.IWebViewResourceProvider get_ResourceProvider()
-  Shenora.WebView2.WebViewEnvironmentOptions Environment
-  Shenora.WebView2.WebViewEnvironmentOptions get_Environment()
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs] OnDownloadStarting
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs] get_OnDownloadStarting()
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs] OnPermissionRequested
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs] get_OnPermissionRequested()
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs] OnProcessFailed
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs] get_OnProcessFailed()
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings] ConfigureSettings
-  System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings] get_ConfigureSettings()
-  System.Action`1[System.String] Log
-  System.Action`1[System.String] get_Log()
-  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object] InjectedGlobals
-  System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object] get_InjectedGlobals()
-  System.Collections.Generic.IReadOnlyList`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind] PermittedPermissions
-  System.Collections.Generic.IReadOnlyList`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind] get_PermittedPermissions()
-  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewDeferredScheme] DeferredSchemes
-  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewDeferredScheme] get_DeferredSchemes()
-  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewFolderMapping] FolderMappings
-  System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewFolderMapping] get_FolderMappings()
-  System.Collections.Generic.IReadOnlyList`1[System.String] DocumentCreatedScripts
-  System.Collections.Generic.IReadOnlyList`1[System.String] get_DocumentCreatedScripts()
-  System.Nullable`1[System.Drawing.Color] BackgroundColor
-  System.Nullable`1[System.Drawing.Color] get_BackgroundColor()
-  System.String DevUrl
-  System.String ProductionUrl
-  System.String VirtualHost
-  System.String get_DevUrl()
-  System.String get_ProductionUrl()
-  System.String get_VirtualHost()
-  System.TimeSpan AutoReloadCooldown
-  System.TimeSpan InitTimeout
-  System.TimeSpan get_AutoReloadCooldown()
-  System.TimeSpan get_InitTimeout()
-  Void .ctor()
-  Void set_AllowExternalDrop(Boolean)
-  Void set_AutoReloadCooldown(System.TimeSpan)
-  Void set_BackgroundColor(System.Nullable`1[System.Drawing.Color])
-  Void set_BlockBrowserShortcutsInProduction(Boolean)
-  Void set_ConfigureSettings(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2Settings])
-  Void set_DeferredSchemes(System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewDeferredScheme])
-  Void set_DevUrl(System.String)
-  Void set_DocumentCreatedScripts(System.Collections.Generic.IReadOnlyList`1[System.String])
-  Void set_Environment(Shenora.WebView2.WebViewEnvironmentOptions)
-  Void set_FolderMappings(System.Collections.Generic.IReadOnlyList`1[Shenora.WebView2.WebViewFolderMapping])
-  Void set_InitTimeout(System.TimeSpan)
-  Void set_InjectedGlobals(System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Object])
-  Void set_Log(System.Action`1[System.String])
-  Void set_MaxAutoReloads(Int32)
-  Void set_OnDownloadStarting(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs])
-  Void set_OnPermissionRequested(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs])
-  Void set_OnProcessFailed(System.Action`1[Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs])
-  Void set_OpenExternalLinksInSystemBrowser(Boolean)
-  Void set_PermittedPermissions(System.Collections.Generic.IReadOnlyList`1[Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind])
-  Void set_PreventDefaultFileDrop(Boolean)
-  Void set_ProductionUrl(System.String)
-  Void set_ReloadOnRenderProcessFailure(Boolean)
-  Void set_ResourceProvider(Shenora.WebView2.IWebViewResourceProvider)
-  Void set_UseSharedEnvironment(Boolean)
-  Void set_VirtualHost(System.String)
-Shenora.WebView2.WebViewIpcBridge
-  Boolean IsClientReady
-  Boolean get_IsClientReady()
-  System.String HandshakeModule
-  System.String HandshakeType
-  Void .ctor(Microsoft.Web.WebView2.WinForms.WebView2, Shenora.WebView2.WebViewIpcBridgeOptions)
-  Void Attach()
-  Void Dispose()
-  Void SendNotification(System.String, System.String, System.Object, System.String)
-Shenora.WebView2.WebViewIpcBridgeOptions
-  Int32 MaxQueuedNotifications
-  Int32 get_MaxQueuedNotifications()
-  Shenora.Core.IEventBus EventBus
-  Shenora.Core.IEventBus get_EventBus()
-  Shenora.Ipc.IMessageDispatcher Dispatcher
-  Shenora.Ipc.IMessageDispatcher get_Dispatcher()
-  System.Action`1[Shenora.Ipc.IpcRequest] OnClientReady
-  System.Action`1[Shenora.Ipc.IpcRequest] get_OnClientReady()
-  System.Action`1[System.String] Log
-  System.Action`1[System.String] get_Log()
-  System.TimeSpan NotificationInterval
-  System.TimeSpan get_NotificationInterval()
-  Void .ctor()
-  Void set_Dispatcher(Shenora.Ipc.IMessageDispatcher)
-  Void set_EventBus(Shenora.Core.IEventBus)
-  Void set_Log(System.Action`1[System.String])
-  Void set_MaxQueuedNotifications(Int32)
-  Void set_NotificationInterval(System.TimeSpan)
-  Void set_OnClientReady(System.Action`1[Shenora.Ipc.IpcRequest])
-Shenora.WebView2.WindowCommandFacade
-  System.String Module
-  System.String ModuleName
-  System.String get_ModuleName()
-  Void .ctor(Shenora.WebView2.WindowCommandOptions, Microsoft.Extensions.Logging.ILogger`1[Shenora.WebView2.WindowCommandFacade])
-Shenora.WebView2.WindowCommandOptions
-  System.Action ToggleMaximize
-  System.Action get_ToggleMaximize()
-  System.Action`1[System.Boolean] ApplyTheme
-  System.Action`1[System.Boolean] get_ApplyTheme()
-  System.Func`1[System.Boolean] IsMaximized
-  System.Func`1[System.Boolean] get_IsMaximized()
-  System.Windows.Forms.Form Window
-  System.Windows.Forms.Form get_Window()
-  Void .ctor()
-  Void set_ApplyTheme(System.Action`1[System.Boolean])
-  Void set_IsMaximized(System.Func`1[System.Boolean])
-  Void set_ToggleMaximize(System.Action)
-  Void set_Window(System.Windows.Forms.Form)
+static class Shenora.WebView2.BrowserArguments
+  public static string Build(bool isDevelopment, string? devExtraArguments = null, string? additionalArguments = null)
+  public static string Compose(string preset, bool isDevelopment, string? devExtraArguments = null, string? additionalArguments = null)
+sealed class Shenora.WebView2.DropZoneFacade : Shenora.Ipc.BaseFacade
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request)
+  public .ctor(Shenora.WebView2.DropZoneManager manager, Microsoft.Extensions.Logging.ILogger<Shenora.WebView2.DropZoneFacade>? logger = null)
+  public override string ModuleName { get; }
+sealed class Shenora.WebView2.DropZoneManager : System.IDisposable
+  public .ctor(Shenora.WebView2.DropZoneManagerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.WebView2.DropZoneManager>? logger = null)
+  public const string Module = "DROP_ZONE"
+  public void ClearAll()
+  public void Dispose()
+  public void RegisterZone(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight)
+  public void ShowOverlay(string zoneId)
+  public void UnregisterZone(string zoneId)
+  public void UpdateZoneBounds(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight)
+sealed class Shenora.WebView2.DropZoneManagerOptions
+  public required Microsoft.Web.WebView2.WinForms.WebView2 WebView { get; init; }
+  public required Shenora.Core.IEventBus EventBus { get; init; }
+  public required System.Windows.Forms.Form ParentForm { get; init; }
+sealed class Shenora.WebView2.EmbeddedResourceProvider : Shenora.WebView2.IWebViewResourceProvider
+  public .ctor(Shenora.WebView2.EmbeddedResourceProviderOptions options)
+  public System.IO.Stream? GetResourceStream(string virtualPath)
+  public bool CanServe { get; }
+  public bool Exists(string virtualPath)
+  public bool IsEmbedded { get; }
+  public void BeginWarmup()
+sealed class Shenora.WebView2.EmbeddedResourceProviderOptions
+  public System.Action<string>? Log { get; init; }
+  public bool PreferFiles { get; init; }
+  public required System.Reflection.Assembly Assembly { get; init; }
+  public required string ResourcePrefix { get; init; }
+  public string? FileFallbackDirectory { get; init; }
+interface Shenora.WebView2.IWebViewResourceProvider
+  public abstract System.IO.Stream? GetResourceStream(string virtualPath)
+  public abstract bool Exists(string virtualPath)
+static class Shenora.WebView2.WebView2BuilderExtensions
+  public static Shenora.Core.ShenoraApplicationBuilder PrewarmWebView2(Shenora.Core.ShenoraApplicationBuilder builder, System.Func<Shenora.Core.ShenoraApplication, Shenora.WebView2.WebViewEnvironmentOptions> options)
+sealed class Shenora.WebView2.WebViewDeferredScheme
+  public required System.Func<System.Uri, System.Threading.Tasks.Task<System.ValueTuple<byte[], string>>> Handler { get; init; }
+  public required string Scheme { get; init; }
+  public string CacheControl { get; init; }
+static class Shenora.WebView2.WebViewEnvironment
+  public static System.Threading.Tasks.Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> CreateForCurrentThreadAsync(Shenora.WebView2.WebViewEnvironmentOptions options)
+  public static System.Threading.Tasks.Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> GetSharedAsync(Shenora.WebView2.WebViewEnvironmentOptions options)
+  public static bool IsRuntimeAvailable(string? browserExecutableFolder = null)
+  public static string? GetAvailableRuntimeVersion(string? browserExecutableFolder = null)
+  public static void Prewarm(Shenora.WebView2.WebViewEnvironmentOptions options)
+sealed class Shenora.WebView2.WebViewEnvironmentOptions
+  public System.Action<string>? Log { get; init; }
+  public bool IsDevelopment { get; init; }
+  public required string UserDataFolder { get; init; }
+  public string? AdditionalArguments { get; init; }
+  public string? BrowserExecutableFolder { get; init; }
+  public string? DevExtraArguments { get; init; }
+sealed class Shenora.WebView2.WebViewFolderMapping
+  public Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind AccessKind { get; init; }
+  public required string FolderPath { get; init; }
+  public required string HostName { get; init; }
+sealed class Shenora.WebView2.WebViewHost
+  public .ctor(Microsoft.Web.WebView2.WinForms.WebView2 webView, Shenora.WebView2.WebViewHostOptions options)
+  public System.Threading.Tasks.Task InitializeAsync()
+  public bool IsDevelopment { get; }
+  public void Navigate()
+sealed class Shenora.WebView2.WebViewHostOptions
+  public Shenora.WebView2.IWebViewResourceProvider? ResourceProvider { get; init; }
+  public System.Action<Microsoft.Web.WebView2.Core.CoreWebView2DownloadStartingEventArgs>? OnDownloadStarting { get; init; }
+  public System.Action<Microsoft.Web.WebView2.Core.CoreWebView2PermissionRequestedEventArgs>? OnPermissionRequested { get; init; }
+  public System.Action<Microsoft.Web.WebView2.Core.CoreWebView2ProcessFailedEventArgs>? OnProcessFailed { get; init; }
+  public System.Action<Microsoft.Web.WebView2.Core.CoreWebView2Settings>? ConfigureSettings { get; init; }
+  public System.Action<string>? Log { get; init; }
+  public System.Collections.Generic.IReadOnlyDictionary<string, object> InjectedGlobals { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Microsoft.Web.WebView2.Core.CoreWebView2PermissionKind> PermittedPermissions { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.WebView2.WebViewDeferredScheme> DeferredSchemes { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.WebView2.WebViewFolderMapping> FolderMappings { get; init; }
+  public System.Collections.Generic.IReadOnlyList<string> DocumentCreatedScripts { get; init; }
+  public System.Drawing.Color? BackgroundColor { get; init; }
+  public System.TimeSpan AutoReloadCooldown { get; init; }
+  public System.TimeSpan InitTimeout { get; init; }
+  public bool AllowExternalDrop { get; init; }
+  public bool BlockBrowserShortcutsInProduction { get; init; }
+  public bool OpenExternalLinksInSystemBrowser { get; init; }
+  public bool PreventDefaultFileDrop { get; init; }
+  public bool ReloadOnRenderProcessFailure { get; init; }
+  public bool UseSharedEnvironment { get; init; }
+  public int MaxAutoReloads { get; init; }
+  public required Shenora.WebView2.WebViewEnvironmentOptions Environment { get; init; }
+  public string? DevUrl { get; init; }
+  public string? ProductionUrl { get; init; }
+  public string? VirtualHost { get; init; }
+sealed class Shenora.WebView2.WebViewIpcBridge : System.IDisposable
+  public .ctor(Microsoft.Web.WebView2.WinForms.WebView2 webView, Shenora.WebView2.WebViewIpcBridgeOptions options)
+  public bool IsClientReady { get; }
+  public const string HandshakeModule = "SHENORA"
+  public const string HandshakeType = "READY"
+  public void Attach()
+  public void Dispose()
+  public void SendNotification(string module, string type, object? payload = null, string? scope = null)
+sealed class Shenora.WebView2.WebViewIpcBridgeOptions
+  public Shenora.Core.IEventBus? EventBus { get; init; }
+  public System.Action<Shenora.Ipc.IpcRequest>? OnClientReady { get; init; }
+  public System.Action<string>? Log { get; init; }
+  public System.TimeSpan NotificationInterval { get; init; }
+  public int MaxQueuedNotifications { get; init; }
+  public required Shenora.Ipc.IMessageDispatcher Dispatcher { get; init; }
+sealed class Shenora.WebView2.WindowCommandFacade : Shenora.Ipc.BaseFacade
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request)
+  public .ctor(Shenora.WebView2.WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.WebView2.WindowCommandFacade>? logger = null)
+  public const string Module = "WINDOW"
+  public override string ModuleName { get; }
+sealed class Shenora.WebView2.WindowCommandOptions
+  public System.Action<bool>? ApplyTheme { get; init; }
+  public System.Action? ToggleMaximize { get; init; }
+  public System.Func<bool>? IsMaximized { get; init; }
+  public required System.Windows.Forms.Form Window { get; init; }

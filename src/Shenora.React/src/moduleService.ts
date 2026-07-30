@@ -17,8 +17,15 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
  *
  * DEVIATION from the source: its boolean/array/optional convenience wrappers were pure casts
  * around the same call — the response generic already expresses them, so they're gone.
+ *
+ * `TRequests extends object`, NOT `extends Record<string, unknown>` (P5.5 H6). The stricter bound was
+ * unsatisfiable by a plain `interface` — interfaces get no implicit index signature — so the example
+ * above and the README's snippet both failed with TS2344, on the first line an adopter copies. And
+ * satisfying it the way the kit's own `windowCommands.ts` did (`interface X extends Record<string,
+ * unknown>`) widened `keyof TRequests & string` back to `string`, so a mistyped request type compiled
+ * and every payload collapsed to `unknown` — the flagship typed-service feature checking nothing at all.
  */
-export abstract class BaseModuleService<TRequests extends Record<string, unknown> = Record<string, unknown>> {
+export abstract class BaseModuleService<TRequests extends object = Record<string, unknown>> {
   protected constructor(
     /** The backend module this service fronts (e.g. `"TODO"`). */
     protected readonly module: string,

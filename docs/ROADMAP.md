@@ -5,6 +5,44 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H6 (part): the gates that were supposed to be watching
+
+Four items, and the theme is that three separate gates existed but were not actually looking at anything.
+421 dotnet + 54 vitest.
+
+**The API baseline was blind to most of what breaks a consumer.** It dumped
+`GetMembers(BindingFlags.Public)`, so `BaseFacade.RouteMessageAsync` — the one member every consumer
+overrides — was outside the SemVer gate entirely, and so were default parameter values (dropping a
+`= null` is a source break for every caller and produced NO diff), `init` vs `set`, `required`, `static`,
+parameter names, generic constraints, nullability, and attributes. `[JsonPropertyName]` being invisible
+was the sharpest one: those 22 names ARE the wire contract, so renaming one broke the C#⇄TS mirror while
+every test stayed green. The new `ApiSurfaceDump` renders all of it. Three of its decisions were wrong on
+the first attempt and are documented in the file: an unconstrained `T` reads as Nullable at runtime, so
+annotating it printed a `?` that does not exist in the signature; the compiler's `[Obsolete]` ctor stub on
+a `required` type carries SDK-version-dependent text that would churn the baseline on a toolchain update;
+and C# aliases beat `System.Void` because a human reads this file on every intentional change.
+
+**The cross-language mirror was asserted on both sides and compared on neither.** Each suite checked its
+own hand-written literals, so `SCOPE_REQUIRED` sat in the host's `IpcErrorCodes` — emitted by
+`ScopedContainerRouter` — while being absent from `types.ts` for two phases, all under documentation
+claiming a name-for-name mirror. `WireMirrorTests` now parses the TS source (what an adopter imports) and
+asserts set equality for error codes, the handshake route and the envelope categories. Client-only codes
+are excluded through a new `ClientOnlyIpcErrorCodes` export, so the client declares its own exceptions
+rather than the test carrying a second list to drift. I confirmed the tripwire fails by removing the code
+again — a green tripwire that cannot fail is worth nothing.
+
+**The client tests were type-checked by nothing at all.** `build` uses a tsconfig that excludes them,
+vitest transpiles without checking, and the tsconfig written to do the job had never been run — it was
+red on an ES2020 `lib` against `.at()`. That was discovered while fixing `BaseModuleService`'s constraint,
+whose whole point is compile-time checking: the `@ts-expect-error` assertions pinning it would have been
+inert. Fixed the lib, added a `typecheck` script, wired it into `verify`, and proved it by reintroducing
+the anti-pattern and watching TS2578 fire.
+
+Also: the client event bus keys on `'\0'` instead of `.` (so `("APP","TASK.DONE")` and
+`("APP.TASK","DONE")` stop being the same key — the collision the host fixed and documented while the
+client kept it) and gained the scope filter the wire always carried, mirroring the host's rule including
+the half that is easy to miss: a global event still reaches a scoped subscriber.
+
 ### 2026-07-30 — P5.5 H3: the ready gate, option validation, and the fail-loudly cases
 
 Thirteen new tests (417 dotnet). Three of these are worth reading past the one-line summary.

@@ -25,6 +25,14 @@ export const HANDSHAKE_TYPE = 'READY';
 export const IpcErrorCodes = {
   unknownError: 'UNKNOWN_ERROR',
   noHandler: 'NO_HANDLER',
+  /**
+   * A scope-routed module was called without a `scope`. Parameters: `module`.
+   *
+   * This was MISSING here while the host emitted it (P5.5 H6), so a scoped app could not match it by
+   * constant and had to hard-code the string — against documentation claiming the two sides mirror
+   * name-for-name. The mirror is now enforced by a test rather than by care.
+   */
+  scopeRequired: 'SCOPE_REQUIRED',
   missingPayloadValue: 'MISSING_PAYLOAD_VALUE',
   invalidPayloadValue: 'INVALID_PAYLOAD_VALUE',
   /** Client-only: the request timed out waiting for a response. */
@@ -32,6 +40,16 @@ export const IpcErrorCodes = {
   /** Client-only: no transport is available and no fallback was configured. */
   noTransport: 'NO_TRANSPORT',
 } as const;
+
+/**
+ * The codes that exist ONLY on the client — they never arrive from the host, but reject through the same
+ * structured shape so app error handling stays uniform. Named here so the cross-language mirror check can
+ * exclude them by intent rather than by a hard-coded list on the other side.
+ */
+export const ClientOnlyIpcErrorCodes: readonly string[] = [
+  IpcErrorCodes.timeout,
+  IpcErrorCodes.noTransport,
+];
 
 /** The request envelope a client sends to the host. */
 export interface IpcRequest<TPayload = unknown> {

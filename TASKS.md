@@ -563,33 +563,43 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
 
 **H6 — Public surface + cross-language lockstep (cheapest window is BEFORE 1.0)**
 
-- [ ] **Extend the API baseline to `protected` members.** `ApiSurfaceTests.cs:55` uses
-  `BindingFlags.Public` only, so `BaseFacade.RouteMessageAsync` — the one member EVERY consumer
-  overrides — is outside the SemVer gate. Also invisible to the dump: default parameter values
-  (`new EventBus()` works but the baseline renders the ctor as non-optional — dropping `= null` is a
-  silent break, same shape at 8 sites), `init` vs `set`, `required` add/remove, `static` vs
-  instance, attributes incl. `[JsonPropertyName]`, generic constraints, nullability, parameter names.
-  And derive the assembly list from the baseline directory — `:15-22` hardcodes five
-  `typeof(...).Assembly` literals, a second hand-maintained copy of `devtools/project.config.mjs`'s
-  `packableProjects`; delete a line and the theory silently runs 4 cases with an orphaned baseline.
-- [ ] **Add the cross-language mirror tripwire and the missing code.** `SCOPE_REQUIRED` exists in
-  `IpcErrorCodes.cs:20` and is emitted by `ScopedContainerRouter.cs:164`, but is absent from
-  `types.ts:25-34` — so a scoped app cannot match it by constant, while `ARCHITECTURE.md` claims the
-  mirror is "name-for-name". Root cause is structural: the two suites each assert their own
-  hand-written literals and nothing compares the sets. FIX: a check that parses the C# consts and
-  asserts set equality with `types.ts`.
-- [ ] **`'\0'`-join the client event-bus keys and add a scope filter.** `eventBus.ts:19,37` uses
-  `` `${module}.${type}` `` — the exact '.'-collision `ipc-contracts.md` forbids and that
-  `EventBus.cs:85` fixed with `'\0'` (its comment spells the collision out). The TS key also omits
-  `scope` while the host keys on it and the wire carries it, so a scoped app's `useShenoraEvent`
-  fires for every scope with no filter available.
-- [ ] **Fix `BaseModuleService`'s generic constraint** (`moduleService.ts:21`). `TRequests extends
-  Record<string, unknown>` is not satisfiable by a plain `interface` (no implicit index signature),
-  so the TSDoc example at `:10` and the README snippet DON'T COMPILE (TS2344) — the first thing an
-  adopter copies. Satisfying it the way `windowCommands.ts:9` does widens `keyof TRequests & string`
-  to `string`, so typos compile and payloads collapse to `unknown`: the flagship typed-service
-  feature currently checks nothing. FIX: `TRequests extends object`, drop `extends Record<…>` from
-  the callers and both doc snippets.
+- [x] **Extend the API baseline to `protected` members.** DONE, and much further: the one-line
+  `GetMembers(BindingFlags.Public)` dump became `ApiSurfaceDump`, which renders protected members
+  (`BaseFacade.RouteMessageAsync` — the member EVERY consumer overrides — was entirely ungated),
+  default parameter values (dropping a `= null` is a source break for every caller and showed NO diff),
+  `init` vs `set`, `required`, `static`, `virtual`/`abstract`/`override`, parameter names (named
+  arguments are a source contract), generic constraints, nullability, base types + directly-implemented
+  interfaces, const VALUES (a wire code is what consumers compare against), and attributes — all 22
+  `[JsonPropertyName]` wire names are now pinned, so renaming one can no longer break the C#⇄TS mirror
+  silently. Accessors render as `{ get; init; }` rather than separate `get_X()` lines: shorter AND
+  strictly more informative. Three rendering decisions are documented in the file because they were
+  wrong on the first attempt: an unconstrained `T` reads as Nullable at runtime and must NOT be
+  annotated; the compiler's `[Obsolete]` parameterless-ctor stub on a `required` type is filtered (its
+  message is SDK-version-dependent and would churn); C# aliases (`void`, `string`) are used because a
+  human reviews this file on every change. The assembly list now comes from the baseline DIRECTORY, plus
+  a new `Every_shipped_assembly_has_a_baseline` walking transitive references to close the other
+  direction (deriving from the directory alone would leave a new package silently ungated).
+- [x] **Add the cross-language mirror tripwire and the missing code.** DONE — `scopeRequired` added to
+  `types.ts`, plus `WireMirrorTests`, which parses the TS SOURCE (what an adopter imports; a generated
+  artifact would add another place to diverge) and asserts set equality of the error codes, the
+  handshake route, and the envelope categories. Client-ONLY codes are excluded via a new exported
+  `ClientOnlyIpcErrorCodes` so the client DECLARES its own exceptions rather than the test carrying a
+  second hard-coded list. The parser self-checks (`Assert.NotEmpty`) so a regex that silently matched
+  nothing can't make it pass, and I verified the tripwire FAILS by temporarily removing the code —
+  message: "The host emits these codes but the client cannot name them: SCOPE_REQUIRED".
+- [x] **`'\0'`-join the client event-bus keys and add a scope filter.** DONE, with the host's exact
+  scope rule mirrored — including the half that is easy to miss: a global (scope-less) event still
+  reaches a SCOPED subscriber, so an app-wide announcement isn't swallowed by a per-scope listener.
+  `useShenoraEvent` takes `scope` through. Three tests pin the scope semantics and one pins the
+  collision (`("APP","TASK.DONE")` vs `("APP.TASK","DONE")` were the same key).
+- [x] **Fix `BaseModuleService`'s generic constraint.** DONE — `TRequests extends object`, and the
+  `extends Record<…>` dropped from both callers (`windowCommands.ts` was demonstrating the very
+  anti-pattern the base class exists to prevent). **This uncovered a bigger hole:** the tests were not
+  type-checked by ANYTHING — `build` uses `tsconfig.build.json` which excludes them, vitest transpiles
+  without checking, and the `tsconfig.json` written to do the job had never been run (it was red on an
+  ES2020 `lib` vs `.at()`). So `@ts-expect-error` assertions were inert. Fixed the lib, added a
+  `typecheck` script, and wired it into `dev.mjs verify` — then proved it works by reintroducing the
+  anti-pattern and watching TS2578 fire.
 - [ ] **Give form-dependent facades a first-class registration seam.** The reference composition has
   to downcast — `MainForm.cs:85` `if (dispatcher is MessageDispatcher concrete)` — because
   `IMessageDispatcher` exposes only `DispatchAsync`/`SendAsync`, and `WindowCommandFacade.cs:41-43`

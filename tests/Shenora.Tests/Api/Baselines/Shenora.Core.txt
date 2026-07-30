@@ -1,223 +1,139 @@
-Shenora.Core.AppCallback
-  Boolean Run(System.Action, System.Action`1[System.Exception])
-  T RunOrDefault[T](System.Func`1[T], T, System.Action`1[System.Exception])
-Shenora.Core.AppRootArgument
-  System.String Flag
-  System.String Resolve(System.String[], System.String)
-Shenora.Core.EventBus
-  Int32 GetHandlerCount()
-  System.String Subscribe(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String Subscribe(System.String, System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String SubscribeToAll(System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String SubscribeToModule(System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String SubscribeToModule(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage)
-  System.Threading.Tasks.Task EmitAsync(System.String, System.String, System.Object, System.String)
-  Void .ctor(Microsoft.Extensions.Logging.ILogger`1[Shenora.Core.EventBus])
-  Void Unsubscribe(System.String)
-Shenora.Core.EventMessage
-  System.DateTimeOffset Timestamp
-  System.DateTimeOffset get_Timestamp()
-  System.Object Payload
-  System.Object get_Payload()
-  System.String Id
-  System.String Module
-  System.String Scope
-  System.String Type
-  System.String get_Id()
-  System.String get_Module()
-  System.String get_Scope()
-  System.String get_Type()
-  Void .ctor()
-  Void set_Id(System.String)
-  Void set_Module(System.String)
-  Void set_Payload(System.Object)
-  Void set_Scope(System.String)
-  Void set_Timestamp(System.DateTimeOffset)
-  Void set_Type(System.String)
-Shenora.Core.FileDialogFilter
-  System.Collections.Generic.IReadOnlyList`1[System.String] Extensions
-  System.Collections.Generic.IReadOnlyList`1[System.String] get_Extensions()
-  System.String Name
-  System.String get_Name()
-  Void .ctor()
-  Void set_Extensions(System.Collections.Generic.IReadOnlyList`1[System.String])
-  Void set_Name(System.String)
-Shenora.Core.FileDialogOptions
-  Boolean AllowFileSelection
-  Boolean OverwritePrompt
-  Boolean get_AllowFileSelection()
-  Boolean get_OverwritePrompt()
-  System.Collections.Generic.IReadOnlyList`1[Shenora.Core.FileDialogFilter] Filters
-  System.Collections.Generic.IReadOnlyList`1[Shenora.Core.FileDialogFilter] get_Filters()
-  System.Nullable`1[System.Boolean] CheckFileExists
-  System.Nullable`1[System.Boolean] CheckPathExists
-  System.Nullable`1[System.Boolean] ValidateNames
-  System.Nullable`1[System.Boolean] get_CheckFileExists()
-  System.Nullable`1[System.Boolean] get_CheckPathExists()
-  System.Nullable`1[System.Boolean] get_ValidateNames()
-  System.String DefaultExtension
-  System.String DefaultPath
-  System.String FileName
-  System.String RememberPathKey
-  System.String Title
-  System.String get_DefaultExtension()
-  System.String get_DefaultPath()
-  System.String get_FileName()
-  System.String get_RememberPathKey()
-  System.String get_Title()
-  Void .ctor()
-  Void set_AllowFileSelection(Boolean)
-  Void set_CheckFileExists(System.Nullable`1[System.Boolean])
-  Void set_CheckPathExists(System.Nullable`1[System.Boolean])
-  Void set_DefaultExtension(System.String)
-  Void set_DefaultPath(System.String)
-  Void set_FileName(System.String)
-  Void set_Filters(System.Collections.Generic.IReadOnlyList`1[Shenora.Core.FileDialogFilter])
-  Void set_OverwritePrompt(Boolean)
-  Void set_RememberPathKey(System.String)
-  Void set_Title(System.String)
-  Void set_ValidateNames(System.Nullable`1[System.Boolean])
-Shenora.Core.FileDialogResult
-  Boolean Success
-  Boolean get_Success()
-  Shenora.Core.FileDialogResult Cancelled()
-  Shenora.Core.FileDialogResult Selected(System.String)
-  System.String FilePath
-  System.String get_FilePath()
-  Void .ctor()
-  Void set_FilePath(System.String)
-  Void set_Success(Boolean)
-Shenora.Core.IClipboardService
-  System.Threading.Tasks.Task SetImageFromFileAsync(System.String)
-  System.Threading.Tasks.Task SetTextAsync(System.String)
-  System.Threading.Tasks.Task`1[System.Boolean] TrySaveImageToFileAsync(System.String)
-  System.Threading.Tasks.Task`1[System.String] GetTextAsync()
-Shenora.Core.IEventBus
-  System.String Subscribe(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String Subscribe(System.String, System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String SubscribeToAll(System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String SubscribeToModule(System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.String SubscribeToModule(System.String, System.String, System.Func`2[Shenora.Core.EventMessage,System.Threading.Tasks.Task])
-  System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage)
-  System.Threading.Tasks.Task EmitAsync(System.String, System.String, System.Object, System.String)
-  Void Unsubscribe(System.String)
-Shenora.Core.IFileDialogPathStore
-  System.Threading.Tasks.Task SavePathAsync(System.String, System.String)
-  System.Threading.Tasks.Task`1[System.String] GetPathAsync(System.String)
-Shenora.Core.IFileDialogs
-  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] OpenFileAsync(Shenora.Core.FileDialogOptions)
-  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] OpenFolderAsync(Shenora.Core.FileDialogOptions)
-  System.Threading.Tasks.Task`1[Shenora.Core.FileDialogResult] SaveFileAsync(Shenora.Core.FileDialogOptions)
-Shenora.Core.IShenoraLifecycleHook
-  Void OnStarting(Shenora.Core.ShenoraApplication)
-  Void OnStopping(Shenora.Core.ShenoraApplication)
-Shenora.Core.IShenoraModule
-  Void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection)
-Shenora.Core.IShenoraRunner
-  Void Run(Shenora.Core.ShenoraApplication)
-Shenora.Core.IUiDispatcher
-  Boolean IsOnUiThread
-  Boolean Post(System.Action)
-  Boolean Post(System.Func`1[System.Threading.Tasks.Task])
-  Boolean get_IsOnUiThread()
-  Shenora.Core.UiTargetState State
-  Shenora.Core.UiTargetState get_State()
-  System.Threading.Tasks.Task InvokeAsync(System.Action, System.Threading.CancellationToken)
-  System.Threading.Tasks.Task InvokeAsync(System.Func`1[System.Threading.Tasks.Task], System.Threading.CancellationToken)
-  System.Threading.Tasks.Task`1[T] InvokeAsync[T](System.Func`1[System.Threading.Tasks.Task`1[T]], System.Threading.CancellationToken)
-  System.Threading.Tasks.Task`1[T] InvokeOrDefaultAsync[T](System.Func`1[System.Threading.Tasks.Task`1[T]], T, System.Threading.CancellationToken)
-Shenora.Core.IUiInteraction
-  Void BlockInteraction()
-  Void UnblockInteraction()
-Shenora.Core.IUrlLauncher
-  Void OpenUrl(System.String)
-Shenora.Core.ShenoraApplication
-  Shenora.Core.ShenoraApplicationBuilder CreateBuilder(Shenora.Core.ShenoraApplicationOptions)
-  Shenora.Core.ShenoraApplicationBuilder CreateBuilder(System.String[])
-  Shenora.Core.ShenoraEnvironment Environment
-  Shenora.Core.ShenoraEnvironment get_Environment()
-  Shenora.Core.ShenoraPaths Paths
-  Shenora.Core.ShenoraPaths get_Paths()
-  System.Collections.Generic.IReadOnlyList`1[System.String] Args
-  System.Collections.Generic.IReadOnlyList`1[System.String] get_Args()
-  System.IServiceProvider Services
-  System.IServiceProvider get_Services()
-  System.String ApplicationName
-  System.String get_ApplicationName()
-  System.Threading.Tasks.ValueTask DisposeAsync()
-  Void Dispose()
-  Void Run()
-Shenora.Core.ShenoraApplicationBuilder
-  Microsoft.Extensions.DependencyInjection.IServiceCollection Services
-  Microsoft.Extensions.DependencyInjection.IServiceCollection get_Services()
-  Shenora.Core.ShenoraApplication Build()
-  Shenora.Core.ShenoraApplicationBuilder AddModule(Shenora.Core.IShenoraModule)
-  Shenora.Core.ShenoraApplicationBuilder OnStarting(System.Action`1[Shenora.Core.ShenoraApplication])
-  Shenora.Core.ShenoraApplicationBuilder OnStopping(System.Action`1[Shenora.Core.ShenoraApplication])
-  Shenora.Core.ShenoraEnvironment Environment
-  Shenora.Core.ShenoraEnvironment get_Environment()
-  Shenora.Core.ShenoraPaths Paths
-  Shenora.Core.ShenoraPaths get_Paths()
-  System.Collections.Generic.IReadOnlyList`1[System.String] Args
-  System.Collections.Generic.IReadOnlyList`1[System.String] get_Args()
-  System.String ApplicationName
-  System.String get_ApplicationName()
-Shenora.Core.ShenoraApplicationOptions
-  Shenora.Core.ShenoraPathsOptions Paths
-  Shenora.Core.ShenoraPathsOptions get_Paths()
-  System.Func`2[System.String,System.String] GetEnvironmentVariable
-  System.Func`2[System.String,System.String] get_GetEnvironmentVariable()
-  System.String ApplicationName
-  System.String BaseDirectory
-  System.String get_ApplicationName()
-  System.String get_BaseDirectory()
-  System.String[] Args
-  System.String[] get_Args()
-  Void .ctor()
-  Void set_ApplicationName(System.String)
-  Void set_Args(System.String[])
-  Void set_BaseDirectory(System.String)
-  Void set_GetEnvironmentVariable(System.Func`2[System.String,System.String])
-  Void set_Paths(Shenora.Core.ShenoraPathsOptions)
-Shenora.Core.ShenoraEnvironment
-  Boolean IsDevelopment
-  Boolean get_IsDevelopment()
-  Shenora.Core.ShenoraEnvironment Detect(System.String, System.Func`2[System.String,System.String])
-  System.String BaseDirectory
-  System.String DevMarkerFileName
-  System.String get_BaseDirectory()
-Shenora.Core.ShenoraPaths
-  Shenora.Core.ShenoraPaths Resolve(Shenora.Core.ShenoraPathsOptions, System.String, System.Func`2[System.String,System.String])
-  System.String DataArea(System.String)
-  System.String DataDir
-  System.String ResourcesDir
-  System.String RootDir
-  System.String get_DataDir()
-  System.String get_ResourcesDir()
-  System.String get_RootDir()
-Shenora.Core.ShenoraPathsOptions
-  System.Collections.Generic.IReadOnlyList`1[System.String] ExecutableSubfolders
-  System.Collections.Generic.IReadOnlyList`1[System.String] get_ExecutableSubfolders()
-  System.String DataEnvironmentVariable
-  System.String DataFolderName
-  System.String ExplicitRoot
-  System.String ResourcesFolderName
-  System.String RootEnvironmentVariable
-  System.String get_DataEnvironmentVariable()
-  System.String get_DataFolderName()
-  System.String get_ExplicitRoot()
-  System.String get_ResourcesFolderName()
-  System.String get_RootEnvironmentVariable()
-  Void .ctor()
-  Void set_DataEnvironmentVariable(System.String)
-  Void set_DataFolderName(System.String)
-  Void set_ExecutableSubfolders(System.Collections.Generic.IReadOnlyList`1[System.String])
-  Void set_ExplicitRoot(System.String)
-  Void set_ResourcesFolderName(System.String)
-  Void set_RootEnvironmentVariable(System.String)
-Shenora.Core.UiTargetState
-  Int32 value__
-  Shenora.Core.UiTargetState Gone
-  Shenora.Core.UiTargetState NotReady
-  Shenora.Core.UiTargetState Ready
+static class Shenora.Core.AppCallback
+  public static T RunOrDefault<T>(System.Func<T> work, T fallback, System.Action<System.Exception>? onError = null)
+  public static bool Run(System.Action work, System.Action<System.Exception>? onError = null)
+static class Shenora.Core.AppRootArgument
+  public const string Flag = "--app-root"
+  public static string Resolve(string[]? args, string fallback)
+sealed class Shenora.Core.EventBus : Shenora.Core.IEventBus
+  public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.EventBus>? logger = null)
+  public System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage message)
+  public System.Threading.Tasks.Task EmitAsync(string module, string type, object? payload = null, string? scope = null)
+  public int GetHandlerCount()
+  public string Subscribe(string module, string type, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public string Subscribe(string module, string type, string scope, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public string SubscribeToAll(System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public string SubscribeToModule(string module, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public string SubscribeToModule(string module, string scope, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public void Unsubscribe(string subscriptionId)
+sealed class Shenora.Core.EventMessage
+  public System.DateTimeOffset Timestamp { get; init; }
+  public object? Payload { get; init; }
+  public required string Module { get; init; }
+  public required string Type { get; init; }
+  public string Id { get; init; }
+  public string? Scope { get; init; }
+sealed class Shenora.Core.FileDialogFilter
+  public required System.Collections.Generic.IReadOnlyList<string> Extensions { get; init; }
+  public required string Name { get; init; }
+sealed class Shenora.Core.FileDialogOptions
+  public .ctor()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileDialogFilter>? Filters { get; init; }
+  public bool AllowFileSelection { get; init; }
+  public bool OverwritePrompt { get; init; }
+  public bool? CheckFileExists { get; init; }
+  public bool? CheckPathExists { get; init; }
+  public bool? ValidateNames { get; init; }
+  public string? DefaultExtension { get; init; }
+  public string? DefaultPath { get; init; }
+  public string? FileName { get; init; }
+  public string? RememberPathKey { get; init; }
+  public string? Title { get; init; }
+sealed class Shenora.Core.FileDialogResult
+  public required bool Success { get; init; }
+  public static Shenora.Core.FileDialogResult Cancelled()
+  public static Shenora.Core.FileDialogResult Selected(string path)
+  public string? FilePath { get; init; }
+interface Shenora.Core.IClipboardService
+  public abstract System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
+  public abstract System.Threading.Tasks.Task SetTextAsync(string text)
+  public abstract System.Threading.Tasks.Task<bool> TrySaveImageToFileAsync(string targetPath)
+  public abstract System.Threading.Tasks.Task<string> GetTextAsync()
+interface Shenora.Core.IEventBus
+  public abstract System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage message)
+  public abstract System.Threading.Tasks.Task EmitAsync(string module, string type, object? payload = null, string? scope = null)
+  public abstract string Subscribe(string module, string type, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public abstract string Subscribe(string module, string type, string scope, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public abstract string SubscribeToAll(System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public abstract string SubscribeToModule(string module, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public abstract string SubscribeToModule(string module, string scope, System.Func<Shenora.Core.EventMessage, System.Threading.Tasks.Task> handler)
+  public abstract void Unsubscribe(string subscriptionId)
+interface Shenora.Core.IFileDialogPathStore
+  public abstract System.Threading.Tasks.Task SavePathAsync(string key, string path)
+  public abstract System.Threading.Tasks.Task<string> GetPathAsync(string key)
+interface Shenora.Core.IFileDialogs
+  public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)
+  public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.FileDialogOptions? options = null)
+  public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
+interface Shenora.Core.IShenoraLifecycleHook
+  public virtual void OnStarting(Shenora.Core.ShenoraApplication app)
+  public virtual void OnStopping(Shenora.Core.ShenoraApplication app)
+interface Shenora.Core.IShenoraModule
+  public abstract void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+interface Shenora.Core.IShenoraRunner
+  public abstract void Run(Shenora.Core.ShenoraApplication app)
+interface Shenora.Core.IUiDispatcher
+  public abstract Shenora.Core.UiTargetState State { get; }
+  public abstract System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = null)
+  public abstract System.Threading.Tasks.Task InvokeAsync(System.Func<System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = null)
+  public abstract System.Threading.Tasks.Task<T> InvokeAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, System.Threading.CancellationToken cancellationToken = null)
+  public abstract System.Threading.Tasks.Task<T> InvokeOrDefaultAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, T fallback, System.Threading.CancellationToken cancellationToken = null)
+  public abstract bool IsOnUiThread { get; }
+  public abstract bool Post(System.Action work)
+  public abstract bool Post(System.Func<System.Threading.Tasks.Task> work)
+interface Shenora.Core.IUiInteraction
+  public abstract void BlockInteraction()
+  public abstract void UnblockInteraction()
+interface Shenora.Core.IUrlLauncher
+  public abstract void OpenUrl(string url)
+sealed class Shenora.Core.ShenoraApplication : System.IAsyncDisposable, System.IDisposable
+  public Shenora.Core.ShenoraEnvironment Environment { get; }
+  public Shenora.Core.ShenoraPaths Paths { get; }
+  public System.Collections.Generic.IReadOnlyList<string> Args { get; }
+  public System.IServiceProvider Services { get; }
+  public System.Threading.Tasks.ValueTask DisposeAsync()
+  public static Shenora.Core.ShenoraApplicationBuilder CreateBuilder(Shenora.Core.ShenoraApplicationOptions options)
+  public static Shenora.Core.ShenoraApplicationBuilder CreateBuilder(string[]? args = null)
+  public string ApplicationName { get; }
+  public void Dispose()
+  public void Run()
+sealed class Shenora.Core.ShenoraApplicationBuilder
+  public Microsoft.Extensions.DependencyInjection.IServiceCollection Services { get; }
+  public Shenora.Core.ShenoraApplication Build()
+  public Shenora.Core.ShenoraApplicationBuilder AddModule(Shenora.Core.IShenoraModule module)
+  public Shenora.Core.ShenoraApplicationBuilder OnStarting(System.Action<Shenora.Core.ShenoraApplication> callback)
+  public Shenora.Core.ShenoraApplicationBuilder OnStopping(System.Action<Shenora.Core.ShenoraApplication> callback)
+  public Shenora.Core.ShenoraEnvironment Environment { get; }
+  public Shenora.Core.ShenoraPaths Paths { get; }
+  public System.Collections.Generic.IReadOnlyList<string> Args { get; }
+  public string ApplicationName { get; }
+sealed class Shenora.Core.ShenoraApplicationOptions
+  public .ctor()
+  public Shenora.Core.ShenoraPathsOptions? Paths { get; init; }
+  public System.Func<string, string>? GetEnvironmentVariable { get; init; }
+  public string? ApplicationName { get; init; }
+  public string? BaseDirectory { get; init; }
+  public string[]? Args { get; init; }
+sealed class Shenora.Core.ShenoraEnvironment
+  public bool IsDevelopment { get; }
+  public const string DevMarkerFileName = ".dev"
+  public static Shenora.Core.ShenoraEnvironment Detect(string baseDirectory, System.Func<string, string>? getEnvironmentVariable = null)
+  public string BaseDirectory { get; }
+sealed class Shenora.Core.ShenoraPaths
+  public static Shenora.Core.ShenoraPaths Resolve(Shenora.Core.ShenoraPathsOptions? options = null, string? baseDirectory = null, System.Func<string, string>? getEnvironmentVariable = null)
+  public string DataArea(string name)
+  public string DataDir { get; }
+  public string ResourcesDir { get; }
+  public string RootDir { get; }
+sealed class Shenora.Core.ShenoraPathsOptions
+  public .ctor()
+  public System.Collections.Generic.IReadOnlyList<string> ExecutableSubfolders { get; init; }
+  public string DataFolderName { get; init; }
+  public string ResourcesFolderName { get; init; }
+  public string? DataEnvironmentVariable { get; init; }
+  public string? ExplicitRoot { get; init; }
+  public string? RootEnvironmentVariable { get; init; }
+enum Shenora.Core.UiTargetState (int)
+  public const Shenora.Core.UiTargetState Gone = 2
+  public const Shenora.Core.UiTargetState NotReady = 0
+  public const Shenora.Core.UiTargetState Ready = 1
+  public int value__

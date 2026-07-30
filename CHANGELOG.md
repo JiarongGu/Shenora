@@ -99,6 +99,22 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Changed
 
+- **`ShenoraEventBus.subscribe` takes an options object with `scope`, and `useShenoraEvent` passes it
+  through** (P5.5 H6). Additive — existing calls compile unchanged. The wire has always carried a scope
+  and the host has always keyed on it, but the client had no way to express one, so a component in one
+  scope also woke for every other scope's events. The host's rule is mirrored exactly: no subscriber
+  scope means every scope, and a global (scope-less) event still reaches scoped subscribers.
+- **`BaseModuleService<TRequests>` is now constrained to `object`, not `Record<string, unknown>`**
+  (P5.5 H6). The old bound was unsatisfiable by a plain `interface`, so the documented example and the
+  README snippet failed with TS2344 — the first thing an adopter copies. Satisfying it the way the kit's
+  own `windowCommands.ts` did widened `keyof TRequests & string` back to `string`, so a mistyped request
+  type compiled and every payload collapsed to `unknown`: the typed-service feature checked nothing.
+  Drop `extends Record<string, unknown>` from your request interfaces — with it, you keep the old
+  no-checking behaviour.
+- `IpcErrorCodes.scopeRequired` (`SCOPE_REQUIRED`) is now exported from `@shenora/react`; it was emitted
+  by the host but missing from the client, so a scoped app had to hard-code the string. A new
+  `ClientOnlyIpcErrorCodes` export names the codes that exist only client-side (`TIMEOUT`,
+  `NO_TRANSPORT`), which is what lets a test enforce the mirror instead of trusting care.
 - **The verification gate now covers what it claimed to** (P5.5 H5): `Shenora.slnx` includes the
   sample projects and `Shenora.Core`, so `dev.mjs build|verify` compiles the reference composition
   and the e2e subject (the solution's `samples` folder was empty, so the sample could be red while

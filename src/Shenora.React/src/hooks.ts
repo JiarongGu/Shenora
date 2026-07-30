@@ -10,24 +10,35 @@ export function useShenora(): { isAvailable: boolean; bridge: ShenoraBridge } {
 }
 
 /**
- * Subscribe to one `module.type` event for the component's lifetime, ported from the primary
+ * Subscribe to one (module, type) event for the component's lifetime, ported from the primary
  * desktop sibling. The handler receives the unwrapped payload (plus the full event). DEVIATION
  * from the source: instead of a deps array re-subscribing on change, the latest handler is kept
  * in a ref — no re-subscribe churn, no stale-closure trap.
+ *
+ * Pass `scope` for a scoped app: the wire carries a scope and the host keys on it, but this hook had
+ * no way to express one, so a component in profile A also woke for profile B's events with no filter
+ * available (P5.5 H6). Omitting it still means "every scope", and a global (scope-less) event still
+ * reaches a scoped subscriber — the host's rule, mirrored.
  */
 export function useShenoraEvent<TPayload = unknown>(
   module: string,
   type: string,
   handler: (payload: TPayload, event: EventMessage<TPayload>) => void,
-  options: { bus?: ShenoraEventBus } = {},
+  options: { bus?: ShenoraEventBus; scope?: string } = {},
 ): void {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
   const bus = options.bus ?? defaultEventBus;
+  const scope = options.scope;
 
   useEffect(
-    () => bus.subscribe<TPayload>(module, type, (event) => handlerRef.current(event.payload as TPayload, event)),
-    [module, type, bus],
+    () => bus.subscribe<TPayload>(
+      module,
+      type,
+      (event) => handlerRef.current(event.payload as TPayload, event),
+      { scope },
+    ),
+    [module, type, bus, scope],
   );
 }
 

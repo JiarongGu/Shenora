@@ -7,7 +7,10 @@ import { BaseModuleService } from './moduleService.js';
  * side/bottom resize borders, so only the top (covered by the WebView) needs page-side help. */
 export type WindowResizeEdge = 'top' | 'topLeft' | 'topRight';
 
-interface WindowRequests extends Record<string, unknown> {
+// A plain interface — NOT `extends Record<string, unknown>` (P5.5 H6). That widened
+// `keyof TRequests & string` to `string`, so a mistyped route compiled and every payload collapsed to
+// `unknown`: the kit's own service was demonstrating the anti-pattern the base class exists to prevent.
+interface WindowRequests {
   MINIMIZE: void;
   TOGGLE_MAXIMIZE: void;
   CLOSE: void;
