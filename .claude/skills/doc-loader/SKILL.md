@@ -11,9 +11,11 @@ for a non-trivial task, load what the task touches — otherwise you'll miss a h
 ## Steps
 
 1. **Docs.** Open `docs/README.md`'s "Read this when…" table; read the 1–2 docs that match —
-   `ARCHITECTURE.md` (as-built), `2026-07-30-shenora-design.md` (the design contract),
-   `DECISIONS.md` (why it's done this way), `ROADMAP.md`/`TASKS.md` (status/next). Don't read all
-   of them.
+   `ARCHITECTURE.md` (**as-built, NOT the target**), `2026-07-30-shenora-design.md` (the design
+   contract — read its `## Amendments` too), `DECISIONS.md` (why it's done this way),
+   `ROADMAP.md`/`TASKS.md` (status/next), `2026-07-30-shenora-relayering-design.md` (the TARGET
+   layering + where a contract belongs, D19/D20 — pending `TASKS.md` H4.1),
+   `REVIEW-GUIDE.md` (reviewing anything). Don't read all of them.
 2. **Rules.** Open `.claude/rules/RULES_INDEX.md`. The **core** rules are already auto-loaded.
    Scan the **Knowledge** table's *Applies when* column against the task and `Read` every matched
    `.claude/knowledge/*.md`. Examples: extracting/porting code from a sibling app →

@@ -11,11 +11,24 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   MUST create its own on that thread (`CreateForCurrentThreadAsync`; same options + user-data
   folder ⇒ one shared browser process). Mixing threads throws — it broke every secondary window
   in the source app.
-- **Everything on `CoreWebView2` is UI-affine — marshal with non-blocking `BeginInvoke`.** A
-  deferred `WebResourceRequested` response must be BUILT on the UI thread; before the control's
-  handle exists `InvokeRequired` lies (false on a pool thread), so never "call inline when
-  InvokeRequired is false" — check `IsHandleCreated`, else complete the deferral empty
-  (`WebViewHost.ServeDeferred`).
+- **Everything on `CoreWebView2` is UI-affine — marshal through the ONE owner, never hand-roll a
+  `BeginInvoke`.** Post-D19/D20 the seam is `IUiDispatcher` (`Shenora.Core`) implemented once as
+  `WinFormsUiDispatcher(Control)` (`Shenora.WinForms`); `Shenora.WebView2` and
+  `Shenora.WebView2.Sessions` consume it through the sanctioned downward edge. This rule exists
+  because hand-rolling produced **14 copies with 5 incompatible pre-handle policies** and real
+  defects. Why the owner is shaped as it is — all four are invariants, not preferences:
+  - **`IsHandleCreated` BEFORE `InvokeRequired`.** Pre-handle, `InvokeRequired` lies (false on a
+    pool thread), so "no handle" must never be mistaken for "already on the UI thread" and run the
+    WebView2 call off-thread. A deferred `WebResourceRequested` response must be BUILT on the UI
+    thread; no handle ⇒ complete the deferral empty (`WebViewHost.ServeDeferred`).
+  - **Non-blocking `BeginInvoke`, never a blocking `Invoke` off the UI thread** (a measured AppHang).
+  - **The marshal OBSERVES the token it accepts.** An op that takes a `CancellationToken` and
+    ignores it after posting cannot be cancelled when the page's JS thread is blocked — that is a
+    permanent pool-permit leak, not a slow call.
+  - **The posted body is GUARDED.** An exception in a posted delegate is an unhandled UI-thread
+    exception (crash dialog), because there is no caller on that stack to catch it.
+  - **Per-CONTROL, never per-application.** Sessions marshal to their anchor form and
+    `SecondaryWindows` run their own STA pumps, so one app-wide dispatcher is wrong for both.
 - **Serve the packaged bundle synchronously; defer dynamic schemes.** The virtual-host bundle is
   in-memory and includes the MAIN DOCUMENT — deferring it stalls the initial navigation ("stuck
   on start", production-only). Dynamic content (disk reads, remote fetch) served inline blocks

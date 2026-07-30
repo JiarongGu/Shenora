@@ -14,7 +14,8 @@ commands, STA dialogs/shell/clipboard/interaction services, drag-drop zones + `u
 (+ per-monitor DPI handling), secondary windows + tray. P5 added the `Shenora.WebView2.Sessions`
 package: the one browser-configuration path, a bounded LIFO render-session pool, the login-window
 stack (persistent per-account profiles, silent refresh, clear-on-logout), and co-browse streaming
-— all proven live in the sample. Next: P6 (sibling adoption).
+— all proven live in the sample. Next: **P5.5 consolidation** (cleanup + the D19/D20 re-layer +
+the roadmap revisit — `TASKS.md` H1–H8), then P6 (sibling adoption).
 
 ```
 Shenora.slnx
@@ -26,7 +27,7 @@ Shenora.slnx
 │   ├── Shenora.WinForms    net10.0-windows  — deps: Shenora.Core
 │   └── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
 ├── tests/
-│   └── Shenora.Tests       net10.0-windows  — xunit; references all five src projects
+│   └── Shenora.Tests       net10.0-windows  — xunit; references the four leaf src projects (Core transitively)
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
     ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWinForms →
     │                                            prewarm → WebViewHost + provider + SplashPanel +
@@ -110,12 +111,13 @@ changes, noting them in `CHANGELOG.md`).
   event policies: new-window→system browser, downloads canceled, permissions denied except
   allowlist, guarded renderer-crash reload); `IWebViewResourceProvider` seam +
   `EmbeddedResourceProvider(+Options)` (assembly+prefix, lazy-with-warmup, file-fallback mode,
-  path→name lookups; no-cache HTML / immutable hashed-asset headers); `WebViewIpcBridge(+Options)`
+  path→name lookups) — the no-cache-HTML / immutable-hashed-asset header policy lives in the
+  internal `WebViewContentTypes` and is applied by `WebViewHost` when it serves; `WebViewIpcBridge(+Options)`
   (the postMessage transport: UI-thread async-interleaved request dispatch into an
   `IMessageDispatcher`, `IsHandleCreated`-guarded `BeginInvoke` posts, bounded drop-oldest
   notification queue buffering from construction + ~50 ms batch flush after the reserved
   `SHENORA`/`READY` client handshake, optional `IEventBus` wildcard forwarding,
-  `SendNotification`, `OnClientReady` per-handshake callback); `WindowCommandFacade(+Options)`
+  `SendNotification`, `OnClientReady` per-handshake callback); `WindowCommandFacade` + `WindowCommandOptions`
   (module `WINDOW`: MINIMIZE/TOGGLE_MAXIMIZE/CLOSE/IS_MAXIMIZED/START_DRAG/START_RESIZE +
   optional SET_THEME; `ToggleMaximize`/`IsMaximized` delegate seams for frameless apps — here
   because the commands arrive over the bridge and need Ipc, which WinForms doesn't reference);
@@ -188,7 +190,11 @@ changes, noting them in `CHANGELOG.md`).
 - `Core` depends only on Microsoft.Extensions DI (implementation — the builder needs
   `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on
   `Core`; never sideways (`WinForms` ↔ `WebView2`) — host packages contribute via extension
-  methods over the Core builder, and the app composes them. `Shenora.WebView2.Sessions` layers
+  methods over the Core builder, and the app composes them. **⚠ D19 SUPERSEDES the sideways clause
+  for the two Windows packages** — `WebView2` → `WinForms` is approved and pending `TASKS.md` H4.1
+  (`docs/2026-07-30-shenora-relayering-design.md`). This file is **as-built, not the target**: do not
+  reject the H4.1 diff on the strength of this line. `WinForms` → `WebView2` stays forbidden, and
+  `WinForms` keeps carrying no `Ipc` dependency. `Shenora.WebView2.Sessions` layers
   on `Shenora.WebView2` (the one deliberate package-on-package edge above `Core` — D14 keeps
   the session stack out of the core hosting package).
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.

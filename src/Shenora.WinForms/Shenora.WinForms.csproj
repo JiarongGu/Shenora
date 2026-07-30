@@ -5,7 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.WinForms</PackageId>
-    <Description>Shenora WinForms shell: application bootstrapper with global exception handling, DPI-correct window-state persistence, single-instance guard with activate broadcast, secondary windows, STA file dialogs, clipboard/shell services, drag-drop overlays, tray support, and the UI-thread dispatcher.</Description>
+    <Description>Shenora WinForms shell: application bootstrapper with global exception handling, DPI-correct window-state persistence, single-instance guard with activate broadcast, secondary windows on their own STA threads, tray icon, frameless-chrome form, splash panel, STA file dialogs, and clipboard/shell services.</Description>
   </PropertyGroup>
 
   <ItemGroup>

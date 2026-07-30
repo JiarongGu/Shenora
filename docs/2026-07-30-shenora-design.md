@@ -157,6 +157,7 @@ re-solved per project. Two consequences now explicit:
    streaming — as its own later package (P5, D14).
 3. **Growth is harvest-driven (D15):** features are promoted into Shenora when they prove nice
    during application development — generalized per `generic-library`, shipped in a minor.
+
 4. **Mobile shells are a target (D16):** the IPC envelope stays transport-neutral so a
    Capacitor-style native shell speaks the same contract; app logic on `@shenora/react` runs
    unchanged across desktop, browser, and mobile. Packaging of the mobile transport adapter is
@@ -171,4 +172,36 @@ re-solved per project. Two consequences now explicit:
    `ShenoraApplicationBuilder` live in Core with an `IShenoraRunner` seam and DI-registered
    `IShenoraLifecycleHook`s; `Shenora.WinForms` (`UseWinForms`) and `Shenora.WebView2`
    (`PrewarmWebView2`) contribute through extension methods over the Core builder. The packages
-   still never reference each other — the app that references both composes them.
+   still never reference each other — the app that references both composes them. *(Superseded in
+   part by the 2026-07-30 re-layering amendment below: `WebView2` now references `WinForms`. The
+   builder-extension composition pattern itself is unchanged.)*
+
+**2026-07-30 (user direction — §4 re-layered; supersedes this document's dependency rule).** The §4
+rule "never sideways `WinForms`↔`WebView2` … revisit only if extraction proves it impossible" is
+hereby revisited on exactly that ground: extraction produced the UI-thread marshal pattern
+**hand-rolled 14 times across 3 packages with 5 incompatible pre-handle policies**, with real defects
+traced to the divergence. Two changes, designed in
+`docs/2026-07-30-shenora-relayering-design.md` and decided as D19 + D20:
+
+1. **`Shenora.WebView2` now depends on `Shenora.WinForms`** (D19). The two are one Windows
+   presentation layer — the boundary is **primitives → hosting-on-primitives**, not two peers. All
+   edges remain strictly downward, and `WinForms` never references `WebView2`. The §3 profiles never
+   took `WinForms` without `WebView2`, so the old split served neither of them. `Shenora.WinForms`
+   still carries NO `Shenora.Ipc` dependency — but note the reason: it preserves a **WinForms-only
+   consumer** (a tray/single-instance utility with no web frontend). It is NOT that profile 2 avoids
+   `Ipc` — `Shenora.WebView2` references `Shenora.Ipc`, so profile 2 receives it transitively and
+   simply doesn't use the postMessage bridge.
+2. **The portable contracts move to `Shenora.Core`** (D20), because the shareable part of the kit is
+   the *logic*, and a non-Windows shell (mobile, D16) can implement contracts but not WinForms:
+   `IClipboardService`, `IFileDialogs`/`IFileDialogPathStore` + their models, and portable
+   `IUrlLauncher`/`IUiInteraction` bases for the mixed `IShellLauncher`/`IFormInteraction`. The
+   `IUiDispatcher` §4's table already specified — and which P2 never built — is added to Core as the
+   single UI-thread marshalling seam, implemented as `WinFormsUiDispatcher(Control)` (public) plus an
+   internal `MainFormUiDispatcher` for the DI singleton. Contracts move only when app logic needs
+   them to compile off Windows: the window-state stack deliberately stays in `Shenora.WinForms`.
+
+**§4's table is not yet rewritten** — when the work lands, three rows change: `Shenora.WebView2`'s
+*Depends on* column gains `Shenora.WinForms`; `Shenora.Core`'s contents gain the moved contracts; and
+`Shenora.WinForms`'s contents keep the implementations but not the contracts. Until then
+`docs/ARCHITECTURE.md` records the current as-built layering and remains authoritative — it is
+as-built, not the target. Tracked work: `TASKS.md` `### P5.5` batch H4.

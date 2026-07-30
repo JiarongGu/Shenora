@@ -45,6 +45,16 @@ read BOTH before porting anything). Foundation: 2026-07-30 survey of all five fa
   the DPI-pure-function testability of one with the RestoreBounds/never-block-close discipline of
   the other).
 
+- **A declared dependency edge that nothing crosses is a duplication smell.** Found live:
+  `Shenora.WebView2.Sessions` declared its `ProjectReference` to `Shenora.WebView2` and then imported
+  nothing from it — so the port re-implemented browser-argument building (re-introducing the CDP
+  env-var gotcha from `windows-dev-gotchas`), environment creation, the init-timeout guard, and
+  settings hardening, and shipped WITHOUT the `NewWindowRequested`/`PermissionRequested`/
+  `ProcessFailed` policies this file lists as must-fix. Before porting a helper a second time, grep
+  the packages you already reference for an owner. **After D19/D20 a ported helper's home is decided
+  by LAYER, not by which sibling proved it** (portable contract → `Shenora.Core`; Windows
+  implementation → `Shenora.WinForms`; web hosting on top).
+
 ## Gotchas / traps
 
 - The sources disagree on virtual-host mechanics (`SetVirtualHostNameToFolderMapping` vs

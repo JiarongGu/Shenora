@@ -541,8 +541,9 @@ green (dotnet build + tests, npm build + tests, sensitive scan, knowledge check)
 
 ### P1 — Skeleton hardening (short tail)
 
-- Decide + pin the placeholder public types that P2 replaces (keep minimal; no speculative API).
-- First sibling-consumption smoke: pack locally, restore from the local feed in a scratch consumer.
+Both original bullets are DONE — the placeholder types were pinned in P2 (see Done) and the
+local-feed consumption smoke landed as P1.1 (`0776f37`). Only one item remains:
+- **P1.2 — release-workflow dry run**, blocked until a GitHub remote exists (`TASKS.md`).
 
 ### P2 — Core host extraction (brief Phase 2) — COMPLETE except deliberate carry-overs
 
@@ -579,6 +580,72 @@ profiles, silent refresh, clear-on-logout) and co-browse streaming (`CoBrowseSes
 screencast frames out, input dispatched back, human-solved by design), in its own package with a
 live sample demo.
 
+### P5.5 — Consolidation: cleanup, re-layer, roadmap revisit — NEXT, before P6
+
+**What this phase is.** P0–P5 put the whole body of the kit down in a short span — five commits,
+~8.7k lines of `src/` plus ~4.7k of tests, five packages and an npm client — extraction-first and
+phase-gated, but moving fast, and with holes in the verification gate itself (see H5). P5.5 is the
+deliberate **consolidation checkpoint**: clean up what that velocity left behind (duplication,
+missing guards, convention drift), take the structural correction while it is still free (pre-1.0),
+close the gate, and revisit the rest of the roadmap in light of what the pass taught. It is a
+planned settling pass, not an emergency — the tree was green throughout.
+
+Consolidation has three strands:
+
+1. **Cleanup** — the first review spanning all of P0–P5 (2026-07-30): six parallel reviewers over
+   the five packages, the npm client, the samples and the tree, briefed by `docs/REVIEW-GUIDE.md`.
+   The baseline was green (`verify` PASSED at `130d4cd`), so everything found is a LATENT defect
+   rather than a regression — which is exactly why it lands before a real app depends on the surface
+   (P6) and before the 1.0 SemVer freeze (P7). Full itemised plan with `file:line` anchors:
+   `TASKS.md` `### P5.5`, batches H1–H8.
+2. **Re-layer** — the structural change below (D19 + D20), which the cleanup's own findings argued
+   for and which is only cheap while nothing is published.
+3. **Roadmap revisit** — this section, plus the amendments to P6/P7/Later that follow from both.
+
+**The phase also carries a structural change** (user direction after reading the review, approved
+2026-07-30): the two Windows shell packages become one layer — `Shenora.WebView2` depends on
+`Shenora.WinForms` — and the portable contracts plus the long-specified-never-built `IUiDispatcher`
+move to `Shenora.Core`, so an app's own logic compiles with no Windows reference and a future mobile
+shell can implement the same contracts. Design:
+`docs/2026-07-30-shenora-relayering-design.md`; decisions: D19 + D20. This replaces the review's
+proposed `InternalsVisibleTo`/linked-file workaround — the deduplication fix and the portability
+seam turn out to be the same object, so one change buys both. Execution order matters: security
+fixes first (H1 + H5), then the re-layer, then the dedup on top — see `TASKS.md`.
+
+The review's own verdict was that the per-package internals are disciplined — the extraction
+comments are load-bearing and accurate, the dependency graph holds exactly as documented, the IPC
+error boundary leaks no exception text on any traced path, and the wire mirror is correct
+field-for-field bar one missing constant. The weaknesses are **at the seams between packages, and
+in the gate around them**:
+
+- **Six confirmed P0s** (each re-verified against the code before being recorded): no path
+  containment in file-mode serving (arbitrary file read, live in every dev session); the
+  frameless-maximize ⇄ window-state seam (a maximized close makes restore a permanent no-op — live
+  in the reference composition); `RenderSession` accepting cancellation tokens it never observes
+  (one JS-blocked page starves the pool for the process lifetime); `NavigationGuard` — the
+  documented SSRF boundary — bypassed by redirects and in-page navigation; `AddMessageDispatcher`
+  enumerating facades inside its own singleton factory (StackOverflow, no diagnostic, on the
+  documented cross-module composition); and a throwing app `OnLoading` callback leaving an
+  unclosable login modal that then vetoes `Application.Exit`.
+- **The duplication is causal, not cosmetic.** The UI-marshal pattern is hand-rolled 14 times with
+  5 incompatible pre-handle policies — 7 unguarded, and one site carries a comment explaining the
+  pre-handle trap then commits it on the next line. And the `Sessions → Shenora.WebView2` edge that
+  D14 documents as deliberate is **declared but entirely unused**, which is why `SessionBrowser`
+  re-implements browser arguments (re-introducing the CDP env-var gotcha), environment creation, the
+  init-timeout guard and settings hardening — and why pooled/co-browse instances have none of the
+  `NewWindowRequested`/`PermissionRequested`/`ProcessFailed` policies the host package already
+  implements.
+- **The gate had holes.** `Shenora.slnx` carries an empty `/samples/` folder (and omits
+  `Shenora.Core`), so `verify` never compiled the reference composition or the e2e subject;
+  `dev.mjs test <typo>` exited 0 having run nothing; and `check-sensitive` fails OPEN when the
+  gitignored pattern file is absent — i.e. the private-name half of the guard never ran in CI.
+- **Pre-1.0 surface work** that is far cheaper now than after the freeze: the API baseline doesn't
+  gate `protected` members (so `BaseFacade.RouteMessageAsync`, the member every consumer overrides,
+  is outside the SemVer gate) or default parameter values; `BaseModuleService`'s typed-payload
+  feature type-checks nothing and its documented example doesn't compile; and the reference
+  composition has to downcast `IMessageDispatcher` because form-dependent facades have no
+  registration seam.
+
 ### P6 — Sibling adoption (brief Phase 5)
 
 - Adopt in the newest desktop sibling first (smallest host, gaps already documented), via local
@@ -586,17 +653,50 @@ live sample demo.
   and the server-backed app (shell-only profile).
 - Feed every "the framework almost fits, but…" back into the API before 1.0.
 
+**Revisited 2026-07-30 (post-consolidation):**
+- **Do not start P6 before P5.5's H1–H5.** Adopting against a surface that is about to be re-layered
+  (D19/D20) means doing the integration twice, and adopting against the pre-H5 gate means the
+  adoption itself isn't verified — `verify` did not even compile the sample until H5.
+- **Adoption gains a second dimension: portability.** With D20's contracts in `Shenora.Core`, put the
+  adopting app's own facades in a `net10.0` project from day one (H4.3 proves the pattern on the
+  sample). That makes the app's logic mobile-shareable as a side effect of adopting, and it turns
+  the abstract question "are these the right portable contracts?" into a concrete one answered by a
+  real app — feed the answer back as a D20 amendment.
+- **The adoption is the real test of the review's fixes.** Several P5.5 P0s were latent-only
+  (nothing in-repo triggered them); a real consumer is what proves them fixed rather than merely
+  patched — notably the DI composition (facades injecting `IMessageDispatcher`), async disposal of
+  singletons, and a relative `--app-root`.
+
 ### P7 — Stabilisation + 1.0 (brief Phase 6)
 
 - API-surface baseline tests on; docs pass (XML docs, README per package section); CHANGELOG
   discipline from first publish; `Shenora.Hosting.AspNetCore` go/no-go (D10); first NuGet/npm
   publish via the release workflow; GitHub repo goes public.
 
+**Revisited 2026-07-30 (post-consolidation):**
+- **"API-surface baseline tests on" is not yet the SemVer gate it is assumed to be.** They dump
+  `BindingFlags.Public` only, so `protected` members — including `BaseFacade.RouteMessageAsync`, the
+  one member every consumer overrides — are ungated, along with default parameter values, `init` vs
+  `set`, `required`, and attributes. P5.5 H6 closes this; 1.0 must not freeze behind a gate with a
+  hole in it.
+- **Part of the docs pass moves earlier.** P5.5 H7 already corrects the shipped-in-nupkg inaccuracies
+  (package descriptions, README claims). What remains for P7 is genuinely new writing: per-package
+  README sections, the XML-doc sweep enabled by turning CS1591 back on (H5), and the stable-chunk
+  frontend build guidance carried over from P2/P3.
+- **CHANGELOG discipline starts now, not at first publish** — the log is already missing the one fix
+  that changed a published artifact's importability (`0776f37`), which is exactly the class of entry
+  the discipline exists for.
+
 ### Later / candidates
 
 - `Shenora.Hosting.AspNetCore` (SPA static policy, loopback-gated endpoint helpers) — D10.
 - Mobile transport adapter (Capacitor or similar speaking the same IPC envelope) — D16; packaged
-  at first mobile adoption (`@shenora/capacitor` vs an adapter in `@shenora/react`).
+  at first mobile adoption (`@shenora/capacitor` vs an adapter in `@shenora/react`). **Revisited
+  2026-07-30:** the decision point is unchanged (first real mobile adoption), but the .NET-side
+  surface such a shell would implement is now enumerated rather than hypothetical — D20's portable
+  contracts in `Shenora.Core` (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`,
+  `IUiInteraction`). D16 covers the transport seam; D20 covers the feature seams. Neither ships an
+  implementation until there is a consumer.
 - Harvest-promotions from ongoing app development (D15) — any proven-nice feature gets
   generalized and lands here as a task before shipping in a minor.
 - C++ launcher template (runtime check/install, staged self-update) as a repo template, not a package.

@@ -1,9 +1,13 @@
 # REVIEW-GUIDE.md — orientation for a full code review of Shenora
 
 Written to hand a whole-codebase code review the context it needs without re-deriving it. Shenora
-has been built in phases (P0–P5) across five commits; this is the first full review spanning the
-lot. Read this, then review `src/` against the invariants it points at. Nothing here overrides the
-design contract or the rules — it routes you to them and flags what's already settled.
+has been built in phases (P0–P5) across five commits. Read this, then review `src/` against the
+invariants it points at. Nothing here overrides the design contract or the rules — it routes you to
+them and flags what's already settled.
+
+> **The first full review already ran, at `130d4cd`.** Its ~60 open findings are `TASKS.md`
+> `### P5.5` (batches H1–H8), summarised in `docs/ROADMAP.md` `### P5.5`. **Verify and extend that
+> list — do not re-derive it.** A second reviewer's value is in what H1–H8 missed.
 
 ## 1. What Shenora is (the review lens)
 
@@ -24,7 +28,9 @@ Windows apps, shipped as NuGet (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|Win
   component library, anywhere.
 
 Design contract: `docs/2026-07-30-shenora-design.md`. Load-bearing choices: `docs/DECISIONS.md`
-(D1–D18 — numbered; don't relitigate, they record *why*). As-built map + full public surface:
+(D1–D20 — numbered; don't relitigate, they record *why*). **D19 + D20 are the newest and the most
+likely to look like violations:** the package layering was deliberately changed
+(`docs/2026-07-30-shenora-relayering-design.md`), and the tree still predates it. As-built map + full public surface:
 `docs/ARCHITECTURE.md`. Phase-by-phase narrative of what changed and how it was verified:
 `docs/ROADMAP.md` `## Done`.
 
@@ -91,8 +97,11 @@ a finding that contradicts one of these is either a real regression or a rule th
   the builder needs `BuildServiceProvider`).
 - `WindowCommandFacade` / the drop-zone stack live in `Shenora.WebView2` (not `WinForms`) because
   they need `Shenora.Ipc`, which `WinForms` deliberately does not reference.
-- `Shenora.WebView2.Sessions` depends on `Shenora.WebView2` — the one deliberate package-on-package
-  edge above `Core` (D14 keeps the session stack out of the core hosting package).
+- `Shenora.WebView2.Sessions` depends on `Shenora.WebView2` (D14 keeps the session stack out of the
+  core hosting package). It was "the one deliberate package-on-package edge above `Core`" until D19
+  added `WebView2` → `WinForms` — so that edge is sanctioned too, not a violation. Note the Sessions
+  edge is currently **declared but unused**: nothing in the package imports a `Shenora.WebView2`
+  type, which is `TASKS.md` H4.4.
 - `CoBrowseSession` reuses `LoginWindowController` as a **background** controller (the source's own
   pattern); its window-managing calls are gated inert by a `foreground` flag.
 - `PayloadHelper` is static; `IpcResponse.category` is lowercase; notifications are always batched —
@@ -117,8 +126,10 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
 ## 6. What's verified vs what's not (so thin coverage isn't mistaken for a gap)
 
-- **Gated by tests:** the entire public surface is pinned by API-surface baseline tests
-  (`tests/Shenora.Tests/Api/Baselines/*.txt` — drift fails the build). Unit tests cover the pure/
+- **Gated by tests:** the public surface is pinned by API-surface baseline tests
+  (`tests/Shenora.Tests/Api/Baselines/*.txt` — drift fails the build) — but **public members only**:
+  `protected` members (including `BaseFacade.RouteMessageAsync`, the one every consumer overrides),
+  default parameter values, `init`-vs-`set` and `required` are NOT gated yet (`TASKS.md` H6). Unit tests cover the pure/
   seam-testable logic: Core env/paths/builder/event-bus, Ipc envelopes/dispatcher/facade/router/
   payload, WinForms dpi/window-state/single-instance/dialog seams, WebView2 bridge + drop-zone
   seams, React bridge/hooks/services, Sessions pool accounting (via factory/reset seams), login

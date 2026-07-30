@@ -25,12 +25,12 @@ verified end-to-end against the sample app (see `docs/ROADMAP.md`). Not yet publ
 
 | Package | Registry | What it gives you |
 |---|---|---|
-| `Shenora.Core` | NuGet | Application host + builder + lifetime, module registration (`IShenoraModule`), environment (dev/prod), app paths, options, event bus. Depends only on Microsoft.Extensions abstractions. |
+| `Shenora.Core` | NuGet | Application host + builder + lifetime, module registration (`IShenoraModule`), environment (dev/prod), app paths, options, event bus. Depends on Microsoft.Extensions DI (implementation — the builder needs `BuildServiceProvider`, D17) + logging abstractions. |
 | `Shenora.Ipc` | NuGet | Typed request/response/notification envelopes, composable middleware dispatcher, structured error contract (`code` + parameters, i18n-ready), `System.Text.Json` defaults. Transport-neutral. |
 | `Shenora.WebView2` | NuGet | WebView2 hosting: environment prewarm, dev-server vs packaged-frontend loading (embedded resources / virtual host), navigation + new-window + download + permission + process-failure handling, postMessage bridge with batched event push. |
 | `Shenora.WebView2.Sessions` | NuGet | Auxiliary off-screen browser sessions over the same runtime: the one browser-configuration path, a bounded LIFO render-session pool, per-provider/per-account login windows (clear-on-logout), and co-browse streaming (CDP screencast out / input dispatch back). Layers on `Shenora.WebView2`. |
-| `Shenora.WinForms` | NuGet | The native shell: bootstrapper with global exception handling, window-state persistence (DPI-correct), single-instance guard, secondary windows, STA file dialogs, clipboard/shell services, drag-drop overlays, tray support, UI-thread dispatcher. |
-| `@shenora/react` | npm | The frontend bridge: correlated `invoke`/`send`/`subscribe`, typed module services, React hooks (`useShenora`, `useShenoraEvent`, `useShenoraQuery`), drop-zone hook, window commands, a browser fallback for pure-UI development. |
+| `Shenora.WinForms` | NuGet | The native shell: bootstrapper with global exception handling, window-state persistence (DPI-correct), single-instance guard, secondary windows + tray, frameless-chrome form, splash panel, STA file dialogs, clipboard/shell services. (Drag-drop overlays live in `Shenora.WebView2` — they need the WebView2 control.) |
+| `@shenora/react` | npm | The frontend bridge: correlated `invoke` + `notifyReady`/`dispose` (`ShenoraBridge`), an event bus you `subscribe` to, typed module services (`send` on `BaseModuleService`), React hooks (`useShenora`, `useShenoraEvent`, `useShenoraQuery`), drop-zone hook, window commands, a browser fallback for pure-UI development. |
 
 Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and
 **server-backed** (the app runs its own in-process HTTP server shared with mobile/LAN clients;
@@ -46,7 +46,8 @@ speaking the same envelope. Planned areas beyond the current packages: server-ho
 
 ```csharp
 var builder = ShenoraApplication.CreateBuilder(args);
-builder.Services.AddSingleton<IModuleFacade, SettingsFacade>();   // your typed IPC module
+builder.Services.AddModuleFacade<SettingsFacade>();               // your typed IPC module
+builder.Services.AddMessageDispatcher();                          // error handler → middleware → facades
 builder.PrewarmWebView2(app => new WebViewEnvironmentOptions { /* … */ });
 builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) });
 using var app = builder.Build();

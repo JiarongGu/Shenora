@@ -15,9 +15,9 @@
   WebView2 IGNORE the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` env var — a dev-mode host must
   re-append the env var's value itself or the devtools CDP loop silently gets no port. (Proven in
   two sibling apps; keep the fix in the browser-arguments builder.)
-- Desktop verification without CDP: `dev.mjs input list` / `click <fx> <fy>` post background
-  mouse messages to the WebView2 render surface (no focus steal, works occluded); `shot`/`wgc`
-  capture the window (WGC works even when hidden). Target process comes from
+- Desktop verification without CDP: `dev.mjs input list` / `click|rclick|move|drag <fx> <fy>…` post
+  background mouse messages to the WebView2 render surface (no focus steal, works occluded);
+  `shot`/`wgc` capture the window (WGC works even when hidden). Target process comes from
   `devtools/project.config.mjs` (`processName` → `DEVTOOL_PROC`).
 - **Tests creating WinForms handles with `AllowDrop = true` (or any OLE feature) must run on a
   dedicated STA thread** — xunit workers are MTA, and the failure is NOT a clean test failure:

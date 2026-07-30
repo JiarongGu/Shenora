@@ -24,6 +24,19 @@ transport, or building the P6 adoption shims.
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so
   `WebViewIpcBridge.HandleIncomingAsync` still wraps dispatch + serialize (an unserializable
   handler result once escaped through the async-void handler = process death; found in review).
+- **An app-supplied payload never serializes unguarded — including on the OUTGOING timer.** The
+  rule above covers the incoming path; the notification flush is the twin and was NOT guarded:
+  `WebViewIpcBridge.TryBuildBatchJson` DRAINS the queue and then serializes, on a 50 ms WinForms
+  timer, so one event carrying a cyclic object graph (parent/child entities), a `Type`/delegate
+  member, or a throwing getter is an unhandled UI-thread exception AND the whole drained batch is
+  lost. Guard per-notification (one bad event must not kill its batch) plus a catch-all in `Flush`.
+- **A DI singleton factory must never enumerate the provider it is building.** `AddMessageDispatcher`
+  resolved `IModuleFacade`s inside the `IMessageDispatcher` singleton factory, so any facade whose
+  graph injects `IMessageDispatcher` — the documented cross-module `SendAsync` seam — re-enters the
+  same factory. MS DI's cycle detection is call-site-based and cannot see a factory delegate
+  re-entering the provider, and the cache entry isn't published yet: unbounded recursion, process
+  death by StackOverflow, no exception and no log. Resolve lazily (a terminal middleware over a
+  `Lazy<IModuleFacade[]>`) so the singleton is cached before enumeration.
 - **Notifications are ALWAYS a batch** (a single event is a batch of one) — `category` alone
   discriminates, which is what lets the same envelope ride postMessage, WebSocket, or a mobile
   channel (D16). Don't reintroduce a single-notification shape or a synthetic batch module/type.

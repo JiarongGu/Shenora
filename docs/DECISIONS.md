@@ -13,6 +13,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   this even though its package sketch listed one). No `Shenora.Extensions.DependencyInjection`
   either: standard Microsoft DI abstractions are used directly (brief requirement), so there is
   nothing to put in it yet.
+  *(Amended 2026-07-30: the set is now FIVE NuGet packages + npm — `Shenora.WebView2.Sessions` was
+  added per D14. A sixth, `Shenora.Shell.Abstractions`, was considered and rejected per D20.)*
 
 - **D3 — Single TFM `net10.0` / `net10.0-windows`, not the brief's ".NET 8".** The brief predates
   the survey: every family app and Lyntai target .NET 10, the dev machine has no .NET 8 SDK, and
@@ -33,7 +35,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   npm trusted-publisher policy is configured).** The version bump is committed only after both
   publishes succeed — a failed release leaves no phantom bump.
 
-- **D7 — One test project (`tests/Shenora.Tests`) referencing every src project**, not
+- **D7 — One test project (`tests/Shenora.Tests`) referencing every src project** (in practice the
+  four leaf projects; `Shenora.Core` arrives transitively), not
   per-package test projects (the brief sketched four). Lyntai proves the single-project layout
   scales to 11 packages; folders mirror src. API-surface baseline tests gate SemVer from the
   first release.
@@ -49,7 +52,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `CLAUDE.md` → `docs/README.md` router → two-tier `.claude/rules|knowledge` with
   `RULES_INDEX.md` → gitignored `local/`), `TASKS.md` ⇄ `docs/ROADMAP.md` conveyor,
   `docs/FIX-LOG.md`, plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`,
-  design-contract doc, task archive).
+  design-contract doc). Done work is archived narratively in `docs/ROADMAP.md` `## Done` rather than
+  in a separate task-archive file.
 
 - **D10 — Two consumption profiles; server-backed hosting helpers are deferred.** The package
   split (Ipc separate from the shell packages) exists so a Sonora-style app (in-process HTTP
@@ -118,3 +122,45 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   in `docs/ROADMAP.md` `## Done` (the durable record by design), and the pre-rename history is
   kept privately offline. The former name stays out of tracked files and commit messages
   permanently (same discipline as the private sibling names, `sensitive-info`).
+
+- **D19 — The two Windows shell packages are ONE layer: `Shenora.WebView2` depends on
+  `Shenora.WinForms`.** (User direction, 2026-07-30, after the first full code review.) The design
+  contract §4 forbade the sideways edge *"revisit only if extraction proves it impossible"* —
+  extraction proved it: the UI-thread marshal pattern ended up hand-rolled **14 times across 3
+  packages with 5 incompatible pre-handle policies**, and the divergence produced real defects (7
+  unguarded `BeginInvoke`s in the sessions package; a site whose comment explains the pre-handle
+  trap and then commits it on the next line; a P0 where `RenderSession` accepts cancellation tokens
+  it cannot observe). Deciding facts: `Shenora.WebView2` is ALREADY a WinForms assembly — its csproj
+  sets `<UseWindowsForms>true</UseWindowsForms>`, it hosts the `Microsoft.Web.WebView2.WinForms`
+  control, and 5 of its files use a `Form`/`Control`-derived type — so the edge adds no new
+  *technology* dependency, only an honest package reference; and **neither consumption profile (§3)
+  takes `WinForms` without `WebView2`**, so that split served no profile. The boundary is now
+  **primitives → hosting-on-primitives**, all edges still strictly downward. UNCHANGED and still
+  load-bearing: `Shenora.WinForms` carries NO `Shenora.Ipc` dependency — the reason is that it keeps a
+  **WinForms-only consumer** viable (a tray/single-instance utility with no web frontend), and it is
+  why the window-command and drop-zone facades stay in `Shenora.WebView2`. (NOT because profile 2
+  avoids `Ipc`: `Shenora.WebView2` references `Shenora.Ipc`, so profile 2 receives it transitively and
+  merely doesn't use the postMessage bridge — an earlier draft of this entry claimed otherwise.)
+  `WinForms` never references `WebView2`. Rejected:
+  merging into one `Shenora.Windows` package (preserves no WebView2-free option, much larger diff
+  for the same benefit) and sharing via a linked source file (two binaries carrying the same
+  internal type; solves the least). Full design: `docs/2026-07-30-shenora-relayering-design.md`.
+
+- **D20 — Portable contracts live in `Shenora.Core`; only Windows implementations live in
+  `Shenora.WinForms`.** (User direction, 2026-07-30.) The reusable part of a desktop kit is the
+  *logic* — IPC and the feature contracts — because that is what a non-Windows shell (mobile, D16)
+  can share; an app's facades should compile with no Windows reference. So the platform-neutral
+  contracts move to `Shenora.Core` (`IClipboardService`, `IFileDialogs`/`IFileDialogPathStore` +
+  their models, a portable `IUrlLauncher` and `IUiInteraction` base for the mixed
+  `IShellLauncher`/`IFormInteraction`), and `IUiDispatcher` — specified in design contract §4 and
+  never built in P2 — is added there as the one UI-thread marshalling seam: a public
+  `WinFormsUiDispatcher(Control)` (per-control, consumed by the WebView2 packages) plus an internal
+  `MainFormUiDispatcher` for the DI singleton. Its contract carries a **three-state** target
+  (`NotReady`/`Ready`/`Gone`) rather than one bool, because three call sites have review-earned
+  pre-handle policies that a bool would silently break. This restores original intent: Core's shipped NuGet description
+  already advertised a "UI-dispatcher seam" that did not exist. Home is Core, NOT a sixth
+  `Shenora.Shell.Abstractions` package — D2 resists speculative packages and §4 already placed
+  these seam types in Core. Scope guard: contracts move only when **app logic needs them to compile
+  off Windows** — portable-in-signature is not the bar, which is why the whole window-state stack
+  stays in `Shenora.WinForms` (window geometry is a desktop concept). Per D16 this pass ships NO
+  mobile host or transport adapter — the seam, not the package.

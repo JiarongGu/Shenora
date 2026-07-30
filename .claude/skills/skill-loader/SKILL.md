@@ -15,6 +15,7 @@ Prefer a skill over hand-rolling when one fits. Match the task, then invoke it.
 | `/pattern-finder` | adding a unit shaped like an existing one — find the exemplar (in this repo, a sibling source, or the family template) to mirror |
 | `/phase-review` | finishing a development phase — adversarial review over the diff before committing |
 | `/fix-log` | after landing a non-trivial bug/regression fix — record root cause + verification |
+| `/skill-loader` | this table — pick the right skill for the task shape (you are here) |
 
 ## Steps
 

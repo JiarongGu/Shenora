@@ -4,9 +4,19 @@ All packages (NuGet `Shenora.*` + npm `@shenora/react`) version in lockstep from
 `src/Directory.Build.props` (`VersionPrefix`). From 1.0, SemVer 2.0 applies, gated by the
 API-surface baseline tests; while every consumer is one of the author's own applications, a
 **documented** break may ship in a MINOR release — always called out under a `### Breaking`
-heading here. Newest first.
+heading here. Released versions are listed newest first; within `## Unreleased`, entries are in
+landing order (oldest first) because they narrate one version being built.
 
 ## Unreleased (0.1.0)
+
+### Fixed
+
+- **`@shenora/react` was not importable under native Node ESM** (`0776f37`). The emitted relative
+  imports carried no `.js` extension, which bundler resolution silently tolerated and plain Node
+  rejected — so the published tarball would have failed for any consumer not behind a bundler. All
+  relative specifiers now carry explicit extensions and `module`/`moduleResolution` are `NodeNext`,
+  which makes a missing extension a build error rather than a publish-time surprise. Caught by the
+  P1.1 local-feed consumption smoke; root cause in `docs/FIX-LOG.md`.
 
 Bootstrap: repo, docs system, design contract, buildable package skeleton
 (`Shenora.Core` / `Shenora.Ipc` / `Shenora.WebView2` / `Shenora.WinForms` / `@shenora/react`),

@@ -22,9 +22,14 @@ needed a full `git filter-repo` rewrite — the working tree being clean is NOT 
 
 ## How to apply
 
-- **An automated pre-commit guard enforces this** — `devtools/scripts/check-sensitive.mjs` (run by
-  `devtools/hooks/pre-commit`) scans staged changes and blocks the commit on any dev path or
-  private name. Install once per clone: `node devtools/dev.mjs install-hooks`. The real tokens
+- **An automated pre-commit guard enforces this — but only PARTIALLY today.**
+  `devtools/scripts/check-sensitive.mjs` (run by `devtools/hooks/pre-commit`) scans staged changes
+  and blocks the commit on any dev path or private name. **Its current limits (P5.5 H5 fixes them —
+  do these by hand until then):** it **fails OPEN** when the gitignored `local/sensitive-patterns.txt`
+  is absent, so on a fresh clone or in CI only the two built-in path shapes run and the private-name
+  half does not; renamed/copied files are skipped (`--diff-filter=ACM` misses `git mv`'s `R`); only
+  file CONTENT is scanned, never file PATHS; and there is **no `commit-msg` hook**, so commit
+  messages — which are history too — are not scanned at all. Install once per clone: `node devtools/dev.mjs install-hooks`. The real tokens
   live in the gitignored `local/sensitive-patterns.txt` (add new ones there — never in a tracked
   file); the tracked scanner carries only generic path shapes. Scan the whole tree any time with
   `node devtools/dev.mjs check-sensitive --tree`. Bypass deliberately (rare) with

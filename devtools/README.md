@@ -19,7 +19,10 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `shot [name]` | PrintWindow capture of the sample window → `screenshots/` |
 | `wgc [name]` | occlusion-immune capture (Windows Graphics Capture) — works when the window is hidden/occluded |
 | `click <fx> <fy>` | background click at client-rect **fractions** (0–1) — drives the WebView2 UI without CDP |
-| `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `drag x1 y1 x2 y2`) |
+| `rclick <fx> <fy>` | as `click`, right button |
+| `move <fx> <fy>` | background mouse-move to a client-rect fraction (hover states) |
+| `drag <fx1> <fy1> <fx2> <fy2>` | background press-move-release between two client-rect fractions |
+| `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule |
 | `check-sensitive [--tree]` | scan for dev paths / private names (the pre-commit guard) |
 | `install-hooks` | point `core.hooksPath` at `devtools/hooks` — ONCE per clone |
