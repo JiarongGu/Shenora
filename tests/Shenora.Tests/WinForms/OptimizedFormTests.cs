@@ -44,6 +44,31 @@ public class OptimizedFormTests
     });
 
     [Fact]
+    public void A_throwing_WndProcHook_does_not_take_the_window_down() => RunSta(() =>
+    {
+        // The hook is APP CODE inside WndProc — the worst place for an escaping exception (P5.5 H2):
+        // nothing is above it on the stack, and before the bootstrap installs its handlers this
+        // surfaces as WinForms' own BLOCKING modal dialog, mid-message-dispatch. A throwing hook must
+        // read as "did not handle the message" so the window keeps working.
+        var calls = 0;
+        using var form = new OptimizedForm
+        {
+            WndProcHook = _ =>
+            {
+                calls++;
+                throw new InvalidOperationException("app hook bug");
+            },
+        };
+
+        _ = form.Handle;      // realizing the window pumps a stream of messages through the hook
+        form.Text = "still alive";
+
+        Assert.True(calls > 0);                 // the hook really did run (and really did throw)
+        Assert.True(form.IsHandleCreated);      // …and the window survived it
+        Assert.Equal("still alive", form.Text); // …and still responds
+    });
+
+    [Fact]
     public void Frameless_options_apply() => RunSta(() =>
     {
         using var form = new OptimizedForm(new OptimizedFormOptions

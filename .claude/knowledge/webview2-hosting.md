@@ -47,12 +47,31 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
     a perfectly reusable instance, and discarding it costs a browser startup on every ordinary error.
   - **The posted body is GUARDED.** An exception in a posted delegate is an unhandled UI-thread
     exception (crash dialog), because there is no caller on that stack to catch it.
-  - **An `ILogger` counts as an app callback — guard it too** (`SessionLog.Try`). This is the same
-    rule, and it was missed once already: the sessions logging invoked the app's logger bare at eight
-    sites, and a throwing sink (dead file handle, provider used after shutdown) landed before
-    `tcs.TrySetException` (lease hangs forever, permit held), before `_capacity.Release()` (permit
-    leaked for the process lifetime), and inside three WebView2 event handlers. A lost log line must
-    never become a lost operation, so the guard swallows — there is nowhere left to report to.
+  - **There is ONE guard and it is `Shenora.Core.AppCallback`** (`Run`/`RunOrDefault`) — not a
+    try/catch remembered per site, because "remembered per site" is exactly how this reopened three
+    times. It covers anything app-supplied reached from a place with no caller on the stack: event
+    handlers, timer ticks, posted bodies, dispose paths.
+    - **An `ILogger` or a `Log` action counts as an app callback.** Missed once already: a throwing
+      sink (dead file handle, provider used after shutdown) landed before `tcs.TrySetException`
+      (lease hangs forever, permit held), before `_capacity.Release()` (permit leaked for the process
+      lifetime), and inside three WebView2 event handlers. Worst, several sit inside a `catch` that
+      exists to stop a failure escaping, so a throwing sink defeats the thing it reports from.
+    - **Make log calls LAZY (`Log(Func<string>)`).** The guard must cover BUILDING the message, not
+      just writing it — several messages read WebView2/COM properties that throw once the underlying
+      object is gone, and interpolation at the call site happens outside the guard.
+    - **Guarding is not enough where the kit still owes the event an answer.** A failed
+      `OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` must FALL BACK to the built-in
+      policy: an un-cancelled download proceeds, an unanswered permission request stalls its caller,
+      and a renderer crash goes unhandled exactly when things are already wrong. `WndProcHook` falls
+      back to "did not handle this message" so the window keeps working.
+    - A lost callback must never become a lost operation, so the guard swallows — and the error sink
+      is guarded too, or the fatal throw just moves one frame outward.
+  - **Handler/tap collections read on the UI thread must be COPY-ON-WRITE, not `List<T>`**
+    (`SessionController`'s four tap arrays). Taps get registered from a driver's thread while the
+    WebView2 handlers read them on the UI thread, and `List<T>.ToArray()` reads `_size` then copies
+    the backing store — an `Add` in between throws or copies a torn view, and two concurrent `Add`s
+    corrupt the list. A `.ToArray()` at the read site LOOKS like the fix for this and is not one:
+    publish a fresh array under a lock (`volatile` field) so readers take no lock at all.
   - **Per-CONTROL, never per-application.** Sessions marshal to their anchor form and
     `SecondaryWindows` run their own STA pumps, so one app-wide dispatcher is wrong for both.
 - **Serve the packaged bundle synchronously; defer dynamic schemes.** The virtual-host bundle is

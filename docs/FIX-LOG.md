@@ -14,6 +14,37 @@ entry template:
 
 ## 2026-07-30
 
+### Kit-wide: the last unguarded app callbacks, and a data race in the session controller's taps
+- **Symptom:** found by review; the closing half of H2's "no app callback runs unguarded" item. Three
+  distinct failures, all from app-supplied delegates invoked where nothing can catch them: a throwing
+  `OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` crashed the UI thread AND left the
+  WebView2 event unanswered; a throwing `WndProcHook` surfaced as WinForms' own BLOCKING modal dialog
+  mid-message-dispatch, on a window that may not be visible yet; and `SessionController`'s driver taps
+  could throw or deliver a torn handler list under concurrent registration.
+- **Root cause:** the pattern was guarded per-site, by memory, so each new site re-opened it. For the
+  taps specifically: the four collections were plain `List<T>`, appended from the driver's thread (a
+  driver continuation resumes wherever the thread pool puts it) while the WebView2 handlers read them
+  on the UI thread. `List<T>.ToArray()` reads `_size` and then `Array.Copy`s the backing store, so an
+  `Add` that grows the array in between throws or copies a torn view, and two concurrent `Add`s corrupt
+  the list. The `.ToArray()` at the read site looked like the fix for exactly this and is not one.
+- **Fix:** one owner — `Shenora.Core.AppCallback` (`Run`/`RunOrDefault`), public because three packages
+  consume it and a `ProjectReference` grants no internal access (D19/D20 placement law). Routed through
+  it: the three `WebViewHost` policy hooks, which now also FALL BACK to the kit's built-in policy rather
+  than leaving the event unanswered; `WndProcHook`, where a throw reads as "did not handle this
+  message"; `OnClientReady`; `SessionController.Fan`; and `SessionLog`, which stopped carrying its own
+  copy of the policy. Every `Action<string>? Log` site in `WebViewHost` and `WebViewIpcBridge` became a
+  guarded, LAZY `Log(Func<string>)` — lazy so the guard covers BUILDING the message too, since several
+  read WebView2/COM properties that throw once the underlying object is gone and that read would
+  otherwise happen at the call site, outside the guard. The taps became copy-on-write `volatile` arrays
+  published under a lock, so readers need no lock and every reader sees one immutable snapshot.
+- **Verify:** `AppCallbackTests` (7 cases incl. a throwing error sink, and that a null callback is a
+  CALLER bug that still throws — the guard covers the app's mistakes, not the kit's) and
+  `OptimizedFormTests.A_throwing_WndProcHook_does_not_take_the_window_down`, which realizes a real
+  window through a hook that throws on every message and asserts the window still responds. 394 dotnet
+  + 39 vitest, `verify` PASSED. `WebViewHost`'s hooks and `SessionController`'s taps need a live browser
+  core to construct, so those sites are compile-and-review verified; the sample e2e is their subject.
+- **Commit:** _pending (P5.5 H2 callback sweep)_
+
 ### Shenora.WebView2.Sessions: a throwing app logger could hang a lease and leak a capacity permit
 - **Symptom:** found by the H2 sessions batch's own phase review, in code that batch had just written.
   No observed incident. An app `ILogger` that throws — a file sink whose handle went away, a

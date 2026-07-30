@@ -261,7 +261,18 @@ public class OptimizedForm : Form, IAppMaximizable
 
     protected override void WndProc(ref Message m)
     {
-        if (WndProcHook is not null && WndProcHook(m.Msg))
+        // The hook is APP CODE running inside WndProc, which is the worst possible place for an
+        // escaping exception (P5.5 H2): there is no caller on the stack, and before the family
+        // bootstrap installs its handlers — window creation happens early — an unhandled exception
+        // here surfaces as WinForms' own BLOCKING modal dialog, mid-message-dispatch, on a window that
+        // may not even be visible yet. The measured version of that failure stalled a whole test suite.
+        // A throwing hook is therefore treated as "did not handle the message": the window keeps
+        // working and the message falls through to the real handling below, which is the only
+        // behaviour that leaves the app usable.
+        // msg is copied out first: `m` is a `ref` parameter and cannot be captured by the guard's
+        // lambda (CS1628). The hook only ever received the message id anyway.
+        var msg = m.Msg;
+        if (WndProcHook is { } hook && Shenora.Core.AppCallback.RunOrDefault(() => hook(msg), false))
             return;
 
         if (!_options.FramelessChrome)

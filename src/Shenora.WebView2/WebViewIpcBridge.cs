@@ -144,7 +144,24 @@ public sealed class WebViewIpcBridge : IDisposable
         _flushTimer.Tick += (_, _) => Flush();
         _flushTimer.Start();
 
-        _log?.Invoke("[Shenora.WebView2] IPC bridge attached");
+        Log(() => "[Shenora.WebView2] IPC bridge attached");
+    }
+
+    /// <summary>
+    /// Write a diagnostic through the app's sink — GUARDED and LAZY (P5.5 H2).
+    /// <para>
+    /// The log sink is an app-supplied delegate, and every site here is a place with no caller to
+    /// catch anything: a WebView2 event handler, the notification timer's tick, or dispose. Several are
+    /// inside a <c>catch</c> that exists precisely to stop a failure escaping — so a throwing sink
+    /// there DEFEATS that catch, which is how a log statement turns into the crash it was reporting.
+    /// The lazy <see cref="Func{TResult}"/> puts message BUILDING inside the guard too, and makes it
+    /// free when no sink is configured (this runs on the IPC hot path).
+    /// </para>
+    /// </summary>
+    private void Log(Func<string> message)
+    {
+        if (_log is null) return;
+        Shenora.Core.AppCallback.Run(() => _log(message()));
     }
 
     /// <summary>
@@ -186,7 +203,7 @@ public sealed class WebViewIpcBridge : IDisposable
             catch (Exception ex)
             {
                 // Non-string message (postMessage of a raw object) — our client always posts strings.
-                _log?.Invoke($"[Shenora.WebView2] Ignored non-string web message: {ex.Message}");
+                Log(() => $"[Shenora.WebView2] Ignored non-string web message: {ex.Message}");
                 return;
             }
             if (json is null) return;
@@ -197,7 +214,7 @@ public sealed class WebViewIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[Shenora.WebView2] Unhandled error in the IPC message handler: {ex}");
+            Log(() => $"[Shenora.WebView2] Unhandled error in the IPC message handler: {ex}");
         }
     }
 
@@ -209,7 +226,7 @@ public sealed class WebViewIpcBridge : IDisposable
     {
         if (!_clientReady) return;
         _clientReady = false;
-        _log?.Invoke("[Shenora.WebView2] Navigation started — buffering notifications until the client is ready again");
+        Log(() => "[Shenora.WebView2] Navigation started — buffering notifications until the client is ready again");
     }
 
     /// <summary>
@@ -226,7 +243,7 @@ public sealed class WebViewIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[Shenora.WebView2] Invalid IPC message dropped: {ex.Message}");
+            Log(() => $"[Shenora.WebView2] Invalid IPC message dropped: {ex.Message}");
             return null;
         }
         if (request is null) return null;
@@ -248,7 +265,7 @@ public sealed class WebViewIpcBridge : IDisposable
             // implementation carries no such guarantee) — and Serialize itself can throw on an
             // unserializable handler result (cycles, Type/delegate members). The client must
             // still get a response, and per design §5 it learns nothing but the code.
-            _log?.Invoke($"[Shenora.WebView2] Error handling {request.Module}/{request.Type}: {ex}");
+            Log(() => $"[Shenora.WebView2] Error handling {request.Module}/{request.Type}: {ex}");
             return IpcJson.Serialize(IpcResponse.CreateError(request.Id, IpcErrorCodes.UnknownError,
                 parameters: new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name }));
         }
@@ -257,15 +274,13 @@ public sealed class WebViewIpcBridge : IDisposable
     private IpcResponse HandleHandshake(IpcRequest request)
     {
         _clientReady = true;
-        _log?.Invoke("[Shenora.WebView2] Client ready");
-        try
+        Log(() => "[Shenora.WebView2] Client ready");
+        // Per-page glue (splash, overlays) failing must not fail the client's init await. The report
+        // sink goes through the guarded Log for the same reason the callback is guarded at all.
+        if (_options.OnClientReady is { } onReady)
         {
-            _options.OnClientReady?.Invoke(request);
-        }
-        catch (Exception ex)
-        {
-            // Per-page glue (splash, overlays) failing must not fail the client's init await.
-            _log?.Invoke($"[Shenora.WebView2] OnClientReady callback failed: {ex.Message}");
+            Shenora.Core.AppCallback.Run(() => onReady(request),
+                ex => Log(() => $"[Shenora.WebView2] OnClientReady callback failed: {ex.Message}"));
         }
         return IpcResponse.CreateSuccess(request.Id);
     }
@@ -284,7 +299,9 @@ public sealed class WebViewIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[Shenora.WebView2] Notification flush failed: {ex.Message}");
+            // Through the guarded Log: this catch-all IS the timer's last line of defence, so a
+            // throwing app sink here would defeat the very thing it is reporting from.
+            Log(() => $"[Shenora.WebView2] Notification flush failed: {ex.Message}");
         }
     }
 
@@ -324,8 +341,8 @@ public sealed class WebViewIpcBridge : IDisposable
             {
                 // Module/type only — a payload that fails to serialize must not have its contents
                 // logged either (it may carry app data).
-                _log?.Invoke($"[Shenora.WebView2] Dropped unserializable notification " +
-                             $"{notification.Module}/{notification.Type}: {ex.GetType().Name}");
+                Log(() => $"[Shenora.WebView2] Dropped unserializable notification " +
+                          $"{notification.Module}/{notification.Type}: {ex.GetType().Name}");
             }
         }
         if (serializable.Count == 0) return null;
@@ -383,7 +400,7 @@ public sealed class WebViewIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[Shenora.WebView2] Bridge dispose: could not detach WebView2 handlers ({ex.Message})");
+            Log(() => $"[Shenora.WebView2] Bridge dispose: could not detach WebView2 handlers ({ex.Message})");
         }
     }
 }

@@ -125,6 +125,10 @@ changes, noting them in `CHANGELOG.md`).
   capture real OS paths incl. background drags; non-blocking UI marshalling, activation sync,
   DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; events on
   `IEventBus`) + `DropZoneFacade` (module `DROP_ZONE`: REGISTER/UPDATE/UNREGISTER/SHOW).
+- `Shenora.Core` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
+  where an escaping exception is fatal rather than catchable (a UI-thread event handler, a timer tick, a
+  posted body, a dispose path). Public because `Shenora.WebView2`, `Shenora.WebView2.Sessions` and
+  `Shenora.WinForms` all consume it and a `ProjectReference` grants no `internal` access (D19/D20).
 - `Shenora.WebView2.Sessions` — auxiliary browser sessions (D14: browser work outside the
   app's own UI, kept out of the core hosting package): `SessionBrowser(+Options)` (the ONE
   auxiliary-WebView2 configuration path — per-profile environment, quiet-start +

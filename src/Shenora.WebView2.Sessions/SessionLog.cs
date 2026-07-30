@@ -37,14 +37,10 @@ internal static class SessionLog
     internal static void Try(ILogger? log, Action<ILogger> write)
     {
         if (log is null) return;
-        try
-        {
-            write(log);
-        }
-        catch (Exception)
-        {
-            // A diagnostic that fails is a lost line, never a lost operation. Deliberately silent:
-            // there is nowhere left to report to — the reporter is what just failed.
-        }
+        // Through the ONE owner of this policy (Shenora.Core.AppCallback) rather than a local
+        // try/catch: an app logger is an app callback, and there is exactly one correct behaviour for
+        // one of those escaping into a UI-thread event handler. No onError sink — a diagnostic that
+        // fails is a lost line, and there is nowhere left to report it to: the reporter just failed.
+        Shenora.Core.AppCallback.Run(() => write(log));
     }
 }

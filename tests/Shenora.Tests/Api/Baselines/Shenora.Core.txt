@@ -1,3 +1,6 @@
+Shenora.Core.AppCallback
+  Boolean Run(System.Action, System.Action`1[System.Exception])
+  T RunOrDefault[T](System.Func`1[T], T, System.Action`1[System.Exception])
 Shenora.Core.AppRootArgument
   System.String Flag
   System.String Resolve(System.String[], System.String)

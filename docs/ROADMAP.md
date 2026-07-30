@@ -5,6 +5,32 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 H2 (callbacks): no app-supplied delegate runs unguarded, kit-wide
+
+Closes the H2 item that had been open since the first full review, and the answer turned out to be
+structural rather than a sweep: **one owner**, `Shenora.Core.AppCallback`, public because three
+packages consume it (the D19/D20 placement law). The pattern had been guarded per-site by memory, which
+is precisely why it reopened three times — H4.2 fixed the facades, the sessions batch discovered that an
+`ILogger` is app code too, and this batch found the rest.
+
+Two things here are more than "wrap it in try/catch". First, **guarding is not enough where the kit
+still owes the event an answer**: a failed `OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed`
+now falls back to the built-in policy, because an un-cancelled download proceeds, an unanswered
+permission request stalls whatever asked for it, and a renderer crash goes unhandled at the exact moment
+things are already going wrong. `WndProcHook` falls back to "did not handle this message" — a throw
+there surfaces as WinForms' own BLOCKING modal dialog mid-message-dispatch, on a window that may not be
+visible yet. Second, **log calls became lazy** (`Log(Func<string>)`), because the guard has to cover
+building the message as well as writing it: several messages read WebView2/COM properties that throw
+once the underlying object is gone, and interpolation at the call site sits outside the guard. Several
+of those sinks live inside a `catch` that exists to stop a failure escaping, where a throwing sink
+defeated the very thing it was reporting from.
+
+Also fixed here: `SessionController`'s four driver-tap collections were plain `List<T>`, appended from
+the driver's thread while the WebView2 handlers read them on the UI thread. `ToArray()` reads the count
+then copies the backing store, so an `Add` in between throws or copies a torn view and two concurrent
+`Add`s corrupt the list — and the `.ToArray()` at the read site *looked* like the fix for exactly this.
+Copy-on-write arrays published under a lock; readers now take no lock at all.
+
 ### 2026-07-30 — P5.5 H2 (sessions): the lifetime cluster in `Shenora.WebView2.Sessions`
 
 Six review findings that all live in the same three files, done together because they interlock. 381

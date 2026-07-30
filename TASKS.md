@@ -160,24 +160,31 @@ code comment.
   move there. Note the token must gate the AWAIT only, never cancel the creation itself: the
   environment task is now SHARED across a pool's instances (`SessionEnvironmentCache`), so cancelling it
   for one caller would break the others.
-- [~] **No app callback runs unguarded inside a WebView2/WinForms event handler.** The SESSIONS half is
-  now done: an `ILogger` is app code too, and the H4.7 logging invoked it bare at all eight sites in the
-  package — including one where a throw escaped before `tcs.TrySetException` and hung the lease, and one
-  before `_capacity.Release()`. All eight now go through the internal `SessionLog.Try`, with a
-  regression test. Found by that batch's own phase review, which is the checklist working. Earlier,
-  PARTLY DONE in H4.2
-  — `WindowCommandFacade` (SET_THEME's `ApplyTheme`, CLOSE's `FormClosing`) and `DropZoneManager` now
-  post through the guarded dispatcher, and `LoginWindow`'s `OnLoading` is guarded (above). STILL OPEN:
-  `WebViewHost`'s `OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` + its `_log?.Invoke`
-  calls, `OptimizedForm.WndProcHook` (a throwing hook inside `WndProc` is the blocking-dialog failure
-  mode), and `SessionController`'s tap lists (plain `List<T>` mutated off the UI thread while the UI
-  thread copies them). Original list:
-  `WebViewHost.cs:335-374` (`OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` + every
-  `_log?.Invoke`), the posted bodies in `DropZoneManager.cs:201-211` and
-  `WindowCommandFacade.cs:147-158` (a throwing `ApplyTheme` or `form.Close()` takes the app down),
-  `OptimizedForm.cs:242` (`WndProcHook` inside `WndProc` — before bootstrap that is the blocking-
-  dialog failure mode), and the tap lists at `LoginWindowController.cs:32-38,58,241-247` (plain
-  `List<T>` mutated off the UI thread while the UI thread `.ToArray()`s them).
+- [x] **No app callback runs unguarded inside a WebView2/WinForms event handler.** DONE. The structural
+  answer is **one owner** — `Shenora.Core.AppCallback` (`Run` / `RunOrDefault`, public per the D19/D20
+  placement law because three packages consume it) — rather than a try/catch remembered per site. What
+  it closed, in landing order:
+  - H4.2: `WindowCommandFacade` (SET_THEME's `ApplyTheme`, CLOSE's `FormClosing`) and `DropZoneManager`
+    post through the guarded dispatcher; `LoginWindow`'s `OnLoading` guarded (see the modal item).
+  - The H2 sessions batch: an **`ILogger` is app code too**, and H4.7's logging invoked it bare at all
+    eight sites in that package — one throw escaped before `tcs.TrySetException` (hung lease, permit
+    held), one before `_capacity.Release()`. Found by that batch's own phase review.
+  - This batch: `WebViewHost`'s three app policy hooks
+    (`OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed`) — and note the fix is not just
+    "don't crash": a failed hook now **falls back to the kit's built-in policy**, because leaving the
+    event unanswered is its own bug (an un-cancelled download proceeds, an unanswered permission
+    request stalls its caller, a renderer crash goes unhandled exactly when things are already wrong).
+    `OptimizedForm.WndProcHook` reads a throwing hook as "did not handle this message", so the window
+    keeps working. And every `Action<string>? Log` site in `WebViewHost` + `WebViewIpcBridge` became a
+    guarded, LAZY `Log(Func<string>)` — lazy because the guard must cover BUILDING the message too
+    (several read WebView2/COM properties that throw once the object is gone), and because several sit
+    inside a `catch` that exists to stop a failure escaping, where a throwing sink defeats the very
+    thing it reports from.
+  - `SessionController`'s four tap lists are now COPY-ON-WRITE arrays published under a lock. This was
+    a genuine data race, not a style point: taps are registered from the driver's thread while the
+    WebView2 handlers read them on the UI thread, and `List<T>.ToArray()` reads `_size` then copies the
+    backing store — an `Add` in between throws or copies a torn view, and two concurrent `Add`s corrupt
+    the list. Readers now need no lock at all.
 - [x] **Pool reset must fail closed.** DONE — `AwaitResetNavigationAsync` (internal, so the REAL path
   is unit-testable; the old test could only drive `ResetOverride`, which is exactly why this survived
   five reviews) returns the navigation's actual outcome, and the 5 s budget became the validated

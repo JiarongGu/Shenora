@@ -30,13 +30,22 @@ public sealed class SessionController
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly Action<bool>? _onLoading;
     private readonly bool _foreground; // a real login window (true) vs an off-screen co-browse host (false)
-    private readonly List<Action<string>> _messageHandlers = [];
-    // Raw browser-event reporters the DRIVER registers — accumulate (like OnMessage) so composed
-    // drivers don't silently drop each other's taps. The host just reports what the browser does;
-    // the driver decides which URL is "the download".
-    private readonly List<Action<DownloadHit>> _downloadHandlers = [];
-    private readonly List<Action<string>> _newWindowHandlers = [];
-    private readonly List<Action<string>> _navigationHandlers = [];
+    // The DRIVER's taps — they accumulate so composed drivers don't silently drop each other's, and
+    // the host just reports what the browser does (the driver decides which URL is "the download").
+    //
+    // COPY-ON-WRITE, not List<T> (P5.5 H2). These are registered from the driver's thread — a driver
+    // continuation resumes wherever the thread pool puts it — while the WebView2 event handlers read
+    // them ON THE UI THREAD. A plain List<T> being appended during a read is a genuine data race, not
+    // a theoretical one: ToArray() reads _size and then Array.Copy's the backing store, so an Add that
+    // grows the array in between throws or copies a torn view; two concurrent Adds corrupt the list
+    // outright. Publishing a fresh array under a lock makes every reader see one immutable snapshot
+    // with no lock on the hot path. Fields are volatile so a reader can't observe a stale array
+    // reference after the swap.
+    private readonly object _tapLock = new();
+    private volatile Action<string>[] _messageHandlers = [];
+    private volatile Action<DownloadHit>[] _downloadHandlers = [];
+    private volatile Action<string>[] _newWindowHandlers = [];
+    private volatile Action<string>[] _navigationHandlers = [];
     private readonly CancellationTokenSource _closed = new();
     private bool _finishing;
     private bool _revealed;
@@ -60,10 +69,7 @@ public sealed class SessionController
             string? message = null;
             try { message = e.TryGetWebMessageAsString(); } catch { /* not a string message */ }
             if (message is null) return;
-            foreach (var handler in _messageHandlers.ToArray())
-            {
-                try { handler(message); } catch { /* a bad handler can't sink the window */ }
-            }
+            Fan(_messageHandlers, message);
         };
         if (_foreground)
         {
@@ -110,28 +116,28 @@ public sealed class SessionController
     public void OnMessage(Action<string> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _messageHandlers.Add(handler);
+        lock (_tapLock) _messageHandlers = [.. _messageHandlers, handler];
     }
 
     /// <summary>Report page-initiated downloads (already cancelled browser-side).</summary>
     public void OnDownload(Action<DownloadHit> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _downloadHandlers.Add(handler);
+        lock (_tapLock) _downloadHandlers = [.. _downloadHandlers, handler];
     }
 
     /// <summary>Report suppressed new-window requests (the URL a download button often opens).</summary>
     public void OnNewWindow(Action<string> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _newWindowHandlers.Add(handler);
+        lock (_tapLock) _newWindowHandlers = [.. _newWindowHandlers, handler];
     }
 
     /// <summary>Report top-level navigations.</summary>
     public void OnNavigation(Action<string> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _navigationHandlers.Add(handler);
+        lock (_tapLock) _navigationHandlers = [.. _navigationHandlers, handler];
     }
 
     /// <summary>
@@ -245,12 +251,15 @@ public sealed class SessionController
     /// <summary>Toggle the app's loading overlay (routes to <see cref="LoginWindowOptions.OnLoading"/>).</summary>
     public void SetLoading(bool loading) => PostUi(() => _onLoading?.Invoke(loading));
 
-    private static void Fan<T>(List<Action<T>> handlers, T value)
+    /// <summary>
+    /// Deliver to every tap, isolating each one: these run inside WebView2 event handlers, so one
+    /// driver's throw must neither reach the browser nor stop the OTHER taps from being told. No
+    /// snapshot copy is needed — the array is already immutable once published (see the field docs).
+    /// </summary>
+    private static void Fan<T>(Action<T>[] handlers, T value)
     {
-        foreach (var handler in handlers.ToArray())
-        {
-            try { handler(value); } catch { /* one bad handler can't sink the window */ }
-        }
+        foreach (var handler in handlers)
+            Shenora.Core.AppCallback.Run(() => handler(value));
     }
 
     /// <summary>

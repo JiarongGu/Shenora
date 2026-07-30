@@ -41,8 +41,42 @@ public sealed class WebViewHost
         _log = options.Log ?? options.Environment.Log;
         // The one marshalling owner (D19/D20, P5.5 H4.2).
         _ui = new Shenora.WinForms.WinFormsUiDispatcher(webView,
-            ex => _log?.Invoke($"[Shenora.WebView2] Posted UI work failed: {ex.Message}"));
+            ex => Log(() => $"[Shenora.WebView2] Posted UI work failed: {ex.Message}"));
     }
+
+    /// <summary>
+    /// Write a diagnostic through the app's sink — GUARDED and LAZY (P5.5 H2).
+    /// <para>
+    /// <see cref="WebViewHostOptions.Log"/> is an app-supplied delegate, and almost every call site
+    /// below sits inside a WebView2 event handler or a posted UI-thread body, where an escaping
+    /// exception has no caller to catch it and becomes an unhandled UI-thread exception (a modal crash
+    /// dialog under the family bootstrap). Routing every one through
+    /// <see cref="Shenora.Core.AppCallback"/> makes that structurally impossible instead of relying on
+    /// each site remembering.
+    /// </para>
+    /// <para>
+    /// The <see cref="Func{TResult}"/> is not ceremony: the guard has to cover BUILDING the message as
+    /// well as writing it, because several messages read WebView2/COM properties (a download
+    /// operation's URI, a process-failed reason) that can throw once the underlying object is gone —
+    /// and that read would otherwise happen at the call site, outside the guard. It also makes the
+    /// interpolation free when no sink is configured.
+    /// </para>
+    /// </summary>
+    private void Log(Func<string> message)
+    {
+        if (_log is null) return;
+        Shenora.Core.AppCallback.Run(() => _log(message()));
+    }
+
+    /// <summary>
+    /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event: true only
+    /// when it ran to completion. A hook that throws returns false, so the caller applies the kit's own
+    /// default rather than leaving a WebView2 event unanswered (P5.5 H2).
+    /// </summary>
+    private bool AppCallbackRan<T>(Action<T> callback, T args, string hookName) =>
+        Shenora.Core.AppCallback.Run(() => callback(args),
+            ex => Log(() => $"[Shenora.WebView2] {hookName} threw ({ex.GetType().Name}: {ex.Message}); " +
+                            "applying the built-in policy instead."));
 
     /// <summary>Dev/prod, from the single source (<see cref="WebViewEnvironmentOptions.IsDevelopment"/>).</summary>
     public bool IsDevelopment => _options.Environment.IsDevelopment;
@@ -77,14 +111,14 @@ public sealed class WebViewHost
         RegisterResourceServing();
         await InjectScriptsAsync();
         WireEventPolicies();
-        _log?.Invoke($"[Shenora.WebView2] Host initialized (mode: {(IsDevelopment ? "Development" : "Production")})");
+        Log(() => $"[Shenora.WebView2] Host initialized (mode: {(IsDevelopment ? "Development" : "Production")})");
     }
 
     /// <summary>Navigate to the resolved start URL (see <see cref="ResolveStartUrl"/>).</summary>
     public void Navigate()
     {
         var url = ResolveStartUrl(_options);
-        _log?.Invoke($"[Shenora.WebView2] Navigating to {url}");
+        Log(() => $"[Shenora.WebView2] Navigating to {url}");
         _webView.CoreWebView2.Navigate(url);
     }
 
@@ -334,29 +368,34 @@ public sealed class WebViewHost
                 {
                     // Rejected scheme, or no default browser — a page must not be able to crash the
                     // host by asking to open something odd.
-                    _log?.Invoke($"[Shenora.WebView2] Ignoring new-window request for {e.Uri}: {ex.GetType().Name}");
+                    Log(() => $"[Shenora.WebView2] Ignoring new-window request for {e.Uri}: {ex.GetType().Name}");
                 }
             };
         }
 
+        // ALL THREE app policy hooks below run inside a WebView2 event handler, so a throw from one
+        // has no caller on its stack and becomes an unhandled UI-thread exception (P5.5 H2). Each is
+        // therefore invoked through AppCallback, and each FALLS BACK TO THE KIT'S OWN DEFAULT when the
+        // app's hook fails — because leaving the event unanswered is its own bug: an un-cancelled
+        // download proceeds, an unanswered permission request stalls whatever asked for it, and a
+        // renderer crash goes unhandled at the exact moment things are already going wrong.
+
         core.DownloadStarting += (_, e) =>
         {
-            if (_options.OnDownloadStarting is { } onDownload)
-            {
-                onDownload(e);
+            if (_options.OnDownloadStarting is { } onDownload
+                && AppCallbackRan(onDownload, e, nameof(WebViewHostOptions.OnDownloadStarting)))
                 return;
-            }
+
             e.Cancel = true;
-            _log?.Invoke($"[Shenora.WebView2] Download canceled by policy: {e.DownloadOperation.Uri}");
+            Log(() => $"[Shenora.WebView2] Download canceled by policy: {e.DownloadOperation.Uri}");
         };
 
         core.PermissionRequested += (_, e) =>
         {
-            if (_options.OnPermissionRequested is { } onPermission)
-            {
-                onPermission(e);
+            if (_options.OnPermissionRequested is { } onPermission
+                && AppCallbackRan(onPermission, e, nameof(WebViewHostOptions.OnPermissionRequested)))
                 return;
-            }
+
             e.State = _options.PermittedPermissions.Contains(e.PermissionKind)
                 ? CoreWebView2PermissionState.Allow
                 : CoreWebView2PermissionState.Deny;
@@ -364,18 +403,17 @@ public sealed class WebViewHost
 
         core.ProcessFailed += (_, e) =>
         {
-            if (_options.OnProcessFailed is { } onFailed)
-            {
-                onFailed(e);
+            if (_options.OnProcessFailed is { } onFailed
+                && AppCallbackRan(onFailed, e, nameof(WebViewHostOptions.OnProcessFailed)))
                 return;
-            }
-            _log?.Invoke($"[Shenora.WebView2] Process failed: {e.ProcessFailedKind} (reason: {e.Reason})");
+
+            Log(() => $"[Shenora.WebView2] Process failed: {e.ProcessFailedKind} (reason: {e.Reason})");
             if (_options.ReloadOnRenderProcessFailure
                 && e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited
                 && DateTime.UtcNow - _lastAutoReloadUtc > AutoReloadCooldown)
             {
                 _lastAutoReloadUtc = DateTime.UtcNow;
-                _log?.Invoke("[Shenora.WebView2] Renderer crashed — reloading.");
+                Log(() => "[Shenora.WebView2] Renderer crashed — reloading.");
                 try { _webView.Reload(); } catch { }
             }
         };

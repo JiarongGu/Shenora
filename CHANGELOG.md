@@ -79,6 +79,16 @@ landing order (oldest first) because they narrate one version being built.
   file-name characters and Windows reserved device names. Per-provider/per-account scoping is the
   session stack's isolation boundary, and the library previously documented that boundary while
   shipping no safe way to construct the path.
+- **`Shenora.Core.AppCallback`** (P5.5 H2) — the one guard for invoking APP-SUPPLIED code from a place
+  where an escaping exception is fatal rather than catchable: a UI-thread event handler, a timer tick, a
+  posted delegate, a dispose path. `Run` returns whether the callback completed; `RunOrDefault` returns
+  its answer or an explicit policy fallback. Both swallow, deliberately — at these sites the
+  alternative to losing the callback's exception is losing the operation, the window, or the process —
+  and the optional error sink is itself guarded, because a failure reporter that throws must not become
+  the crash it was reporting. Public because three packages consume it (D19/D20 placement law); apps can
+  use it against their own extension points for the same reason. Every app callback and log sink in
+  `Shenora.WebView2`, `Shenora.WebView2.Sessions` and `OptimizedForm.WndProcHook` now routes through it
+  — see Fixed.
 - **`RenderSessionPoolOptions.OpTimeout`, `NavigationTimeout` and `ResetTimeout`** (P5.5 H2) — the
   three budgets a leased session runs on, all validated at construction. `OpTimeout` (60 s) caps ONE
   marshalled operation (navigate / script / HTML read / CDP call) and is the piece that lets the pool
@@ -111,6 +121,25 @@ landing order (oldest first) because they narrate one version being built.
 
 ### Fixed
 
+- **An app callback that threw could take the host down, stall a browser event, or corrupt a tap list**
+  (P5.5 H2). Every remaining unguarded app-supplied delegate now runs through `AppCallback`:
+  `WebViewHostOptions.OnDownloadStarting`/`OnPermissionRequested`/`OnProcessFailed` (all three run
+  inside WebView2 events, where a throw has no caller and becomes an unhandled UI-thread exception —
+  and a failed hook now falls back to the kit's built-in policy, because leaving the event unanswered
+  is its own bug: an un-cancelled download proceeds, an unanswered permission request stalls its
+  caller, a renderer crash goes unhandled exactly when things are already wrong);
+  `OptimizedForm.WndProcHook`, where a throw inside `WndProc` surfaces as WinForms' own BLOCKING modal
+  dialog mid-message-dispatch — a throwing hook now reads as "did not handle this message" and the
+  window keeps working; `WebViewIpcBridgeOptions.OnClientReady`; and every `Log` sink in
+  `Shenora.WebView2`, several of which sat inside a `catch` that exists to stop a failure escaping,
+  where a throwing sink defeated the very thing it was reporting from. Log calls are also lazy now, so
+  building a message can't throw outside the guard either.
+- **`SessionController`'s driver taps were a data race.** The four tap collections were plain
+  `List<T>`, appended from the driver's thread (a continuation resumes wherever the pool puts it) while
+  the WebView2 event handlers read them on the UI thread. `List<T>.ToArray()` reads the count and then
+  copies the backing store, so an `Add` in between throws or copies a torn view, and two concurrent
+  `Add`s corrupt the list outright. They are now copy-on-write arrays published under a lock, so
+  readers take no lock at all.
 - **A wedged page permanently poisoned the render pool** (P5.5 H2, the second half of the
   unobserved-token fix). A page blocked in its own script thread never answers `ExecuteScriptAsync` or
   `GetHtmlAsync`. H4.2 already made the CALLER escape (the marshal observes its token), but that alone
