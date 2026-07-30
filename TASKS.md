@@ -818,15 +818,8 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   `UseDropZoneOptions`, `DropZoneManager.ClearAll`, and the npm README's copy-paste snippet — plus a
   bullet in `.claude/knowledge/ipc-contracts.md`. The sample's `useEffect` now says it must stay ABOVE
   the `useDropZone` call, since effects inside one component run in declaration order.
-  **The "or make it order-independent" half is DEFERRED, not done** — see the next item.
-- [ ] **Make the drop-zone reset order-independent: clear on DOCUMENT CHANGE, not on the handshake.**
-  The right trigger is a new document starting to load (`ContentLoading`, which the IPC ready gate
-  already uses), because stale overlays belong to the outgoing DOCUMENT — and unlike the handshake it
-  never races the client's `REGISTER` at all, so the ordering contract above stops needing to be
-  documented in four places. Deliberately NOT done inside H7: that is a drop-zone lifecycle change,
-  not tests/docs/dead-weight hygiene, and today the *app* calls `ClearAll` (the kit exposes no
-  document-change hook for it), so it is a small surface addition too. Do it with H9 or as its own
-  batch, and delete the four documentation sites when it lands.
+  **The "or make it order-independent" half landed in P5.6:** `DropZoneManager` clears on
+  `ContentLoading` now, which removed this contract and all four documentation sites with it.
 
 **H8 — Capture the earned invariants (do as the batches land, not after)**
 
