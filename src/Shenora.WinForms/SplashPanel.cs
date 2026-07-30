@@ -71,6 +71,15 @@ public sealed class SplashPanel : Panel
     /// (clamped 0–100). Marshals itself once the handle exists; before that, applies directly
     /// (pre-handle <c>InvokeRequired</c> LIES — false on a pool thread — and <c>BeginInvoke</c>
     /// throws, the same trap the WebView2 deferral marshal guards against).
+    /// <para>
+    /// DELIBERATELY NOT routed through <see cref="WinFormsUiDispatcher"/>, unlike the other marshal
+    /// sites collapsed in P5.5 H4.2 — and this is a judgement, not an oversight. Those were services
+    /// marshalling to a FOREIGN control from an arbitrary thread, where centralising the
+    /// handle/thread/guard decision removes duplicated risk. This is a control marshalling to
+    /// ITSELF: the two-line self-post is idiomatic, its pre-handle "apply directly" is correct
+    /// (setting a property on an unrealized control needs no marshal), and injecting a dispatcher
+    /// would add a field and a construction site for zero correctness gain.
+    /// </para>
     /// </summary>
     public void UpdateProgress(int percent)
     {

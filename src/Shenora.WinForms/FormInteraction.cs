@@ -85,15 +85,18 @@ public sealed class FormInteraction : IFormInteraction
         if (form is null || form.IsDisposed) return;
         try
         {
-            // IsHandleCreated before InvokeRequired — pre-handle, InvokeRequired lies (false on
-            // any thread) and a cross-thread property set would go unmarshalled. NON-BLOCKING
-            // BeginInvoke: this runs while holding the block-count lock, and a blocking Invoke
-            // under a lock is the classic pool↔UI deadlock (the family's measured AppHang shape).
-            // Posts are FIFO, so block/unblock ordering is preserved.
-            if (form.IsHandleCreated && form.InvokeRequired)
-                form.BeginInvoke(() => { try { form.Enabled = enabled; } catch { } });
-            else
-                form.Enabled = enabled;
+            // Marshalling goes through the ONE owner (P5.5 H4.2) — it holds the
+            // IsHandleCreated-before-InvokeRequired rule, the non-blocking post, and the guarded
+            // body in a single place. Non-blocking matters here specifically: this runs while
+            // holding the block-count lock, and a blocking Invoke under a lock is the classic
+            // pool-vs-UI deadlock (the family's measured AppHang shape). Posts are FIFO, so
+            // block/unblock ordering is preserved.
+            if (new WinFormsUiDispatcher(form).Post(() => form.Enabled = enabled)) return;
+
+            // Not Ready: apply directly, deliberately. Control.Enabled before handle creation is
+            // just a stored value — no handle to marshal to and nothing thread-affine about it — and
+            // dropping it here would lose the block for a window that hasn't been shown yet.
+            form.Enabled = enabled;
         }
         catch
         {

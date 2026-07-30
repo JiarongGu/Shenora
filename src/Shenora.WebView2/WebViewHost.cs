@@ -29,6 +29,7 @@ public sealed class WebViewHost
     private readonly WebView2Control _webView;
     private readonly WebViewHostOptions _options;
     private readonly Action<string>? _log;
+    private readonly Shenora.Core.IUiDispatcher _ui;
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
 
     public WebViewHost(WebView2Control webView, WebViewHostOptions options)
@@ -36,6 +37,9 @@ public sealed class WebViewHost
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = options.Log ?? options.Environment.Log;
+        // The one marshalling owner (D19/D20, P5.5 H4.2).
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(webView,
+            ex => _log?.Invoke($"[Shenora.WebView2] Posted UI work failed: {ex.Message}"));
     }
 
     /// <summary>Dev/prod, from the single source (<see cref="WebViewEnvironmentOptions.IsDevelopment"/>).</summary>
@@ -268,14 +272,12 @@ public sealed class WebViewHost
             // We are ALWAYS on a thread-pool thread here, so the response must be marshalled to
             // the UI thread — CoreWebView2 is UI-affine. Never build inline: before the handle
             // exists InvokeRequired is false, and an inline build would run on the pool thread
-            // (the source app's exact bug). No handle (early-startup race) → complete without a
-            // response.
+            // (the source app's exact bug). The one marshalling owner encodes that rule (P5.5 H4.2);
+            // it returns false when there is no handle (early-startup race) or the control is gone,
+            // and then we complete WITHOUT a response rather than serving from the wrong thread.
             try
             {
-                if (_webView.IsHandleCreated)
-                    _webView.BeginInvoke((Action)Build);
-                else
-                    deferral.Complete();
+                if (!_ui.Post(Build)) deferral.Complete();
             }
             catch
             {

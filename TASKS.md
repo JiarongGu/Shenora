@@ -262,7 +262,20 @@ contracts). The design-contract §4 rule authorised this revision on exactly thi
   `docs/RELEASING.md`'s "the two leaf packages" (WinForms stops being a leaf); plus the design
   contract's §4 table rows. Then the `Shenora.Core`/`Shenora.WinForms` csproj `<Description>`s — the
   "UI-dispatcher seam" claim becomes TRUE here, and WinForms gains the dispatcher implementation.
-- [ ] **H4.2 — Retire the 14 marshal copies onto `WinFormsUiDispatcher`.** 14 hand-rolled copies
+- [~] **H4.2 — Retire the 14 marshal copies onto `WinFormsUiDispatcher`.** PARTLY DONE — the six
+  outside the sessions package are converted (`FormInteraction.SetEnabled`, `SecondaryWindows.Post`,
+  `WebViewIpcBridge.PostJson`, `WebViewHost`'s deferral marshal, `WindowCommandFacade.Post`,
+  `DropZoneManager.MarshalToUi`). **The sessions copies land with H4.4**, which rewrites the same
+  files anyway — doing them twice would be churn. Two outcomes worth carrying forward:
+  (a) **`SplashPanel`'s two self-marshals are deliberately NOT converted** and say so in the code: a
+  control marshalling to ITSELF is idiomatic and its pre-handle apply-directly is correct, so the
+  honest count is "collapse the service-to-foreign-control copies", not "14 → 1";
+  (b) `FormInteraction` keeps applying `Enabled` directly when NotReady — `Control.Enabled` on an
+  unrealized control is a stored value, and dropping it would lose the block for a not-yet-shown
+  window. Conversion also fixed two live defects: `WindowCommandFacade` used to defer even when
+  already on the UI thread (losing `START_DRAG`'s mouse-down timing) and left the posted body
+  unguarded (a throwing `ApplyTheme`/`FormClosing` crashed the app); `DropZoneManager` used to run
+  `PointToScreen`/`Controls.Add` inline ON A WORKER THREAD pre-handle, which is now a drop-and-log. 14 hand-rolled copies
   across 3 packages with 5 incompatible pre-handle policies — 7 of them (all in Sessions) have no
   guard at all, and `LoginWindowController.cs:250-254` carries a comment explaining the pre-handle
   trap and then commits it on the next line (`if (!_form.IsHandleCreated || !_form.InvokeRequired)

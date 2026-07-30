@@ -60,11 +60,16 @@ public sealed class WindowCommandFacade : BaseFacade
     private const int HTCAPTION = 2, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
 
     private readonly WindowCommandOptions _options;
+    private readonly Shenora.Core.IUiDispatcher _ui;
 
     public WindowCommandFacade(WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<WindowCommandFacade>? logger = null)
         : base(logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        // One marshalling owner (P5.5 H4.2). It also GUARDS the posted body, which matters here more
+        // than anywhere: SET_THEME runs an app-supplied callback and CLOSE runs app FormClosing logic,
+        // and an exception from either used to become an unhandled UI-thread exception.
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(_options.Window);
     }
 
     /// <inheritdoc />
@@ -77,18 +82,18 @@ public sealed class WindowCommandFacade : BaseFacade
         switch (request.Type.ToUpperInvariant())
         {
             case "MINIMIZE":
-                Post(form, () => form.WindowState = FormWindowState.Minimized);
+                Post(() => form.WindowState = FormWindowState.Minimized);
                 return Done();
 
             case "TOGGLE_MAXIMIZE":
-                Post(form, _options.ToggleMaximize ?? (() =>
+                Post(_options.ToggleMaximize ?? (() =>
                     form.WindowState = form.WindowState == FormWindowState.Maximized
                         ? FormWindowState.Normal
                         : FormWindowState.Maximized));
                 return Done();
 
             case "CLOSE":
-                Post(form, form.Close);
+                Post(form.Close);
                 return Done();
 
             case "IS_MAXIMIZED":
@@ -107,7 +112,7 @@ public sealed class WindowCommandFacade : BaseFacade
                 // the page's header should restore first (as native caption drags do).
                 if (_options.IsMaximized?.Invoke() ?? form.WindowState == FormWindowState.Maximized)
                     return Done();
-                Post(form, () =>
+                Post(() =>
                 {
                     ReleaseCapture();
                     SendMessage(form.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
@@ -122,7 +127,7 @@ public sealed class WindowCommandFacade : BaseFacade
                 // (0,0) and doesn't track (measured).
                 var edge = PayloadHelper.GetOptionalValue<string>(request.Payload, "edge");
                 var hitTest = edge switch { "topLeft" => HTTOPLEFT, "topRight" => HTTOPRIGHT, _ => HTTOP };
-                Post(form, () =>
+                Post(() =>
                 {
                     GetCursorPos(out var pt);
                     ReleaseCapture();
@@ -132,7 +137,7 @@ public sealed class WindowCommandFacade : BaseFacade
 
             case "SET_THEME" when _options.ApplyTheme is { } applyTheme:
                 var dark = PayloadHelper.GetOptionalValue<bool?>(request.Payload, "dark") ?? true;
-                Post(form, () => applyTheme(dark));
+                Post(() => applyTheme(dark));
                 return Done();
 
             default:
@@ -143,19 +148,17 @@ public sealed class WindowCommandFacade : BaseFacade
 
     private static Task<object?> Done() => Task.FromResult<object?>(null);
 
-    /// <summary>Best-effort non-blocking post to the form's UI thread (the source shape).</summary>
-    private static void Post(Form form, Action action)
-    {
-        try
-        {
-            if (form is { IsDisposed: false, IsHandleCreated: true })
-                form.BeginInvoke(action);
-        }
-        catch
-        {
-            // window tearing down — a chrome command against a dying window is a no-op
-        }
-    }
+    /// <summary>
+    /// Best-effort non-blocking post to the form's UI thread, through the one owner.
+    /// <para>
+    /// Behaviour CHANGE from the source shape, and it is a fix: this used to call
+    /// <c>BeginInvoke</c> unconditionally, so a command arriving already ON the UI thread was still
+    /// deferred to the next message — which loses <c>START_DRAG</c>'s mouse-down timing, since the OS
+    /// window-move loop must start while the button is still down. The dispatcher runs inline when
+    /// the caller is already on the UI thread and posts otherwise.
+    /// </para>
+    /// </summary>
+    private void Post(Action action) => _ui.Post(action);
 
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);

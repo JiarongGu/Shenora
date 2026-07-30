@@ -192,22 +192,11 @@ public sealed class SecondaryWindows : IDisposable
     internal Form? TryGetForm(string name) =>
         _windows.TryGetValue(name, out var entry) ? entry.Form : null;
 
-    // Non-blocking marshal to the window's own thread — a blocking Invoke from the IPC thread
-    // deadlocked the source app during scope switches. Pre-handle this is a deliberate NO-OP:
-    // the caller is never the window's own thread here, so running inline would CREATE the
-    // handle on the wrong thread and kill the pump (found in review); pre-handle intent is
-    // carried by flags instead (CloseRequested + the HandleCreated re-check).
-    private static void Post(Form form, Action action)
-    {
-        try
-        {
-            if (form.IsDisposed || !form.IsHandleCreated) return;
-            if (form.InvokeRequired) form.BeginInvoke(action);
-            else action();
-        }
-        catch
-        {
-            // window tearing down mid-post
-        }
-    }
+    // Non-blocking marshal to the window's own thread, through the ONE owner (P5.5 H4.2) — a
+    // blocking Invoke from the IPC thread deadlocked the source app during scope switches.
+    // Pre-handle this stays a deliberate NO-OP, which is exactly what the dispatcher's `false`
+    // return means here: the caller is never the window's own thread, so running inline would
+    // CREATE the handle on the wrong thread and kill the pump (found in review). Pre-handle intent
+    // is carried by flags instead (CloseRequested + the HandleCreated re-check) — see Open/Close.
+    private static void Post(Form form, Action action) => new WinFormsUiDispatcher(form).Post(action);
 }

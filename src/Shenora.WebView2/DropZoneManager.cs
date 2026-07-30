@@ -43,6 +43,7 @@ public sealed class DropZoneManager : IDisposable
 
     private readonly DropZoneManagerOptions _options;
     private readonly ILogger<DropZoneManager> _logger;
+    private readonly Shenora.Core.IUiDispatcher _ui;
     private readonly Dictionary<string, DropZoneOverlay> _overlays = [];
     // Last CSS bounds per zone — so a DPI change (window moved to another monitor) can re-derive
     // every overlay's physical bounds without waiting for the page to resend them (P2.3b).
@@ -53,6 +54,11 @@ public sealed class DropZoneManager : IDisposable
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<DropZoneManager>.Instance;
+        // One marshalling owner (P5.5 H4.2). The guarded body matters here: a posted overlay update
+        // can throw ObjectDisposedException or a cross-thread error if the window closes between the
+        // post and its execution, and that used to surface as an unhandled UI-thread exception.
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(_options.ParentForm,
+            ex => _logger.LogWarning(ex, "Drop-zone UI work failed."));
 
         // Overlay visibility tracks form activation: an inactive form shows every overlay —
         // that's what makes background drag-drop from other apps work.
@@ -200,14 +206,20 @@ public sealed class DropZoneManager : IDisposable
     // (re-invoking the caller here recursed without end — found in review).
     private bool MarshalToUi(Action action)
     {
-        var form = _options.ParentForm;
-        if (!form.IsHandleCreated) return false;
-        if (form.InvokeRequired)
-        {
-            form.BeginInvoke(action);
-            return true;
-        }
-        return false; // already on the UI thread — caller proceeds inline
+        // TRUE  = handled here (posted, or deliberately dropped).
+        // FALSE = the caller should proceed INLINE — and now that means only one thing: we are
+        //         already on the UI thread. Re-invoking the caller from here recursed without end
+        //         (found in review), which is why this returns a bool at all rather than calling back.
+        if (_ui.IsOnUiThread) return false;
+
+        if (_ui.Post(action)) return true;
+
+        // Not Ready (no handle yet) or Gone. This used to fall into the inline path too — which ran
+        // PointToScreen / Controls.Add ON A WORKER THREAD, forcing handle creation from the wrong
+        // thread. Dropping is the correct answer: zones are registered by the page, which cannot
+        // have loaded before the form was realized.
+        _logger.LogDebug("Drop-zone UI work skipped — the host window is {State}.", _ui.State);
+        return true;
     }
 
     // Wire events (the bridge forwards the bus to the page). Fire-and-forget: emission must

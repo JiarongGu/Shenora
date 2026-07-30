@@ -5,6 +5,33 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-30 — P5.5 batch H4.2 (part): the marshal copies outside the sessions package
+
+Six sites now route through `WinFormsUiDispatcher` instead of hand-rolling the
+handle/thread/guard decision: `FormInteraction.SetEnabled`, `SecondaryWindows.Post`,
+`WebViewIpcBridge.PostJson`, `WebViewHost`'s deferred-response marshal, `WindowCommandFacade.Post`
+and `DropZoneManager.MarshalToUi`. The sessions copies are deliberately held for H4.4, which rewrites
+those same files anyway.
+
+Conversion fixed three live defects as a side effect, which is the argument for the collapse in a
+sentence: `WindowCommandFacade` used to call `BeginInvoke` unconditionally — so a command arriving
+already on the UI thread was deferred to the next message, losing `START_DRAG`'s mouse-down timing —
+and left its posted body unguarded, so a throwing app `ApplyTheme` or `FormClosing` became an
+unhandled UI-thread exception; `DropZoneManager` used to treat "no handle yet" the same as "already on
+the UI thread" and ran `PointToScreen`/`Controls.Add` inline **on a worker thread**, now a
+drop-and-log.
+
+Two deliberate non-conversions, both documented at the site so they aren't "finished" later by
+mistake. `SplashPanel`'s two self-marshals stay hand-rolled: a control marshalling to *itself* is a
+different problem from a service marshalling to a foreign control, and its pre-handle apply-directly
+is correct — so the honest description of this work is "collapse the service-to-foreign-control
+copies", not "14 → 1". And `FormInteraction` still applies `Enabled` directly when the target is
+`NotReady`, because `Control.Enabled` on an unrealized control is just a stored value and dropping it
+would lose the block for a window that hasn't been shown yet.
+
+Verified: `dev.mjs verify` PASSED — 357 dotnet + 39 vitest, no API baseline drift (every converted
+helper was private).
+
 ### 2026-07-30 — P5.5 batch H4.1: the re-layer (D19 + D20)
 
 The structural half of consolidation, as its own commit. `Shenora.WebView2` now depends on

@@ -75,6 +75,7 @@ public sealed class WebViewIpcBridge : IDisposable
     private readonly WebView2Control _webView;
     private readonly WebViewIpcBridgeOptions _options;
     private readonly Action<string>? _log;
+    private readonly Shenora.Core.IUiDispatcher _ui;
     private readonly ConcurrentQueue<IpcNotification> _pending = new();
     private int _pendingCount;
     private string? _busSubscriptionId;
@@ -88,6 +89,11 @@ public sealed class WebViewIpcBridge : IDisposable
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = options.Log;
+        // The one marshalling owner (D19/D20) — reachable because Shenora.WebView2 layers on
+        // Shenora.WinForms. A posted body that throws is reported here instead of becoming an
+        // unhandled UI-thread exception.
+        _ui = new Shenora.WinForms.WinFormsUiDispatcher(webView,
+            ex => options.Log?.Invoke($"[Shenora.WebView2] Posted UI work failed: {ex.Message}"));
 
         // Subscribe NOW, not at Attach: the bus hands us events from any thread and the queue
         // buffers them until the client is ready — so nothing emitted during WebView2 init or
@@ -334,23 +340,12 @@ public sealed class WebViewIpcBridge : IDisposable
     {
         try
         {
-            // IsHandleCreated FIRST: before the handle exists InvokeRequired lies (false on a
-            // pool thread), so it must never gate an inline call on its own (the family's
-            // measured trap — see .claude/knowledge/webview2-hosting.md). No handle yet or
-            // already torn down → drop; the client's timeout/reconnect handles the rest.
-            if (!_webView.IsHandleCreated) return;
-            if (_webView.InvokeRequired)
-            {
-                _webView.BeginInvoke(() =>
-                {
-                    try { _webView.CoreWebView2?.PostWebMessageAsString(json); }
-                    catch { /* window tearing down mid-post */ }
-                });
-            }
-            else
-            {
-                _webView.CoreWebView2?.PostWebMessageAsString(json);
-            }
+            // One owner for the marshal (P5.5 H4.2): it holds IsHandleCreated-before-InvokeRequired
+            // (pre-handle, InvokeRequired lies — false on a pool thread — so it must never gate an
+            // inline call on its own; see .claude/knowledge/webview2-hosting.md), the non-blocking
+            // post, and the guarded body. No handle yet or already torn down → the post returns false
+            // and we DROP; the client's timeout/reconnect handles the rest.
+            _ui.Post(() => _webView.CoreWebView2?.PostWebMessageAsString(json));
         }
         catch
         {
