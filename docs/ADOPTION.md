@@ -72,6 +72,20 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
   `WebViewByteRange.TryParse(request.GetHeader("Range"), length, out var range)` then
   `WebViewResourceResponse.PartialContent(...)`, or `RangeNotSatisfiable(length)` when
   `range.IsSatisfiable(length)` is false. Serve the whole file with `Ok(...)` when there is no range.
+  **Register the scheme on the ENVIRONMENT as well as declaring the handler**, with the origins your
+  page is served from:
+  ```csharp
+  CustomSchemes = [new WebViewCustomScheme { Name = "media", AllowedOrigins = ["https://app.local"] }]
+  ```
+  WebView2 accepts scheme registrations only at environment-creation time, so the handler alone is
+  never enough — the host throws at construction if you declare one without the other, because the
+  runtime symptom is otherwise a bare `TypeError: Failed to fetch` with nothing in the host log. CORS
+  response headers are defaulted for you (`Access-Control-Allow-Origin` and, so a ranged `fetch` can
+  READ `Content-Range`, `Access-Control-Expose-Headers`); set either yourself to tighten it.
+  A worked, self-checking example is in the desktop sample (`RangeSchemeProbe`), which serves a
+  ranged resource and asserts the page really receives a 206 with the right bytes at the right offset.
+  ⚠ **Changing a scheme registration on an existing app can wedge startup** until its WebView2
+  user-data folder is deleted — worth knowing before you conclude your code is at fault.
 - **Policies you may not have.** `NewWindowRequested`, `PermissionRequested`, `ProcessFailed` and
   download handling are wired with safe defaults; app hooks fall back to the built-in policy if they
   throw, because leaving one of those events unanswered is its own bug.

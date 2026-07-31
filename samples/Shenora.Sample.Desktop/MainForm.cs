@@ -280,6 +280,7 @@ public sealed class MainForm : OptimizedForm
                 // The page measures its own title bar and reports the real rects from here on, so
                 // the host's splash-time estimate must stop competing with it on resize.
                 _pageOwnsCaptionButtons = true;
+                _ = RunRangeSeamProbeAsync();
 
                 // A live stream belongs to the page that STARTED it, and the handshake means a new
                 // page just loaded — so tear it down here, exactly as the overlays above are.
@@ -336,6 +337,17 @@ public sealed class MainForm : OptimizedForm
     /// moments — without it the splash covers the caption and a slow or failing frontend leaves a
     /// window the user cannot minimise or close.
     /// </summary>
+    private async Task RunRangeSeamProbeAsync()
+    {
+        try
+        {
+            var core = _webView.CoreWebView2;
+            if (core is null) { Console.WriteLine("RANGE SEAM: SKIPPED"); return; }
+            Console.WriteLine(await RangeSchemeProbe.RunAsync(core).ConfigureAwait(true));
+        }
+        catch (Exception ex) { Console.WriteLine($"RANGE SEAM: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+    }
+
     private void ReportSplashCaptionButtons()
     {
         if (_pageOwnsCaptionButtons || !IsHandleCreated || IsDisposed) return;

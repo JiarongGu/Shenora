@@ -516,6 +516,27 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **Custom-scheme serving actually works now — `DeferredSchemes` had never served a request.** The
+  host added a `WebResourceRequested` filter for `scheme://*`, but nothing registered the scheme with
+  `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations`, and WebView2 accepts those only when the
+  ENVIRONMENT is created — so every request was rejected by the network stack before the filter was
+  consulted. Only `http`/`https` deferred schemes could work, and those were already `VirtualHost` /
+  `FolderMappings`, so the feature as documented was empty. Found by an end-to-end probe; the unit
+  tests, the API baseline and the docs all agreed it worked.
+  **New:** `WebViewEnvironmentOptions.CustomSchemes` + `WebViewCustomScheme`
+  (`Name`, `TreatAsSecure`, `HasAuthorityComponent`, `AllowedOrigins`). `WebViewHost` now THROWS at
+  construction when `DeferredSchemes` names a non-http(s) scheme the environment does not register —
+  the runtime symptom is otherwise a bare `TypeError: Failed to fetch` with nothing in the host log,
+  which is undiagnosable from either side.
+  **Also fixed, and needed before any of it worked in a page:** deferred-scheme responses now default
+  `Access-Control-Allow-Origin: *` and `Access-Control-Expose-Headers: *` (both overridable per
+  response). An app scheme is a different ORIGIN from the page that loads it, so without the first
+  every fetch is refused; without the second a correct 206 arrives with the right bytes while
+  `Content-Range` reads back as **null**. The bundle path already set the former; this path never did.
+  **Migration:** add `CustomSchemes = [new WebViewCustomScheme { Name = "…", AllowedOrigins = […] }]`
+  to your environment options for each app scheme. The constructor error names the exact fix.
+  Note that changing a scheme registration on an existing app can wedge startup until its WebView2
+  user-data folder is deleted — documented in `docs/ADOPTION.md`.
 - **Maximizing and restoring a SNAPPED frameless window now exits the snap**, matching every other
   Windows app. `OptimizedForm.Maximize` captured the live window rect as its restore target, which
   for a snapped window is the docked half — so restore put the window straight back into the dock. It

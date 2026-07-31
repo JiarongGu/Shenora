@@ -35,6 +35,14 @@ internal static class Program
                 UserDataFolder = paths.DataArea("webview2"),
                 IsDevelopment = environment.IsDevelopment,
                 Log = Console.WriteLine, // sample runs from a console-visible dev loop
+                CustomSchemes =
+                [
+                    new WebViewCustomScheme
+                    {
+                        Name = RangeSchemeProbe.Scheme,
+                        AllowedOrigins = ["https://sample.local", "http://localhost:3900"],
+                    },
+                ],
             };
         });
 
@@ -59,6 +67,7 @@ internal static class Program
             DevUrl = "http://localhost:3900",
             VirtualHost = "sample.local",
             ResourceProvider = sp.GetRequiredService<IWebViewResourceProvider>(),
+            DeferredSchemes = [RangeSchemeProbe.CreateScheme()],
             BackgroundColor = MainForm.Background, // the no-white-flash contract: form = webview = splash
             InjectedGlobals = new Dictionary<string, object?>
             {

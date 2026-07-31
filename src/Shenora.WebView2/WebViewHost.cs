@@ -432,6 +432,27 @@ public sealed class WebViewHost
             if (!response.Headers.ContainsKey("Cache-Control") && response.StatusCode is >= 200 and < 300)
                 headerLines.Add($"Cache-Control: {scheme.CacheControl}");
 
+            // CORS, by default, for the same reason the bundle path already sets it. An app scheme is a
+            // DIFFERENT ORIGIN from the page that loads it (page on https://app.local, resource on
+            // app://…), so without this every fetch/XHR is refused by the browser — and the refusal
+            // looks identical to the scheme not existing: a bare `TypeError: Failed to fetch`, with the
+            // handler having already run and answered correctly. That is exactly how this cost an
+            // afternoon (P7.1): `handlerHits=3` while the page saw three failures.
+            // Registering the scheme's AllowedOrigins is NOT sufficient — that governs which origins
+            // may REQUEST the scheme; this governs whether the browser hands the RESPONSE to script.
+            // A handler that sets the header itself wins, so a stricter policy stays expressible.
+            if (!response.Headers.ContainsKey("Access-Control-Allow-Origin"))
+                headerLines.Add("Access-Control-Allow-Origin: *");
+
+            // …and EXPOSE the response headers, which is a separate rule people meet second. On a
+            // cross-origin response the browser hands script only the CORS-safelisted headers, so
+            // `Content-Range` reads back as null even on a perfectly correct 206 — the bytes arrive,
+            // the status is right, and the metadata describing them is invisible. (A media element
+            // seeking does not care, because the browser reads the header internally; anything doing
+            // its own ranged fetch in JS does.) Same override rule as above.
+            if (!response.Headers.ContainsKey("Access-Control-Expose-Headers"))
+                headerLines.Add("Access-Control-Expose-Headers: *");
+
             void Build()
             {
                 try

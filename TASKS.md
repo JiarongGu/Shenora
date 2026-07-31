@@ -1151,63 +1151,27 @@ Known capability LIMITS:
 - **Private specifics stay in `local/`.** Real names, paths and file-level findings from the survey
   live in `local/PROJECT_NOTES.md` and `local/EXTRACTION-MAP.md` — this file stays generic.
 
-### P7.1 — `DeferredSchemes` custom-scheme serving: registration LANDED, end-to-end STILL NOT PROVEN (RELEASE BLOCKER)
-
-Found 2026-07-31 by the P7 e2e adoption pass — the only thing that could have found it: the unit
-tests pass, the API baseline lists the feature, `docs/ADOPTION.md` recommends it for seekable media,
-and it had never served a request.
-
-**The original defect (FIXED).** `WebViewHost` added a `WebResourceRequested` filter for
-`scheme://*`, but nothing registered the scheme with
-`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` — and WebView2 accepts those ONLY at
-environment creation, so the request was rejected by the network stack before the filter was
-consulted. Now `WebViewEnvironmentOptions.CustomSchemes` + `WebViewCustomScheme` feed the
-registration, and `WebViewHost` refuses at CONSTRUCTION when a deferred scheme is not registered —
-turning a bare `TypeError: Failed to fetch` with nothing in the host log into a loud composition
-error naming the fix.
-
-**The trap that cost the afternoon, now encoded in a comment at the site.**
-`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` is **null** on a default-constructed
-instance in this SDK, so `.Add(...)` AND a `{ … }` collection initializer both NullReference — and
-because that happens inside an async environment factory, the symptom is not a stack trace but a
-startup that never completes. The list must be supplied through the **constructor overload**
-(`new CoreWebView2EnvironmentOptions(browserArguments, null, null, false, [registrations])`).
-Isolated with a 40-line probe using no Shenora code at all, which answered it in one run after three
-inconclusive attempts against the full sample — **isolate the SDK call before debugging the wiring
-around it.**
-
-**What is still NOT working.** With registration in place the app starts and the probe runs, but the
-page's `fetch('probe://sample/data')` still fails with `TypeError: Failed to fetch`. Known so far:
-
-- `AllowedOrigins` is REQUIRED here and is not the whole answer. The page is served from the virtual
-  host, so a fetch to `probe://` is CROSS-origin; the default (same-origin only) blocks it. Adding
-  `["https://sample.local", "http://localhost:3900"]` did not make it pass.
-- Registration itself is sound: the isolation probe creates an environment with a registration, and
-  with `AllowedOrigins`, in ~1 ms.
-- **A stale user-data folder wedges startup when the registrations change.** After a run with
-  different registrations, the next launch hangs before the page loads; deleting
-  `bin/Debug/net10.0-windows/data/webview2` fixes it. Worth confirming and then documenting as a kit
-  gotcha (it will bite any adopter who adds a scheme to an existing app).
-
-**Next steps, in order.**
-
-- [ ] Report `location.origin` from the page and compare it to what is registered — the sample serves
-      from `VirtualHost = "sample.local"`, and the exact origin string has not actually been observed.
-- [ ] Try `HasAuthorityComponent = false` with an opaque `probe:data` URL, and try a scheme fetched as
-      a subresource (an `<img>`/`<video>` src) rather than `fetch`, to separate a CORS refusal from a
-      scheme-resolution refusal.
-- [ ] Confirm and document the stale-user-data-folder wedge.
-- [ ] Only when a page really receives a 206 with the right `Content-Range`: restore the seam probe
-      into the sample (`RangeSchemeProbe` — recoverable from this commit's message/history), and
-      re-point `docs/ADOPTION.md`'s media guidance at the feature.
-- [ ] If custom schemes cannot be made to work, say so in `ADOPTION.md` and route seekable media
-      through an https virtual host — but the range seam then still needs an e2e proof through THAT
-      path, because it has never served a real request either.
-
-**Two things the probe already taught, worth keeping whichever way this lands.**
-`ExecuteScriptAsync` does NOT await a promise — an async IIFE serializes as `{}`, so park the result
-on a `window.__x` global and poll. And assert on CONTENT, not length: bytes 10-19 of a repeating
-"0123456789" is another "0123456789", so a wrong offset with the right length passes a length check.
+- [x] **P7.1 — custom-scheme serving works end to end. RESOLVED 2026-07-31.** The
+  `DeferredSchemes` feature had never served a request: `WebViewHost` added a `WebResourceRequested`
+  filter for `scheme://*` but nothing registered the scheme with the environment, so requests were
+  rejected by the network stack before the filter was consulted. Found by the P7 e2e adoption pass —
+  the unit tests, the API baseline and the docs all agreed the feature worked.
+  **Three things were missing, each producing the identical page-side error** (`TypeError: Failed to
+  fetch`), which is why it took four rounds: the environment registration
+  (`WebViewEnvironmentOptions.CustomSchemes` + `WebViewCustomScheme`, now guarded at construction);
+  `AllowedOrigins`, because the page is served from the virtual host so the fetch is cross-origin;
+  and CORS headers on the RESPONSE — `Access-Control-Allow-Origin` plus
+  `Access-Control-Expose-Headers`, without which a correct 206 arrives with the right bytes while
+  `Content-Range` reads back as null.
+  **Proven, not asserted:** the sample now carries `RangeSchemeProbe`, which fetches a ranged
+  resource through the real browser on every run and asserts status 206, `Content-Range`
+  `bytes 10-19/1000`, the correct ten bytes AT THE CORRECT OFFSET (content, not length — a wrong
+  offset is still ten bytes), 200 for the whole resource, 416 for an unsatisfiable range, and a
+  working XHR. `RANGE SEAM: PASS`.
+  Two method notes worth keeping: **counting handler hits** is what separated "the browser refused
+  our response" from "the request never reached us" — same symptom, different bugs; and a 40-line
+  isolation probe with no kit code answered in one run what three attempts against the full sample
+  could not.
 
 ### P7 — Stabilisation + 1.0 (CURRENT)
 
@@ -1239,8 +1203,7 @@ on a `window.__x` global and poll. And assert on CONTENT, not length: bytes 10-1
   the kit already provides, and its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`.
   Recorded as an amendment on D10; the two-profile split stands, only the extra package is dropped.
 - [ ] **First publish + repo public.** Blocked with P1.2 on a GitHub remote existing.
-- [ ] **BLOCKED ON P7.1 above** — do not cut 1.0 while a documented, publicly-surfaced serving
-  feature has never worked. See the release-readiness note there.
+- [x] **P7.1 is RESOLVED**, so nothing blocks the release except the GitHub remote itself.
 
 ### P1 — Skeleton tail
 

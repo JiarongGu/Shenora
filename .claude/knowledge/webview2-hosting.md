@@ -6,6 +6,28 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 
 ## The rules
 
+- **A custom scheme takes THREE things, and missing any one fails identically: `TypeError: Failed to
+  fetch`.** All three were missing or wrong at some point in P7.1, each producing the same
+  indistinguishable page-side error, which is why this is a list and not a sentence.
+  1. **Register the scheme with the ENVIRONMENT** (`WebViewEnvironmentOptions.CustomSchemes`).
+     WebView2 accepts registrations only at environment creation, so declaring a `DeferredSchemes`
+     handler alone is rejected by the network stack before the filter is consulted. `WebViewHost`
+     now refuses at construction if the two disagree.
+     ⚠ `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` is **null** on a default-constructed
+     instance, so `.Add(...)` and `{ … }` initializers NullReference — and inside an async environment
+     factory that surfaces as a startup that never completes, not a stack trace. Use the constructor
+     overload.
+  2. **`AllowedOrigins`** on the registration — the page is served from the virtual host, so a fetch
+     to `scheme://` is CROSS-origin and the default (same-origin only) refuses it.
+  3. **CORS headers on the RESPONSE.** (1) and (2) govern whether the request is made; this governs
+     whether the browser hands the result to script. `WebViewHost` defaults
+     `Access-Control-Allow-Origin: *` AND `Access-Control-Expose-Headers: *` for deferred schemes,
+     both overridable per response. Without the second, a perfectly correct 206 arrives with the
+     right bytes and `Content-Range` reads back as **null** — the metadata describing the bytes is
+     invisible while the bytes are fine.
+  **The diagnostic that cut through all of it: count handler hits.** Three page-side failures with a
+  non-zero hit count says the browser refused our RESPONSE; a zero count says the request never
+  reached us. Those are different bugs with one symptom, and guessing between them cost an afternoon.
 - **A resource handler answers a REQUEST with a RESPONSE — never "here are all the bytes".** The
   deferred-scheme seam used to be `Func<Uri, Task<(byte[], string)>>`, which made two whole classes of
   response unwritable: anything depending on a request header (above all `Range`, so **nothing it
