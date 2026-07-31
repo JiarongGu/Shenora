@@ -175,10 +175,12 @@ public class WinFormsHostTests
             WindowState = new WindowStateHostOptions { Store = _ => store },
             MessageLoop = form =>
             {
-                sizeInLoop = form.Size;
-                // Close() only raises FormClosing/FormClosed via WM_CLOSE, which needs a window
-                // handle — under Application.Run one always exists; force it here in the seam.
+                // Force the handle FIRST — Application.Run would do so as part of Show, which is
+                // also when the parameterless AttachTo's deferred apply runs (0.1.2). Reading
+                // form.Size before the handle exists would see the pre-apply default. Close()
+                // also needs the handle to raise FormClosing/FormClosed via WM_CLOSE.
                 _ = form.Handle;
+                sizeInLoop = form.Size;
                 form.Close(); // fires FormClosed → the save
             },
         });

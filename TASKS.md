@@ -55,7 +55,10 @@ findings — API feedback arrives with Stages 1-3.
 
 The Stage 1 findings from the same adopter (over-promised DPI claim, no work-area clamp, primary-scale
 `Apply`, conditional "highest payoff") landed in 0.1.1 — see `docs/task-archive.md` `### 0.1.1 —
-Stage 1 adopter findings`. Two entries below are standing habits rather than work to pull.
+Stage 1 adopter findings`. The Stage 1 ADOPTION findings (DPI resolution ownership, plain-form
+maximize deferral) landed in 0.1.2 — see `docs/task-archive.md` `### 0.1.2 — Stage 1 adopted:
+kit-owns-DPI + plain-form maximize deferral`. Two entries below are standing habits rather than work
+to pull.
 
 ### Standing (habits, not a queue)
 

@@ -12,6 +12,29 @@ entry template:
 - **Commit:** <hash>
 ```
 
+## 2026-08-01
+
+### 0.1.2: WindowStateManager.Apply on a plain Form opened restored-down from a saved Maximized=true
+
+- **Symptom.** After adopting `WindowStateManager` in a private desktop sibling (Stage 1 on 0.1.1)
+  a plain `Form` closed while maximized reopened as `Normal` however the saved state was set. Also
+  present in the app's own hand-rolled predecessor — A/B'd against the pre-adoption build, which
+  had the identical bug — so not a kit regression, but the kit was now the right place for the
+  one-time fix.
+- **Root cause.** `WindowStateManager.Apply` set `form.WindowState = FormWindowState.Maximized`
+  synchronously for non-`IAppMaximizable` forms. Measured live: state is `Maximized` at the end of
+  `OnHandleCreated` and back to `Normal` by `OnLoad` (WinForms' internal Load-time state
+  reconciliation on a form whose window was created without the maximize style set). The
+  `IAppMaximizable` path already used the `RestoreMaximizedTag` marker + `OnShown` consumption,
+  which fires after `OnLoad` and so survives the reset.
+- **Fix.** Extend the same marker mechanism to plain forms via a one-shot `Shown` handler
+  (`DeferMaximizeToShown` at `src/Shenora.WinForms/WindowStateManager.cs:125-135`), consuming the
+  same `RestoreMaximizedTag`. One owner for "apply maximize once realized."
+- **Verify.** New test `Apply_defers_maximize_to_Shown_for_a_plain_form` runs the full show
+  sequence under `Sta.Run` with `Application.Run(form)`, asserts `WindowState.Maximized` at
+  `Shown` time and that the marker was consumed. `dev.mjs verify` clean (564 dotnet + 85 vitest).
+- **Commit:** _pending_
+
 ## 2026-07-31
 
 ### P6.4: the npm package's shipped types needed `@types/react` in the CONSUMER's global program

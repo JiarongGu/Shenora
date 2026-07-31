@@ -1252,6 +1252,45 @@ Known capability LIMITS:
   trusted-publisher setup steps are in `docs/RELEASING.md`, and the npm ordering — org first,
   hand-publish once, then configure trusted publishing — is recorded above with the release.
 
+### 0.1.2 — Stage 1 adopted: kit-owns-DPI + plain-form maximize deferral (2026-08-01)
+
+Second round of adopter feedback, this time from the same private desktop sibling **after**
+adopting Stage 1 on 0.1.1 (roughly 45 hand-rolled lines replaced by `WindowStateManager` +
+`IWindowStateStore` over the app's settings file — verified live on a 200% display: position and
+size restore at the correct physical scale, an unreachable saved position re-centres, save/restore
+symmetric with no per-launch drift). Both findings are behaviour-only fixes on 0.1.1's surface — no
+new members, no baseline delta.
+
+- [x] **The kit owns DPI resolution entirely; the adopter supplies only LOGICAL state.**
+  `AttachTo(form)` / `Apply(form)` now defer to `HandleCreated` when the handle doesn't exist yet
+  and resolve `DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)` at that moment (still before `Show`, so
+  the restored geometry lands on the initial paint with no resize flash). The 0.1.1 default used
+  `DpiHelper.SystemScale()` (the PRIMARY monitor) synchronously, which made adopters responsible for
+  two pieces of kit-internal knowledge — that `DeviceDpi` is the right source and that
+  `OnHandleCreated` is the only moment it is valid — for a concern that is entirely the kit's. The
+  scale-explicit overloads stay as the escape hatch (test harness, preview against a different
+  monitor). `WindowStateManager.cs` L40-58 (parameterless defer) + L148-153 (`AttachTo` delegates).
+- [x] **`Apply` defers the maximize application to `Shown` for plain forms too.** In 0.1.1 only
+  `IAppMaximizable` implementors got the `RestoreMaximizedTag` deferral; a plain `Form` had
+  `WindowState.Maximized` set synchronously and — measured live by the adopter — the state reset to
+  `Normal` by `OnLoad`, so a window opened restored-down however it was closed. Fix reuses the same
+  marker via a one-shot `Shown` handler for plain forms (`DeferMaximizeToShown` at
+  `WindowStateManager.cs` L125-135). Not a kit regression — the app's hand-rolled predecessor had
+  the identical bug — but the kit is the right place for it to be fixed once.
+
+Two tests updated (`Apply_places_the_saved_position_even_when_maximized` now asserts the marker
+instead of the synchronous `WindowState`; `Window_state_applies_before_the_loop_and_saves_on_close`
+forces the form's handle before reading `Size`, matching how `Application.Run` would trigger the
+deferred apply) and three added (`Apply_parameterless_defers_to_HandleCreated_when_the_handle_does_not_exist_yet`,
+`Apply_parameterless_applies_synchronously_when_the_handle_already_exists`,
+`Apply_defers_maximize_to_Shown_for_a_plain_form`). API baseline unchanged — Apply/AttachTo
+signatures identical to 0.1.1.
+
+Deferred deliberately: `Apply(Form, double)` still applies synchronously — a caller supplying a
+scale has said "size against this scale now", and inserting a HandleCreated defer would be
+surprising. If the finding recurs there — an adopter passing a stale scale from before a handle
+existed — the fix is documentation, not another defer.
+
 ### 0.1.1 — Stage 1 adopter findings (2026-08-01)
 
 First real API feedback from the adoption loop — a private desktop sibling evaluated Stage 1 against

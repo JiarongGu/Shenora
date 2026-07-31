@@ -10,9 +10,9 @@ namespace Shenora.WinForms;
 /// from a logical baseline — a value saved at one monitor's DPI would be the wrong physical size
 /// at another. The fix: store LOGICAL px (physical ÷ the form's current-monitor DPI via
 /// <c>Control.DeviceDpi</c> — the form may be on a secondary monitor) and restore as physical
-/// (× the DPI resolved fresh THIS launch — the primary monitor by default, or the caller's
-/// explicit scale for per-monitor accuracy: see <see cref="Apply(Form, double)"/>). The DPI itself
-/// is never persisted. At 100% (96 DPI) every conversion is the identity. An off-screen saved
+/// (× the DPI resolved fresh THIS launch — the form's OWN monitor by default, via
+/// <see cref="Apply(Form)"/>'s deferred <c>HandleCreated</c> resolution). The DPI itself is
+/// never persisted. At 100% (96 DPI) every conversion is the identity. An off-screen saved
 /// position (a monitor was unplugged/rearranged) is discarded and the window re-centers, and a
 /// size saved on a bigger display shrinks to fit the target monitor's work area (see
 /// <see cref="WindowStateOptions.MaxToWorkArea"/>).
@@ -22,23 +22,46 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     private readonly WindowStateOptions _options = options ?? new WindowStateOptions();
 
     /// <summary>
-    /// Set the form's initial bounds from the saved state, DPI-corrected for this launch using the
-    /// PRIMARY monitor's scale — usable before the form has a handle, so before any device DPI is
-    /// available. Call BEFORE the form is shown (geometry set after show causes a visible jump).
+    /// Set the form's initial bounds from the saved state, DPI-corrected for this launch using
+    /// the form's OWN monitor DPI. If the handle already exists the scale is resolved from
+    /// <c>Control.DeviceDpi</c> and applied now; otherwise the whole apply is deferred to
+    /// <see cref="Control.HandleCreated"/>, which fires before <c>Show</c> — so the restored size
+    /// still lands on the initial paint without a resize flash. The 0.1.1 default resolved
+    /// <see cref="DpiHelper.SystemScale"/> (the PRIMARY monitor) synchronously; adopters had to
+    /// call <see cref="Apply(Form, double)"/> from <c>OnHandleCreated</c> with an explicit
+    /// per-monitor scale to be accurate on a mixed-DPI setup (adopter, 2026-08-01: two pieces of
+    /// kit-internal knowledge the adopter should not have owned — that <c>DeviceDpi</c> is the
+    /// right source and that <c>OnHandleCreated</c> is the only moment it is valid).
     /// <para>
-    /// For per-monitor accuracy on a mixed-DPI setup — the form's real monitor may not be the
-    /// primary — call <see cref="Apply(Form, double)"/> from <c>OnHandleCreated</c> with
-    /// <c>DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)</c>. That is still before <c>Show</c> so
-    /// there is no resize flash, and by then the handle sits on the actual target monitor.
+    /// Use <see cref="Apply(Form, double)"/> only when you need to size against a scale you
+    /// resolve yourself (a test harness, a preview thumbnail against a different monitor's DPI).
     /// </para>
     /// </summary>
-    public void Apply(Form form) => Apply(form, DpiHelper.SystemScale());
+    public void Apply(Form form)
+    {
+        ArgumentNullException.ThrowIfNull(form);
+        if (form.IsHandleCreated)
+        {
+            Apply(form, DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi));
+            return;
+        }
+        // Same shape as SecondaryWindows.Open's pre-handle intent (P5.5 H2): the marshal cannot
+        // deliver anything before the handle exists, so defer to HandleCreated. Setting Size /
+        // Location inside HandleCreated is still before OnLoad/OnShown, so the first paint sees
+        // the restored geometry.
+        void OnHandleCreated(object? sender, EventArgs e)
+        {
+            form.HandleCreated -= OnHandleCreated;
+            Apply(form, DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi));
+        }
+        form.HandleCreated += OnHandleCreated;
+    }
 
     /// <summary>
     /// The scale-explicit overload of <see cref="Apply(Form)"/>. See that method for the ordering
-    /// contract; use this when you know the target monitor's DPI (e.g. from <c>form.DeviceDpi</c>
-    /// after handle creation) and want the restored size sized against it instead of the primary
-    /// monitor's.
+    /// contract; use this when you have a scale you want to size against directly (a test
+    /// harness, a preview against a different monitor's DPI). The parameterless overload already
+    /// resolves per-monitor DPI itself — most callers do not need this one.
     /// </summary>
     /// <param name="form">The form to size and place.</param>
     /// <param name="scale">The DPI scale to convert the stored logical bounds by (1.0 at 100%).</param>
@@ -70,12 +93,16 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
 
         // Restore the maximized state through the window's OWN mechanism when it has one: setting
         // WindowState.Maximized on frameless chrome is exactly the ~6px-gap-per-edge bug its manual
-        // work-area path exists to avoid (P5.5 H2). The form is not shown yet, so a manual maximize is
-        // deferred to its first Shown — IAppMaximizable implementors apply it there.
-        if (maximized && form is not IAppMaximizable)
-            form.WindowState = FormWindowState.Maximized;
-        else if (maximized)
-            form.Tag = RestoreMaximizedTag;   // picked up by OptimizedForm on Shown
+        // work-area path exists to avoid (P5.5 H2). Deferred to first Shown either way — the marker
+        // pattern was IAppMaximizable-only in 0.1.1, but adopter measurement (2026-08-01) showed a
+        // plain Form with WindowState.Maximized set from Apply/OnHandleCreated goes back to Normal
+        // by OnLoad, so the window opens restored-down however it was closed. Extend the same
+        // deferral to plain forms via a one-shot Shown handler that consumes the same marker.
+        if (maximized)
+        {
+            form.Tag = RestoreMaximizedTag;
+            if (form is not IAppMaximizable) DeferMaximizeToShown(form);
+        }
     }
 
     /// <summary>
@@ -87,8 +114,30 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     internal const string RestoreMaximizedTag = "shenora:restore-maximized";
 
     /// <summary>
-    /// Attach the full lifecycle to <paramref name="form"/>: apply the saved geometry NOW and save it
-    /// on <see cref="Form.FormClosed"/>.
+    /// Consume <see cref="RestoreMaximizedTag"/> from <see cref="Form.Shown"/> for a plain form.
+    /// <para>
+    /// <see cref="IAppMaximizable"/> implementors (<see cref="OptimizedForm"/> is the one) override
+    /// <c>OnShown</c> and consume the marker themselves — a plain <see cref="Form"/> cannot, so this
+    /// subscribes a one-shot handler that applies <c>WindowState.Maximized</c> once the show
+    /// sequence has finished (adopter, 2026-08-01: setting it earlier does not survive OnLoad).
+    /// </para>
+    /// </summary>
+    private static void DeferMaximizeToShown(Form form)
+    {
+        void OnShown(object? sender, EventArgs e)
+        {
+            form.Shown -= OnShown;
+            if (!ReferenceEquals(form.Tag, RestoreMaximizedTag)) return;
+            form.Tag = null;
+            form.WindowState = FormWindowState.Maximized;
+        }
+        form.Shown += OnShown;
+    }
+
+    /// <summary>
+    /// Attach the full lifecycle to <paramref name="form"/>: apply the saved geometry (per-monitor
+    /// DPI accurate — via <see cref="Apply(Form)"/>, which defers to <c>HandleCreated</c> when the
+    /// handle doesn't exist yet) and save it on <see cref="Form.FormClosed"/>.
     /// <para>
     /// Exists because the ORDERING is the contract and it was hand-written in two places (P5.5 H4.5):
     /// apply BEFORE the form is shown — geometry set after show causes a visible jump — and save on
@@ -96,15 +145,18 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     /// window that flickers on open and forgets its position on close, with nothing failing loudly.
     /// </para>
     /// </summary>
-    public void AttachTo(Form form) => AttachTo(form, DpiHelper.SystemScale());
+    public void AttachTo(Form form)
+    {
+        ArgumentNullException.ThrowIfNull(form);
+        Apply(form);
+        form.FormClosed += (_, _) => Save(form);
+    }
 
     /// <summary>
-    /// The scale-explicit overload of <see cref="AttachTo(Form)"/>, so a caller that wants
-    /// per-monitor DPI accuracy (via <c>DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)</c> from
-    /// <c>OnHandleCreated</c>) does not lose the save-on-close ordering guarantee this method
-    /// exists to protect (P5.5 H4.5) — that adopter used to have to hand-roll the FormClosed hook
-    /// alongside <see cref="Apply(Form, double)"/>, re-introducing exactly the hazard AttachTo
-    /// removes.
+    /// The scale-explicit overload of <see cref="AttachTo(Form)"/>. Applies the geometry
+    /// synchronously at the caller-supplied scale (a test harness, a preview against a different
+    /// monitor's DPI). The parameterless overload already resolves per-monitor DPI itself — most
+    /// callers do not need this one.
     /// </summary>
     public void AttachTo(Form form, double scale)
     {

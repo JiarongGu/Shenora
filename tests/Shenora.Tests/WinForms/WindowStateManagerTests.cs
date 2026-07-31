@@ -229,10 +229,12 @@ public class WindowStateManagerTests
     {
         // The runner creates the form and THEN applies state, so an app that sets MinimumSize in its
         // constructor had it silently replaced — the reference composition's own 640x420 was dead code.
+        // Explicit scale so the assertion is DPI-independent (the parameterless overload is now
+        // deferred pre-handle; that path is exercised by Apply_parameterless_defers_to_HandleCreated).
         var store = new FakeWindowStateStore();
         using var form = new Form { MinimumSize = new Size(640, 420) };
 
-        new WindowStateManager(store, new WindowStateOptions()).Apply(form);
+        new WindowStateManager(store, new WindowStateOptions()).Apply(form, 1.0);
 
         Assert.Equal(new Size(640, 420), form.MinimumSize);
     }
@@ -244,11 +246,9 @@ public class WindowStateManagerTests
         using var form = new Form();
         var options = new WindowStateOptions();
 
-        new WindowStateManager(store, options).Apply(form);
+        new WindowStateManager(store, options).Apply(form, 1.0);
 
-        var scale = DpiHelper.SystemScale();
-        Assert.Equal(new Size(DpiHelper.Scale(options.MinWidth, scale), DpiHelper.Scale(options.MinHeight, scale)),
-                     form.MinimumSize);
+        Assert.Equal(new Size(options.MinWidth, options.MinHeight), form.MinimumSize);
     }
 
     [Fact]
@@ -282,14 +282,98 @@ public class WindowStateManagerTests
         // WinForms maximize onto the SAVED monitor, and what restore-down returns to (Save
         // captures RestoreBounds for exactly this). Regression: a review found an added
         // !maximized condition silently re-centering every maximized launch.
-        var scale = DpiHelper.SystemScale();
+        // Explicit scale so position is DPI-independent; the maximized flag now lands as the
+        // deferred marker (see Apply_defers_maximize_to_Shown_for_a_plain_form for the
+        // Shown-time consumption).
         var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, Maximized: true) };
         using var form = new Form();
-        new WindowStateManager(store).Apply(form);
+        new WindowStateManager(store).Apply(form, 1.0);
 
         Assert.Equal(FormStartPosition.Manual, form.StartPosition);
-        Assert.Equal(new Point(DpiHelper.Scale(10, scale), DpiHelper.Scale(10, scale)), form.Location);
-        Assert.Equal(FormWindowState.Maximized, form.WindowState);
+        Assert.Equal(new Point(10, 10), form.Location);
+        Assert.Equal(WindowStateManager.RestoreMaximizedTag, form.Tag);
+        Assert.Equal(FormWindowState.Normal, form.WindowState);
+    }
+
+    // ── Deferred DPI resolution + deferred maximize application (adopter, 2026-08-01) ────────────
+    // Two findings from Stage 1 adoption on 0.1.1: the adopter should not have to know that
+    // DeviceDpi is the right source and that OnHandleCreated is the only moment it is valid; and
+    // for a plain Form, WindowState.Maximized set from Apply/OnHandleCreated goes back to Normal
+    // by OnLoad, so the window opened restored-down however it was closed.
+
+    [Fact]
+    public void Apply_parameterless_defers_to_HandleCreated_when_the_handle_does_not_exist_yet()
+    {
+        // The 0.1.1 default resolved SystemScale (primary monitor) synchronously; the new default
+        // waits for a handle and resolves ScaleFromDeviceDpi(form.DeviceDpi) — per-monitor accurate
+        // by default. This test verifies deferral without asserting a specific scale (which
+        // depends on the test machine).
+        Sta.Run(() =>
+        {
+            var store = new FakeWindowStateStore { Stored = new WindowState(1200, 800, null, null, false) };
+            using var form = new Form { MinimumSize = new Size(1, 1) };
+            var before = form.Size;
+
+            new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
+
+            Assert.False(form.IsHandleCreated);
+            Assert.Equal(before, form.Size);   // nothing applied yet — deferred
+
+            _ = form.Handle;                   // fire HandleCreated
+
+            var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
+            Assert.Equal(new Size(DpiHelper.Scale(1200, scale), DpiHelper.Scale(800, scale)), form.Size);
+        });
+    }
+
+    [Fact]
+    public void Apply_parameterless_applies_synchronously_when_the_handle_already_exists()
+    {
+        Sta.Run(() =>
+        {
+            var store = new FakeWindowStateStore { Stored = new WindowState(1200, 800, null, null, false) };
+            using var form = new Form { MinimumSize = new Size(1, 1) };
+            _ = form.Handle;                   // handle exists before Apply
+
+            new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
+
+            var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
+            Assert.Equal(new Size(DpiHelper.Scale(1200, scale), DpiHelper.Scale(800, scale)), form.Size);
+        });
+    }
+
+    [Fact]
+    public void Apply_defers_maximize_to_Shown_for_a_plain_form()
+    {
+        // The finding: `Apply` set `form.WindowState = FormWindowState.Maximized` synchronously,
+        // and on a real Show the state reset to Normal by OnLoad. The fix reuses the marker path
+        // that IAppMaximizable already got, via a one-shot Shown handler for plain forms.
+        Sta.Run(() =>
+        {
+            var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, Maximized: true) };
+            using var form = new Form();
+            new WindowStateManager(store).Apply(form, 1.0);
+
+            Assert.Equal(WindowStateManager.RestoreMaximizedTag, form.Tag);
+            Assert.Equal(FormWindowState.Normal, form.WindowState);
+
+            // Actually run the show sequence: OnHandleCreated → OnLoad → OnShown. Our deferred
+            // handler consumes the marker on Shown and applies WindowState.Maximized; the test's
+            // Shown subscribes AFTER the deferred handler so it observes the applied state, then
+            // closes the pump.
+            FormWindowState afterShown = default;
+            object? tagAfterShown = null;
+            form.Shown += (_, _) =>
+            {
+                afterShown = form.WindowState;
+                tagAfterShown = form.Tag;
+                form.Close();
+            };
+            Application.Run(form);
+
+            Assert.Equal(FormWindowState.Maximized, afterShown);
+            Assert.Null(tagAfterShown);        // marker consumed
+        });
     }
 
     [Fact]

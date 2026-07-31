@@ -12,6 +12,35 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Changed
+
+- **`WindowStateManager.Apply(Form)` and `AttachTo(Form)` now resolve per-monitor DPI by default.**
+  The parameterless overloads defer to `HandleCreated` when the form has no handle yet, then
+  resolve `DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)` at that moment — still before `Show`,
+  so the restored geometry lands on the initial paint with no resize flash. On a mixed-DPI setup
+  the form is now sized against ITS monitor's DPI, not the primary. The 0.1.1 default used
+  `DpiHelper.SystemScale()` (the PRIMARY monitor) synchronously; adopters had to know two
+  kit-internal details — that `DeviceDpi` was the right source and that `OnHandleCreated` was
+  the only valid moment — and call the explicit `AttachTo(form, DpiHelper.ScaleFromDeviceDpi(
+  form.DeviceDpi))` overload themselves. The scale-explicit overloads are unchanged and remain
+  as the escape hatch for callers who want to size against a scale they resolve themselves
+  (a test harness, a preview against a different monitor). Reported by the first adopter after
+  Stage 1 adoption on 0.1.1.
+
+### Fixed
+
+- **`WindowStateManager.Apply` now defers the maximize application to `Shown` for a plain
+  `Form` too.** In 0.1.1 the `RestoreMaximizedTag` deferral was `IAppMaximizable`-only; for a
+  plain `Form`, `Apply` set `form.WindowState = FormWindowState.Maximized` synchronously — which
+  goes back to `Normal` by `OnLoad`, so a window opened restored-down however it was closed.
+  The fix extends the existing marker mechanism to plain forms via a one-shot `Shown` handler
+  that consumes the same tag. Same shape `IAppMaximizable` implementors already had, one owner
+  for "apply maximize once realized". Not a kit regression — the hand-rolled predecessor code
+  had the identical bug — but the kit is the right place for it to be fixed once. Reported by
+  the first adopter.
+
 ## 0.1.1 — 2026-07-31
 
 ### Added
