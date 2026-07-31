@@ -12,7 +12,7 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
-## Unreleased (0.1.0)
+## 0.1.0 — 2026-07-31
 
 ### Breaking
 
