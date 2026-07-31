@@ -136,4 +136,95 @@ public class OperationRegistryTests
 
         Assert.Equal(running.Id, registry.GetAll().Single().Id);
     }
+
+    [Fact]
+    public void Construction_rejects_a_negative_MaxHistory_naming_the_option()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new OperationRegistry(new EventBus(), new OperationRegistryOptions { MaxHistory = -1 }));
+
+        Assert.Contains(nameof(OperationRegistryOptions.MaxHistory), ex.Message);
+    }
+
+    [Fact]
+    public void Construction_rejects_a_negative_ProgressInterval_naming_the_option()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new OperationRegistry(new EventBus(),
+                new OperationRegistryOptions { ProgressInterval = TimeSpan.FromMilliseconds(-1) }));
+
+        Assert.Contains(nameof(OperationRegistryOptions.ProgressInterval), ex.Message);
+    }
+
+    /// <summary>
+    /// The everyday race this primitive exists for: a user clicks cancel on a long-running task at
+    /// the exact moment it finishes on its own. `Cancel` reads the CTS under the lock but calls
+    /// `.Cancel()` OUTSIDE it (deliberately — see the comment on `OperationRegistry.Cancel`), so a
+    /// concurrent `Complete`/`Fail`/`Cancel` can dispose that same CTS first, between the lock
+    /// release and the `.Cancel()` call — a window of roughly one machine instruction.
+    /// <para>
+    /// A single pair on thread-pool tasks does NOT reliably hit a window that narrow (tried first;
+    /// 300 sequential pool-task iterations never reproduced the fault). What DOES reproduce it: real
+    /// OS threads (guaranteed immediate, true parallelism — no thread-pool queuing), MANY pairs
+    /// racing at once released by one shared gate, so system-wide scheduler contention (far more
+    /// runnable threads than cores) makes a preemption land inside the window for at least one pair.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Concurrent_Cancel_and_Complete_never_leak_an_exception_and_settle_on_one_terminal_state()
+    {
+        const int Pairs = 500;
+        // MaxHistory must cover every operation this test finishes, or pruning removes the
+        // evidence before the post-condition check below can see it — unrelated to the race
+        // this test targets.
+        var (registry, _) = Build(new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero, MaxHistory = Pairs });
+        var operations = Enumerable.Range(0, Pairs)
+            .Select(_ => registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Cancellable = true }))
+            .ToList();
+
+        using var gate = new ManualResetEventSlim(false);
+        var escaped = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        var threads = new List<Thread>(Pairs * 2);
+
+        foreach (var operation in operations)
+        {
+            var cancelThread = new Thread(() =>
+            {
+                gate.Wait();
+                try { registry.Cancel(operation.Id); }
+                catch (Exception ex) { escaped.Add(ex); }
+            });
+            var completeThread = new Thread(() =>
+            {
+                gate.Wait();
+                try { operation.Complete(); }
+                catch (Exception ex) { escaped.Add(ex); }
+            });
+            threads.Add(cancelThread);
+            threads.Add(completeThread);
+            cancelThread.Start();
+            completeThread.Start();
+        }
+
+        gate.Set(); // release all Pairs*2 threads at once — maximize contention
+
+        // Bounded: a hang here would stall the whole (serial) suite instead of failing it.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        foreach (var thread in threads)
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            Assert.True(thread.Join(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero),
+                "a Cancel/Complete thread did not finish within the bound");
+        }
+
+        // The actual assertion for the Critical finding: no ObjectDisposedException (or anything
+        // else) escaped a Cancel()/Complete() call on either thread.
+        Assert.Empty(escaped);
+
+        foreach (var operation in operations)
+        {
+            var status = registry.GetAll().Single(o => o.Id == operation.Id).Status;
+            Assert.True(status is OperationStatus.Cancelled or OperationStatus.Completed);
+        }
+    }
 }

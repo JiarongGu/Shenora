@@ -98,17 +98,44 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
 
         CancellationTokenSource? cts;
+        string? miss;
         lock (_lock)
         {
-            if (!_entries.TryGetValue(id, out var entry) || entry.Status != OperationStatus.Running)
-                return false;
-            cts = entry.Cts; // read under the lock — Finish() may null it out concurrently otherwise
+            miss = Validate(id, out var entry);
+            cts = miss is null ? entry!.Cts : null; // read under the lock — Finish()/Dispose() may dispose it concurrently otherwise
+        }
+
+        if (miss is not null)
+        {
+            LogIgnored("Cancel", id, miss);
+            return false;
         }
 
         // Cancel the token BEFORE the status flip: a body observing the token sees the
-        // cancellation rather than racing a completed-then-cancelled transition.
-        cts?.Cancel();
-        Finish(id, OperationStatus.Cancelled, null);
+        // cancellation rather than racing a completed-then-cancelled transition. Deliberately
+        // OUTSIDE the lock: CancellationTokenSource.Cancel() runs registered callbacks
+        // synchronously, and a callback that re-enters the registry (e.g. observes the token and
+        // calls Report/Complete on the SAME thread) would deadlock re-acquiring _lock if it were
+        // still held here. Do NOT move this inside the lock.
+        //
+        // Because it runs outside the lock, `cts` can legitimately already be disposed by a
+        // CONCURRENT Finish() (another caller completed/failed/cancelled the same operation
+        // first) or by Dispose() (the registry is being torn down) between the read above and
+        // this call — CancellationTokenSource.Cancel() on an already-disposed instance throws
+        // ObjectDisposedException. That is not a bug to propagate: it means the operation is
+        // already finished (or the registry is gone), so THIS call's own Finish() below will
+        // correctly no-op and log the miss. Swallow it — proven the same way in the harvested
+        // source app.
+        try
+        {
+            cts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed by a concurrent Finish()/Dispose() — see the comment above.
+        }
+
+        Finish(id, OperationStatus.Cancelled, null, "Cancel");
         return true;
     }
 
@@ -127,15 +154,24 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     private void Report(string id, int? progress, OperationLabel? detail)
     {
         Entry? entry;
+        string? miss;
         lock (_lock)
         {
-            if (!_entries.TryGetValue(id, out entry) || entry.Status != OperationStatus.Running)
-                return;
-            if (progress.HasValue) entry.Progress = ClampProgress(progress);
-            if (detail is not null) entry.Detail = detail;
+            miss = Validate(id, out entry);
+            if (miss is null)
+            {
+                if (progress.HasValue) entry!.Progress = ClampProgress(progress);
+                if (detail is not null) entry!.Detail = detail;
+            }
         }
 
-        Publish(entry, immediate: false);
+        if (miss is not null)
+        {
+            LogIgnored("Report", id, miss);
+            return;
+        }
+
+        Publish(entry!, immediate: false);
     }
 
     /// <summary>
@@ -143,26 +179,71 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// a second call for an already-terminal (or unknown) id is a safe no-op — this is what makes
     /// the "Complete at the end + Fail in the catch" pattern safe.
     /// </summary>
-    private void Finish(string id, OperationStatus status, IpcError? error)
+    /// <param name="id">The operation id.</param>
+    /// <param name="status">The terminal status to transition to.</param>
+    /// <param name="error">The structured failure, when <paramref name="status"/> is <see cref="OperationStatus.Failed"/>; otherwise null.</param>
+    /// <param name="caller">The public API this came from (<c>"Complete"</c>/<c>"Fail"</c>/<c>"Cancel"</c>) — only for the miss diagnostic.</param>
+    private void Finish(string id, OperationStatus status, IpcError? error, string caller)
     {
         Entry? entry;
+        string? miss;
         lock (_lock)
         {
-            if (!_entries.TryGetValue(id, out entry) || entry.Status != OperationStatus.Running)
-                return;
+            miss = Validate(id, out entry);
+            if (miss is null)
+            {
+                entry!.Status = status;
+                entry.Error = error;
+                entry.FinishedAt = _options.TimeProvider.GetUtcNow();
+                if (status == OperationStatus.Completed) entry.Progress = 100;
+                entry.Cts?.Dispose();
+                entry.Cts = null;
 
-            entry.Status = status;
-            entry.Error = error;
-            entry.FinishedAt = _options.TimeProvider.GetUtcNow();
-            if (status == OperationStatus.Completed) entry.Progress = 100;
-            entry.Cts?.Dispose();
-            entry.Cts = null;
-
-            _finishedOrder.AddLast(id);
-            PruneHistory();
+                _finishedOrder.AddLast(id);
+                PruneHistory();
+            }
         }
 
-        Publish(entry, immediate: true);
+        if (miss is not null)
+        {
+            LogIgnored(caller, id, miss);
+            return;
+        }
+
+        Publish(entry!, immediate: true);
+    }
+
+    /// <summary>
+    /// Look up <paramref name="id"/>: null = found and running (proceed), <paramref name="entry"/>
+    /// is set; otherwise the diagnostic reason to log for why the caller's id was ignored (an
+    /// unknown id, or one already in a terminal state). MUST be called while holding
+    /// <see cref="_lock"/> — it reads <see cref="_entries"/> directly.
+    /// </summary>
+    private string? Validate(string id, out Entry? entry)
+    {
+        if (!_entries.TryGetValue(id, out entry))
+            return "is not known to this registry (a stale id usually means the caller kept a handle past the operation's life)";
+        return entry.Status != OperationStatus.Running
+            ? $"has already reached a terminal state ({entry.Status})"
+            : null;
+    }
+
+    /// <summary>
+    /// The one real job <see cref="OperationRegistryOptions.Log"/> has today: an id the registry
+    /// does not know, or one already terminal, silently dropped otherwise. Never called while
+    /// holding <see cref="_lock"/> — the sink is app code.
+    /// </summary>
+    private void LogIgnored(string caller, string id, string reason) =>
+        Log(() => $"[Shenora.Ipc] {caller} ignored: operation '{id}' {reason}.");
+
+    /// <summary>
+    /// Guarded and lazy, matching <c>WebViewIpcBridge.Log</c>'s convention: build the message only
+    /// when a sink is configured, and never let a throwing sink escape into the caller.
+    /// </summary>
+    private void Log(Func<string> message)
+    {
+        if (_options.Log is null) return;
+        AppCallback.Run(() => _options.Log(message()));
     }
 
     /// <summary>Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>. Caller holds <see cref="_lock"/>.</summary>
@@ -222,6 +303,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     {
         lock (_lock)
         {
+            // Safe even with an operation mid-Cancel on another thread: CancellationTokenSource
+            // .Dispose() is idempotent (no exception on a second call), so THIS call never throws
+            // regardless of ordering. The only side of that race that CAN throw — a concurrent
+            // Cancel()'s own cts.Cancel() call landing on an instance this Dispose() just disposed
+            // — is guarded at that call site (see Cancel()'s try/catch), not here.
             foreach (var entry in _entries.Values)
                 entry.Cts?.Dispose();
             _entries.Clear();
@@ -260,18 +346,18 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public void Report(int? progress = null, OperationLabel? detail = null) =>
             registry.Report(Id, progress, detail);
 
-        public void Complete() => registry.Finish(Id, OperationStatus.Completed, null);
+        public void Complete() => registry.Finish(Id, OperationStatus.Completed, null, "Complete");
 
         public void Fail(string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(code);
-            registry.Finish(Id, OperationStatus.Failed, new IpcError { Code = code, Message = message, Parameters = parameters });
+            registry.Finish(Id, OperationStatus.Failed, new IpcError { Code = code, Message = message, Parameters = parameters }, "Fail");
         }
 
         public void Fail(OperationException error)
         {
             ArgumentNullException.ThrowIfNull(error);
-            registry.Finish(Id, OperationStatus.Failed, error.ToError());
+            registry.Finish(Id, OperationStatus.Failed, error.ToError(), "Fail");
         }
 
         public void Cancel() => registry.Cancel(Id);
