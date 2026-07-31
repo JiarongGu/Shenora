@@ -1151,6 +1151,53 @@ Known capability LIMITS:
 - **Private specifics stay in `local/`.** Real names, paths and file-level findings from the survey
   live in `local/PROJECT_NOTES.md` and `local/EXTRACTION-MAP.md` — this file stays generic.
 
+### P7.1 — `DeferredSchemes` has never worked for a real custom scheme (RELEASE BLOCKER)
+
+Found 2026-07-31 by the P7 e2e adoption pass, which is the only thing that could have found it: the
+unit tests pass, the API baseline lists the feature, `docs/ADOPTION.md` recommends it for seekable
+media, and it cannot work.
+
+**The defect.** `WebViewHost.RegisterResourceServing` adds a `WebResourceRequested` filter for
+`scheme://*`, but nothing ever registers the scheme with
+`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations`. WebView2 only accepts scheme
+registrations when the ENVIRONMENT is created, so an unregistered scheme is rejected by the network
+stack before the filter is ever consulted. **Proven, not deduced:** a probe page fetching
+`probe://sample/data` got `TypeError: Failed to fetch`, with nothing in the host log.
+
+Only `http`/`https` deferred schemes can work today — and those are already covered by `VirtualHost`
+/ `FolderMappings`, so the feature as documented is empty.
+
+**Why this blocks the release.** It is public surface (`WebViewDeferredScheme`), the adoption guide
+tells the media-serving sibling to use it for exactly the thing it cannot do, and P6.6 closed a
+capability gap (`WebViewResourceRequest`/`Response`, `WebViewByteRange`) whose ONLY delivery route is
+this seam. Shipping 1.0 with it would freeze a feature that has never functioned.
+
+**What was attempted, and why it is not committed.** An API was written and then reverted rather than
+shipped unproven: `WebViewEnvironmentOptions.CustomSchemes` + a `WebViewCustomScheme` record feeding
+`CustomSchemeRegistrations`, plus a composition-time guard in `WebViewHost` refusing a deferred scheme
+the environment does not register. The guard is right and should come back. The registration **did not
+work**: with any custom scheme registered, `CoreWebView2Environment.CreateAsync` never returned —
+reproduced three times, including with a freshly deleted user-data folder and with
+`TreatAsSecure = false` + `AllowedOrigins = ["*"]`. Removing the scheme entirely restored a normal
+startup, so the registration is implicated and the rest of the change is not.
+
+**The leading hypothesis, UNTESTED.** The sample logs `[WebView2] Creating environment` TWICE per run
+(prewarm and the window) even though `GetSharedAsync` caches, and WebView2 requires that every
+environment sharing a user-data folder be created with IDENTICAL options. Two environments over one
+folder, each carrying its own `CoreWebView2CustomSchemeRegistration` instances, is the most likely
+cause of a deadlock that only appears once registrations exist. **Explain the double creation first** —
+it may be a real defect on its own, and it is cheap to instrument.
+
+- [ ] Explain why two environments are created per run when `GetSharedAsync` caches.
+- [ ] Get one custom scheme serving a real request end to end in the sample (a page `fetch` returning
+      206 with the right `Content-Range` — the probe is written and can be restored from this commit's
+      parent history).
+- [ ] Restore the `CustomSchemes` API + the composition guard, and only then re-point
+      `docs/ADOPTION.md`'s media guidance at it.
+- [ ] If custom schemes prove unworkable, say so in `ADOPTION.md` and route seekable media through an
+      https virtual host instead — but then the range seam still needs an e2e proof through that path,
+      because it has never served a real request either.
+
 ### P7 — Stabilisation + 1.0 (CURRENT)
 
 - [x] **The API-surface gate is complete** (P5.5 H6 closed the hole: protected members, default
@@ -1181,6 +1228,8 @@ Known capability LIMITS:
   the kit already provides, and its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`.
   Recorded as an amendment on D10; the two-profile split stands, only the extra package is dropped.
 - [ ] **First publish + repo public.** Blocked with P1.2 on a GitHub remote existing.
+- [ ] **BLOCKED ON P7.1 above** — do not cut 1.0 while a documented, publicly-surfaced serving
+  feature has never worked. See the release-readiness note there.
 
 ### P1 — Skeleton tail
 
