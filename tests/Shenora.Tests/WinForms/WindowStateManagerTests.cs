@@ -308,13 +308,21 @@ public class WindowStateManagerTests
         // waits for a handle and resolves ScaleFromDeviceDpi(form.DeviceDpi) — per-monitor accurate
         // by default. This test verifies deferral without asserting a specific scale (which
         // depends on the test machine).
+        //
+        // Small saved size + tiny MinWidth/MinHeight for the same reason
+        // Apply_scale_overload_sizes_by_the_explicit_scale_not_SystemScale explains: once WinForms
+        // creates a Form's handle it clamps Size to the current monitor's work area, so a saved
+        // size the CI runner cannot fit (GitHub Actions runner: 1044x788) reads back CLAMPED and
+        // the assertion misfires with a value nothing in the kit chose (v1 of this test regressed
+        // on CI at 1200x800, 2026-08-01).
         Sta.Run(() =>
         {
-            var store = new FakeWindowStateStore { Stored = new WindowState(1200, 800, null, null, false) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(400, 300, null, null, false) };
             using var form = new Form { MinimumSize = new Size(1, 1) };
             var before = form.Size;
+            var options = new WindowStateOptions { MaxToWorkArea = false, MinWidth = 100, MinHeight = 100 };
 
-            new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
+            new WindowStateManager(store, options).Apply(form);
 
             Assert.False(form.IsHandleCreated);
             Assert.Equal(before, form.Size);   // nothing applied yet — deferred
@@ -322,23 +330,26 @@ public class WindowStateManagerTests
             _ = form.Handle;                   // fire HandleCreated
 
             var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
-            Assert.Equal(new Size(DpiHelper.Scale(1200, scale), DpiHelper.Scale(800, scale)), form.Size);
+            Assert.Equal(new Size(DpiHelper.Scale(400, scale), DpiHelper.Scale(300, scale)), form.Size);
         });
     }
 
     [Fact]
     public void Apply_parameterless_applies_synchronously_when_the_handle_already_exists()
     {
+        // Same size/min sizing rationale as
+        // Apply_parameterless_defers_to_HandleCreated_when_the_handle_does_not_exist_yet.
         Sta.Run(() =>
         {
-            var store = new FakeWindowStateStore { Stored = new WindowState(1200, 800, null, null, false) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(400, 300, null, null, false) };
             using var form = new Form { MinimumSize = new Size(1, 1) };
             _ = form.Handle;                   // handle exists before Apply
+            var options = new WindowStateOptions { MaxToWorkArea = false, MinWidth = 100, MinHeight = 100 };
 
-            new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
+            new WindowStateManager(store, options).Apply(form);
 
             var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
-            Assert.Equal(new Size(DpiHelper.Scale(1200, scale), DpiHelper.Scale(800, scale)), form.Size);
+            Assert.Equal(new Size(DpiHelper.Scale(400, scale), DpiHelper.Scale(300, scale)), form.Size);
         });
     }
 
