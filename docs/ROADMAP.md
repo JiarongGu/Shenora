@@ -1456,11 +1456,23 @@ green (dotnet build + tests, npm build + tests, sensitive scan, knowledge check)
 
 ## Remaining
 
-### P1 — Skeleton hardening (short tail)
+> **NOTHING IS REMAINING. v0.1.0 shipped on 2026-07-31** — five NuGet packages + `@shenora/react` on
+> npm, through the manual Release workflow. P1–P7 are all complete, and every section below is kept
+> for the record of what each phase set out to do and which carry-overs it decided against. The open
+> backlog is `TASKS.md` (two standing habits); the task-level record is `docs/task-archive.md`.
+>
+> **What "next" looks like from here is not a phase.** Growth is harvest-driven (D15) and
+> adoption-driven: work arrives when a sibling app adopts the kit and hits something, or when a
+> feature worth generalising emerges while building one. The candidates that were deliberately NOT
+> built are under `### Later / candidates` at the end.
 
-Both original bullets are DONE — the placeholder types were pinned in P2 (see Done) and the
-local-feed consumption smoke landed as P1.1 (`0776f37`). Only one item remains:
-- **P1.2 — release-workflow dry run**, blocked until a GitHub remote exists (`TASKS.md`).
+### P1 — Skeleton hardening (short tail) — COMPLETE
+
+Both original bullets were done in P2/P1.1 (`0776f37`), and **P1.2 closed with the real release**:
+OIDC trusted publishing is validated by v0.1.0 having shipped through it. Its own premise was wrong
+and the workflow was changed rather than the plan — `draft=true` is not a dry run (it only affects
+the GitHub Release, while both registry pushes precede it and are permanent), so a genuine `dry_run`
+input was added.
 
 ### P2 — Core host extraction (brief Phase 2) — COMPLETE except deliberate carry-overs
 
@@ -1497,7 +1509,7 @@ profiles, silent refresh, clear-on-logout) and co-browse streaming (`CoBrowseSes
 screencast frames out, input dispatched back, human-solved by design), in its own package with a
 live sample demo.
 
-### P5.5 — Consolidation: cleanup, re-layer, roadmap revisit — IN PROGRESS, before P6
+### P5.5 — Consolidation: cleanup, re-layer, roadmap revisit — **COMPLETE 2026-07-31**
 
 > **STATUS (2026-07-30, end of the second consolidation session): H1 · H2 · H3 · H4 · H5 · H6 · H8 are
 > DONE. Only H7 and H9 remain.** Fourteen commits across two sessions; `dev.mjs verify` PASSES at
@@ -1638,7 +1650,12 @@ they add is the missing correlation. Per D21 any wire-format compat lives in the
 never in the kit's envelope — a question the 2026-07-30 extraction survey had deliberately left open
 until adoption time, now decided.
 
-### P7 — Stabilisation + 1.0 (brief Phase 6)
+### P7 — Stabilisation + 1.0 (brief Phase 6) — **COMPLETE 2026-07-31 (shipped as v0.1.0)**
+
+> Every item below is done. **1.0 was NOT cut**, deliberately: five breaking changes landed while
+> readying the release, so v0.1.0 ships the stabilised surface and 1.0 stays a separate, deliberate
+> freeze once adoption has exercised it. `Shenora.Hosting.AspNetCore` was answered **NO** (D10) — on
+> evidence, not deferral. See `## Done` for the narrative and `docs/task-archive.md` for the tasks.
 
 - API-surface baseline tests on; docs pass (XML docs, README per package section); CHANGELOG
   discipline from first publish; `Shenora.Hosting.AspNetCore` go/no-go (D10); first NuGet/npm

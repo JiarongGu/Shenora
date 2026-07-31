@@ -33,9 +33,19 @@ needed a full `git filter-repo` rewrite — the working tree being clean is NOT 
   `git commit --no-verify`.
 - If the guard blocks you: move the value to `local/` and reference it generically in the tracked file.
 - **A leak already committed is a history problem, not a working-tree problem.** Editing the
-  current file leaves it in every past commit + message. Fix with a scoped `git filter-repo` pass
-  (backup bundle first, dry-run on a `--mirror` clone, verify
-  `git grep <token> $(git rev-list --all)` = 0 AND messages, then apply).
+  current file leaves it in every past commit + message.
+  **CHECK IT, don't assume it:** `node devtools/dev.mjs check-sensitive --history` scans every blob
+  reachable from every ref, every PATH those blobs ever had, and every commit MESSAGE. That mode
+  exists because this rule demanded a history check for five phases while the scanner only offered
+  `--tree`, which reads the CURRENT checkout — so the one question the rule cares most about was the
+  one it could not answer. Run it before making a repo public, and after any scrub.
+  If it finds something, fix with a scoped `git filter-repo` pass (backup bundle first, dry-run on a
+  `--mirror` clone, verify `git grep <token> $(git rev-list --all)` = 0 AND messages, then apply).
+  ⚠ **A history scan that reports clean deserves the same suspicion as a test that passes.** Prove
+  the pipeline is live before believing it: append a pattern matching a string you KNOW is in
+  history, confirm it reports hits from both a blob and a `commit-message`, then remove it. Verified
+  that way when the mode was added (2026-07-31): 929 blobs + all messages, clean on the real
+  patterns, and correctly noisy on planted ones.
 
 ## Gotchas / traps
 

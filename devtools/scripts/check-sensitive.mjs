@@ -6,6 +6,8 @@
 //
 //   node devtools/scripts/check-sensitive.mjs          # scan STAGED changes (what pre-commit does)
 //   node devtools/scripts/check-sensitive.mjs --tree    # scan every tracked file
+//   node devtools/scripts/check-sensitive.mjs --history # scan ALL history: every reachable blob,
+//                                                      # every path it ever had, every commit message
 //   node devtools/scripts/check-sensitive.mjs --message <file>   # scan a commit message (commit-msg hook)
 //   …any mode + --allow-builtins-only                  # opt in to running WITHOUT the private patterns
 //
@@ -29,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tree = process.argv.includes('--tree');
+const history = process.argv.includes('--history');
 // Env var as well as the flag, so CI (where gitignored local/ cannot exist) can opt in once at the
 // job level without threading a flag through `dev.mjs verify`.
 const allowBuiltinsOnly = process.argv.includes('--allow-builtins-only')
@@ -87,7 +90,66 @@ function decode(buf) {
 
 // Files to scan + a getter for their raw bytes (staged blob vs on-disk vs a commit message).
 let files, bufOf;
-if (messageFile) {
+if (history) {
+  // HISTORY MODE — the one the rule has always demanded and no scanner could do. Both this rule and
+  // the sibling's say "a leak already committed is a HISTORY problem, not a working-tree problem",
+  // and then offered only --tree, which reads the CURRENT checkout. Editing the file away leaves the
+  // value in every past commit, and on a public repo those are all fetchable. This scans every blob
+  // reachable from every ref, every PATH those blobs ever had, and every commit MESSAGE.
+  const objects = git(['rev-list', '--objects', '--all']).split('\n').filter(Boolean);
+  const pathOf = new Map();
+  for (const line of objects) {
+    const sp = line.indexOf(' ');
+    if (sp > 0) pathOf.set(line.slice(0, sp), line.slice(sp + 1));
+  }
+
+  // One `cat-file --batch-check` for the whole set: per-object spawns would be ~1500 processes.
+  const shas = [...pathOf.keys()];
+  const check = execFileSync('git', ['cat-file', '--batch-check'],
+    { cwd: repo, input: shas.join('\n'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const blobs = [];
+  for (const line of check.split('\n')) {
+    const [sha, type, size] = line.split(' ');
+    // 4 MB cap: anything larger in this repo is an image or a package, and the NUL check below
+    // would drop it anyway — this just avoids buffering it.
+    if (type === 'blob' && Number(size) <= 4 * 1024 * 1024) blobs.push(sha);
+  }
+
+  // One `cat-file --batch` likewise. Output per object: "<sha> blob <size>\n" + <size> bytes + "\n".
+  const contents = new Map();
+  if (blobs.length) {
+    const out = execFileSync('git', ['cat-file', '--batch'],
+      { cwd: repo, input: blobs.join('\n'), maxBuffer: 512 * 1024 * 1024 });
+    let at = 0;
+    while (at < out.length) {
+      const nl = out.indexOf(0x0A, at);
+      if (nl < 0) break;
+      const [sha, type, size] = out.subarray(at, nl).toString('utf8').split(' ');
+      const len = Number(size);
+      if (type !== 'blob' || !Number.isFinite(len)) break;
+      contents.set(sha, out.subarray(nl + 1, nl + 1 + len));
+      at = nl + 1 + len + 1;   // payload + the trailing newline git appends
+    }
+  }
+
+  // Commit messages are history too — NUL-delimited so a message body can contain anything.
+  const messages = git(['log', '--all', '--format=%H%x00%B%x00']).split('\0');
+  const buffers = new Map();
+  files = [];
+  for (const sha of blobs) {
+    const label = `${pathOf.get(sha) || '(no path)'}  @${sha.slice(0, 8)}`;
+    files.push(label);
+    buffers.set(label, contents.get(sha) ?? Buffer.alloc(0));
+  }
+  for (let i = 0; i + 1 < messages.length; i += 2) {
+    const sha = messages[i].trim();
+    if (!sha) continue;
+    const label = `commit-message ${sha.slice(0, 8)}`;
+    files.push(label);
+    buffers.set(label, Buffer.from(messages[i + 1], 'utf8'));
+  }
+  bufOf = (f) => buffers.get(f) ?? Buffer.alloc(0);
+} else if (messageFile) {
   files = [messageFile];
   bufOf = () => { try { return readFileSync(path.isAbsolute(messageFile) ? messageFile : path.join(repo, messageFile)); } catch { return Buffer.alloc(0); } };
 } else if (tree) {
@@ -126,7 +188,11 @@ for (const f of files) {
 }
 
 if (hits.length === 0) {
-  if (tree) console.log('check-sensitive: clean — no dev-machine paths, brands, sibling names, or R18 wording in tracked files.');
+  if (history) {
+    console.log(`check-sensitive: HISTORY clean — scanned ${files.length} blobs + commit messages `
+      + 'across every ref. No dev-machine paths, brands, sibling names, or R18 wording.');
+  }
+  else if (tree) console.log('check-sensitive: clean — no dev-machine paths, brands, sibling names, or R18 wording in tracked files.');
   else if (messageFile) console.log('check-sensitive: commit message clean.');
   process.exit(0);
 }

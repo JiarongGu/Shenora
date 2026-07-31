@@ -13,7 +13,8 @@ update the relevant entry HERE — this file is the durable index.
 | Package layering / where a contract belongs / mobile-shareable logic | `docs/2026-07-30-shenora-relayering-design.md` (D19+D20: one Windows shell layer, portable contracts in Core) |
 | Sending IPC without awaiting / long-running work / correlating streamed results | `docs/2026-07-31-shenora-oneway-ipc-design.md` (why the event pipe is the default, not request/response) |
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
-| Picking the next piece of work | `TASKS.md` (root — pending only), `docs/ROADMAP.md` `## Remaining` |
+| Picking the next piece of work | `TASKS.md` (root — OPEN only; v0.1.0 shipped, nothing queued) |
+| Why a FINISHED decision was made that way | `docs/task-archive.md` (the closed backlog: plans, file:line anchors, judgement calls) |
 | What shipped already / verifying history | `docs/ROADMAP.md` `## Done`, `CHANGELOG.md` |
 | Reviewing the codebase (full/whole-tree review) | `docs/REVIEW-GUIDE.md` (orientation: invariants by area, risk hotspots, settled decisions, coverage map) |
 | Extracting code from a sibling app | `.claude/knowledge/extraction-sources.md` (tracked, de-identified) + `local/EXTRACTION-MAP.md` (private, named) |
@@ -50,6 +51,7 @@ update the relevant entry HERE — this file is the durable index.
 | `RELEASING.md` | How releases are cut and consumed pre-release | Keep in sync with reality |
 | `REVIEW-GUIDE.md` | Orientation for a whole-codebase review: invariants by area, risk hotspots, settled decisions, coverage map | Keep in sync with reality |
 | `../CHANGELOG.md` | Per-version release log (Breaking/Added/Changed/Fixed) | Append per release |
-| `../TASKS.md` | Pending backlog only (done ⇒ ROADMAP, removed here) | Living |
+| `../TASKS.md` | OPEN backlog only — a done entry MOVES to `task-archive.md`, it is not checked off in place | Living |
+| `task-archive.md` | The completed-task record (P5.5 · P6 · P7 · P1). Several entries carry warnings written for a future session — read before re-litigating a finished decision | Append on close |
 | `../README.md` | The public front door + package table. **Ships inside every nupkg**; its `## Status` version headline is tool-synced (`dev.mjs pack`/`doctor --fix`) — never hand-edit that line | Keep in sync with reality |
 | `../src/Shenora.React/README.md` | The npm package's own README (shipped to npmjs via `files`) | Keep in sync with the client API |
