@@ -34,14 +34,18 @@ Build and ship. Nothing has changed yet — this stage only proves the feed.
 
 ---
 
-## Stage 1 — shell primitives (no IPC dependency, highest payoff)
+## Stage 1 — shell primitives (no IPC dependency, land one at a time)
 
-These live in `Shenora.WinForms` and know nothing about IPC, so they can land one at a time.
+These live in `Shenora.WinForms` and know nothing about IPC, so they can land one at a time. Payoff
+is **proportional to what you actually hand-rolled** — an app that owns a splash launcher, wraps
+`Process.Start` for tests and never bothered with a single-instance mutex will only see the window
+and secondary-window rows apply. Table row = a specific handrolled piece it replaces, not a claim
+that every app needs every row.
 
 | You probably hand-rolled | Use | Notes |
 |---|---|---|
-| Window bounds save/restore | `WindowStateManager` (+ `IWindowStateStore`, `JsonFileWindowStateStore`) | Stores LOGICAL px and restores physical, validates the rect is reachable, and prefers `IAppMaximizable` over `Form.WindowState`. **Fixes a bug you likely have:** hand-rolled versions reach for `Screen.WorkingArea`, which is DPI-mis-scaled on a HiDPI monitor (~12 px per edge); the kit uses `GetMonitorInfo`. |
-| A double-buffered form base / frameless chrome | `OptimizedForm(+Options)` | Frameless is opt-in. Maximize is manual (work-area fill), so `IsAppMaximized` is the truth, **not** `Form.WindowState`. |
+| Window bounds save/restore | `WindowStateManager` (+ `IWindowStateStore`, `JsonFileWindowStateStore`) | Stores LOGICAL px and restores physical, validates the rect is reachable, prefers `IAppMaximizable` over `Form.WindowState`, and shrinks a size saved on a bigger display to fit a smaller one (`WindowStateOptions.MaxToWorkArea`, default on). For per-monitor DPI accuracy on a mixed-DPI setup, call `AttachTo(form, DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi))` (or `Apply(...)` if you handle save-on-close yourself) from `OnHandleCreated` instead of the parameterless overload — the primary monitor's DPI is the default because it is usable before any handle exists, not because it is the most accurate answer. |
+| A double-buffered form base / frameless chrome | `OptimizedForm(+Options)` | Frameless is opt-in. Maximize is manual (work-area fill), so `IsAppMaximized` is the truth, **not** `Form.WindowState`. **Fixes a bug you likely have:** hand-rolled work-area code reaches for `Screen.WorkingArea`, which is DPI-mis-scaled on a HiDPI monitor (~12 px per edge — the visible gap the manual maximize path exists to remove); `OptimizedForm` uses `GetMonitorInfo`. |
 | Caption buttons drawn by the page | `OptimizedFormOptions.NativeCaptionButtons` + `CaptionButtonColors` | Report the rects via `SetCaptionButtons`; the window clips them out of every covering child and paints them, which is what buys Windows 11 **Snap Layouts**. Requires `FramelessChrome` — the combination throws at construction rather than doing nothing. |
 | Tray icon + themed menu | `TrayIcon(+Options)`, `TrayMenuColors` | **`CloseReason.UserClosing` also means a programmatic `Close()`** — with close-to-tray on, a startup-abort path that calls `Close()` leaves a resident process. Close via `ExitApplication()`. |
 | Single-instance mutex + activate-existing | `SingleInstanceGuard` | Idempotent by design (an OS mutex is per-thread reentrant, which broke the naive version). |

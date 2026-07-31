@@ -32,6 +32,16 @@ public sealed class WindowStateOptions
 
     /// <inheritdoc cref="MinVisibleWidth"/>
     public int MinVisibleHeight { get; init; } = 60;
+
+    /// <summary>
+    /// Shrink the restored physical width/height to the target monitor's work area when a size
+    /// saved on a bigger display would overflow a smaller one (moving to a laptop, unplugging an
+    /// external monitor). Default true — a window bigger than its monitor is one the user cannot
+    /// resize back down, which is a worse state than a window slightly smaller than they saved.
+    /// The <see cref="MinWidth"/>/<see cref="MinHeight"/> floor still applies, and position is
+    /// validated separately by <see cref="WindowStateManager.IsVisible"/>.
+    /// </summary>
+    public bool MaxToWorkArea { get; init; } = true;
 }
 
 /// <summary>

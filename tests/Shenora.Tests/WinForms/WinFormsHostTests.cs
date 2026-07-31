@@ -186,8 +186,12 @@ public class WinFormsHostTests
         using var app = builder.Build();
         app.Run();
 
+        // Compute the expected via the SAME (work-area-clamped) overload Apply now uses (0.1.1),
+        // not the 3-arg one, so this assertion cannot silently drift on a runner whose primary
+        // work area is smaller than the saved size.
         var expected = WindowStateManager.ToPhysical(
-            store.Stored, DpiHelper.SystemScale(), new WindowStateOptions());
+            store.Stored, DpiHelper.SystemScale(), new WindowStateOptions(),
+            Screen.AllScreens.Select(s => s.WorkingArea));
         Assert.True(store.LoadCalled);
         Assert.Equal(expected.Width, sizeInLoop.Width);
         Assert.Equal(expected.Height, sizeInLoop.Height);

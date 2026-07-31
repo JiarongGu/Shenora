@@ -619,9 +619,10 @@ public class OptimizedForm : Form, IAppMaximizable
     public Rectangle AppRestoreBounds => _options.FramelessChrome ? _restoreBounds : RestoreBounds;
 
     /// <summary>
-    /// Apply a saved maximized state once the window is realized. <see cref="WindowStateManager.Apply"/>
-    /// runs BEFORE the form is shown, and a manual work-area maximize needs a live handle and a monitor
-    /// to measure — so it leaves a marker and this consumes it.
+    /// Apply a saved maximized state once the window is realized.
+    /// <see cref="WindowStateManager.Apply(Form)"/> runs BEFORE the form is shown, and a manual
+    /// work-area maximize needs a live handle and a monitor to measure — so it leaves a marker and
+    /// this consumes it.
     /// </summary>
     protected override void OnShown(EventArgs e)
     {

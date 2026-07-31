@@ -10,29 +10,48 @@ namespace Shenora.WinForms;
 /// from a logical baseline — a value saved at one monitor's DPI would be the wrong physical size
 /// at another. The fix: store LOGICAL px (physical ÷ the form's current-monitor DPI via
 /// <c>Control.DeviceDpi</c> — the form may be on a secondary monitor) and restore as physical
-/// (× the primary DPI resolved fresh THIS launch). The DPI itself is never persisted. At 100%
-/// (96 DPI) every conversion is the identity. An off-screen saved position (a monitor was
-/// unplugged/rearranged) is discarded and the window re-centers.
+/// (× the DPI resolved fresh THIS launch — the primary monitor by default, or the caller's
+/// explicit scale for per-monitor accuracy: see <see cref="Apply(Form, double)"/>). The DPI itself
+/// is never persisted. At 100% (96 DPI) every conversion is the identity. An off-screen saved
+/// position (a monitor was unplugged/rearranged) is discarded and the window re-centers, and a
+/// size saved on a bigger display shrinks to fit the target monitor's work area (see
+/// <see cref="WindowStateOptions.MaxToWorkArea"/>).
 /// </summary>
 public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptions? options = null)
 {
     private readonly WindowStateOptions _options = options ?? new WindowStateOptions();
 
     /// <summary>
-    /// Set the form's initial bounds from the saved state, DPI-corrected for this launch.
-    /// No saved state → the centered default size. Also sets the DPI-scaled minimum size.
-    /// Call BEFORE the form is shown (geometry set after show causes a visible jump).
+    /// Set the form's initial bounds from the saved state, DPI-corrected for this launch using the
+    /// PRIMARY monitor's scale — usable before the form has a handle, so before any device DPI is
+    /// available. Call BEFORE the form is shown (geometry set after show causes a visible jump).
+    /// <para>
+    /// For per-monitor accuracy on a mixed-DPI setup — the form's real monitor may not be the
+    /// primary — call <see cref="Apply(Form, double)"/> from <c>OnHandleCreated</c> with
+    /// <c>DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)</c>. That is still before <c>Show</c> so
+    /// there is no resize flash, and by then the handle sits on the actual target monitor.
+    /// </para>
     /// </summary>
-    public void Apply(Form form)
+    public void Apply(Form form) => Apply(form, DpiHelper.SystemScale());
+
+    /// <summary>
+    /// The scale-explicit overload of <see cref="Apply(Form)"/>. See that method for the ordering
+    /// contract; use this when you know the target monitor's DPI (e.g. from <c>form.DeviceDpi</c>
+    /// after handle creation) and want the restored size sized against it instead of the primary
+    /// monitor's.
+    /// </summary>
+    /// <param name="form">The form to size and place.</param>
+    /// <param name="scale">The DPI scale to convert the stored logical bounds by (1.0 at 100%).</param>
+    public void Apply(Form form, double scale)
     {
-        var scale = DpiHelper.SystemScale();
+        ArgumentNullException.ThrowIfNull(form);
         // Don't clobber a minimum the FORM set for itself (P5.5 H2). The runner creates the form and
         // then calls Apply, so an app that sets MinimumSize in its constructor had it silently
         // replaced by these defaults — the reference composition's own 640x420 was dead code.
         if (form.MinimumSize == Size.Empty)
             form.MinimumSize = new Size(DpiHelper.Scale(_options.MinWidth, scale), DpiHelper.Scale(_options.MinHeight, scale));
 
-        var (width, height, x, y, maximized) = ToPhysical(store.Load(), scale, _options);
+        var (width, height, x, y, maximized) = ToPhysical(store.Load(), scale, _options, WorkAreas());
         form.Size = new Size(width, height);
 
         // Place the saved position even when maximized: WinForms maximizes onto the monitor
@@ -77,10 +96,20 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     /// window that flickers on open and forgets its position on close, with nothing failing loudly.
     /// </para>
     /// </summary>
-    public void AttachTo(Form form)
+    public void AttachTo(Form form) => AttachTo(form, DpiHelper.SystemScale());
+
+    /// <summary>
+    /// The scale-explicit overload of <see cref="AttachTo(Form)"/>, so a caller that wants
+    /// per-monitor DPI accuracy (via <c>DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)</c> from
+    /// <c>OnHandleCreated</c>) does not lose the save-on-close ordering guarantee this method
+    /// exists to protect (P5.5 H4.5) — that adopter used to have to hand-roll the FormClosed hook
+    /// alongside <see cref="Apply(Form, double)"/>, re-introducing exactly the hazard AttachTo
+    /// removes.
+    /// </summary>
+    public void AttachTo(Form form, double scale)
     {
         ArgumentNullException.ThrowIfNull(form);
-        Apply(form);
+        Apply(form, scale);
         form.FormClosed += (_, _) => Save(form);
     }
 
@@ -137,6 +166,12 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     /// Pure conversion: stored LOGICAL state → PHYSICAL px at <paramref name="scale"/>. Nulls fall
     /// back to the default size; the minimum clamps in LOGICAL space; position converts only as a
     /// pair (an incomplete pair can't place a window — the caller centers instead).
+    /// <para>
+    /// This overload does NOT clamp to a monitor's work area, so a size saved on a big display can
+    /// restore larger than a smaller display can show. Prefer
+    /// <see cref="ToPhysical(WindowState?, double, WindowStateOptions, IEnumerable{Rectangle})"/>
+    /// when work areas are known — that is what <see cref="Apply(Form)"/> uses.
+    /// </para>
     /// </summary>
     public static (int Width, int Height, int? X, int? Y, bool Maximized) ToPhysical(
         WindowState? state, double scale, WindowStateOptions options)
@@ -154,6 +189,57 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
             y = (int)Math.Round(ly * s);
         }
         return (width, height, x, y, state?.Maximized ?? false);
+    }
+
+    /// <summary>
+    /// The work-area-clamped overload of
+    /// <see cref="ToPhysical(WindowState?, double, WindowStateOptions)"/>. When
+    /// <see cref="WindowStateOptions.MaxToWorkArea"/> is on, the physical width/height shrink to
+    /// the target monitor's work area — the one the saved position falls on (or overlaps most,
+    /// or the first, in that order). The MinWidth/MinHeight floor still applies. Position is not
+    /// clamped: unreachable positions are already handled by <see cref="IsVisible"/> and the
+    /// caller's centre fallback, which is a separate concern.
+    /// </summary>
+    public static (int Width, int Height, int? X, int? Y, bool Maximized) ToPhysical(
+        WindowState? state, double scale, WindowStateOptions options, IEnumerable<Rectangle> workAreas)
+    {
+        var (width, height, x, y, maximized) = ToPhysical(state, scale, options);
+        if (!options.MaxToWorkArea) return (width, height, x, y, maximized);
+
+        var target = PickTarget(workAreas, x, y, width, height);
+        if (target is not { } area) return (width, height, x, y, maximized);
+
+        var s = scale > 0 ? scale : 1.0;
+        var minW = (int)Math.Round(options.MinWidth * s);
+        var minH = (int)Math.Round(options.MinHeight * s);
+        width = Math.Min(width, Math.Max(minW, area.Width));
+        height = Math.Min(height, Math.Max(minH, area.Height));
+        return (width, height, x, y, maximized);
+    }
+
+    /// <summary>
+    /// The work area to clamp against: the one containing the saved top-left; else the one with
+    /// the largest overlap with the candidate rect; else the first work area the caller yielded
+    /// (<see cref="WorkAreas"/> deliberately yields the PRIMARY monitor first, so this fallback
+    /// matches what happens when no position is saved and the window centres onto the primary).
+    /// </summary>
+    private static Rectangle? PickTarget(IEnumerable<Rectangle> workAreas, int? x, int? y, int width, int height)
+    {
+        Rectangle? first = null;
+        Rectangle? containing = null;
+        Rectangle? bestOverlap = null;
+        var bestOverlapArea = 0;
+        foreach (var area in workAreas)
+        {
+            first ??= area;
+            if (x is not { } px || y is not { } py) continue;
+            if (containing is null && area.Contains(px, py)) containing = area;
+            var ow = Math.Max(0, Math.Min(px + width, area.Right) - Math.Max(px, area.Left));
+            var oh = Math.Max(0, Math.Min(py + height, area.Bottom) - Math.Max(py, area.Top));
+            var overlap = ow * oh;
+            if (overlap > bestOverlapArea) { bestOverlapArea = overlap; bestOverlap = area; }
+        }
+        return containing ?? bestOverlap ?? first;
     }
 
     /// <summary>Pure conversion: PHYSICAL bounds at <paramref name="scale"/> → stored LOGICAL state.</summary>
@@ -184,5 +270,23 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     private static IEnumerable<Rectangle> ScreenBounds()
     {
         foreach (var screen in Screen.AllScreens) yield return screen.Bounds;
+    }
+
+    // Managed WorkingArea is ~12 px short per edge on a HiDPI monitor vs the exact P/Invoke
+    // GetMonitorInfo rect (winforms-shell.md); that is fine for a shrink-to-fit safety clamp,
+    // which is over-conservative by a small margin rather than off by a monitor. Manual maximize
+    // in OptimizedForm still uses GetMonitorInfo directly, where the ~12 px MATTERS (a visible gap
+    // per edge is exactly what the manual path exists to remove).
+    //
+    // Primary FIRST — Screen.AllScreens is not documented to be primary-first (only that Primary
+    // is one of its elements), and PickTarget's fallback picks the first work area it sees. A
+    // "shrunk to the primary" fallback is defensible; a "shrunk to whichever monitor AllScreens
+    // happened to yield first on this launch" fallback is not.
+    private static IEnumerable<Rectangle> WorkAreas()
+    {
+        var primary = Screen.PrimaryScreen;
+        if (primary is not null) yield return primary.WorkingArea;
+        foreach (var screen in Screen.AllScreens)
+            if (!ReferenceEquals(screen, primary)) yield return screen.WorkingArea;
     }
 }

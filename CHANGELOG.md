@@ -12,6 +12,42 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`WindowStateManager.Apply(Form, double scale)` and `AttachTo(Form, double scale)` overloads**
+  for per-monitor DPI accuracy. The existing parameterless forms use `DpiHelper.SystemScale()` —
+  the PRIMARY monitor — because that is usable before the form has a handle, not because it is
+  the most accurate answer: a form opening on a secondary monitor with a different DPI would then
+  be sized to the wrong physical size. Callers who can defer to `OnHandleCreated` (handle exists
+  → `DeviceDpi` reflects the real monitor, still before `Show` → no resize flash) call
+  `AttachTo(form, DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi))` instead. The paired `AttachTo`
+  overload was added so that adoption path does not lose the save-on-close ordering guarantee
+  `AttachTo` exists to protect (P5.5 H4.5). Reported by the first adopter.
+- **`WindowStateOptions.MaxToWorkArea` (default `true`)** — shrink the restored physical size to
+  the target monitor's work area when a size saved on a bigger display would overflow a smaller
+  one (moving to a laptop, unplugging an external monitor). The MinWidth/MinHeight floor still
+  applies. **Behaviour change** for the default case: a saved size that would previously overhang
+  now fits — which was the point. Set `MaxToWorkArea = false` for the pre-0.1.1 behaviour.
+  Position is validated separately by `IsVisible`, unchanged.
+- **`WindowStateManager.ToPhysical` overload taking `IEnumerable<Rectangle> workAreas`** — the
+  work-area-aware pure conversion that powers the clamp above. The three-argument overload is
+  unchanged and continues to skip the clamp (documented).
+
+### Fixed
+
+- **`docs/ADOPTION.md`: the "hand-rolled uses `Screen.WorkingArea`, kit uses `GetMonitorInfo`"
+  fix claim moved from the `WindowStateManager` row to the `OptimizedForm` row**, where the P/Invoke
+  actually lives (`TryGetCurrentWorkArea`). The `WindowStateManager` row previously overpromised:
+  an adopter taking that primitive without also adopting `OptimizedForm` did not get the fix,
+  which they only discovered by reading the source. Reported by the first adopter.
+- **`docs/ADOPTION.md`: Stage 1's "highest payoff" heading rephrased** — payoff is proportional
+  to what the adopter actually hand-rolled. The row-by-row wording is unchanged; the intro now
+  says each row = a specific replacement rather than a claim that every app benefits from every
+  row (an adopter that already had a C++ splash launcher, no single-instance mutex and injectable
+  shell delegates only saw two rows apply).
+
 ## 0.1.0 — 2026-07-31
 
 ### Breaking

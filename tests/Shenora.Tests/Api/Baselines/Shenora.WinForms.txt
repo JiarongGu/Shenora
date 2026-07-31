@@ -242,12 +242,16 @@ sealed class Shenora.WinForms.WindowStateManager
   public .ctor(Shenora.WinForms.IWindowStateStore store, Shenora.WinForms.WindowStateOptions? options = null)
   public static Shenora.WinForms.WindowState ToLogical(System.Drawing.Rectangle bounds, bool maximized, double scale)
   public static System.ValueTuple<int, int, int?, int?, bool> ToPhysical(Shenora.WinForms.WindowState? state, double scale, Shenora.WinForms.WindowStateOptions options)
+  public static System.ValueTuple<int, int, int?, int?, bool> ToPhysical(Shenora.WinForms.WindowState? state, double scale, Shenora.WinForms.WindowStateOptions options, System.Collections.Generic.IEnumerable<System.Drawing.Rectangle> workAreas)
   public static bool IsVisible(int x, int y, int width, int height, System.Collections.Generic.IEnumerable<System.Drawing.Rectangle> screens, Shenora.WinForms.WindowStateOptions options)
   public void Apply(System.Windows.Forms.Form form)
+  public void Apply(System.Windows.Forms.Form form, double scale)
   public void AttachTo(System.Windows.Forms.Form form)
+  public void AttachTo(System.Windows.Forms.Form form, double scale)
   public void Save(System.Windows.Forms.Form form)
 sealed class Shenora.WinForms.WindowStateOptions
   public .ctor()
+  public bool MaxToWorkArea { get; init; }
   public int DefaultHeight { get; init; }
   public int DefaultWidth { get; init; }
   public int MinHeight { get; init; }

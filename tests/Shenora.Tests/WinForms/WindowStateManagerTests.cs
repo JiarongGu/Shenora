@@ -57,6 +57,70 @@ public class WindowStateManagerTests
         Assert.Equal(1000, result.Width); // identity fallback, never zero/negative geometry
     }
 
+    // ---- ToPhysical work-area clamp (finding: a size saved on a big display would restore too large) ----
+
+    private static readonly Rectangle[] SmallWorkArea = [new(0, 0, 1366, 728)];
+
+    [Fact]
+    public void ToPhysical_with_workAreas_shrinks_a_saved_size_that_would_overflow_the_target()
+    {
+        // Saved 2400x1500 (a big external monitor) restoring onto a 1366x728 laptop panel.
+        var result = WindowStateManager.ToPhysical(
+            new WindowState(2400, 1500, 100, 100, false), 1.0, Options, SmallWorkArea);
+        Assert.Equal((1366, 728), (result.Width, result.Height));
+        // Position is not clamped — IsVisible + the caller's centre fallback own that concern.
+        Assert.Equal((100, 100), (result.X!.Value, result.Y!.Value));
+    }
+
+    [Fact]
+    public void ToPhysical_with_workAreas_is_a_no_op_when_the_saved_size_already_fits()
+    {
+        var result = WindowStateManager.ToPhysical(
+            new WindowState(1200, 700, 30, 40, false), 1.0, Options, SmallWorkArea);
+        Assert.Equal((1200, 700), (result.Width, result.Height));
+    }
+
+    [Fact]
+    public void ToPhysical_with_workAreas_respects_the_MinWidth_MinHeight_floor()
+    {
+        // Even on a tiny target area, the physical size never drops below the DPI-scaled minimum
+        // — a window smaller than its own minimum is useless.
+        Rectangle[] tiny = [new(0, 0, 100, 100)];
+        var result = WindowStateManager.ToPhysical(
+            new WindowState(1600, 1000, 0, 0, false), 1.0, Options, tiny);
+        Assert.Equal((Options.MinWidth, Options.MinHeight), (result.Width, result.Height));
+    }
+
+    [Fact]
+    public void ToPhysical_with_workAreas_picks_the_target_containing_the_saved_position()
+    {
+        // Two monitors side by side. The saved position sits on the second one; the clamp must
+        // use ITS work area, not the primary's — which is what "target monitor" means.
+        Rectangle[] two = [new(0, 0, 3840, 2160), new(3840, 0, 1366, 728)];
+        var result = WindowStateManager.ToPhysical(
+            new WindowState(2000, 1000, 3900, 100, false), 1.0, Options, two);
+        Assert.Equal((1366, 728), (result.Width, result.Height));
+    }
+
+    [Fact]
+    public void ToPhysical_with_workAreas_does_not_clamp_when_MaxToWorkArea_is_off()
+    {
+        var offOptions = new WindowStateOptions { MaxToWorkArea = false };
+        var result = WindowStateManager.ToPhysical(
+            new WindowState(2400, 1500, 100, 100, false), 1.0, offOptions, SmallWorkArea);
+        Assert.Equal((2400, 1500), (result.Width, result.Height));
+    }
+
+    [Fact]
+    public void ToPhysical_with_workAreas_falls_back_to_the_first_area_when_no_position_is_saved()
+    {
+        // No saved position → target defaults to the first (primary) work area, so a saved size
+        // that overflows the primary still shrinks even before the window has a position.
+        var result = WindowStateManager.ToPhysical(
+            new WindowState(2400, 1500, null, null, false), 1.0, Options, SmallWorkArea);
+        Assert.Equal((1366, 728), (result.Width, result.Height));
+    }
+
     // ---- ToLogical ----
 
     [Fact]
@@ -185,6 +249,30 @@ public class WindowStateManagerTests
         var scale = DpiHelper.SystemScale();
         Assert.Equal(new Size(DpiHelper.Scale(options.MinWidth, scale), DpiHelper.Scale(options.MinHeight, scale)),
                      form.MinimumSize);
+    }
+
+    [Fact]
+    public void Apply_scale_overload_sizes_by_the_explicit_scale_not_SystemScale()
+    {
+        // The finding: an adopter calling Apply from OnHandleCreated with the form's own DeviceDpi
+        // scale gets per-monitor accuracy that the default (primary-monitor SystemScale) does not.
+        // Verifies the explicit scale is what's used, without depending on this machine's DPI —
+        // a 300x200 save at scale 2.0 must land on 600x400, whatever the primary is.
+        //
+        // Small values on purpose: the ordinary defaults would push MinWidth/MinHeight above the
+        // saved size (so the min clamp would preempt the scale multiply), AND once WinForms
+        // creates a handle it caps Form.Size to the current monitor's height on this machine
+        // (measured: 1800×1400 requested → 1800×1220 stored). Both traps go away when both
+        // dimensions sit well inside any monitor's work area.
+        var store = new FakeWindowStateStore { Stored = new WindowState(300, 200, null, null, false) };
+        using var form = new Form();
+        var options = new WindowStateOptions { MaxToWorkArea = false, MinWidth = 100, MinHeight = 100 };
+
+        new WindowStateManager(store, options).Apply(form, 2.0);
+
+        Assert.Equal(new Size(600, 400), form.Size);
+        // Minimum size follows the same explicit scale — no primary-monitor bleed.
+        Assert.Equal(new Size(options.MinWidth * 2, options.MinHeight * 2), form.MinimumSize);
     }
 
     [Fact]

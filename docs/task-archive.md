@@ -1251,3 +1251,52 @@ Known capability LIMITS:
   `dry_run` input now exists (gate + pack + OIDC login, publishing nothing, touching no git). The
   trusted-publisher setup steps are in `docs/RELEASING.md`, and the npm ordering — org first,
   hand-publish once, then configure trusted publishing — is recorded above with the release.
+
+### 0.1.1 — Stage 1 adopter findings (2026-08-01)
+
+First real API feedback from the adoption loop — a private desktop sibling evaluated Stage 1 against
+its own hand-rolled shell and did NOT adopt `WindowStateManager` because for that app the swap would
+have been a net downgrade. The findings named specific gaps rather than a general dislike, which made
+them cheap to close. Non-breaking: two new overloads + one new option (default-on) + docs.
+
+- [x] **`Apply(Form, double scale)` overload.** The existing `Apply(Form)` uses
+  `DpiHelper.SystemScale()` (the PRIMARY monitor), which is what makes it usable before the form has a
+  handle — not what makes it accurate on a mixed-DPI setup. An adopter calling from `OnHandleCreated`
+  with `DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi)` was measurably MORE accurate than the kit. The
+  overload lets them ship that pattern; the parameterless one keeps working. `WindowStateManager.cs`
+  L32/L42.
+- [x] **`WindowStateOptions.MaxToWorkArea` (default true) + `ToPhysical` overload taking
+  `IEnumerable<Rectangle> workAreas`.** A size saved on a bigger display used to restore larger than
+  a smaller display could show — the hand-rolled code being replaced clamped to the work area, so
+  adopting as-is would have lost shrink-to-fit. Default-on because a window bigger than its monitor
+  cannot be resized back down, which is a worse state than one slightly smaller than saved. Position
+  stays owned by `IsVisible` + the caller's centre fallback. `WindowState.cs` L37, `WindowStateManager.cs`
+  L182.
+- [x] **`ADOPTION.md`'s DPI-fix claim moved from the `WindowStateManager` row to the `OptimizedForm`
+  row.** Where the P/Invoke `GetMonitorInfo` actually lives (`OptimizedForm.TryGetCurrentWorkArea`).
+  Previously the row overpromised: an adopter taking `WindowStateManager` without also taking
+  `OptimizedForm` did not get the fix and only discovered so by reading kit source — precisely what a
+  published surface is meant to make unnecessary. `ADOPTION.md` L43-45.
+- [x] **`ADOPTION.md` Stage 1's "highest payoff" reworded as conditional.** Payoff is proportional to
+  what the adopter actually hand-rolled — the same shell that produced these findings only had two rows
+  apply (no single-instance mutex, no clipboard use, no splash, no frameless chrome, three shell-open
+  sites already injected). Row-by-row wording unchanged; the intro is honest about it. `ADOPTION.md` L37.
+
+Why the fixes are conservative on API shape: this is 0.1.1, and every public change is now SemVer
+surface. Two new overloads on `Apply`/`AttachTo` + one new `ToPhysical` overload + one new option
+are additive; the only behaviour change is `MaxToWorkArea` defaulting on, called out under
+`### Added` because the old behaviour is one option away (`MaxToWorkArea = false`). Deferred
+deliberately: the `ToPhysical` clamp could also clamp POSITION to keep the window fully within the
+work area — the finding said "position is already handled well by `IsVisible`", so this stays a
+size-only clamp until an adopter reports otherwise.
+
+**Failure mode to watch for**, so the next session that sees it does not rediscover it: an odd
+multi-monitor arrangement whose saved position falls in the GAP between monitors will hit
+`PickTarget`'s "largest overlap" or "first" fallback, and if primary has a small work area the
+window shrinks even though the user has room on the other monitor. `MaxToWorkArea = false` is the
+escape hatch that turns the clamp off entirely; a smarter fix would clamp POSITION to keep the
+window on the largest-overlap monitor, which is the deliberate deferral above.
+
+Baselines re-promoted (additions only — one property on `WindowStateOptions`, one `ToPhysical`
+overload, one `Apply` overload, one `AttachTo` overload — the last added during phase review to
+close a symmetry gap the reviewer caught).
