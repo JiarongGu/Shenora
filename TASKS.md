@@ -1203,6 +1203,31 @@ Known capability LIMITS:
   the kit already provides, and its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`.
   Recorded as an amendment on D10; the two-profile split stands, only the extra package is dropped.
 - [ ] **First publish + repo public.** Blocked with P1.2 on a GitHub remote existing.
+- [x] **Every reference profile proven to adopt, end to end — DONE 2026-07-31.** The third
+  pre-release gate (user direction: *"verify all reference project they can adopt this seamlessly
+  (you might setup some usecases and test them e2e)"*). Throwaways in `devtools/_p7-profiles/`
+  (gitignored), resolving Shenora.* from the **packed packages** through a local feed — the real
+  restore graph an adopter gets, not ProjectReferences.
+
+  | profile | what it stands for | proof |
+  |---|---|---|
+  | desktop IPC adapters | the business-manager sibling: flat event-stream IPC behind two adapters | host adapter, **28 checks**, on `net10.0` with no Windows reference |
+  | client shim | the same app's ~148 call sites behind `post`/`onMessage` | client probe, **18 checks**, incl. legacy firehose and migrated `(module,type)` seeing the same event |
+  | plug-in hosting | the skin-manager sibling's plug-in SDK | claim / answer / **release** / re-claim with no restart, inside the host adapter's run |
+  | media serving | the video sibling's ranged local media | `RANGE SEAM: PASS` through a real browser (P7.1) |
+  | shell-only | the server-backed sibling: Kestrel serves its own UI, it wants the shell only | **11 checks** against `Shenora.WinForms` ALONE |
+
+  **The shell-only profile is proven in BOTH directions**, which is the half that would otherwise rot:
+  a runtime check shows the primitives work (paths, DPI-correct window-state conversions and
+  off-screen recovery, an idempotent single-instance mutex, the portable contracts resolving to their
+  Windows implementations), and a **compile-time negative** shows `Shenora.WinForms` does not drag in
+  `Shenora.Ipc` or `Shenora.WebView2` — `NotReachable.cs` names one type from each behind an
+  undefined `#if`, and building with the symbol defined FAILS with CS0246 on both. Verified by doing
+  exactly that. "It works without them" is easy to say and easy to be wrong about later.
+
+  Findings: none. Every profile adopted against the current surface without a workaround — which is
+  the first time in this phase that a verification pass has produced no gap, and is the actual
+  release signal.
 - [x] **P7.1 is RESOLVED**, so nothing blocks the release except the GitHub remote itself.
 
 ### P1 — Skeleton tail
