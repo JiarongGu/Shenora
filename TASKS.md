@@ -27,6 +27,32 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
+### From the first adopter (2026-07-31)
+
+Filed by the adoption loop this file describes ("the next real work arrives when a sibling app adopts
+the kit"). A private desktop sibling is at **Stage 0**: `Shenora.WebView2.Sessions` 0.1.0 referenced,
+all five packages resolving transitively from the leaf, host building 0 errors against
+`net10.0-windows`. Nothing consumes the kit yet, so these are packaging/docs findings, not API
+findings — API feedback arrives with Stages 1-3.
+
+- [ ] **`README.md` still says "Not yet published to NuGet/npm" — stale, and actively misleading.**
+  All six packages are live (`Shenora.Core`, `.Ipc`, `.WinForms`, `.WebView2`, `.WebView2.Sessions` on
+  NuGet, `@shenora/react` on npm, all 0.1.0 — verified against the registries). The line sits directly
+  under the "**v0.1.0 - pre-release**" status heading, so an evaluating reader's first conclusion is
+  that they cannot consume it yet. `TASKS.md` says shipped, the README says otherwise, and the README
+  is what a newcomer reads first.
+- [ ] **Consider stating the lib TFM in the package table.** `Shenora.WinForms` ships
+  `net10.0-windows7.0`. An adopter currently has to download the nupkg and inspect `lib/` to learn
+  whether it fits - which is what the first adopter did before referencing anything. One column, or a
+  line under the table, removes that step.
+- [ ] **`docs/ADOPTION.md` is genuinely good - the staging rationale is the valuable part.** Recorded as
+  positive feedback rather than a request: "Stage 1 carries no IPC dependency, so it deletes the most
+  duplicated code for the least risk; the IPC substrate comes last because it is the only stage that
+  touches every module" is what made the adoption decision easy. Naming the concrete bugs a hand-rolled
+  shell tends to have - the DPI-mis-scaled `Screen.WorkingArea` restore, `CloseReason.UserClosing`
+  firing for a programmatic `Close()` - is what justifies adopting a kit at all. Worth keeping that
+  bug-naming habit as more stages get written.
+
 **Nothing is queued.** That is the honest state after v0.1.0, not an oversight — every phase item is
 in the archive. The two entries below are standing habits rather than work to pull.
 
