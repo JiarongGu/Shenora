@@ -13,6 +13,13 @@ name: Release
 #  - npm publishes with provenance. Configure npm Trusted Publishing (OIDC) for @shenora/react on
 #    npmjs.com (package -> Settings -> Trusted publisher -> this repo + release.yml); until that
 #    exists, set a granular NPM_TOKEN repo secret and the publish step uses it instead.
+#
+# ⚠ `draft: true` is NOT a dry run. It only makes the GITHUB RELEASE a draft — both registry pushes
+# happen BEFORE that step and are irreversible (nuget.org never deletes a version, only unlists it;
+# npm allows an unpublish only briefly and only for a new package). Use `dry_run: true` to rehearse:
+# it runs the gate, the pack and the OIDC login — which is the part actually worth validating, since
+# that step exchanges the workflow's token against the trusted-publishing policy and fails loudly if
+# the policy is wrong — then publishes nothing and touches no git.
 on:
   workflow_dispatch:
     inputs:
@@ -35,6 +42,10 @@ on:
         default: true
       prerelease:
         description: 'Mark the GitHub release as a prerelease'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'DRY RUN — verify + pack + OIDC login, then publish NOTHING and touch no git'
         type: boolean
         default: false
 
@@ -120,7 +131,20 @@ jobs:
         with:
           user: Jiarong.Gu
 
+      # A dry run must SAY what it rehearsed, or it is indistinguishable from a run that quietly did
+      # nothing — which is the failure mode a rehearsal exists to rule out.
+      - name: Dry-run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          Write-Host "DRY RUN - nothing was published and no git state changed."
+          Write-Host "  version that WOULD ship: ${{ steps.version.outputs.version }} (tag ${{ steps.version.outputs.tag }})"
+          Write-Host "  release files rewritten in the working tree only: ${{ steps.version.outputs.changed }}"
+          Write-Host "  OIDC trusted publishing: the NuGet login step above succeeded, so the policy matches this repo + workflow."
+          Write-Host "  packages that would be pushed:"
+          Get-ChildItem publish/packages -File | ForEach-Object { Write-Host "    $($_.Name)" }
+
       - name: Push to NuGet
+        if: ${{ !inputs.dry_run }}
         run: >
           dotnet nuget push "publish/packages/*.nupkg"
           --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
@@ -138,6 +162,7 @@ jobs:
       # this step, unable to ever complete the bump or the tag. The two registries cannot be made
       # atomic; what they can be is re-runnable.
       - name: Publish npm (@shenora/react)
+        if: ${{ !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -162,7 +187,7 @@ jobs:
           }
 
       - name: Commit version bump
-        if: steps.version.outputs.changed == 'true'
+        if: ${{ steps.version.outputs.changed == 'true' && !inputs.dry_run }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
@@ -175,7 +200,7 @@ jobs:
           git push
 
       - name: Create tag
-        if: inputs.create_tag
+        if: ${{ inputs.create_tag && !inputs.dry_run }}
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
           if (git tag -l $tag) { Write-Host "tag $tag already exists — leaving it" }
@@ -222,7 +247,7 @@ jobs:
       # "don't tag" actually means it; a no-tag run publishes the packages and skips the GitHub
       # release (nuget.org/npmjs.com are the canonical homes anyway).
       - name: Create GitHub release
-        if: inputs.create_tag
+        if: ${{ inputs.create_tag && !inputs.dry_run }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}

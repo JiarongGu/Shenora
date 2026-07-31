@@ -6,7 +6,16 @@ Releases are cut from the GitHub **Actions** tab → **Release** workflow → *R
 (`.github/workflows/release.yml`). There is deliberately no tag-push or PR trigger (docs/DECISIONS.md D5).
 
 Inputs: `version` (explicit, e.g. `0.2.0`; empty = bump) · `bump` (`none|patch|minor|major`,
-default `patch`) · `create_tag` (default true) · `draft` (default true) · `prerelease`.
+default `patch`) · `create_tag` (default true) · `draft` (default true) · `prerelease` ·
+`dry_run` (default false).
+
+> ⚠ **`draft: true` is NOT a dry run.** It only makes the GitHub Release a draft — both registry
+> pushes happen before that step, and both are effectively permanent (nuget.org never deletes a
+> version, only unlists it; npm allows an unpublish briefly and only for a brand-new package).
+> **Rehearse with `dry_run: true`:** it runs the gate, the pack and the OIDC login, then publishes
+> nothing and touches no git. The OIDC login is the part worth rehearsing — that step exchanges the
+> workflow's token against the trusted-publishing policy and fails loudly if the policy does not
+> match this repo and workflow file, which is exactly what a first release gets wrong.
 
 Steps, in order — the irreversible publishes happen BEFORE the bump commit, so a failed release
 burns no version:
