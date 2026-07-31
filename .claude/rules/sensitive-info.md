@@ -38,7 +38,13 @@ needed a full `git filter-repo` rewrite — the working tree being clean is NOT 
   reachable from every ref, every PATH those blobs ever had, and every commit MESSAGE. That mode
   exists because this rule demanded a history check for five phases while the scanner only offered
   `--tree`, which reads the CURRENT checkout — so the one question the rule cares most about was the
-  one it could not answer. Run it before making a repo public, and after any scrub.
+  one it could not answer.
+  **It is a ONE-OFF AUDIT, not a routine check** — run it before making a repo public and after any
+  scrub, and nowhere else. Its cost grows with the history because it reads every reachable blob, so
+  putting it in `verify` or the pre-commit hook would tax every commit forever to re-check commits
+  that were already checked when they were made. **The PRE-COMMIT hook is the ongoing protection:**
+  it catches a leak while it is still staged, which is the only point at which the fix is free rather
+  than a history rewrite.
   If it finds something, fix with a scoped `git filter-repo` pass (backup bundle first, dry-run on a
   `--mirror` clone, verify `git grep <token> $(git rev-list --all)` = 0 AND messages, then apply).
   ⚠ **A history scan that reports clean deserves the same suspicion as a test that passes.** Prove

@@ -6,8 +6,19 @@
 //
 //   node devtools/scripts/check-sensitive.mjs          # scan STAGED changes (what pre-commit does)
 //   node devtools/scripts/check-sensitive.mjs --tree    # scan every tracked file
-//   node devtools/scripts/check-sensitive.mjs --history # scan ALL history: every reachable blob,
-//                                                      # every path it ever had, every commit message
+//   node devtools/scripts/check-sensitive.mjs --history # ONE-OFF AUDIT of ALL history: every
+//                                                      # reachable blob, every path it ever had,
+//                                                      # and every commit message
+//
+// THE DIVISION OF LABOUR, and --history is deliberately NOT part of it:
+//   * pre-commit hook (staged) — the ONGOING gate. Every commit, cheap, catches a leak before it
+//     ever becomes history. This is the one that actually protects the repo.
+//   * commit-msg hook (--message) — the same, for the message.
+//   * `dev.mjs verify` (--tree) — the current checkout, on the "am I done?" gate.
+//   * --history — an AUDIT you run at moments, not routinely: before making a repo public, and
+//     after any filter-repo scrub to prove it worked. Its cost grows with the history (it reads
+//     every reachable blob), so wiring it into `verify` or the hook would tax every commit forever
+//     to re-check commits that were already checked when they were made. Don't.
 //   node devtools/scripts/check-sensitive.mjs --message <file>   # scan a commit message (commit-msg hook)
 //   …any mode + --allow-builtins-only                  # opt in to running WITHOUT the private patterns
 //
