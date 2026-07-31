@@ -40,6 +40,16 @@ export default {
   sampleProject: 'samples/Shenora.Sample.Desktop',
   processName: 'Shenora.Sample.Desktop',
   shotPrefix: 'shenora',
+  /**
+   * How many captures `shot`/`wgc` keep in devtools/screenshots (newest first; older ones are
+   * pruned BEFORE each capture, so the new one is never the one evicted).
+   *
+   * They are gitignored, transient verification artifacts and capture is cheap, so without a cap
+   * they only ever grow — 53 files / 7.5 MB by the first release, and no doc referenced any of
+   * them, because evidence here is recorded as NUMBERS and prose (ROADMAP, FIX-LOG), never as a
+   * PNG. Raise it if you are mid-investigation and want a longer trail; `--keep N` overrides once.
+   */
+  shotRetention: 24,
   /** Sample web (vite) dev server dir + port. */
   sampleWebDir: 'samples/Shenora.Sample.Web',
   vitePort: 3900,

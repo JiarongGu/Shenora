@@ -12,7 +12,8 @@
 //   node devtools/dev.mjs drag <fx1> <fy1> <fx2> <fy2>      - background press-move-release between two fractions
 //   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | move | drag)
 //   node devtools/dev.mjs knowledge <…>    - two-tier rule-base doctor (check | footprint | new <name> [--core])
-//   node devtools/dev.mjs check-sensitive [--tree] - public-repo leak scan (the pre-commit guard)
+//   node devtools/dev.mjs clean [--all]     - drop devtools/_* build output (--all: sources + publish/ too)
+//   node devtools/dev.mjs check-sensitive [--tree|--history] - leak scan (--history = one-off audit)
 //   node devtools/dev.mjs install-hooks    - point core.hooksPath at devtools/hooks (once per clone)
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -133,6 +134,37 @@ function changelogDoctor({ fix = false, version = config.version, date } = {}) {
   fs.writeFileSync(file, changelog.replace(unreleasedHeading, heading));
   console.log(`  fixed CHANGELOG "${match[0].trim()}" -> "${heading}"`);
   return true;
+}
+
+// ONE owner for "where does a capture go" — `shot` and `wgc` both had their own copy of the
+// default-name + mkdir + join, which is how the two drifted apart in the first place.
+//
+// It also PRUNES, because nothing else ever did: screenshots are gitignored, transient verification
+// artifacts and capturing is a keystroke, so the folder only grows (53 files / 7.5 MB by v0.1.0,
+// with no doc referring to any of them — evidence in this repo is numbers and prose, not PNGs).
+// Pruning happens BEFORE the capture writes, so the newest file can never be the one evicted, and
+// every deletion is printed: a cleanup that removes work silently is worse than one that never runs.
+function shotTarget(name, argv) {
+  const dir = path.join(repo, 'devtools', 'screenshots');
+  fs.mkdirSync(dir, { recursive: true });
+
+  const keepAt = argv.indexOf('--keep');
+  const keep = keepAt >= 0 ? Number(argv[keepAt + 1]) : (config.shotRetention ?? 24);
+  if (Number.isFinite(keep) && keep >= 0) {
+    const shots = fs.readdirSync(dir)
+      .filter((f) => f.toLowerCase().endsWith('.png'))
+      .map((f) => ({ f, at: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.at - a.at);          // newest first
+    // keep-1: leave room for the capture about to be taken, so the steady state is exactly `keep`.
+    const stale = shots.slice(Math.max(0, keep - 1));
+    for (const { f } of stale) {
+      try { fs.rmSync(path.join(dir, f)); } catch { /* held open by a viewer — skip, try next run */ }
+    }
+    if (stale.length) console.log(`screenshots: pruned ${stale.length} older capture(s), keeping ${keep}`);
+  }
+
+  const stamp = new Date().toISOString().slice(11, 19).replaceAll(':', '');
+  return path.join(dir, `${name ?? `${config.shotPrefix}-${stamp}`}.png`);
 }
 
 // The npm package.json version and the README "## Status" headline are derived; `doctor` fails
@@ -347,12 +379,10 @@ switch (cmd) {
   }
 
   case 'shot': {
-    const name = args[0] ?? `${config.shotPrefix}-${new Date().toISOString().slice(11, 19).replaceAll(':', '')}`;
-    fs.mkdirSync(path.join(repo, 'devtools', 'screenshots'), { recursive: true });
     run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
       '-File', path.join(repo, 'devtools', 'scripts', 'shot-window.ps1'),
       '-ProcessName', config.processName,
-      '-OutFile', path.join(repo, 'devtools', 'screenshots', `${name}.png`)]);
+      '-OutFile', shotTarget(args[0]?.startsWith('--') ? undefined : args[0], args)]);
     break;
   }
 
@@ -370,9 +400,7 @@ switch (cmd) {
     }
     const env = { ...process.env, DEVTOOL_PROC: config.processName };
     if (cmd === 'wgc') {
-      const name = args[0] ?? `${config.shotPrefix}-${new Date().toISOString().slice(11, 19).replaceAll(':', '')}`;
-      fs.mkdirSync(path.join(repo, 'devtools', 'screenshots'), { recursive: true });
-      run(exe, ['--out', path.join(repo, 'devtools', 'screenshots', `${name}.png`)], { env });
+      run(exe, ['--out', shotTarget(args[0]?.startsWith('--') ? undefined : args[0], args)], { env });
     } else if (cmd === 'input') {
       run(exe, args, { env });
     } else {
@@ -384,6 +412,56 @@ switch (cmd) {
   case 'knowledge': // check | footprint | new <name> [--core] — two-tier rule-base doctor
     run('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), ...args]);
     break;
+
+  case 'clean': {
+    // Reclaim the BUILD OUTPUT under devtools/_* (and publish/), never the sources. Those scratch
+    // folders are gitignored probes — the P6 consumers, the adoption adapters, the P7 profile
+    // proofs — and docs/ROADMAP + task-archive describe them as RE-RUNNABLE, so deleting their
+    // sources would quietly destroy the thing those entries point at. Their bin/obj/node_modules is
+    // ~60 MB of regenerable weight and is fair game.
+    //
+    // `--all` also drops the probe sources and the packed output, for reclaiming a checkout you do
+    // not intend to re-run. It is opt-in because it is the destructive reading of "clean".
+    const dropSources = args.includes('--all');
+    const targets = [];
+    const scratch = fs.existsSync(path.join(repo, 'devtools'))
+      ? fs.readdirSync(path.join(repo, 'devtools')).filter((f) => f.startsWith('_')) : [];
+    for (const entry of scratch) {
+      const full = path.join(repo, 'devtools', entry);
+      if (!fs.statSync(full).isDirectory()) continue;
+      if (dropSources) { targets.push(full); continue; }
+      // Walk shallowly for the regenerable folders rather than guessing at a layout.
+      const stack = [full];
+      while (stack.length) {
+        const dir = stack.pop();
+        for (const child of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!child.isDirectory()) continue;
+          const childPath = path.join(dir, child.name);
+          if (['bin', 'obj', 'node_modules', 'out', 'dist'].includes(child.name)) targets.push(childPath);
+          else stack.push(childPath);
+        }
+      }
+    }
+    if (dropSources) targets.push(path.join(repo, ...config.packagesDir.split('/')));
+
+    let freed = 0;
+    for (const t of targets) {
+      if (!fs.existsSync(t)) continue;
+      try {
+        // Never fs.cpSync/rmSync surprises: rmSync recursive is fine, but a file held open by a
+        // running sample or an editor will throw — report it instead of aborting the whole sweep.
+        fs.rmSync(t, { recursive: true, force: true });
+        freed++;
+        console.log(`  removed ${path.relative(repo, t)}`);
+      } catch (e) {
+        console.error(`  SKIPPED ${path.relative(repo, t)} — ${e.code ?? e.message} (in use?)`);
+      }
+    }
+    console.log(freed === 0
+      ? 'clean: nothing to remove.'
+      : `clean: removed ${freed} folder(s)${dropSources ? ' INCLUDING probe sources and packed output' : ' (probe sources kept — re-runnable)'}.`);
+    break;
+  }
 
   case 'check-sensitive':
     run('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), ...args]);
@@ -397,6 +475,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|sample|vite|shot|wgc|click|rclick|move|drag|input|knowledge|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|knowledge|clean|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }

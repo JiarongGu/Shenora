@@ -16,7 +16,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `doctor [--fix]` | version-drift check: npm `package.json` + README `## Status` headline vs `VersionPrefix` |
 | `sample [--dev]` | run the sample desktop app (Phase 2+); `--dev` = vite URL + CDP port → `.cdp-port` |
 | `vite` | the sample web dev server (Phase 2+) |
-| `shot [name]` | PrintWindow capture of the sample window → `screenshots/` |
+| `shot [name]` | PrintWindow capture of the sample window → `screenshots/` (auto-pruned, see below) |
 | `wgc [name]` | occlusion-immune capture (Windows Graphics Capture) — works when the window is hidden/occluded |
 | `click <fx> <fy>` | background click at client-rect **fractions** (0–1) — drives the WebView2 UI without CDP |
 | `rclick <fx> <fy>` | as `click`, right button |
@@ -24,10 +24,29 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `drag <fx1> <fy1> <fx2> <fy2>` | background press-move-release between two client-rect fractions |
 | `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule |
-| `check-sensitive [--tree]` | scan for dev paths / private names (the pre-commit guard) |
+| `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
+| `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
 | `install-hooks` | point `core.hooksPath` at `devtools/hooks` — ONCE per clone |
 
 Releases are cut by the manual **Release** GitHub workflow — see `docs/RELEASING.md`.
+
+## Screenshots are auto-pruned
+
+`shot`/`wgc` keep the newest `shotRetention` captures (24, in `project.config.mjs`) and delete the
+rest BEFORE capturing, so the new file is never the one evicted. Every deletion is printed — a
+cleanup that removes work silently is worse than one that never runs. Override once with
+`--keep N`, or raise the config value while mid-investigation.
+
+Why: captures are gitignored, transient, and cost a keystroke, so the folder only grows — 53 files /
+7.5 MB by v0.1.0, and no doc referred to any of them. Evidence in this repo is recorded as NUMBERS
+and prose (ROADMAP, FIX-LOG), never as a PNG.
+
+## Scratch folders (`devtools/_*`)
+
+Gitignored probes — the P6 consumers, the adoption adapters, the P7 profile proofs. `docs/ROADMAP.md`
+and `docs/task-archive.md` describe them as RE-RUNNABLE, so `clean` removes only their regenerable
+build output and leaves the sources; `--all` is the opt-in destructive reading. (Verified: after a
+`clean` that reclaimed ~60 MB, the profile probe still rebuilt from source and passed.)
 
 ## Desktop verification loop (no CDP needed)
 
