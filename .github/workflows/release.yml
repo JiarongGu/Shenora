@@ -82,10 +82,25 @@ jobs:
           # the publishes succeed.
           $props = 'src/Directory.Build.props'
           (Get-Content $props -Raw) -replace '<VersionPrefix>[^<]+</VersionPrefix>', "<VersionPrefix>$final</VersionPrefix>" | Set-Content $props -Encoding utf8 -NoNewline
-          "changed=$("$($final -ne $current)".ToLower())" >> $env:GITHUB_OUTPUT
+
+          # Stamp the CHANGELOG's `## Unreleased` heading for this release, exactly as VersionPrefix
+          # (above) and the README `## Status` headline (in Pack) are stamped. Ported from Lyntai,
+          # where this was the one release edit still left to a human and a version shipped with its
+          # section titled "Unreleased" because of it. Idempotent, and it never invents prose.
+          node devtools/dev.mjs changelog --fix --version $final
+          if ($LASTEXITCODE -ne 0) { throw "changelog stamp failed - CHANGELOG.md unreadable or unwritable" }
+
+          # Ask GIT what actually changed rather than comparing version strings. The two edits above
+          # move independently: re-cutting the SAME version still stamps a heading, and a bump whose
+          # changelog was already stamped rewrites only the props. A string compare would skip the
+          # commit in the first case and lose the stamp; it would also produce an EMPTY commit on a
+          # re-run that rewrote neither.
+          $changed = if (git status --porcelain -- src/Directory.Build.props CHANGELOG.md) { 'true' } else { 'false' }
+
+          "changed=$changed" >> $env:GITHUB_OUTPUT
           "version=$final" >> $env:GITHUB_OUTPUT
           "tag=v$final" >> $env:GITHUB_OUTPUT
-          Write-Host "current=$current -> final=$final"
+          Write-Host "current=$current -> final=$final (release files rewritten: $changed)"
 
       - name: Verify gate
         # local/sensitive-patterns.txt is gitignored, so the private half of the sensitive guard
@@ -112,22 +127,50 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
+      # Publish the tarball PACK produced — not a rebuild. `npm publish` from the package directory
+      # re-runs `prepublishOnly`, which builds a SECOND artifact: the thing whose sha256 the Pack step
+      # printed, and which P6.1's consumer test exercises, would then not be the thing that shipped.
+      # Publishing the file closes that gap and skips the redundant rebuild.
+      #
+      # Idempotent, to match `dotnet nuget push --skip-duplicate` above. npm has no such flag and
+      # fails hard (E403/EPUBLISHCONFLICT) when the version exists, so without this guard ANY failure
+      # after both pushes — a rejected bump commit, a tag push race — leaves every re-run stuck at
+      # this step, unable to ever complete the bump or the tag. The two registries cannot be made
+      # atomic; what they can be is re-runnable.
       - name: Publish npm (@shenora/react)
-        working-directory: src/Shenora.React
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # npm Trusted Publishing (OIDC) needs a newer npm CLI than Node 22 bundles; harmless
           # when NPM_TOKEN auth is used instead.
           npm install -g npm@latest
-          npm publish --provenance --access public
+
+          $v = '${{ steps.version.outputs.version }}'
+          $tgz = Get-ChildItem 'publish/packages' -Filter 'shenora-react-*.tgz' | Select-Object -First 1
+          if (-not $tgz) { throw "no @shenora/react tarball in publish/packages - did Pack run?" }
+
+          # A missing package (the FIRST publish) makes `npm view` exit non-zero; that is "not
+          # published", not an error. Only an exact version match means skip.
+          $live = npm view "@shenora/react@$v" version 2>$null
+          if ($LASTEXITCODE -eq 0 -and $live -eq $v) {
+            Write-Host "@shenora/react@$v is already published - skipping (matches --skip-duplicate)"
+          } else {
+            $global:LASTEXITCODE = 0
+            Write-Host "publishing $($tgz.Name)"
+            npm publish $tgz.FullName --provenance --access public
+            if ($LASTEXITCODE -ne 0) { throw "npm publish failed" }
+          }
 
       - name: Commit version bump
         if: steps.version.outputs.changed == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add src/Directory.Build.props README.md src/Shenora.React/package.json
+          # Named explicitly so nothing else the job touched — a publish/ artifact, a scratch file —
+          # can ride along into a release commit. These four move in lockstep with a release:
+          # VersionPrefix and the stamped CHANGELOG heading (Determine), the README `## Status`
+          # headline and the npm version (both auto-synced by Pack's doctor --fix).
+          git add src/Directory.Build.props CHANGELOG.md README.md src/Shenora.React/package.json
           git commit -m "chore: release ${{ steps.version.outputs.tag }}"
           git push
 
@@ -145,8 +188,14 @@ jobs:
         id: notes
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
-          # Previous release tag by NUMERIC version compare (so 1.10.0 > 1.6.0), not git tag order.
-          $prev = git tag -l 'v*' | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and $_ -ne $tag } |
+          # Previous release tag = the highest tag STRICTLY LESS than the one being cut, compared
+          # NUMERICALLY (so 1.10.0 > 1.6.0, which git tag order gets wrong).
+          # "Strictly less" rather than "not equal": excluding only the current tag means re-cutting
+          # an older version picks a NEWER tag as the baseline, and `git log v1.1.0..HEAD` for a
+          # v1.0.0 release yields notes that are empty or describe the wrong direction entirely.
+          $curV = [version]($tag.Substring(1))
+          $prev = git tag -l 'v*' |
+            Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and [version]($_.Substring(1)) -lt $curV } |
             Sort-Object { [version]($_.Substring(1)) } | Select-Object -Last 1
           $range = if ($prev) { "$prev..HEAD" } else { 'HEAD' }
           $subjects = git log $range --pretty=%s --no-merges
@@ -161,7 +210,10 @@ jobs:
           if ($feat)  { $lines += '## New features'; $lines += $feat; $lines += '' }
           if ($fix)   { $lines += '## Fixes'; $lines += $fix; $lines += '' }
           if ($other) { $lines += '## Other changes'; $lines += $other; $lines += '' }
-          $lines += 'Full detail in CHANGELOG.md.'
+          if (-not ($feat -or $fix -or $other)) { $lines += 'See CHANGELOG.md for details.'; $lines += '' }
+          $lines += '---'
+          $lines += ''
+          $lines += 'Install: `dotnet add package Shenora.WebView2.Sessions` (or the leaf package you need — the rest arrive transitively) and `npm i @shenora/react`. Full detail in CHANGELOG.md.'
           Set-Content release-notes.md ($lines -join "`n") -Encoding utf8
 
       # NOTE (P5.5 H5): this action CREATES tag_name when the tag doesn't exist, so gating only the

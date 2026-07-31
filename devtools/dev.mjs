@@ -4,6 +4,7 @@
 //   node devtools/dev.mjs verify           - build · test · check-sensitive --tree · knowledge check (the "am I done?" gate)
 //   node devtools/dev.mjs pack             - nupkgs + npm tarball -> publish/packages (lockstep version, sha256 printed)
 //   node devtools/dev.mjs doctor [--fix]   - version/readme drift check (npm package.json + README headline vs VersionPrefix)
+//   node devtools/dev.mjs changelog [--fix] [--version X.Y.Z] [--date YYYY-MM-DD] - stamp "## Unreleased" for the release
 //   node devtools/dev.mjs sample [--dev]   - run the sample desktop app (Phase 2+)
 //   node devtools/dev.mjs vite             - run the sample web dev server (Phase 2+)
 //   node devtools/dev.mjs shot|wgc [name]  - capture the sample window (PrintWindow / occlusion-immune WGC)
@@ -83,6 +84,57 @@ function evictGlobalCache() {
 }
 
 // ---- doctor: the version story has ONE source (src/Directory.Build.props VersionPrefix).
+// changelog-doctor: stamp the CHANGELOG's `## Unreleased` heading with the version being released, the
+// way the pipeline already stamps VersionPrefix, the npm version and the README `## Status` headline.
+// PORTED FROM LYNTAI, where it was earned the expensive way: cutting a release was otherwise the one
+// place a human had to remember a manual edit, and a version shipped with its section still titled
+// "Unreleased" because of it. Shenora is one release away from the same mistake — its heading reads
+// `## Unreleased (0.1.0)` right now.
+//
+// Three heading shapes are accepted, covering what this file and Lyntai's both use:
+//   `## Unreleased`                → `## X.Y.Z — 2026-07-31`
+//   `## Unreleased (0.1.0)`        → `## X.Y.Z — 2026-07-31`   (the parenthesised hint is a placeholder;
+//                                                               the stamp replaces it, never keeps it)
+//   `## Unreleased — <title>`      → `## X.Y.Z — <title> (2026-07-31)`
+// so an author who wants a titled release writes the title on the Unreleased heading in advance.
+// Nothing is ever invented here. IDEMPOTENT: a heading for the version already present means the
+// release was already stamped (a pipeline re-run), and the file is left untouched.
+const unreleasedHeading =
+  /^## Unreleased(?:[ \t]*\([^)]*\))?[ \t]*(?:[—–-][ \t]*(.+?))?[ \t]*$/m;
+
+function changelogDoctor({ fix = false, version = config.version, date } = {}) {
+  const file = path.join(repo, 'CHANGELOG.md');
+  const changelog = fs.readFileSync(file, 'utf8');
+  const stamped = new RegExp(`^## ${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[ \t]|$)`, 'm');
+
+  if (stamped.test(changelog)) {
+    console.log(`  ok  CHANGELOG already has a "## ${version}" heading`);
+    return true;
+  }
+
+  const match = changelog.match(unreleasedHeading);
+  if (!match) {
+    // Neither a section for this version nor an Unreleased one to promote: nothing DOCUMENTS what is
+    // being shipped. Report it, but never fail a release over a doc heading — the packages are the
+    // deliverable, and a release blocked on prose is a worse outcome than an unlabelled section.
+    console.warn(`  warn  no "## ${version}" and no "## Unreleased" heading in CHANGELOG.md — `
+      + 'nothing to stamp (add the section by hand).');
+    return true;
+  }
+  if (!fix) {
+    console.error(`  FAIL CHANGELOG "## Unreleased" is not stamped for ${version} — `
+      + 'run `node devtools/dev.mjs changelog --fix` (the release workflow does this for you).');
+    return false;
+  }
+
+  const title = match[1]?.trim();
+  const on = date ?? new Date().toISOString().slice(0, 10); // UTC — releases run on a UTC runner
+  const heading = title ? `## ${version} — ${title} (${on})` : `## ${version} — ${on}`;
+  fs.writeFileSync(file, changelog.replace(unreleasedHeading, heading));
+  console.log(`  fixed CHANGELOG "${match[0].trim()}" -> "${heading}"`);
+  return true;
+}
+
 // The npm package.json version and the README "## Status" headline are derived; `doctor` fails
 // on drift, `doctor --fix` (also run by `pack`) rewrites them.
 function doctor({ fix = false } = {}) {
@@ -253,6 +305,18 @@ switch (cmd) {
   case 'doctor':
     process.exitCode = doctor({ fix: args.includes('--fix') }) ? 0 : 1;
     break;
+
+  case 'changelog': {
+    // `--version` so the release pipeline can stamp the version it is ABOUT to publish, before that
+    // version has been written back into VersionPrefix; `--date` so a re-cut can reproduce a heading.
+    const at = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
+    process.exitCode = changelogDoctor({
+      fix: args.includes('--fix'),
+      version: at('--version') ?? config.version,
+      date: at('--date'),
+    }) ? 0 : 1;
+    break;
+  }
 
   // ---- Sample-app loop (Phase 2+; see docs/ROADMAP.md). The capture/input tools below already
   // work against any process named in project.config.mjs once the sample exists.

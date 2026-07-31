@@ -11,29 +11,42 @@ default `patch`) · `create_tag` (default true) · `draft` (default true) · `pr
 Steps, in order — the irreversible publishes happen BEFORE the bump commit, so a failed release
 burns no version:
 
-1. Resolve the new version; rewrite `<VersionPrefix>` in `src/Directory.Build.props` in the
-   working tree only.
+1. Resolve the new version; rewrite `<VersionPrefix>` in `src/Directory.Build.props` and **stamp the
+   CHANGELOG's `## Unreleased` heading** (`dev.mjs changelog --fix --version X.Y.Z`) — in the working
+   tree only. Stamping is automated because it was the one release edit left to a human, and the
+   sibling library shipped a version whose section was still titled "Unreleased" because of it. The
+   step then asks *git* whether either file actually changed, rather than comparing version strings:
+   the two edits move independently, so a string compare would skip the commit when only the stamp
+   moved — and would produce an empty commit on a re-run that moved neither.
 2. **Verify gate**: `node devtools/dev.mjs verify` (dotnet build + tests, npm build + tests,
-   `check-sensitive --tree`, `knowledge check`).
+   typechecks, `check-sensitive --tree`, `knowledge check`, `doctor`).
 3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + the npm tarball
-   (npm `package.json` version synced from `VersionPrefix`).
+   (npm `package.json` version and the README headline synced from `VersionPrefix`), each with its
+   sha256 printed.
 4. **Publish NuGet** — Trusted Publishing (OIDC): `NuGet/login@v1` mints a short-lived key; no
    stored secret. One-time setup on nuget.org: Account → Trusted Publishing → policy for the
-   repo + `release.yml`, scoped to the `Shenora.*` package glob.
-5. **Publish npm** — `npm publish --provenance --access public` from `src/Shenora.React`. Uses
-   npm Trusted Publishing (OIDC) once the publisher policy is configured on npmjs.com for
-   `@shenora/react` + this repo/workflow; until then set a granular `NPM_TOKEN` repo secret
-   (the workflow uses it when present).
-6. Commit `chore: release vX.Y.Z` (props + README + package.json) **only if the version actually
-   changed**, push, then the annotated tag `vX.Y.Z` — the tag step is gated on the `create_tag`
-   input and skipped if the tag already exists.
+   repo + `release.yml`, scoped to the `Shenora.*` package glob. `--skip-duplicate` makes a re-run safe.
+5. **Publish npm** — `npm publish publish/packages/shenora-react-X.Y.Z.tgz --provenance --access public`.
+   Note it publishes the tarball **Pack produced**, not a rebuild: `npm publish` from the package
+   directory would re-run `prepublishOnly` and ship a second artifact, so the thing whose sha256 step 3
+   printed would not be the thing that shipped. Uses npm Trusted Publishing (OIDC) once the publisher
+   policy is configured on npmjs.com for `@shenora/react` + this repo/workflow; until then set a
+   granular `NPM_TOKEN` repo secret (the workflow uses it when present).
+   The step **skips when that exact version is already on the registry**, because npm has no
+   `--skip-duplicate` and fails hard otherwise. That matters: the two registries can never be made
+   atomic, so the goal is re-runnability — without the guard, any failure after both pushes (a
+   rejected bump commit, a tag race) leaves every re-run stuck here, unable to complete the bump or
+   the tag.
+6. Commit `chore: release vX.Y.Z` — props + CHANGELOG + README + npm `package.json`, named
+   explicitly so no build artifact rides along — then push, then the annotated tag `vX.Y.Z`. The tag
+   step is gated on `create_tag` and skipped if the tag already exists.
 7. Generate release notes from conventional-commit subjects since the previous release tag
-   (numeric version compare, `feat`/`fix` bucketed, chores dropped) → draft GitHub Release.
-   No binaries attached — nuget.org/npmjs.com are the canonical homes.
-   ⚠ **Two steps can create the tag.** The release action is always given `tag_name`, so it creates
-   the tag itself when step 6's tag step was skipped — i.e. `create_tag: false` does not mean "no
-   tag", and the tag it creates points at the default-branch head, which may not be the published
-   commit. Fixing the workflow is `TASKS.md` H5.
+   (the highest tag STRICTLY LESS than the one being cut, compared numerically — "not equal" would
+   pick a NEWER tag as the baseline when re-cutting an older version) → draft GitHub Release, with
+   `feat`/`fix` bucketed and chores dropped. No binaries attached — nuget.org/npmjs.com are the
+   canonical homes. The GitHub-release step is gated on `create_tag` too, because the action CREATES
+   `tag_name` when it does not exist: gating only the tag step left `create_tag: false` still
+   producing a tag, at the default-branch head rather than the published commit (fixed in P5.5 H5).
 
 ## Consuming pre-release (in-house siblings)
 
