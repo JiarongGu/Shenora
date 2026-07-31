@@ -259,15 +259,61 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
     /// <summary>
     /// The one place a transition reaches the bus. <paramref name="immediate"/> distinguishes a
-    /// lifecycle transition (start/terminal — always emits now and always will) from a progress
-    /// report (<c>false</c> — every report emits unthrottled today; a follow-up adds a
-    /// <see cref="OperationRegistryOptions.ProgressInterval"/>-based frame rate here with a
-    /// trailing emit, without touching any caller of this method).
+    /// lifecycle transition (start/terminal — always emits now, never throttled) from a progress
+    /// report (<c>false</c> — collapsed to at most one emission per
+    /// <see cref="OperationRegistryOptions.ProgressInterval"/> window, with a trailing emit so the
+    /// final value in a window is never lost). <see cref="TimeSpan.Zero"/> disables the throttle:
+    /// every window is immediately "closed", so this falls through to an immediate emit.
     /// </summary>
     private void Publish(Entry entry, bool immediate)
     {
-        _ = immediate; // throttling arrives in a follow-up task; every transition emits for now.
+        if (immediate) { EmitNow(entry); return; }
+
+        var now = _options.TimeProvider.GetUtcNow();
+        lock (_lock)
+        {
+            if (entry.Status != OperationStatus.Running) return;          // terminal already
+            if (now - entry.LastEmitUtc < _options.ProgressInterval)
+            {
+                if (entry.TrailingScheduled) return;                       // one pending trailer, not N
+                entry.TrailingScheduled = true;
+                var delay = _options.ProgressInterval - (now - entry.LastEmitUtc);
+                _ = TrailingEmitAsync(entry, delay);                       // fire-and-forget, guarded below
+                return;
+            }
+            entry.LastEmitUtc = now;
+        }
         EmitNow(entry);
+    }
+
+    /// <summary>
+    /// The trailing half of the throttle: guarantees the LAST progress value in a window is never
+    /// simply dropped (the stuck-at-80%-bar symptom). Guarded end to end — this is a
+    /// fire-and-forget body (<see cref="Publish"/> does not await it), so an unguarded exception
+    /// here would be an UNOBSERVED task exception rather than a caller-visible failure.
+    /// </summary>
+    private async Task TrailingEmitAsync(Entry entry, TimeSpan delay)
+    {
+        try
+        {
+            // Task.Delay's TimeProvider overload is what makes the FakeTimeProvider test deterministic —
+            // a real 100 ms sleep in the suite would be both slow and flaky.
+            await Task.Delay(delay, _options.TimeProvider).ConfigureAwait(false);
+            lock (_lock)
+            {
+                entry.TrailingScheduled = false;
+                entry.LastEmitUtc = _options.TimeProvider.GetUtcNow();
+                if (entry.Status != OperationStatus.Running) return;       // a terminal emit already went
+            }
+            EmitNow(entry);
+        }
+        catch (Exception ex)
+        {
+            // An unguarded fire-and-forget body makes any fault an UNOBSERVED task exception.
+            // Routed through the same guarded/lazy Log() every other diagnostic uses — not a
+            // second logging path — so a throwing sink still cannot escape here either.
+            Log(() => $"[Shenora.Ipc] trailing progress emit failed: {ex.GetType().Name}");
+        }
     }
 
     private void EmitNow(Entry entry)
@@ -334,6 +380,12 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public DateTimeOffset? FinishedAt { get; set; }
         public CancellationTokenSource? Cts { get; set; }
         public long Sequence { get; set; }
+
+        /// <summary>When this entry last actually emitted — the anchor the throttle window is measured from.</summary>
+        public DateTimeOffset LastEmitUtc { get; set; }
+
+        /// <summary>True while a trailing emit is already queued for this entry — caps it at one pending timer, not N.</summary>
+        public bool TrailingScheduled { get; set; }
     }
 
     /// <summary>The handle returned by <see cref="Start"/> — closes over the owning registry and this operation's id.</summary>
