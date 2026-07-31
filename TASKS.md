@@ -1208,22 +1208,19 @@ Known capability LIMITS:
      git, and validates the OIDC exchange against the trusted-publishing policy - the part a first
      release actually gets wrong. Note draft: true is NOT a dry run; both registry pushes happen
      before the release step and are effectively permanent.
-  2. **Create the npm org.** BLOCKED HERE as of 2026-07-31: the @shenora scope does not exist
-     (npm org ls shenora -> 404 Scope not found), so a publish cannot succeed. It is an ORG scope,
-     not the user scope, so it must be created at npmjs.com/org/create (free for public packages).
-     Renaming the package instead is the wrong trade - @shenora/react is baked into the README,
-     ADOPTION.md, the sample web app and the consumer probes.
-  3. **Publish npm ONCE by hand**, because npm trusted publishing cannot be configured for a package
-     that does not exist yet. From a logged-in machine:
-     npm publish publish/packages/shenora-react-<version>.tgz --access public
-     WITHOUT --provenance: provenance requires a supported CI with OIDC and fails locally.
-  4. **Then configure npm trusted publishing** for @shenora/react (package -> Settings -> Trusted
-     publisher -> this repo + release.yml). Until it exists the workflow falls back to an NPM_TOKEN
-     repo secret, which must therefore exist for a real run of step 5.
+  2. **DONE 2026-07-31** — npm org shenora created (owner: the maintainer account).
+  3. **DONE 2026-07-31** — @shenora/react@0.1.0 hand-published from a logged-in machine and live as
+     the latest tag. Two things this taught, both now avoided for good: npm checks AUTH before
+     SCOPE, so a missing org surfaced first as a 2FA 403 and only then as the real scope error; and
+     the local publish must omit --provenance, which needs a supported CI with OIDC.
+  4. **Configure npm trusted publishing** for @shenora/react (package -> Settings -> Trusted
+     publisher -> this repo + release.yml). NOT needed for the first workflow run: 0.1.0 is already
+     on the registry, so the npm step SKIPS (rehearsed against the live registry, exit 0, version
+     matched). It is needed from the next version onward, or an NPM_TOKEN secret instead.
   5. **Cut the release** for real. The workflow skips the npm push when that version is already on
      the registry, so the hand-publish in step 3 does not block it.
-  Decide the version deliberately at step 5: 0.1.0 with prerelease: true matches the README status,
-  or 1.0.0 if the SemVer freeze is intended now. Five breaking changes landed this session.
+  **Version DECIDED (user, 2026-07-31): 0.1.0**, matching what is already on npm. 1.0.0 stays a
+  separate deliberate cut once the surface has settled — five breaking changes landed this session.
 - [x] **Every reference profile proven to adopt, end to end — DONE 2026-07-31.** The third
   pre-release gate (user direction: *"verify all reference project they can adopt this seamlessly
   (you might setup some usecases and test them e2e)"*). Throwaways in `devtools/_p7-profiles/`
