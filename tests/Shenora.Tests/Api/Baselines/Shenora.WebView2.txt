@@ -50,6 +50,11 @@ struct Shenora.WebView2.WebViewByteRange : System.IEquatable<Shenora.WebView2.We
   public static bool op_Equality(Shenora.WebView2.WebViewByteRange left, Shenora.WebView2.WebViewByteRange right)
   public static bool op_Inequality(Shenora.WebView2.WebViewByteRange left, Shenora.WebView2.WebViewByteRange right)
   public void Deconstruct(out long From, out long To)
+sealed class Shenora.WebView2.WebViewCustomScheme
+  public System.Collections.Generic.IReadOnlyList<string> AllowedOrigins { get; init; }
+  public bool HasAuthorityComponent { get; init; }
+  public bool TreatAsSecure { get; init; }
+  public required string Name { get; init; }
 sealed class Shenora.WebView2.WebViewDeferredScheme
   public required System.Func<Shenora.WebView2.WebViewResourceRequest, System.Threading.Tasks.Task<Shenora.WebView2.WebViewResourceResponse>> Handler { get; init; }
   public required string Scheme { get; init; }
@@ -62,6 +67,7 @@ static class Shenora.WebView2.WebViewEnvironment
   public static void Prewarm(Shenora.WebView2.WebViewEnvironmentOptions options)
 sealed class Shenora.WebView2.WebViewEnvironmentOptions
   public System.Action<string>? Log { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.WebView2.WebViewCustomScheme> CustomSchemes { get; init; }
   public bool IsDevelopment { get; init; }
   public required string UserDataFolder { get; init; }
   public string? AdditionalArguments { get; init; }

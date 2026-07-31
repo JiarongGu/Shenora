@@ -1151,52 +1151,63 @@ Known capability LIMITS:
 - **Private specifics stay in `local/`.** Real names, paths and file-level findings from the survey
   live in `local/PROJECT_NOTES.md` and `local/EXTRACTION-MAP.md` — this file stays generic.
 
-### P7.1 — `DeferredSchemes` has never worked for a real custom scheme (RELEASE BLOCKER)
+### P7.1 — `DeferredSchemes` custom-scheme serving: registration LANDED, end-to-end STILL NOT PROVEN (RELEASE BLOCKER)
 
-Found 2026-07-31 by the P7 e2e adoption pass, which is the only thing that could have found it: the
-unit tests pass, the API baseline lists the feature, `docs/ADOPTION.md` recommends it for seekable
-media, and it cannot work.
+Found 2026-07-31 by the P7 e2e adoption pass — the only thing that could have found it: the unit
+tests pass, the API baseline lists the feature, `docs/ADOPTION.md` recommends it for seekable media,
+and it had never served a request.
 
-**The defect.** `WebViewHost.RegisterResourceServing` adds a `WebResourceRequested` filter for
-`scheme://*`, but nothing ever registers the scheme with
-`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations`. WebView2 only accepts scheme
-registrations when the ENVIRONMENT is created, so an unregistered scheme is rejected by the network
-stack before the filter is ever consulted. **Proven, not deduced:** a probe page fetching
-`probe://sample/data` got `TypeError: Failed to fetch`, with nothing in the host log.
+**The original defect (FIXED).** `WebViewHost` added a `WebResourceRequested` filter for
+`scheme://*`, but nothing registered the scheme with
+`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` — and WebView2 accepts those ONLY at
+environment creation, so the request was rejected by the network stack before the filter was
+consulted. Now `WebViewEnvironmentOptions.CustomSchemes` + `WebViewCustomScheme` feed the
+registration, and `WebViewHost` refuses at CONSTRUCTION when a deferred scheme is not registered —
+turning a bare `TypeError: Failed to fetch` with nothing in the host log into a loud composition
+error naming the fix.
 
-Only `http`/`https` deferred schemes can work today — and those are already covered by `VirtualHost`
-/ `FolderMappings`, so the feature as documented is empty.
+**The trap that cost the afternoon, now encoded in a comment at the site.**
+`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` is **null** on a default-constructed
+instance in this SDK, so `.Add(...)` AND a `{ … }` collection initializer both NullReference — and
+because that happens inside an async environment factory, the symptom is not a stack trace but a
+startup that never completes. The list must be supplied through the **constructor overload**
+(`new CoreWebView2EnvironmentOptions(browserArguments, null, null, false, [registrations])`).
+Isolated with a 40-line probe using no Shenora code at all, which answered it in one run after three
+inconclusive attempts against the full sample — **isolate the SDK call before debugging the wiring
+around it.**
 
-**Why this blocks the release.** It is public surface (`WebViewDeferredScheme`), the adoption guide
-tells the media-serving sibling to use it for exactly the thing it cannot do, and P6.6 closed a
-capability gap (`WebViewResourceRequest`/`Response`, `WebViewByteRange`) whose ONLY delivery route is
-this seam. Shipping 1.0 with it would freeze a feature that has never functioned.
+**What is still NOT working.** With registration in place the app starts and the probe runs, but the
+page's `fetch('probe://sample/data')` still fails with `TypeError: Failed to fetch`. Known so far:
 
-**What was attempted, and why it is not committed.** An API was written and then reverted rather than
-shipped unproven: `WebViewEnvironmentOptions.CustomSchemes` + a `WebViewCustomScheme` record feeding
-`CustomSchemeRegistrations`, plus a composition-time guard in `WebViewHost` refusing a deferred scheme
-the environment does not register. The guard is right and should come back. The registration **did not
-work**: with any custom scheme registered, `CoreWebView2Environment.CreateAsync` never returned —
-reproduced three times, including with a freshly deleted user-data folder and with
-`TreatAsSecure = false` + `AllowedOrigins = ["*"]`. Removing the scheme entirely restored a normal
-startup, so the registration is implicated and the rest of the change is not.
+- `AllowedOrigins` is REQUIRED here and is not the whole answer. The page is served from the virtual
+  host, so a fetch to `probe://` is CROSS-origin; the default (same-origin only) blocks it. Adding
+  `["https://sample.local", "http://localhost:3900"]` did not make it pass.
+- Registration itself is sound: the isolation probe creates an environment with a registration, and
+  with `AllowedOrigins`, in ~1 ms.
+- **A stale user-data folder wedges startup when the registrations change.** After a run with
+  different registrations, the next launch hangs before the page loads; deleting
+  `bin/Debug/net10.0-windows/data/webview2` fixes it. Worth confirming and then documenting as a kit
+  gotcha (it will bite any adopter who adds a scheme to an existing app).
 
-**The leading hypothesis, UNTESTED.** The sample logs `[WebView2] Creating environment` TWICE per run
-(prewarm and the window) even though `GetSharedAsync` caches, and WebView2 requires that every
-environment sharing a user-data folder be created with IDENTICAL options. Two environments over one
-folder, each carrying its own `CoreWebView2CustomSchemeRegistration` instances, is the most likely
-cause of a deadlock that only appears once registrations exist. **Explain the double creation first** —
-it may be a real defect on its own, and it is cheap to instrument.
+**Next steps, in order.**
 
-- [ ] Explain why two environments are created per run when `GetSharedAsync` caches.
-- [ ] Get one custom scheme serving a real request end to end in the sample (a page `fetch` returning
-      206 with the right `Content-Range` — the probe is written and can be restored from this commit's
-      parent history).
-- [ ] Restore the `CustomSchemes` API + the composition guard, and only then re-point
-      `docs/ADOPTION.md`'s media guidance at it.
-- [ ] If custom schemes prove unworkable, say so in `ADOPTION.md` and route seekable media through an
-      https virtual host instead — but then the range seam still needs an e2e proof through that path,
-      because it has never served a real request either.
+- [ ] Report `location.origin` from the page and compare it to what is registered — the sample serves
+      from `VirtualHost = "sample.local"`, and the exact origin string has not actually been observed.
+- [ ] Try `HasAuthorityComponent = false` with an opaque `probe:data` URL, and try a scheme fetched as
+      a subresource (an `<img>`/`<video>` src) rather than `fetch`, to separate a CORS refusal from a
+      scheme-resolution refusal.
+- [ ] Confirm and document the stale-user-data-folder wedge.
+- [ ] Only when a page really receives a 206 with the right `Content-Range`: restore the seam probe
+      into the sample (`RangeSchemeProbe` — recoverable from this commit's message/history), and
+      re-point `docs/ADOPTION.md`'s media guidance at the feature.
+- [ ] If custom schemes cannot be made to work, say so in `ADOPTION.md` and route seekable media
+      through an https virtual host — but the range seam then still needs an e2e proof through THAT
+      path, because it has never served a real request either.
+
+**Two things the probe already taught, worth keeping whichever way this lands.**
+`ExecuteScriptAsync` does NOT await a promise — an async IIFE serializes as `{}`, so park the result
+on a `window.__x` global and poll. And assert on CONTENT, not length: bytes 10-19 of a repeating
+"0123456789" is another "0123456789", so a wrong offset with the right length passes a length check.
 
 ### P7 — Stabilisation + 1.0 (CURRENT)
 

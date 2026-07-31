@@ -38,6 +38,34 @@ public sealed class WebViewHost
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = options.Log ?? options.Environment.Log;
+
+        // Fail at COMPOSITION rather than degrading to silence (the P5.5 H3 convention). A deferred
+        // scheme gets a WebResourceRequested filter below, but WebView2 accepts the SCHEME itself only
+        // at environment-creation time — so an unregistered custom scheme is rejected by the network
+        // stack before the filter is consulted, and all the page ever sees is
+        // `TypeError: Failed to fetch`, with nothing logged host-side to explain it. That was true for
+        // as long as the feature existed (P7.1); this guard is what stops it recurring.
+        // http/https need no registration — those are the browser's own schemes, served by a virtual
+        // host rather than a custom one.
+        var registered = options.Environment.CustomSchemes.Select(s => s.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unregistered = options.DeferredSchemes
+            .Select(s => s.Scheme)
+            .Where(s => !s.Equals("http", StringComparison.OrdinalIgnoreCase)
+                     && !s.Equals("https", StringComparison.OrdinalIgnoreCase)
+                     && !registered.Contains(s))
+            .ToArray();
+        if (unregistered.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"DeferredSchemes names {string.Join(", ", unregistered.Select(s => $"'{s}'"))} but "
+                + $"{nameof(WebViewEnvironmentOptions)}.{nameof(WebViewEnvironmentOptions.CustomSchemes)} "
+                + "does not register them. WebView2 accepts custom schemes only when the ENVIRONMENT is "
+                + "created, so without that registration every request to them fails in the page as "
+                + "'TypeError: Failed to fetch' with nothing in the host log. Add "
+                + $"`CustomSchemes = [new {nameof(WebViewCustomScheme)} {{ Name = \"{unregistered[0]}\" }}]` "
+                + "to the environment options.");
+        }
         // The one marshalling owner (D19/D20, P5.5 H4.2).
         _ui = new Shenora.WinForms.WinFormsUiDispatcher(webView,
             ex => Log(() => $"[Shenora.WebView2] Posted UI work failed: {ex.Message}"));

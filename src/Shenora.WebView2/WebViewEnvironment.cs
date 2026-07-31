@@ -29,6 +29,57 @@ public sealed class WebViewEnvironmentOptions
 
     /// <summary>Diagnostics sink (timings, prewarm progress). Null = silent.</summary>
     public Action<string>? Log { get; init; }
+
+    /// <summary>
+    /// Custom URI schemes this environment serves, e.g. <c>app</c> for <c>app://…</c>.
+    /// <para>
+    /// REQUIRED for every non-http(s) scheme in <see cref="WebViewHostOptions.DeferredSchemes"/>, and
+    /// it has to live HERE rather than beside the handler because WebView2 accepts scheme
+    /// registrations only when the ENVIRONMENT is created — before any control exists. Without it the
+    /// browser does not know the scheme, so the request is rejected by the network stack before the
+    /// <c>WebResourceRequested</c> filter is ever consulted, and the page sees a bare
+    /// <c>TypeError: Failed to fetch</c> with nothing in the host log.
+    /// </para>
+    /// <para>
+    /// That was a real defect, not a hypothetical: the deferred-scheme feature shipped with the filter
+    /// and no registration, so it could never have worked for an actual custom scheme, while the unit
+    /// tests, the API baseline and the docs all looked fine (P7.1 — found by an e2e probe).
+    /// <see cref="WebViewHost"/> now validates the pairing at construction, so a missing registration
+    /// fails loudly at composition instead of as a fetch error at runtime.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<WebViewCustomScheme> CustomSchemes { get; init; } = [];
+}
+
+/// <summary>
+/// A custom URI scheme registered with the environment (see
+/// <see cref="WebViewEnvironmentOptions.CustomSchemes"/>).
+/// </summary>
+public sealed class WebViewCustomScheme
+{
+    /// <summary>Scheme name without the separator (e.g. <c>app</c> for <c>app://…</c>).</summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Treat as a SECURE origin (default true). Secure schemes reach the APIs a modern page needs —
+    /// service workers, <c>crypto.subtle</c>, and being allowed to load subresources into an https
+    /// document — so the useful default is the secure one; a page served from an insecure custom
+    /// scheme is mysteriously restricted.
+    /// </summary>
+    public bool TreatAsSecure { get; init; } = true;
+
+    /// <summary>
+    /// True (default) when URIs carry a host, i.e. <c>scheme://host/path</c>. False for the opaque
+    /// <c>scheme:path</c> form. Get this wrong and paths parse into the wrong component.
+    /// </summary>
+    public bool HasAuthorityComponent { get; init; } = true;
+
+    /// <summary>
+    /// Origins allowed to fetch this scheme cross-origin. Empty (default) = same-origin only, which
+    /// is the safe starting point: widen it deliberately when the page's origin differs from the
+    /// scheme's, not by reflex.
+    /// </summary>
+    public IReadOnlyList<string> AllowedOrigins { get; init; } = [];
 }
 
 /// <summary>
@@ -117,11 +168,17 @@ public static class WebViewEnvironment
 
         var devExtra = options.DevExtraArguments
             ?? (options.IsDevelopment ? Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") : null);
+        var browserArguments = BrowserArguments.Build(options.IsDevelopment, devExtra, options.AdditionalArguments);
 
-        var envOptions = new CoreWebView2EnvironmentOptions
-        {
-            AdditionalBrowserArguments = BrowserArguments.Build(options.IsDevelopment, devExtra, options.AdditionalArguments),
-        };
+        // Custom schemes go through the CONSTRUCTOR, never the property. `CustomSchemeRegistrations`
+        // is NULL on a default-constructed CoreWebView2EnvironmentOptions in this SDK, so both
+        // `.Add(...)` and a `{ ... }` collection initializer NullReference — and because that happens
+        // inside an async environment factory the symptom is not a stack trace but a startup that
+        // never completes. Cost an afternoon; there is an isolation probe in the P7.1 write-up.
+        var envOptions = options.CustomSchemes.Count == 0
+            ? new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = browserArguments }
+            : new CoreWebView2EnvironmentOptions(browserArguments, null, null, false,
+                [.. options.CustomSchemes.Select(ToRegistration)]);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var environment = await CoreWebView2Environment.CreateAsync(
@@ -129,5 +186,19 @@ public static class WebViewEnvironment
         sw.Stop();
         options.Log?.Invoke($"[WebView2] Environment ready (CreateAsync took {sw.ElapsedMilliseconds}ms)");
         return environment;
+    }
+
+    private static CoreWebView2CustomSchemeRegistration ToRegistration(WebViewCustomScheme scheme)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scheme.Name);
+        var registration = new CoreWebView2CustomSchemeRegistration(scheme.Name)
+        {
+            TreatAsSecure = scheme.TreatAsSecure,
+            HasAuthorityComponent = scheme.HasAuthorityComponent,
+        };
+        // AllowedOrigins IS a live list on a constructed registration (unlike the options property
+        // above), so adding is correct here.
+        foreach (var origin in scheme.AllowedOrigins) registration.AllowedOrigins.Add(origin);
+        return registration;
     }
 }
