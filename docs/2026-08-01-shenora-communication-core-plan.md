@@ -756,6 +756,7 @@ lock:
 
     private async Task TrailingEmitAsync(Entry entry, TimeSpan delay)
     {
+        var emit = false;
         try
         {
             // Task.Delay's TimeProvider overload is what makes the FakeTimeProvider test deterministic —
@@ -763,16 +764,23 @@ lock:
             await Task.Delay(delay, _options.TimeProvider).ConfigureAwait(false);
             lock (_lock)
             {
-                entry.TrailingScheduled = false;
                 entry.LastEmitUtc = _options.TimeProvider.GetUtcNow();
-                if (entry.Status != OperationStatus.Running) return;       // a terminal emit already went
+                emit = entry.Status == OperationStatus.Running;   // a terminal emit already went
             }
-            EmitNow(entry);
+            if (emit) EmitNow(entry);
         }
         catch (Exception ex)
         {
             // An unguarded fire-and-forget body makes any fault an UNOBSERVED task exception.
-            _options.Log?.Invoke($"[Shenora.Ipc] trailing progress emit failed: {ex.GetType().Name}");
+            Log(() => $"[Shenora.Ipc] trailing progress emit failed: {ex.GetType().Name}");
+        }
+        finally
+        {
+            // MUST be finally, not the success path. TimeProvider is public, consumer-settable
+            // surface: if a custom implementation's timer faults, a flag cleared only on success
+            // stays true forever and every later Report on this operation returns at the
+            // already-scheduled check — progress frozen while the work keeps running, silently.
+            lock (_lock) entry.TrailingScheduled = false;
         }
     }
 ```
