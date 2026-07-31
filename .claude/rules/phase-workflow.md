@@ -2,7 +2,10 @@
 
 The project moves in phases (`docs/ROADMAP.md`: P1 skeleton → P2 core host → P3 IPC → P4 modules
 + native services → P5 auxiliary browser sessions → P5.5 consolidation/re-layer → P5.6 native
-caption buttons → **P6 adoption readiness (CURRENT)** → P7 stabilisation/1.0). P6 readies the
+caption buttons → P6 adoption readiness → **P7 stabilisation → v0.1.0 SHIPPED 2026-07-31; no phase is
+CURRENT**). Post-release, work arrives as harvest (D15) or adoption feedback rather than as a phase —
+but the loop below still applies to any non-trivial change, and every public change is now SemVer
+surface. P6 readied the
 LIBRARY and writes `docs/ADOPTION.md`; the adopting app's own session does the adoption, and this
 repo does not edit another repo. Per phase:
 

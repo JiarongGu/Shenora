@@ -14,6 +14,12 @@ brain; **Shenora must never depend on Lyntai**. Two consumption profiles: deskto
 `docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D22) before
 relitigating anything.
 
+**Status: v0.1.0 SHIPPED (2026-07-31)** — five NuGet packages + `@shenora/react` on npm, repo public.
+P1–P7 are complete and **nothing is queued**: `TASKS.md` holds two standing habits, the finished work
+lives in `docs/task-archive.md`. Growth from here is harvest-driven (D15) and adoption-driven — real
+work arrives when a sibling app adopts the kit and hits something. **Every public change is now SemVer
+surface**; 1.0 is a separate deliberate freeze, not yet cut.
+
 **Read first:** `docs/README.md` — the memory map that routes any task to the right doc or rule.
 **Private companion:** also read `local/CLAUDE.local.md` + `local/PROJECT_NOTES.md` at session
 start. Absolute paths and private sibling names stay OUT of tracked files (→ `local/`).
@@ -36,12 +42,13 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 - **Library discipline:** generalize the consumer's request, never ship its shape
   (`.claude/knowledge/generic-library.md`). No app/domain vocabulary in `src/`. **Headless
   (D13):** no UI component library dependency anywhere — apps bring their own design system.
-- **Layering (D19/D20, approved 2026-07-30 — NOT yet implemented):** `Shenora.WebView2` →
+- **Layering (D19/D20 — IMPLEMENTED in P5.5, shipped in v0.1.0):** `Shenora.WebView2` →
   `Shenora.WinForms` is a **sanctioned downward edge** (the two are one Windows presentation layer;
   the old "never sideways" rule was retired on evidence). Portable contracts + the `IUiDispatcher`
-  marshalling seam live in `Shenora.Core` so app logic compiles with no Windows reference. Target:
-  `docs/2026-07-30-shenora-relayering-design.md`; the tree still predates it, and
-  `docs/ARCHITECTURE.md` is **as-built, not the target** — don't "fix" the new layering back.
+  marshalling seam live in `Shenora.Core` so app logic compiles with no Windows reference —
+  enforced, not asserted: `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED if a
+  Windows type creeps into app logic. `docs/ARCHITECTURE.md` now describes this as-built; don't
+  "fix" the layering back toward the pre-P5.5 shape.
 - **Extraction-first:** prefer lifting proven sibling code — including its post-mortem comments —
   over new abstractions (`.claude/knowledge/extraction-sources.md` + `local/EXTRACTION-MAP.md`).
 - One `<VersionPrefix>` (src/Directory.Build.props) is the only version source; npm/README are

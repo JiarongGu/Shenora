@@ -4,7 +4,15 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state (P5 complete — auxiliary browser sessions)
+## Current state — **v0.1.0 SHIPPED (2026-07-31)**, P1–P7 complete
+
+Five NuGet packages + `@shenora/react` on npm. Since the summary below was written, P5.5 landed the
+D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
+a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 added native caption
+buttons, P6 readied adoption (`docs/ADOPTION.md`, and six capability gaps found and closed), and P7
+stabilised: every public and protected member documented with CS1591 as an error, the login RECIPE
+moved out of the library to the sample (D21/D22 amended), and the release pipeline hardened. The
+narrative is `docs/ROADMAP.md` `## Done`; the task-level record is `docs/task-archive.md`.
 
 P2 delivered the core host (builder, WinForms runner, WebView2 hosting + serving, samples). P3
 delivered the full IPC stack (wire contract, dispatcher + facades, event bus, postMessage
@@ -14,8 +22,7 @@ commands, STA dialogs/shell/clipboard/interaction services, drag-drop zones + `u
 (+ per-monitor DPI handling), secondary windows + tray. P5 added the `Shenora.WebView2.Sessions`
 package: the one browser-configuration path, a bounded LIFO render-session pool, the login-window
 stack (persistent per-account profiles, silent refresh, clear-on-logout), and co-browse streaming
-— all proven live in the sample. Next: **P5.5 consolidation** (cleanup + the D19/D20 re-layer +
-the roadmap revisit — `TASKS.md` H1–H8), then P6 (sibling adoption).
+— all proven live in the sample.
 
 ```
 Shenora.slnx
