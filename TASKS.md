@@ -1202,25 +1202,23 @@ Known capability LIMITS:
   model — app security policy, not a reusable helper. Its host→page channel is the one-way event push
   the kit already provides, and its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`.
   Recorded as an amendment on D10; the two-profile split stands, only the extra package is dropped.
-- [ ] **First publish + repo public.** The GitHub remote and NuGet trusted publishing are set up
-  (2026-07-31), so what remains is the ORDER, which is not obvious and is easy to get wrong:
-  1. **Rehearse:** Actions -> Release -> dry_run: true, bump: none. Publishes nothing, touches no
-     git, and validates the OIDC exchange against the trusted-publishing policy - the part a first
-     release actually gets wrong. Note draft: true is NOT a dry run; both registry pushes happen
-     before the release step and are effectively permanent.
-  2. **DONE 2026-07-31** — npm org shenora created (owner: the maintainer account).
-  3. **DONE 2026-07-31** — @shenora/react@0.1.0 hand-published from a logged-in machine and live as
-     the latest tag. Two things this taught, both now avoided for good: npm checks AUTH before
-     SCOPE, so a missing org surfaced first as a 2FA 403 and only then as the real scope error; and
-     the local publish must omit --provenance, which needs a supported CI with OIDC.
-  4. **Configure npm trusted publishing** for @shenora/react (package -> Settings -> Trusted
-     publisher -> this repo + release.yml). NOT needed for the first workflow run: 0.1.0 is already
-     on the registry, so the npm step SKIPS (rehearsed against the live registry, exit 0, version
-     matched). It is needed from the next version onward, or an NPM_TOKEN secret instead.
-  5. **Cut the release** for real. The workflow skips the npm push when that version is already on
-     the registry, so the hand-publish in step 3 does not block it.
-  **Version DECIDED (user, 2026-07-31): 0.1.0**, matching what is already on npm. 1.0.0 stays a
-  separate deliberate cut once the surface has settled — five breaking changes landed this session.
+- [x] **FIRST RELEASE SHIPPED — v0.1.0, 2026-07-31.** All five NuGet packages + @shenora/react on
+  npm, tag v0.1.0, draft GitHub release. The order that actually worked, since it is not the one
+  the docs originally implied:
+  1. Create the npm ORG (@shenora is an org scope, not a user scope). npm checks AUTH before SCOPE,
+     so a missing org first surfaced as a 2FA 403 and only afterwards as the real scope error.
+  2. Hand-publish npm ONCE - trusted publishing cannot be configured for a package that does not
+     exist. Locally that means NO --provenance, which requires a CI with OIDC.
+  3. Run the workflow. The npm step SKIPPED because that version was already live, so the first run
+     needed no npm auth at all.
+  **Two workflow defects the first runs found, both fixed:** there was no real dry run (draft only
+  affects the GitHub Release; both registry pushes precede it), and the NuGet push used a quoted
+  glob copied from the sibling library - which works there only because that job runs on ubuntu and
+  the SHELL expands it. On windows-latest dotnet took the pattern literally and pushed nothing.
+  **And the release commit validated a design choice in production:** it changed ONLY CHANGELOG.md,
+  because the version was already 0.1.0. Detecting "did anything change" by asking GIT rather than
+  comparing version strings is the only reason that commit happened at all - a string compare would
+  have seen no version change, skipped the commit, and silently lost the CHANGELOG stamp.
 - [x] **Every reference profile proven to adopt, end to end — DONE 2026-07-31.** The third
   pre-release gate (user direction: *"verify all reference project they can adopt this seamlessly
   (you might setup some usecases and test them e2e)"*). Throwaways in `devtools/_p7-profiles/`
@@ -1250,9 +1248,13 @@ Known capability LIMITS:
 
 ### P1 — Skeleton tail
 
-- [ ] **P1.2 — Release workflow dry-run readiness.** Once a GitHub remote exists: run the Release
-  workflow with `draft=true` against test feeds (or `--skip-duplicate` into a throwaway version)
-  to validate OIDC config; document the nuget.org/npmjs.com trusted-publisher setup steps taken.
+- [x] **P1.2 — DONE 2026-07-31, superseded by the real release.** OIDC trusted publishing is
+  validated by v0.1.0 having shipped through it. Note this item's own premise was WRONG and the
+  workflow was changed rather than the plan: `draft=true` is not a dry run — it only affects the
+  GitHub Release, while both registry pushes precede it and are effectively permanent. A genuine
+  `dry_run` input now exists (gate + pack + OIDC login, publishing nothing, touching no git). The
+  trusted-publisher setup steps are in `docs/RELEASING.md`, and the npm ordering — org first,
+  hand-publish once, then configure trusted publishing — is recorded above with the release.
 
 ### Standing
 
