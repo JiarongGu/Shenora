@@ -157,6 +157,14 @@ public class SingleInstanceGuardTests
         } // thread exits still holding → the OS marks the mutex abandoned
 
         using var relaunch = new SingleInstanceGuard("Shenora.Tests", scope);
-        Assert.True(relaunch.TryAcquire()); // AbandonedMutexException → ours now
+        // Widened wait, not the zero-wait TryAcquire(): after Thread.Join returns, there is a tiny
+        // window on some Windows kernels (seen live on a windows-latest CI runner, 2026-08-01) where
+        // the CLR reports the thread ended before the OS has processed the mutex-abandonment
+        // side-effect — so WaitOne(0) returns false cleanly instead of throwing AbandonedMutexException,
+        // and TryAcquire() reports "already running" against a corpse. The widened wait falls through
+        // to a blocking WaitOne that observes the abandonment as soon as the kernel flips the bit,
+        // which is what real production usage does anyway (the --restarted handoff uses 25 s for
+        // exactly this class of timing).
+        Assert.True(relaunch.TryAcquire(TimeSpan.FromSeconds(2))); // AbandonedMutexException → ours now
     }
 }

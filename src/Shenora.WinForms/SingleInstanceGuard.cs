@@ -70,6 +70,15 @@ public sealed class SingleInstanceGuard : IDisposable
     /// True = this is the first/only instance (mutex now held for the process lifetime).
     /// False = another instance owns this scope; call <see cref="BroadcastActivate"/> and exit.
     /// A mutex failure fails OPEN (true) — an OS hiccup must never block a legitimate launch.
+    /// <para>
+    /// Abandonment recovery (a predecessor that DIED holding the mutex) is BEST-EFFORT on this
+    /// instant path — on some Windows kernels there is a tiny window between the owning thread
+    /// ending and the kernel flipping the mutex's abandoned bit, and this call would then report
+    /// "already running" against a corpse. Where recovery must be reliable — the
+    /// <c>--restarted</c> handoff, or any relaunch that overlaps a predecessor's shutdown — use
+    /// <see cref="TryAcquire(TimeSpan)"/>: its blocking wait observes the abandonment as soon as
+    /// the kernel processes it.
+    /// </para>
     /// </summary>
     public bool TryAcquire() => TryAcquire(TimeSpan.Zero);
 
@@ -80,7 +89,9 @@ public sealed class SingleInstanceGuard : IDisposable
     /// the outgoing instance (<c>--restarted</c>) overlaps its predecessor's graceful shutdown,
     /// which can legitimately spend many seconds draining before the mutex releases — a genuine
     /// double-launch keeps the instant zero-wait answer. A predecessor that DIED holding the mutex
-    /// surfaces as <see cref="AbandonedMutexException"/> — the mutex is ours then.
+    /// surfaces as <see cref="AbandonedMutexException"/> — the mutex is ours then. This overload
+    /// also closes the abandonment-timing race described on <see cref="TryAcquire()"/>: the
+    /// blocking wait sees the abandonment as soon as the kernel processes it.
     ///
     /// The contract is CROSS-PROCESS (the only scenario that exists in production — one guard per
     /// process, owned by the runner): an OS mutex is per-thread reentrant, so a second guard
