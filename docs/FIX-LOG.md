@@ -14,6 +14,35 @@ entry template:
 
 ## 2026-08-01
 
+### 0.1.2: WindowStateManager.Apply(Form) resolved DPI on the wrong monitor on cross-monitor mixed-DPI setups
+
+- **Symptom.** First cut of the 0.1.2 fix (commit `109654c`) made `Apply(Form)` defer to
+  `HandleCreated` and resolve `ScaleFromDeviceDpi(form.DeviceDpi)` at that moment — claiming
+  "per-monitor accuracy is now the default." Adversarial phase review flagged this as unproven
+  for the actual multi-monitor scenario, and empirical probing confirmed the flaw.
+- **Root cause.** At `HandleCreated`, the form's handle is created wherever
+  WinForms/Windows initially places it — typically the primary monitor, since `Location` hasn't
+  been set to the saved value yet. On a mixed-DPI setup with a saved position on a
+  different-DPI secondary monitor, `form.DeviceDpi` returned the PRIMARY's DPI, not the
+  target's, and the restored `Size` was computed against the wrong scale. The commit's live
+  verification was on a single 200% display, which cannot exercise this path. WinForms' default
+  `WM_DPICHANGED` handler does not rescale a Form's outer `Size` (verified live in
+  `devtools/_dpi-probe/`: after a 200% → 150% change, `SuggestedRectangle` came back with the
+  form's current width/height unchanged and the handler left `Size` alone), so there was no
+  self-heal to fall back on.
+- **Fix.** `WindowStateManager.PrePositionToTargetMonitor` moves the handle to the saved
+  location BEFORE reading `DeviceDpi`. The `SetWindowPos` fires `WM_DPICHANGED` synchronously
+  as the window crosses monitors, updating `DeviceDpi` to the target monitor before the scale
+  is resolved. `src/Shenora.WinForms/WindowStateManager.cs`.
+- **Verify.** Two new tests — `Apply_parameterless_pre_positions_before_reading_DeviceDpi` and
+  `Apply_parameterless_skips_pre_position_for_an_off_screen_saved_position` — cover the code
+  path on a single-monitor test machine (the DPI change itself cannot be observed without a
+  second monitor, but pre-position happening / not happening is testable). Empirical DPI-event
+  behaviour verified live via `devtools/_dpi-probe/` (a standalone .NET 10 WinForms PerMonitorV2
+  probe that logs `DeviceDpi` + `Size` on every `DpiChanged` event). `dev.mjs verify` clean —
+  566 dotnet + 85 vitest.
+- **Commit:** _pending_
+
 ### 0.1.2: WindowStateManager.Apply on a plain Form opened restored-down from a saved Maximized=true
 
 - **Symptom.** After adopting `WindowStateManager` in a private desktop sibling (Stage 1 on 0.1.1)

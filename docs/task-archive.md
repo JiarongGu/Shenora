@@ -1269,7 +1269,17 @@ new members, no baseline delta.
   two pieces of kit-internal knowledge — that `DeviceDpi` is the right source and that
   `OnHandleCreated` is the only moment it is valid — for a concern that is entirely the kit's. The
   scale-explicit overloads stay as the escape hatch (test harness, preview against a different
-  monitor). `WindowStateManager.cs` L40-58 (parameterless defer) + L148-153 (`AttachTo` delegates).
+  monitor). `WindowStateManager.cs` L40-58 (parameterless defer) + `AttachTo` delegating to it.
+  **Cross-monitor DPI hole in the first cut — caught by adversarial phase review, then fixed:**
+  the initial commit read `form.DeviceDpi` immediately at `HandleCreated`, but the handle is
+  created wherever WinForms/Windows initially places it (typically the primary monitor, since
+  `Location` hasn't been set yet). On a mixed-DPI setup with a saved position on a
+  different-DPI secondary, that returned the wrong DPI and the restored size was wrong. Fixed
+  by pre-positioning the handle to the saved location BEFORE reading `DeviceDpi` — the move
+  triggers `WM_DPICHANGED` synchronously (verified live in `devtools/_dpi-probe/` on the dev
+  machine: DeviceDpi updated from 192 → 144 on a scale change, but SuggestedRectangle stayed
+  unchanged and WinForms did NOT auto-rescale outer Size, so pre-position is load-bearing not
+  belt-and-braces). `WindowStateManager.PrePositionToTargetMonitor`.
 - [x] **`Apply` defers the maximize application to `Shown` for plain forms too.** In 0.1.1 only
   `IAppMaximizable` implementors got the `RestoreMaximizedTag` deferral; a plain `Form` had
   `WindowState.Maximized` set synchronously and — measured live by the adopter — the state reset to

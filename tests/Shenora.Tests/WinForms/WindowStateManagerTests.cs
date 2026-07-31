@@ -343,6 +343,57 @@ public class WindowStateManagerTests
     }
 
     [Fact]
+    public void Apply_parameterless_pre_positions_before_reading_DeviceDpi()
+    {
+        // Adopter-review 2026-08-01: on a mixed-DPI multi-monitor box, reading form.DeviceDpi at
+        // HandleCreated returns the initial monitor's DPI (typically the primary, since Location
+        // hasn't been set yet) — sizing against that DPI is wrong when the saved position is on
+        // a secondary monitor with a different DPI. Belt-and-braces: the deferred path
+        // pre-positions the handle to the saved location BEFORE reading DeviceDpi, so the move
+        // brings the handle onto the target monitor first.
+        //
+        // Without a second monitor this test can't observe the DPI change directly. What it CAN
+        // verify is that pre-positioning HAPPENS - form.Location matches the saved value the
+        // moment the deferred apply completes, meaning any DPI change from the move already
+        // fired synchronously before Apply(form, scale) read DeviceDpi.
+        Sta.Run(() =>
+        {
+            // A saved position that is guaranteed to be on-screen on any test machine (0,0 is
+            // inside the primary monitor's bounds on every configuration).
+            var store = new FakeWindowStateStore { Stored = new WindowState(600, 400, 10, 10, false) };
+            using var form = new Form { MinimumSize = new Size(1, 1) };
+
+            new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
+            _ = form.Handle;   // trigger deferred handler
+
+            // Location applied via pre-position and again inside Apply — the value is idempotent.
+            Assert.Equal(FormStartPosition.Manual, form.StartPosition);
+            Assert.Equal(new Point(10, 10), form.Location);
+        });
+    }
+
+    [Fact]
+    public void Apply_parameterless_skips_pre_position_for_an_off_screen_saved_position()
+    {
+        // If the saved position is off-screen (a monitor was unplugged/rearranged), pre-position
+        // is a no-op — moving the handle to an unreachable point would be pointless AND would
+        // fire a spurious WM_DPICHANGED if the point happened to land on a phantom monitor.
+        // Apply's own IsVisible + centre fallback then handles placement inside the primary.
+        Sta.Run(() =>
+        {
+            // Off-screen: no test machine has a monitor covering (100000, 100000).
+            var store = new FakeWindowStateStore { Stored = new WindowState(600, 400, 100000, 100000, false) };
+            using var form = new Form { MinimumSize = new Size(1, 1) };
+
+            new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
+            _ = form.Handle;   // trigger deferred handler
+
+            // Fell through to Apply's centre fallback (position not applied, StartPosition centred).
+            Assert.Equal(FormStartPosition.CenterScreen, form.StartPosition);
+        });
+    }
+
+    [Fact]
     public void Apply_defers_maximize_to_Shown_for_a_plain_form()
     {
         // The finding: `Apply` set `form.WindowState = FormWindowState.Maximized` synchronously,

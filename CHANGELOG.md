@@ -40,6 +40,18 @@ at the first list and missed five more breaking changes.
   for "apply maximize once realized". Not a kit regression — the hand-rolled predecessor code
   had the identical bug — but the kit is the right place for it to be fixed once. Reported by
   the first adopter.
+- **`WindowStateManager.Apply(Form)` now pre-positions the handle to the saved location before
+  resolving `DeviceDpi`, closing a cross-monitor mixed-DPI hole in the initial fix.** The first
+  cut of the `HandleCreated` defer read `form.DeviceDpi` immediately — but the handle is
+  created wherever WinForms/Windows initially places it (typically the primary monitor, since
+  `Location` hasn't been set yet), so on a mixed-DPI setup with a saved position on a
+  different-DPI secondary monitor, `DeviceDpi` returned the wrong value and the restored size
+  was computed against the wrong scale. The fix moves the handle to the saved location first;
+  the move triggers `WM_DPICHANGED` synchronously, updating `DeviceDpi` to the target monitor
+  before the scale is resolved. There is no auto-heal to fall back on — the WinForms default
+  `WM_DPICHANGED` handler does not rescale a Form's outer `Size` (verified live in
+  `devtools/_dpi-probe/`: Windows' `SuggestedRectangle` came back unchanged after a 200% → 150%
+  scale change). Caught by adversarial phase review of the first-cut commit.
 
 ## 0.1.1 — 2026-07-31
 

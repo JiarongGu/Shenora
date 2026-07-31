@@ -16,6 +16,19 @@ namespace Shenora.WinForms;
 /// position (a monitor was unplugged/rearranged) is discarded and the window re-centers, and a
 /// size saved on a bigger display shrinks to fit the target monitor's work area (see
 /// <see cref="WindowStateOptions.MaxToWorkArea"/>).
+///
+/// CROSS-MONITOR MIXED-DPI (adopter-review 2026-08-01, empirically verified): the handle is
+/// created wherever WinForms/Windows initially places the form - typically the primary monitor,
+/// since <c>Location</c> hasn't been set yet - so <c>form.DeviceDpi</c> at <c>HandleCreated</c>
+/// returns the PRIMARY's DPI, not the target monitor's, if the saved position is on a
+/// different-DPI secondary. The deferred <see cref="Apply(Form)"/> path therefore MOVES the
+/// handle to the saved position FIRST (Windows fires <c>WM_DPICHANGED</c> synchronously as the
+/// move crosses monitors, updating <c>DeviceDpi</c> to the target), then resolves the scale
+/// against that updated DPI. This is not optional and there is no auto-heal to fall back on:
+/// verified live in <c>devtools/_dpi-probe/</c> that WinForms' default <c>WM_DPICHANGED</c>
+/// handler does NOT rescale a Form's outer <c>Size</c> - Windows' <c>SuggestedRectangle</c>
+/// comes back as the current width/height unchanged, and the handler leaves it alone.
+/// Positioning first makes <c>DeviceDpi</c> authoritative before <c>Size</c> is computed.
 /// </summary>
 public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptions? options = null)
 {
@@ -49,12 +62,49 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
         // deliver anything before the handle exists, so defer to HandleCreated. Setting Size /
         // Location inside HandleCreated is still before OnLoad/OnShown, so the first paint sees
         // the restored geometry.
+        //
+        // Cross-monitor DPI trap (adopter-review, 2026-08-01, empirically verified): the handle
+        // is created wherever WinForms/Windows initially places the form — typically the primary
+        // monitor, since StartPosition/Location haven't been set yet. Reading form.DeviceDpi at
+        // HandleCreated would return the PRIMARY monitor's DPI, not the target monitor's, so on
+        // a mixed-DPI setup where the saved position is on a secondary monitor, sizing against
+        // that DPI is wrong. MOVE the window to the saved position first (Windows sends
+        // WM_DPICHANGED synchronously as the move crosses monitors, updating form.DeviceDpi to
+        // the target monitor), THEN resolve the scale. WinForms' default WM_DPICHANGED handler
+        // does NOT auto-rescale a Form's outer Size (verified in devtools/_dpi-probe/ — Windows'
+        // SuggestedRectangle came back unchanged and the handler left Size alone), so there is
+        // no self-heal to fall back on: this positioning step is load-bearing, not defence.
         void OnHandleCreated(object? sender, EventArgs e)
         {
             form.HandleCreated -= OnHandleCreated;
+            PrePositionToTargetMonitor(form, store.Load());
             Apply(form, DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi));
         }
         form.HandleCreated += OnHandleCreated;
+    }
+
+    /// <summary>
+    /// Move the just-created handle to the saved position, if any, so <c>form.DeviceDpi</c>
+    /// reflects the TARGET monitor before <see cref="Apply(Form, double)"/> reads it. A no-op if
+    /// there is no saved position, or the saved position is off-screen (the caller's centre
+    /// fallback handles that — leaving the window on its initial monitor is fine because that IS
+    /// the monitor we'll end up on). The subsequent <see cref="Apply(Form, double)"/> sets
+    /// <c>Location</c> to the same value again (idempotent).
+    /// </summary>
+    private static void PrePositionToTargetMonitor(Form form, WindowState? state)
+    {
+        if (state is not { X: { } x, Y: { } y }) return;
+        var pt = new Point(x, y);
+        // Cheap "does this point land on any real monitor?" check — Bounds, not WorkingArea,
+        // because we're checking whether the DPI change is even meaningful, not whether the
+        // window would be grabbable there. IsVisible + the caller's centre fallback own the
+        // "usable position" question inside Apply.
+        var onScreen = false;
+        foreach (var screen in Screen.AllScreens)
+            if (screen.Bounds.Contains(pt)) { onScreen = true; break; }
+        if (!onScreen) return;
+        form.StartPosition = FormStartPosition.Manual;
+        form.Location = pt;
     }
 
     /// <summary>
