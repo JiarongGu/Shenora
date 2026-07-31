@@ -13,64 +13,197 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.1.0 — pre-release, core host + IPC + native services + auxiliary browser sessions extracted.** The application builder,
-WinForms host, WebView2 hosting, the full typed IPC stack (envelopes, middleware dispatcher,
-scoped-container router, event bus, postMessage transport, `@shenora/react` client), and the
-native desktop surface (frameless chrome + frontend window commands, STA dialogs, shell/clipboard,
-drag-drop zones, secondary windows, tray), and the auxiliary browser sessions (offscreen render
-pool, login windows, co-browse streaming) are extracted from the proven in-house applications and
-verified end-to-end against the sample app (see `docs/ROADMAP.md`). Not yet published to NuGet/npm.
+**v0.1.0 — pre-release, stabilising toward 1.0.** The application builder, WinForms host, WebView2
+hosting, the full typed IPC stack (envelopes, middleware dispatcher, scoped-container router, event
+bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
+native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
+the auxiliary browser sessions (off-screen render pool, interactive sessions, streaming sessions) are
+extracted from proven in-house applications and verified end-to-end against the sample app. Every
+public and protected member is documented and gated by API-surface baselines. Not yet published to
+NuGet/npm — see `docs/ROADMAP.md`.
 
 ## Packages
 
-| Package | Registry | What it gives you |
+Version in lockstep; reference the **leaf** you need and the rest arrive transitively.
+
+| Package | Registry | In one line |
 |---|---|---|
-| `Shenora.Core` | NuGet | Application host + builder + lifetime, module registration (`IShenoraModule`), environment (dev/prod), app paths, options, event bus, and the **platform-neutral contracts** — the `IUiDispatcher` UI-thread seam plus file dialogs, clipboard, URL launching and UI blocking — so your own app logic compiles with no Windows reference. Depends on Microsoft.Extensions DI (implementation — the builder needs `BuildServiceProvider`, D17) + logging abstractions. |
-| `Shenora.Ipc` | NuGet | Typed request/response/notification envelopes, composable middleware dispatcher, structured error contract (`code` + parameters, i18n-ready), `System.Text.Json` defaults. Transport-neutral. |
-| `Shenora.WebView2` | NuGet | WebView2 hosting: environment prewarm, dev-server vs packaged-frontend loading (embedded resources / virtual host), navigation + new-window + download + permission + process-failure handling, postMessage bridge with batched event push. |
-| `Shenora.WebView2.Sessions` | NuGet | Auxiliary off-screen browser sessions over the same runtime: the one browser-configuration path, a bounded LIFO render-session pool, per-provider/per-account login windows (clear-on-logout), and co-browse streaming (CDP screencast out / input dispatch back). Layers on `Shenora.WebView2`. |
-| `Shenora.WinForms` | NuGet | The native shell: bootstrapper with global exception handling, window-state persistence (DPI-correct), single-instance guard, secondary windows + tray, frameless-chrome form, splash panel, and the Windows implementations of the Core contracts (STA file dialogs, clipboard, shell, UI-thread dispatcher). (Drag-drop overlays live in `Shenora.WebView2` — they need the WebView2 control.) |
-| `@shenora/react` | npm | The frontend bridge: correlated `invoke` **and one-way `post`** for work that answers with events (`ShenoraBridge`) + `notifyReady`/`dispose`, an event bus you `subscribe` to, `createShenoraStore` for host-fed state many components share, typed module services (`send` on `BaseModuleService`), React hooks (`useShenora`, `useShenoraEvent`, `useShenoraQuery`), drop-zone hook, window commands, a browser fallback for pure-UI development. |
+| `Shenora.Core` | NuGet | The application host, and the platform-neutral contracts your logic compiles against. |
+| `Shenora.Ipc` | NuGet | The transport-neutral IPC contract and middleware dispatcher. |
+| `Shenora.WinForms` | NuGet | The native Windows shell: bootstrap, windows, tray, dialogs, single-instance. |
+| `Shenora.WebView2` | NuGet | Hosting a WebView2: serving, policies, and the postMessage bridge. |
+| `Shenora.WebView2.Sessions` | NuGet | Extra browser sessions: a render pool, interactive windows, frame streaming. |
+| `@shenora/react` | npm | The client half — bridge, event bus, store, hooks. |
 
-Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and
-**server-backed** (the app runs its own in-process HTTP server shared with mobile/LAN clients;
-Shenora provides the shell and an optional one-way event fast-path).
+Dependency chain: `Shenora.WebView2.Sessions` → `Shenora.WebView2` → `Shenora.WinForms` →
+`Shenora.Ipc` → `Shenora.Core`. A shell with no web frontend references `Shenora.WinForms` directly;
+app logic that must stay portable references only `Shenora.Core`.
 
-Shenora is deliberately **headless**: it depends on no UI component library — applications bring
-their own design system on top of the shell, bridge, hooks, and behaviors. The IPC contract is
-transport-neutral, so the same application logic can later run in mobile shells (Capacitor-style)
-speaking the same envelope. Planned areas beyond the current packages: server-hosting helpers
-(`Shenora.Hosting.AspNetCore`) and a mobile transport adapter — see `docs/ROADMAP.md`.
+Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and **server-backed**
+(the app runs its own in-process HTTP server shared with mobile/LAN clients; Shenora provides the
+shell and a one-way event fast-path). A `Shenora.Hosting.AspNetCore` package was considered and
+**declined** — what it would have held turned out to be five lines of ASP.NET plus a security policy
+that belongs to the app (D10).
 
-## Ergonomics (as built — the sample app is the full reference)
+Shenora is deliberately **headless**: it depends on no UI component library and ships no design
+system — applications bring their own. It also ships no product recipes; the mechanisms are here and
+the workflows are yours (D21).
+
+---
+
+## Using each package
+
+Enough to get each one working, plus the trap that costs an afternoon. The sample app under
+`samples/` is the full reference composition.
+
+### `Shenora.Core` — the host, and portability
+
+The builder, lifetime, module registration, environment and app paths — plus the **platform-neutral
+contracts** (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`, `IUiInteraction`)
+and the in-process `IEventBus`.
 
 ```csharp
 var builder = ShenoraApplication.CreateBuilder(args);
-builder.Services.AddModuleFacade<SettingsFacade>();               // your typed IPC module
-builder.Services.AddMessageDispatcher();                          // error handler → middleware → facades
-builder.PrewarmWebView2(app => new WebViewEnvironmentOptions { /* … */ });
-builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) });
+builder.Services.AddSingleton<IMyService, MyService>();
 using var app = builder.Build();
-app.Run();
+app.Run();                       // executes the registered runner (UseWinForms supplies one)
 ```
 
-```tsx
-const settings = await getBridge().invoke<Settings>('SETTINGS', 'GET');
-useShenoraEvent<JobProgress>('JOBS', 'PROGRESS', p => setProgress(p.percent));
+Put your facades in a plain `net10.0` project that references only this package and inject the
+contracts. The compiler then enforces portability instead of a document asserting it — if a Windows
+type ever creeps into app logic, that project turns red. See `docs/ADOPTION.md` Stage 4.
+
+### `Shenora.Ipc` — the wire and the dispatcher
+
+Typed request/response/notification envelopes, a composable middleware pipeline, module facades, and
+a structured error contract (`code` + parameters, i18n-ready). Transport-neutral by design: the same
+envelopes ride postMessage today and a WebSocket or mobile channel tomorrow.
+
+```csharp
+public sealed class SettingsFacade : BaseFacade
+{
+    public override string ModuleName => "SETTINGS";
+
+    protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken ct) =>
+        request.Type switch
+        {
+            "GET"  => Task.FromResult<object?>(_settings.Current),
+            "SAVE" => Save(request, ct),
+            _      => throw UnknownType(request),
+        };
+}
+
+services.AddModuleFacade<SettingsFacade>();
+services.AddMessageDispatcher();          // error handler → logging → your middleware → facades
 ```
+
+**Raw exception text never crosses the wire.** An `OperationException` carries the app's own code,
+parameters and message; anything else becomes `UNKNOWN_ERROR` plus the exception's type name, with
+the detail in the host log. The one sharp edge: an `OperationException`'s message crosses **verbatim**
+— so never build one from `ex.Message`, which would turn the sanctioned channel into a bypass.
+
+### `Shenora.WinForms` — the native shell
+
+Bootstrap with global exception handling, window-state persistence (DPI-correct, via `GetMonitorInfo`
+rather than the mis-scaled `Screen.WorkingArea`), single-instance guard, secondary windows on their
+own STA pumps, tray icon, frameless `OptimizedForm` with optional native caption buttons, splash
+panel, and the Windows implementations of the Core contracts.
+
+```csharp
+builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) });
+```
+
+**`CloseReason.UserClosing` also means a programmatic `Close()`.** With close-to-tray on, a
+startup-abort path that calls `Close()` leaves a resident process — exit via `ExitApplication()`.
+
+### `Shenora.WebView2` — hosting the page
+
+One place a WebView2 is configured: environment prewarm, dev-server vs packaged-bundle loading,
+serving (embedded resources, virtual hosts, app schemes), safe defaults for new windows, downloads,
+permissions and renderer crashes, plus the postMessage IPC bridge with batched event push.
+
+```csharp
+var host = new WebViewHost(webView, options);
+await host.InitializeAsync();            // idempotent, and bounded by one InitTimeout
+var bridge = new WebViewIpcBridge(webView, new WebViewIpcBridgeOptions { Dispatcher = dispatcher });
+host.Navigate();
+bridge.Attach();
+```
+
+Construct the bridge **before** `InitializeAsync` — event buffering starts at construction, so
+anything emitted during the slow WebView2 init survives. Serving something seekable or large (video,
+audio) needs a deferred scheme rather than a folder mapping: a folder mapping cannot honour `Range`.
+The handler receives request headers and returns a status, headers and a stream, so nothing is
+buffered whole.
+
+### `Shenora.WebView2.Sessions` — extra browsers
+
+Off-screen and auxiliary browser sessions over the same runtime: a bounded LIFO `RenderSessionPool`,
+`InteractiveSession` (a human-in-the-loop window over an isolated persistent profile, driven by
+**your** driver), and `StreamingSession` (frames out, input in). The kit ships the mechanics and no
+scenario — a worked driver example lives in the sample, to copy and edit.
+
+### `@shenora/react` — the client half
+
+```ts
+import { getBridge, configureBridge, useShenoraEvent, createShenoraStore } from '@shenora/react';
+
+configureBridge({ onPostError: (f) => log.error(f.module, f.type, f.error) });
+await getBridge().notifyReady();          // starts notification delivery
+
+const settings = await getBridge().invoke<Settings>('SETTINGS', 'GET');
+useShenoraEvent<Progress>('JOBS', 'PROGRESS', (p) => setProgress(p.percent));
+```
+
+**Reserve `invoke` for calls that are quick and UI-thread-safe**, and `post` for everything else.
+The host's dispatch pipeline preserves the caller's synchronization context by design, so a route's
+synchronous segment runs on the UI thread: measured on the sample, the same 3 s of work stalls the
+window 2 027 ms when left in the route and 0 ms when handed off and streamed back as events.
+
+---
+
+## Building the frontend bundle
+
+The host serves **HTML no-cache and hashed assets immutable**. Two things follow for the app's build:
+
+- **Content-hash your asset filenames** and let the HTML stay unhashed. Vite does this by default
+  (`assets/index-<hash>.js`); the point is that a released HTML file must never be cached, or a user
+  keeps loading an old document that references assets you have replaced.
+- **Split vendor code into stable chunks** so a one-line app change does not invalidate the whole
+  bundle for everyone. With Vite, `build.rollupOptions.output.manualChunks` — pulling React and any
+  large third-party library into their own chunks — keeps those hashes steady across releases.
+
+Embed the built output and point the provider at it:
+
+```xml
+<EmbeddedResource Include="wwwroot\**" />
+```
+```csharp
+ResourceProvider = new EmbeddedResourceProvider(new EmbeddedResourceProviderOptions
+{
+    Assembly = typeof(Program).Assembly,
+    ResourcePrefix = "MyApp.wwwroot",     // includes the folder segment
+})
+```
+
+> ⚠ **Dev-loop trap.** A dev server pre-bundles `@shenora/react`. After upgrading the package, clear
+> that cache (for Vite, delete `node_modules/.vite`) and restart it — otherwise the page silently runs
+> the OLD client: imports resolve to `undefined` and the app renders blank while the host looks
+> perfectly healthy.
 
 ## Dev loop
 
 ```
 node devtools/dev.mjs build     # dotnet build + npm build (react package)
 node devtools/dev.mjs test      # dotnet test + vitest
-node devtools/dev.mjs verify    # build · test · leak scan · knowledge check — the "am I done?" gate
+node devtools/dev.mjs verify    # build · test · typecheck · leak scan · knowledge check · doctor
 node devtools/dev.mjs pack      # nupkgs + npm tarball into publish/packages (lockstep version)
 node devtools/dev.mjs doctor    # version/readme drift check (--fix to sync)
 ```
 
-Requirements: .NET 10 SDK, Node 22+. See `devtools/README.md` for the full command set and
-`docs/README.md` for the documentation map.
+Requirements: .NET 10 SDK, Node 22+. See `devtools/README.md` for the full command set,
+`docs/README.md` for the documentation map, and `docs/ADOPTION.md` to bring an existing app onto the
+kit.
 
 ## License
 

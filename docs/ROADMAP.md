@@ -5,6 +5,45 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P7: the README each package's consumer actually reads, and D10 answered NO
+
+**D10 is resolved: `Shenora.Hosting.AspNetCore` will NOT be built.** It had sat as "a candidate later
+addition" since the design contract, which is the comfortable answer — so it was decided on evidence
+instead. P6.6 had already surveyed the server-backed sibling, and both of the package's proposed
+contents evaporated on contact: the "SPA static-file policy" is **five lines** of ASP.NET there (an
+`OnPrepareResponse` setting `no-cache` on the HTML, passed to `UseStaticFiles` and
+`MapFallbackToFile`), and the "loopback-gated endpoint helpers" is a **two-line host check** embedded
+in a policy written against that app's own threat model — a local page fetching the loopback API and
+exfiltrating the response. That second one is the more interesting refusal: shipping a generic
+version would be the kit making a security decision on a consumer's behalf, which is worse than
+shipping nothing.
+
+Its host→page channel is a one-way event push, exactly what D10 anticipated, and the kit already
+covers it; its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`, which an HTTP
+endpoint calls directly. So D16's transport pluggability holds with **no new surface at all**. The
+two-profile split stands — only the extra package is dropped. The standing test settles it: would the
+other apps use it unchanged? Only one of four is server-backed, and even it would keep its own five
+lines.
+
+**The README is now written for the person who installed ONE package.** It ships inside every nupkg,
+so a `Shenora.Ipc` consumer reads the whole file — and it had been a single feature table addressed
+to nobody in particular. It now carries a "Using each package" section per package: what the package
+is for, the smallest snippet that works, and the one trap that costs an afternoon (construct the
+bridge BEFORE `InitializeAsync` or events emitted during init are lost; `CloseReason.UserClosing` also
+means a programmatic `Close()`; an `OperationException`'s message crosses the wire verbatim, so never
+build one from `ex.Message`; a folder mapping cannot honour `Range`). Every C# name in it was checked
+against the API baselines and every TS name against the client barrel — the discipline `docs/ADOPTION.md`
+was written under, because a guide naming a member the library lacks is worse than no guide.
+
+The P2/P3 carry-over landed with it: **stable-chunk frontend build guidance**. Hash the asset
+filenames and leave the HTML unhashed, because the host serves HTML no-cache and hashed assets
+immutable — a cached HTML file is a user permanently loading a document that references assets you
+have replaced. Split vendor code into stable chunks (`manualChunks`) so a one-line app change does not
+invalidate the whole bundle for everyone. And the dev-loop trap that has now cost two sessions: a dev
+server pre-bundles `@shenora/react`, so after upgrading it you must clear that cache or the page
+silently runs the OLD client — imports resolve to `undefined` and the app renders blank while the host
+looks perfectly healthy.
+
 ### 2026-07-31 — P7 starts by taking a product OUT of the library, and closing the docs gate
 
 **A login recipe was shipping as library surface, and two decisions had been justifying it to each

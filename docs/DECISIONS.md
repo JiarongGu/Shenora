@@ -61,6 +61,27 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   can adopt the shell without the postMessage command bridge. A `Shenora.Hosting.AspNetCore`
   package (SPA static-file policy, loopback-gated endpoint helpers) is a candidate later
   addition — out of initial scope to keep the first releases small.
+  **RESOLVED 2026-07-31 (P7): NO-GO. The package will not be built.** The two-profile split stands;
+  only the extra package is dropped. P6.6 surveyed the server-backed app to decide this instead of
+  reasoning about it, and both proposed contents evaporated on contact:
+  * the **SPA static-file policy** is five lines of ASP.NET in that app — an `OnPrepareResponse`
+    that sets `no-cache` on the HTML, passed to `UseStaticFiles` and `MapFallbackToFile`. A package
+    wrapping five lines of someone else's framework earns nothing and costs a version to keep in
+    lockstep.
+  * the **loopback gate** is a two-line host check, and in the real app it is embedded in a policy
+    written against that app's own threat model (a local page fetching the loopback API and
+    exfiltrating the response). That is app security policy, not a reusable helper — shipping a
+    generic version would be the kit making a security decision on a consumer's behalf, which is
+    worse than shipping nothing.
+  Its host→page channel is a one-way event push, exactly what this entry anticipated, and the kit
+  already covers it (`WebViewIpcBridge` + `IEventBus` wildcard forwarding on the host,
+  `eventBus.subscribeToAll` on the client). Its host-side IPC seam is already
+  `IMessageDispatcher.DispatchAsync` — an HTTP endpoint calls it directly, so D16's transport
+  pluggability holds with no new surface at all.
+  **The test this fails is the standing one:** would the other apps use it unchanged? Only one of the
+  four is server-backed, and even it would not — it would keep its own five lines. Per D2 a seam does
+  not justify a package; here there is not even a seam, only boilerplate. Revisit only if a real
+  consumer cannot express what it needs — the same bar every other deferred capability is held to.
 
 - **D11 — IPC envelope follows the proven family shape** (`{id, module, type, payload, timestamp}`
   request; category-wrapped response; ~50 ms-batched notification array), not the brief's

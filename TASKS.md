@@ -1165,13 +1165,21 @@ Known capability LIMITS:
   they had been justifying it to each other rather than testing it. A whole-surface audit by the
   documented method (sweep the API baselines for domain vocabulary) found no others: everything else
   it flagged is genuine browser or platform vocabulary.
-- [ ] **Per-package README sections**, plus the stable-chunk frontend build guidance carried over
-  from P2/P3. The root README ships INSIDE every nupkg, so each package needs its own section rather
-  than one combined table.
-- [ ] **`Shenora.Hosting.AspNetCore` go/no-go (D10)** — decide and record either way. P6.6's survey of
-  the server-backed sibling is the evidence to decide on: it serves over in-process Kestrel, and its
-  host-side IPC seam is already `IMessageDispatcher.DispatchAsync`, which an HTTP endpoint can call
-  directly.
+- [x] **Per-package README sections + frontend build guidance — DONE 2026-07-31.** The README ships
+  INSIDE every nupkg, so a `Shenora.Ipc` consumer reads the whole file: it now has a "Using each
+  package" section per package — the smallest working snippet plus the one trap that costs an
+  afternoon — rather than a single table addressed to nobody in particular. The P2/P3 carry-over
+  landed with it: hash the assets, keep the HTML unhashed (the host serves it no-cache), split vendor
+  code into stable chunks so a one-line app change does not invalidate everyone's bundle, and clear
+  the dev server's pre-bundle cache after upgrading the client. Every C# name was checked against the
+  API baselines and every TS name against the barrel — a README naming a member the library lacks is
+  worse than none.
+- [x] **`Shenora.Hosting.AspNetCore` go/no-go (D10) — DECIDED: NO-GO (2026-07-31).** Decided on
+  evidence rather than reasoning: in the server-backed sibling the "SPA static-file policy" is five
+  lines of ASP.NET, and the "loopback gate" is a two-line host check embedded in that app's own threat
+  model — app security policy, not a reusable helper. Its host→page channel is the one-way event push
+  the kit already provides, and its host-side IPC seam is already `IMessageDispatcher.DispatchAsync`.
+  Recorded as an amendment on D10; the two-profile split stands, only the extra package is dropped.
 - [ ] **First publish + repo public.** Blocked with P1.2 on a GitHub remote existing.
 
 ### P1 — Skeleton tail
