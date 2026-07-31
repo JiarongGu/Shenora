@@ -5,6 +5,57 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-07-31 — P7 starts by taking a product OUT of the library, and closing the docs gate
+
+**A login recipe was shipping as library surface, and two decisions had been justifying it to each
+other.** `CookieLoginFlow` sat in `Shenora.WebView2.Sessions` with `LoginUrl`, `CookieReadUrl`,
+`AuthCookiePatterns`, `RevealDelay` and `CaptureAllCookies` — one product's workflow, fully specified,
+public and about to become SemVer surface. D21 blessed shipping "one opt-in reference driver"; D22
+then justified the scenario NAME on the grounds that D21 had blessed shipping it. Circular, and
+neither ever applied D21's own test: *would the other apps use this API unchanged?* Only an app doing
+cookie logins would.
+
+It is out. Both decisions are amended: **the kit ships no drivers**, and the "reference driver may
+name its scenario" exception is withdrawn — because the naming question was never the real one.
+A type that needs a scenario name to make sense is telling you it does not belong in `src/`. The
+transferable rule, now in `generic-library.md`: **check placement and naming as ONE question.**
+Checking them separately is exactly how this survived two audits that were each looking at one half —
+D22's audit swept every baseline for domain vocabulary, FOUND this type, and waved it through on the
+naming exception.
+
+Nothing was lost. The driver only ever consumed public seam members
+(`InteractiveSession.RunAsync`, `SessionController.GetCookiesAsync`/`NavigateAsync`/`Reveal`/
+`SetLoading`), so it ported to the desktop sample as `CookieLoginDriver` unchanged — which is D21's
+test passing in the other direction: a consumer really can build it on the primitives. It kept its
+tests too (the test project now references the sample), because their invariants are sibling
+post-mortems worth keeping green: a STALE auth cookie must not capture, and closing a signed-out
+window must not produce an anonymous blob. It also gives `InteractiveSession`'s driver seam the worked
+example it never had anywhere.
+
+**The rest of the surface is clean.** A full audit by the documented method — sweep
+`tests/…/Api/Baselines/*.txt` for domain vocabulary — found this as the only product leak. Everything
+else it flagged is genuine browser or platform vocabulary: `DownloadHit`/`OnDownloadStarting` (HTTP
+and WebView2's own event args), `SessionCookie` (a cookie is a browser primitive, not a login
+concept), `MuteAudio`, `ProfileDirectory`, `UserDataFolder`, `Module`. One method note for next time:
+the first sweep used `\b`-anchored patterns and reported ZERO cookie hits, because a word boundary
+does not exist inside CamelCase — `SessionCookie` never matched. A sweep that finds nothing deserves
+the same suspicion as a test that passes.
+
+**And the docs gate is on.** CS1591 was suppressed with a note saying the sweep was P7's job; it is
+now unsuppressed and, like every other warning, an ERROR. All five packages document every public and
+protected member — 24 sites, all constructors, overrides and interface implementations, since Core and
+Ipc were already complete. Adding an undocumented public member no longer compiles, which is the
+point: a public member is SemVer surface from 1.0, and "document it later" is how an API ends up with
+members nobody can explain. Turning it on immediately caught a broken `<see cref="..."/>` pointing at
+`OptimizedFormOptions.WndProcHook` for a property that lives on `OptimizedForm` — a CS1574 that had
+been invisible for as long as warnings were non-fatal.
+
+One consequence worth knowing: the test project now references the desktop sample, which made
+`Every_shipped_assembly_has_a_baseline` see `Shenora.Sample.Desktop` as a new ungated package. Fixed
+by excluding the `Shenora.Sample.` PREFIX rather than by naming the assembly — that test was rewritten
+in P5.5 H6 precisely to stop being a hand-maintained list, and no real package can ever carry that
+prefix.
+
 ### 2026-07-31 — P6.5 + P6.6: the last two items, and the last gap the survey found
 
 **P6 is complete.** What remained was guidance and a survey, and the survey found one more real gap.

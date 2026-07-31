@@ -129,6 +129,7 @@ public sealed class RenderSessionPool : IDisposable
     internal Func<CancellationToken, Task<PoolInstance>>? InstanceFactoryOverride;
     internal Func<PoolInstance, Task<bool>>? ResetOverride;
 
+    /// <summary>A pool bounded by <paramref name="options"/>. Nothing starts until the first lease.</summary>
     public RenderSessionPool(RenderSessionPoolOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));

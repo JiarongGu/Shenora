@@ -32,6 +32,7 @@ public sealed class WebViewHost
     private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)
     private Task? _initialization;           // InitializeAsync is idempotent — see its remarks
 
+    /// <summary>Wraps <paramref name="webView"/>. Construct, then <see cref="InitializeAsync"/>, then navigate.</summary>
     public WebViewHost(WebView2Control webView, WebViewHostOptions options)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));

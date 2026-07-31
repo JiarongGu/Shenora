@@ -91,6 +91,7 @@ public sealed class WindowCommandFacade : BaseFacade
     private readonly WindowCommandOptions _options;
     private readonly Shenora.Core.IUiDispatcher _ui;
 
+    /// <summary>Window commands over IPC. Every route is opt-in: an unset callback answers NO_HANDLER.</summary>
     public WindowCommandFacade(WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<WindowCommandFacade>? logger = null)
         : base(logger)
     {

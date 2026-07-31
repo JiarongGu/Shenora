@@ -35,6 +35,7 @@ public sealed class SplashPanel : Panel
     private readonly ProgressBar _bar;
     private readonly UiDebounce _resizeDebounce;
 
+    /// <summary>A startup overlay. Colours come from <paramref name="options"/> — the kit ships none (D13).</summary>
     public SplashPanel(SplashPanelOptions? options = null)
     {
         _options = options ?? new SplashPanelOptions();
@@ -126,6 +127,7 @@ public sealed class SplashPanel : Panel
         _content.Location = new Point((Width - _content.Width) / 2, (Height - _content.Height) / 2);
     }
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
         if (disposing) _resizeDebounce.Dispose();

@@ -11,6 +11,7 @@ public sealed class JsonFileWindowStateStore(string filePath) : IWindowStateStor
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
+    /// <summary>The persisted state, or null when absent OR unreadable — a corrupt file must not stop startup.</summary>
     public WindowState? Load()
     {
         try
@@ -25,6 +26,7 @@ public sealed class JsonFileWindowStateStore(string filePath) : IWindowStateStor
         }
     }
 
+    /// <summary>Persist the state. Best-effort: a failure here must never take the app down on exit.</summary>
     public void Save(WindowState state)
     {
         try

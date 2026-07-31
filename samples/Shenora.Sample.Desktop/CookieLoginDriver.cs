@@ -1,10 +1,12 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Shenora.WebView2.Sessions;
+using Shenora.WebView2.Sessions;
 
-/// <summary>Inputs for <see cref="CookieLoginFlow"/>.</summary>
-public sealed class CookieLoginFlowOptions
+namespace Shenora.Sample.Desktop;
+
+/// <summary>Inputs for <see cref="CookieLoginDriver"/>.</summary>
+public sealed class CookieLoginDriverOptions
 {
     /// <summary>The provider's login page — navigated first, through the window's navigation guard.</summary>
     public required string LoginUrl { get; init; }
@@ -49,28 +51,48 @@ public sealed class CookieLoginFlowOptions
 }
 
 /// <summary>
-/// The built-in <see cref="InteractiveSession"/> driver, ported from the primary sibling's cookie login:
+/// A RECIPE, not a library feature. This used to ship inside <c>Shenora.WebView2.Sessions</c> as
+/// <c>CookieLoginFlow</c>, and it should never have: <c>LoginUrl</c>, <c>CookieReadUrl</c>,
+/// <c>AuthCookiePatterns</c>, <c>RevealDelay</c> and <c>CaptureAllCookies</c> are one product's
+/// workflow, and the library rule is to ship the mechanism an app builds its product on and leave the
+/// product with the app (D21). Two decisions talked each other into it — D21 blessed shipping "one
+/// opt-in reference driver", and D22 then justified the scenario NAME on the grounds that D21 had
+/// blessed shipping it — and neither ever applied the actual test: <i>would the other apps use this
+/// API unchanged?</i> Only an app doing cookie logins would.
+/// <para>
+/// Nothing was lost by moving it. Every capability it uses is public kit seam —
+/// <see cref="SessionController.GetCookiesAsync"/>, <see cref="SessionController.NavigateAsync"/>,
+/// <c>Reveal</c>, <c>SetLoading</c>, <see cref="InteractiveSession.RunAsync"/> — so it is a plain
+/// CONSUMER, which is exactly the proof D21 asks for: a consumer can build its own version on the
+/// primitives without adopting ours. Copy this file into your app and edit it; it is yours.
+/// </para>
+/// <para>
+/// It stays in the sample rather than in a doc so it keeps COMPILING against the seam, and because
+/// <see cref="InteractiveSession"/>'s driver seam otherwise has no worked example anywhere.
+/// </para>
+///
+/// Ported from the primary sibling's cookie login:
 /// snapshot the jar, navigate to the login page, and poll until an auth cookie is FRESHLY set —
 /// by the profile's silent auto-sign-in (no interaction, the window never reveals) or by the user
 /// logging in. The blob is a JSON array of <see cref="SessionCookie"/> (camelCase; read it back
 /// with <see cref="ReadBlob"/>).
 ///
 /// <code>
-/// var flow = new CookieLoginFlow(new CookieLoginFlowOptions { … });
+/// var flow = new CookieLoginDriver(new CookieLoginDriverOptions { … });
 /// var result = await loginWindow.RunAsync(flow.DriveAsync, ct);
 /// </code>
 /// </summary>
-public sealed class CookieLoginFlow
+public sealed class CookieLoginDriver
 {
     // The frozen wire serializer, not a private copy (P5.5 H4.5): IpcJson's own docs record that
     // the source app grew three private option sets that drifted apart. Same camelCase shape, and the
     // captured blob rides the IPC contract anyway.
     private static JsonSerializerOptions BlobJson => Shenora.Ipc.IpcJson.Options;
 
-    private readonly CookieLoginFlowOptions _options;
+    private readonly CookieLoginDriverOptions _options;
     private readonly List<Regex> _patterns;
 
-    public CookieLoginFlow(CookieLoginFlowOptions options)
+    public CookieLoginDriver(CookieLoginDriverOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         if (string.IsNullOrWhiteSpace(options.LoginUrl)) throw new ArgumentException("LoginUrl is required.", nameof(options));
@@ -112,7 +134,8 @@ public sealed class CookieLoginFlow
 
     /// <summary>The controller surface the flow actually uses — a seam so the poll/capture logic
     /// is testable without a live browser (the pool-seam precedent).</summary>
-    internal sealed class Hooks
+    /// <summary>See the summary above — the seam that makes the poll/capture logic testable.</summary>
+    public sealed class Hooks
     {
         public required Func<string, CancellationToken, Task<IReadOnlyList<SessionCookie>>> ReadCookies { get; init; }
         public required Func<string, CancellationToken, Task> Navigate { get; init; }
@@ -120,7 +143,8 @@ public sealed class CookieLoginFlow
         public required Action<bool> SetLoading { get; init; }
     }
 
-    internal async Task<string?> DriveAsync(Hooks hooks, CancellationToken cancellationToken)
+    /// <summary>The poll/capture loop, over the seam rather than a live browser.</summary>
+    public async Task<string?> DriveAsync(Hooks hooks, CancellationToken cancellationToken)
     {
         hooks.SetLoading(true);
 

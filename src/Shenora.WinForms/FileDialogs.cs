@@ -30,6 +30,7 @@ public sealed class FileDialogs : IFileDialogs
     private readonly FileDialogsOptions _options;
     private readonly ILogger<FileDialogs> _logger;
 
+    /// <summary>Dialogs run on a dedicated STA thread. <paramref name="options"/> null = defaults.</summary>
     public FileDialogs(FileDialogsOptions? options = null, ILogger<FileDialogs>? logger = null)
     {
         _options = options ?? new FileDialogsOptions();

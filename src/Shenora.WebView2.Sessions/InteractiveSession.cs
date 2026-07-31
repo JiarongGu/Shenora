@@ -152,9 +152,9 @@ public sealed class InteractiveSessionOptions
 /// accepting terms, completing a checkout step — anything that needs a real browser and, sometimes,
 /// a real person. This type was called <c>LoginWindow</c> until P5.5 H9.7 and contained no login
 /// logic even then; the name was the last of the login vocabulary H4.6 started removing when it made
-/// the controller neutral. <see cref="CookieLoginFlow"/> remains as ONE opt-in reference driver, and
-/// it keeps its name because a reference driver naming the scenario it demonstrates is the point of
-/// it.
+/// the controller neutral. The package ships NO driver at all: a cookie-login one used to, and was
+/// removed in P7 because a login workflow is a product, not a mechanism (D21 amended). A worked
+/// example lives in the desktop sample — copy it, it is yours.
 /// </para>
 /// </summary>
 public sealed class InteractiveSession
@@ -162,6 +162,7 @@ public sealed class InteractiveSession
     private readonly InteractiveSessionOptions _options;
     private int _busy; // 0 idle, 1 a session window is open (they serialize)
 
+    /// <summary>A session gated by <paramref name="options"/>. One window at a time — see the type summary.</summary>
     public InteractiveSession(InteractiveSessionOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));

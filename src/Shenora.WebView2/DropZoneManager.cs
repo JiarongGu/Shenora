@@ -50,6 +50,7 @@ public sealed class DropZoneManager : IDisposable
     private readonly Dictionary<string, (int X, int Y, int Width, int Height)> _cssBounds = [];
     private bool _disposed;
 
+    /// <summary>Zones clear on DOCUMENT change, hooked here — so there is no ordering contract to remember.</summary>
     public DropZoneManager(DropZoneManagerOptions options, ILogger<DropZoneManager>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));

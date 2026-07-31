@@ -1,14 +1,3 @@
-sealed class Shenora.WebView2.Sessions.CookieLoginFlow
-  public .ctor(Shenora.WebView2.Sessions.CookieLoginFlowOptions options)
-  public System.Threading.Tasks.Task<string> DriveAsync(Shenora.WebView2.Sessions.SessionController controller, System.Threading.CancellationToken cancellationToken = default)
-  public static System.Collections.Generic.IReadOnlyList<Shenora.WebView2.Sessions.SessionCookie> ReadBlob(string blob)
-sealed class Shenora.WebView2.Sessions.CookieLoginFlowOptions
-  public System.TimeSpan PollInterval { get; init; }
-  public System.TimeSpan RevealDelay { get; init; }
-  public bool CaptureAllCookies { get; init; }
-  public required System.Collections.Generic.IReadOnlyList<string> AuthCookiePatterns { get; init; }
-  public required string CookieReadUrl { get; init; }
-  public required string LoginUrl { get; init; }
 sealed class Shenora.WebView2.Sessions.DownloadHit : System.IEquatable<Shenora.WebView2.Sessions.DownloadHit>
   public .ctor(string Url, string? FileName)
   public Shenora.WebView2.Sessions.DownloadHit <Clone>$()

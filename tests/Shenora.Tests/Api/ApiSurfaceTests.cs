@@ -53,6 +53,13 @@ public class ApiSurfaceTests
             {
                 var name = reference.Name!;
                 if (!name.StartsWith("Shenora.", StringComparison.Ordinal) || !visited.Add(name)) continue;
+                // Samples are never packable, so they are not "shipped" and have no API surface to
+                // gate. The test project references one deliberately (the cookie-login driver moved
+                // there in P7 and kept its tests), which otherwise reads as a new ungated package.
+                // Narrow by PREFIX rather than by name: this must not become a hand-maintained list
+                // of exceptions, which is the exact failure the case source above was rewritten to
+                // avoid — and no real package can ever be called Shenora.Sample.*.
+                if (name.StartsWith("Shenora.Sample.", StringComparison.Ordinal)) continue;
                 shipped.Add(name);
                 try { queue.Enqueue(Assembly.Load(reference)); }
                 catch (Exception) { /* unresolvable reference — the baseline check below still reports it */ }

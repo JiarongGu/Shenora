@@ -1151,6 +1151,29 @@ Known capability LIMITS:
 - **Private specifics stay in `local/`.** Real names, paths and file-level findings from the survey
   live in `local/PROJECT_NOTES.md` and `local/EXTRACTION-MAP.md` — this file stays generic.
 
+### P7 — Stabilisation + 1.0 (CURRENT)
+
+- [x] **The API-surface gate is complete** (P5.5 H6 closed the hole: protected members, default
+  values, `required`/`init`, attributes, parameter names, const values). 1.0 must not freeze behind a
+  gate with a hole in it, and no longer would.
+- [x] **XML-doc sweep — DONE 2026-07-31.** CS1591 is unsuppressed and, like every other warning, an
+  ERROR. All five packages document every public and protected member. Adding an undocumented public
+  member no longer compiles. Turning it on immediately caught a broken `<see cref/>` that had been
+  invisible for as long as warnings were non-fatal.
+- [x] **The last product leak is out of the library — DONE 2026-07-31 (user direction).**
+  `CookieLoginFlow` moved to the desktop sample as `CookieLoginDriver`; D21 and D22 amended, since
+  they had been justifying it to each other rather than testing it. A whole-surface audit by the
+  documented method (sweep the API baselines for domain vocabulary) found no others: everything else
+  it flagged is genuine browser or platform vocabulary.
+- [ ] **Per-package README sections**, plus the stable-chunk frontend build guidance carried over
+  from P2/P3. The root README ships INSIDE every nupkg, so each package needs its own section rather
+  than one combined table.
+- [ ] **`Shenora.Hosting.AspNetCore` go/no-go (D10)** — decide and record either way. P6.6's survey of
+  the server-backed sibling is the evidence to decide on: it serves over in-process Kestrel, and its
+  host-side IPC seam is already `IMessageDispatcher.DispatchAsync`, which an HTTP endpoint can call
+  directly.
+- [ ] **First publish + repo public.** Blocked with P1.2 on a GitHub remote existing.
+
 ### P1 — Skeleton tail
 
 - [ ] **P1.2 — Release workflow dry-run readiness.** Once a GitHub remote exists: run the Release

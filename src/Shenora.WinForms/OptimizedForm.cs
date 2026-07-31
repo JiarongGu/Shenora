@@ -119,10 +119,16 @@ public class OptimizedForm : Form, IAppMaximizable
     private CaptionButtonColors? _captionButtonColors;
     private Font? _captionGlyphFont;
 
+    /// <summary>A form with the default options: double-buffered, framed, no manual maximize.</summary>
     public OptimizedForm() : this(null)
     {
     }
 
+    /// <summary>
+    /// A form configured by <paramref name="options"/> (null = defaults). Options are validated HERE
+    /// rather than degrading to silence later: asking for native caption buttons without frameless
+    /// chrome throws, because the alternative is a window whose buttons simply do nothing.
+    /// </summary>
     public OptimizedForm(OptimizedFormOptions? options)
     {
         _options = options ?? new OptimizedFormOptions();
@@ -820,6 +826,7 @@ public class OptimizedForm : Form, IAppMaximizable
         if (_options.FramelessChrome && IsHandleCreated) ApplyDwmChrome();
     }
 
+    /// <inheritdoc />
     protected override CreateParams CreateParams
     {
         get
@@ -834,6 +841,7 @@ public class OptimizedForm : Form, IAppMaximizable
         }
     }
 
+    /// <inheritdoc />
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
@@ -863,6 +871,12 @@ public class OptimizedForm : Form, IAppMaximizable
         DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
     }
 
+    /// <summary>
+    /// The window procedure. Overriding it in a derived form is supported, but call
+    /// <c>base.WndProc</c> or the frameless chrome, caption hit-testing and maximize bookkeeping all
+    /// stop working — prefer <see cref="WndProcHook"/>, which runs first and
+    /// cannot silently swallow the base behaviour.
+    /// </summary>
     protected override void WndProc(ref Message m)
     {
         // The hook is APP CODE running inside WndProc, which is the worst possible place for an

@@ -12,6 +12,7 @@ public sealed class DropZoneFacade : BaseFacade
 {
     private readonly DropZoneManager _manager;
 
+    /// <summary>The IPC face of <paramref name="manager"/>. Map it late — it needs the live control.</summary>
     public DropZoneFacade(DropZoneManager manager, Microsoft.Extensions.Logging.ILogger<DropZoneFacade>? logger = null)
         : base(logger)
     {

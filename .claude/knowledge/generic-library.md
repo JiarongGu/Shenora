@@ -24,10 +24,17 @@ keeps the library reusable (adopted from the family's other library, where it's 
   it ships that product, so the next contributor adds more of the product — and it LEAKS across
   features: `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`, forcing a
   streaming consumer to program against a login type.
-  **Exception, deliberate:** a REFERENCE DRIVER may name the scenario it demonstrates
-  (`CookieLoginFlow` keeps its name — naming the recipe is why it ships). And do not "fix" genuine
-  mechanism vocabulary: `ProfileDirectory` is a Chromium user-data folder, `Module` is the kit's
-  composition unit, `ImmersiveDarkMode`/`UserDataFolder` are platform SDK terms.
+  **A scenario name in `src/` is a placement smell, not a naming problem (2026-07-31, P7).** There
+  used to be an exception here — "a reference driver may name the scenario it demonstrates
+  (`CookieLoginFlow`)" — resting on D21 having blessed shipping one opt-in driver, while D21 rested on
+  D22 for the name. Circular, and neither ever asked whether a scenario RECIPE belongs in a shipped
+  package. It does not: it becomes SemVer surface at 1.0, it makes the kit look like it ships that
+  product, and it invites the next recipe in beside it. The driver moved to the sample and the kit
+  ships none. **So when a type needs a scenario name to make sense, move it out — do not license the
+  name.** Check placement and naming as ONE question; checking them separately is exactly how this
+  survived two audits that were each looking at only one half.
+  And do not "fix" genuine mechanism vocabulary: `ProfileDirectory` is a Chromium user-data folder,
+  `Module` is the kit's composition unit, `ImmersiveDarkMode`/`UserDataFolder` are platform SDK terms.
   **Audit it cheaply:** the API baselines already list every public type and member, so sweep
   `tests/Shenora.Tests/Api/Baselines/*.txt` for domain words and triage by hand. That is how the
   whole-library audit ran; it found the Login cluster was the ONLY real leak, plus one PARAMETER name

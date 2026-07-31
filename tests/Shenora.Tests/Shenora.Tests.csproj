@@ -48,6 +48,11 @@
     <ProjectReference Include="..\..\src\Shenora.WebView2\Shenora.WebView2.csproj" />
     <ProjectReference Include="..\..\src\Shenora.WebView2.Sessions\Shenora.WebView2.Sessions.csproj" />
     <ProjectReference Include="..\..\src\Shenora.WinForms\Shenora.WinForms.csproj" />
+    <!-- The desktop SAMPLE, so the cookie-login driver keeps its tests after moving out of the
+         library (P7). It is a recipe now, not public surface — but its invariants are sibling
+         post-mortems (a STALE auth cookie must not capture; closing a signed-out window must not
+         produce an anonymous blob) and those are worth keeping green. -->
+    <ProjectReference Include="..\..\samples\Shenora.Sample.Desktop\Shenora.Sample.Desktop.csproj" />
   </ItemGroup>
 
 </Project>

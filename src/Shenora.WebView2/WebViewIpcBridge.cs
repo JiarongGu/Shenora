@@ -102,6 +102,11 @@ public sealed class WebViewIpcBridge : IDisposable
     /// </summary>
     private readonly CancellationToken _lifetimeToken;
 
+    /// <summary>
+    /// Construct BEFORE <see cref="WebViewHost.InitializeAsync"/> — event buffering starts here, so
+    /// anything emitted during the slow WebView2 init survives — then <see cref="Attach"/> after it.
+    /// Options are validated now, not at <see cref="Attach"/>, so a bad value names itself.
+    /// </summary>
     public WebViewIpcBridge(WebView2Control webView, WebViewIpcBridgeOptions options)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));

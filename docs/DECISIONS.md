@@ -173,7 +173,19 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   decisions?** If not, we shipped too much — or we shipped too few hooks.
   Shenora already followed this twice: `RenderSessionPool` ships the pool + session and deliberately
   did NOT port the sibling's render/analyze flows (the sample writes its own `RENDER` route), and
-  `LoginWindow` keeps policy in a driver seam with `CookieLoginFlow` as ONE opt-in reference driver.
+  `LoginWindow` keeps policy in a driver seam.
+  **AMENDED 2026-07-31 (P7, user direction).** This entry used to add "…with `CookieLoginFlow` as ONE
+  opt-in reference driver", and D22 then justified that type's scenario NAME on the grounds that D21
+  had blessed shipping it. That is circular, and neither decision ever applied this entry's OWN test
+  to it. Applied now, it fails outright: `LoginUrl`, `CookieReadUrl`, `AuthCookiePatterns`,
+  `RevealDelay` and `CaptureAllCookies` are one product's workflow, and only an app doing cookie
+  logins would use that API unchanged. **A reference driver is SAMPLE material, not library surface.**
+  Shipping one costs three things — it becomes SemVer surface at 1.0, it makes the kit look like it
+  ships that product (the exact "so the next contributor adds more of the product" failure D22 names),
+  and it invites the next recipe in beside it. `CookieLoginFlow` was removed from
+  `Shenora.WebView2.Sessions` and lives in the desktop sample as `CookieLoginDriver`. Nothing was lost:
+  it only ever consumed public seam members, which is this entry's test passing in the other
+  direction — a consumer really can build it on the primitives. **The kit ships no drivers.**
   `CoBrowseSession` is the outlier, and the audit that produced this entry is concrete: `Frames`
   (bounded latest-wins channel), `StartAsync`/`DisposeAsync` and the 1:1 device-metrics viewport
   mirroring are genuine primitives — CDP screencast, its ack protocol and stale-frame dropping are
@@ -210,10 +222,14 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   the product to it, and consumers with a different use case never find the primitive at all. It also
   leaks: `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`, so a consumer
   streaming a page for remote viewing had to program against a login type.
-  **Scope and the deliberate exception.** This governs the CORE surface. A REFERENCE DRIVER may name
-  the scenario it demonstrates — `CookieLoginFlow` keeps its name on purpose, because naming the
-  recipe is the entire point of shipping one (D21 already blesses it as the one opt-in driver). Sibling
-  vocabulary that is genuinely mechanism is likewise fine and must not be "fixed":
+  **The "reference driver" exception is WITHDRAWN (2026-07-31, P7, user direction).** This entry used
+  to say a reference driver may name the scenario it demonstrates, because D21 blessed shipping one —
+  while D21 pointed back here for the name. Two decisions leaning on each other, and the question
+  neither asked was whether a scenario recipe belongs in a shipped package at all. It does not (see
+  D21's amendment): the driver moved to the sample, so there is no exception left to state. **If a
+  type in `src/` needs a scenario name to make sense, that is the signal it does not belong in `src/`
+  — not a licence to name it.**
+  Sibling vocabulary that is genuinely mechanism is still fine and must not be "fixed":
   `ProfileDirectory` is a Chromium user-data folder, `Module` is the kit's composition unit,
   `ImmersiveDarkMode`/`UserDataFolder` are platform SDK terms.
   **How to enforce it:** the API-surface baselines already enumerate every public type and member, so a

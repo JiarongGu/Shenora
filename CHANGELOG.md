@@ -205,6 +205,28 @@ at the first list and missed five more breaking changes.
   `Handler = uri => Task.FromResult((bytes, "text/plain"))` becomes
   `Handler = request => Task.FromResult<WebViewResourceResponse?>(WebViewResourceResponse.Bytes(bytes, "text/plain"))`.
   Returning null now means 404, and throwing still does (with the message kept host-side, as before).
+- **`CookieLoginFlow` and `CookieLoginFlowOptions` are REMOVED from `Shenora.WebView2.Sessions`.**
+  They were a product workflow shipping as library surface: `LoginUrl`, `CookieReadUrl`,
+  `AuthCookiePatterns`, `RevealDelay` and `CaptureAllCookies` are one app's login recipe, and only an
+  app doing cookie logins would use that API unchanged. Two decisions had talked each other into it —
+  D21 blessed shipping "one opt-in reference driver", D22 then justified the scenario NAME because
+  D21 had blessed shipping it — and neither ever applied D21's own test. Both are amended: **the kit
+  ships no drivers**, and a type that needs a scenario name to make sense is telling you it does not
+  belong in `src/`.
+  **Migration:** the recipe now lives in the desktop sample as `CookieLoginDriver` — copy that file
+  into your app and edit it; it is yours. Nothing else changes, because the driver only ever consumed
+  public seam members (`InteractiveSession.RunAsync`, `SessionController.GetCookiesAsync`/
+  `NavigateAsync`/`Reveal`/`SetLoading`). That it ports across as a plain consumer is the proof D21
+  asks for. `SessionCookie` stays — a cookie is a browser primitive, not a login concept.
+  A whole-surface audit went with it, by the documented method (sweep the API baselines for domain
+  vocabulary): this was the ONLY product leak left. Everything the sweep flagged is genuine browser or
+  platform vocabulary — `DownloadHit`/`OnDownloadStarting`, `SessionCookie`, `MuteAudio`,
+  `ProfileDirectory`, `UserDataFolder`, `Module`.
+- **Missing XML docs are now build ERRORS** (CS1591 unsuppressed, P7 docs sweep). Every public and
+  protected member across all five packages is documented. Adding an undocumented public member no
+  longer compiles — deliberate, because a public member is SemVer surface from 1.0 and "document it
+  later" is how an API ends up with members nobody can explain. Turning it on immediately caught a
+  broken `<see cref="..."/>` that had been invisible while warnings were non-fatal.
 
 ### Added
 

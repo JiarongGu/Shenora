@@ -1,15 +1,16 @@
+using Shenora.Sample.Desktop;
 using Shenora.WebView2.Sessions;
 
-namespace Shenora.Tests.WebView2Sessions;
+namespace Shenora.Tests.Samples;
 
 /// <summary>
-/// The poll/capture logic over the flow's controller seam (<see cref="CookieLoginFlow.Hooks"/>) —
+/// The poll/capture logic over the flow's controller seam (<see cref="CookieLoginDriver.Hooks"/>) —
 /// no live browser, the pool-seam precedent. The invariants under test are the sibling
 /// post-mortems: freshness gating (a STALE auth cookie must not capture), the final read on
 /// close (with the same gate — no anonymous blob), silent-refresh reveal timing, and the
 /// identity-keyed baseline.
 /// </summary>
-public class CookieLoginFlowTests
+public class CookieLoginDriverTests
 {
     private sealed class FakeBrowser
     {
@@ -20,7 +21,7 @@ public class CookieLoginFlowTests
         public int Reads;
         public Action<FakeBrowser>? OnRead; // mutate the jar / trip tokens per read (read 1 = the baseline)
 
-        public CookieLoginFlow.Hooks Hooks => new()
+        public CookieLoginDriver.Hooks Hooks => new()
         {
             ReadCookies = (_, _) =>
             {
@@ -34,9 +35,9 @@ public class CookieLoginFlowTests
         };
     }
 
-    private static CookieLoginFlow CreateFlow(
+    private static CookieLoginDriver CreateFlow(
         TimeSpan? revealDelay = null, bool captureAll = true, params string[] patterns) =>
-        new(new CookieLoginFlowOptions
+        new(new CookieLoginDriverOptions
         {
             LoginUrl = "https://login.example.com/signin",
             CookieReadUrl = "https://api.example.com/",
@@ -80,7 +81,7 @@ public class CookieLoginFlowTests
         Assert.Equal(["https://login.example.com/signin"], browser.Navigated);
         Assert.Equal([true, false], browser.Loading.Take(2)); // loading dropped once navigation settled
 
-        var cookies = CookieLoginFlow.ReadBlob(blob!);
+        var cookies = CookieLoginDriver.ReadBlob(blob!);
         Assert.Equal(2, cookies.Count); // CaptureAllCookies default: the whole jar
         Assert.Equal("fresh", cookies.Single(c => c.Name == "auth_token").Value);
     }
@@ -94,7 +95,7 @@ public class CookieLoginFlowTests
         var blob = await CreateFlow().DriveAsync(browser.Hooks, CancellationToken.None);
 
         Assert.NotNull(blob);
-        Assert.Equal("v1", CookieLoginFlow.ReadBlob(blob!).Single().Value);
+        Assert.Equal("v1", CookieLoginDriver.ReadBlob(blob!).Single().Value);
     }
 
     [Fact]
@@ -126,7 +127,7 @@ public class CookieLoginFlowTests
         var blob = await CreateFlow().DriveAsync(browser.Hooks, cts.Token);
 
         Assert.NotNull(blob);
-        Assert.Equal("v1", CookieLoginFlow.ReadBlob(blob!).Single().Value);
+        Assert.Equal("v1", CookieLoginDriver.ReadBlob(blob!).Single().Value);
     }
 
     [Fact]
@@ -137,7 +138,7 @@ public class CookieLoginFlowTests
 
         var blob = await CreateFlow(captureAll: false).DriveAsync(browser.Hooks, CancellationToken.None);
 
-        var cookies = CookieLoginFlow.ReadBlob(blob!);
+        var cookies = CookieLoginDriver.ReadBlob(blob!);
         Assert.Equal("auth_token", Assert.Single(cookies).Name);
     }
 
@@ -156,13 +157,13 @@ public class CookieLoginFlowTests
     public void Construction_validates_the_options()
     {
         Assert.Throws<ArgumentException>(() => CreateFlow(patterns: "(")); // invalid regex fails FAST, not mid-login
-        Assert.Throws<ArgumentException>(() => new CookieLoginFlow(new CookieLoginFlowOptions
+        Assert.Throws<ArgumentException>(() => new CookieLoginDriver(new CookieLoginDriverOptions
         {
             LoginUrl = "https://x",
             CookieReadUrl = "https://x",
             AuthCookiePatterns = [],
         }));
-        Assert.Throws<ArgumentException>(() => new CookieLoginFlow(new CookieLoginFlowOptions
+        Assert.Throws<ArgumentException>(() => new CookieLoginDriver(new CookieLoginDriverOptions
         {
             LoginUrl = "https://x",
             CookieReadUrl = "https://x",

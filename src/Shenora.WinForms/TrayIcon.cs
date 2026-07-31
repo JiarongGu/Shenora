@@ -94,6 +94,11 @@ public sealed class TrayIcon : IDisposable
     private bool _exiting;
     private bool _disposed;
 
+    /// <summary>
+    /// A tray icon and its themed menu. NOTE <see cref="TrayIconOptions.CloseToTray"/>: WinForms reports
+    /// <c>UserClosing</c> for a PROGRAMMATIC close too, so exit via <c>ExitApplication()</c> or a
+    /// startup-abort path leaves a resident process.
+    /// </summary>
     public TrayIcon(TrayIconOptions options, ILogger<TrayIcon>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -177,6 +182,7 @@ public sealed class TrayIcon : IDisposable
 
     private void OnWindowClosed(object? sender, EventArgs e) => _notifyIcon.Visible = false;
 
+    /// <summary>Hides and releases the icon. Idempotent — the shell keeps a ghost icon otherwise.</summary>
     public void Dispose()
     {
         if (_disposed) return;

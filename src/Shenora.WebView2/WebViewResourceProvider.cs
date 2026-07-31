@@ -67,6 +67,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     private readonly ConcurrentDictionary<string, byte[]> _cache = new(StringComparer.OrdinalIgnoreCase);
     private int _warmupStarted;
 
+    /// <summary>Serves the bundle embedded in <see cref="EmbeddedResourceProviderOptions.Assembly"/>.</summary>
     public EmbeddedResourceProvider(EmbeddedResourceProviderOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -147,6 +148,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         });
     }
 
+    /// <inheritdoc />
     public Stream? GetResourceStream(string virtualPath)
     {
         if (string.IsNullOrWhiteSpace(virtualPath)) return null;
@@ -188,6 +190,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         }
     }
 
+    /// <inheritdoc />
     public bool Exists(string virtualPath)
     {
         if (string.IsNullOrWhiteSpace(virtualPath)) return false;

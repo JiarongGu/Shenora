@@ -38,11 +38,13 @@
        (EnableSourceLink defaults true) — only PublishRepositoryUrl. -->
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- CS1591 (missing XML doc on a public member) stays suppressed for now; turning it on is the
-         P7 docs sweep, not a P5.5 gate change. Everything ELSE is an error: warnings were both
-         non-fatal AND invisible (`-clp:ErrorsOnly`), which is part of how the P0-P5 latent defects
-         passed five phase reviews (P5.5 H5). -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- CS1591 (missing XML doc on a public member) is ON as of the P7 docs sweep — nothing is
+         suppressed here any more. It is an ERROR like every other warning, which is the point: a
+         public member is SemVer surface from 1.0, and "document it later" is how a shipped API ends
+         up with members nobody can explain. Warnings used to be both non-fatal AND invisible
+         (`-clp:ErrorsOnly`), which is part of how the P0-P5 latent defects passed five phase
+         reviews (P5.5 H5).
+         Adding a public member now requires documenting it. That is deliberate. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DebugType>portable</DebugType>
     <IncludeSymbols>true</IncludeSymbols>

@@ -60,6 +60,7 @@ public sealed class SecondaryWindows : IDisposable
     private readonly ConcurrentDictionary<string, WindowEntry> _windows = new();
     private bool _disposed;
 
+    /// <summary>The registry of windows running their own STA message pumps. Logger optional.</summary>
     public SecondaryWindows(ILogger<SecondaryWindows>? logger = null)
     {
         _logger = logger ?? NullLogger<SecondaryWindows>.Instance;
