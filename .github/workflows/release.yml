@@ -143,13 +143,34 @@ jobs:
           Write-Host "  packages that would be pushed:"
           Get-ChildItem publish/packages -File | ForEach-Object { Write-Host "    $($_.Name)" }
 
+      # Enumerate and push each package explicitly rather than handing dotnet a wildcard.
+      # `dotnet nuget push "publish/packages/*.nupkg"` is the family's command and works in the
+      # sibling library — because that one runs on ubuntu-latest, where the SHELL expands the glob
+      # before dotnet sees it. This job runs on windows-latest (the net10.0-windows targets need
+      # it), pwsh does not expand inside quotes, and dotnet took the pattern literally:
+      # "error: File does not exist (publish/packages/*.nupkg)". Copying a command across platforms
+      # is where that hid.
+      #
+      # Enumerating also lets the step FAIL LOUDLY when Pack produced nothing, instead of pushing a
+      # wildcard that matches zero files and calling it a success.
       - name: Push to NuGet
         if: ${{ !inputs.dry_run }}
-        run: >
-          dotnet nuget push "publish/packages/*.nupkg"
-          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
-          --source https://api.nuget.org/v3/index.json
-          --skip-duplicate
+        run: |
+          # Match on Extension, not -Filter: -Filter uses the legacy filesystem matcher (8.3 aliases
+          # and all), and `.snupkg` sitting beside every `.nupkg` is exactly the kind of near-miss it
+          # can surprise you with. dotnet pushes the adjacent .snupkg automatically anyway, so this
+          # list must contain ONLY the .nupkg files.
+          $packages = Get-ChildItem 'publish/packages' -File | Where-Object { $_.Extension -eq '.nupkg' }
+          if (-not $packages) { throw "no .nupkg found in publish/packages - did the Pack step run?" }
+          Write-Host "pushing $($packages.Count) package(s)"
+          foreach ($package in $packages) {
+            Write-Host "  $($package.Name)"
+            dotnet nuget push $package.FullName `
+              --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" `
+              --source https://api.nuget.org/v3/index.json `
+              --skip-duplicate
+            if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push failed for $($package.Name)" }
+          }
 
       # Publish the tarball PACK produced — not a rebuild. `npm publish` from the package directory
       # re-runs `prepublishOnly`, which builds a SECOND artifact: the thing whose sha256 the Pack step
