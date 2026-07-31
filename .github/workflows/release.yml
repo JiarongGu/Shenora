@@ -95,18 +95,28 @@ jobs:
           (Get-Content $props -Raw) -replace '<VersionPrefix>[^<]+</VersionPrefix>', "<VersionPrefix>$final</VersionPrefix>" | Set-Content $props -Encoding utf8 -NoNewline
 
           # Stamp the CHANGELOG's `## Unreleased` heading for this release, exactly as VersionPrefix
-          # (above) and the README `## Status` headline (in Pack) are stamped. Ported from Lyntai,
-          # where this was the one release edit still left to a human and a version shipped with its
-          # section titled "Unreleased" because of it. Idempotent, and it never invents prose.
+          # (above) is. Ported from Lyntai, where this was the one release edit still left to a human
+          # and a version shipped with its section titled "Unreleased" because of it. Idempotent, and
+          # it never invents prose.
           node devtools/dev.mjs changelog --fix --version $final
           if ($LASTEXITCODE -ne 0) { throw "changelog stamp failed - CHANGELOG.md unreadable or unwritable" }
 
-          # Ask GIT what actually changed rather than comparing version strings. The two edits above
+          # Sync the OTHER derived files (npm package.json version + README `## Status` headline)
+          # from the newly-written VersionPrefix. `doctor --fix` is idempotent and the same routine
+          # `pack` runs. It has to run HERE, before the Verify gate — verify's doctor is deliberately
+          # non-fixing (P5.5 H5: "verify must FAIL on version/README drift rather than leave it to
+          # pack"), so leaving the sync in pack alone made every version-BUMPING release fail verify.
+          # v0.1.0 dodged this only because that release cut kept VersionPrefix at 0.1.0 (bump=none
+          # or an already-matching explicit input) so nothing drifted.
+          node devtools/dev.mjs doctor --fix
+          if ($LASTEXITCODE -ne 0) { throw "doctor --fix failed - could not sync npm/README from VersionPrefix" }
+
+          # Ask GIT what actually changed rather than comparing version strings. The four edits above
           # move independently: re-cutting the SAME version still stamps a heading, and a bump whose
           # changelog was already stamped rewrites only the props. A string compare would skip the
           # commit in the first case and lose the stamp; it would also produce an EMPTY commit on a
-          # re-run that rewrote neither.
-          $changed = if (git status --porcelain -- src/Directory.Build.props CHANGELOG.md) { 'true' } else { 'false' }
+          # re-run that rewrote none of them.
+          $changed = if (git status --porcelain -- src/Directory.Build.props CHANGELOG.md README.md src/Shenora.React/package.json) { 'true' } else { 'false' }
 
           "changed=$changed" >> $env:GITHUB_OUTPUT
           "version=$final" >> $env:GITHUB_OUTPUT
@@ -213,9 +223,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           # Named explicitly so nothing else the job touched — a publish/ artifact, a scratch file —
-          # can ride along into a release commit. These four move in lockstep with a release:
-          # VersionPrefix and the stamped CHANGELOG heading (Determine), the README `## Status`
-          # headline and the npm version (both auto-synced by Pack's doctor --fix).
+          # can ride along into a release commit. These four all move in lockstep with a release and
+          # are all rewritten by "Determine version" above (VersionPrefix + the CHANGELOG stamp
+          # directly, README `## Status` + the npm version via `doctor --fix`).
           git add src/Directory.Build.props CHANGELOG.md README.md src/Shenora.React/package.json
           git commit -m "chore: release ${{ steps.version.outputs.tag }}"
           git push

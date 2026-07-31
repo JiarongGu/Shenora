@@ -20,13 +20,17 @@ default `patch`) · `create_tag` (default true) · `draft` (default true) · `pr
 Steps, in order — the irreversible publishes happen BEFORE the bump commit, so a failed release
 burns no version:
 
-1. Resolve the new version; rewrite `<VersionPrefix>` in `src/Directory.Build.props` and **stamp the
-   CHANGELOG's `## Unreleased` heading** (`dev.mjs changelog --fix --version X.Y.Z`) — in the working
-   tree only. Stamping is automated because it was the one release edit left to a human, and the
-   sibling library shipped a version whose section was still titled "Unreleased" because of it. The
-   step then asks *git* whether either file actually changed, rather than comparing version strings:
-   the two edits move independently, so a string compare would skip the commit when only the stamp
-   moved — and would produce an empty commit on a re-run that moved neither.
+1. Resolve the new version; rewrite `<VersionPrefix>` in `src/Directory.Build.props`, **stamp the
+   CHANGELOG's `## Unreleased` heading** (`dev.mjs changelog --fix --version X.Y.Z`), and **sync the
+   derived files from VersionPrefix** (`dev.mjs doctor --fix` — rewrites the npm package.json version
+   and the README `## Status` headline) — all in the working tree only. Stamping is automated because
+   it was the one release edit left to a human, and the sibling library shipped a version whose
+   section was still titled "Unreleased" because of it. The derived-file sync has to happen HERE (not
+   in Pack) because `verify`'s `doctor` is deliberately non-fixing — a bump would otherwise create
+   drift that Verify caught and blocked (P5.5 H5 combined with the release path is what earned this,
+   in v0.1.1). The step then asks *git* whether any of the four files actually changed, rather than
+   comparing version strings: the edits move independently, so a string compare would skip the commit
+   when only one moved — and would produce an empty commit on a re-run that moved none.
 2. **Verify gate**: `node devtools/dev.mjs verify` (dotnet build + tests, npm build + tests,
    typechecks, `check-sensitive --tree`, `knowledge check`, `doctor`).
 3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + the npm tarball
