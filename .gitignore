@@ -27,3 +27,7 @@ devtools/.cdp-port
 
 # Private local-only notes/config (real paths, sibling names, sensitive patterns) — never tracked
 local/
+
+# Subagent-driven-execution scratch: per-plan ledgers, task briefs, review packages. Working state
+# for an in-flight plan, not a record — the record is the plan doc, the commits, and PROJECT_NOTES.
+.superpowers/

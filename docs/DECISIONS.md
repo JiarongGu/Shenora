@@ -258,3 +258,35 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   that is how the whole-library audit was done, and it found the Login cluster was the only real leak
   plus one PARAMETER name (`driveLogin`), which the baselines pin because named arguments are a source
   contract. Recorded as a rule in `.claude/knowledge/generic-library.md`.
+
+- **D23 — The module contract carries the EVENT path, and the kit tracks long-running operations.**
+  (User direction, 2026-08-01, on the first adopter's IPC design review.) Three parts, one design:
+  `docs/2026-08-01-shenora-communication-core-design.md`, shipping as 0.2.0.
+  **(a)** A route receives an `IModuleContext` — `Publish` (module-scoped emit), `Start`/`Run` (tracked
+  operations), `Logger` — *in its signature*, because `Shenora.Ipc` had **zero** references to
+  `IEventBus` while the kit's own `DropZoneManager` took one as a REQUIRED option. The bus was already
+  the spine; the contract did not admit it, so every app re-agreed the conventions by hand. Layering was
+  never the obstacle: `Shenora.Ipc` already references `Shenora.Core`, so this adds no package edge.
+  **(b)** This **supersedes `docs/2026-07-31-shenora-oneway-ipc-design.md` §6 bullet 1** ("no
+  operation/job manager, registry, queue, or progress TYPE"), which itself said to revisit if adoption
+  showed the need. It did: one sibling ships a 320-line `ProcessRegistry` feeding a status bar and an
+  activity panel, a second ships the `JOB_UPDATED`/`JOB_PROGRESS` archetype, and the kit's own shipped
+  `createShenoraStore` *requires* a host-side snapshot source that no adopter can express without
+  building one. What moves in is the correlation-and-lifecycle MECHANISM only — id, status, progress,
+  scope, idempotent finish, cancel-by-id, bounded history, throttled progress emission. What stays out
+  is everything that decides what an operation IS: no queue, no scheduler, no phase model, no
+  `ProcessType`-style enum (`Kind` is an app string), no i18n rendering (labels carry key + parameters
+  like `IpcError`), no UI (D13), no persistence. D21's test still passes — an app builds its own
+  activity panel on `OperationInfo` + the event + the store without adopting a kit product decision.
+  **(c)** The transport-neutral half of the outbound path (bus subscribe → filter → bounded queue →
+  batch → ready gate → guarded serialize) becomes `NotificationPump` in `Shenora.Ipc`, with a
+  per-channel `Filter`; `WebViewIpcBridge` keeps only the WinForms/WebView2 parts (the timer, the
+  WebView2 events, `postMessage`). This is D16's "the seam, not the package" applied to the HOST half —
+  the client half has been base-agnostic since P3 (`ShenoraTransport`), while the host half welded four
+  paid-for bug fixes to a `System.Windows.Forms.Timer`. It also closes a real gap: every bridge
+  subscribes with `SubscribeToAll`, so with two windows every event reaches both.
+  Placement (D19/D20): operations live in `Shenora.Ipc`, not `Shenora.Core`, so they reuse
+  `IpcError`/`OperationException` rather than duplicating a structured-error type in Core; both packages
+  are `net10.0`, so portability is satisfied either way.
+  Cost accepted: `RouteMessageAsync` gains a parameter, which breaks every override — mechanical, and
+  taken deliberately pre-1.0 rather than shipped as a second migration later.
