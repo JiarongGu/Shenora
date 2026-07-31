@@ -23,7 +23,7 @@ public sealed class DropZoneFacade : BaseFacade
     public override string ModuleName => DropZoneManager.Module;
 
     /// <inheritdoc />
-    protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
+    protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
         switch (request.Type.ToUpperInvariant())
         {

@@ -33,7 +33,7 @@ public sealed class PortableSampleFacade(
     public override string ModuleName => Module;
 
     /// <inheritdoc />
-    protected override async Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
+    protected override async Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
         switch (request.Type)
         {

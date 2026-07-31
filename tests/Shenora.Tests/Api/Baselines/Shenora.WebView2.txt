@@ -2,7 +2,7 @@ static class Shenora.WebView2.BrowserArguments
   public static string Build(bool isDevelopment, string? devExtraArguments = null, string? additionalArguments = null)
   public static string Compose(string preset, bool isDevelopment, string? devExtraArguments = null, string? additionalArguments = null)
 sealed class Shenora.WebView2.DropZoneFacade : Shenora.Ipc.BaseFacade
-  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken)
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.WebView2.DropZoneManager manager, Microsoft.Extensions.Logging.ILogger<Shenora.WebView2.DropZoneFacade>? logger = null)
   public override string ModuleName { get; }
 sealed class Shenora.WebView2.DropZoneManager : System.IDisposable
@@ -139,7 +139,7 @@ sealed class Shenora.WebView2.WebViewResourceResponse
   public static Shenora.WebView2.WebViewResourceResponse RangeNotSatisfiable(long totalLength)
   public string ReasonPhrase { get; init; }
 sealed class Shenora.WebView2.WindowCommandFacade : Shenora.Ipc.BaseFacade
-  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken)
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.WebView2.WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.WebView2.WindowCommandFacade>? logger = null)
   public const string Module = "WINDOW"
   public override string ModuleName { get; }

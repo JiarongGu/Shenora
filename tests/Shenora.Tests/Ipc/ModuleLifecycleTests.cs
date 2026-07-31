@@ -17,7 +17,7 @@ public class ModuleLifecycleTests
     private sealed class Facade(string module, string answer) : BaseFacade
     {
         public override string ModuleName => module;
-        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
             => Task.FromResult<object?>(answer);
     }
 
@@ -142,7 +142,7 @@ public class ModuleLifecycleTests
     private sealed class SlowFacade(TaskCompletionSource entered, TaskCompletionSource release) : BaseFacade
     {
         public override string ModuleName => "SLOW";
-        protected override async Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
+        protected override async Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
         {
             entered.SetResult();
             await release.Task;

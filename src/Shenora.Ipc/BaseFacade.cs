@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Shenora.Core;
 
 namespace Shenora.Ipc;
 
@@ -16,12 +17,24 @@ namespace Shenora.Ipc;
 public abstract class BaseFacade : IModuleFacade
 {
     private readonly ILogger _logger;
+    private IModuleContext? _context;
 
-    /// <summary>The logger is optional so composition works without <c>AddLogging</c>.</summary>
-    protected BaseFacade(ILogger? logger = null)
+    /// <summary>
+    /// The logger is optional so composition works without <c>AddLogging</c>; the bus is optional so a
+    /// facade that never publishes (and every unit test that constructs one bare) still works. A facade
+    /// that DOES publish without one fails loudly at the call site — see <see cref="ModuleContext"/>.
+    /// </summary>
+    protected BaseFacade(ILogger? logger = null, IEventBus? events = null)
     {
         _logger = logger ?? NullLogger.Instance;
+        Events = events;
     }
+
+    /// <summary>The bus this facade publishes on, if one was supplied.</summary>
+    protected IEventBus? Events { get; }
+
+    /// <summary>Built lazily: ModuleName is an abstract property, so it is not readable from the ctor.</summary>
+    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, Events);
 
     /// <inheritdoc />
     public abstract string ModuleName { get; }
@@ -40,7 +53,7 @@ public abstract class BaseFacade : IModuleFacade
             // UI thread. Under the WebView2 bridge the request already arrives there, so this discarded
             // the very context the design guarantees — it survived only because every in-repo facade
             // happens to marshal internally anyway. See .claude/knowledge/ipc-contracts.md.
-            var data = await RouteMessageAsync(request, cancellationToken);
+            var data = await RouteMessageAsync(request, Context, cancellationToken);
             return IpcResponse.CreateSuccess(request.Id, data);
         }
         catch (Exception ex)
@@ -73,6 +86,11 @@ public abstract class BaseFacade : IModuleFacade
     /// operation returns nothing). Throw <see cref="OperationException"/> for every expected
     /// failure.
     /// <para>
+    /// <paramref name="context"/> is how a route EMITS (<see cref="IModuleContext.Publish"/>) — the
+    /// event path is the desktop default and the request path the special case, so it is in the
+    /// signature rather than behind a base-class member a route author may never find.
+    /// </para>
+    /// <para>
     /// <paramref name="cancellationToken"/> is the CALLER's lifetime, not a per-request cancel —
     /// see <see cref="IMessageDispatcher.DispatchAsync"/>. Ignore it for quick synchronous work
     /// (most window commands); observe it for anything that awaits, and an
@@ -82,5 +100,6 @@ public abstract class BaseFacade : IModuleFacade
     /// this one and then wonder why a long operation dies when the page navigates.
     /// </para>
     /// </summary>
-    protected abstract Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken);
+    protected abstract Task<object?> RouteMessageAsync(
+        IpcRequest request, IModuleContext context, CancellationToken cancellationToken);
 }

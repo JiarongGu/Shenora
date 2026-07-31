@@ -106,7 +106,7 @@ public sealed class WindowCommandFacade : BaseFacade
     public override string ModuleName => Module;
 
     /// <inheritdoc />
-    protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
+    protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
     {
         var form = _options.Window;
         switch (request.Type.ToUpperInvariant())

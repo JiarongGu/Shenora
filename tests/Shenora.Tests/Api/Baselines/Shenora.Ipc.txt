@@ -1,7 +1,9 @@
 abstract class Shenora.Ipc.BaseFacade : Shenora.Ipc.IModuleFacade
-  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null)
+  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.IEventBus? events = null)
+  protected Shenora.Core.IEventBus? Events { get; }
+  protected Shenora.Ipc.IModuleContext Context { get; }
   protected Shenora.Ipc.OperationException UnknownType(Shenora.Ipc.IpcRequest request)
-  protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken)
+  protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   protected static System.Threading.Tasks.Task<object> Done()
   public System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleMessageAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
   public abstract string ModuleName { get; }
@@ -10,6 +12,10 @@ interface Shenora.Ipc.IMessageDispatcher
   public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> DispatchAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
   public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> SendAsync(string module, string type, string? scope = null, object? payload = null, System.Threading.CancellationToken cancellationToken = default)
   public abstract System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, System.Threading.CancellationToken cancellationToken = default)
+interface Shenora.Ipc.IModuleContext
+  public abstract Microsoft.Extensions.Logging.ILogger Logger { get; }
+  public abstract string Module { get; }
+  public abstract void Publish(string type, object? payload = null, string? scope = null)
 interface Shenora.Ipc.IModuleFacade
   public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleMessageAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
   public abstract string ModuleName { get; }

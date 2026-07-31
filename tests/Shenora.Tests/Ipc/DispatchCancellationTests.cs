@@ -165,7 +165,7 @@ public class DispatchCancellationTests
 
         public override string ModuleName => "CAPTURE";
 
-        protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken cancellationToken)
+        protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
         {
             Seen = cancellationToken;
             return Task.FromResult<object?>(null);
