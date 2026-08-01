@@ -294,18 +294,34 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// </summary>
     private async Task TrailingEmitAsync(Entry entry, TimeSpan delay)
     {
+        var shouldEmit = false;
         try
         {
-            // Task.Delay's TimeProvider overload is what makes the FakeTimeProvider test deterministic —
-            // a real 100 ms sleep in the suite would be both slow and flaky.
-            await Task.Delay(delay, _options.TimeProvider).ConfigureAwait(false);
-            lock (_lock)
+            try
             {
-                entry.TrailingScheduled = false;
-                entry.LastEmitUtc = _options.TimeProvider.GetUtcNow();
-                if (entry.Status != OperationStatus.Running) return;       // a terminal emit already went
+                // Task.Delay's TimeProvider overload is what makes the FakeTimeProvider test deterministic —
+                // a real 100 ms sleep in the suite would be both slow and flaky.
+                await Task.Delay(delay, _options.TimeProvider).ConfigureAwait(false);
             }
-            EmitNow(entry);
+            finally
+            {
+                // MUST run on EVERY exit from the await — success, cancellation, or a faulting
+                // TimeProvider (TimeProvider is public, consumer-settable surface, so a faulting
+                // custom CreateTimer is not purely academic). A `return` here would silently
+                // swallow whatever exception is in flight, so this only ever sets state; the
+                // exception (if any) keeps propagating to the catch below on its own.
+                // Found in review: resetting the flag only on the success path let it stick at
+                // `true` forever after a fault, silently muting every later Report on this
+                // operation — the exact silent-drop failure class this throttle exists to remove.
+                lock (_lock)
+                {
+                    entry.TrailingScheduled = false;
+                    entry.LastEmitUtc = _options.TimeProvider.GetUtcNow();
+                    shouldEmit = entry.Status == OperationStatus.Running; // a terminal emit already went
+                }
+            }
+
+            if (shouldEmit) EmitNow(entry);   // unreachable when the await above faulted — see the finally
         }
         catch (Exception ex)
         {
