@@ -8,8 +8,8 @@ repo: it readies the LIBRARY and writes `docs/ADOPTION.md`; the adopting app's o
 
 1. **Build** through the dev loop: `node devtools/dev.mjs <build|test|verify|pack|doctor|sample|…>` —
    don't invent ad-hoc shell for these.
-2. **Verify with evidence.** `dev.mjs verify` is the "am I done?" gate (build · test · both
-   typechecks · sensitive scan · knowledge check · doc-drift · doctor). Behavioural claims about the
+2. **Verify with evidence.** `dev.mjs verify` is the "am I done?" gate (build · test · typechecks ·
+   sensitive scan · knowledge check+footprint · doc-drift · doctor). Behavioural claims about the
    desktop shell are proven against the sample (`dev.mjs sample` + the capture/input tools), not
    asserted; performance claims need numbers. **When a claim is not covered by the gate, say so** —
    a green gate that wasn't looking at the samples is how the P0–P5 latent defects passed five

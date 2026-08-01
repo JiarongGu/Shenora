@@ -1,7 +1,7 @@
 // Shenora devtools dispatcher (family pattern: one entry, allow-listed once).
 //   node devtools/dev.mjs build            - dotnet build the solution + npm build the react package
 //   node devtools/dev.mjs test [dotnet|npm] - dotnet test + vitest (or just one side)
-//   node devtools/dev.mjs verify           - build · test · check-sensitive --tree · knowledge check (the "am I done?" gate)
+//   node devtools/dev.mjs verify           - build · test · check-sensitive --tree · knowledge check + footprint (the "am I done?" gate)
 //   node devtools/dev.mjs pack             - nupkgs + npm tarball -> publish/packages (lockstep version, sha256 printed)
 //   node devtools/dev.mjs doctor [--fix]   - version/readme drift check (npm package.json + README headline vs VersionPrefix)
 //   node devtools/dev.mjs changelog [--fix] [--version X.Y.Z] [--date YYYY-MM-DD] - stamp "## Unreleased" for the release
@@ -358,6 +358,12 @@ switch (cmd) {
       }],
       ['check-sensitive --tree', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), '--tree'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['knowledge check', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'check'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // The always-loaded budget, gated rather than advisory. It existed from the start and nothing
+      // ran it, so it drifted to its ceiling unnoticed and the next knowledge rule (doc-claims,
+      // 2026-08-02) overflowed it — the index row counts as core, so EVERY on-demand rule costs core
+      // bytes. Enforced here it fails while the fix is still free: trim the index (RULES_INDEX says
+      // so) rather than raise the cap, which is what keeps a session's base small.
+      ['knowledge footprint', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'footprint'], { stdio: 'inherit', cwd: repo }).status === 0],
       // The gate the PROSE never had (0.2.0 design pass, D4). Every code invariant here has a test;
       // no doc claim had anything, and a whole-codebase review found 8 of its ~13 findings in
       // comments and docs — including a dependency graph both READMEs drew with an edge that has
