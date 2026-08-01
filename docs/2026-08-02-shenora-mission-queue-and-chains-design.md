@@ -1,6 +1,8 @@
 # Shenora missions — the queue, and chained missions — design
 
-**Status: PART 1 IMPLEMENTED 2026-08-02** (`IMissionQueueStore`); **PART 2 PLANNED**, nothing built. Two owner-directed additions to the mission layer
+**Status: BOTH PARTS IMPLEMENTED 2026-08-02** — Part 1 as `IMissionQueueStore`, Part 2 as
+`MissionChain`/`MissionStep`/`IMissionChainContext` (10 tests). One claim below was NOT delivered and
+is corrected in place rather than left standing: see §5's note on `Snapshot()`. Two owner-directed additions to the mission layer
 that shipped in 0.3.0 (`docs/2026-08-02-shenora-mission-scheduling-design.md`, renamed and split by
 its A3). Written to be argued with; retired into `DECISIONS.md` + `ARCHITECTURE.md` once built.
 
@@ -127,6 +129,15 @@ public static class MissionChain
 
 `MissionChain.Sequence` is a helper, not a new scheduler input — which is exactly why this is small:
 it returns an ordinary `MissionDefinition` that `SubmitAsync` cannot tell apart from any other.
+
+> **Corrected after building it:** §6.1 below claims `Snapshot()` shows "one mission, labelled with the
+> step it is on". **It does not, and no attempt was made to make it.** A `MissionExecution` is an
+> immutable value produced at submit time; giving it a mutable step label would mean either a mutable
+> execution or the scheduler learning what a chain is — and the entire point of one-entry was that the
+> scheduler learns nothing. The step is reported through `IMissionChainContext` instead
+> (`StepIndex`/`StepName`/`StepCount`), which an app forwards to its own progress surface. Left
+> uncorrected, that sentence would have been the exact class of defect `.claude/knowledge/doc-claims.md`
+> was written about, in the document that argued for the feature.
 
 **Why a bag and not typed results:** step B needs "the temp path A wrote", and the kit cannot know
 that type. A typed chain (`Chain<A, B>` threading a result type) is elegant for two steps and

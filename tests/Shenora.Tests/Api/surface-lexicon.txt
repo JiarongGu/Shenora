@@ -197,6 +197,7 @@ Range
 # `Mission` names a unit of work with an objective and an outcome, is unique on this surface, and is
 # still MECHANISM vocabulary rather than any app's domain noun (`Quest` was rejected for reading as
 # domain vocabulary in a games family).
+Chain
 Claim
 Claims
 Definition
@@ -216,6 +217,7 @@ Retry
 Mission
 Scheduler
 Scope
+Step
 
 # ── Watch this one ────────────────────────────────────────────────────────────────────────────────
 # Download: a browser mechanism (a session observing a download), NOT a product feature. It is the

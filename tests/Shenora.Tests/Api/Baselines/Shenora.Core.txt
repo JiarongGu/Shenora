@@ -88,6 +88,12 @@ interface Shenora.Core.ILane
   public abstract string Name { get; }
   public abstract void Hold()
   public abstract void Release()
+interface Shenora.Core.IMissionChainContext
+  public abstract T Get<T>(string key)
+  public abstract int StepCount { get; }
+  public abstract int StepIndex { get; }
+  public abstract string StepName { get; }
+  public abstract void Set<T>(string key, T value)
 interface Shenora.Core.IMissionObserver
   public virtual void OnFinished(in Shenora.Core.MissionExecution mission, Shenora.Core.MissionResult result)
   public virtual void OnQueued(in Shenora.Core.MissionExecution mission)
@@ -129,6 +135,8 @@ interface Shenora.Core.IUiInteraction
   public abstract void UnblockInteraction()
 interface Shenora.Core.IUrlLauncher
   public abstract void OpenUrl(string url)
+static class Shenora.Core.MissionChain
+  public static Shenora.Core.MissionDefinition Sequence(string kind, params Shenora.Core.MissionStep[] steps)
 struct Shenora.Core.MissionClaim : System.IEquatable<Shenora.Core.MissionClaim>
   public .ctor(string Scope, string Key, Shenora.Core.ClaimMode Mode)
   public Shenora.Core.ClaimMode Mode { get; init; }
@@ -254,6 +262,20 @@ enum Shenora.Core.MissionState (int)
   public const Shenora.Core.MissionState Queued = 0
   public const Shenora.Core.MissionState Running = 1
   public int value__
+sealed class Shenora.Core.MissionStep : System.IEquatable<Shenora.Core.MissionStep>
+  public .ctor(string Name, System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims = null, Shenora.Core.RetryPolicy? Retry = null)
+  public Shenora.Core.MissionStep <Clone>$()
+  public Shenora.Core.RetryPolicy? Retry { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims { get; init; }
+  public System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run { get; init; }
+  public bool Equals(Shenora.Core.MissionStep? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.MissionStep? left, Shenora.Core.MissionStep? right)
+  public static bool op_Inequality(Shenora.Core.MissionStep? left, Shenora.Core.MissionStep? right)
+  public string Name { get; init; }
+  public void Deconstruct(out string Name, out System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, out System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims, out Shenora.Core.RetryPolicy? Retry)
 sealed class Shenora.Core.NestedClaimScope : Shenora.Core.IClaimScope
   public .ctor(string name, char separator, bool ignoreCase = false)
   public bool Conflicts(string normalizedA, string normalizedB)

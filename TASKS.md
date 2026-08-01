@@ -49,10 +49,9 @@ the third is independent).
   as the pluggable async queue the first draft proposed: that would have put an `await` in the
   dispatch path and forced admission to re-validate against a collection that may have changed. Moves
   to `docs/task-archive.md` at the next tidy.
-- [ ] **Chained missions with a shared context** (same doc, Part 2). Claims prevent overlap but cannot
-  express order, dependency or data flow, so a chain today lives in a stack frame and cannot be
-  resumed or seen in `Snapshot()`. **Blocked on one decision:** is a chain ONE queue entry or N? That
-  answer decides whether §10's "no DAG engine" still holds.
+- [x] ~~**Chained missions with a shared context**~~ — DONE 2026-08-02, Part 2 of the same doc, as
+  ONE queue entry per the owner's call. `MissionChain.Sequence` returns an ordinary definition, so
+  §10's "no DAG engine" still holds. Moves to `docs/task-archive.md` at the next tidy.
 - [ ] **A file-update queue + cross-process path leases** (`docs/2026-08-02-shenora-file-updates-design.md`).
   Owner-directed, deliberately NOT part of mission management: the scheduler decides which missions
   run, this decides how their mutations land. The point is that a path claim excludes two missions for

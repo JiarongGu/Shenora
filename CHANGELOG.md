@@ -84,6 +84,28 @@ _Do not stamp this heading by hand — the release workflow does it (`docs/RELEA
   changed underneath — a race in the one place where a race corrupts rather than delays, bought for a
   capability no consumer has asked for. Ordering was already the app's, through `IMissionPolicy`.
 
+### Added
+
+- **Chained missions** — `MissionChain.Sequence(kind, params MissionStep[])`, `MissionStep`,
+  `IMissionChainContext`. Steps run in order sharing one context, so a later step can use what an
+  earlier one produced — the case claims cannot express, since they prevent overlap but say nothing
+  about order or data flow. Before this, a chain lived in a stack frame: unresumable, invisible, and
+  dead if the awaiting code went away.
+
+  **A chain is ONE queue entry, not N.** `Sequence` returns an ordinary `MissionDefinition` the
+  scheduler cannot tell apart from any other, so it gains no dependency edges and no "blocked on a
+  predecessor" state — the alternative was a DAG engine by another name, which the kit declined on
+  the evidence that no sibling has needed one. The cost is accepted and documented: a chain holds the
+  UNION of its steps' claims for its whole life, taking the STRONGER mode where steps disagree, so a
+  read-then-write chain holds that key exclusively throughout.
+
+  A step's `RetryPolicy` retries that step only; there is no chain-level retry, because re-running
+  completed steps is a judgement only the app can make. A failing step fails the chain, and cancelling
+  cancels the chain — one mission, one token. `IMissionChainContext` is **in-memory only**: a durable
+  chain carries state in `Payload` like every other durable mission, and that limit is stated rather
+  than papered over, because a resume that silently lost the context is worse than one that never had
+  it.
+
 ## 0.2.0 — never released
 
 **This version number was consumed without ever shipping.** A session hand-edited

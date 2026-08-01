@@ -163,6 +163,15 @@ changes, noting them in `CHANGELOG.md`).
   killed the process, and re-running it turns one crash into a boot loop) and `RecoveryPolicyFor`.
   Recovery is an explicit `RecoverAsync` with an app `rehydrate` delegate, never implicit: a delegate
   does not serialize, and that same delegate is why the kit ships no handler-registry-by-type.
+  **Chains (multi-step missions)** — `MissionChain.Sequence(kind, params MissionStep[])` returns an
+  ordinary `MissionDefinition`, so the scheduler gains NO concept of dependencies: a chain is ONE
+  queue entry whose steps run in order, sharing an `IMissionChainContext`
+  (`StepIndex`/`StepName`/`StepCount` + a `Get`/`Set` bag). `MissionStep` carries an optional
+  per-step `Claims` and `RetryPolicy` — the claims are unioned onto the chain and held for its whole
+  life (taking the STRONGER mode where steps disagree, so a read-then-write chain holds the key
+  exclusively), and the retry repeats only that step, never the ones before it. A failing step fails
+  the chain; cancelling cancels the chain. The context is IN-MEMORY only: a durable chain carries
+  state in `Payload`, because an arbitrary object graph is what the kit cannot serialize for an app.
   **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
   case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
   `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
