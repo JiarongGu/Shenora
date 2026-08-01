@@ -1,15 +1,13 @@
 # Rules index — scan "Applies when", read the ones your task touches
 
-Two tiers, to keep the always-loaded base small as the rule set grows:
+**Core** (`.claude/rules/`) auto-loads every session. **Knowledge** (`.claude/knowledge/`) does not —
+when your task matches a row's *Applies when*, `Read` that file before touching the area. Keeping a
+body out of context until it is needed is the point.
 
-- **Core** (`.claude/rules/`) — auto-loaded every session; applies to nearly any task.
-- **Knowledge** (`.claude/knowledge/`) — **not** auto-loaded; domain-specific. When your task matches
-  a row's *Applies when*, `Read` that file before you touch the area. The body isn't in context until
-  you read it — that's the point (it keeps sessions lean).
-
-Add a rule with `node devtools/dev.mjs knowledge new <kebab-name> [--core]` (scaffolds from
-`TEMPLATE.md` and appends a row here). Check the system stays consistent with
-`node devtools/dev.mjs knowledge check`; see the always-loaded size with `… knowledge footprint`.
+Add one with `node devtools/dev.mjs knowledge new <kebab-name> [--core]`; verify with `… knowledge
+check`, size with `… knowledge footprint`. **This INDEX is always loaded, so every knowledge rule
+costs core bytes for its row** — keep rows to one clause each, and when the budget is full, trim the
+index rather than raising the cap.
 
 ## Core (always loaded)
 
@@ -30,3 +28,4 @@ Add a rule with `node devtools/dev.mjs knowledge new <kebab-name> [--core]` (sca
 | [webview2-hosting](../knowledge/webview2-hosting.md) | changing WebView2 hosting/serving/session code, adding a resource scheme or injected script, **or touching UI-thread marshalling in ANY package** | environment thread-affinity; the ONE marshalling owner and its four invariants; the sync-bundle vs deferred-scheme split; init timeout; guarded app callbacks; CDP re-append |
 | [ipc-contracts](../knowledge/ipc-contracts.md) | touching the IPC stack on either side (`src/Shenora.Ipc/`, `WebViewIpcBridge`, `src/Shenora.React/src/`), adding a transport, or writing adoption shims | C#⇄TS wire mirror kept by tripwires; no raw exception text on any error path; never-throws dispatch; always-batched notifications; context-preserving pipeline |
 | [winforms-shell](../knowledge/winforms-shell.md) | touching any desktop primitive in `src/Shenora.WinForms/` — bootstrap, frameless chrome/maximize, tray, secondary windows, single-instance, window state, clipboard | STA-or-fail; idempotent init; `UserClosing` also means a PROGRAMMATIC close; manual maximize via `IAppMaximizable`; `FormClosed` ≠ pump finished; pre-handle intent in a flag |
+| [doc-claims](../knowledge/doc-claims.md) | writing prose about what the code DOES — XML comments, `ADOPTION.md`, a README | verify against the SOURCE, not the design doc; pin a surprise with a test |
