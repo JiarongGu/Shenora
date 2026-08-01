@@ -103,7 +103,7 @@ public class ModuleLifecycleTests
     }
 
     [Fact]
-    public void Claiming_is_atomic_under_concurrency()
+    public async Task Claiming_is_atomic_under_concurrency()
     {
         // The plug-in case: two threads offering the same name. A check followed by a separate map
         // would let both win and the second would be dead code — the silent-shadowing defect
@@ -121,7 +121,11 @@ public class ModuleLifecycleTests
             })).ToArray();
 
             start.Set();
-            Task.WaitAll(racers);
+            // AWAITED, not Task.WaitAll (xUnit1031 — the suite's only build warning). Blocking on a
+            // task inside a test can deadlock, and this suite runs SERIALLY over real threads
+            // precisely because a hang here is the worst outcome: it stalls the whole run with no
+            // failing test to point at (P5.5 H7 found a 17-second one hiding behind parallelism).
+            await Task.WhenAll(racers);
 
             Assert.Equal(1, wins);
             Assert.Single(((IModuleRegistry)dispatcher).MappedModules);

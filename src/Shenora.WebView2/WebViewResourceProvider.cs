@@ -113,26 +113,14 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     }
 
     /// <summary>
-    /// Write a diagnostic through the app's sink — GUARDED and LAZY, the same shape every other
-    /// diagnostic in this kit uses (<c>WebViewHost.Log</c>, <c>WebViewIpcBridge.Log</c>,
-    /// <c>NotificationPump.Log</c>, <c>OperationRegistry.Log</c>).
-    /// <para>
-    /// This type used to call <c>_options.Log?.Invoke(…)</c> directly at seven sites. Most were
-    /// survivable — they sit under a caller that would observe a throwing sink — but two are inside
-    /// <see cref="BeginWarmup"/>'s fire-and-forget <c>Task.Run</c>, where there is no caller at all:
-    /// an app logger throwing there escapes the very <c>catch</c> it is reporting from and becomes an
-    /// unobserved task exception. An <c>ILogger</c>/<c>Log</c> action IS an app callback
-    /// (<c>.claude/knowledge/webview2-hosting.md</c>), so it gets the one guard rather than a
-    /// try/catch remembered per site. The <see cref="Func{TResult}"/> puts message BUILDING inside the
-    /// guard too — which matters for the constructor's "serves nothing" hint, since that one
-    /// enumerates the assembly's manifest to compose itself.
-    /// </para>
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). This type used
+    /// to call <c>_options.Log?.Invoke(…)</c> directly at seven sites; two of them sit inside
+    /// <see cref="BeginWarmup"/>'s fire-and-forget <c>Task.Run</c>, where a throwing sink escapes the
+    /// very <c>catch</c> it reports from and becomes an unobserved task exception. Laziness also
+    /// matters for the constructor's "serves nothing" hint, which enumerates the assembly's manifest
+    /// to compose itself.
     /// </summary>
-    private void Log(Func<string> message)
-    {
-        if (_options.Log is null) return;
-        Shenora.Core.AppCallback.Run(() => _options.Log(message()));
-    }
+    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_options.Log, message);
 
     /// <summary>True = serving embedded resources; false = serving <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/>.</summary>
     public bool IsEmbedded { get; }

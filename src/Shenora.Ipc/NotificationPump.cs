@@ -199,17 +199,11 @@ public sealed class NotificationPump : IDisposable
     }
 
     /// <summary>
-    /// Write a diagnostic through the app's sink — GUARDED and LAZY (P5.5 H2). The log sink is an
-    /// app-supplied delegate invoked from places with no caller left to catch anything (the
-    /// per-notification guard above, the tick's catch-all), so a throwing sink there would defeat
-    /// the very guard it is reporting from. The lazy <see cref="Func{TResult}"/> puts message
-    /// BUILDING inside the guard too, and makes it free when no sink is configured.
+    /// Guarded + lazy, via the one owner (<see cref="AppCallback.Log"/>) — the sink is app code
+    /// invoked from the per-notification guard above and the base's tick, i.e. places with no caller
+    /// left to catch anything.
     /// </summary>
-    private void Log(Func<string> message)
-    {
-        if (_options.Log is null) return;
-        AppCallback.Run(() => _options.Log(message()));
-    }
+    private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
 
     /// <summary>Unsubscribe from the bus. The base owns its own timer/transport teardown.</summary>
     public void Dispose()

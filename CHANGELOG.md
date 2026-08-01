@@ -359,6 +359,11 @@ event hub … async from the UI, progress synced") while the HOST contract did n
 
 ### Changed
 
+- **`Shenora.Core.AppCallback.Log(Action<string>? sink, Func<string> message)`** — the guarded, lazy
+  diagnostic helper existed as FIVE byte-identical private copies (`WebViewHost`,
+  `WebViewIpcBridge`, `EmbeddedResourceProvider`, `NotificationPump`, `OperationRegistry`), the same
+  "N copies of the rule that must never be broken" shape `IpcErrorMapping` was collapsed for. One
+  owner now, on the type that already owns the callback-guard policy. Additive; no behaviour change.
 - **D16's host half is now EXECUTED rather than asserted — no code change was needed, which is the
   result.** `NotificationPump` was extracted in this release "so a second, non-WinForms base inherits
   these already-fixed bugs", and no second base existed, so nothing had ever run the kit's IPC stack

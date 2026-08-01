@@ -72,28 +72,13 @@ public sealed class WebViewHost
     }
 
     /// <summary>
-    /// Write a diagnostic through the app's sink — GUARDED and LAZY (P5.5 H2).
-    /// <para>
-    /// <see cref="WebViewHostOptions.Log"/> is an app-supplied delegate, and almost every call site
-    /// below sits inside a WebView2 event handler or a posted UI-thread body, where an escaping
-    /// exception has no caller to catch it and becomes an unhandled UI-thread exception (a modal crash
-    /// dialog under the family bootstrap). Routing every one through
-    /// <see cref="Shenora.Core.AppCallback"/> makes that structurally impossible instead of relying on
-    /// each site remembering.
-    /// </para>
-    /// <para>
-    /// The <see cref="Func{TResult}"/> is not ceremony: the guard has to cover BUILDING the message as
-    /// well as writing it, because several messages read WebView2/COM properties (a download
-    /// operation's URI, a process-failed reason) that can throw once the underlying object is gone —
-    /// and that read would otherwise happen at the call site, outside the guard. It also makes the
-    /// interpolation free when no sink is configured.
-    /// </para>
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). Almost every
+    /// call site below sits inside a WebView2 event handler or a posted UI-thread body, where an
+    /// escaping exception has no caller and becomes a modal crash dialog; and several messages read
+    /// WebView2/COM properties (a download's URI, a process-failed reason) that throw once the
+    /// underlying object is gone, which is why BUILDING the message must be inside the guard too.
     /// </summary>
-    private void Log(Func<string> message)
-    {
-        if (_log is null) return;
-        Shenora.Core.AppCallback.Run(() => _log(message()));
-    }
+    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_log, message);
 
     /// <summary>
     /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event: true only

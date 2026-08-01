@@ -32,26 +32,17 @@ needed a full `git filter-repo` rewrite — the working tree being clean is NOT 
   shapes. Whole tree: `node devtools/dev.mjs check-sensitive --tree`. Bypass (rare):
   `git commit --no-verify`.
 - If the guard blocks you: move the value to `local/` and reference it generically in the tracked file.
-- **A leak already committed is a history problem, not a working-tree problem.** Editing the
-  current file leaves it in every past commit + message.
-  **CHECK IT, don't assume it:** `node devtools/dev.mjs check-sensitive --history` scans every blob
-  reachable from every ref, every PATH those blobs ever had, and every commit MESSAGE. That mode
-  exists because this rule demanded a history check for five phases while the scanner only offered
-  `--tree`, which reads the CURRENT checkout — so the one question the rule cares most about was the
-  one it could not answer.
-  **It is a ONE-OFF AUDIT, not a routine check** — run it before making a repo public and after any
-  scrub, and nowhere else. Its cost grows with the history because it reads every reachable blob, so
-  putting it in `verify` or the pre-commit hook would tax every commit forever to re-check commits
-  that were already checked when they were made. **The PRE-COMMIT hook is the ongoing protection:**
-  it catches a leak while it is still staged, which is the only point at which the fix is free rather
-  than a history rewrite.
-  If it finds something, fix with a scoped `git filter-repo` pass (backup bundle first, dry-run on a
-  `--mirror` clone, verify `git grep <token> $(git rev-list --all)` = 0 AND messages, then apply).
-  ⚠ **A history scan that reports clean deserves the same suspicion as a test that passes.** Prove
-  the pipeline is live before believing it: append a pattern matching a string you KNOW is in
-  history, confirm it reports hits from both a blob and a `commit-message`, then remove it. Verified
-  that way when the mode was added (2026-07-31): 929 blobs + all messages, clean on the real
-  patterns, and correctly noisy on planted ones.
+- **A leak already committed is a history problem** — editing the current file leaves it in every
+  past commit and message. `dev.mjs check-sensitive --history` scans every reachable blob, every path
+  those blobs ever had, and every commit message. It is a **ONE-OFF AUDIT** (before going public,
+  after a scrub) — never in `verify` or the hook, whose cost would grow with the history to re-check
+  commits already checked when made. **The pre-commit hook is the ongoing protection**: it catches a
+  leak while it is still staged, the only point where the fix is free.
+  Fix a real hit with a scoped `git filter-repo` pass (backup bundle, dry-run on a `--mirror` clone,
+  verify `git grep <token> $(git rev-list --all)` = 0 AND messages, then apply).
+  ⚠ **A clean history scan deserves the same suspicion as a passing test** — plant a pattern you KNOW
+  is in history, confirm hits from both a blob and a `commit-message`, remove it. Done that way when
+  the mode was added (929 blobs + all messages).
 
 ## Gotchas / traps
 

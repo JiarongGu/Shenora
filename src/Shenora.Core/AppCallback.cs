@@ -84,6 +84,43 @@ public static class AppCallback
         }
     }
 
+    /// <summary>
+    /// Write a diagnostic to an app-supplied sink — GUARDED and LAZY. The one shape every diagnostic
+    /// in this kit uses, and the reason it is here rather than copied per type.
+    /// <para>
+    /// <b>An <c>ILogger</c> or an <c>Action&lt;string&gt;</c> IS an app callback</b>, so it obeys the
+    /// rule above: these sinks are invoked from places with no caller left to catch anything — a
+    /// WebView2 event handler, a timer tick, a fire-and-forget body — and several sit INSIDE a
+    /// <c>catch</c> that exists to stop a failure escaping, so a throwing sink defeats the very guard
+    /// it is reporting from. That has been paid for: a throwing sink once landed before a
+    /// <c>TrySetException</c> (a pool lease hung forever holding its permit) and before a
+    /// <c>Release()</c> (a permit leaked for the process lifetime).
+    /// </para>
+    /// <para>
+    /// <paramref name="message"/> is a <see cref="Func{TResult}"/> because the guard has to cover
+    /// BUILDING the message as well as writing it — several call sites interpolate WebView2/COM
+    /// properties that throw once the underlying object is gone, and interpolation at the call site
+    /// would happen outside the guard. It also makes the message free when no sink is configured,
+    /// which matters on the IPC hot path.
+    /// </para>
+    /// <para>
+    /// Collapsed here in the 0.2.0 cleanup from FIVE byte-identical private copies
+    /// (<c>WebViewHost</c>, <c>WebViewIpcBridge</c>, <c>EmbeddedResourceProvider</c>,
+    /// <c>NotificationPump</c>, <c>OperationRegistry</c>) — the same "N copies of the rule that must
+    /// never be broken" shape <see cref="Shenora.Core"/>'s neighbours already learned from
+    /// <c>IpcErrorMapping</c>, where a fifth copy of the error boundary was one paste away from
+    /// leaking a filesystem path to the page.
+    /// </para>
+    /// </summary>
+    /// <param name="sink">The app's diagnostic sink. Null = do nothing, and do not build the message.</param>
+    /// <param name="message">Builds the line to write. Invoked inside the guard.</param>
+    public static void Log(Action<string>? sink, Func<string> message)
+    {
+        if (sink is null) return;
+        ArgumentNullException.ThrowIfNull(message);
+        Run(() => sink(message()));
+    }
+
     private static void Report(Action<Exception>? onError, Exception error)
     {
         if (onError is null) return;

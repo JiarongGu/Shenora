@@ -8,11 +8,11 @@ release-facing log. `> DIRECTION (user):` blockquotes capture the user's steerin
 here as long as they still steer.
 
 **Status: 0.1.2 PUBLISHED (2026-07-31); 0.2.0 BUILT AND MERGED, NOT YET PUSHED OR PUBLISHED** — five
-NuGet packages + `@shenora/react` on npm, from the manual Release workflow. P1–P7 are all complete;
-nothing below is blocking. Growth from here is harvest-driven (D15) and adoption-driven: the next real
-work arrives when a sibling app adopts the kit and hits something, or when a feature worth generalising
-emerges while building one. **Because 0.2.0 is unpublished, its surface is still free to change** —
-which is why several corrections landed in it rather than as a 0.2.1.
+NuGet packages + `@shenora/react` on npm, from the manual Release workflow. Growth from here is
+harvest-driven (D15) and adoption-driven: the next real work arrives when a sibling app adopts the kit
+and hits something, or when a feature worth generalising emerges while building one. **Because 0.2.0 is
+unpublished, its surface is still free to change** — which is why several corrections landed in it
+rather than as a 0.2.1, and why its two breaking changes (D1, D2) cost nothing yet.
 
 > DIRECTION (user, 2026-07-30): Shenora is the shared infrastructure library for ALL sibling
 > projects — a "UI kit for non-web applications" in the headless sense: it holds the desktop
@@ -29,43 +29,16 @@ which is why several corrections landed in it rather than as a 0.2.1.
 
 ## Open
 
-### 0.2.0 design pass — "make a proper 0.2.0" (owner direction, 2026-08-01)
+**Nothing here is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are
+finished — record, rationale and verification in `docs/task-archive.md`. What survives below is what
+those passes deliberately did **not** build, each held back by a named evidence bar rather than by
+effort. That distinction is the point: none of these should be started because the list looks short.
 
-> DIRECTION (user, 2026-08-01): *"usually if you do the code review, you should be getting the purpose
-> of the project rethinking if this is a good design, instead just check if the code itself works or
-> not"* — then: *"lets do all, make a proper 0.2.0."*
+### Held at the two-consumer bar (`generic-library.md`)
 
-The whole-codebase review (`docs/task-archive.md`) audited the kit against its OWN stated intentions
-and never asked whether those intentions were right. This is that second pass. **All four items are
-free only while 0.2.0 is unpublished** — after publish, D1 and D2 are breaking changes.
-
-**D1 (cut the crash-checkpoint half of the operations cluster) is DONE** — record and rationale in
-`docs/task-archive.md` `### 0.2.0 design pass`. It landed narrower than first scoped: the
-`RequestWait`/`RequestResume` ask-act pair stayed, because cutting it would have left a client able to
-pause but never resume.
-
-**D2 (frameless chrome) is DONE, and it landed as a REJECTION plus a narrower change** — see
-`docs/DECISIONS.md` D24. Making the chrome attachable was rejected on evidence: the window style
-belongs in `CreateParams` at handle creation, and attaching it later needs `SetWindowLong` +
-`SWP_FRAMECHANGED` as a second mechanism, in the one area where a green unit suite has twice been the
-wrong answer. What DID change: the pure input-to-pixels half moved to an internal
-`CaptionButtonRenderer`, with direct tests it could never have had inside the form.
-
-**D4 (gate the prose) is DONE** — `devtools/scripts/doc-drift.mjs`, run by `verify` and `doctor`. Two
-PRECISE checks rather than a fuzzy symbol sweep: the dependency graph drawn in `README.md`/
-`ADOPTION.md` against the real `ProjectReference`s, and names in `devtools/retired-names.txt` stated
-as a CURRENT fact (past tense is fine — these docs are amendment stacks — and `doc-drift:history`
-marks a preserved sketch). It found real drift on its first run; see `CHANGELOG.md` 0.2.0
-`### Changed`. **Add a name to `devtools/retired-names.txt` the moment you delete or rename one.**
-
-**D3 (validate D16 with a real second transport) is DONE, and it PASSED** — the spike lived in
-`devtools/_transport-spike/` (gitignored, like `_dpi-probe` before it) and its findings are the
-deliverable. A `net10.0` console app referencing ONLY `Shenora.Core` + `Shenora.Ipc` ran a full
-request/response, the structured error boundary, a `NotificationPump` on a `PeriodicTimer`, and a
-`ctx.Run` operation streamed to a client as batched notifications. **The TFM is the proof**: adding a
-Windows type anywhere in that graph turns the project red, so "the IPC stack binds to no UI
-framework" is now enforced rather than asserted. Three follow-ups it surfaced are listed below —
-`Shenora.Ipc` needed no change at all.
+Surfaced by the D3 transport spike, which PASSED — `Shenora.Ipc` needed no change at all. These are
+recorded so the next real non-WebView2 base arrives as EVIDENCE rather than a re-argument from
+scratch; at that point the shape is already known.
 
 - [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
   base (see the design-pass record in `docs/task-archive.md`) showed the IPC half needs NOTHING to run
@@ -73,10 +46,8 @@ framework" is now enforced rather than asserted. Three follow-ups it surfaced ar
   transport read loop → deserialize → `DispatchAsync` → serialize → write, plus the pump tick. The
   CLIENT half has had this since P3 (`ShenoraBridge` owns correlation, category demux and the batch
   unbundle); the HOST half has no mirror, so `WebViewIpcBridge` is the only thing that knows the shape
-  and it is welded to WinForms. **Not built yet on purpose:** the spike is ONE consumer, and the kit's
-  bar is two (`generic-library.md`). It is recorded here so the next real non-WebView2 base is
-  EVIDENCE rather than a re-argument from scratch — at which point the shape is already known.
-  Candidate placement is `Shenora.Ipc` (no new package, D2).
+  and it is welded to WinForms. **Not built yet on purpose:** the spike is ONE consumer, the bar is
+  two. Candidate placement is `Shenora.Ipc` (no new package, D2).
 - [ ] **`Shenora.Core` ships no headless `IShenoraRunner`.** Also from the D3 spike: `CreateBuilder`
   → `Build()` → `Run()` throws without a runner, and the only implementation lives in
   `Shenora.WinForms`. So Core's "application host" half is WinForms-only in practice even though every
@@ -90,31 +61,7 @@ framework" is now enforced rather than asserted. Three follow-ups it surfaced ar
   waiting at the first real mobile adoption, and it is still a 1.0 break the kit says it will not
   take. Narrowing it needs a real mobile consumer, not another spike.
 
-### From the first adopter, IPC + drop-zone design review (2026-08-01)
-
-Requested review of whether the CURRENT implementation matches the stated design intent — *"not a sync
-request pattern, which does not fit desktop or mobile: the backend layer here is mostly attached to its
-frontend layer, so a stateful design with an event hub is the way to go — async from the UI, progress
-synced"* — plus a proper Windows-native drop experience. Read against `Shenora.Ipc`, `Shenora.Core`'s
-`EventBus`, `@shenora/react`, and `DropZoneManager`.
-
-**The verdict first: the client design already matches the intent; the HOST contract does not.**
-`createShenoraStore` is exactly the described model — `snapshot` loads current state on first subscribe,
-`on` maps events to PURE reducers, `actions` are fire-and-forget `post`. Its own doc gets the hard part
-right ("a component that mounts while work is already in flight has MISSED the events, and a stream cannot
-be replayed. Snapshot-then-deltas is the contract"), and `invoke` is correctly scoped to "calls that are
-quick AND UI-thread-safe" rather than being the default. `EventBus` (module/type/scope patterns, isolated
-concurrent handlers, per-subscription match cache) is a real hub, not an afterthought. No change asked for
-in any of that — recorded because the next reviewer should not "fix" it toward request/response.
-
-**IMPLEMENTED AS 0.2.0 (2026-08-01):** the missing event path, the undefined long-operation shape, and
-the drop-zone Stage-1 finding all landed — `IModuleContext` (`Publish`/`Start`/`Run`) in
-`BaseFacade.RouteMessageAsync`'s signature, the `Shenora.Ipc.Operations` cluster + `@shenora/react`'s
-`useShenoraOperations`, `NotificationPump` extracted for a base-agnostic outbound channel, and
-`docs/ADOPTION.md`'s drop-zone row corrected. Design + rationale:
-`docs/2026-08-01-shenora-communication-core-design.md` + **D23**; what shipped task by task and how
-it was verified: `docs/task-archive.md` `### 0.2.0 — the communication core`. One finding from this
-review remains open, below.
+### Worth saying better (documentation, not code)
 
 - [ ] **Drop zones are the strongest dedup case in the kit, and worth stating as such.** The native
   approach is right for the goal (transparent overlays over the page's zone elements capturing REAL OS

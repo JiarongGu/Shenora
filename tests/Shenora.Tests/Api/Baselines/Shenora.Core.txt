@@ -1,6 +1,7 @@
 static class Shenora.Core.AppCallback
   public static T RunOrDefault<T>(System.Func<T> work, T fallback, System.Action<System.Exception>? onError = null)
   public static bool Run(System.Action work, System.Action<System.Exception>? onError = null)
+  public static void Log(System.Action<string>? sink, System.Func<string> message)
 static class Shenora.Core.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)

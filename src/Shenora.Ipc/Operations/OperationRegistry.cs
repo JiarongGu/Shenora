@@ -722,15 +722,8 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     private void LogIgnored(string caller, string id, string reason) =>
         Log(() => $"[Shenora.Ipc] {caller} ignored: operation '{id}' {reason}.");
 
-    /// <summary>
-    /// Guarded and lazy, matching <c>WebViewIpcBridge.Log</c>'s convention: build the message only
-    /// when a sink is configured, and never let a throwing sink escape into the caller.
-    /// </summary>
-    private void Log(Func<string> message)
-    {
-        if (_options.Log is null) return;
-        AppCallback.Run(() => _options.Log(message()));
-    }
+    /// <summary>Guarded + lazy, via the one owner (<see cref="AppCallback.Log"/>).</summary>
+    private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
 
     /// <summary>
     /// Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>.

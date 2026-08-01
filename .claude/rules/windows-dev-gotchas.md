@@ -3,19 +3,12 @@
 - **NEVER roundtrip source files through PowerShell 5 `Get-Content`/`Set-Content`** — it mangles
   UTF-8 (mojibake incident in the family; restored via git). Use the Edit/Write tools or Node
   scripts for text.
-- **Restoring a sabotage with `Move-Item`/`Copy-Item` can leave MSBuild running the SABOTAGED
-  binary.** Both cmdlets preserve `LastWriteTime`, so a file restored from a `.bak` can be OLDER
-  than the assembly built from the sabotaged version — the incremental build then reports success,
-  changes nothing, and the suite keeps failing (or, in the dangerous direction, keeps PASSING against
-  a stale binary while you conclude a tripwire fires when it does not). Hit live during the 0.2.0
-  design pass. The sabotage-verification discipline this repo runs on depends on the restore actually
-  taking effect, so: restore by rewriting the CONTENT (Edit/Write) rather than moving a file back, or
-  force it with `dotnet build -t:Rebuild`. Re-run the test after restoring and confirm it is GREEN —
-  a sabotage is only verified once both directions are.
-  ⚠ **`git checkout -- <path>` is NOT a safe restore either** — it reverts to HEAD, silently
-  discarding any UNCOMMITTED edits that file already carried. Also hit live: a sabotage restore threw
-  away a redirect made minutes earlier in the same file. Prefer sabotaging a file you have no pending
-  work in, or undo the sabotage with the same tool that applied it.
+- **Undo a sabotage with the SAME tool that applied it (Edit/Write), then confirm GREEN.** Both
+  restore shortcuts lie, and both were hit live in one session: `Move-Item`/`Copy-Item` preserve
+  `LastWriteTime`, so the restored file can be older than the assembly built from the sabotage and
+  the incremental build silently keeps running it (dangerous direction: a stale PASS); and
+  `git checkout -- <path>` reverts to HEAD, discarding uncommitted edits the file already carried.
+  A sabotage is only verified once both directions are — `dotnet build -t:Rebuild` if unsure.
 - **Node 24 `fs.cpSync` crashes on this box** (fail-fast 0xC0000409, silent). Use manual
   recursive copy loops in .mjs scripts.
 - PS 5.1 quirks in scripts: no `&&`/`||` chains; `-Encoding utf8` writes a BOM (fine for

@@ -218,21 +218,12 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Write a diagnostic through the app's sink — GUARDED and LAZY (P5.5 H2).
-    /// <para>
-    /// The log sink is an app-supplied delegate, and every site here is a place with no caller to
-    /// catch anything: a WebView2 event handler, the notification timer's tick, or dispose. Several are
-    /// inside a <c>catch</c> that exists precisely to stop a failure escaping — so a throwing sink
-    /// there DEFEATS that catch, which is how a log statement turns into the crash it was reporting.
-    /// The lazy <see cref="Func{TResult}"/> puts message BUILDING inside the guard too, and makes it
-    /// free when no sink is configured (this runs on the IPC hot path).
-    /// </para>
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). Every site
+    /// here has no caller to catch anything — a WebView2 event handler, the flush timer's tick,
+    /// dispose — and several sit inside a <c>catch</c> that exists to stop a failure escaping, so a
+    /// throwing sink would defeat the very catch it reports from.
     /// </summary>
-    private void Log(Func<string> message)
-    {
-        if (_log is null) return;
-        Shenora.Core.AppCallback.Run(() => _log(message()));
-    }
+    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_log, message);
 
     /// <summary>
     /// Queue a notification for the next batched push (fire-and-forget; delivery starts once the
