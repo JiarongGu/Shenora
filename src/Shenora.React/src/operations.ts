@@ -106,9 +106,24 @@ function makeState(byId: Record<string, OperationInfo>): OperationsState {
   };
 }
 
-/** Test/alternate-transport seams, plus an optional routing scope, for {@link createOperationsStore}. */
+/** Test/alternate-transport seams, a renamed host module, and an optional scope filter, for {@link createOperationsStore}. */
 export interface OperationsStoreOptions {
-  /** Optional app-defined routing scope, applied to both the subscription and the actions. */
+  /**
+   * The request/event module this store talks to. Must match the host's
+   * `OperationRegistryOptions.ModuleName` — default `'OPERATIONS'` on both sides — when an app
+   * renamed it to avoid a collision with one of its own module names (the duplicate-module guard
+   * `OperationsFacade`'s own docs describe). A store bound to the default name cannot reach a
+   * renamed host at all, which is exactly the gap this field closes.
+   */
+  module?: string;
+  /**
+   * Optional app-defined scope, applied to THREE places so the store stays internally consistent:
+   * the bus subscription (only deltas whose event scope matches are folded), the actions' request
+   * envelope, and the initial `LIST` snapshot's payload (`OperationsFacade` reads its scope filter
+   * from the payload, not the envelope — see `OperationsFacade.RouteMessageAsync`). Threading it
+   * into only the first two would load every scope on first subscribe and never remove the
+   * out-of-scope rows, since no delta for them ever arrives: a silent, permanent leak.
+   */
   scope?: string;
   /** Test/multi-transport seams. Default: the shared bridge and event bus. */
   bridge?: ShenoraBridge;
@@ -116,20 +131,30 @@ export interface OperationsStoreOptions {
 }
 
 /**
- * Build a store instance over the `OPERATIONS` module — the factory {@link useShenoraOperations}
+ * Build a store instance over the operations module — the factory {@link useShenoraOperations}
  * itself is built from. Exposed (rather than only the ready-made hook) for the same reason
  * `WindowCommands` takes an optional bridge: a test needs a fake bridge/bus
- * (`operations.test.ts`), and an app running a secondary window or auxiliary session needs its own
- * routing-scoped instance instead of being stuck with the shared default.
+ * (`operations.test.ts`), an app that renamed the host's `OperationRegistryOptions.ModuleName`
+ * needs a store bound to that name instead of the unreachable default, and an app running a
+ * secondary window or auxiliary session needs its own scope-filtered instance instead of being
+ * stuck with the shared, unscoped default.
  */
 export function createOperationsStore(
   options: OperationsStoreOptions = {},
 ): ShenoraStore<OperationsState, OperationsActions> {
-  return createShenoraStore<OperationsState, OperationsActions>('OPERATIONS', {
+  const module = options.module ?? 'OPERATIONS';
+  return createShenoraStore<OperationsState, OperationsActions>(module, {
     initial: makeState({}),
     // LIST is the snapshot source (design §4.6): a store cannot replay a stream, so a component
     // that mounts while work is already running gets it from here before folding any deltas.
-    snapshot: { type: 'LIST', apply: (_state, data) => makeState(index(data as OperationInfo[])) },
+    // The payload carries `scope` so the initial load is filtered the SAME way the deltas are
+    // (below, and via createShenoraStore's own `scope` option) — both halves must agree, or a
+    // scoped store loads every scope once and then never sheds the out-of-scope rows.
+    snapshot: {
+      type: 'LIST',
+      payload: options.scope !== undefined ? { scope: options.scope } : undefined,
+      apply: (_state, data) => makeState(index(data as OperationInfo[])),
+    },
     on: {
       // ONE event type for every transition (design §4.3) — last-write-wins by id, so folding needs
       // no ordering logic and no cross-type races.
@@ -153,7 +178,8 @@ export function createOperationsStore(
  * id — one subscription however many components read it, and a late mounter renders CURRENT state
  * because the host is authoritative (the store primitive's own late-mounter case is now
  * host-backed end to end). `running`/`finished` are selectors an activity panel or status bar reads
- * directly: `useShenoraOperations((s) => s.running)`.
+ * directly: `useShenoraOperations((s) => s.running)`. Bound to the default module/no scope — use
+ * {@link createOperationsStore} directly for a renamed module or a scope-filtered instance.
  *
  * Headless, per D13: no component, no UI opinion, no `ProcessType`-style enum — what an operation
  * IS stays the app's `kind` string; this only carries the uniform lifecycle around it.

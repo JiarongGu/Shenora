@@ -10,14 +10,16 @@ import { FakeTransport } from './testing/fakeTransport.js';
  * this store is exercised directly (`subscribe`/`getState`), never through a rendered component, so
  * there is no `act()` to wrap: `ShenoraStore` supports non-React callers by design.
  */
-function harness(initialList: unknown[]) {
+function harness(initialList: unknown[], storeOptions: { module?: string; scope?: string } = {}) {
   const transport = new FakeTransport();
   const realBus = new ShenoraEventBus();
   const bridge = new ShenoraBridge({ transport, eventBus: realBus });
-  const store = createOperationsStore({ bridge, bus: realBus });
+  const store = createOperationsStore({ bridge, bus: realBus, ...storeOptions });
 
   return {
     store,
+    /** Raw access for asserting on what the fake bridge actually RECEIVED, not just resulting state. */
+    transport,
     bus: {
       /** Emit straight to the bus, bypassing the wire — the store only cares that it subscribed. */
       emit: (module: string, type: string, payload: unknown): void => {
@@ -77,5 +79,45 @@ describe('operations store', () => {
     bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
 
     expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
+  });
+
+  it('binds to a renamed module for both the snapshot request and the event subscription', () => {
+    // The default-bound store can never reach a host that renamed OperationRegistryOptions.ModuleName
+    // (review finding): `module` must flow into both halves, not just be accepted and ignored.
+    const { store, transport, bus } = harness([], { module: 'MY_OPS' });
+    store.subscribe(() => {});
+
+    expect(transport.lastRequest().module).toBe('MY_OPS');
+
+    // A delta on the DEFAULT module must not reach a store bound to the renamed one, and vice versa.
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'wrong-module' }));
+    bus.emit('MY_OPS', 'OPERATION_UPDATED', info({ id: 'op-2' }));
+
+    expect(store.getState().byId['wrong-module']).toBeUndefined();
+    expect(store.getState().byId['op-2']).toBeDefined();
+  });
+
+  it('threads scope into the LIST snapshot payload, not just the subscription', () => {
+    // OperationsFacade reads its scope filter from the PAYLOAD (see RouteMessageAsync), not the
+    // envelope — asserting on the resulting state would pass even if the payload were empty, since
+    // an unfiltered LIST returns a superset that just happens to still contain the scoped rows.
+    const { store, transport } = harness([], { scope: 'tenant-1' });
+    store.subscribe(() => {});
+
+    const request = transport.lastRequest<{ scope?: string }>();
+    expect(request.scope).toBe('tenant-1');
+    expect(request.payload).toEqual({ scope: 'tenant-1' });
+  });
+
+  it('keeps an interrupted operation out of both running and finished', () => {
+    // `finished` deliberately excludes `interrupted` (a pending resume offer, not terminal history) —
+    // an undocumented carve-out with no coverage is how a later cleanup silently changes behaviour.
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'interrupted' }));
+
+    expect(store.getState().running).toEqual([]);
+    expect(store.getState().finished).toEqual([]);
+    expect(store.getState().byId['op-1']).toBeDefined();
   });
 });
