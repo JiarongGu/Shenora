@@ -12,13 +12,13 @@ public interface IOperationRegistry
     /// Start a tracked operation owned by <paramref name="module"/> and get its handle. Publishes
     /// an immediate <see cref="OperationStatus.Running"/> snapshot.
     /// <para>
-    /// <b>Known limit, recorded rather than solved (generic-library audit finding 5):</b> "registered
-    /// but not yet started" has no representation — <see cref="OperationStatus.Running"/> is the
-    /// FIRST snapshot this (or <see cref="Run"/>) ever publishes. An app with its own queue in front
-    /// of this registry either omits its pending rows entirely, or registers them
-    /// <see cref="OperationStatus.Running"/> early and misrepresents queued time as active time. No
-    /// consumer has asked for a queued/pending status — the kit ships no queue or scheduler at all
-    /// (see the class doc) — so this is recorded as a limit, not guessed at as a new status.
+    /// <b>"Registered but not yet started" is representable with no kit change</b> (closes what a
+    /// generic-library audit had recorded as a known limit): the FIRST snapshot is still
+    /// <see cref="OperationStatus.Running"/>, but an app with its own queue in front of this registry
+    /// can immediately call <see cref="IOperation.Wait"/>(<c>"queued"</c>) on the returned handle
+    /// before any real work begins — the same mechanism a mid-flight blocker uses, with the app's own
+    /// reason string standing in for a queued/pending status the kit never needed to add. Nothing was
+    /// ever progressing in either case, so <c>Wait</c> reads correctly for both.
     /// </para>
     /// </summary>
     IOperation Start(string module, OperationOptions options);
@@ -40,10 +40,10 @@ public interface IOperationRegistry
     /// capturing a caller's token (a request, say) kills it the moment that caller's lifetime ends.
     /// </para>
     /// <para>
-    /// <b>Pausing by returning</b> (§5A.3): <paramref name="work"/> can call <c>op.Pause(reason)</c>
+    /// <b>Waiting by returning</b> (§5A.3): <paramref name="work"/> can call <c>op.Wait(reason)</c>
     /// and simply RETURN instead of throwing — <c>Complete</c> is only ever applied implicitly when
     /// the operation is STILL <see cref="OperationStatus.Running"/> once <paramref name="work"/>
-    /// finishes, so a body that paused and returned is left <see cref="OperationStatus.Paused"/>, not
+    /// finishes, so a body that waited and returned is left <see cref="OperationStatus.Waiting"/>, not
     /// silently stamped <see cref="OperationStatus.Completed"/>. Resuming it from there is the APP's
     /// job (the same handle's <c>op.Resume()</c>, or its own checkpoint/restart path) — see
     /// <see cref="IModuleContext.Run"/>'s own doc for the full rationale.
@@ -55,10 +55,10 @@ public interface IOperationRegistry
     /// Resolve a live handle for an already-started operation by id — reinstated (generic-library
     /// audit finding 3) after being sketched-then-dropped pre-0.2.0 as unearned surface ("no consumer
     /// resolves a handle from a bare id"). That ruling did not survive contact with
-    /// <see cref="RequestPause"/>/<see cref="RequestResume"/>: both are client-request routes that
+    /// <see cref="RequestWait"/>/<see cref="RequestResume"/>: both are client-request routes that
     /// carry only an id, and whoever handles them (the owning module, hearing
-    /// <see cref="OperationEvents.PauseRequested"/>/<see cref="OperationEvents.ResumeRequested"/>) must
-    /// translate that id back into a handle to call <see cref="IOperation.Pause"/>/
+    /// <see cref="OperationEvents.WaitRequested"/>/<see cref="OperationEvents.ResumeRequested"/>) must
+    /// translate that id back into a handle to call <see cref="IOperation.Wait"/>/
     /// <see cref="IOperation.Resume"/> — a recurring shape every such consumer would otherwise
     /// re-solve with its own id→handle map kept alongside the registry. Returns <c>null</c> for an
     /// unknown id.
@@ -110,11 +110,11 @@ public interface IOperationRegistry
     void ClearFinished(string? module = null, string? scope = null);
 
     /// <summary>
-    /// Decline a pending offer in the WAITING band (§5A.2): <see cref="OperationStatus.Paused"/> or
-    /// <see cref="OperationStatus.Interrupted"/> → <see cref="OperationStatus.Cancelled"/> — terminal,
-    /// so it enters bounded history and is prunable/clearable like any other finished entry, and
-    /// publishes an <see cref="OperationEvents.Updated"/> snapshot like any other terminal transition
-    /// (unlike <see cref="ClearFinished"/>/<see cref="RequestResume"/>, which remove an entry with no
+    /// Decline a pending offer in the WAITING band (§5A.2): <see cref="OperationStatus.Waiting"/> →
+    /// <see cref="OperationStatus.Cancelled"/> — terminal, so it enters bounded history and is
+    /// prunable/clearable like any other finished entry, and publishes an
+    /// <see cref="OperationEvents.Updated"/> snapshot like any other terminal transition (unlike
+    /// <see cref="ClearFinished"/>/<see cref="RequestResume"/>, which remove an entry with no
     /// corresponding wire event).
     /// <para>
     /// <b>Refuses <see cref="OperationStatus.Running"/></b> — returns <c>false</c> and changes nothing.
@@ -125,10 +125,10 @@ public interface IOperationRegistry
     /// not <c>Cancel</c> accepting more states, for the same reason.
     /// </para>
     /// <para>
-    /// Signals the entry's own <see cref="CancellationToken"/> FIRST when one exists (a
-    /// <see cref="OperationStatus.Paused"/> entry still has one; an <see cref="OperationStatus.Interrupted"/>
-    /// entry never does — see <see cref="RegisterInterrupted"/>), so a paused body still parked on its
-    /// token unwinds the same way a running one does under <see cref="Cancel"/>.
+    /// Signals the entry's own <see cref="CancellationToken"/> FIRST when one exists (an entry reached
+    /// via <see cref="IOperation.Wait"/> still has one; one registered directly via
+    /// <see cref="RegisterWaiting"/> never does — see that method's own doc), so a waiting body still
+    /// parked on its token unwinds the same way a running one does under <see cref="Cancel"/>.
     /// </para>
     /// </summary>
     /// <returns>
@@ -138,17 +138,18 @@ public interface IOperationRegistry
     bool Dismiss(string id);
 
     /// <summary>
-    /// Announce a crash-interrupted, resumable operation from the APP's own checkpoint — the kit
-    /// holds the offer; the app owns what to resume and how. Requires a non-empty
+    /// Announce a crash-interrupted, resumable operation directly from the APP's own checkpoint — the
+    /// kit holds the offer; the app owns what to resume and how. Requires a non-empty
     /// <see cref="OperationOptions.ResumePayload"/> (the opaque checkpoint token — its presence IS
-    /// what makes this resumable, see that property's own doc), throwing <see cref="ArgumentException"/>
-    /// naming it when missing — a silently-accepted unusable entry would be worse than a loud
-    /// rejection.
+    /// what makes this resumable, see that property's own doc, and is also what tells this offer apart
+    /// from an ordinary <see cref="IOperation.Wait"/> once both land on the same
+    /// <see cref="OperationStatus.Waiting"/> status), throwing <see cref="ArgumentException"/> naming
+    /// it when missing — a silently-accepted unusable entry would be worse than a loud rejection.
     /// <para>
-    /// Deduped on <c>(module, kind, resumePayload)</c> among already-<see cref="OperationStatus.Interrupted"/>
-    /// entries: re-announcing the SAME checkpoint (a profile/session switch, say) returns the
-    /// existing id rather than stacking a second offer for what is still the same interrupted
-    /// checkpoint.
+    /// Deduped on <c>(module, kind, resumePayload)</c> among already-<see cref="OperationStatus.Waiting"/>
+    /// entries that themselves carry no live handle: re-announcing the SAME checkpoint (a
+    /// profile/session switch, say) returns the existing id rather than stacking a second offer for
+    /// what is still the same interrupted checkpoint.
     /// </para>
     /// <para>
     /// The returned entry is a pending OFFER, not finished history: the registry's automatic history
@@ -156,38 +157,42 @@ public interface IOperationRegistry
     /// <see cref="RequestResume"/> removes it.
     /// </para>
     /// </summary>
-    string RegisterInterrupted(string module, OperationOptions options);
+    string RegisterWaiting(string module, OperationOptions options);
 
     /// <summary>
-    /// The user asked to resume operation <paramref name="id"/>. Accepts an entry in the WAITING band
-    /// (§5A.2) — <see cref="OperationStatus.Paused"/> OR <see cref="OperationStatus.Interrupted"/> —
-    /// returning <c>false</c> and changing nothing otherwise (the same honest-refusal shape as
-    /// <see cref="Cancel"/> for an unknown or wrong-state id). On success, emits
-    /// <see cref="OperationEvents.ResumeRequested"/> with
-    /// <c>{ operationId, module, kind, resumePayload, scope, status }</c> — <c>status</c> lets a
-    /// handler tell the two cases apart, because it CANNOT look the entry up afterward for the
-    /// <see cref="OperationStatus.Interrupted"/> case (see the asymmetry below).
+    /// The user asked to resume operation <paramref name="id"/>. Accepts
+    /// <see cref="OperationStatus.Waiting"/> only, returning <c>false</c> and changing nothing
+    /// otherwise (the same honest-refusal shape as <see cref="Cancel"/> for an unknown or wrong-state
+    /// id). On success, emits <see cref="OperationEvents.ResumeRequested"/> with
+    /// <c>{ operationId, module, kind, resumePayload, scope, status }</c> — <c>status</c> is kept so a
+    /// handler can still branch, even though it is always <see cref="OperationStatus.Waiting"/> here
+    /// now that there is only one such value (see the asymmetry below for what a handler actually needs
+    /// to tell apart).
     /// <para>
-    /// <b>The asymmetry is deliberate (§5A.4), not an inconsistency to tidy away:</b> for
-    /// <see cref="OperationStatus.Paused"/>, the entry is LEFT IN PLACE — the app calls
+    /// <b>The drop-vs-keep decision is deliberate (§5A.4), and now keys on
+    /// <see cref="OperationOptions.ResumePayload"/>, not on a second status — that is the intrinsic
+    /// difference this section used to spend a whole extra <see cref="OperationStatus"/> value naming:</b>
+    /// a <c>null</c> <see cref="OperationInfo.ResumePayload"/> means an ordinary entry reached via
+    /// <see cref="IOperation.Wait"/> — LEFT IN PLACE, because the app calls
     /// <see cref="IOperation.Resume"/> on its own handle once it has actually resumed, so the client
-    /// asking is not the state changing. For <see cref="OperationStatus.Interrupted"/>, the entry is
-    /// still REMOVED, because there is no live handle to flip — the body died with the process, and the
-    /// resumed operation registers a FRESH one (via <see cref="Start"/>/<see cref="Run"/>) when it
-    /// actually restarts. This call only carries the app's opaque token across; it never resumes
-    /// anything itself.
+    /// asking is not the state changing. A non-null one means this entry has no live handle at all — the
+    /// process that owned it is gone (<see cref="RegisterWaiting"/>'s checkpoint is the common case, but
+    /// the same is true of any entry the app itself started with a <see cref="OperationOptions.ResumePayload"/>
+    /// already attached) — so it is REMOVED, and the resumed operation registers a FRESH one (via
+    /// <see cref="Start"/>/<see cref="Run"/>) when it actually restarts. This call only carries the
+    /// app's opaque token across; it never resumes anything itself.
     /// </para>
     /// </summary>
     bool RequestResume(string id);
 
     /// <summary>
-    /// The user asked to pause operation <paramref name="id"/> — generic-library audit finding 3, an
-    /// EXACT mirror of <see cref="RequestResume"/> for the other direction. Accepts only
-    /// <see cref="OperationStatus.Running"/>, returning <c>false</c> and changing nothing otherwise
-    /// (unknown id, already <see cref="OperationStatus.Paused"/>, <see cref="OperationStatus.Interrupted"/>,
-    /// or terminal — the same honest-refusal shape as every other transition here). On success, emits
-    /// <see cref="OperationEvents.PauseRequested"/> with <c>{ operationId, module, kind, scope }</c>
-    /// and leaves the entry untouched — the owning module's OWN <see cref="IOperation.Pause"/> is what
+    /// The user asked to wait operation <paramref name="id"/> — generic-library audit finding 3
+    /// (renamed from <c>RequestPause</c>), an EXACT mirror of <see cref="RequestResume"/> for the other
+    /// direction. Accepts only <see cref="OperationStatus.Running"/>, returning <c>false</c> and
+    /// changing nothing otherwise (unknown id, already <see cref="OperationStatus.Waiting"/>, or
+    /// terminal — the same honest-refusal shape as every other transition here). On success, emits
+    /// <see cref="OperationEvents.WaitRequested"/> with <c>{ operationId, module, kind, scope }</c>
+    /// and leaves the entry untouched — the owning module's OWN <see cref="IOperation.Wait"/> is what
     /// actually flips the status once it has stopped. **The client asking is not the state
     /// changing** — the same split <see cref="RequestResume"/> already draws against
     /// <see cref="IOperation.Resume"/>, applied to the direction the kit previously had no client
@@ -195,5 +200,5 @@ public interface IOperationRegistry
     /// blocker, not for the equally-common shape of a human clicking Pause on visible work — a
     /// download, a sync, a backup — that the kit itself already names as a consumer).
     /// </summary>
-    bool RequestPause(string id);
+    bool RequestWait(string id);
 }

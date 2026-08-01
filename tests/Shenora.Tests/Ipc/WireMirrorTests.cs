@@ -166,9 +166,10 @@ public class WireMirrorTests
         Assert.NotEmpty(client);   // parser self-check: a regex that matched nothing must not pass
         Assert.Equal(OperationEvents.Updated, client["Updated"]);
         Assert.Equal(OperationEvents.ResumeRequested, client["ResumeRequested"]);
-        // Generic-library audit finding 3: PAUSE_REQUESTED is new — pin it the same way, or a host
-        // rename leaves the client deaf to it exactly like the others this test already guards.
-        Assert.Equal(OperationEvents.PauseRequested, client["PauseRequested"]);
+        // Generic-library audit finding 3: WAIT_REQUESTED (renamed from PAUSE_REQUESTED) is new — pin
+        // it the same way, or a host rename leaves the client deaf to it exactly like the others this
+        // test already guards.
+        Assert.Equal(OperationEvents.WaitRequested, client["WaitRequested"]);
     }
 
     [Fact]
@@ -181,10 +182,11 @@ public class WireMirrorTests
         Assert.Equal(OperationsFacade.CancelType, client["Cancel"]);
         Assert.Equal(OperationsFacade.ClearFinishedType, client["ClearFinished"]);
         Assert.Equal(OperationsFacade.ResumeType, client["Resume"]);
-        // RESUME/DISMISS are the human's decisions (§5A.3 amendment); PAUSE (generic-library audit
-        // finding 3) is the client ASKING the host to pause — see OperationsFacade's own class doc.
+        // RESUME/DISMISS are the human's decisions (§5A.3 amendment); WAIT (generic-library audit
+        // finding 3, renamed from PAUSE) is the client ASKING the host to wait — see OperationsFacade's
+        // own class doc.
         Assert.Equal(OperationsFacade.DismissType, client["Dismiss"]);
-        Assert.Equal(OperationsFacade.PauseType, client["Pause"]);
+        Assert.Equal(OperationsFacade.WaitType, client["Wait"]);
     }
 
     [Fact]

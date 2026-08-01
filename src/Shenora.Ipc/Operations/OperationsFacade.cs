@@ -28,29 +28,30 @@ namespace Shenora.Ipc;
 /// <c>RESUME</c> forwards <c>{ operationId }</c> straight to
 /// <see cref="IOperationRegistry.RequestResume"/> and answers <c>{ requested: bool }</c> — the same
 /// honest-bool shape as <c>CANCEL</c>: the request always succeeds, and the bool says whether the
-/// operation actually was a pending, resumable, interrupted offer. This is single-app-provenance
+/// operation actually was a pending, resumable, waiting offer. This is single-app-provenance
 /// mechanism (design §4.2) — a state, an opaque token, an event; the app owns the checkpoint and
 /// what "resume" actually does with it.
 /// </para>
 /// <para>
 /// The route types are also public constants (<see cref="ListType"/>/<see cref="CancelType"/>/
 /// <see cref="ClearFinishedType"/>/<see cref="ResumeType"/>/<see cref="DismissType"/>/
-/// <see cref="PauseType"/>), matching <see cref="OperationEvents"/>'s own const shape — an app or
+/// <see cref="WaitType"/>), matching <see cref="OperationEvents"/>'s own const shape — an app or
 /// test matches by symbol, and <c>WireMirrorTests</c> pins them against the client's route literals
 /// so a host rename cannot silently leave the client deaf.
 /// </para>
 /// <para>
-/// <c>PAUSE</c> (generic-library audit finding 3) forwards <c>{ operationId }</c> to
-/// <see cref="IOperationRegistry.RequestPause"/> and answers <c>{ requested: bool }</c> — the same
-/// honest-bool shape as <c>RESUME</c>: the request always succeeds, and the bool says whether the
-/// operation actually was running and eligible to be asked. §5A.3 (D23) reasoned "pausing is the
-/// HOST's own knowledge" from ONE app's pause semantics — a host discovering its own blocker
-/// (expired credentials, DNS not yet propagated). That does not hold for the equally-common shape
-/// the kit itself already names as a consumer (a download-manager-style activity panel, "a download
-/// service starting an installer fetch"): a human clicking Pause on visible work. <c>PAUSE</c> asks;
-/// it does not act — <see cref="IOperationRegistry.RequestPause"/> leaves the entry untouched, and
-/// the owning module's OWN <see cref="IOperation.Pause"/> is what actually stops the work and
-/// publishes the transition, same split as <c>RESUME</c> vs <see cref="IOperation.Resume"/>.
+/// <c>WAIT</c> (generic-library audit finding 3, renamed from <c>PAUSE</c>) forwards
+/// <c>{ operationId }</c> to <see cref="IOperationRegistry.RequestWait"/> and answers
+/// <c>{ requested: bool }</c> — the same honest-bool shape as <c>RESUME</c>: the request always
+/// succeeds, and the bool says whether the operation actually was running and eligible to be asked.
+/// §5A.3 (D23) reasoned "pausing is the HOST's own knowledge" from ONE app's wait semantics — a host
+/// discovering its own blocker (expired credentials, DNS not yet propagated). That does not hold for
+/// the equally-common shape the kit itself already names as a consumer (a download-manager-style
+/// activity panel, "a download service starting an installer fetch"): a human clicking Pause on
+/// visible work. <c>WAIT</c> asks; it does not act — <see cref="IOperationRegistry.RequestWait"/>
+/// leaves the entry untouched, and the owning module's OWN <see cref="IOperation.Wait"/> is what
+/// actually stops the work and publishes the transition, same split as <c>RESUME</c> vs
+/// <see cref="IOperation.Resume"/>.
 /// </para>
 /// </summary>
 public sealed class OperationsFacade : BaseFacade
@@ -58,25 +59,25 @@ public sealed class OperationsFacade : BaseFacade
     /// <summary>Route: snapshot of currently-known operations — see the class doc's table.</summary>
     public const string ListType = "LIST";
 
-    /// <summary>Route: cancel a running (or paused) operation by id.</summary>
+    /// <summary>Route: cancel a running (or waiting) operation by id.</summary>
     public const string CancelType = "CANCEL";
 
     /// <summary>Route: drop retained finished history.</summary>
     public const string ClearFinishedType = "CLEAR_FINISHED";
 
-    /// <summary>Route: continue a paused or interrupted, resumable operation.</summary>
+    /// <summary>Route: continue a waiting, resumable operation.</summary>
     public const string ResumeType = "RESUME";
 
     /// <summary>
-    /// Route: ask the owning module to pause a running operation by id — <see cref="IOperationRegistry.RequestPause"/>.
+    /// Route: ask the owning module to wait a running operation by id — <see cref="IOperationRegistry.RequestWait"/>.
     /// Mirrors <see cref="ResumeType"/>'s shape (<c>{ operationId }</c> → <c>{ requested }</c>): the
     /// request always succeeds, and the bool says whether the operation was actually running and
     /// eligible to be asked.
     /// </summary>
-    public const string PauseType = "PAUSE";
+    public const string WaitType = "WAIT";
 
     /// <summary>
-    /// Route: decline a pending Paused/Interrupted offer by id — <see cref="IOperationRegistry.Dismiss"/>.
+    /// Route: decline a pending Waiting offer by id — <see cref="IOperationRegistry.Dismiss"/>.
     /// Mirrors <see cref="CancelType"/>'s shape (<c>{ operationId }</c> → <c>{ dismissed }</c>), a
     /// separate route rather than <see cref="CancelType"/> accepting more states, for the same reason
     /// <see cref="IOperationRegistry.Dismiss"/> is a separate member from <see cref="IOperationRegistry.Cancel(string)"/>.
@@ -144,12 +145,12 @@ public sealed class OperationsFacade : BaseFacade
                 var dismissed = _registry.Dismiss(dismissId);
                 return Task.FromResult<object?>(new { dismissed });
 
-            case PauseType:
-                var pauseId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
-                // Same honest-bool shape as RESUME: RequestPause() itself refuses (and changes
+            case WaitType:
+                var waitId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
+                // Same honest-bool shape as RESUME: RequestWait() itself refuses (and changes
                 // nothing) for anything not Running — this route just forwards that bool.
-                var pauseRequested = _registry.RequestPause(pauseId);
-                return Task.FromResult<object?>(new { requested = pauseRequested });
+                var waitRequested = _registry.RequestWait(waitId);
+                return Task.FromResult<object?>(new { requested = waitRequested });
 
             default:
                 throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5)

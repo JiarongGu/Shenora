@@ -226,11 +226,11 @@ public class OperationRegistryTests
 
     /// <summary>
     /// The three-band sort (§5A.2, coordinator ruling on this batch): Active (`Running`) → Waiting
-    /// (`Paused`/`Interrupted`) → Terminal — NOT "Running vs everything else". Before this fix a
-    /// `Paused` entry fell into the "everything else" bucket right alongside completed history
-    /// (`FinishedAt == null`, sorted by `Sequence` ascending with no band of its own), burying the
-    /// exact row a user needs to find in order to resume or dismiss it — precisely the reason the
-    /// Waiting band exists at all (§5A.2's table).
+    /// (`Waiting`) → Terminal — NOT "Running vs everything else". Before this fix a waiting entry
+    /// fell into the "everything else" bucket right alongside completed history (`FinishedAt == null`,
+    /// sorted by `Sequence` ascending with no band of its own), burying the exact row a user needs to
+    /// find in order to resume or dismiss it — precisely the reason the Waiting band exists at all
+    /// (§5A.2's table).
     /// </summary>
     [Fact]
     public void GetAll_orders_active_then_waiting_then_terminal()
@@ -238,13 +238,13 @@ public class OperationRegistryTests
         var (registry, _) = Build();
         var done = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
         done.Complete();
-        var paused = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        paused.Pause("dns");
+        var waiting = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        waiting.Wait("dns");
         var running = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
         var all = registry.GetAll();
 
-        Assert.Equal([running.Id, paused.Id, done.Id], all.Select(o => o.Id));
+        Assert.Equal([running.Id, waiting.Id, done.Id], all.Select(o => o.Id));
     }
 
     /// <summary>
@@ -298,99 +298,99 @@ public class OperationRegistryTests
         Assert.Equal([second.Id, first.Id], all.Select(o => o.Id));   // newest SEQUENCE first, tie or not
     }
 
-    // --- Pause/Resume (§5A.3, D23 amendment) ---------------------------------------------------
+    // --- Wait/Resume (§5A.3, D23 amendment) ----------------------------------------------------
 
     /// <summary>
-    /// FINDING 5 minor (generic-library audit): a pause whose cause is self-evident (the user clicked
+    /// FINDING 5 minor (generic-library audit): a wait whose cause is self-evident (the user clicked
     /// Pause) has nothing to branch a UI on — the surveyed app's four-value reason taxonomy does not
     /// generalize to every consumer, so a required parameter forced one on a caller who has none.
     /// </summary>
     [Fact]
-    public void Pause_with_no_reason_succeeds_and_leaves_PauseReason_null()
+    public void Wait_with_no_reason_succeeds_and_leaves_WaitReason_null()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
-        operation.Pause();
+        operation.Wait();
 
         var info = registry.GetAll().Single();
-        Assert.Equal(OperationStatus.Paused, info.Status);
-        Assert.Null(info.PauseReason);
+        Assert.Equal(OperationStatus.Waiting, info.Status);
+        Assert.Null(info.WaitReason);
     }
 
     [Fact]
-    public void Pause_transitions_running_to_paused_and_publishes_immediately_with_the_reason()
+    public void Wait_transitions_running_to_waiting_and_publishes_immediately_with_the_reason()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
-        operation.Pause("dns", new OperationLabel(Text: "waiting on DNS"));
+        operation.Wait("dns", new OperationLabel(Text: "waiting on DNS"));
 
         var info = Payload(events[^1]);
-        Assert.Equal(OperationStatus.Paused, info.Status);
-        Assert.Equal("dns", info.PauseReason);
+        Assert.Equal(OperationStatus.Waiting, info.Status);
+        Assert.Equal("dns", info.WaitReason);
         Assert.Equal("waiting on DNS", info.Detail!.Text);
     }
 
     /// <summary>
-    /// Validate rework (this batch, §5A.1): Pause requires Running specifically — it must refuse an
-    /// ALREADY-paused entry (not just a terminal one), or a second Pause call would silently stomp the
-    /// existing reason with no signal that the first pause was still in effect.
+    /// Validate rework (this batch, §5A.1): Wait requires Running specifically — it must refuse an
+    /// ALREADY-waiting entry (not just a terminal one), or a second Wait call would silently stomp the
+    /// existing reason with no signal that the first wait was still in effect.
     /// </summary>
     [Fact]
-    public void Pause_is_ignored_once_already_paused()
+    public void Wait_is_ignored_once_already_waiting()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
-        var eventsAfterFirstPause = events.Count;
+        operation.Wait("dns");
+        var eventsAfterFirstWait = events.Count;
 
-        operation.Pause("credentials");   // must NOT stomp the existing reason
+        operation.Wait("credentials");   // must NOT stomp the existing reason
 
-        Assert.Equal(eventsAfterFirstPause, events.Count);   // no spurious second snapshot
-        Assert.Equal("dns", registry.GetAll().Single().PauseReason);
+        Assert.Equal(eventsAfterFirstWait, events.Count);   // no spurious second snapshot
+        Assert.Equal("dns", registry.GetAll().Single().WaitReason);
     }
 
     [Fact]
-    public void Resume_transitions_paused_to_running_and_clears_the_reason()
+    public void Resume_transitions_waiting_to_running_and_clears_the_reason()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         operation.Resume();
 
         var info = Payload(events[^1]);
         Assert.Equal(OperationStatus.Running, info.Status);
-        Assert.Null(info.PauseReason);
+        Assert.Null(info.WaitReason);
     }
 
     /// <summary>
-    /// The other half of `PauseReason`'s lifetime (coordinator ruling, pinned so a future
+    /// The other half of `WaitReason`'s lifetime (coordinator ruling, pinned so a future
     /// "simplification" that clears it on every terminal transition — a reasonable-LOOKING cleanup —
     /// fails loudly instead of silently discarding useful history): a terminal transition reached
-    /// DIRECTLY from Paused (no intervening `Resume`) must retain the reason. "Failed while paused
-    /// waiting on credentials" is exactly the kind of thing a finished-history reader wants.
+    /// DIRECTLY from Waiting (no intervening `Resume`) must retain the reason. "Failed while waiting
+    /// on credentials" is exactly the kind of thing a finished-history reader wants.
     /// </summary>
     [Fact]
-    public void A_terminal_transition_reached_directly_from_paused_retains_the_pause_reason()
+    public void A_terminal_transition_reached_directly_from_waiting_retains_the_wait_reason()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("credentials");
+        operation.Wait("credentials");
 
         operation.Fail("DEADLINE_EXCEEDED");
 
-        Assert.Equal("credentials", registry.GetAll().Single().PauseReason);
+        Assert.Equal("credentials", registry.GetAll().Single().WaitReason);
     }
 
     /// <summary>
-    /// The handle-level Resume() (Paused → Running) is distinct from the by-id RequestResume (which
+    /// The handle-level Resume() (Waiting → Running) is distinct from the by-id RequestResume (which
     /// only ASKS, see OperationResumeTests) — it must refuse a plain Running operation rather than
     /// silently no-op-ing into an indistinguishable Running state.
     /// </summary>
     [Fact]
-    public void Resume_is_ignored_for_an_operation_that_is_not_paused()
+    public void Resume_is_ignored_for_an_operation_that_is_not_waiting()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
@@ -403,30 +403,30 @@ public class OperationRegistryTests
     }
 
     /// <summary>
-    /// Validate rework (§5A.1): Report requires Running ONLY — a paused operation is not progressing,
-    /// and letting progress tick while paused is how a UI ends up showing motion for stopped work.
+    /// Validate rework (§5A.1): Report requires Running ONLY — a waiting operation is not progressing,
+    /// and letting progress tick while waiting is how a UI ends up showing motion for stopped work.
     /// </summary>
     [Fact]
-    public void Report_is_ignored_while_paused()
+    public void Report_is_ignored_while_waiting()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
-        var eventsAfterPause = events.Count;
+        operation.Wait("dns");
+        var eventsAfterWait = events.Count;
 
         operation.Report(new OperationProgress(50));
 
-        Assert.Equal(eventsAfterPause, events.Count);          // no spurious progress snapshot
+        Assert.Equal(eventsAfterWait, events.Count);          // no spurious progress snapshot
         Assert.Null(registry.GetAll().Single().Progress);      // untouched
     }
 
-    /// <summary>Validate rework (§5A.1): Complete/Fail accept Running OR Paused — a paused deploy can still fail on a deadline.</summary>
+    /// <summary>Validate rework (§5A.1): Complete/Fail accept Running OR Waiting — a waiting deploy can still fail on a deadline.</summary>
     [Fact]
-    public void Complete_accepts_a_paused_operation()
+    public void Complete_accepts_a_waiting_operation()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         operation.Complete();
 
@@ -434,11 +434,11 @@ public class OperationRegistryTests
     }
 
     [Fact]
-    public void Fail_accepts_a_paused_operation()
+    public void Fail_accepts_a_waiting_operation()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         operation.Fail("DEADLINE_EXCEEDED");
 
@@ -447,13 +447,13 @@ public class OperationRegistryTests
         Assert.Equal("DEADLINE_EXCEEDED", info.Error!.Code);
     }
 
-    /// <summary>Validate rework (§5A.1): the public by-id Cancel(id) accepts Running OR Paused, keeping its own Cancellable check.</summary>
+    /// <summary>Validate rework (§5A.1): the public by-id Cancel(id) accepts Running OR Waiting, keeping its own Cancellable check.</summary>
     [Fact]
-    public void Cancel_by_id_accepts_a_paused_operation()
+    public void Cancel_by_id_accepts_a_waiting_operation()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Cancellable = true });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         Assert.True(registry.Cancel(operation.Id));
 
@@ -463,10 +463,9 @@ public class OperationRegistryTests
 
     /// <summary>
     /// The message-honesty fix (§5A.1, this batch): the OLD message unconditionally said "has already
-    /// reached a terminal state (Interrupted)" for ANY status a transition refused — which is false for
-    /// Interrupted (explicitly not terminal, see OperationStatus's own doc). A Report call against a
-    /// Paused entry must get a message that does NOT claim "terminal", since Paused is not terminal
-    /// either.
+    /// reached a terminal state" for ANY status a transition refused — which was false for a
+    /// non-terminal one. A Report call against a Waiting entry must get a message that does NOT claim
+    /// "terminal", since Waiting is not terminal either.
     /// </summary>
     [Fact]
     public void The_ignored_diagnostic_does_not_call_a_non_terminal_status_terminal()
@@ -479,13 +478,13 @@ public class OperationRegistryTests
             Log = message => logged = message,
         });
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
-        operation.Report(new OperationProgress(50));   // Report only accepts Running — Paused must be refused
+        operation.Report(new OperationProgress(50));   // Report only accepts Running — Waiting must be refused
 
         Assert.NotNull(logged);
         Assert.DoesNotContain("terminal", logged, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Paused", logged, StringComparison.Ordinal);
+        Assert.Contains("Waiting", logged, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -620,19 +619,19 @@ public class OperationRegistryTests
     }
 
     /// <summary>
-    /// §5A.2's table claims Paused is "never pruned" — same band as Interrupted. Verified rather than
-    /// assumed (this batch): it should follow structurally from Pause() never touching
-    /// <c>_finishedOrder</c>, but a test PINS it, the same way <c>OperationResumeTests</c> already pins
-    /// it for Interrupted. Covers BOTH eviction paths: the automatic <c>MaxHistory</c> cap and the
-    /// explicit <c>ClearFinished</c> call.
+    /// §5A.2's table claims Waiting is "never pruned". Verified rather than assumed (this batch): it
+    /// should follow structurally from <c>Wait()</c> never touching <c>_finishedOrder</c>, but a test
+    /// PINS it, the same way <c>OperationResumeTests</c> already pins it for a checkpoint entry. Covers
+    /// BOTH eviction paths: the automatic <c>MaxHistory</c> cap and the explicit <c>ClearFinished</c>
+    /// call.
     /// </summary>
     [Fact]
-    public void A_paused_entry_is_not_prunable_history_and_survives_ClearFinished()
+    public void A_waiting_entry_is_not_prunable_history_and_survives_ClearFinished()
     {
         var bus = new EventBus();
         var registry = new OperationRegistry(bus, new OperationRegistryOptions { MaxHistory = 1 });
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
         for (var i = 0; i < 5; i++) registry.Start("SCAN", new OperationOptions { Kind = "X" }).Complete();
 
         Assert.Contains(registry.GetAll(), o => o.Id == operation.Id);   // survives MaxHistory eviction
@@ -640,16 +639,16 @@ public class OperationRegistryTests
         registry.ClearFinished();
 
         Assert.Contains(registry.GetAll(), o => o.Id == operation.Id);   // survives explicit ClearFinished too
-        Assert.Equal(OperationStatus.Paused, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == operation.Id).Status);
     }
 
     // --- Find (generic-library audit finding 3, reinstated) ------------------------------------
 
     /// <summary>
     /// <c>Find</c> was dropped pre-0.2.0 as unearned surface ("no consumer resolves a handle from a
-    /// bare id"). That ruling is now wrong on evidence: <c>RESUME</c>/<c>PAUSE</c> are both
+    /// bare id"). That ruling is now wrong on evidence: <c>RESUME</c>/<c>WAIT</c> are both
     /// CLIENT-request routes whose handlers must translate the id they carry back into a handle to
-    /// call <see cref="IOperation.Resume"/>/<see cref="IOperation.Pause"/> — every consumer of those
+    /// call <see cref="IOperation.Resume"/>/<see cref="IOperation.Wait"/> — every consumer of those
     /// two routes would otherwise keep its own id→handle map alongside the registry.
     /// </summary>
     [Fact]

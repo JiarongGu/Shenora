@@ -107,7 +107,7 @@ public class OperationsFacadeTests
     public async Task RESUME_forwards_to_the_registry_and_answers_requested_true()
     {
         var (facade, registry) = Build();
-        var id = registry.RegisterInterrupted("SCAN",
+        var id = registry.RegisterWaiting("SCAN",
             new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
 
         var response = await facade.HandleMessageAsync(
@@ -132,11 +132,11 @@ public class OperationsFacadeTests
 
     /// <summary>DISMISS mirrors CANCEL's shape (§5A.3, D23 amendment): `{ operationId }` → `{ dismissed }`.</summary>
     [Fact]
-    public async Task DISMISS_dismisses_a_paused_operation_by_id()
+    public async Task DISMISS_dismisses_a_waiting_operation_by_id()
     {
         var (facade, registry) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         var response = await facade.HandleMessageAsync(
             IpcRequests.Create("OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
@@ -165,15 +165,15 @@ public class OperationsFacadeTests
         Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
     }
 
-    /// <summary>PAUSE mirrors RESUME's shape (generic-library audit finding 3): `{ operationId }` → `{ requested }`.</summary>
+    /// <summary>WAIT mirrors RESUME's shape (generic-library audit finding 3, renamed from PAUSE): `{ operationId }` → `{ requested }`.</summary>
     [Fact]
-    public async Task PAUSE_forwards_to_the_registry_and_answers_requested_true_leaving_the_operation_running()
+    public async Task WAIT_forwards_to_the_registry_and_answers_requested_true_leaving_the_operation_running()
     {
         var (facade, registry) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "PAUSE", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
@@ -181,14 +181,14 @@ public class OperationsFacadeTests
     }
 
     [Fact]
-    public async Task PAUSE_answers_requested_false_for_an_operation_that_is_not_running()
+    public async Task WAIT_answers_requested_false_for_an_operation_that_is_not_running()
     {
         var (facade, registry) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "PAUSE", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());

@@ -9,10 +9,10 @@ namespace Shenora.Tests.Ipc;
 /// is the whole point of the D23 amendment — the bug it closes was not a single wrong line, it was
 /// three individually-correct guards (<c>Validate</c> hard-coding <c>Running</c>, <c>ClearFinished</c>
 /// walking only <c>_finishedOrder</c>, <c>PruneHistory</c> skipping offers on purpose) composing into a
-/// state (<see cref="OperationStatus.Interrupted"/>) with no exit at all. An emergent trap like that is
-/// invisible in any single guard's diff, so this test enumerates the LIVE enum via reflection — never a
-/// hardcoded status list — and fails BY NAME the moment a future non-terminal status is added with no
-/// registered exit.
+/// state (the former <c>Interrupted</c> status, now folded into <see cref="OperationStatus.Waiting"/>)
+/// with no exit at all. An emergent trap like that is invisible in any single guard's diff, so this
+/// test enumerates the LIVE enum via reflection — never a hardcoded status list — and fails BY NAME the
+/// moment a future non-terminal status is added with no registered exit.
 /// </summary>
 public class OperationLifecycleInvariantTests
 {
@@ -28,6 +28,16 @@ public class OperationLifecycleInvariantTests
     /// assertion is what makes this non-vacuous: this table can be incomplete and the test still
     /// catches it.
     /// </para>
+    /// <para>
+    /// Two entries, not three: the former <c>Paused</c>/<c>Interrupted</c> pair collapsed into the
+    /// single <see cref="OperationStatus.Waiting"/> value (they were already one band everywhere that
+    /// mattered — <c>Dismiss</c> and <c>RequestResume</c> both accepted either, neither was ever
+    /// pruned), so the sweep below is simpler, not weaker. The <see cref="OperationStatus.Waiting"/>
+    /// row reaches it via <see cref="IOperation.Wait"/> — <see cref="Waiting_reached_via_RegisterWaiting_also_has_a_registered_exit_that_reaches_terminal"/>
+    /// separately proves the OTHER way to reach the same status (<see cref="IOperationRegistry.RegisterWaiting"/>'s
+    /// crash checkpoint) also has a sanctioned exit, since a dictionary keyed by status can only hold
+    /// one representative reach per key.
+    /// </para>
     /// </summary>
     private static readonly IReadOnlyDictionary<OperationStatus, (
         Func<OperationRegistry, string> Reach,
@@ -41,26 +51,47 @@ public class OperationLifecycleInvariantTests
                 registry => registry.Start("TEST", new OperationOptions { Kind = "X", Cancellable = true }).Id,
                 (registry, id) => registry.Cancel(id)),
 
-            // Paused's sanctioned exit under test is Dismiss — the fix this whole feature exists to
+            // Waiting's sanctioned exit under test is Dismiss — the fix this whole feature exists to
             // add (§5A.2/§5A.3). Complete/Fail/Cancel(id) are ALSO valid exits (see
-            // OperationRegistryTests), but Dismiss is the one the sabotage below targets.
-            [OperationStatus.Paused] = (
+            // OperationRegistryTests), but Dismiss is the one the sabotage below targets. This reach
+            // (via IOperation.Wait) is the "live handle" shape; the checkpoint shape
+            // (RegisterWaiting) is covered separately below.
+            [OperationStatus.Waiting] = (
                 registry =>
                 {
                     var operation = registry.Start("TEST", new OperationOptions { Kind = "X" });
-                    operation.Pause("reason");
+                    operation.Wait("reason");
                     return operation.Id;
                 },
                 (registry, id) => registry.Dismiss(id)),
-
-            // Interrupted's sanctioned exit under test is ALSO Dismiss (this batch) — before it, the
-            // ONLY exit was RequestResume, which does not reach a terminal status at all (it just
-            // removes the entry), which is exactly §5A.1's bug: no sanctioned TERMINAL exit existed.
-            [OperationStatus.Interrupted] = (
-                registry => registry.RegisterInterrupted("TEST",
-                    new OperationOptions { Kind = "X", ResumePayload = "checkpoint" }),
-                (registry, id) => registry.Dismiss(id)),
         };
+
+    /// <summary>
+    /// The OTHER way to reach <see cref="OperationStatus.Waiting"/> — <see cref="IOperationRegistry.RegisterWaiting"/>'s
+    /// crash checkpoint, which has no live handle at all (unlike the <see cref="IOperation.Wait"/> row
+    /// in <see cref="NonTerminalExits"/>). Before this feature, its ONLY exit was
+    /// <see cref="IOperationRegistry.RequestResume"/>, which does not reach a terminal status at all
+    /// (it just removes the entry) — exactly §5A.1's bug: no sanctioned TERMINAL exit existed. Kept as
+    /// its own test rather than a second dictionary entry, because <see cref="NonTerminalExits"/> is
+    /// keyed by status and can only hold one representative reach per key.
+    /// </summary>
+    [Fact]
+    public void Waiting_reached_via_RegisterWaiting_also_has_a_registered_exit_that_reaches_terminal()
+    {
+        var registry = BuildRegistry();
+        var id = registry.RegisterWaiting("TEST", new OperationOptions { Kind = "X", ResumePayload = "checkpoint" });
+        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == id).Status);
+
+        var exited = registry.Dismiss(id);
+
+        Assert.True(exited);
+        var final = registry.GetAll().SingleOrDefault(o => o.Id == id);
+        Assert.NotNull(final);
+        Assert.True(OperationRegistry.IsTerminal(final!.Status));
+
+        registry.ClearFinished();
+        Assert.Null(registry.GetAll().SingleOrDefault(o => o.Id == id));
+    }
 
     private static OperationRegistry BuildRegistry() =>
         new(new EventBus(), new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero });

@@ -30,26 +30,28 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
     private long _nextSequence;
 
-    /// <summary>The only status <see cref="Report"/> and <see cref="Pause"/> accept.</summary>
+    /// <summary>The only status <see cref="Report"/> and <see cref="Wait"/> accept.</summary>
     private static readonly OperationStatus[] ActiveOnly = [OperationStatus.Running];
 
     /// <summary>
     /// What <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
     /// (via <see cref="OperationHandle"/>) and the public by-id <see cref="Cancel(string)"/> accept —
-    /// a paused operation can still complete, fail on a deadline, or be cancelled by an external client,
+    /// a waiting operation can still complete, fail on a deadline, or be cancelled by an external client,
     /// exactly as a running one can (§5A.3).
     /// </summary>
-    private static readonly OperationStatus[] ActiveOrPaused = [OperationStatus.Running, OperationStatus.Paused];
+    private static readonly OperationStatus[] ActiveOrWaiting = [OperationStatus.Running, OperationStatus.Waiting];
 
     /// <summary>
-    /// The WAITING band (§5A.2) — what <see cref="RequestResume"/> and <see cref="Dismiss"/> accept.
+    /// The WAITING band (§5A.2) — what <see cref="Dismiss"/>, <see cref="RequestResume"/>, and the
+    /// handle's own <see cref="Resume"/> (as opposed to the by-id <see cref="RequestResume"/>) accept.
     /// Never entered into <see cref="_finishedOrder"/>, so never pruned by <see cref="PruneHistory"/>
-    /// or removed by <see cref="ClearFinished"/> — an offer is not history.
+    /// or removed by <see cref="ClearFinished"/> — an offer is not history. A single-status array now
+    /// that <see cref="OperationStatus"/> carries only one WAITING value (collapsed from the former
+    /// <c>Paused</c>/<c>Interrupted</c> pair, which every transition here already treated as one band) —
+    /// kept as an array, not a bare comparison, so every <c>Validate</c> call site still reads the same
+    /// shape regardless of how many statuses a band happens to hold.
     /// </summary>
-    private static readonly OperationStatus[] WaitingBand = [OperationStatus.Paused, OperationStatus.Interrupted];
-
-    /// <summary>What <see cref="Resume"/> (the handle's own — not the by-id <see cref="RequestResume"/>) accepts.</summary>
-    private static readonly OperationStatus[] PausedOnly = [OperationStatus.Paused];
+    private static readonly OperationStatus[] WaitingOnly = [OperationStatus.Waiting];
 
     /// <summary>
     /// The three finish-outcomes. Everything else is a band this registry must give an exit from
@@ -64,7 +66,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
     /// <summary>
     /// ANY non-terminal status — what the owner-path terminal cancel (<see cref="CancelTerminal"/>)
-    /// accepts (§5A.2/§5A.3): a <see cref="OperationStatus.Paused"/> body is still parked on its own
+    /// accepts (§5A.2/§5A.3): a <see cref="OperationStatus.Waiting"/> body is still parked on its own
     /// token and must be able to unwind the same way a <see cref="OperationStatus.Running"/> one does.
     /// DERIVED from the live enum via <see cref="IsTerminal"/> (hardening, this batch's review) — this
     /// is the one file whose thesis is "don't hand-maintain a status set"; a hand-copied array here
@@ -136,13 +138,13 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 // handoff exists to free.
                 await work(operation, operation.CancellationToken).ConfigureAwait(false);
                 // Complete ONLY when still Running (IMPORTANT 2, this batch's review): Complete()
-                // itself accepts ActiveOrPaused (a paused operation CAN still complete — see its own
+                // itself accepts ActiveOrWaiting (a waiting operation CAN still complete — see its own
                 // doc), so this unconditional call used to stamp Completed on a body that did the
-                // spec's own headline move — op.Pause("dns"); return; — and simply returned instead
+                // spec's own headline move — op.Wait("dns"); return; — and simply returned instead
                 // of throwing. §5A.2 exists because "keep it Running" and "Fail it" are both lies for
-                // a paused-but-not-crashed run; silently completing it here would have been a THIRD
+                // a waiting-but-not-crashed run; silently completing it here would have been a THIRD
                 // lie, introduced by the very feature meant to remove the other two. A body that
-                // paused and returned leaves the operation Paused with no live body — resuming it is
+                // waited and returned leaves the operation Waiting with no live body — resuming it is
                 // the app's own job (via the SAME handle's IOperation.Resume, or the app's own
                 // checkpoint/restart path), same shape as a crash offer (see IModuleContext.Run's doc).
                 if (PeekStatus(operation.Id) == OperationStatus.Running)
@@ -178,15 +180,15 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <remarks>
     /// Sorted by the THREE BANDS (§5A.2), not "Running vs everything else" (coordinator ruling, this
     /// batch — a real defect, not a style nit): Active (<see cref="OperationStatus.Running"/>, oldest
-    /// first) → Waiting (<see cref="OperationStatus.Paused"/>/<see cref="OperationStatus.Interrupted"/>,
-    /// oldest first) → Terminal (newest FINISHED first, tiebroken by newest SEQUENCE — a history/log
-    /// view surfaces the most recent outcome first; the sequence tiebreak matters because
-    /// <c>TimeProvider.System</c> has ~15.6 ms granularity on Windows, so two same-tick finishes would
-    /// otherwise fall back to dictionary enumeration order, which reshuffles on unrelated churn —
-    /// IMPORTANT 3, this batch's review). Before this fix, a <see cref="OperationStatus.Paused"/> entry
-    /// fell into the "everything else" bucket alongside completed history with no band of its own —
-    /// burying the exact row a user needs to find in order to resume or dismiss it, precisely the
-    /// reason the Waiting band exists (pinned by <c>OperationRegistryTests.GetAll_orders_active_then_waiting_then_terminal</c>,
+    /// first) → Waiting (<see cref="OperationStatus.Waiting"/>, oldest first) → Terminal (newest
+    /// FINISHED first, tiebroken by newest SEQUENCE — a history/log view surfaces the most recent
+    /// outcome first; the sequence tiebreak matters because <c>TimeProvider.System</c> has ~15.6 ms
+    /// granularity on Windows, so two same-tick finishes would otherwise fall back to dictionary
+    /// enumeration order, which reshuffles on unrelated churn — IMPORTANT 3, this batch's review).
+    /// Before this fix, a waiting entry fell into the "everything else" bucket alongside completed
+    /// history with no band of its own — burying the exact row a user needs to find in order to
+    /// resume or dismiss it, precisely the reason the Waiting band exists (pinned by
+    /// <c>OperationRegistryTests.GetAll_orders_active_then_waiting_then_terminal</c>,
     /// <c>…_orders_terminal_entries_newest_finished_first</c>, and
     /// <c>…_breaks_a_terminal_tie_on_finishedAt_by_sequence_not_enumeration_order</c>).
     /// </remarks>
@@ -198,7 +200,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
             var active = filtered.Where(e => e.Status == OperationStatus.Running)
                 .OrderBy(e => e.Sequence);
-            var waiting = filtered.Where(e => e.Status is OperationStatus.Paused or OperationStatus.Interrupted)
+            var waiting = filtered.Where(e => e.Status == OperationStatus.Waiting)
                 .OrderBy(e => e.Sequence);
             // ThenByDescending(Sequence) is the DETERMINISTIC tiebreak (IMPORTANT 3, this batch's
             // review) — TimeProvider.System has ~15.6 ms granularity on Windows, so two operations
@@ -237,10 +239,10 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         string? miss;
         lock (_lock)
         {
-            // ActiveOrPaused (Finding 2, this batch, §5A.3): a paused operation is exactly as
-            // cancellable as a running one — nothing about being paused changes whether an external
+            // ActiveOrWaiting (Finding 2, this batch, §5A.3): a waiting operation is exactly as
+            // cancellable as a running one — nothing about waiting changes whether an external
             // client has standing to stop it.
-            miss = Validate(id, ActiveOrPaused, out var entry);
+            miss = Validate(id, ActiveOrWaiting, out var entry);
             if (miss is null && !entry!.Cancellable)
             {
                 // The honest CANCEL contract (Task 5, carried from the Task 2 review): Start()
@@ -268,7 +270,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         // rather than assuming success just because THIS check passed. A concurrent transition
         // between releasing this lock and Finish's own lock (e.g. another caller's Complete/Fail/
         // Cancel racing in) can make the id no longer eligible by the time Finish re-checks it.
-        return CancelTokenThenFinish(cts, id, "Cancel", ActiveOrPaused);
+        return CancelTokenThenFinish(cts, id, "Cancel", ActiveOrWaiting);
     }
 
     /// <summary>
@@ -294,8 +296,8 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         lock (_lock)
         {
             _entries.TryGetValue(id, out var entry);
-            // ANY non-terminal status, not only Running (§5A.2/§5A.3, this batch): a Paused body is
-            // still parked on this same token via IOperation.Pause and must unwind the same way.
+            // ANY non-terminal status, not only Running (§5A.2/§5A.3, this batch): a Waiting body is
+            // still parked on this same token via IOperation.Wait and must unwind the same way.
             cts = entry is not null && !IsTerminal(entry.Status) ? entry.Cts : null;
         }
 
@@ -328,7 +330,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// Returns whatever <see cref="Finish"/> actually decided (hardening, this batch's review) — NOT
     /// an assumed <c>true</c> — because the caller's own permission check ran under a DIFFERENT lock
     /// acquisition than <see cref="Finish"/>'s re-validation, and a concurrent transition in that
-    /// window (e.g. <see cref="Resume"/> flipping a <see cref="OperationStatus.Paused"/> entry back to
+    /// window (e.g. <see cref="Resume"/> flipping a <see cref="OperationStatus.Waiting"/> entry back to
     /// <see cref="OperationStatus.Running"/> between <see cref="Dismiss"/>'s own check and this call)
     /// must not be reported to the client as a successful transition that did not actually happen.
     /// </para>
@@ -354,7 +356,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         var removed = new List<string>();
         lock (_lock)
         {
-            // Walk _finishedOrder (never _entries directly — the WAITING band, Paused/Interrupted,
+            // Walk _finishedOrder (never _entries directly — the WAITING band (OperationStatus.Waiting)
             // is deliberately never added to this list, so it structurally cannot be touched here
             // regardless of the filter) and only drop entries MatchesFilter agrees to — same rule
             // GetAll applies, so "clear completed" in one scoped window can no longer wipe another
@@ -388,12 +390,12 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         string? miss;
         lock (_lock)
         {
-            // WaitingBand (§5A.2/§5A.3, this batch): Paused or Interrupted only — Dismiss REFUSES
-            // Running on purpose. Declining a pending offer and cancelling LIVE work are different
-            // acts; letting this accept Running too would be the exact conflation (Cancel accepting
-            // states it should not) that produced this branch's only Critical.
-            miss = Validate(id, WaitingBand, out var entry);
-            cts = miss is null ? entry!.Cts : null; // Paused has one; Interrupted never does (RegisterInterrupted) — read under the lock, same discipline as Cancel(id).
+            // WaitingOnly (§5A.2/§5A.3, this batch): Dismiss REFUSES Running on purpose. Declining a
+            // pending offer and cancelling LIVE work are different acts; letting this accept Running
+            // too would be the exact conflation (Cancel accepting states it should not) that produced
+            // this branch's only Critical.
+            miss = Validate(id, WaitingOnly, out var entry);
+            cts = miss is null ? entry!.Cts : null; // an entry reached via Wait() has one; one registered via RegisterWaiting never does — read under the lock, same discipline as Cancel(id).
         }
 
         if (miss is not null)
@@ -402,20 +404,21 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return false;
         }
 
-        // Signal the token FIRST (same order as Cancel/CancelTerminal): a Paused body still parked on
-        // it unwinds rather than racing a completed-then-cancelled flip. Interrupted's cts is null, so
-        // this is a no-op for that case — see CancelTokenThenFinish's own null-conditional call.
+        // Signal the token FIRST (same order as Cancel/CancelTerminal): an entry reached via Wait()
+        // still has one and unwinds rather than racing a completed-then-cancelled flip. An entry
+        // registered via RegisterWaiting has a null cts, so this is a no-op for that case — see
+        // CancelTokenThenFinish's own null-conditional call.
         //
         // The HONEST return (hardening, this batch's review): a concurrent Resume() between THIS
-        // lock's release and Finish's own re-validation can flip a Paused entry back to Running before
+        // lock's release and Finish's own re-validation can flip a Waiting entry back to Running before
         // Finish ever runs — Finish then correctly refuses the transition, and this must report that
         // refusal rather than the unconditional `true` it used to return regardless of the outcome
         // (which would leave a live, un-cancelled operation reported as successfully dismissed).
-        return CancelTokenThenFinish(cts, id, "Dismiss", WaitingBand);
+        return CancelTokenThenFinish(cts, id, "Dismiss", WaitingOnly);
     }
 
     /// <inheritdoc />
-    public string RegisterInterrupted(string module, OperationOptions options)
+    public string RegisterWaiting(string module, OperationOptions options)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(module);
         ArgumentNullException.ThrowIfNull(options);
@@ -427,7 +430,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         // carry: a non-empty checkpoint token IS what makes an operation resumable).
         if (string.IsNullOrEmpty(options.ResumePayload))
             throw new ArgumentException(
-                $"Registering an interrupted operation requires a non-empty " +
+                $"Registering a waiting operation from a crash checkpoint requires a non-empty " +
                 $"{nameof(OperationOptions.ResumePayload)} — it is the opaque checkpoint token the " +
                 "app resumes from.",
                 nameof(options));
@@ -436,12 +439,15 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         var isNew = false;
         lock (_lock)
         {
-            // Dedupe on (module, kind, resumePayload) among already-Interrupted entries: a
-            // profile/session switch re-announces the SAME checkpoint, and that must return the
-            // existing offer rather than stack a second one for what is still the same interrupted
-            // operation.
+            // Dedupe on (module, kind, resumePayload) among already-Waiting entries that carry no live
+            // handle (Cts is null — i.e. themselves registered this way, not reached via Wait() on a
+            // live operation): a profile/session switch re-announces the SAME checkpoint, and that must
+            // return the existing offer rather than stack a second one for what is still the same
+            // interrupted checkpoint. The `Cts is null` guard keeps this from ever matching an
+            // ordinary live-but-waiting operation that happens to share a module/kind/resumePayload.
             var existing = _entries.Values.FirstOrDefault(e =>
-                e.Status == OperationStatus.Interrupted
+                e.Status == OperationStatus.Waiting
+                && e.Cts is null
                 && string.Equals(e.Module, module, StringComparison.Ordinal)
                 && string.Equals(e.Kind, options.Kind, StringComparison.Ordinal)
                 && string.Equals(e.ResumePayload, options.ResumePayload, StringComparison.Ordinal));
@@ -458,13 +464,13 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                     Module = module,
                     Kind = options.Kind,
                     Scope = options.Scope,
-                    Status = OperationStatus.Interrupted,
+                    Status = OperationStatus.Waiting,
                     Progress = options.Progress,
                     Title = options.Title,
                     Cancellable = options.Cancellable,
                     ResumePayload = options.ResumePayload,
                     StartedAt = _options.TimeProvider.GetUtcNow(),
-                    // No CTS: an interrupted entry is not running work, just a pending offer —
+                    // No CTS: a checkpoint-registered entry is not running work, just a pending offer —
                     // there is nothing to cancel until the app's own resume restarts it as a fresh
                     // Start()/Run(), which allocates its own.
                     Cts = null,
@@ -472,11 +478,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 entry.Sequence = _nextSequence++;
                 _entries[entry.Id] = entry;
                 // Deliberately NEVER added to _finishedOrder. That list is PruneHistory's eviction
-                // queue for TERMINAL history, and Interrupted is not terminal (see OperationStatus) —
-                // it is a pending offer that only RequestResume removes. Adding it here would let an
-                // unrelated flood of finished operations silently evict a crash offer the app has not
-                // yet had a chance to show the user; this is the structural half of that guard (see
-                // also PruneHistory's own note).
+                // queue for TERMINAL history, and Waiting is not terminal (see OperationStatus) — it
+                // is a pending offer that only RequestResume (or Dismiss) removes. Adding it here would
+                // let an unrelated flood of finished operations silently evict a crash offer the app
+                // has not yet had a chance to show the user; this is the structural half of that guard
+                // (see also PruneHistory's own note).
                 isNew = true;
             }
         }
@@ -496,24 +502,38 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         var dropped = false;
         lock (_lock)
         {
-            // WaitingBand (§5A.4, this batch): Paused OR Interrupted. The asymmetry lives HERE, not in
-            // Validate — only the Interrupted case is removed.
-            miss = Validate(id, WaitingBand, out entry);
+            miss = Validate(id, WaitingOnly, out entry);
             if (miss is null)
             {
-                status = entry!.Status;
-                if (status == OperationStatus.Interrupted)
+                status = entry!.Status;   // captured under the lock — see the field's own doc below
+                // The drop-vs-keep decision keys on ResumePayload, NOT on a second status (§5A.4) —
+                // there is only one WAITING status now, so the asymmetry lives entirely here. Non-null
+                // means no live handle to flip: either RegisterWaiting's crash checkpoint, or one the
+                // app itself attached at Start() time — either way the honest read is "no live body",
+                // so the resumed operation registers a FRESH one via Start/Run when it actually
+                // restarts. This is why the RESUME_REQUESTED payload below still carries `status` — a
+                // handler can no longer tell the two cases apart from status alone, but the field stays
+                // for wire stability and so a handler can still branch on it.
+                if (entry.ResumePayload is not null)
                 {
-                    // No live handle to flip: the body died with the process, and the resumed
-                    // operation registers a FRESH one via Start/Run when it actually restarts. This
-                    // is why the RESUME_REQUESTED payload below carries `status` — a handler cannot
-                    // look this entry up afterward to tell the two cases apart.
+                    // Deliberately does NOT dispose entry.Cts here (known limit, recorded rather than
+                    // "fixed"): a RegisterWaiting checkpoint never has a live Cts, but an entry reached
+                    // via IOperation.Wait that ALSO carries a ResumePayload the app itself attached at
+                    // Start() does — and that Cts may still be live under a body the app has not
+                    // actually stopped (Wait() is a status label the app applies; it does not signal or
+                    // observe the token). Disposing it here would risk ObjectDisposedException inside
+                    // that still-running body the moment it next touches the token (e.g. a fresh
+                    // `Task.Delay(_, ct)` registration) — a worse failure than leaving a small,
+                    // GC-reclaimable CTS behind. This combination is already out-of-contract usage
+                    // (ResumePayload's documented purpose is RegisterWaiting's checkpoint); an app that
+                    // creates it this way keeps the cleanup cost.
                     _entries.Remove(id);
                     dropped = true;
                 }
-                // Paused: deliberately LEFT IN PLACE — the app's own IOperation.Resume() flips it once
-                // it has ACTUALLY resumed. The client asking is not the state changing (§5A.4) — the
-                // same split that fixed this branch's only Critical (Cancel vs Dismiss, §5A.3).
+                // Null ResumePayload: deliberately LEFT IN PLACE — the app's own IOperation.Resume()
+                // flips it once it has ACTUALLY resumed. The client asking is not the state changing
+                // (§5A.4) — the same split that fixed this branch's only Critical (Cancel vs Dismiss,
+                // §5A.3).
             }
         }
 
@@ -532,20 +552,20 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             kind = entry.Kind,
             resumePayload = entry.ResumePayload,
             scope = entry.Scope,
-            status,   // lets a handler tell Paused (still there) apart from Interrupted (already gone)
+            status,   // always Waiting now — kept so a handler can still branch on it (see the field's own doc above)
         }, entry.Scope);
 
-        // The Interrupted drop above left the registry with no wire trace of its own (Finding 4,
+        // The no-live-handle drop above left the registry with no wire trace of its own (Finding 4,
         // generic-library audit) — this is the one place the client-side asymmetry the docs already
-        // describe (Paused kept, Interrupted gone) now has an authoritative removal event to match,
-        // instead of a hand-written optimistic prune guessing at it.
+        // describe (a live Wait() kept, a reconstructed offer gone) now has an authoritative removal
+        // event to match, instead of a hand-written optimistic prune guessing at it.
         if (dropped) EmitRemoved([id]);
 
         return true;
     }
 
     /// <inheritdoc />
-    public bool RequestPause(string id)
+    public bool RequestWait(string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
 
@@ -553,23 +573,22 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         string? miss;
         lock (_lock)
         {
-            // ActiveOnly: only a RUNNING operation can be asked to pause — an already-paused,
-            // interrupted, or terminal entry refuses, same honest-refusal shape as every other
-            // transition here.
+            // ActiveOnly: only a RUNNING operation can be asked to wait — an already-waiting or
+            // terminal entry refuses, same honest-refusal shape as every other transition here.
             miss = Validate(id, ActiveOnly, out entry);
         }
 
         if (miss is not null)
         {
-            LogIgnored("RequestPause", id, miss);
+            LogIgnored("RequestWait", id, miss);
             return false;
         }
 
         // Outside the lock, same discipline as every other bus emission here. Deliberately no status
         // flip and no _entries mutation: the client ASKING is not the state changing (mirrors
-        // RequestResume's Paused case) — the owning module's OWN IOperation.Pause is what actually
-        // stops the work and publishes the Paused snapshot.
-        _bus.Emit(_options.ModuleName, OperationEvents.PauseRequested, new
+        // RequestResume's live-handle case) — the owning module's OWN IOperation.Wait is what actually
+        // stops the work and publishes the Waiting snapshot.
+        _bus.Emit(_options.ModuleName, OperationEvents.WaitRequested, new
         {
             operationId = entry!.Id,
             module = entry.Module,
@@ -587,8 +606,8 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
         lock (_lock)
         {
-            // entry.Cts is null for an Interrupted entry (no live work to cancel — see
-            // RegisterInterrupted's own doc) and for anything already terminal (Finish disposes and
+            // entry.Cts is null for a checkpoint-registered Waiting entry (no live work to cancel —
+            // see RegisterWaiting's own doc) and for anything already terminal (Finish disposes and
             // clears it) — `default` in either case is a harmless no-cancellation token, since the
             // handle's own methods re-validate status before doing anything with it anyway.
             return _entries.TryGetValue(id, out var entry)
@@ -599,8 +618,9 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
     /// <summary>
     /// Called by an <see cref="OperationHandle"/>. Requires <see cref="OperationStatus.Running"/> —
-    /// NOT <see cref="OperationStatus.Paused"/> too (§5A.3): a paused operation is not progressing, and
-    /// letting progress tick while paused is how a UI ends up showing motion for work that is stopped.
+    /// NOT <see cref="OperationStatus.Waiting"/> too (§5A.3): a waiting operation is not progressing,
+    /// and letting progress tick while waiting is how a UI ends up showing motion for work that is
+    /// stopped.
     /// </summary>
     private void Report(string id, OperationProgress? progress, OperationLabel? detail)
     {
@@ -630,12 +650,12 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <summary>
-    /// Pause: <see cref="OperationStatus.Running"/> → <see cref="OperationStatus.Paused"/> (§5A.3).
+    /// Wait: <see cref="OperationStatus.Running"/> → <see cref="OperationStatus.Waiting"/> (§5A.3).
     /// Called by an <see cref="OperationHandle"/>. A lifecycle transition — emits immediately, never
     /// throttled, same as every other band change. <paramref name="reason"/> is optional
-    /// (generic-library audit finding 5) — a consumer whose pause is self-evident has nothing to name.
+    /// (generic-library audit finding 5) — a consumer whose wait is self-evident has nothing to name.
     /// </summary>
-    private void Pause(string id, string? reason, OperationLabel? detail)
+    private void Wait(string id, string? reason, OperationLabel? detail)
     {
         Entry? entry;
         string? miss;
@@ -644,15 +664,15 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             miss = Validate(id, ActiveOnly, out entry);
             if (miss is null)
             {
-                entry!.Status = OperationStatus.Paused;
-                entry.PauseReason = reason;
+                entry!.Status = OperationStatus.Waiting;
+                entry.WaitReason = reason;
                 if (detail is not null) entry.Detail = detail;
             }
         }
 
         if (miss is not null)
         {
-            LogIgnored("Pause", id, miss);
+            LogIgnored("Wait", id, miss);
             return;
         }
 
@@ -660,8 +680,8 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <summary>
-    /// Resume: <see cref="OperationStatus.Paused"/> → <see cref="OperationStatus.Running"/>, clearing
-    /// <see cref="Entry.PauseReason"/> (§5A.3). Called by an <see cref="OperationHandle"/> — distinct
+    /// Resume: <see cref="OperationStatus.Waiting"/> → <see cref="OperationStatus.Running"/>, clearing
+    /// <see cref="Entry.WaitReason"/> (§5A.3). Called by an <see cref="OperationHandle"/> — distinct
     /// from the by-id <see cref="RequestResume"/>, which only ASKS (§5A.4).
     /// </summary>
     private void Resume(string id)
@@ -670,11 +690,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         string? miss;
         lock (_lock)
         {
-            miss = Validate(id, PausedOnly, out entry);
+            miss = Validate(id, WaitingOnly, out entry);
             if (miss is null)
             {
                 entry!.Status = OperationStatus.Running;
-                entry.PauseReason = null;
+                entry.WaitReason = null;
             }
         }
 
@@ -699,9 +719,9 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <param name="allowedStatuses">
     /// What this particular transition accepts (Task: rework Validate, this batch) — different
     /// callers legitimately accept different bands: <c>Complete</c>/<c>Fail</c> accept
-    /// <see cref="ActiveOrPaused"/> (a paused operation can still fail on a deadline), the public by-id
-    /// <c>Cancel</c> accepts <see cref="ActiveOrPaused"/>, the owner-path terminal cancel accepts
-    /// <see cref="NonTerminal"/>, and <c>Dismiss</c> accepts <see cref="WaitingBand"/>.
+    /// <see cref="ActiveOrWaiting"/> (a waiting operation can still fail on a deadline), the public by-id
+    /// <c>Cancel</c> accepts <see cref="ActiveOrWaiting"/>, the owner-path terminal cancel accepts
+    /// <see cref="NonTerminal"/>, and <c>Dismiss</c> accepts <see cref="WaitingOnly"/>.
     /// </param>
     /// <returns>
     /// Whether the transition actually happened (hardening, this batch's review) — <c>false</c> for an
@@ -763,17 +783,17 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <see cref="_entries"/> directly.
     /// <para>
     /// Rework (this batch, §5A.1): different callers legitimately accept different statuses — a single
-    /// hard-coded <c>Status == Running</c> check here is exactly what left <see cref="OperationStatus.Interrupted"/>
-    /// with no sanctioned exit (every transition refused it, because none of them was allowed to accept
-    /// anything but <see cref="OperationStatus.Running"/>). Every call site now states what IT accepts.
+    /// hard-coded <c>Status == Running</c> check here is exactly what left the former <c>Interrupted</c>
+    /// status (now folded into <see cref="OperationStatus.Waiting"/>) with no sanctioned exit (every
+    /// transition refused it, because none of them was allowed to accept anything but
+    /// <see cref="OperationStatus.Running"/>). Every call site now states what IT accepts.
     /// </para>
     /// <para>
     /// The "ignored" reason is now HONEST about terminal vs. non-terminal (this batch): the old message
-    /// unconditionally said "has already reached a terminal state (Interrupted)" for an
-    /// <see cref="OperationStatus.Interrupted"/> id passed to a transition that does not accept it —
-    /// which is false, <see cref="OperationStatus.Interrupted"/> is explicitly NOT terminal (see its own
-    /// doc). Only an actually-terminal status gets that wording; anything else (a status that merely
-    /// isn't in <paramref name="allowedStatuses"/>) gets a status-naming message instead.
+    /// unconditionally said "has already reached a terminal state" for a non-terminal id passed to a
+    /// transition that does not accept it — which was false. Only an actually-terminal status gets that
+    /// wording; anything else (a status that merely isn't in <paramref name="allowedStatuses"/>) gets a
+    /// status-naming message instead.
     /// </para>
     /// </summary>
     private string? Validate(string id, IReadOnlyCollection<OperationStatus> allowedStatuses, out Entry? entry)
@@ -822,10 +842,10 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <summary>
     /// Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>.
     /// Caller holds <see cref="_lock"/>. Only ever touches <see cref="_finishedOrder"/> — the WAITING
-    /// band (§5A.2), <see cref="OperationStatus.Interrupted"/> (from <see cref="RegisterInterrupted"/>)
-    /// and <see cref="OperationStatus.Paused"/> (from <see cref="Pause"/>), is never added to that list
-    /// (an offer is not history), so it structurally cannot be evicted here regardless of how many
-    /// other operations finish afterward — only <see cref="Dismiss"/> moves one out of this band.
+    /// band (§5A.2), <see cref="OperationStatus.Waiting"/> (reached via <see cref="RegisterWaiting"/>
+    /// or <see cref="Wait"/>), is never added to that list (an offer is not history), so it
+    /// structurally cannot be evicted here regardless of how many other operations finish afterward —
+    /// only <see cref="Dismiss"/> moves one out of this band.
     /// </summary>
     /// <returns>
     /// The ids actually evicted this call (Finding 4, generic-library audit) — <see cref="Finish"/>
@@ -953,7 +973,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         Progress = entry.Progress,
         Title = entry.Title,
         Detail = entry.Detail,
-        PauseReason = entry.PauseReason,
+        WaitReason = entry.WaitReason,
         Error = entry.Error,
         Cancellable = entry.Cancellable,
         ResumePayload = entry.ResumePayload,
@@ -989,7 +1009,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public OperationProgress? Progress { get; set; }
         public OperationLabel? Title { get; init; }
         public OperationLabel? Detail { get; set; }
-        public string? PauseReason { get; set; }
+        public string? WaitReason { get; set; }
         public IpcError? Error { get; set; }
         public bool Cancellable { get; init; }
         public string? ResumePayload { get; set; }
@@ -1015,20 +1035,20 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public void Report(OperationProgress? progress = null, OperationLabel? detail = null) =>
             registry.Report(Id, progress, detail);
 
-        // ActiveOrPaused (§5A.3, this batch): a paused operation can still complete once the human
+        // ActiveOrWaiting (§5A.3, this batch): a waiting operation can still complete once the human
         // unblocks it out of band, or fail on a deadline — see Finish's own doc for the full band map.
-        public void Complete() => registry.Finish(Id, OperationStatus.Completed, null, "Complete", ActiveOrPaused);
+        public void Complete() => registry.Finish(Id, OperationStatus.Completed, null, "Complete", ActiveOrWaiting);
 
         public void Fail(string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(code);
-            registry.Finish(Id, OperationStatus.Failed, new IpcError { Code = code, Message = message, Parameters = parameters }, "Fail", ActiveOrPaused);
+            registry.Finish(Id, OperationStatus.Failed, new IpcError { Code = code, Message = message, Parameters = parameters }, "Fail", ActiveOrWaiting);
         }
 
         public void Fail(OperationException error)
         {
             ArgumentNullException.ThrowIfNull(error);
-            registry.Finish(Id, OperationStatus.Failed, error.ToError(), "Fail", ActiveOrPaused);
+            registry.Finish(Id, OperationStatus.Failed, error.ToError(), "Fail", ActiveOrWaiting);
         }
 
         // CancelTerminal, NOT registry.Cancel(Id) (Finding 1, whole-branch review): this handle is
@@ -1036,7 +1056,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         // permission question the way the public by-id Cancel(id) is — see CancelTerminal's own doc.
         public void Cancel() => registry.CancelTerminal(Id, "Cancel");
 
-        public void Pause(string? reason = null, OperationLabel? detail = null) => registry.Pause(Id, reason, detail);
+        public void Wait(string? reason = null, OperationLabel? detail = null) => registry.Wait(Id, reason, detail);
 
         public void Resume() => registry.Resume(Id);
     }

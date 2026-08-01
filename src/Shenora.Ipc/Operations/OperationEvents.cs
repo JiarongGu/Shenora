@@ -8,20 +8,20 @@ public static class OperationEvents
     /// so folding is last-write-wins by id with no cross-type ordering hazard.</summary>
     public const string Updated = "OPERATION_UPDATED";
 
-    /// <summary>An interrupted+resumable operation should be continued by its owning module.</summary>
+    /// <summary>A waiting, resumable operation should be continued by its owning module.</summary>
     public const string ResumeRequested = "OPERATION_RESUME_REQUESTED";
 
     /// <summary>
-    /// A client asked to pause a running operation — the owning module should call
-    /// <see cref="IOperation.Pause"/> on its own handle once it has actually stopped (generic-library
+    /// A client asked to wait a running operation — the owning module should call
+    /// <see cref="IOperation.Wait"/> on its own handle once it has actually stopped (generic-library
     /// audit finding 3: the same ASK/ACT split <see cref="ResumeRequested"/> already has for resume).
     /// </summary>
-    public const string PauseRequested = "OPERATION_PAUSE_REQUESTED";
+    public const string WaitRequested = "OPERATION_WAIT_REQUESTED";
 
     /// <summary>
     /// One or more operation ids left the registry with NO corresponding <see cref="Updated"/>
     /// snapshot — <c>MaxHistory</c> eviction, <see cref="IOperationRegistry.ClearFinished"/>, and the
-    /// interrupted-entry drop inside <see cref="IOperationRegistry.RequestResume"/> (generic-library
+    /// no-live-handle entry drop inside <see cref="IOperationRegistry.RequestResume"/> (generic-library
     /// audit finding 4: the host bounds its own history, but the client — the side actually
     /// rendering — never heard about a removal, so a long-lived store's mirror of a bounded list was
     /// unbounded). Payload is <c>{ operationIds: string[] }</c> — a BATCH, since eviction and clearing

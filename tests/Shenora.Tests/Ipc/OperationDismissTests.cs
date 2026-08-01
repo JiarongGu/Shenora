@@ -5,10 +5,11 @@ namespace Shenora.Tests.Ipc;
 
 /// <summary>
 /// <see cref="IOperationRegistry.Dismiss"/> (§5A.3, D23 amendment) — the fix for the bug that named
-/// the rule: an `Interrupted` offer used to have exactly one exit (`RequestResume`), and a `Paused`
-/// entry had none at all. `Dismiss` gives both a sanctioned path to a TERMINAL status
-/// (`Cancelled`) — declining an offer, distinct from `Cancel`'s "stop LIVE work" (permission-checked
-/// against `Cancellable`), which is the conflation that produced this branch's only Critical.
+/// the rule: a checkpoint offer (reached via <see cref="IOperationRegistry.RegisterWaiting"/>) used
+/// to have exactly one exit (`RequestResume`), and an entry reached via <see cref="IOperation.Wait"/>
+/// had none at all. `Dismiss` gives both a sanctioned path to a TERMINAL status (`Cancelled`) —
+/// declining an offer, distinct from `Cancel`'s "stop LIVE work" (permission-checked against
+/// `Cancellable`), which is the conflation that produced this branch's only Critical.
 /// </summary>
 public class OperationDismissTests
 {
@@ -21,11 +22,11 @@ public class OperationDismissTests
     }
 
     [Fact]
-    public void Dismiss_transitions_a_paused_entry_to_cancelled_and_publishes_a_snapshot()
+    public void Dismiss_transitions_a_waiting_entry_to_cancelled_and_publishes_a_snapshot()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
         var eventsBeforeDismiss = events.Count;
 
         Assert.True(registry.Dismiss(operation.Id));
@@ -39,10 +40,10 @@ public class OperationDismissTests
     }
 
     [Fact]
-    public void Dismiss_transitions_an_interrupted_offer_to_cancelled()
+    public void Dismiss_transitions_a_checkpoint_offer_to_cancelled()
     {
         var (registry, _) = Build();
-        var id = registry.RegisterInterrupted("SCAN",
+        var id = registry.RegisterWaiting("SCAN",
             new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
 
         Assert.True(registry.Dismiss(id));
@@ -52,15 +53,15 @@ public class OperationDismissTests
 
     /// <summary>
     /// A dismissed entry is now ORDINARY finished history (terminal, prunable) — the whole point of
-    /// giving the waiting band an exit. Before this feature, an Interrupted/Paused entry could sit
-    /// forever with no way to become eligible for MaxHistory/ClearFinished.
+    /// giving the waiting band an exit. Before this feature, a Waiting entry (reached either way)
+    /// could sit forever with no way to become eligible for MaxHistory/ClearFinished.
     /// </summary>
     [Fact]
     public void A_dismissed_entry_is_prunable_history_afterward()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
         registry.Dismiss(operation.Id);
 
         registry.ClearFinished();
@@ -110,17 +111,17 @@ public class OperationDismissTests
     }
 
     /// <summary>
-    /// "Signals the CTS first when one exists, so a paused body parked on its token still unwinds"
-    /// (§5A.3): a Paused entry still carries its own CancellationTokenSource (Pause doesn't dispose
-    /// it — only a terminal Finish does), and Dismiss must signal it before the terminal transition,
-    /// same order as Cancel/CancelTerminal.
+    /// "Signals the CTS first when one exists, so a waiting body parked on its token still unwinds"
+    /// (§5A.3): an entry reached via <see cref="IOperation.Wait"/> still carries its own
+    /// CancellationTokenSource (<c>Wait</c> doesn't dispose it — only a terminal Finish does), and
+    /// Dismiss must signal it before the terminal transition, same order as Cancel/CancelTerminal.
     /// </summary>
     [Fact]
-    public void Dismiss_signals_the_token_of_a_paused_entry_so_a_parked_body_unwinds()
+    public void Dismiss_signals_the_token_of_an_entry_reached_via_Wait_so_a_parked_body_unwinds()
     {
         var (registry, _) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Pause("dns");
+        operation.Wait("dns");
 
         registry.Dismiss(operation.Id);
 
@@ -128,14 +129,15 @@ public class OperationDismissTests
     }
 
     /// <summary>
-    /// An Interrupted entry never has a CTS at all (RegisterInterrupted's own doc) — Dismiss must not
-    /// throw reaching for one that was never allocated.
+    /// A checkpoint entry (reached via <see cref="IOperationRegistry.RegisterWaiting"/>) never has a
+    /// CTS at all (see that method's own doc) — Dismiss must not throw reaching for one that was never
+    /// allocated.
     /// </summary>
     [Fact]
-    public void Dismiss_does_not_throw_for_an_interrupted_entry_with_no_token()
+    public void Dismiss_does_not_throw_for_a_checkpoint_entry_with_no_token()
     {
         var (registry, _) = Build();
-        var id = registry.RegisterInterrupted("SCAN",
+        var id = registry.RegisterWaiting("SCAN",
             new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
 
         var dismissed = registry.Dismiss(id);   // must not throw
@@ -148,7 +150,7 @@ public class OperationDismissTests
     /// Hardening (this batch's review): <c>Dismiss</c> used to return <c>true</c> unconditionally once
     /// its OWN permission check passed, regardless of what <c>Finish</c>'s re-validation (under a
     /// separately re-acquired lock) actually decided. The window: a concurrent <c>Resume()</c> on the
-    /// SAME paused entry, landing between <c>Dismiss</c>'s own lock release and <c>Finish</c>'s own
+    /// SAME waiting entry, landing between <c>Dismiss</c>'s own lock release and <c>Finish</c>'s own
     /// lock acquisition, flips the entry back to <c>Running</c> before <c>Finish</c> ever runs — so
     /// <c>Finish</c> correctly refuses, but the OLD code still answered the client <c>true</c>,
     /// leaving a live, un-cancelled operation reported as successfully dismissed. Same shape as
@@ -171,7 +173,7 @@ public class OperationDismissTests
             .Select(_ =>
             {
                 var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-                operation.Pause("dns");
+                operation.Wait("dns");
                 return operation;
             })
             .ToList();

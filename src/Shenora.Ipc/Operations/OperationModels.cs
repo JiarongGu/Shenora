@@ -25,24 +25,27 @@ public enum OperationStatus
     Cancelled,
 
     /// <summary>
-    /// A crash-interrupted, resumable operation announced from the app's own checkpoint. Not
-    /// actively running, but not one of the terminal-finish statuses above either — a pending
-    /// resume offer, distinct from finished history.
-    /// </summary>
-    Interrupted,
-
-    /// <summary>
-    /// Stopped mid-flight WITHOUT crashing, awaiting a decision (expired cloud credentials, a
-    /// throttling provider, DNS not yet propagated, a migration awaiting confirmation) — the
-    /// WAITING band alongside <see cref="Interrupted"/> (§5A.2): not progressing, but not one of
-    /// the terminal-finish statuses either, and never pruned as history. Reached from
-    /// <see cref="Running"/> via <see cref="IOperation.Pause"/>; exits via
-    /// <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
-    /// <see cref="IOperationRegistry.Dismiss"/> (to <see cref="Cancelled"/>), or a direct
+    /// Not progressing, awaiting a decision — the APP names why via
+    /// <see cref="OperationInfo.WaitReason"/> (e.g. <c>"credentials"</c>/<c>"dns"</c>/
+    /// <c>"queued"</c>/<c>"rate-limited"</c>), never a kit-owned reason enum. Not one of the
+    /// terminal-finish statuses, and never pruned as history — a waiting entry is a pending offer,
+    /// not something finished.
+    /// <para>
+    /// Reached two ways, told apart by <see cref="OperationInfo.ResumePayload"/> rather than by a
+    /// second status (there is only one WAITING status — this collapses what used to be two,
+    /// <c>Paused</c> and <c>Interrupted</c>, which every transition in this registry already treated
+    /// as one band): <see cref="IOperation.Wait"/> on a live <see cref="Running"/> handle (no
+    /// <see cref="OperationInfo.ResumePayload"/> — the body is still there, just stopped), or
+    /// <see cref="IOperationRegistry.RegisterWaiting"/> announcing a crash-interrupted checkpoint
+    /// directly (a non-empty <see cref="OperationInfo.ResumePayload"/> — no live body at all, the
+    /// process that owned it is gone). Exits via <see cref="IOperation.Resume"/> (back to
+    /// <see cref="Running"/>), <see cref="IOperationRegistry.Dismiss"/> (to
+    /// <see cref="Cancelled"/>), or a direct
     /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
-    /// (a paused operation can still fail on a deadline).
+    /// (a waiting operation can still fail on a deadline).
+    /// </para>
     /// </summary>
-    Paused,
+    Waiting,
 }
 
 /// <summary>
@@ -111,16 +114,25 @@ public sealed record OperationOptions
     /// Opaque app checkpoint token; presence is what makes an operation resumable after a crash.
     /// <para>
     /// There used to be a separate <c>Resumable</c> bool gating
-    /// <see cref="IOperationRegistry.RegisterInterrupted"/> — removed (generic-library audit finding
+    /// <see cref="IOperationRegistry.RegisterWaiting"/> — removed (generic-library audit finding
     /// 2) because it was consulted NOWHERE else: every entry it ever produced already forced it
     /// <c>true</c> to get past that same check, so the flag was a required-true tautology, not a
-    /// choice. <see cref="IOperationRegistry.RegisterInterrupted"/>'s own non-empty-payload
+    /// choice. <see cref="IOperationRegistry.RegisterWaiting"/>'s own non-empty-payload
     /// requirement already expresses "this is resumable" — a second flag added no information. It also
-    /// governed nothing for <see cref="IOperation.Pause"/>/<see cref="IOperation.Resume"/>: a
-    /// <see cref="OperationStatus.Paused"/> operation is resumable BY CONSTRUCTION (<see cref="IOperation.Resume"/>
-    /// needs no flag), so a future re-add gating <see cref="IOperationRegistry.RequestResume"/>'s
-    /// <see cref="OperationStatus.Paused"/> case on a resumable bool would silently break the ordinary
-    /// pause/resume flow for an operation that — like most — never set one.
+    /// governed nothing for <see cref="IOperation.Wait"/>/<see cref="IOperation.Resume"/>: a
+    /// <see cref="OperationStatus.Waiting"/> operation reached via <c>Wait</c> is resumable BY
+    /// CONSTRUCTION (<see cref="IOperation.Resume"/> needs no flag), so a future re-add gating
+    /// <see cref="IOperationRegistry.RequestResume"/>'s live-handle case on a resumable bool would
+    /// silently break the ordinary wait/resume flow for an operation that — like most — never set one.
+    /// </para>
+    /// <para>
+    /// This is also what <see cref="IOperationRegistry.RequestResume"/> keys its drop-vs-keep decision
+    /// on now that <see cref="OperationStatus"/> carries only one WAITING value: non-null means this
+    /// entry has no live handle (a reconstructed offer — either
+    /// <see cref="IOperationRegistry.RegisterWaiting"/>'s checkpoint, or one the app itself attached
+    /// here), so the entry is removed and the app starts fresh work; null means an ordinary live
+    /// <see cref="IOperation.Wait"/> — the entry stays for the app's own <see cref="IOperation.Resume"/>
+    /// to flip.
     /// </para>
     /// </summary>
     public string? ResumePayload { get; init; }
@@ -165,22 +177,23 @@ public sealed record OperationInfo
     public OperationLabel? Detail { get; init; }
 
     /// <summary>
-    /// Why the operation is (or WAS) <see cref="OperationStatus.Paused"/> — an app-defined string,
-    /// like <see cref="Kind"/> (e.g. <c>"credentials"</c>/<c>"transient"</c>/<c>"dns"</c>/
-    /// <c>"migration"</c>): the app's own taxonomy driving what its UI offers, never the kit's.
+    /// Why the operation is (or WAS) <see cref="OperationStatus.Waiting"/> — an app-defined string,
+    /// like <see cref="Kind"/> (e.g. <c>"credentials"</c>/<c>"dns"</c>/<c>"queued"</c>/
+    /// <c>"rate-limited"</c>): the app's own taxonomy driving what its UI offers, never the kit's.
+    /// Optional — a wait whose cause is self-evident (the user clicked Pause) has nothing to name.
     /// <para>
     /// Lifetime (coordinator ruling, D23's lifecycle-completion amendment — stated here so the
-    /// asymmetry reads as intent, not an oversight): set when <see cref="IOperation.Pause"/> runs,
+    /// asymmetry reads as intent, not an oversight): set when <see cref="IOperation.Wait"/> runs,
     /// CLEARED when <see cref="IOperation.Resume"/> runs (back to null), but RETAINED through a
     /// later terminal transition — <see cref="IOperation.Complete"/>, <see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>,
     /// or <see cref="IOperationRegistry.Dismiss"/> — reached directly from
-    /// <see cref="OperationStatus.Paused"/> without an intervening <c>Resume</c>. "Failed while paused
-    /// waiting on credentials" is useful history for whoever reads the finished entry; only an actual
+    /// <see cref="OperationStatus.Waiting"/> without an intervening <c>Resume</c>. "Failed while waiting
+    /// on credentials" is useful history for whoever reads the finished entry; only an actual
     /// <c>Resume</c> means the app has moved past the reason, which is why clearing is <c>Resume</c>'s
-    /// job and not automatic on every exit from <see cref="OperationStatus.Paused"/>.
+    /// job and not automatic on every exit from <see cref="OperationStatus.Waiting"/>.
     /// </para>
     /// </summary>
-    public string? PauseReason { get; init; }
+    public string? WaitReason { get; init; }
 
     /// <summary>
     /// Structured failure — set only when <see cref="Status"/> is <see cref="OperationStatus.Failed"/>.

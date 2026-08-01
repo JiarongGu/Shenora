@@ -126,43 +126,43 @@ public class ModuleOperationTests
 
     /// <summary>
     /// IMPORTANT 2 (this batch's review): <c>Run</c>'s tail used to call <c>operation.Complete()</c>
-    /// UNCONDITIONALLY once the body returned — and <c>Complete</c> accepts <c>ActiveOrPaused</c>, so
-    /// a body doing the spec's own headline move (<c>op.Pause("dns"); return;</c>) got silently
+    /// UNCONDITIONALLY once the body returned — and <c>Complete</c> accepts <c>ActiveOrWaiting</c>, so
+    /// a body doing the spec's own headline move (<c>op.Wait("dns"); return;</c>) got silently
     /// stamped <c>Completed</c>. §5A.2 exists precisely because "keep it Running" and "Fail it" are
-    /// both lies for a paused-but-not-crashed run — this was a THIRD lie, introduced by the very
+    /// both lies for a waiting-but-not-crashed run — this was a THIRD lie, introduced by the very
     /// feature meant to remove the other two, and <c>docs/ADOPTION.md</c>/<c>CHANGELOG.md</c> actively
-    /// route adopters into hitting it by advertising <c>Pause</c> on the same handle <c>Run</c> gave
+    /// route adopters into hitting it by advertising <c>Wait</c> on the same handle <c>Run</c> gave
     /// them. Called directly against the registry (not through a facade) — same shape as the sibling
     /// test above.
     /// </summary>
     [Fact]
-    public async Task Run_does_not_complete_a_body_that_paused_and_returned()
+    public async Task Run_does_not_complete_a_body_that_waited_and_returned()
     {
         var bus = new EventBus();
         var registry = new OperationRegistry(bus, new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero });
 
         var id = registry.Run("WORK", new OperationOptions { Kind = "BUILD" }, (op, ct) =>
         {
-            op.Pause("dns");   // the spec's own "pause by returning" shape — no throw, just return
+            op.Wait("dns");   // the spec's own "wait by returning" shape — no throw, just return
             return Task.CompletedTask;
         });
 
         // NOT a bare single poll (found by sabotage: WaitForTerminalAsync alone is FLAKY here — it
-        // returns on the FIRST "!= Running" observation, and a body that pauses then returns can be
-        // observed transiently AS Paused for the few microseconds before a buggy Run() immediately
+        // returns on the FIRST "!= Running" observation, and a body that waits then returns can be
+        // observed transiently AS Waiting for the few microseconds before a buggy Run() immediately
         // overwrites it to Completed in the same synchronous continuation, making the assertion below
         // pass by ACCIDENT depending on scheduling luck). Wait for that first non-Running observation,
         // then give the background continuation a further generous margin to fully settle — a FIXED
-        // Run() leaves the entry Paused FOREVER after this point (nothing else in this test ever calls
+        // Run() leaves the entry Waiting FOREVER after this point (nothing else in this test ever calls
         // Complete/Fail/Cancel), while a still-buggy Run() has already flipped it to Completed well
         // within the margin (confirmed directly: the settled state reproduces as Completed 100% of the
-        // time once actually awaited, only the FIRST unsettled poll was ever seen as Paused).
+        // time once actually awaited, only the FIRST unsettled poll was ever seen as Waiting).
         await WaitForTerminalAsync(registry, id);
         await Task.Delay(200);
         var info = registry.GetAll().Single(o => o.Id == id);
 
-        Assert.Equal(OperationStatus.Paused, info.Status);
-        Assert.Equal("dns", info.PauseReason);
+        Assert.Equal(OperationStatus.Waiting, info.Status);
+        Assert.Equal("dns", info.WaitReason);
     }
 
     [Fact]

@@ -16,23 +16,20 @@ export const OperationStatuses = {
   Failed: 'failed',
   Cancelled: 'cancelled',
   /**
-   * A crash-announced, resumable operation re-registered from the app's own checkpoint
-   * (`IOperationRegistry.RegisterInterrupted`) — a pending RESUME offer, not finished history: the
-   * other half of the WAITING band alongside `paused` (design §5A.2,
-   * {@link OperationsState.waiting}). The host **never prunes it** on its own; only `Resume` (the
-   * host's own `RequestResume`, via the client's `resume` action) or the client's `DISMISS` route
-   * removes it — an entry left un-actioned stays offered forever, on purpose.
+   * Not progressing, awaiting a decision — the APP names why via {@link OperationInfo.waitReason}
+   * (e.g. `'credentials'`/`'dns'`/`'queued'`/`'rate-limited'`), never a kit-owned reason enum. Not
+   * one of the terminal statuses in {@link OperationsState.finished}, and never pruned as history —
+   * a waiting entry is a pending offer, not something finished.
+   *
+   * Reached two ways, told apart by whether {@link OperationInfo.resumePayload} is set rather than
+   * by a second status (this collapses what used to be two values, `paused` and `interrupted`,
+   * which every host transition already treated as one band): the host's own `IOperation.Wait` on a
+   * live operation (no `resumePayload` — the body is still there, just stopped), or
+   * `IOperationRegistry.RegisterWaiting` announcing a crash-interrupted checkpoint directly (a
+   * non-empty `resumePayload` — no live body at all). Exits via the host's `IOperation.Resume`
+   * (back to `running`), the `DISMISS` route (to `cancelled`), or a direct complete/fail.
    */
-  Interrupted: 'interrupted',
-  /**
-   * Stopped mid-flight WITHOUT crashing, awaiting a decision (expired credentials, a throttling
-   * provider, DNS not yet propagated, a migration awaiting confirmation) — half of the WAITING band
-   * alongside `interrupted` (design §5A.2, {@link OperationsState.waiting}): never pruned as
-   * history, and not one of the terminal statuses in {@link OperationsState.finished}. Reached from
-   * `running` via the host's own `IOperation.Pause`; exits via the host's `IOperation.Resume` (back
-   * to `running`), the `DISMISS` route (to `cancelled`), or a direct complete/fail.
-   */
-  Paused: 'paused',
+  Waiting: 'waiting',
 } as const;
 
 /** One of {@link OperationStatuses}. */
@@ -48,12 +45,13 @@ export const OperationEventTypes = {
   Updated: 'OPERATION_UPDATED',
   ResumeRequested: 'OPERATION_RESUME_REQUESTED',
   /**
-   * A client asked to pause a running operation (generic-library audit finding 3) — the owning
-   * module should call the host's `IOperation.Pause` once it has actually stopped. Not subscribed by
-   * {@link createOperationsStore} itself, same as {@link ResumeRequested}: it targets the owning
-   * module's own service, not the generic operations store.
+   * A client asked to wait a running operation (generic-library audit finding 3, renamed from
+   * `PAUSE_REQUESTED`) — the owning module should call the host's `IOperation.Wait` once it has
+   * actually stopped. Not subscribed by {@link createOperationsStore} itself, same as
+   * {@link ResumeRequested}: it targets the owning module's own service, not the generic operations
+   * store.
    */
-  PauseRequested: 'OPERATION_PAUSE_REQUESTED',
+  WaitRequested: 'OPERATION_WAIT_REQUESTED',
   /**
    * One or more operation ids left the host registry with no corresponding `Updated` snapshot —
    * `MaxHistory` eviction, `CLEAR_FINISHED`, and the interrupted-entry drop on `RESUME` (Finding 4,
@@ -76,15 +74,15 @@ export const OperationRoutes = {
   Cancel: 'CANCEL',
   ClearFinished: 'CLEAR_FINISHED',
   Resume: 'RESUME',
-  /** Decline a pending Paused/Interrupted offer by id — mirrors {@link Cancel}'s shape. */
+  /** Decline a pending Waiting offer by id — mirrors {@link Cancel}'s shape. */
   Dismiss: 'DISMISS',
   /**
-   * Ask the owning module to pause a running operation by id (generic-library audit finding 3) —
-   * mirrors {@link Resume}'s shape (`{ operationId }` → `{ requested }`). Asking is not acting: the
-   * owning module's own `IOperation.Pause` is what actually stops the work and publishes the
-   * transition, same split as {@link Resume} vs the host's `IOperation.Resume`.
+   * Ask the owning module to wait a running operation by id (generic-library audit finding 3,
+   * renamed from `PAUSE`) — mirrors {@link Resume}'s shape (`{ operationId }` → `{ requested }`).
+   * Asking is not acting: the owning module's own `IOperation.Wait` is what actually stops the work
+   * and publishes the transition, same split as {@link Resume} vs the host's `IOperation.Resume`.
    */
-  Pause: 'PAUSE',
+  Wait: 'WAIT',
 } as const;
 
 /**
@@ -133,8 +131,8 @@ export interface OperationInfo {
   progress?: OperationProgress;
   title?: OperationLabel;
   detail?: OperationLabel;
-  /** Why the operation is `'paused'` — an app-defined string, like `kind`; the kit never interprets it. */
-  pauseReason?: string;
+  /** Why the operation is `'waiting'` — an app-defined string, like `kind`; the kit never interprets it. */
+  waitReason?: string;
   error?: IpcError;
   cancellable: boolean;
   resumePayload?: string;
@@ -143,9 +141,9 @@ export interface OperationInfo {
 }
 
 /**
- * Statuses that count as finished history. Deliberately excludes `interrupted` — a crash-announced,
- * resumable operation is a pending resume offer, "distinct from finished history"
- * (`Shenora.Ipc.OperationStatus.Interrupted`), not a terminal outcome.
+ * Statuses that count as finished history. Deliberately excludes `waiting` — a resumable operation
+ * (whether a live `Wait()` or a crash-announced checkpoint) is a pending offer, "distinct from
+ * finished history" (`Shenora.Ipc.OperationStatus.Waiting`), not a terminal outcome.
  */
 const TERMINAL_STATUSES: ReadonlySet<OperationStatus> = new Set([
   OperationStatuses.Completed,
@@ -154,49 +152,30 @@ const TERMINAL_STATUSES: ReadonlySet<OperationStatus> = new Set([
 ]);
 
 /**
- * The WAITING band (design §5A.2): stopped, resumable, awaiting a decision — exactly what
- * `Dismiss`/`RequestResume` both accept, and never pruned as history (an offer is not history).
- * Defined ONCE, same discipline as {@link TERMINAL_STATUSES}, so {@link OperationsState.waiting} is
- * *derived* from this set rather than a hand-listed pair repeated across getters — a second,
- * independently-maintained copy is exactly how `interrupted` fell into no band in the first place.
- */
-const WAITING_STATUSES: ReadonlySet<OperationStatus> = new Set([
-  OperationStatuses.Paused,
-  OperationStatuses.Interrupted,
-]);
-
-/**
- * State behind {@link useShenoraOperations}. Mirrors the host's THREE bands (design §5A.2), not five
- * bare statuses:
+ * State behind {@link useShenoraOperations}. Mirrors the host's THREE bands (design §5A.2):
  *
- * | Band | Getter(s) | Exits |
+ * | Band | Getter | Exits |
  * |---|---|---|
- * | Active | {@link running} | complete / fail / cancel / pause |
- * | Waiting — stopped, resumable, awaiting a decision | {@link paused}, {@link interrupted}, {@link waiting} (their union) | resume / dismiss / complete / fail |
+ * | Active | {@link running} | complete / fail / cancel / wait |
+ * | Waiting — stopped, resumable, awaiting a decision | {@link waiting} | resume / dismiss / complete / fail |
  * | Terminal | {@link finished} | — (prunable via `clearFinished`) |
  *
- * An `'interrupted'` entry is a pending RESUME **offer**, not finished history: the host never prunes
- * it on its own, and only `Resume` or `Dismiss` removes it — the same rule `'paused'` follows, which
- * is why the two share the {@link waiting} getter. Every getter here is DERIVED from `byId` on every
- * read — never a second copy a fold has to remember to keep in sync. `byId` itself is the only thing
- * any reducer here ever writes.
+ * `waiting` is now the WHOLE band, not a union of two getters — the host's `OperationStatus` carries
+ * only one waiting value (the former `paused`/`interrupted` pair collapsed into it, since every host
+ * transition already treated them as one band). A waiting entry is a pending offer, not finished
+ * history: the host never prunes it on its own, and only `Resume` or `Dismiss` removes it. Every
+ * getter here is DERIVED from `byId` on every read — never a second copy a fold has to remember to
+ * keep in sync. `byId` itself is the only thing any reducer here ever writes.
  */
 export interface OperationsState {
   byId: Record<string, OperationInfo>;
   /** Every currently-running operation, in `byId` order. */
   readonly running: OperationInfo[];
-  /** Every operation currently `'paused'` — one half of the WAITING band; see {@link waiting} for both. */
-  readonly paused: OperationInfo[];
   /**
-   * Every operation currently `'interrupted'` — a crash-announced, pending RESUME offer (the other
-   * half of the WAITING band; see {@link waiting} for both). Never pruned by the host on its own:
-   * only `Resume`/`Dismiss` remove it.
-   */
-  readonly interrupted: OperationInfo[];
-  /**
-   * The WAITING band (design §5A.2): {@link paused} ∪ {@link interrupted} — exactly the set
+   * The WAITING band (design §5A.2): stopped, resumable, awaiting a decision — exactly what
    * `Dismiss`/`RequestResume` both accept, so a status bar can render "needs you" as one bucket
-   * without caring whether the process restarted in between.
+   * without caring whether the entry came from a live `Wait()` or a crash-announced checkpoint
+   * (`resumePayload` tells the two apart, if a consumer needs to).
    */
   readonly waiting: OperationInfo[];
   /** Every operation that reached a terminal status (completed/failed/cancelled). */
@@ -208,9 +187,9 @@ export interface OperationsActions {
   /** `CANCEL { operationId }` — the app-level cancel route `ipc-contracts` prescribes. */
   cancel: (operationId: string) => string;
   /**
-   * `DISMISS { operationId }` — decline a pending `paused`/`interrupted` offer (design §5A.3),
-   * mirroring {@link cancel}'s shape. No optimistic local prune: the host's `Dismiss` transitions the
-   * entry to `cancelled` and publishes an ordinary `OPERATION_UPDATED` snapshot for it (same as a real
+   * `DISMISS { operationId }` — decline a pending `waiting` offer (design §5A.3), mirroring
+   * {@link cancel}'s shape. No optimistic local prune: the host's `Dismiss` transitions the entry to
+   * `cancelled` and publishes an ordinary `OPERATION_UPDATED` snapshot for it (same as a real
    * cancel), so the store already folds the result from the wire.
    */
   dismiss: (operationId: string) => string;
@@ -224,22 +203,24 @@ export interface OperationsActions {
    */
   clearFinished: () => string;
   /**
-   * `RESUME { operationId }` — ask the host to continue a paused or interrupted operation. No local
-   * mutation here: the host's `OPERATION_REMOVED` fold is what actually drops an `interrupted` entry
-   * (the asymmetric half of design §5A.4 — a `paused` entry is deliberately LEFT IN PLACE host-side,
-   * so no removal event ever arrives for it either). It used to carry an optimistic local prune
-   * gated on the `interrupted` status, which was the source of this release's only Critical (it
+   * `RESUME { operationId }` — ask the host to continue a waiting operation. No local mutation here:
+   * the host's `OPERATION_REMOVED` fold is what actually drops a no-live-handle entry (the asymmetric
+   * half of design §5A.4 — an entry reached via a live `Wait()` is deliberately LEFT IN PLACE
+   * host-side, so no removal event ever arrives for it either; the host tells the two apart by
+   * `resumePayload`, not by a second status). It used to carry an optimistic local prune gated on the
+   * (now-removed) `interrupted` status, which was the source of this release's only Critical (it
    * pruned a `paused` row once, before the asymmetry was re-derived into it) — the authoritative
    * event now makes that guess unnecessary.
    */
   resume: (operationId: string) => string;
   /**
-   * `PAUSE { operationId }` — ask the owning module to pause a running operation (generic-library
-   * audit finding 3), mirroring {@link dismiss}'s shape. No optimistic local prune: asking never
-   * changes the state by itself — the owning module's own `IOperation.Pause` is what publishes the
-   * `paused` transition, and the store folds it from the wire like any other `OPERATION_UPDATED`.
+   * `WAIT { operationId }` — ask the owning module to wait a running operation (generic-library
+   * audit finding 3, renamed from `pause`), mirroring {@link dismiss}'s shape. No optimistic local
+   * prune: asking never changes the state by itself — the owning module's own `IOperation.Wait` is
+   * what publishes the `waiting` transition, and the store folds it from the wire like any other
+   * `OPERATION_UPDATED`.
    */
-  pause: (operationId: string) => string;
+  wait: (operationId: string) => string;
 }
 
 function index(list: OperationInfo[]): Record<string, OperationInfo> {
@@ -249,8 +230,7 @@ function index(list: OperationInfo[]): Record<string, OperationInfo> {
 }
 
 /**
- * The one place `running`/`paused`/`interrupted`/`waiting`/`finished` are computed — wrap `byId`
- * here, nowhere else.
+ * The one place `running`/`waiting`/`finished` are computed — wrap `byId` here, nowhere else.
  */
 function makeState(byId: Record<string, OperationInfo>): OperationsState {
   return {
@@ -258,14 +238,8 @@ function makeState(byId: Record<string, OperationInfo>): OperationsState {
     get running() {
       return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Running);
     },
-    get paused() {
-      return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Paused);
-    },
-    get interrupted() {
-      return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Interrupted);
-    },
     get waiting() {
-      return Object.values(byId).filter((operation) => WAITING_STATUSES.has(operation.status));
+      return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Waiting);
     },
     get finished() {
       return Object.values(byId).filter((operation) => TERMINAL_STATUSES.has(operation.status));
@@ -339,7 +313,7 @@ export function createOperationsStore(
     actions: ({ post }) => ({
       cancel: (operationId: string) => post(OperationRoutes.Cancel, { payload: { operationId } }),
       dismiss: (operationId: string) => post(OperationRoutes.Dismiss, { payload: { operationId } }),
-      pause: (operationId: string) => post(OperationRoutes.Pause, { payload: { operationId } }),
+      wait: (operationId: string) => post(OperationRoutes.Wait, { payload: { operationId } }),
       clearFinished: () =>
         // Forward THIS store's own configured scope (Finding 1, generic-library audit) — the same
         // key the LIST snapshot payload already carries above. No local mutation here any more
@@ -364,7 +338,7 @@ export function createOperationsStore(
  * because the host is authoritative (the store primitive's own late-mounter case is now
  * host-backed end to end). `running`/`waiting`/`finished` are selectors an activity panel or status
  * bar reads directly: `useShenoraOperations((s) => s.waiting)` for the one "needs you" bucket
- * (`paused`/`interrupted` individually if the UI distinguishes a resume prompt from a pause-reason
+ * (filter further on `resumePayload` if the UI distinguishes a resume prompt from a wait-reason
  * display). Bound to the default module/no scope — use
  * {@link createOperationsStore} directly for a renamed module or a scope-filtered instance.
  *
