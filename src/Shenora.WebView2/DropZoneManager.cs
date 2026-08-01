@@ -27,10 +27,19 @@ public sealed class DropZoneManagerOptions
 /// <summary>
 /// Native drag-drop zones synced to page elements, ported from the primary desktop sibling (its
 /// third copy was already annotated "ported from…" — this ends that): transparent overlays are
-/// positioned over the page's zone elements to capture REAL OS file paths (the page only ever
-/// sees blob URLs), including drags from other apps while this one is in the background.
-/// The client side is <c>useDropZone</c> in @shenora/react; the routes arrive through
-/// <see cref="DropZoneFacade"/>.
+/// positioned over the page's zone elements to capture REAL OS file paths, including drags from
+/// other apps while this one is in the background. The client side is <c>useDropZone</c> in
+/// @shenora/react; the routes arrive through <see cref="DropZoneFacade"/>.
+///
+/// WHY NOT HTML5 DROP — it is not merely that the page cannot see the path. A page-side drop yields
+/// a <c>File</c> handle whose only accessor is its CONTENT, so in a shell architecture (the page is
+/// UI, the host does the file work) the bytes must be read into the renderer and then pushed across
+/// the IPC boundary — a full copy of every dropped file, EAGERLY, at drop time, before the app knows
+/// whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop
+/// a multi-GB asset and you pay that, to reach a file the host could already have opened off the
+/// same disk. A path is a string: open it lazily, stream it, hash it incrementally, move or link it
+/// without copying, watch it for changes. That is the real reason this component exists, and it is
+/// why every app in the family rebuilt it rather than accepting the page-side version.
 ///
 /// Placed in Shenora.WebView2 (the design sketch said WinForms) because it drives the WebView —
 /// coordinates anchor on the control and occlusion checks run DOM scripts — and the facade

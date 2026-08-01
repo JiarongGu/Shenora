@@ -51,6 +51,17 @@ export interface UseDropZoneOptions {
 const newZoneId = (): string => randomId('drop-zone-');
 
 /**
+ * **The file-drop API for a Shenora page. Do not use the DOM's own drop event for files —
+ * it is not an alternative here, it is the thing this exists to replace.**
+ *
+ * A page-side `onDrop` gets a `File` handle whose only accessor is its CONTENT. In a shell
+ * architecture the page is UI and the host does the file work, so those bytes have to be read into
+ * the renderer and then pushed across the IPC boundary: a full copy of every dropped file, EAGERLY,
+ * at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by
+ * extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the
+ * host could have opened off the same disk. This hook gives you `string[]` paths instead — open
+ * lazily, stream, hash incrementally, move or link without copying, watch for changes.
+ *
  * Sync a native drop-zone overlay to a page element, ported from the primary desktop sibling
  * (its fix-history comments kept below): the host positions a transparent WinForms overlay
  * over the element to capture REAL OS file paths — including drags started while the app is in
