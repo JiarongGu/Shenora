@@ -31,6 +31,7 @@ update the relevant entry HERE — this file is the durable index.
 | When did this break? | `docs/FIX-LOG.md` (use `/fix-log` to append) |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/2026-08-02-shenora-mission-scheduling-design.md` (the one-scheduler-two-key-kinds claim + what is deliberately not built) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
+| Serializing filesystem MUTATIONS, atomic replace, cross-process file locks | `docs/2026-08-02-shenora-file-updates-design.md` — a PLAN, nothing built yet; read it before assuming the kit has any of this |
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
@@ -53,6 +54,8 @@ update the relevant entry HERE — this file is the durable index.
 | `2026-08-01-shenora-communication-core-design.md` | The 0.2.0 communication core RATIONALE: `IModuleContext`, tracked operations, `NotificationPump`, the lifecycle bands. Code cites its `§4.2/§4.3/§4.6/§5/§5A.*` | Rewritten to the current shape in the 0.2.0 cleanup; as-built surface is `ARCHITECTURE.md` |
 | `2026-08-02-shenora-mission-scheduling-design.md` | The mission-scheduling + filesystem-claims design: the evidence (five hand-rolled implementations), one engine with pluggable key spaces, the durability and policy seams, and `## Amendments` A1/A2 | Keep in sync with reality (dated amendments) |
 | `2026-08-02-shenora-mobile-offline-plan.md` | Assessment of an on-device/offline mobile host: the blocker is transport coupling in the ADOPTING app, not the kit | Assessment, not a queue — see `TASKS.md` |
+| `2026-08-02-shenora-file-updates-design.md` | **PLAN, nothing built.** A file-update queue separate from the mission scheduler: parallel compute, serialized apply, per-update atomicity, plus cross-process path leases | Pre-implementation — retire it once built (rationale → `DECISIONS.md`) |
+| `2026-08-02-shenora-mission-queue-and-chains-design.md` | **PLAN, nothing built.** `IMissionQueue` replacing `IMissionStore` (one seam for where pending missions live), and chained multi-step missions with a shared context. Part 2 hinges on one unanswered question: is a chain one queue entry or N? | Pre-implementation — retire it once built |
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |

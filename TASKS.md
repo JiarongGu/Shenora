@@ -38,7 +38,31 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
-**Nothing here is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are
+### Designed, awaiting a go — three owner-directed pieces
+
+Written down rather than started, because each carries a fork that changes the build. Recommended
+order: mission queue → chains → file updates (the first is breaking, so it wants the pre-1.0 window;
+the third is independent).
+
+- [ ] **`IMissionQueue` replaces `IMissionStore`** (`docs/2026-08-02-shenora-mission-queue-and-chains-design.md`
+  Part 1). Today the pending set is a private `LinkedList` and durability is a separate seam, so the
+  queue's contents live in two shapes. One seam owns where pending missions live; in-memory by
+  default, durable when the app supplies one. The real work is not the interface — it is that
+  `PeekPendingAsync` cannot be called under the scheduler's lock, so admission must re-validate.
+- [ ] **Chained missions with a shared context** (same doc, Part 2). Claims prevent overlap but cannot
+  express order, dependency or data flow, so a chain today lives in a stack frame and cannot be
+  resumed or seen in `Snapshot()`. **Blocked on one decision:** is a chain ONE queue entry or N? That
+  answer decides whether §10's "no DAG engine" still holds.
+- [ ] **A file-update queue + cross-process path leases** (`docs/2026-08-02-shenora-file-updates-design.md`).
+  Owner-directed, deliberately NOT part of mission management: the scheduler decides which missions
+  run, this decides how their mutations land. The point is that a path claim excludes two missions for
+  their whole duration when only the final replace needs exclusivity — parallel compute, serialized
+  apply. Atomicity is per update, the app's choice (owner, 2026-08-02) — per-file or all-or-nothing
+  via compensating rollback, with the crash boundary explicitly out of scope. Two open questions left.
+
+### The rest — held at the two-consumer bar
+
+**Nothing below is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are
 finished — record, rationale and verification in `docs/task-archive.md`. What survives below is what
 those passes deliberately did **not** build, each held back by a named evidence bar rather than by
 effort. That distinction is the point: none of these should be started because the list looks short.
