@@ -268,14 +268,11 @@ public abstract class BaseFacade : IModuleFacade
     protected BaseFacade(ILogger? logger = null, IEventBus? events = null)
     {
         _logger = logger ?? NullLogger.Instance;
-        Events = events;
+        _events = events;
     }
 
-    /// <summary>The bus this facade publishes on, if one was supplied.</summary>
-    protected IEventBus? Events { get; }
-
     /// <summary>Built lazily: ModuleName is an abstract property, so it is not readable from the ctor.</summary>
-    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, Events);
+    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, _events);
 
     // … HandleMessageAsync unchanged except for the call:
     //     var data = await RouteMessageAsync(request, Context, cancellationToken);
