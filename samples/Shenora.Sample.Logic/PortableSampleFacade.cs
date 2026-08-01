@@ -26,6 +26,7 @@ public sealed class PortableSampleFacade(
     IUrlLauncher urls,
     IUiDispatcher ui,
     IMissionScheduler scheduler,
+    IFileUpdateQueue updates,
     ShenoraPaths paths) : BaseFacade
 {
     /// <summary>The reserved module name for the portable half of the sample.</summary>
@@ -77,6 +78,13 @@ public sealed class PortableSampleFacade(
             case "SCHEDULE_DEMO":
                 return ScheduleDemo();
 
+            // The composition an adopter actually builds: expensive work in parallel, the filesystem
+            // change landed through the queue. Two chains go in at once and their COMMITS serialize
+            // while their staging does not — which is the whole argument for the file queue existing
+            // alongside claims.
+            case "CHAIN_DEMO":
+                return ChainDemo();
+
             default:
                 throw UnknownType(request);
         }
@@ -124,6 +132,45 @@ public sealed class PortableSampleFacade(
                 await File.AppendAllTextAsync(path, Stamp(mission.MissionId, kind, "out"), ct);
             },
         });
+
+    /// <summary>
+    /// Two chains, each "stage a file, then land it". The staging steps overlap; the commits do not,
+    /// because both updates go through one partition of the file queue. Note what is NOT here: a path
+    /// claim on the target. The queue is the only writer, so exclusivity comes from it — claims are
+    /// for missions that must not even COMPUTE at the same time, which is a different question.
+    /// </summary>
+    private object ChainDemo()
+    {
+        var root = paths.DataArea("chain-demo");
+        Submit("alpha");
+        Submit("beta");
+        return new { Submitted = 2, Root = root };
+
+        void Submit(string name) => _ = scheduler.SubmitAsync(MissionChain.Sequence($"CHAIN:{name}",
+            new MissionStep("stage", async (mission, chain, ct) =>
+            {
+                var temp = Path.Combine(root, $"{name}.tmp");
+                Directory.CreateDirectory(root);
+                await File.WriteAllTextAsync(temp, Stamp(mission.MissionId, name, "staged"), ct);
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);   // stand-in for the expensive part
+                // The reason a chain exists at all: step 2 needs what step 1 produced.
+                chain.Set("temp", temp);
+            }),
+            new MissionStep("land", async (mission, chain, ct) =>
+            {
+                var temp = chain.Get<string>("temp")!;
+                var result = await updates.ApplyAsync(new FileUpdate
+                {
+                    Changes = [new FileChange.Replace(temp, Path.Combine(root, $"{name}.txt"))],
+                    // One writer for this tree: two chains staging in parallel still land one at a time.
+                    Partition = root,
+                    Retry = new RetryPolicy(),
+                }, ct);
+                result.ThrowIfFailed();   // a failed landing must fail the mission, not be swallowed
+                await File.AppendAllTextAsync(Path.Combine(root, "landed.log"),
+                    Stamp(mission.MissionId, name, "landed"), ct);
+            })));
+    }
 
     private static string Stamp(string missionId, string kind, string edge) =>
         $"{DateTimeOffset.Now:HH:mm:ss.fff}  {missionId,-4} {kind,-9} {edge}\n";

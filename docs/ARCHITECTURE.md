@@ -76,7 +76,12 @@ Shenora.slnx
     │                                            MissionOperationObserver is the ~35-line IMissionObserver
     │                                            adapter that reports them through Shenora.Ipc's
     │                                            operation registry — execution, reporting and the
-    │                                            seam between them, all with no Windows reference
+    │                                            seam between them, all with no Windows reference.
+    │                                            CHAIN_DEMO adds the composition an adopter builds:
+    │                                            two MissionChains whose staging steps overlap and
+    │                                            whose file landings go through one IFileUpdateQueue
+    │                                            partition (proven live 2026-08-02 — both staged at
+    │                                            the same millisecond, both landed through the queue)
     └── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
                                                  into the desktop sample's wwwroot; page-owned title
                                                  bar (WindowCommands + useWindowMaximized), notifyReady,

@@ -104,6 +104,11 @@ internal static class Program
                 sp.GetRequiredService<IOperationRegistry>(), Shenora.Sample.Logic.PortableSampleFacade.Module)],
             Log = Console.WriteLine,
         }));
+        // The file-update queue: independent of the scheduler, and registered the same plain way.
+        // Missions compute in parallel and hand their finished change sets here to land one at a time.
+        builder.Services.AddSingleton<IFileUpdateQueue>(_ =>
+            new FileUpdateQueue(new FileUpdateQueueOptions { Log = Console.WriteLine }));
+
         // Lane capacities are configured ONCE, at startup, by name — an unknown name is created at
         // the default capacity rather than rejected, so a typo silently costs the budget you meant.
         builder.OnStarting(app =>

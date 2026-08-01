@@ -214,6 +214,17 @@ function SchedulerPanel({ hosted }: { hosted: boolean }) {
         schedule 4 items (2 contend)
       </button>
       {' '}
+      {/* Two CHAINS whose staging overlaps and whose file landings do not — the composition the
+          file-update queue exists for. Same operations store: a chain is one mission. */}
+      <button
+        style={{ padding: '0.35rem 0.75rem' }}
+        disabled={!hosted}
+        data-testid="btn-chain-demo"
+        onClick={() => getBridge().post('SAMPLE_LOGIC', 'CHAIN_DEMO')}
+      >
+        2 chains (stage ∥, land 1-at-a-time)
+      </button>
+      {' '}
       <span style={running.length || queued.length ? value : { color: '#9a9a9a' }}>
         {running.length || queued.length
           ? `running ${running.length} [${kinds(running)}] · queued ${queued.length} [${kinds(queued)}]`
