@@ -357,6 +357,43 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   two remaining sources — `MaxHistory` eviction and `ClearFinished` — are unchanged, and the client
   folds it identically.
 
+### Added
+
+- **Work scheduling + filesystem claims in `Shenora.Core`** — `IWorkScheduler`/`WorkScheduler`,
+  `WorkClaim`/`IClaimScope` (`FlatClaimScope`, `NestedClaimScope`), `ILane`/`WorkLane`,
+  `IWorkPolicy`/`PriorityWorkPolicy`, `IWorkObserver`, `IWorkStore`/`WorkRecord`/`RecoveryPolicy`,
+  and `PathClaims`. Design + evidence: `docs/2026-08-02-shenora-work-scheduling-design.md`.
+
+  Harvested from all three donor apps, where the same two problems had been solved **five times and
+  differently**: two file-operation planners (545 and 603 lines, one an event-driven path-overlap
+  dispatcher, the other a two-plan single-worker model), two job queues (463 and 664 lines), a global
+  GPU gate and a lane-holding capacity governor.
+
+  **The design claim is that these are ONE mechanism.** A filesystem planner is a scheduler keyed by
+  PATH, where two keys conflict if one contains the other; a job queue is a scheduler keyed by LANE,
+  where a key admits N holders. Submission order, bounded parallelism, event-driven dispatch, dedup,
+  retry and cancellation are identical — and each sibling rebuilt all of it. So the kit ships one
+  engine plus two small key strategies, which is what makes adoption a deletion rather than a
+  translation.
+
+  Two behaviours are better than any source rather than equal to them, and both fall out of the model
+  rather than being fixed by hand: the per-key semaphore **ref-count race** disappears (the scheduler
+  owns claim lifetime, so there is no per-key lock object to remove), and the documented **lock-order
+  rule** stops being a rule anyone must remember (claims are acquired as a set, so deadlock is
+  structurally impossible). Shared claims — a reader/writer split none of the sources could express —
+  are new.
+
+  Scheduling POLICY is the app's: `IWorkPolicy` supplies *what* to pick up (`Compare`) and *when*
+  (`ShouldStart`). It is consulted only about work already found safe to run, so a custom or buggy
+  policy can delay work but never corrupt it. Durability is a seam (`IWorkStore`) with **no
+  implementation shipped** — storage is the app's choice; recovery defaults to failing records found
+  RUNNING after a crash, because re-running work that may have caused the crash produces a boot loop.
+
+  33 tests. The concurrency ones assert parallelism **and** exclusion in the same run — correctness
+  alone would pass a fully serial implementation — and were sabotage-verified both ways: forcing
+  capacity 1 fails exactly the five parallelism assertions by name, and dropping the separator
+  boundary check fails exactly the sibling-prefix case.
+
 ### Changed
 
 - **`dev.mjs sample` now builds the packaged frontend before launching** (skip with `--no-build`;

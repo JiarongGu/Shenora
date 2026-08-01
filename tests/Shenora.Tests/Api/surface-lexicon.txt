@@ -180,6 +180,30 @@ Filter
 Mapping
 Range
 
+# ── Work scheduling (0.2.0) ───────────────────────────────────────────────────────────────────────
+# Added for the work scheduler + filesystem claim layer. Every word here is concurrency or
+# scheduling vocabulary — the gate was run before the code was written and admitted these one at a
+# time, which is the review it exists to force. Note what is NOT here: no job, task-type, download,
+# archive, scan or import noun. Those are the APPLICATION's words and the reason the kit ships a
+# scheduler rather than a job system.
+Claim
+Claims
+Flat
+Lane
+Mode
+Nested
+Observer
+Outcome
+Policy
+Priority
+Record
+Recovery
+Retry
+Scheduler
+Scope
+Snapshot
+Work
+
 # ── Watch this one ────────────────────────────────────────────────────────────────────────────────
 # Download: a browser mechanism (a session observing a download), NOT a product feature. It is the
 # closest thing on the surface to a domain word, and it is allowed only because `DownloadHit` names

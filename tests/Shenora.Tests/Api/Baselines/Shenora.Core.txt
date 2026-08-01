@@ -5,6 +5,10 @@ static class Shenora.Core.AppCallback
 static class Shenora.Core.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)
+enum Shenora.Core.ClaimMode (int)
+  public const Shenora.Core.ClaimMode Exclusive = 0
+  public const Shenora.Core.ClaimMode Shared = 1
+  public int value__
 sealed class Shenora.Core.EventBus : Shenora.Core.IEventBus
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.EventBus>? logger = null)
   public System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage message)
@@ -46,6 +50,15 @@ sealed class Shenora.Core.FileDialogResult
   public static Shenora.Core.FileDialogResult Cancelled()
   public static Shenora.Core.FileDialogResult Selected(string path)
   public string? FilePath { get; init; }
+sealed class Shenora.Core.FlatClaimScope : Shenora.Core.IClaimScope
+  public .ctor(string name, bool ignoreCase = false)
+  public bool Conflicts(string normalizedA, string normalizedB)
+  public string Name { get; }
+  public string Normalize(string key)
+interface Shenora.Core.IClaimScope
+  public abstract bool Conflicts(string normalizedA, string normalizedB)
+  public abstract string Name { get; }
+  public abstract string Normalize(string key)
 interface Shenora.Core.IClipboardService
   public abstract System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
   public abstract System.Threading.Tasks.Task SetTextAsync(string text)
@@ -69,6 +82,12 @@ interface Shenora.Core.IFileDialogs
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
+interface Shenora.Core.ILane
+  public abstract bool IsHeld { get; }
+  public abstract int Capacity { get; set; }
+  public abstract string Name { get; }
+  public abstract void Hold()
+  public abstract void Release()
 interface Shenora.Core.IShenoraLifecycleHook
   public virtual void OnStarting(Shenora.Core.ShenoraApplication app)
   public virtual void OnStopping(Shenora.Core.ShenoraApplication app)
@@ -90,6 +109,54 @@ interface Shenora.Core.IUiInteraction
   public abstract void UnblockInteraction()
 interface Shenora.Core.IUrlLauncher
   public abstract void OpenUrl(string url)
+interface Shenora.Core.IWorkObserver
+  public virtual void OnFinished(in Shenora.Core.WorkView work, Shenora.Core.WorkResult result)
+  public virtual void OnQueued(in Shenora.Core.WorkView work)
+  public virtual void OnStarted(in Shenora.Core.WorkView work)
+interface Shenora.Core.IWorkPolicy
+  public abstract bool ShouldStart(in Shenora.Core.WorkView work, in Shenora.Core.WorkSchedulerState state)
+  public abstract int Compare(in Shenora.Core.WorkView a, in Shenora.Core.WorkView b)
+interface Shenora.Core.IWorkScheduler : System.IAsyncDisposable
+  public abstract Shenora.Core.ILane Lane(string name)
+  public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.WorkSnapshot> Snapshot()
+  public abstract System.Threading.Tasks.Task<Shenora.Core.WorkResult> SubmitAsync(Shenora.Core.WorkRequest request, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task<int> RecoverAsync(System.Func<Shenora.Core.WorkRecord, Shenora.Core.WorkRequest> rehydrate, System.Threading.CancellationToken cancellationToken = default)
+  public abstract bool IsActive(Shenora.Core.WorkKey key)
+  public abstract int PendingCount { get; }
+  public abstract int RunningCount { get; }
+  public abstract void Reevaluate()
+interface Shenora.Core.IWorkStore
+  public abstract System.Threading.Tasks.Task RemoveAsync(string workId, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task SaveAsync(Shenora.Core.WorkRecord record, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.WorkRecord>> LoadPendingAsync(System.Threading.CancellationToken cancellationToken)
+sealed class Shenora.Core.NestedClaimScope : Shenora.Core.IClaimScope
+  public .ctor(string name, char separator, bool ignoreCase = false)
+  public bool Conflicts(string normalizedA, string normalizedB)
+  public string Name { get; }
+  public string Normalize(string key)
+static class Shenora.Core.PathClaims
+  public const string ScopeName = "path"
+  public static Shenora.Core.NestedClaimScope Scope { get; }
+  public static Shenora.Core.WorkClaim Exclusive(string path)
+  public static Shenora.Core.WorkClaim Shared(string path)
+  public static bool IsContained(string root, string candidate)
+  public static string Canonical(string path)
+sealed class Shenora.Core.PriorityWorkPolicy : Shenora.Core.IWorkPolicy
+  public .ctor()
+  public bool ShouldStart(in Shenora.Core.WorkView work, in Shenora.Core.WorkSchedulerState state)
+  public int Compare(in Shenora.Core.WorkView a, in Shenora.Core.WorkView b)
+  public static Shenora.Core.PriorityWorkPolicy Instance { get; }
+enum Shenora.Core.RecoveryPolicy (int)
+  public const Shenora.Core.RecoveryPolicy Discard = 2
+  public const Shenora.Core.RecoveryPolicy Fail = 1
+  public const Shenora.Core.RecoveryPolicy Requeue = 0
+  public int value__
+sealed class Shenora.Core.RetryPolicy
+  public .ctor()
+  public System.Func<System.Exception, bool> IsTransient { get; init; }
+  public System.TimeSpan Delay { get; init; }
+  public int Attempts { get; init; }
+  public static Shenora.Core.RetryPolicy None { get; }
 sealed class Shenora.Core.ShenoraApplication : System.IAsyncDisposable, System.IDisposable
   public Shenora.Core.ShenoraEnvironment Environment { get; }
   public Shenora.Core.ShenoraPaths Paths { get; }
@@ -149,3 +216,149 @@ enum Shenora.Core.UiTargetState (int)
   public const Shenora.Core.UiTargetState NotReady = 0
   public const Shenora.Core.UiTargetState Ready = 1
   public int value__
+struct Shenora.Core.WorkClaim : System.IEquatable<Shenora.Core.WorkClaim>
+  public .ctor(string Scope, string Key, Shenora.Core.ClaimMode Mode)
+  public Shenora.Core.ClaimMode Mode { get; init; }
+  public bool Equals(Shenora.Core.WorkClaim other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static Shenora.Core.WorkClaim Exclusive(string scope, string key)
+  public static Shenora.Core.WorkClaim Shared(string scope, string key)
+  public static bool op_Equality(Shenora.Core.WorkClaim left, Shenora.Core.WorkClaim right)
+  public static bool op_Inequality(Shenora.Core.WorkClaim left, Shenora.Core.WorkClaim right)
+  public string Key { get; init; }
+  public string Scope { get; init; }
+  public void Deconstruct(out string Scope, out string Key, out Shenora.Core.ClaimMode Mode)
+struct Shenora.Core.WorkContext : System.IEquatable<Shenora.Core.WorkContext>
+  public .ctor(string WorkId, int Attempt, System.Threading.CancellationToken Cancellation)
+  public System.Threading.CancellationToken Cancellation { get; init; }
+  public bool Equals(Shenora.Core.WorkContext other)
+  public int Attempt { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkContext left, Shenora.Core.WorkContext right)
+  public static bool op_Inequality(Shenora.Core.WorkContext left, Shenora.Core.WorkContext right)
+  public string WorkId { get; init; }
+  public void Deconstruct(out string WorkId, out int Attempt, out System.Threading.CancellationToken Cancellation)
+struct Shenora.Core.WorkKey : System.IEquatable<Shenora.Core.WorkKey>
+  public .ctor(string Value)
+  public bool Equals(Shenora.Core.WorkKey other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkKey left, Shenora.Core.WorkKey right)
+  public static bool op_Inequality(Shenora.Core.WorkKey left, Shenora.Core.WorkKey right)
+  public string Value { get; init; }
+  public void Deconstruct(out string Value)
+struct Shenora.Core.WorkLane : System.IEquatable<Shenora.Core.WorkLane>
+  public .ctor(string Name, int Permits = 1)
+  public bool Equals(Shenora.Core.WorkLane other)
+  public int Permits { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkLane left, Shenora.Core.WorkLane right)
+  public static bool op_Inequality(Shenora.Core.WorkLane left, Shenora.Core.WorkLane right)
+  public string Name { get; init; }
+  public void Deconstruct(out string Name, out int Permits)
+enum Shenora.Core.WorkOutcome (int)
+  public const Shenora.Core.WorkOutcome Cancelled = 2
+  public const Shenora.Core.WorkOutcome Completed = 0
+  public const Shenora.Core.WorkOutcome Deduplicated = 3
+  public const Shenora.Core.WorkOutcome Failed = 1
+  public int value__
+sealed class Shenora.Core.WorkRecord : System.IEquatable<Shenora.Core.WorkRecord>
+  public .ctor(string WorkId, string? Kind, string? Payload, Shenora.Core.WorkState State, System.DateTimeOffset CreatedUtc)
+  public Shenora.Core.WorkRecord <Clone>$()
+  public Shenora.Core.WorkState State { get; init; }
+  public System.DateTimeOffset CreatedUtc { get; init; }
+  public bool Equals(Shenora.Core.WorkRecord? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkRecord? left, Shenora.Core.WorkRecord? right)
+  public static bool op_Inequality(Shenora.Core.WorkRecord? left, Shenora.Core.WorkRecord? right)
+  public string WorkId { get; init; }
+  public string? Kind { get; init; }
+  public string? Payload { get; init; }
+  public void Deconstruct(out string WorkId, out string? Kind, out string? Payload, out Shenora.Core.WorkState State, out System.DateTimeOffset CreatedUtc)
+sealed class Shenora.Core.WorkRequest
+  public Shenora.Core.RetryPolicy? Retry { get; init; }
+  public Shenora.Core.WorkKey? Key { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.WorkClaim> Claims { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.WorkLane> Lanes { get; init; }
+  public System.Func<Shenora.Core.WorkContext, System.Threading.Tasks.Task>? Commit { get; init; }
+  public bool Durable { get; init; }
+  public int Priority { get; init; }
+  public required System.Func<Shenora.Core.WorkContext, System.Threading.Tasks.Task> Run { get; init; }
+  public string? Kind { get; init; }
+  public string? Payload { get; init; }
+sealed class Shenora.Core.WorkResult
+  public Shenora.Core.WorkOutcome Outcome { get; }
+  public System.Exception? Error { get; }
+  public bool Succeeded { get; }
+  public int Attempts { get; }
+  public string WorkId { get; }
+  public void ThrowIfFailed()
+sealed class Shenora.Core.WorkScheduler : Shenora.Core.IWorkScheduler, System.IAsyncDisposable
+  public .ctor(Shenora.Core.WorkSchedulerOptions? options = null)
+  public Shenora.Core.ILane Lane(string name)
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.WorkSnapshot> Snapshot()
+  public System.Threading.Tasks.Task<Shenora.Core.WorkResult> SubmitAsync(Shenora.Core.WorkRequest request, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<int> RecoverAsync(System.Func<Shenora.Core.WorkRecord, Shenora.Core.WorkRequest> rehydrate, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.ValueTask DisposeAsync()
+  public bool IsActive(Shenora.Core.WorkKey key)
+  public int PendingCount { get; }
+  public int RunningCount { get; }
+  public void Reevaluate()
+sealed class Shenora.Core.WorkSchedulerOptions
+  public .ctor()
+  public Shenora.Core.IWorkPolicy? Policy { get; init; }
+  public Shenora.Core.IWorkStore? Store { get; init; }
+  public System.Action<string>? Log { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IClaimScope> Scopes { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IWorkObserver> Observers { get; init; }
+  public System.Func<Shenora.Core.WorkRecord, Shenora.Core.RecoveryPolicy>? RecoveryPolicyFor { get; init; }
+  public int DefaultLaneCapacity { get; init; }
+struct Shenora.Core.WorkSchedulerState : System.IEquatable<Shenora.Core.WorkSchedulerState>
+  public .ctor(int Pending, int Running)
+  public bool Equals(Shenora.Core.WorkSchedulerState other)
+  public int Pending { get; init; }
+  public int Running { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkSchedulerState left, Shenora.Core.WorkSchedulerState right)
+  public static bool op_Inequality(Shenora.Core.WorkSchedulerState left, Shenora.Core.WorkSchedulerState right)
+  public void Deconstruct(out int Pending, out int Running)
+struct Shenora.Core.WorkSnapshot : System.IEquatable<Shenora.Core.WorkSnapshot>
+  public .ctor(Shenora.Core.WorkView Work, bool IsRunning)
+  public Shenora.Core.WorkView Work { get; init; }
+  public bool Equals(Shenora.Core.WorkSnapshot other)
+  public bool IsRunning { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkSnapshot left, Shenora.Core.WorkSnapshot right)
+  public static bool op_Inequality(Shenora.Core.WorkSnapshot left, Shenora.Core.WorkSnapshot right)
+  public void Deconstruct(out Shenora.Core.WorkView Work, out bool IsRunning)
+enum Shenora.Core.WorkState (int)
+  public const Shenora.Core.WorkState Queued = 0
+  public const Shenora.Core.WorkState Running = 1
+  public int value__
+struct Shenora.Core.WorkView : System.IEquatable<Shenora.Core.WorkView>
+  public .ctor(string WorkId, string? Kind, int Priority, System.DateTimeOffset QueuedUtc, long Sequence)
+  public System.DateTimeOffset QueuedUtc { get; init; }
+  public bool Equals(Shenora.Core.WorkView other)
+  public int Priority { get; init; }
+  public long Sequence { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WorkView left, Shenora.Core.WorkView right)
+  public static bool op_Inequality(Shenora.Core.WorkView left, Shenora.Core.WorkView right)
+  public string WorkId { get; init; }
+  public string? Kind { get; init; }
+  public void Deconstruct(out string WorkId, out string? Kind, out int Priority, out System.DateTimeOffset QueuedUtc, out long Sequence)
