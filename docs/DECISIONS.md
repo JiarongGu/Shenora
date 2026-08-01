@@ -290,3 +290,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   are `net10.0`, so portability is satisfied either way.
   Cost accepted: `RouteMessageAsync` gains a parameter, which breaks every override — mechanical, and
   taken deliberately pre-1.0 rather than shipped as a second migration later.
+  **AMENDED 2026-08-01 (before 0.2.0 merged, user direction) — the operation lifecycle is completed to
+  THREE BANDS, and the rule that produced it is the durable part.** The first adopter reviewed the
+  unreleased branch and found that an `Interrupted` offer could only be removed by RESUMING it: `Validate`
+  gates every transition on `Status == Running`, `ClearFinished` walks `_finishedOrder` which
+  `RegisterInterrupted` deliberately never writes, and `PruneHistory` skips offers on purpose. Three
+  guards, each individually correct and commented, composing into a state with no exit — and the same app
+  had already shipped that bug and stranded a real deployment on it. **The rule: every non-terminal state
+  must have a sanctioned exit to a terminal one**, enforced by a test that enumerates the status set
+  rather than by reviewer attention, because an emergent trap is invisible in any single guard's diff.
+  So the states are now *Active* (`Running`), *Waiting — stopped, resumable, never pruned* (`Paused`,
+  `Interrupted`), and *Terminal* (`Completed`/`Failed`/`Cancelled`). `Paused` is new and earns its place:
+  a run that stops mid-flight WITHOUT crashing (expired credentials, a throttling provider, DNS not yet
+  propagated, a migration awaiting confirmation) previously had to be misrepresented as `Running` (a lie —
+  the UI spins for work waiting on a human) or as `Fail` + `RegisterInterrupted` (a terminal event for
+  something that never terminated, plus a second entry); in the surveyed app it is the most common
+  non-success outcome, more common than failure. It carries an app-defined `PauseReason` STRING — the app's
+  taxonomy, like `Kind`, never the kit's. `Dismiss(id)` is a separate member rather than `Cancel` accepting
+  more states, because declining a pending offer and cancelling live work are different acts and this
+  branch's only Critical came from exactly that conflation inside `Cancel`. `Pause` has no client route —
+  pausing is the host's knowledge, while resume and dismiss are the human's decisions. Kept asymmetric on
+  purpose: resuming a `Paused` entry leaves it for the app to flip via the handle, while resuming an
+  `Interrupted` one still drops it, because a crash leaves no live body to flip. An `Adopt(id)` unifying
+  the two was considered and rejected as unearned surface (recorded as a known limit).

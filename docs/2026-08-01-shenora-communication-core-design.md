@@ -367,6 +367,93 @@ deny-list — are one-liners the app writes, and the kit ships no policy.
 construction, not at attach; drop-oldest at the cap; construction-time option validation with
 self-naming messages; guarded per-notification serialize plus a catch-all in flush.
 
+## 5A. The lifecycle, completed (amendment 2026-08-01, before 0.2.0 merged)
+
+The first adopter reviewed the unreleased branch against ~20 real progress-streaming modules and found
+two gaps. They are not two patches — they are one incomplete state machine, and fixing them that way is
+what stops the next instance.
+
+### 5A.1 The bug that names the rule
+
+An `Interrupted` offer could only be removed by RESUMING it. `Validate` gates every transition on
+`Status == Running` (`OperationRegistry.cs`), so `Cancel`/`Complete`/`Fail` all refuse it; `ClearFinished`
+walks `_finishedOrder`, which `RegisterInterrupted` deliberately never writes; `PruneHistory` skips
+offers on purpose. Three guards, each individually right and each with a comment explaining why — and
+together they leave a state with no exit.
+
+**This is not hypothetical:** the adopter shipped the same bug and hit it in production. A deployment
+paused waiting on DNS records at a registrar the owner could not complete: permanently offering Resume,
+permanently undeletable, because a paused run *is* the live state. The kit's own final review flagged it
+as a Minor and the controller deferred it — the adopter hit it hours later, which is the better evidence.
+
+**The rule, and it generalises past operations:** *every non-terminal state must have a sanctioned exit
+to a terminal one.* An emergent trap is not visible in any single guard's diff, so it is enforced by a
+test that enumerates the status set rather than by reviewer attention (§5A.4).
+
+### 5A.2 Three bands, not five states
+
+| Band | States | Pruned? | Exits |
+|---|---|---|---|
+| **Active** | `Running` | never | `Complete` · `Fail` · `Cancel` · `Pause` |
+| **Waiting** — stopped, resumable, awaiting a decision | `Paused` · `Interrupted` | **never** — an offer is not history | `Resume` · `Dismiss` · `Complete` · `Fail` |
+| **Terminal** | `Completed` · `Failed` · `Cancelled` | yes (`MaxHistory`, `ClearFinished`) | — |
+
+`Paused` is the missing band member. Today an app whose run stops mid-flight without crashing — expired
+cloud credentials, a throttling provider, DNS not yet propagated, a migration awaiting confirmation —
+must either keep it `Running` (a lie: the UI spins for something waiting on a human) or `Fail` it and
+immediately `RegisterInterrupted` (a terminal event for something that never terminated, plus a second
+entry). In the surveyed app this is the most common non-success outcome of a deploy — more common than
+failure.
+
+### 5A.3 The surface
+
+```csharp
+// IOperation — the owner's handle
+void Pause(string reason, OperationLabel? detail = null);   // Running → Paused
+void Resume();                                              // Paused → Running, clears the reason
+
+// IOperationRegistry
+bool Dismiss(string id);   // Paused|Interrupted → Cancelled (terminal, prunable). Refuses Running.
+
+// OperationInfo
+string? PauseReason { get; init; }   // app-defined, like Kind — the kit never interprets it
+```
+
+Four decisions worth stating, because each has a plausible-looking alternative:
+
+- **`reason` is an app-defined STRING, not an enum** — the surveyed app switches on `credentials` /
+  `transient` / `dns` / `migration` to decide what the UI offers. That is its taxonomy, not the kit's,
+  exactly as `Kind` is. The optional `OperationLabel` carries the human-facing half, i18n-ready.
+- **`Dismiss` is its own member, not `Cancel` accepting more states.** Declining a pending offer and
+  cancelling live work are different acts: one removes an offer, the other signals a token and is
+  permission-checked against `Cancellable`. This branch's only Critical came from precisely that
+  conflation inside `Cancel`; rebuilding it in a new place would be a poor use of the lesson. `Dismiss`
+  refuses `Running` for the same reason — dismissing live work would route around the permission check.
+  It DOES signal the token first when one exists, so a paused body parked on a token still unwinds.
+- **`Pause` has no client route.** Pausing is the host's knowledge (it is the side that discovered the
+  credentials expired); a client cannot pause work it does not run. `RESUME` and `DISMISS` are client
+  routes because they are the human's decisions. This keeps the kit out of policy.
+- **`Report` still requires `Running`.** A paused operation is not progressing, and letting progress
+  tick while paused is how a UI ends up showing motion for work that is stopped.
+
+### 5A.4 The asymmetry that stays, and why
+
+`RequestResume` on a **`Paused`** entry emits `OPERATION_RESUME_REQUESTED` and leaves the entry alone —
+the app calls `Resume()` when it has actually resumed. On an **`Interrupted`** entry it still drops the
+entry, because there is no live handle to flip: the body died with the process, and the app's resume
+path starts fresh work. That is intrinsic rather than an inconsistency to tidy away, and it follows the
+same split that fixed the Critical — *the client asking* is not *the state changing*.
+
+Considered and rejected: an `Adopt(id) → IOperation` that re-attaches a handle to an interrupted entry,
+unifying both paths and preserving the activity row's identity across a crash. It is genuinely tidier,
+but no consumer has asked for identity across restart, the existing drop-then-register-fresh path works
+in the app that has this problem today, and every public member is SemVer surface at 1.0. Recorded as a
+known limit, not a gap.
+
+**The invariant is enforced, not asserted:** a test enumerates `OperationStatus` and asserts every
+non-terminal value has a transition reaching a terminal one. A future state added without an exit fails
+that test rather than waiting for an adopter to strand a deployment on it.
+
 ## 6. What this deliberately does NOT ship
 
 - **No queue, scheduler, retry, or priority.** Starting work is the app's; the kit tracks what the app
