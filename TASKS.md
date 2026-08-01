@@ -43,11 +43,11 @@ Surfaced by the D3 transport spike, which PASSED — `Shenora.Ipc` needed no cha
 recorded so the next real non-WebView2 base arrives as EVIDENCE rather than a re-argument from
 scratch; at that point the shape is already known.
 
-> **The anticipated consumer #2 for the first two is an on-device mobile host** — see
-> `docs/2026-08-02-shenora-mobile-offline-plan.md`, which assesses what an offline Sonora would need
-> and finds that the real prerequisite is on Sonora's side (28 HTTP controllers to factor into
-> transport-neutral modules), not the kit's. Do NOT build these because that plan exists; build them
-> when the consumer does.
+> **The anticipated consumer #2 for the first two is an on-device (offline) mobile host** — see
+> `docs/2026-08-02-shenora-mobile-offline-plan.md`. Its finding: the prerequisite sits with the
+> ADOPTING app, not the kit — logic living inside transport handlers cannot move on-device, so
+> factoring it behind a transport-neutral seam comes first. Do NOT build these because a plan exists;
+> build them when the consumer does.
 
 - [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
   base (see the design-pass record in `docs/task-archive.md`) showed the IPC half needs NOTHING to run
