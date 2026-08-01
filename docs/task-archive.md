@@ -1463,6 +1463,56 @@ mirror the host's own asymmetry exactly rather than applying one rule to both br
 action, and a permission check split across two lock acquisitions must report the SECOND
 acquisition's outcome, never the first).
 
+#### Second adopter review: the interrupted entry with no selector (2026-08-01, before merge)
+
+Re-review of the completed lifecycle above, from "the first adopter, second review of the
+communication core (2026-08-01)" (`TASKS.md`). **Both findings from the first review confirmed
+closed, and closed better than filed — recorded as positive confirmation, nothing to fix:**
+`Pause(reason, detail)` makes the reason required; `Dismiss` is a separate member from `Cancel` and
+signals the entry's token first; `Run` completes a body only while still `Running`, so
+`op.Pause("dns"); return;` is no longer silently stamped `Completed`; the `RequestResume` asymmetry
+(`Paused` left in place, `Interrupted` removed) is deliberate, documented, and carries `status` on the
+event; `WireMirrorTests` derives from the host enum so neither the status nor the route could have
+been added unmirrored.
+
+One real gap, in the client:
+
+- [x] **A crash-announced `interrupted` operation appeared in NONE of the client's selectors, so the
+  offer `RegisterInterrupted` exists to surface was invisible to a UI built on them.** `makeState`
+  exposed `running`/`paused`/`finished`; `TERMINAL_STATUSES` deliberately excludes `interrupted`
+  (correctly) and `paused` matched only the literal `'paused'`, so an `interrupted` entry belonged to
+  NO band — reachable only by hand-filtering `byId`, which the store's own docs discourage. The host
+  models `Paused`+`Interrupted` as ONE waiting band (§5A.2) that `Dismiss`/`RequestResume` both accept;
+  only the client-side selector for the other half was missing. Worst-case timing: a paused run is
+  visible via `.paused` right up to a restart, then reappears as `interrupted` from the app's own
+  checkpoint and vanishes from any UI built on `running`/`paused`/`finished` alone — the one state that
+  exists purely to say "your work did not finish, decide what to do" silently dropped at exactly the
+  moment its owner needs to see it.
+  Closed by two DERIVED getters on `OperationsState` (`src/Shenora.React/src/operations.ts`) — never
+  stored state, computed in the same `makeState` the existing three already live in: `interrupted`
+  (that status alone) and `waiting` (`paused` ∪ `interrupted`). `waiting` is derived from one
+  `WAITING_STATUSES` set defined ONCE, the same discipline `TERMINAL_STATUSES` already used, rather
+  than a hand-listed pair repeated across two getters — a second, independently-maintained copy is
+  exactly the class of bug this branch's earlier findings (the `resume`/`clearFinished` asymmetry
+  bugs above) were also made of. `paused` itself is unchanged: a resume prompt and a pause-reason
+  display are different UI uses and both still need their own half.
+  Pinned by a client-side mirror of the host's `OperationLifecycleInvariantTests`: a test enumerates
+  the LIVE `OperationStatuses` object (never a hardcoded list) and asserts every status lands in
+  exactly one of {running, waiting, finished}, plus a direct `waiting == paused ∪ interrupted` check
+  and a dedicated `interrupted` getter test. RED confirmed first against the pre-fix code — both new
+  assertions threw `TypeError: Cannot read properties of undefined (reading 'map'/'some')` since
+  `state.waiting`/`state.interrupted` did not exist yet; GREEN after the getters landed
+  (`src/Shenora.React/src/operations.test.ts`).
+
+**Docs pass:** `CHANGELOG.md` (folded into 0.2.0's still-unreleased `### Added`),
+`src/Shenora.React/README.md` (the `interrupted`/`waiting` getters and when to reach for which),
+`ARCHITECTURE.md` (the client surface enumeration), `.claude/knowledge/ipc-contracts.md` (one new
+gotcha: a derived-getter set covering a host state machine's bands must be checked against the FULL
+enum, not eyeballed against the getters that already exist), and `operations.ts`'s own doc comments
+(the `OperationsState` doc now states the host's three-band table directly, and notes that an
+`interrupted` entry is a pending OFFER the host never prunes on its own — only `Resume`/`Dismiss`
+remove it).
+
 ### 0.1.2 — Stage 1 adopted: kit-owns-DPI + plain-form maximize deferral (2026-08-01)
 
 Second round of adopter feedback, this time from the same private desktop sibling **after**

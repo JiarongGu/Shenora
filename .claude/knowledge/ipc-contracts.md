@@ -355,3 +355,18 @@ transport, or building the P6 adoption shims.
   method's own permission check and the mutation it gates are split across two lock acquisitions for a
   documented reason, the SECOND acquisition's outcome is the only one that is actually true by the
   time the caller returns — report that one, never the first.
+- **A client-side derived-getter set covering a host state machine's bands must be checked against
+  the FULL status enum, not eyeballed against the getters that already exist** (`operations.ts`,
+  second adopter review). `makeState` shipped `running`/`paused`/`finished` when `Paused` was added,
+  which reads complete against three statuses — but the host already had FIVE (`Interrupted` predates
+  `Paused`), so `interrupted` fell into no getter at all: not `running`, not `paused` (matched only the
+  literal string), not `finished` (`TERMINAL_STATUSES` deliberately excludes it). It was reachable only
+  by hand-filtering `byId`, exactly the workaround the store's own docs warn against. The fix
+  (`interrupted`, `waiting` = `paused` ∪ `interrupted`, both derived from one `WAITING_STATUSES` set —
+  the same one-definition discipline `TERMINAL_STATUSES` already used) is the specific instance; the
+  REUSABLE half is the same shape as the host's own `OperationLifecycleInvariantTests`: a test that
+  enumerates the LIVE status object (`Object.values(OperationStatuses)`, never a hardcoded list) and
+  asserts every value lands in exactly one getter-backed band, so a status added later with no band
+  fails that test instead of silently belonging nowhere. A hand-maintained parallel status set (a
+  second `paused`/`interrupted` list living inside a different getter) is precisely how this class of
+  gap re-earns itself — define the set once, derive every getter that needs it from that one set.

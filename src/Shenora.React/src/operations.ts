@@ -15,14 +15,22 @@ export const OperationStatuses = {
   Completed: 'completed',
   Failed: 'failed',
   Cancelled: 'cancelled',
+  /**
+   * A crash-announced, resumable operation re-registered from the app's own checkpoint
+   * (`IOperationRegistry.RegisterInterrupted`) — a pending RESUME offer, not finished history: the
+   * other half of the WAITING band alongside `paused` (design §5A.2,
+   * {@link OperationsState.waiting}). The host **never prunes it** on its own; only `Resume` (the
+   * host's own `RequestResume`, via the client's `resume` action) or the client's `DISMISS` route
+   * removes it — an entry left un-actioned stays offered forever, on purpose.
+   */
   Interrupted: 'interrupted',
   /**
    * Stopped mid-flight WITHOUT crashing, awaiting a decision (expired credentials, a throttling
-   * provider, DNS not yet propagated, a migration awaiting confirmation) — the WAITING band
-   * alongside `interrupted` (design §5A.2): never pruned as history, and not one of the terminal
-   * statuses in {@link OperationsState.finished}. Reached from `running` via the host's own
-   * `IOperation.Pause`; exits via the host's `IOperation.Resume` (back to `running`), the
-   * `DISMISS` route (to `cancelled`), or a direct complete/fail.
+   * provider, DNS not yet propagated, a migration awaiting confirmation) — half of the WAITING band
+   * alongside `interrupted` (design §5A.2, {@link OperationsState.waiting}): never pruned as
+   * history, and not one of the terminal statuses in {@link OperationsState.finished}. Reached from
+   * `running` via the host's own `IOperation.Pause`; exits via the host's `IOperation.Resume` (back
+   * to `running`), the `DISMISS` route (to `cancelled`), or a direct complete/fail.
    */
   Paused: 'paused',
 } as const;
@@ -109,16 +117,51 @@ const TERMINAL_STATUSES: ReadonlySet<OperationStatus> = new Set([
 ]);
 
 /**
- * State behind {@link useShenoraOperations}. `running`/`finished` are DERIVED getters computed
- * from `byId` on every read — never a second copy a fold has to remember to keep in sync. `byId`
- * itself is the only thing any reducer here ever writes.
+ * The WAITING band (design §5A.2): stopped, resumable, awaiting a decision — exactly what
+ * `Dismiss`/`RequestResume` both accept, and never pruned as history (an offer is not history).
+ * Defined ONCE, same discipline as {@link TERMINAL_STATUSES}, so {@link OperationsState.waiting} is
+ * *derived* from this set rather than a hand-listed pair repeated across getters — a second,
+ * independently-maintained copy is exactly how `interrupted` fell into no band in the first place.
+ */
+const WAITING_STATUSES: ReadonlySet<OperationStatus> = new Set([
+  OperationStatuses.Paused,
+  OperationStatuses.Interrupted,
+]);
+
+/**
+ * State behind {@link useShenoraOperations}. Mirrors the host's THREE bands (design §5A.2), not five
+ * bare statuses:
+ *
+ * | Band | Getter(s) | Exits |
+ * |---|---|---|
+ * | Active | {@link running} | complete / fail / cancel / pause |
+ * | Waiting — stopped, resumable, awaiting a decision | {@link paused}, {@link interrupted}, {@link waiting} (their union) | resume / dismiss / complete / fail |
+ * | Terminal | {@link finished} | — (prunable via `clearFinished`) |
+ *
+ * An `'interrupted'` entry is a pending RESUME **offer**, not finished history: the host never prunes
+ * it on its own, and only `Resume` or `Dismiss` removes it — the same rule `'paused'` follows, which
+ * is why the two share the {@link waiting} getter. Every getter here is DERIVED from `byId` on every
+ * read — never a second copy a fold has to remember to keep in sync. `byId` itself is the only thing
+ * any reducer here ever writes.
  */
 export interface OperationsState {
   byId: Record<string, OperationInfo>;
   /** Every currently-running operation, in `byId` order. */
   readonly running: OperationInfo[];
-  /** Every operation currently `'paused'` — the WAITING band alongside `'interrupted'` (design §5A.2). */
+  /** Every operation currently `'paused'` — one half of the WAITING band; see {@link waiting} for both. */
   readonly paused: OperationInfo[];
+  /**
+   * Every operation currently `'interrupted'` — a crash-announced, pending RESUME offer (the other
+   * half of the WAITING band; see {@link waiting} for both). Never pruned by the host on its own:
+   * only `Resume`/`Dismiss` remove it.
+   */
+  readonly interrupted: OperationInfo[];
+  /**
+   * The WAITING band (design §5A.2): {@link paused} ∪ {@link interrupted} — exactly the set
+   * `Dismiss`/`RequestResume` both accept, so a status bar can render "needs you" as one bucket
+   * without caring whether the process restarted in between.
+   */
+  readonly waiting: OperationInfo[];
   /** Every operation that reached a terminal status (completed/failed/cancelled). */
   readonly finished: OperationInfo[];
 }
@@ -164,7 +207,10 @@ function index(list: OperationInfo[]): Record<string, OperationInfo> {
   return byId;
 }
 
-/** The one place `running`/`finished` are computed — wrap `byId` here, nowhere else. */
+/**
+ * The one place `running`/`paused`/`interrupted`/`waiting`/`finished` are computed — wrap `byId`
+ * here, nowhere else.
+ */
 function makeState(byId: Record<string, OperationInfo>): OperationsState {
   return {
     byId,
@@ -173,6 +219,12 @@ function makeState(byId: Record<string, OperationInfo>): OperationsState {
     },
     get paused() {
       return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Paused);
+    },
+    get interrupted() {
+      return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Interrupted);
+    },
+    get waiting() {
+      return Object.values(byId).filter((operation) => WAITING_STATUSES.has(operation.status));
     },
     get finished() {
       return Object.values(byId).filter((operation) => TERMINAL_STATUSES.has(operation.status));
@@ -275,8 +327,10 @@ export function createOperationsStore(
  * `IOperationRegistry`): snapshots via `LIST` on first subscribe, then folds `OPERATION_UPDATED` by
  * id — one subscription however many components read it, and a late mounter renders CURRENT state
  * because the host is authoritative (the store primitive's own late-mounter case is now
- * host-backed end to end). `running`/`finished` are selectors an activity panel or status bar reads
- * directly: `useShenoraOperations((s) => s.running)`. Bound to the default module/no scope — use
+ * host-backed end to end). `running`/`waiting`/`finished` are selectors an activity panel or status
+ * bar reads directly: `useShenoraOperations((s) => s.waiting)` for the one "needs you" bucket
+ * (`paused`/`interrupted` individually if the UI distinguishes a resume prompt from a pause-reason
+ * display). Bound to the default module/no scope — use
  * {@link createOperationsStore} directly for a renamed module or a scope-filtered instance.
  *
  * Headless, per D13: no component, no UI opinion, no `ProcessType`-style enum — what an operation

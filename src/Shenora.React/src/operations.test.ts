@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
-import { createOperationsStore } from './operations.js';
+import { createOperationsStore, OperationStatuses } from './operations.js';
 import { FakeTransport } from './testing/fakeTransport.js';
 
 /**
@@ -200,6 +200,80 @@ describe('operations store', () => {
     expect(store.getState().paused.map((o) => o.id)).toEqual(['op-2']);
     expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
     expect(store.getState().finished).toEqual([]);
+  });
+
+  /**
+   * Second-adopter-review finding: `interrupted` fell into NO existing getter — not `running`, not
+   * `paused` (matches only the literal `'paused'`), not `finished` (`TERMINAL_STATUSES` deliberately
+   * excludes it) — reachable only by hand-filtering `byId`, which the store's own docs discourage.
+   * The `interrupted` getter closes that: the other half of the WAITING band (design §5A.2).
+   */
+  it('exposes interrupted operations separately from paused, running, and finished', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'paused' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'interrupted' }));
+
+    expect(store.getState().interrupted.map((o) => o.id)).toEqual(['op-3']);
+    expect(store.getState().paused.map((o) => o.id)).toEqual(['op-2']);
+    expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
+    expect(store.getState().finished).toEqual([]);
+  });
+
+  /**
+   * `waiting` (design §5A.2) is the band `Dismiss`/`RequestResume` both accept — `paused` ∪
+   * `interrupted` — so a status bar can render "needs you" as one bucket without caring whether the
+   * process restarted in between. Asserted as an actual union of the two OTHER getters' output, not
+   * a second hardcoded list, so this test cannot drift from them independently.
+   */
+  it('waiting equals paused union interrupted', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'paused' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'interrupted' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'running' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-4', status: 'completed' }));
+
+    const waitingIds = store.getState().waiting.map((o) => o.id);
+    const unionIds = [
+      ...store.getState().paused.map((o) => o.id),
+      ...store.getState().interrupted.map((o) => o.id),
+    ];
+
+    expect(waitingIds.slice().sort()).toEqual(unionIds.slice().sort());
+    expect(waitingIds).toEqual(['op-1', 'op-2']); // byId order, matching `running`'s own convention
+  });
+
+  /**
+   * The client mirror of the host's `OperationLifecycleInvariantTests` (§5A.1): enumerate the LIVE
+   * `OperationStatuses` object — never a hardcoded list — so a status added later with no band shows
+   * up as a FAILURE here instead of silently belonging nowhere, which is exactly how `interrupted`
+   * went unnoticed before `waiting`/`interrupted` existed. Run against the pre-fix store this fails
+   * (see TASKS.md / the task's own notes for the captured RED output); it must stay green for any
+   * future status too.
+   */
+  it('every live status belongs to exactly one band: running, waiting, or finished', () => {
+    const statuses = Object.values(OperationStatuses);
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    statuses.forEach((status, i) => {
+      bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: `op-${i}`, status }));
+    });
+
+    const state = store.getState();
+    const bandsOf = (id: string): string[] => {
+      const bands: string[] = [];
+      if (state.running.some((o) => o.id === id)) bands.push('running');
+      if (state.waiting.some((o) => o.id === id)) bands.push('waiting');
+      if (state.finished.some((o) => o.id === id)) bands.push('finished');
+      return bands;
+    };
+
+    statuses.forEach((status, i) => {
+      const bands = bandsOf(`op-${i}`);
+      expect(bands, `status '${status}' landed in bands [${bands.join(', ')}], expected exactly 1`).toHaveLength(1);
+    });
   });
 
   /**

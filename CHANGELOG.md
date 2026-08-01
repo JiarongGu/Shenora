@@ -143,7 +143,11 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   values, including `Paused`) + `OperationInfo`/`OperationLabel` types (`OperationInfo.pauseReason`
   mirrors the host's `PauseReason`), a `LIST` snapshot on first subscribe (so a progress strip that
   mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with `running`/`paused`/
-  `finished` DERIVED getters computed from `byId` on every read and `cancel`/`dismiss`/
+  `interrupted`/`waiting`/`finished` DERIVED getters computed from `byId` on every read (`waiting` is
+  `paused` ∪ `interrupted`, derived from one internal status set — the exact band `Dismiss`/
+  `RequestResume` both accept — rather than a hand-listed pair repeated across getters; added because
+  an `interrupted` entry used to fall into NO getter: not `running`, not `paused` — matched only the
+  literal `'paused'` — not `finished`, reachable only by hand-filtering `byId`) and `cancel`/`dismiss`/
   `clearFinished`/`resume` actions. `clearFinished` prunes its entries from LOCAL state immediately
   (optimistic, no wire change): the host removes them but emits no removal delta, so a mounted store
   used to keep rendering cleared rows until every subscriber unmounted — the host's `MaxHistory`

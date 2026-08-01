@@ -328,11 +328,17 @@ changes, noting them in `CHANGELOG.md`).
   (the wire values, including `paused`) + `OperationInfo`/`OperationLabel` types (`pauseReason`
   mirrors the host's `PauseReason`), and a `createShenoraStore` instance
   (`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id }`, `actions: { cancel, dismiss,
-  clearFinished, resume }`) with `running`/`paused`/`finished` DERIVED getters computed from `byId` on
-  every read — never a second copy a reducer has to remember to keep in sync (`finished`/`paused` stay
-  disjoint by construction: the TERMINAL status set `finished` filters on excludes `paused`/
-  `interrupted` on purpose, and `clearFinished`'s optimistic local prune uses that SAME set, pinned by
-  a test, so it cannot remove a `paused`/`interrupted` entry). `resume`'s own local prune is NOT on the
+  clearFinished, resume }`) with `running`/`paused`/`interrupted`/`waiting`/`finished` DERIVED getters
+  computed from `byId` on every read — never a second copy a reducer has to remember to keep in sync.
+  `interrupted`/`waiting` (0.2.0, second adopter review) close a gap the design's own three-band table
+  (§5A.2) exposed: an `interrupted` entry used to fall into NO getter — not `running`, not `paused`
+  (matched only the literal status string), not `finished` — reachable only by hand-filtering `byId`.
+  `waiting` (`paused` ∪ `interrupted`, exactly the band `Dismiss`/`RequestResume` both accept) is
+  derived from one internal status set, the same discipline `finished`'s own TERMINAL set already
+  used, rather than a hand-listed pair repeated across getters. `finished`/`paused`/`interrupted` stay
+  disjoint by construction (the TERMINAL set `finished` filters on excludes `paused`/`interrupted` on
+  purpose), and `clearFinished`'s optimistic local prune uses that SAME TERMINAL set, pinned by a test,
+  so it cannot remove a `paused`/`interrupted` entry. `resume`'s own local prune is NOT on the
   terminal set — it mirrors the host's `RequestResume` asymmetry (§5A.4) instead: an `interrupted`
   entry is dropped locally (the host removes it too), a `paused` one is left untouched (the host
   deliberately keeps it for the app's own `Resume()` to flip) — a review finding on the lifecycle
