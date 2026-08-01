@@ -169,18 +169,19 @@ public interface IOperationRegistry
     /// now that there is only one such value (see the asymmetry below for what a handler actually needs
     /// to tell apart).
     /// <para>
-    /// <b>The drop-vs-keep decision is deliberate (§5A.4), and now keys on
-    /// <see cref="OperationOptions.ResumePayload"/>, not on a second status — that is the intrinsic
-    /// difference this section used to spend a whole extra <see cref="OperationStatus"/> value naming:</b>
-    /// a <c>null</c> <see cref="OperationInfo.ResumePayload"/> means an ordinary entry reached via
-    /// <see cref="IOperation.Wait"/> — LEFT IN PLACE, because the app calls
+    /// <b>The drop-vs-keep decision is deliberate (§5A.4), and keys on how the entry REACHED
+    /// <see cref="OperationStatus.Waiting"/> — kit-owned provenance the registry knows for certain —
+    /// not on <see cref="OperationOptions.ResumePayload"/>, which is app-controlled data and so cannot
+    /// answer that question reliably:</b> an entry reached via a live <see cref="IOperation.Wait"/>
+    /// (through <see cref="Start"/>/<see cref="Run"/>) is LEFT IN PLACE, because the app calls
     /// <see cref="IOperation.Resume"/> on its own handle once it has actually resumed, so the client
-    /// asking is not the state changing. A non-null one means this entry has no live handle at all — the
-    /// process that owned it is gone (<see cref="RegisterWaiting"/>'s checkpoint is the common case, but
-    /// the same is true of any entry the app itself started with a <see cref="OperationOptions.ResumePayload"/>
-    /// already attached) — so it is REMOVED, and the resumed operation registers a FRESH one (via
-    /// <see cref="Start"/>/<see cref="Run"/>) when it actually restarts. This call only carries the
-    /// app's opaque token across; it never resumes anything itself.
+    /// asking is not the state changing — this holds even when the app also attached its own
+    /// <see cref="OperationOptions.ResumePayload"/> at <see cref="Start"/> time, since the handle is
+    /// still live either way. An entry <see cref="RegisterWaiting"/> reconstructed directly from the
+    /// app's own crash checkpoint has no live handle at all — the process that owned it is gone — so it
+    /// is REMOVED, and the resumed operation registers a FRESH one (via <see cref="Start"/>/
+    /// <see cref="Run"/>) when it actually restarts. This call only carries the app's opaque token
+    /// across; it never resumes anything itself.
     /// </para>
     /// </summary>
     bool RequestResume(string id);

@@ -280,12 +280,14 @@ changes, noting them in `CHANGELOG.md`).
   conflating them inside `Cancel` was this branch's only Critical), `RegisterWaiting`/
   `RequestResume` for a crash-resumable checkpoint the app owns (deduped on
   `(module, kind, resumePayload)`, resumability expressed by a non-empty `ResumePayload` alone —
-  `RequestResume`'s drop-vs-keep decision now keys on `ResumePayload`, not on a second status (there
-  is only one `Waiting` value): a null `ResumePayload` (an ordinary `IOperation.Wait()`) is LEFT IN
-  PLACE for the app's own `IOperation.Resume()` to flip; a non-null one (`RegisterWaiting`'s
-  checkpoint, or one an app itself attached at `Start()`) is REMOVED, since there is no live handle to
-  flip — the `OPERATION_RESUME_REQUESTED` payload still carries `status` (always `Waiting` now) so a
-  handler can keep branching on it), and `RequestWait` (post-audit: an exact mirror of `RequestResume`
+  `RequestResume`'s drop-vs-keep decision keys on the registry's own internal provenance record
+  (`Entry.Reconstructed`, set only by `RegisterWaiting`), not on `ResumePayload`, which is app-controlled
+  data and so cannot reliably answer "does this entry have a live handle": an entry reached via an
+  ordinary `IOperation.Wait()` is LEFT IN PLACE for the app's own `IOperation.Resume()` to flip — even
+  when the app also attached its own `ResumePayload` at `Start()` time, since the handle is still live
+  either way; an entry `RegisterWaiting` reconstructed from a checkpoint is REMOVED, since there is no
+  live handle to flip — the `OPERATION_RESUME_REQUESTED` payload still carries `status` (always
+  `Waiting` now) so a handler can keep branching on it), and `RequestWait` (post-audit: an exact mirror of `RequestResume`
   for the direction the kit previously had no client route for at all — asks, does not act; the
   owner's own `IOperation.Wait` is what stops the work). A removal (`MaxHistory` eviction,
   `ClearFinished`, the no-live-handle drop inside `RequestResume`) publishes `OperationEvents.Removed`

@@ -247,16 +247,20 @@ public class OperationResumeTests
     }
 
     /// <summary>
-    /// The intrinsic-difference ruling, proven directly: an app that attaches its OWN
-    /// <see cref="OperationOptions.ResumePayload"/> at <see cref="IOperationRegistry.Start"/> time —
-    /// not through <see cref="IOperationRegistry.RegisterWaiting"/> at all — and then calls
-    /// <see cref="IOperation.Wait"/> still gets dropped by RequestResume, because the decision keys on
-    /// <see cref="OperationOptions.ResumePayload"/> being non-null, not on HOW the entry reached
-    /// Waiting. This is the documented edge case, not a bug: a non-null payload always means "treat as
-    /// having no live handle".
+    /// The hole this closes: <c>RequestResume</c> used to key its drop-vs-keep decision on
+    /// <see cref="OperationOptions.ResumePayload"/> being non-null rather than on how the entry reached
+    /// <see cref="OperationStatus.Waiting"/> — but that field is APP-controlled data, not a signal the
+    /// kit owns. An app that attaches its own <see cref="OperationOptions.ResumePayload"/> at
+    /// <see cref="IOperationRegistry.Start"/> time (not through <see cref="IOperationRegistry.RegisterWaiting"/>
+    /// at all) and then calls <see cref="IOperation.Wait"/> has a genuinely LIVE handle — the body is
+    /// parked, not dead — so it must be treated exactly like any other live-<c>Wait()</c> entry: LEFT IN
+    /// PLACE, with the handle's own <see cref="IOperation.Resume"/> still able to flip it back to
+    /// <see cref="OperationStatus.Running"/>. The registry now keys this on internal provenance
+    /// (<c>Entry.Reconstructed</c>, set only by <see cref="IOperationRegistry.RegisterWaiting"/>) instead
+    /// of the payload, so this combination is no longer ambiguous.
     /// </summary>
     [Fact]
-    public void RequestResume_drops_a_waiting_entry_whose_own_ResumePayload_was_set_at_Start_even_though_it_has_a_live_handle()
+    public void RequestResume_on_a_live_handle_leaves_it_in_place_even_when_its_own_ResumePayload_was_set_at_Start()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", ResumePayload = "checkpoint-attached-at-start" });
@@ -265,7 +269,14 @@ public class OperationResumeTests
 
         Assert.True(registry.RequestResume(operation.Id));
 
-        Assert.Empty(registry.GetAll());
-        Assert.Single(events, e => e.Type == OperationEvents.Removed);
+        // Left IN PLACE, still Waiting — same shape as the ordinary live-Wait() case, not dropped.
+        var info = registry.GetAll().Single(o => o.Id == operation.Id);
+        Assert.Equal(OperationStatus.Waiting, info.Status);
+        Assert.DoesNotContain(events, e => e.Type == OperationEvents.Removed);
+
+        // The live handle still works — proves the entry is genuinely untouched, not a look-alike
+        // replacement, and that its CancellationTokenSource was never disposed out from under it.
+        operation.Resume();
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single(o => o.Id == operation.Id).Status);
     }
 }

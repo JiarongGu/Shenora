@@ -304,10 +304,23 @@ transport, or building the P6 adoption shims.
   collapsed into the single `OperationStatus.Waiting` shown above.** Both were already one band
   everywhere that mattered (`Dismiss`/`RequestResume` accepted either, neither was pruned, the
   client's `waiting` getter already unioned them); the one place they diverged — `RequestResume`
-  dropping the checkpoint case, keeping the live-`Wait()` case — now keys on `ResumePayload` instead
-  of a second status. With one fewer non-terminal status, `OperationLifecycleInvariantTests`' sweep is
-  simpler, not weaker — it still enumerates the live enum rather than a hardcoded list. Full rename
-  table and rationale: `docs/DECISIONS.md` D23's amendment.
+  dropping the checkpoint case, keeping the live-`Wait()` case — moved to keying on `ResumePayload`
+  instead of a second status. With one fewer non-terminal status, `OperationLifecycleInvariantTests`'
+  sweep is simpler, not weaker — it still enumerates the live enum rather than a hardcoded list. Full
+  rename table and rationale: `docs/DECISIONS.md` D23's amendment.
+  **CLOSED (2026-08-01, before 0.2.0 pushed/published): keying on `ResumePayload` was a residual
+  hole, not the final shape — that field is APP-controlled (an app may set it on `OperationOptions` at
+  `Start()`), so it could not reliably answer "does this entry have a live handle".** An app that
+  attached its own `ResumePayload` at `Start()` and then called `Wait()` had a genuinely live operation
+  (handle intact, body parked) dropped by `RequestResume` anyway — silently orphaning later
+  `Report`/`Complete`/`Fail` calls on it, the same defect class `IModuleContext` closed for module
+  drift (a decision keyed on a value the caller also controls, not on the fact the kit itself knows for
+  certain). `RequestResume` now keys the drop-vs-keep decision on an internal `Entry.Reconstructed`
+  flag instead — set `true` only by `RegisterWaiting` (the one call site that legitimately reconstructs
+  an entry with no live body), left `false` by `Start` (which always allocates one) — never exposed on
+  `OperationInfo`, since no consumer needs it and every public member is SemVer surface at 1.0.
+  `ResumePayload`'s other roles are unchanged: `RegisterWaiting` still requires it non-empty, the
+  dedupe key still uses it, and it still rides `OPERATION_RESUME_REQUESTED`.
 
 ## Gotchas / traps
 
@@ -349,8 +362,10 @@ transport, or building the P6 adoption shims.
   always removed the entry host-side. §5A.4 then made that conditional — the no-live-handle case is
   still removed, an entry reached via a live `Wait()` is deliberately LEFT IN PLACE for the app's own
   `Resume()` handle to flip (this asymmetry originally keyed on a second status, `Interrupted` vs.
-  `Paused`; it now keys on `ResumePayload` after the later status collapse — the client-side lesson
-  below holds either way) — and the client's prune did not get re-derived alongside it. The
+  `Paused`; after the status collapse it briefly keyed on `ResumePayload`, and now keys on the host's
+  own internal provenance record — the client-side lesson below holds regardless of which host-side
+  signal decides it, since the client only ever folds the named-id `OPERATION_REMOVED` event, never
+  the field itself) — and the client's prune did not get re-derived alongside it. The
   consequence rebuilt §5A.1's original bug ONE LAYER UP: a user clicking Resume on a still-waiting
   entry made the row vanish locally (nothing published host-side, since nothing changed), so the
   still-parked operation became unreachable — no visible row

@@ -42,7 +42,10 @@ public enum OperationStatus
     /// <see cref="Running"/>), <see cref="IOperationRegistry.Dismiss"/> (to
     /// <see cref="Cancelled"/>), or a direct
     /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
-    /// (a waiting operation can still fail on a deadline).
+    /// (a waiting operation can still fail on a deadline). <see cref="IOperationRegistry.RequestResume"/>
+    /// itself does NOT use this field to tell the two apart — see its own doc and
+    /// <see cref="OperationOptions.ResumePayload"/>'s for the internal, kit-owned signal it actually
+    /// keys on, and why.
     /// </para>
     /// </summary>
     Waiting,
@@ -126,13 +129,20 @@ public sealed record OperationOptions
     /// silently break the ordinary wait/resume flow for an operation that — like most — never set one.
     /// </para>
     /// <para>
-    /// This is also what <see cref="IOperationRegistry.RequestResume"/> keys its drop-vs-keep decision
-    /// on now that <see cref="OperationStatus"/> carries only one WAITING value: non-null means this
-    /// entry has no live handle (a reconstructed offer — either
-    /// <see cref="IOperationRegistry.RegisterWaiting"/>'s checkpoint, or one the app itself attached
-    /// here), so the entry is removed and the app starts fresh work; null means an ordinary live
-    /// <see cref="IOperation.Wait"/> — the entry stays for the app's own <see cref="IOperation.Resume"/>
-    /// to flip.
+    /// <b>NOT what <see cref="IOperationRegistry.RequestResume"/> keys its drop-vs-keep decision on</b>
+    /// — the two often correlate, but keying on this field directly used to be a real defect: an app
+    /// that attaches its own checkpoint token here at <see cref="IOperationRegistry.Start"/> time (not
+    /// through <see cref="IOperationRegistry.RegisterWaiting"/> at all) and later calls
+    /// <see cref="IOperation.Wait"/> has a genuinely LIVE handle, and a decision that read this field
+    /// would drop that entry out of the registry exactly like a crash checkpoint, orphaning every later
+    /// <see cref="IOperation.Report"/>/<see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
+    /// call on it. <see cref="IOperationRegistry.RequestResume"/> instead keys on how the entry reached
+    /// <see cref="OperationStatus.Waiting"/> — a signal only the registry itself sets, so it cannot
+    /// drift the way this app-controlled field can. See that method's own doc for the full rationale.
+    /// This field keeps its other roles unchanged: <see cref="IOperationRegistry.RegisterWaiting"/>
+    /// still requires it non-empty, the dedupe key still uses it, and it still rides the
+    /// <see cref="OperationEvents.ResumeRequested"/> event so the app's handler knows which checkpoint
+    /// to continue.
     /// </para>
     /// </summary>
     public string? ResumePayload { get; init; }

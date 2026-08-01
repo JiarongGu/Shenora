@@ -396,21 +396,33 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   carries). `IOperation.Resume`/`RequestResume`, `Dismiss`, `OPERATION_RESUME_REQUESTED`, `RESUME`,
   `DISMISS` all keep their names: resuming and dismissing were already mechanism words, not scenario
   words, so D22 has nothing to fix there.
-  **`RequestResume` now keys its drop-vs-keep decision on `ResumePayload`, not on status** — non-null
-  means the entry has no live handle (a reconstructed offer, whether from `RegisterWaiting`'s
-  checkpoint or one an app itself attached at `Start()`), so it is removed and the app starts fresh
-  work via `Start`/`Run`; null means an ordinary `Wait()`, left IN PLACE for the app's own `Resume()`
-  to flip. This is the intrinsic difference the two-status design was really encoding — a crash leaves
-  no live body — now expressed directly instead of through an extra enum value. The
+  **`RequestResume` keyed its drop-vs-keep decision on `ResumePayload`, not on status, for one
+  release** — non-null meant the entry has no live handle (a reconstructed offer, whether from
+  `RegisterWaiting`'s checkpoint or one an app itself attached at `Start()`), so it was removed and the
+  app started fresh work via `Start`/`Run`; null meant an ordinary `Wait()`, left IN PLACE for the
+  app's own `Resume()` to flip. This was meant to express the intrinsic difference the two-status
+  design was really encoding — a crash leaves no live body — directly instead of through an extra enum
+  value, and it *mostly* did.
+  **CLOSED (2026-08-01, before 0.2.0 was pushed or published): keying on `ResumePayload` was itself a
+  residual hole, not a harmless simplification, because that field is APP-CONTROLLED data, not a signal
+  the kit owns.** An app that attaches its own `ResumePayload` to `OperationOptions` at `Start()` time
+  (not through `RegisterWaiting` at all) and then calls `Wait()` on the live handle has a genuinely LIVE
+  operation — handle intact, body parked — dropped by `RequestResume` exactly like a crash-checkpoint
+  offer, because the old decision read the field, not the call site that produced it: later
+  `Report`/`Complete`/`Fail` calls on that operation were silently ignored (and only logged) from then
+  on. This was recorded here as a deliberate, out-of-contract known limit rather than fixed — the wrong
+  resolution, the same defect class `IModuleContext` closed for module drift (a decision keyed on a
+  value the caller also controls instead of on the fact the kit itself knows for certain). The fix keys
+  the decision on the registry's OWN provenance instead: an internal `Entry.Reconstructed` flag, set
+  `true` only by `RegisterWaiting` (the one call site that legitimately reconstructs an entry with no
+  live body) and left `false` by `Start` (which always allocates one) — never exposed on
+  `OperationInfo`, since no consumer needs it and every public member is SemVer surface at 1.0. The
+  Start-with-`ResumePayload`-then-`Wait()` combination is no longer ambiguous: it is now an ordinary
+  live-`Wait()` entry, left in place like any other. `ResumePayload`'s other roles are unchanged —
+  `RegisterWaiting` still requires it non-empty, the dedupe key still uses it, and it still rides the
+  `OPERATION_RESUME_REQUESTED` event so a handler knows which checkpoint to continue. The
   `OPERATION_RESUME_REQUESTED` payload still carries `status` (always `Waiting` now) so a handler can
-  keep branching on the field without a breaking shape change, even though it can no longer
-  distinguish the two cases by itself — `resumePayload`'s presence is what does that now.
-  **What stays newly ambiguous, on purpose, and is recorded rather than solved:** an app that attaches
-  its own `ResumePayload` to `OperationOptions` at `Start()` time (not through `RegisterWaiting` at
-  all) and then calls `Wait()` on the live handle gets dropped by `RequestResume` exactly like a
-  crash-checkpoint offer would, because the decision reads the field, not the call site that produced
-  it. No consumer has done this; recording it here is the same discipline as every other known limit
-  in this file — evidence for a future seam if one ever needs it, not a guess in its absence.
+  keep branching on the field without a breaking shape change.
   **Enforcement, unchanged in spirit, simpler in fact:** `OperationLifecycleInvariantTests` (host) and
   its client-side mirror still enumerate the LIVE status set via reflection and require a registered
   exit per non-terminal value — with one fewer status to enumerate, the sweep is simpler, not weaker,

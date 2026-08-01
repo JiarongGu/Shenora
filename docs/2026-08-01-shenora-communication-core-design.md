@@ -22,9 +22,12 @@ Renamed throughout, mechanism not scenario (D22): `OperationStatus.Waiting` (one
 `OperationInfo.WaitReason`; `IOperation.Wait(reason?, detail?)`; `IOperationRegistry.RegisterWaiting`;
 `IOperationRegistry.RequestWait`; `OperationEvents.WaitRequested`
 (`OPERATION_WAIT_REQUESTED`); the `WAIT` facade route; client `OperationStatuses.Waiting` with the
-`paused`/`interrupted` half-getters deleted (`waiting` is now the whole band). `RequestResume` now
-keys its drop-vs-keep decision on `ResumePayload` rather than on status — full rationale, the closed
-"registered but not started" limit, and every rename: **D23's amendment**, `docs/DECISIONS.md`. Full
+`paused`/`interrupted` half-getters deleted (`waiting` is now the whole band). `RequestResume` keyed its
+drop-vs-keep decision on `ResumePayload` rather than on status at this point — full rationale, the
+closed "registered but not started" limit, and every rename: **D23's amendment**, `docs/DECISIONS.md`.
+**Superseded again (2026-08-01, before push/publish — see §5A.4's own amendment stack below): keying on
+`ResumePayload` was itself a residual hole, since that field is app-controlled, not kit-owned —
+`RequestResume` now keys on the registry's internal provenance record instead.** Full
 list: `CHANGELOG.md`'s 0.2.0 entry. This doc is AMENDED IN PLACE below (§4.2, §4.3, §5A, §6) rather
 than left to describe a two-status band that no longer exists — sections not touched by either audit
 still describe the as-shipped shape accurately.
@@ -574,14 +577,28 @@ retires the guess — the client folds a named-id removal instead of re-deriving
 on its own, so it structurally cannot diverge from it again.
 
 **AMENDED again (owner direction, before publish, the status collapse at the top of this doc): the
-asymmetry now keys on `ResumePayload`, not on a second status.** Once `Paused`/`Interrupted` folded into
-one `Waiting` value, `RequestResume` could no longer branch on status at all — so the drop-vs-keep
-decision moved to the field that was always the REAL signal: non-null `ResumePayload` means no live
-handle (a reconstructed offer — either the checkpoint-registration path, or one an app itself attached
-at `Start()` time), so the entry is removed; null means an ordinary live `Wait()`, left in place. The
-`OPERATION_RESUME_REQUESTED` payload still carries `status` (always `Waiting` now) so a handler can keep
-branching on the field without a breaking shape change, even though the field itself can no longer tell
-the two cases apart on its own.
+asymmetry keyed on `ResumePayload`, not on a second status, for one release.** Once `Paused`/`Interrupted`
+folded into one `Waiting` value, `RequestResume` could no longer branch on status at all — so the
+drop-vs-keep decision moved to `ResumePayload`: non-null meant no live handle, null meant an ordinary
+live `Wait()`, left in place. The `OPERATION_RESUME_REQUESTED` payload still carries `status` (always
+`Waiting` now) so a handler can keep branching on the field without a breaking shape change.
+
+**AMENDED again (2026-08-01, closing a residual hole before 0.2.0 was pushed or published): the
+decision now keys on the registry's OWN provenance record, not on `ResumePayload`.** `ResumePayload` is
+APP-controlled data — an app is free to attach one to `OperationOptions` at `Start()` time — so it was
+never actually a reliable signal for "does this entry have a live handle": an app that attached its own
+`ResumePayload` at `Start()` and then called `Wait()` had a genuinely LIVE operation (handle intact,
+body parked) dropped out of the registry here anyway, silently orphaning every later
+`Report`/`Complete`/`Fail` call on it. This is the same defect class `IModuleContext` closed for module
+drift — a decision keyed on a value the caller also controls instead of on the fact the kit itself knows
+for certain. The registry already knows the real answer: `RegisterWaiting` reconstructs an entry with
+NO live body (that path exists precisely for a checkpoint with nothing behind it), while `Start` always
+creates one with a live body. An internal `Entry.Reconstructed` flag, set only by `RegisterWaiting`, now
+drives the drop-vs-keep decision — never exposed on `OperationInfo` (no consumer needs it, and every
+public member is SemVer surface at 1.0). The Start-with-`ResumePayload`-then-`Wait()` combination that
+used to be a recorded, deliberate ambiguity is now simply an ordinary live-`Wait()` entry: left in place,
+same as any other, with `ResumePayload` unchanged in its other roles (`RegisterWaiting`'s non-empty
+requirement, the dedupe key, riding the resume event).
 
 Considered and rejected: an `Adopt(id) → IOperation` that re-attaches a handle to a no-live-handle
 entry, unifying both paths and preserving the activity row's identity across a crash. It is genuinely

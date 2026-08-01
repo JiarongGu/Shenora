@@ -57,8 +57,10 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   `OperationStatuses.Paused`/`.Interrupted` and the `paused`/`interrupted` getters REMOVED,
   `Waiting: 'waiting'` added (`waiting` is now the whole band). **Migration:** rename every occurrence
   1:1; a client testing "is this waiting" now reads `status === OperationStatuses.Waiting` instead of
-  unioning `paused`/`interrupted`; `RequestResume`'s drop-vs-keep now reads `resumePayload`, not
-  `status`, for any handler that branched on the removed values.
+  unioning `paused`/`interrupted`; a handler that branched on the removed values to guess whether
+  `RequestResume` would drop the entry should instead just fold `OPERATION_REMOVED` — the host decides
+  the drop-vs-keep asymmetry itself (see finding 8 under `### Added`) and always publishes it as a named
+  removal, so a client-side guess at the signal (`resumePayload` or otherwise) is never needed.
 
 ### Added
 
@@ -139,16 +141,18 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   a separate member rather than `Cancel` accepting more states for the same reason. It signals the
   entry's own `CancellationToken` first when one exists, so a waiting body still parked on its token
   unwinds.
-  `RequestResume`'s drop-vs-keep decision keys on `ResumePayload`, not on a second status (there is
-  only one `Waiting` value — see finding 7 below), and the two cases are handled asymmetrically ON
-  PURPOSE: an entry with a null `ResumePayload` (an ordinary `Wait()`) is LEFT IN PLACE (the app calls
-  `IOperation.Resume()` on its own handle once it has actually resumed — the client asking is not the
-  state changing), while one with a non-null `ResumePayload` (a checkpoint, or one an app itself
-  attached at `Start()`) is still REMOVED (there is no live handle to flip — the body died with the
-  process, and now also publishes `OPERATION_REMOVED { operationIds: [id] }`). The
+  `RequestResume`'s drop-vs-keep decision keys on how the entry reached `Waiting`, not on a second
+  status (there is only one `Waiting` value — see findings 7 and 8 below) and not on the app-controlled
+  `ResumePayload` field either (finding 8 closed that as a residual hole before publish), and the two
+  cases are handled asymmetrically ON PURPOSE: an entry reached via an ordinary `Wait()` is LEFT IN
+  PLACE (the app calls `IOperation.Resume()` on its own handle once it has actually resumed — the
+  client asking is not the state changing) — even when the app also attached its own `ResumePayload` at
+  `Start()` time, since the handle is still live either way — while one `RegisterWaiting` reconstructed
+  from a checkpoint is still REMOVED (there is no live handle to flip — the process that owned it is
+  gone, and this now also publishes `OPERATION_REMOVED { operationIds: [id] }`). The
   `OPERATION_RESUME_REQUESTED` payload also carries `status` (always `Waiting`), so a handler can keep
-  branching on that field, but `resumePayload` is what actually tells the two cases apart now — a
-  handler can no longer look the entry up afterward for the removed case, because it is gone.
+  branching on that field; a handler can no longer look the entry up afterward for the removed case,
+  because it is gone.
   `GetAll` sorts by the three bands, not "Running vs. everything else": Active (oldest first) →
   Waiting (oldest first) → Terminal (newest FINISHED first, tiebroken by
   newest `Sequence` — `TimeProvider.System`'s ~15.6 ms granularity on Windows means two same-tick
@@ -241,12 +245,24 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      `waiting` getter is now the whole band; the two half-getters are DELETED, not deprecated).
      `IOperation.Resume`/`RequestResume`, `Dismiss`, `OPERATION_RESUME_REQUESTED`, `RESUME`, `DISMISS`
      keep their names — resuming and dismissing were already mechanism words. `RequestResume`'s
-     drop-vs-keep now reads `ResumePayload` directly instead of a second status (finding 4's asymmetry
-     paragraph above is updated in place to describe this). Also closes a known limit finding 5 above
+     drop-vs-keep read `ResumePayload` directly instead of a second status at this point (finding 4's
+     asymmetry paragraph above was updated in place to describe this) — **closed further by finding 8
+     below**, since that field turned out not to be a safe signal either. Also closes a known limit finding 5 above
      recorded rather than solved: "registered but not yet started" is now representable with no kit
      change — an app calls `Wait("queued")` on the handle immediately after `Start`, before real work
      begins. Full rationale: `docs/DECISIONS.md` D23's amendment. Caught before 0.2.0 was pushed or
      published, so free.
+  8. **Keying `RequestResume`'s drop-vs-keep decision on `ResumePayload` (finding 7 above) was itself a
+     residual hole, closed before publish, so also free.** `ResumePayload` is APP-controlled data — an
+     app may attach one to `OperationOptions` at `Start()` — so it could not reliably answer "does this
+     entry have a live handle": an app that did so and then called `Wait()` had a genuinely LIVE
+     operation (handle intact, body parked) dropped exactly like a crash checkpoint, silently orphaning
+     later `Report`/`Complete`/`Fail` calls on it. `RequestResume` now keys the decision on an internal
+     `Entry.Reconstructed` flag instead, set only by `RegisterWaiting` (the one call site that
+     legitimately reconstructs an entry with no live body) — never exposed on `OperationInfo`, since no
+     consumer needs it and every public member is SemVer surface at 1.0. `ResumePayload`'s other roles
+     are unchanged (`RegisterWaiting`'s non-empty requirement, the dedupe key, riding
+     `OPERATION_RESUME_REQUESTED`). Full rationale: `docs/DECISIONS.md` D23's amendment.
 - **`@shenora/react`: `useShenoraOperations` / `createOperationsStore`** — the client half of the
   primitive above, built the same way `createShenoraStore` already was: `OperationStatuses` (wire
   values, including `Waiting` — collapsed from the originally-shipped `Paused`/`Interrupted` pair, see
