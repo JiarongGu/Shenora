@@ -12,7 +12,33 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
-## 0.2.0 — 2026-08-01
+## Unreleased
+
+_Nothing yet. Do not stamp this heading by hand — the release workflow does it
+(`docs/RELEASING.md`). See the 0.2.0 note below for what hand-stamping cost._
+
+## 0.2.0 — never released
+
+**This version number was consumed without ever shipping.** A session hand-edited
+`<VersionPrefix>` from `0.1.2` to `0.2.0` and hand-stamped the changelog heading below to match.
+Neither is a session's job. The release workflow RESOLVES the version — an empty `version` input
+means "bump from whatever `VersionPrefix` currently says" — so the hand-bump silently moved the
+baseline, the run bumped `0.2.0 → 0.3.0`, and 0.2.0 went straight from unreleased to skipped. Nothing
+was ever published under it; the registries go 0.1.2 → 0.3.0.
+
+The hand-stamp did the more visible damage. The workflow stamps `## Unreleased` with the resolved
+version, and there was no `## Unreleased` left to stamp — so **0.3.0 shipped with its changelog
+section titled "0.2.0"**, which is the exact failure `docs/RELEASING.md` says stamping was automated
+to prevent. That is corrected below.
+
+Kept as a stub rather than deleted: a gap in a changelog reads as an omission, and every design doc,
+decision and task entry written while this work was in flight calls it "the 0.2.0 pass". Those names
+are left alone — they refer to the work, not to a release that exists.
+
+## 0.3.0 — 2026-08-01
+
+_Released as 0.3.0; drafted under the working name 0.2.0 (see above). Heading corrected after the
+fact — the content is unchanged and is what shipped._
 
 The communication core (D23, `docs/2026-08-01-shenora-communication-core-design.md`): the module
 contract now carries the EVENT path, the kit tracks long-running operations, and the host outbound

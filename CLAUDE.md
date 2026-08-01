@@ -55,8 +55,13 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
   "fix" the layering back toward the pre-P5.5 shape.
 - **Extraction-first:** prefer lifting proven sibling code — including its post-mortem comments —
   over new abstractions (`.claude/knowledge/extraction-sources.md` + `local/EXTRACTION-MAP.md`).
-- One `<VersionPrefix>` (src/Directory.Build.props) is the only version source; npm/README are
-  synced by `dev.mjs pack`/`doctor --fix`, never hand-edited.
+- **NEVER touch the version — the release workflow owns it.** One `<VersionPrefix>`
+  (src/Directory.Build.props) is the only version source; npm/README are synced by `dev.mjs
+  pack`/`doctor --fix`, never hand-edited. **`VersionPrefix` itself is not yours to bump either**, nor
+  is the CHANGELOG's `## Unreleased` heading (the workflow stamps it). An empty `version` input means
+  "bump from whatever VersionPrefix says", so a hand-bump moves that baseline and SKIPS a release —
+  it cost 0.2.0 outright on 2026-08-01. Between releases `VersionPrefix` == the newest `v*` tag;
+  `doctor` and a pre-commit guard both enforce it. Cut releases from the Actions tab (`docs/RELEASING.md`).
 - C# naming: no `Dto` suffix; contract names mirror the TS names exactly.
 - Working files: temp/probes under `devtools/` (`_*` gitignored), private under `local/` —
   never the system temp, never sibling folders elsewhere.

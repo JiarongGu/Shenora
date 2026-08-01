@@ -243,7 +243,47 @@ function doctor({ fix = false } = {}) {
     fail(`${config.npmDir}/dist/testing/ exists — test-support code is staged for PUBLISH; `
       + `restore the "src/testing/**" entry in tsconfig.build.json "exclude" and rebuild`);
 
-  if (problems === 0) console.log(`  ok  version ${config.version} consistent (props · npm · README · LICENSE)`);
+  // VERSION AUTHORSHIP — VersionPrefix must equal the newest RELEASE TAG.
+  //
+  // The four checks above prove the version is CONSISTENT across props/npm/README/LICENSE. That is a
+  // different property from being CORRECT, and the gap cost a whole version number on 2026-08-01: a
+  // session hand-bumped VersionPrefix 0.1.2 -> 0.2.0, which kept all four files perfectly consistent
+  // — so doctor stayed green — while silently moving the baseline the release workflow bumps FROM.
+  // The next run bumped 0.2.0 -> 0.3.0 and published that; 0.2.0 went from unreleased to skipped
+  // without anyone choosing to skip it, and the registries read 0.1.2 -> 0.3.0.
+  //
+  // The invariant, confirmed to hold in the sibling template repo too: between releases VersionPrefix
+  // sits at the LAST RELEASED version, because the workflow bumps it as part of releasing. So
+  // VersionPrefix != newest tag means someone edited it by hand, whatever their reason.
+  //
+  // A state check, deliberately, rather than only the pre-commit diff guard: this catches the drift
+  // however it arrived — a hand-edit, a bad merge, a rebase that resurrected an old props file.
+  if (problems === 0) {
+    const tags = spawnSync('git', ['tag', '--list', 'v*'], { encoding: 'utf8', cwd: repo });
+    const versions = (tags.stdout ?? '')
+      .split(/\r?\n/)
+      .map((t) => t.trim().replace(/^v/, ''))
+      .filter((t) => /^\d+\.\d+\.\d+$/.test(t))
+      .sort((a, b) => {
+        const [aM, aN, aP] = a.split('.').map(Number);
+        const [bM, bN, bP] = b.split('.').map(Number);
+        return aM - bM || aN - bN || aP - bP;
+      });
+    const newest = versions.at(-1);
+    // No tags at all = a fresh clone with no fetched tags, or a repo before its first release.
+    // Silence is right here: failing would break `verify` on a shallow CI checkout.
+    if (newest && newest !== config.version) {
+      fail(`<VersionPrefix> is ${config.version} but the newest release tag is v${newest}. `
+        + `Between releases these MUST match — the release workflow owns the bump, and an empty `
+        + `\`version\` input bumps from whatever VersionPrefix says. A hand-edit here moves that `
+        + `baseline and SKIPS a version (0.2.0 was lost exactly this way). Restore ${newest}, and cut `
+        + `the release from the Actions tab; pass an explicit \`version\` if you want a specific number. `
+        + `See docs/RELEASING.md.`);
+    }
+  }
+
+  if (problems === 0)
+    console.log(`  ok  version ${config.version} consistent (props · npm · README · LICENSE) and matches the newest tag`);
   return problems === 0;
 }
 

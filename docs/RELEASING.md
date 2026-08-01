@@ -1,5 +1,29 @@
 # RELEASING.md — cutting and consuming releases
 
+> ## ⚠ Never edit the version by hand — this cost 0.2.0 outright
+>
+> **A session must never change `<VersionPrefix>`, and never stamp the CHANGELOG's `## Unreleased`
+> heading.** Both belong to the workflow (step 1 below), and editing either breaks it:
+>
+> - An empty `version` input means *bump from whatever `VersionPrefix` currently says*. On
+>   2026-08-01 a session hand-bumped `0.1.2 → 0.2.0`; the next run bumped from there and published
+>   **0.3.0**. Version 0.2.0 went from unreleased to skipped without anyone choosing to skip it, and
+>   the registries read 0.1.2 → 0.3.0. On a post-1.0 repo the same slip lands on a MAJOR.
+> - That same session hand-stamped the changelog heading to `## 0.2.0`, leaving the workflow no
+>   `## Unreleased` to stamp — so **0.3.0 shipped with its section titled "0.2.0"**, the exact failure
+>   stamping was automated to prevent.
+>
+> **Why nothing caught it:** `doctor` proved the version was *consistent* across props/npm/README/
+> LICENSE, and a hand-bump keeps all four consistent. Consistency was never the property at risk —
+> **authorship** was.
+>
+> **Now enforced, two layers:** `doctor` fails when `<VersionPrefix>` differs from the newest `v*`
+> tag (between releases they must be equal, because the workflow bumps as part of releasing), and
+> `devtools/scripts/check-version-bump.mjs` blocks the edit at pre-commit. If you genuinely are
+> repairing a botched release, say so explicitly: `SHENORA_RELEASE=1 git commit …`.
+>
+> Want a specific number? Pass an explicit `version` input to the workflow. Never pre-set the file.
+
 ## The release pipeline (manual only)
 
 Releases are cut from the GitHub **Actions** tab → **Release** workflow → *Run workflow*

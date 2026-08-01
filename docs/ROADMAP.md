@@ -5,7 +5,12 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
-### 2026-08-01 — 0.2.0: the module contract carries the event path, and the kit tracks operations
+### 2026-08-01 — 0.3.0: the module contract carries the event path, and the kit tracks operations
+
+_Shipped as **0.3.0**, drafted throughout under the working name "0.2.0" — that number was consumed by
+a hand-edit to `<VersionPrefix>` and never released (`CHANGELOG.md` `## 0.2.0 — never released`).
+References to "the 0.2.0 pass" below and in the archive name the WORK, not a release._
+
 
 The first harvest-and-adoption-driven work since v0.1.0 (D15), triggered by the first adopter's IPC +
 drop-zone design review (`TASKS.md`, 2026-08-01). The verdict on that review: the CLIENT design

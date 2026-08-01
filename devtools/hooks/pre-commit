@@ -3,4 +3,9 @@
 # a dev-machine path, source brand, sibling-project name, or explicit age-restricted wording into
 # this public repo. Install with: node devtools/dev.mjs install-hooks  (sets core.hooksPath here).
 # Bypass intentionally with: git commit --no-verify
-node devtools/scripts/check-sensitive.mjs
+node devtools/scripts/check-sensitive.mjs || exit 1
+
+# Version-authorship guard (see docs/RELEASING.md). The release workflow OWNS <VersionPrefix> and the
+# CHANGELOG's "## Unreleased" heading; a session editing either desynchronises the pipeline's
+# versioning — it cost version 0.2.0 outright on 2026-08-01. Bypass: SHENORA_RELEASE=1 git commit ...
+node devtools/scripts/check-version-bump.mjs
