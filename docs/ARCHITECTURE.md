@@ -4,7 +4,7 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state — **v0.1.0 SHIPPED (2026-07-31)**, P1–P7 complete
+## Current state — **v0.1.0 SHIPPED (2026-07-31)**, P1–P7 complete; **0.2.0 communication core landed**
 
 Five NuGet packages + `@shenora/react` on npm. Since the summary below was written, P5.5 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
@@ -13,6 +13,17 @@ buttons, P6 readied adoption (`docs/ADOPTION.md`, and six capability gaps found 
 stabilised: every public and protected member documented with CS1591 as an error, the login RECIPE
 moved out of the library to the sample (D21/D22 amended), and the release pipeline hardened. The
 narrative is `docs/ROADMAP.md` `## Done`; the task-level record is `docs/task-archive.md`.
+
+**0.2.0 (D23, `docs/2026-08-01-shenora-communication-core-design.md`, implemented):** the module
+contract now carries the EVENT path — `IModuleContext` (`Publish`/`Start`/`Run`/`Logger`) is the
+second parameter of `BaseFacade.RouteMessageAsync`, the one breaking change this release makes. A new
+operations cluster in `Shenora.Ipc` tracks long-running work (id, status, progress, cancel-by-id,
+throttled progress emission) as mechanism only — what an operation IS stays app-defined. The
+transport-neutral half of the outbound notification pipeline moved out of `WebViewIpcBridge` into
+`Shenora.Ipc`'s `NotificationPump`, so `WebViewIpcBridge` is now a thin WinForms/WebView2 adapter over
+it (D16's "the seam, not the package" applied to the host half). `@shenora/react` gained
+`useShenoraOperations`/`createOperationsStore`, a host-backed store mirroring the pattern
+`createShenoraStore` already established.
 
 P2 delivered the core host (builder, WinForms runner, WebView2 hosting + serving, samples). P3
 delivered the full IPC stack (wire contract, dispatcher + facades, event bus, postMessage
@@ -229,6 +240,57 @@ changes, noting them in `CHANGELOG.md`).
   four things a dispatcher IS. `MapModule(facade)` throws on a duplicate; `TryMapModule` returns
   false instead, and throws rather than answering when the dispatcher cannot know. Known limit: a
   mapped module cannot be released — the pipeline only grows.
+  **The module contract's event half (0.2.0, D23):** `IModuleContext` (`Module`, `Logger`,
+  `Publish(type, payload?, scope?)`, `Start(OperationOptions)`, `Run(OperationOptions, work)`) is the
+  second parameter of `BaseFacade.RouteMessageAsync` — the release's one breaking change, because
+  `Shenora.Ipc` had zero references to `IEventBus` while the kit's own `DropZoneManager` took one as a
+  REQUIRED option. Built once per facade (`BaseFacade.Context`, lazy — `ModuleName` is abstract and
+  unreadable from the base constructor) from the now-optional `BaseFacade(ILogger?, IEventBus?,
+  IOperationRegistry?)` constructor params; `Publish`/`Start`/`Run` throw a loud, self-naming
+  `InvalidOperationException` when the corresponding dependency was never supplied, rather than
+  silently no-op-ing. `Publish` needs no registry and no opt-in — the primary, always-available
+  channel; `Start`/`Run` are the one OPT-IN thing the same context offers (only present when
+  `AddShenoraOperations` is called), never the other way round.
+  **The operations cluster** (`Shenora.Ipc.Operations` mechanism, tracked long-running work — no
+  queue, scheduler, retry, priority or phase model, and no opinion on what an operation IS):
+  `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/`Interrupted` — crosses the wire
+  camelCase for free via `IpcJson`'s enum converter), `OperationLabel` (`{Text?, Key?, Parameters?}`,
+  the same i18n shape as `IpcError`), `OperationOptions` (`Kind` an app-defined string, `Title`,
+  `Scope`, `Cancellable`, `Progress`, `Resumable`, `ResumePayload`), `OperationInfo` (the full
+  snapshot — both the `OPERATION_UPDATED` event payload and the `LIST` response element; one type for
+  every transition, so a client folds by `Id` with no cross-type ordering hazard), `IOperation`
+  (`Id`, its OWN `CancellationToken` — never the request's — `Report`/`Complete`/`Fail`(×2)/`Cancel`,
+  all idempotent once terminal), `IOperationRegistry`/`OperationRegistry(+Options)` (one lock over
+  in-memory state; `Start`/`Run` — `Run` is `Start` + a guarded background body mapping
+  `OperationCanceledException`→`Cancel`, `OperationException`→`Fail(code, parameters, message)`, else
+  →`Fail(UnknownError, {exceptionType})`, identical to the dispatch boundary's no-raw-text rule —
+  `GetAll(module?, scope?)`, `Cancel` (refuses an operation that never opted into `Cancellable`, so
+  the status can't lie about a body still running underneath it), `ClearFinished`, and
+  `RegisterInterrupted`/`RequestResume` for a crash-resumable checkpoint the app owns, deduped on
+  `(module, kind, resumePayload)`; progress emission is throttled to `ProgressInterval` — default
+  100 ms — with a TRAILING emit so the final value in a window is never dropped, and every lifecycle
+  transition emits immediately, never throttled), `OperationEvents` (`Updated` = `OPERATION_UPDATED`,
+  `ResumeRequested` = `OPERATION_RESUME_REQUESTED`), `OperationsFacade` (module `OPERATIONS` by
+  default, shared with the registry via one `OperationRegistryOptions` instance so the two can never
+  drift apart: `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`), `AddShenoraOperations` (opt-in DI wiring;
+  an app with no long-running work pays nothing). Known limit, recorded rather than guessed at: no
+  `Find(id)` on `IOperationRegistry` — it was in the design sketch and dropped because no consumer
+  resolves a handle from a bare id and every public member is SemVer surface at 1.0; an app needing
+  one today keeps its own id→handle map.
+  **`NotificationPump`(+`Options`)** — the transport-neutral half of the outbound notification
+  channel (design §5, D16 applied to the host side): bus subscription (from CONSTRUCTION, not
+  `Open`), the per-channel `Filter` (applied at enqueue, fail-CLOSED on a throwing predicate — the
+  filter exists so a channel gets only its own slice of traffic, and delivering a notification the
+  app meant to keep off this channel is the more dangerous failure), the bounded drop-oldest queue,
+  the ready gate (`Open`/`Close`), batch building, and the guarded per-notification serialize (one
+  bad payload must not sink its batch). Owns NO timer and NO transport — `TryDrainBatch` is called by
+  whatever the base drives its own tick with (a `Forms.Timer` on WinForms; a `PeriodicTimer` on a
+  headless base), because which thread may touch a base's client is a base-specific fact.
+  `WebViewIpcBridge` is now a thin adapter over it: it keeps only what is WinForms/WebView2 — the
+  timer, `WebMessageReceived`, `ContentLoading`→`Close()`, `READY`→`Open()`,
+  `ProcessFailed`→`Close()`, and `PostWebMessageAsString` — while `WebViewIpcBridgeOptions` keeps its
+  existing option names (`NotificationInterval`, `MaxQueuedNotifications`, forwarded to the pump's
+  `FlushInterval`/`MaxQueued`) and gains `NotificationFilter`.
 - `@shenora/react` — the client side of the contract: wire types mirroring `Shenora.Ipc`
   name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError`
   (structured code + parameters; client-side `TIMEOUT`/`NO_TRANSPORT` reject the same way),
@@ -245,7 +307,19 @@ changes, noting them in `CHANGELOG.md`).
   `BaseModuleService<TRequests>`, hooks (`useShenora`/`useShenoraEvent`/`useShenoraQuery`),
   `WindowCommands` typed service + `useWindowMaximized` (resize-triggered resync), `useDropZone`
   (native drop zones synced to elements — real OS paths, unstyled drag feedback),
-  `installDevInterceptor` (`window.__shenora` CDP-testing global). react ≥18 required peer.
+  `installDevInterceptor` (`window.__shenora` CDP-testing global); **`useShenoraOperations`/
+  `createOperationsStore`** (0.2.0) — mirrors `Shenora.Ipc`'s operations cluster: `OperationStatuses`
+  (the wire values) + `OperationInfo`/`OperationLabel` types, and a `createShenoraStore` instance
+  (`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id }`, `actions: { cancel, clearFinished,
+  resume }`) with `running`/`finished` DERIVED getters computed from `byId` on every read — never a
+  second copy a reducer has to remember to keep in sync. `createOperationsStore(options)` takes an
+  optional renamed module (for an app that changed `OperationRegistryOptions.ModuleName` to avoid a
+  collision) and an optional `scope`, threaded into the snapshot payload, the bus subscription AND
+  the action envelopes so a scoped store stays internally consistent; `useShenoraOperations` is the
+  ready-made default instance. Known limit, deliberate: no `byModule`/`byScope` selector — filtering
+  by module or scope is a one-line consumer selector over `byId`
+  (`Object.values(state.byId).filter(o => o.module === 'X')`), and shipping indexes for it would be
+  duplicated derived state for no gain. react ≥18 required peer.
 
 ## Dependency rules (enforced by review)
 

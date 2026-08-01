@@ -5,6 +5,87 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-01 — 0.2.0: the module contract carries the event path, and the kit tracks operations
+
+The first harvest-and-adoption-driven work since v0.1.0 (D15), triggered by the first adopter's IPC +
+drop-zone design review (`TASKS.md`, 2026-08-01). The verdict on that review: the CLIENT design
+already matched its own stated intent — *"a stateful design with an event hub is the way to go —
+async from the UI, progress synced"* — `createShenoraStore`'s snapshot-then-deltas model, the
+per-subscription `EventBus`, and `invoke` correctly scoped to quick UI-thread-safe calls were all
+already right. The HOST contract did not: `Shenora.Ipc` had **zero references to `IEventBus`** while
+the kit's own `DropZoneManager` took one as a REQUIRED option, so the bus was already the spine and
+the contract simply never admitted it. Design: `docs/2026-08-01-shenora-communication-core-design.md`
++ **D23** (11 tasks, 3 staged stages — the task-by-task plan they were implemented from is removed
+per its own "delete once the work lands" lifecycle); what shipped and how it was verified, task by
+task: `docs/task-archive.md` `### 0.2.0`.
+
+**Stage 1 — contract.** `IModuleContext` (`Module`, `Logger`, `Publish(type, payload?, scope?)`,
+`Start(OperationOptions)`, `Run(OperationOptions, work)`) is now the second parameter of
+`BaseFacade.RouteMessageAsync` — the release's one breaking change, mechanical and accepted pre-1.0
+(every override needs the parameter added; ignore it if unused). A mid-plan user steer mattered here:
+*"we still allow for custom events so this is more like a context for every module/facade"* — the
+context is the MODULE's context, not an operations entry point. `Publish` needs no registry and no
+opt-in; `Start`/`Run` are the one opt-in thing the same context offers, present only once
+`AddShenoraOperations()` is called. Both fail LOUD — naming the exact fix — when the corresponding
+dependency was never supplied to `BaseFacade`'s two new optional constructor parameters
+(`IEventBus?`, `IOperationRegistry?`), rather than silently no-op-ing, which would have been the
+"mistyped resource prefix degrading to an all-404 provider" class of bug this repo keeps fixing.
+
+**Stage 2 — operations.** A tracked-operation primitive in `Shenora.Ipc.Operations`, harvested
+MECHANISM-ONLY from a private sibling's 320-line process registry (a second sibling's
+`JOB_UPDATED`/`JOB_PROGRESS` archetype was the second data point the `generic-library` two-app bar
+asks for): id, owning module, app-defined `Kind`/`Scope`, status, progress, idempotent finish, bounded
+history, cancel-by-id, and progress emission throttled to `ProgressInterval` (default 100 ms) with a
+TRAILING emit so the final value in a window is never dropped — lifecycle transitions (start,
+complete, fail, cancel, interrupt) are never throttled. Two races surfaced and were fixed during the
+build, not after: `Cancel` on a non-cancellable operation used to flip status while the body ran on
+underneath it (now refused, the same honest shape as an unknown or already-terminal id), and the
+trailing-emit flag was reset only on the success path, so a faulting `TimeProvider` left it stuck
+`true` forever, silently muting every later `Report` on that operation — fixed by resetting it in a
+`finally` covering every exit. An operation failure obeys the identical no-raw-exception-text
+boundary as a response: unexpected exceptions cross as `UnknownError` + the exception type name only.
+`OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`) and `AddShenoraOperations` (opt-in —
+an app with no long-running work pays nothing) round out the host side; `@shenora/react`'s
+`useShenoraOperations`/`createOperationsStore` is the client half, a host-backed `createShenoraStore`
+instance with `running`/`finished` derived getters. Two things the design sketched and this stage
+deliberately did NOT ship, recorded as known limits rather than oversights: `IOperationRegistry.Find(id)`
+(no consumer resolves a handle from a bare id) and `byModule`/`byScope` client selectors (a one-line
+consumer selector over `byId` — shipping indexes would be duplicated derived state). Also cut during
+review, for the same reason: a protected `Events`/`Operations` accessor on `BaseFacade` that the
+original plan sketched — no scenario needed it once `Context` existed.
+
+**Stage 3 — channel.** The transport-neutral half of the outbound notification pipeline — bus
+subscribe, per-channel filter, bounded drop-oldest queue, batch building, guarded per-notification
+serialize, the ready gate — moved out of `WebViewIpcBridge` into `Shenora.Ipc`'s new
+`NotificationPump`, so a second, non-WinForms base inherits the already-fixed P5.5 H2/H3 bugs instead
+of re-earning them (D16's "the seam, not the package" finally applied to the HOST half of the outbound
+path; the client half, `ShenoraTransport`, has been base-agnostic since P3). The pump owns no timer
+and no transport — which thread may touch a base's client is a base-specific fact — so
+`WebViewIpcBridge` is now a thin adapter keeping only the `Forms.Timer`, the WebView2 event wiring and
+`PostWebMessageAsString`; option names (`NotificationInterval`, `MaxQueuedNotifications`) and public
+behaviour are unchanged. New: per-channel `Filter`/`NotificationFilter` — every bridge previously
+subscribed with `SubscribeToAll`, so two windows meant every bus event reached both.
+
+**Verified against the real sample, not just unit tests.** `SampleFacade`'s `SLOW` route was rewritten
+onto `ctx.Run`, and `node devtools/dev.mjs responsiveness` — a newly tracked probe, rebuilt from the
+v0.1.0 one-off shell session so the numbers stay re-runnable — measured 0/65 unresponsive samples
+(0 ms longest stall) for the streamed shape across repeat runs, matching the v0.1.0 baseline (0/95);
+the unchanged `block` anti-example still stalls ~2978–2989 ms of a 4000 ms window. The probe itself
+was hardened mid-task after review found it proved only that a click LANDED, not that the operation
+STARTED (a WebView2 render surface swallows a stale-coordinate click and still reports "click ok"): a
+fourth guard now polls the window title for a marker `SampleFacade` sets synchronously before the
+slow work begins, and the guard's own refusal path was proven live before trusting it.
+
+**Docs pass, closing the loop the review opened.** `docs/ADOPTION.md`'s drop-zone finding closed
+alongside the code: `DropZoneManager` is Stage-1-adoptable STANDALONE (it depends only on
+`Shenora.Core`'s `IEventBus`, the WebView2 control and a `Form`, referencing no `Ipc` type at all) —
+only `DropZoneFacade`/`useDropZone` are the Stage 3 IPC half, which the guide had previously filed the
+whole component under. `ARCHITECTURE.md`, `.claude/knowledge/ipc-contracts.md` (the invariants earned
+here, each with its reason), `CHANGELOG.md`, both READMEs, and the design/plan docs' status lines were
+brought current in the same pass, and `<VersionPrefix>` moved to `0.2.0` — the only version source.
+One finding from the same review remains open in `TASKS.md` (drop zones as the kit's strongest dedup
+case, worth stating more plainly than one table row).
+
 ### 2026-07-31 — P7: the README each package's consumer actually reads, and D10 answered NO
 
 **D10 is resolved: `Shenora.Hosting.AspNetCore` will NOT be built.** It had sat as "a candidate later

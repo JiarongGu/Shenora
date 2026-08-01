@@ -12,6 +12,93 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## 0.2.0 — 2026-08-01
+
+The communication core (D23, `docs/2026-08-01-shenora-communication-core-design.md`): the module
+contract now carries the EVENT path, the kit tracks long-running operations, and the host outbound
+pipeline is base-agnostic. Triggered by the first adopter's IPC + drop-zone design review — the
+verdict was that the client design already matched its own stated intent ("a stateful design with an
+event hub … async from the UI, progress synced") while the HOST contract did not.
+
+### Breaking
+
+- **`BaseFacade.RouteMessageAsync` now takes an `IModuleContext` — the module contract's EVENT path
+  is in the signature, not a side dependency every app wired by hand.**
+  `(IpcRequest request, CancellationToken cancellationToken)` →
+  `(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)`. Before this,
+  `Shenora.Ipc` had **zero references to `IEventBus`** while the kit's own `DropZoneManager` took one
+  as a REQUIRED option — the bus was already the spine, the contract just never admitted it.
+  **Migration: add the parameter to every override; ignore it if your facade doesn't emit.**
+  `context.Publish(type, payload?, scope?)` is the new default gesture for emitting — module-scoped,
+  so it can never drift from `ModuleName` the way a hand-typed literal re-used at every call site
+  can — and `context.Start`/`context.Run` are the tracked-operation primitive (see `### Added`).
+  `BaseFacade`'s own constructor gained two optional parameters, `IEventBus?` and
+  `IOperationRegistry?`, to back the context: `protected BaseFacade(ILogger? logger = null, IEventBus?
+  events = null, IOperationRegistry? operations = null)`. Existing `base(logger)` calls compile
+  unchanged; a facade that never publishes and never starts tracked work is completely unaffected,
+  including every bus-less unit test in the suite. `Publish`/`Start`/`Run` fail LOUD at the call site
+  — naming the exact fix (`pass an IEventBus to BaseFacade`, `call services.AddShenoraOperations()`)
+  — rather than silently no-op-ing when the corresponding dependency was never supplied.
+  `WebViewIpcBridge`'s internals also moved onto a new `Shenora.Ipc.NotificationPump` in this release
+  (see `### Added`) with no public-surface break: `WebViewIpcBridgeOptions`' existing names
+  (`NotificationInterval`, `MaxQueuedNotifications`) and behavior are preserved.
+
+### Added
+
+- **The tracked-operation primitive** (D23; harvested mechanism-only from a private sibling's
+  320-line process registry, per `generic-library`'s two-app bar): id, owning module, app-defined
+  `Kind`/`Scope`, status, progress, idempotent finish, cancel-by-id, bounded history, and throttled
+  progress emission — with NO queue, scheduler, retry, priority, phase model, `ProcessType`-style
+  enum, i18n rendering, UI or persistence. What an operation IS stays the app's; the kit only tracks
+  it. New in `Shenora.Ipc`: `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/
+  `Interrupted`), `OperationLabel` (`{Text?, Key?, Parameters?}` — the same i18n shape as `IpcError`),
+  `OperationOptions`, `OperationInfo` (the one snapshot type for every lifecycle transition — a
+  client folds by `Id`, last-write-wins, no cross-type ordering hazard), `IOperation`
+  (`Report`/`Complete`/`Fail`×2/`Cancel`, all idempotent once terminal, with its OWN
+  `CancellationToken` — never the request's, because work handed off outlives the request that
+  started it), `IOperationRegistry`/`OperationRegistry(+OperationRegistryOptions)`,
+  `OperationEvents` (`OPERATION_UPDATED`, `OPERATION_RESUME_REQUESTED`), `OperationsFacade`
+  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME` under module `OPERATIONS` by default), and
+  `AddShenoraOperations` — opt-in DI wiring, so an app with no long-running work pays nothing.
+  Progress reports are throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms) with
+  a TRAILING emit so the final value in a window is never dropped; every lifecycle transition emits
+  immediately, never throttled. An operation failure obeys the same no-raw-exception-text boundary as
+  a request/response failure: an unexpected exception crosses as `IpcErrorCodes.UnknownError` plus the
+  exception type name, with the real detail logged host-side only. `Cancel` refuses an operation that
+  never opted into `Cancellable`, rather than flipping its status while the body runs on underneath
+  it. Also included: `RegisterInterrupted`/`RequestResume`, for announcing a crash-interrupted
+  resumable operation from the app's own checkpoint (deduped on `(module, kind, resumePayload)`).
+  **Known limit, recorded rather than guessed at:** no `Find(id)` on `IOperationRegistry` — it was in
+  the original interface sketch and deliberately dropped, because no consumer resolves a handle from
+  a bare id and every public member becomes SemVer surface at 1.0; an app needing one today keeps its
+  own id→handle map.
+- **`@shenora/react`: `useShenoraOperations` / `createOperationsStore`** — the client half of the
+  primitive above, built the same way `createShenoraStore` already was: `OperationStatuses` (wire
+  values) + `OperationInfo`/`OperationLabel` types, a `LIST` snapshot on first subscribe (so a
+  progress strip that mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with
+  `running`/`finished` DERIVED getters computed from `byId` on every read and `cancel`/
+  `clearFinished`/`resume` actions. `createOperationsStore({ module?, scope? })` supports a renamed
+  host module (avoiding a collision with an app's own module name) and a scope-filtered instance.
+  **Known limit, deliberate:** no `byModule`/`byScope` selector — filtering by module or scope is a
+  one-line consumer selector over `byId`, and shipping indexes for it would be duplicated derived
+  state for no gain.
+- **`Shenora.Ipc.NotificationPump`(+`NotificationPumpOptions`)** — the transport-neutral half of a
+  host's outbound notification channel (bus subscribe from CONSTRUCTION → per-channel filter →
+  bounded drop-oldest queue → batch → ready gate → guarded per-notification serialize), extracted out
+  of `WebViewIpcBridge` so a second, non-WinForms base inherits these already-fixed bugs (P5.5 H2/H3)
+  instead of re-earning them — D16's "the seam, not the package" applied to the HOST half of the
+  outbound path (the client half, `ShenoraTransport`, has been base-agnostic since P3). The pump owns
+  no timer and no transport: which thread may touch a base's client is a base-specific fact, so the
+  base drives its own tick (a `Forms.Timer` on WinForms; a `PeriodicTimer` on a headless base) and
+  calls `TryDrainBatch`. `WebViewIpcBridge` is now a thin adapter over it, keeping only what is
+  WinForms/WebView2: the timer, `WebMessageReceived`, the `ContentLoading`/`READY`/`ProcessFailed`
+  gate wiring, and `PostWebMessageAsString`.
+- **Per-channel notification filtering** — `NotificationPumpOptions.Filter` /
+  `WebViewIpcBridgeOptions.NotificationFilter`, applied at enqueue. Every bridge previously subscribed
+  with `SubscribeToAll`, so with two windows every bus event reached both — an auxiliary session or a
+  remote client would receive the whole app's traffic with no way to narrow it. Default: deliver
+  everything, unchanged for an app that doesn't need the seam.
+
 ## 0.1.2 — 2026-07-31
 
 ### Changed

@@ -1252,6 +1252,86 @@ Known capability LIMITS:
   trusted-publisher setup steps are in `docs/RELEASING.md`, and the npm ordering — org first,
   hand-publish once, then configure trusted publishing — is recorded above with the release.
 
+### 0.2.0 — the communication core: event path, tracked operations, base-agnostic channel (2026-08-01)
+
+Closes the first two findings from "the first adopter, IPC + drop-zone design review (2026-08-01)"
+(`TASKS.md`) plus the drop-zone Stage-1 finding from the same review — three of that section's four
+findings; the fourth ("drop zones are the strongest dedup case, worth stating as such") remains open
+below. Design + rationale: `docs/2026-08-01-shenora-communication-core-design.md` + **D23**.
+Implemented over 11 tasks in 3 staged stages (contract → operations → channel) from a plan doc now
+removed per its own "delete once the work lands" lifecycle (`docs/README.md`'s doc inventory) — this
+entry is its durable replacement. Ships as **0.2.0**, the first deliberate break since v0.1.0.
+
+- [x] **The module contract carries the REQUEST path but not the EVENT path.** Closed by
+  `IModuleContext` (`Module`, `Logger`, `Publish`, `Start`, `Run`) as the second parameter of
+  `BaseFacade.RouteMessageAsync` — the one breaking change (`016bb9c`). `Publish` needs no registry
+  and is always available; `Start`/`Run` are the one opt-in thing the same context offers, decided by
+  a mid-plan user steer (*"we still allow for custom events so this is more like a context for every
+  module/facade"*) that kept `IModuleContext` from narrowing into an operations-only entry point.
+  Both fail LOUD, naming the fix, when the corresponding dependency (`IEventBus`/
+  `IOperationRegistry`) was never supplied to `BaseFacade` — never a silent no-op.
+- [x] **Long-running operations have no first-class shape.** Closed by the operations cluster in
+  `Shenora.Ipc.Operations` (`a7dd661`, `3a2c035`, `99cbb02`, `373e579`, `5c35457`, `da79be8`) —
+  harvested MECHANISM-ONLY from a private sibling's 320-line process registry, per `generic-library`'s
+  two-app bar (a second sibling's `JOB_UPDATED`/`JOB_PROGRESS` archetype was the second data point).
+  `OperationRegistry`/`IOperationRegistry`, `IOperation`, `OperationOptions`/`OperationInfo`/
+  `OperationLabel`, `OperationEvents`, `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`),
+  `AddShenoraOperations` (opt-in). Two review findings fixed during the build, both about a
+  cancel/throttle race rather than the shape: (1) `Cancel` on a non-`Cancellable` operation used to
+  flip status while the body kept running — now refused, the same honest-refusal shape as an unknown
+  or already-terminal id (`3a2c035`); (2) the trailing-progress-emit flag was reset only on the
+  SUCCESS path, so a faulting `TimeProvider` left `TrailingScheduled` stuck `true` forever, silently
+  muting every later `Report` on that operation — fixed by resetting it in a `finally` covering every
+  exit (`7326984`, caught by review, corrected the plan doc's own snippet too — `018f4e0`).
+  `RegisterInterrupted`/`RequestResume` (crash-resumable checkpoint offers, deduped on
+  `(module, kind, resumePayload)`) came from ONE sibling only, flagged in the design as the first
+  candidate for removal if a 1.0 audit wants surface trimmed (`da79be8`).
+  **Deliberately dropped from the original interface sketch, recorded as a known limit, not an
+  oversight:** `IOperationRegistry.Find(id)` — no consumer resolves a handle from a bare id, and
+  every public member is SemVer surface at 1.0; an app needing one keeps its own id→handle map.
+  Also dropped during review: a protected `Events`/`Operations` accessor on `BaseFacade` that the
+  Task 1 plan snippet had sketched — no consumer scenario existed for reaching the raw dependencies
+  once `Context` (`Publish`/`Start`/`Run`) exists, so it would have been unwanted SemVer surface
+  (`0d3af6e`, plan corrected in `ba74c79`).
+  **Client side:** `@shenora/react`'s `useShenoraOperations`/`createOperationsStore` (`586a1e3`,
+  fixed to thread `module`/`scope` into the `LIST` snapshot payload in `8d499d4`) — a host-backed
+  `createShenoraStore` instance with `running`/`finished` DERIVED getters over `byId`. Design §4.6
+  sketched `byModule`/`byScope` selectors too; **deliberately not shipped** — filtering by module or
+  scope is a one-line consumer selector over `byId`, and shipping indexes for it would be duplicated
+  derived state with no gain. The design doc's prose promising them was trimmed in this task (11)
+  rather than left to over-promise a surface that does not exist.
+  **Verified against the real sample, not just unit tests** (`129bf10` rewrites `SampleFacade`'s
+  SLOW route onto `ctx.Run`; `d6243cd` hardens the probe itself after review found it proved only
+  that a click landed, not that the operation started — a 4th guard now polls the window TITLE for a
+  marker set synchronously before the slow work begins). `node devtools/dev.mjs responsiveness`
+  measured 0/65 unresponsive samples for the streamed shape across repeat runs (0 ms longest stall),
+  matching the v0.1.0 baseline (0/95); the unchanged `block` anti-example still stalls ~2978–2989 ms
+  of a 4000 ms window — the refactor did not quietly move work back onto the UI thread. Full numbers:
+  `local/PROJECT_NOTES.md` 2026-08-01.
+- [x] **`DropZoneManager` is already consumable WITHOUT the IPC migration — say so, loudly.**
+  `docs/ADOPTION.md` Stage 1's drop-zone row previously listed `DropZoneManager` bundled with
+  `DropZoneFacade` and noted "needs IPC, so it belongs to Stage 3" — true of the facade, not the
+  manager, which depends only on `Shenora.Core` (`IEventBus`), the WebView2 control and a `Form`, and
+  references no `Ipc` type. Fixed in this task (11): the row now names `DropZoneManager` alone as
+  Stage-1-adoptable standalone, with `DropZoneFacade`/`useDropZone` pointed at Stage 3 as the IPC
+  half. An adopter previously found this only by reading the source — the same failure mode as the
+  0.1.1 DPI-claim finding.
+
+**Cross-base channel (Stage 3, no public behaviour change — D16's "the seam, not the package"
+applied to the host outbound half):** `NotificationPump`(+`Options`) extracted from
+`WebViewIpcBridge` into `Shenora.Ipc` (`93563da`), which is now a thin WinForms/WebView2 adapter over
+it (`84556a5`) — option names (`NotificationInterval`, `MaxQueuedNotifications`) and behaviour
+preserved, `NotificationFilter` added. Every bridge previously subscribed with `SubscribeToAll`, so
+two windows meant every event reached both; the filter is the seam that lets a channel receive only
+its own slice.
+
+**Docs pass (this task, 11):** `ARCHITECTURE.md` (the `IModuleContext`/operations/`NotificationPump`
+inventory + the bridge's new shape), `.claude/knowledge/ipc-contracts.md` (the invariants earned
+here, each with its reason), `CHANGELOG.md` (`### Breaking` for the `RouteMessageAsync` signature,
+`### Added` for the rest), `README.md` + `src/Shenora.React/README.md` (the `IModuleContext`/
+operations surface), `docs/ROADMAP.md` `## Done`, and the design + plan docs marked implemented per
+`docs/README.md`'s doc inventory. `<VersionPrefix>` bumped to `0.2.0` — the only version source.
+
 ### 0.1.2 — Stage 1 adopted: kit-owns-DPI + plain-form maximize deferral (2026-08-01)
 
 Second round of adopter feedback, this time from the same private desktop sibling **after**

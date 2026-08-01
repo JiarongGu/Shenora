@@ -182,6 +182,60 @@ transport, or building the P6 adoption shims.
   after an async fall-through. The transport side interleaves async on the UI thread; never
   `Task.Run`-per-message (the measured pool-starvation freeze).
 
+### 0.2.0 — the communication core (D23, `docs/2026-08-01-shenora-communication-core-design.md`)
+
+- **`Publish` goes through `IModuleContext`, never a hand-typed module literal, so an emit cannot
+  drift from the facade's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
+  with `Module` supplied by `BaseFacade` at construction — the same anti-drift reason
+  `OperationInfo.Module` is stamped by the registry from the caller's own module rather than trusted
+  from the app. The sample's pre-0.2.0 shape (a hardcoded `"SAMPLE"` string re-typed at every emit
+  site) is exactly the class of bug this closes: one typo and an event silently claims the wrong
+  module, with nothing to grep for.
+- **An operation's `CancellationToken` is its OWN, never the request's — work handed off outlives
+  the request that started it.** `OperationRegistry.Start` allocates a fresh `CancellationTokenSource`
+  per operation; `IModuleContext.Run`/`Start` never touch the dispatch token at all. Capturing the
+  request's token instead would cancel a ten-minute deploy the moment the page that kicked it off
+  navigates away — the same trap `BaseFacade.RouteMessageAsync`'s own doc already named for
+  hand-rolled background work, now structurally impossible to get wrong through the primitive.
+- **Progress emission is throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms)
+  with a TRAILING emit, because the notification batcher queues without coalescing.** A tight
+  `Report` loop would otherwise ship hundreds of updates a second — the exact defect the harvested
+  source app had already fixed. At most one emission lands per window, but the LAST value in that
+  window is never simply dropped: a trailing timer fires once the window closes. **The trailing
+  flag must reset in a `finally`, covering every exit — success, cancellation, or a faulting
+  `TimeProvider`** (`OperationRegistry.TrailingEmitAsync`) — resetting only on the happy path would
+  leave `TrailingScheduled` stuck `true` forever after one fault, silently muting every later
+  `Report` on that operation for its remaining lifetime (found in review: the first cut did exactly
+  this). Lifecycle transitions (start, complete, fail, cancel, interrupt) are never throttled — they
+  always emit immediately, because a terminal state arriving late or not at all is a different class
+  of bug than a missed progress tick.
+- **An operation failure obeys the same no-raw-exception-text boundary as a request/response
+  failure.** `OperationRegistry.Run`'s guarded background body maps `OperationCanceledException` →
+  `Cancel()`, `OperationException` → `Fail(code, parameters, message)` (the app's own sanctioned
+  words, same rule as `IpcErrorMapping`), and anything else → `Fail(IpcErrorCodes.UnknownError,
+  {exceptionType})` with the real exception logged host-side only. One boundary, two entry points
+  (a response and an `OperationInfo.Error`) — a second copy of the policy is exactly how the
+  `ex.Message`-in-a-wrapper bypass gets re-earned.
+- **`NotificationPump` owns the gate, the cap and the batch; a base owns only the tick.** The pump
+  subscribes to the bus at construction (buffering starts before any client could exist to receive
+  anything), applies the per-channel `Filter` at enqueue, bounds the queue with drop-oldest, and
+  serializes a batch guarded per-notification — all transport-neutral. It deliberately owns NO timer
+  and NO transport: which thread may touch a base's client is a base-specific fact (WinForms must
+  flush on the UI thread; a headless base can use a bare `PeriodicTimer`), so `WebViewIpcBridge`
+  keeps only the `Forms.Timer`, the WebView2 event wiring (`ContentLoading`→`Close`,
+  `READY`→`Open`, `ProcessFailed`→`Close`) and `PostWebMessageAsString`, and calls
+  `TryDrainBatch` on its own schedule. A second, non-WinForms base gets every one of the pump's
+  already-paid-for bug fixes (P5.5 H2/H3) by construction instead of re-earning them.
+- **`Cancel` refuses an operation that never opted into `Cancellable` — flipping its status while
+  the body runs on would be a lie to the UI.** `OperationRegistry.Start` allocates a
+  `CancellationTokenSource` for every operation regardless of `Cancellable`, so a token is not what a
+  non-cancellable operation lacks; what the flag actually gates is whether `Cancel()` is allowed to
+  signal it at all. Honoring a cancel on an operation that opted out would report `Cancelled` to
+  every subscriber while the background body kept running to its own `Complete()`/`Fail()` —
+  observable state that no longer describes reality. Same honest-refusal shape as an unknown or
+  already-terminal id: `Cancel` returns `false` and changes nothing, rather than pretending to
+  succeed.
+
 ## Gotchas / traps
 
 - **EventBus match-cache keys must be collision-free**: module/type/scope are arbitrary app

@@ -13,7 +13,7 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.1.2 — pre-release, stabilising toward 1.0.** The application builder, WinForms host, WebView2
+**v0.2.0 — pre-release, stabilising toward 1.0.** The application builder, WinForms host, WebView2
 hosting, the full typed IPC stack (envelopes, middleware dispatcher, scoped-container router, event
 bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
@@ -84,11 +84,12 @@ public sealed class SettingsFacade : BaseFacade
 {
     public override string ModuleName => "SETTINGS";
 
-    protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken ct) =>
+    protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context,
+        CancellationToken ct) =>
         request.Type switch
         {
             "GET"  => Task.FromResult<object?>(_settings.Current),
-            "SAVE" => Save(request, ct),
+            "SAVE" => Save(request, context, ct),
             _      => throw UnknownType(request),
         };
 }
@@ -101,6 +102,17 @@ services.AddMessageDispatcher();          // error handler → logging → your 
 parameters and message; anything else becomes `UNKNOWN_ERROR` plus the exception's type name, with
 the detail in the host log. The one sharp edge: an `OperationException`'s message crosses **verbatim**
 — so never build one from `ex.Message`, which would turn the sanctioned channel into a bypass.
+
+**`IModuleContext` is the route's world: who it is, how it emits, how it starts long work.**
+`context.Publish(type, payload?, scope?)` emits on the host bus under the facade's own module — the
+default gesture for progress and state, not a wiring exercise, and it can never drift from
+`ModuleName` the way a hand-typed literal at every call site can. For work too long to answer inline,
+`context.Run(new OperationOptions { Kind = "IMPORT", Cancellable = true }, async (op, ct) => {
+op.Report(progress: 40); … })` hands it to the background, tracks it (id, status, progress,
+cancel-by-id), and returns the operation id immediately — pair it with `services
+.AddShenoraOperations()` and `@shenora/react`'s `useShenoraOperations()` for a host-backed progress
+store with no per-feature event wiring. Both are opt-in: a facade that never publishes and never
+starts tracked work pays nothing.
 
 ### `Shenora.WinForms` — the native shell
 

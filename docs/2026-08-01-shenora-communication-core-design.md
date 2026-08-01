@@ -1,7 +1,12 @@
 # The communication core: event-first module contract, tracked operations, base-agnostic channel — design (2026-08-01)
 
-Status: **DESIGN, approved to write (user, 2026-08-01), not implemented.** Ships as **0.2.0** with a
-`### Breaking` section — the first deliberate break since v0.1.0.
+Status: **IMPLEMENTED (2026-08-01), shipped as 0.2.0** with a `### Breaking` section — the first
+deliberate break since v0.1.0. The as-built shape is recorded in `docs/ARCHITECTURE.md`'s
+`Shenora.Ipc`/`@shenora/react` inventory; this doc stays for the rationale. What shipped task by task,
+the review findings fixed along the way, and the deliberate known limits (`Find(id)`, client
+`byModule`/`byScope` selectors): `docs/task-archive.md` `### 0.2.0`. The task-by-task plan this design
+was implemented from has been removed per its own "delete once the work lands" lifecycle
+(`docs/README.md`'s doc inventory) — its content is superseded by the archive entry above.
 
 Read first: `.claude/knowledge/ipc-contracts.md` (this design is constrained by it in several places
 and contradicts it in none) and `docs/2026-07-31-shenora-oneway-ipc-design.md` (this **supersedes its §6
@@ -193,7 +198,7 @@ public interface IOperationRegistry
 {
     IOperation Start(string module, OperationOptions options);
     string Run(string module, OperationOptions options, Func<IOperation, CancellationToken, Task> work);
-    IOperation? Find(string id);
+    IOperation? Find(string id);   // sketched here, NOT shipped — see the note below the interface
     IReadOnlyList<OperationInfo> GetAll(string? module = null, string? scope = null);
     bool Cancel(string id);
     void ClearFinished();
@@ -209,6 +214,13 @@ public interface IOperationRegistry
 `OperationStatus` crosses the wire as `"running"` etc. for free: `IpcJson` already installs
 `JsonStringEnumConverter(CamelCase)`, so the sibling's hard-won enum-serialization trap does not exist
 here.
+
+**`Find(id)` is sketched above and was NOT shipped — a known limit, not an oversight.** It was in this
+interface from the first draft, and was dropped during implementation because no consumer resolves a
+handle from a bare id (`Start`/`Run` already return one), and every public member becomes SemVer
+surface at 1.0 — a member with no call site is exactly the kind of surface `generic-library` asks to
+justify before shipping, not after. An app that genuinely needs to resolve an id to a handle today
+keeps its own id→handle map alongside the registry.
 
 **Provenance note, so a future reviewer can cut it cleanly:** `Interrupted` / `Resumable` /
 `ResumePayload` / `RegisterInterrupted` / `RequestResume` come from **one** app, not two. They are
@@ -297,7 +309,11 @@ concern") — the kit now ships it instead of describing it.
 
 Client (`@shenora/react`): `useShenoraOperations()`, one `createShenoraStore` instance —
 `snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id }`, `actions: { cancel, clearFinished, resume }`,
-plus selectors (`running`, `byModule`, `byScope`). The late-mounter case the store was built for
+plus `running`/`finished` selectors derived from `byId` on every read. **Not shipped, deliberately:**
+`byModule`/`byScope` selectors — an earlier revision of this section promised them, but filtering by
+module or scope is a one-line consumer selector over `byId`
+(`Object.values(state.byId).filter(o => o.module === 'X')`), and shipping indexes for it would be
+duplicated derived state for no gain. The late-mounter case the store was built for
 (§5.2 of the one-way design) is now host-backed: a progress strip mounting mid-operation renders current
 state because the host is authoritative. Headless, per D13 — no components, no UI opinions.
 

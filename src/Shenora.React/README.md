@@ -66,6 +66,29 @@ single component**. A failed `post` has no promise to reject, so it is reported 
 configureBridge({ onPostError: (failure) => log.error(failure.module, failure.type, failure.error) });
 ```
 
+### Tracked operations: a ready-made progress store
+
+For work the host tracks with `Shenora.Ipc`'s operation registry (an `IModuleContext.Run`/`Start`
+route on the C# side), `useShenoraOperations()` is a `createShenoraStore` instance built the same
+way as the example above — no per-feature event wiring needed:
+
+```ts
+import { useShenoraOperations } from '@shenora/react';
+
+const running = useShenoraOperations((s) => s.running);         // every in-flight operation
+const importJob = useShenoraOperations((s) => s.byId[jobId]);   // one, by id
+
+useShenoraOperations.actions.cancel(jobId);       // only does anything if the op opted into Cancellable
+useShenoraOperations.actions.clearFinished();
+```
+
+It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
+folds `OPERATION_UPDATED` by id — one subscription however many components read it. `running`/
+`finished` are derived from `byId` on every read, never a second copy to keep in sync; filtering by
+your own `module`/`kind` is a plain `Array.filter` over either. Use `createOperationsStore({ module,
+scope })` instead of the default export if your host renamed `OperationRegistryOptions.ModuleName` or
+you need a scope-filtered instance (a secondary window, an auxiliary session).
+
 ### Observing the whole stream
 
 `useShenoraEvent` and `createShenoraStore` listen for an exact `(module, type)`. When the vocabulary

@@ -53,7 +53,7 @@ that every app needs every row.
 | Extra windows on their own threads | `SecondaryWindows` | `FormClosed` is **not** the end of a window; cleanup happens after `Application.Run` returns, or a WebView2 child leaves a locked profile folder. |
 | App root / data / resources paths, env overrides | `ShenoraPaths(+Options)` | Resolves and absolutizes; file dialogs move the process CWD, so a relative root must not be re-resolved later. |
 | Startup splash | `SplashPanel(+Options)` | Colours are yours. |
-| OS file drag-drop over page elements | `DropZoneManager` + `DropZoneFacade` (in `Shenora.WebView2`) | Needs IPC, so it belongs to Stage 3 — but it is usually the third copy of the same code in a family, so plan for it. Zones now clear on **document change**, not on the ready handshake, so there is no ordering contract against `notifyReady` any more. |
+| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.WebView2`) | **Stage-1-adoptable STANDALONE, despite living in the WebView2 package** — it depends only on `Shenora.Core` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneFacade` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneFacade` + `useDropZone` — is Stage 3, below, once you're there. |
 
 **Verify a stage-1 change:** the window still restores to the right monitor at the right size after a
 DPI change, and closing while maximized reopens maximized.
@@ -123,12 +123,21 @@ stays uncontaminated by any one app's wire format (D21).
 Both were written against this surface and run before this guide claimed they could be
 (P6.4) — the shapes below are what that produced, not a sketch.
 
+> ⚠ **`RouteMessageAsync` changed shape in 0.2.0 (D23) — every override needs the parameter added.**
+> `protected override Task<object?> RouteMessageAsync(IpcRequest request, CancellationToken ct)` →
+> `(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)`. The one-line
+> migration: add the parameter; ignore it if your facade doesn't emit. If it does, this is also the
+> moment to replace a hand-typed module string at your emit call sites with `context.Publish(type,
+> payload, scope)` — it is stamped with the facade's own `ModuleName`, so it cannot drift the way a
+> literal re-typed at every call site can.
+
 - **Host side.** Derive from `BaseFacade`, one instance per existing module, and let
   `RouteMessageAsync` call your module's handler. `request.Type` is your action; rebuild whatever
   document shape your handler expects from `request.Payload` (if your client spread the payload at
   the top level, nest/unnest here — it is a few lines). Return `null`: your modules answer with
   events, which is the `post` shape, and answering at all is what buys correlation. Emit through
-  `IEventBus.EmitAsync(module, type, payload)`. Nothing about this needs Windows, so the adapter can
+  `context.Publish(type, payload, scope)` (or `IEventBus.EmitAsync(module, type, payload)` directly,
+  if you're not yet on `BaseFacade`'s context). Nothing about this needs Windows, so the adapter can
   live in a `net10.0` project (see Stage 4).
 - **Client side.** `bridge.post(module, type, { payload })` for the send; `eventBus.subscribeToAll`
   for a legacy "every host message" handler. Emit real `(module, type)` pairs from the host adapter
@@ -175,6 +184,21 @@ until the page is listening.
   one-off reaction in a single component, and `eventBus.subscribeToModule`/`subscribeToAll` when the
   event vocabulary isn't knowable up front — plug-in-contributed types, a diagnostics tap, the legacy
   firehose above.
+- **Long-running work** (a ten-minute deploy, a render, a model download — the case "always produces
+  a response" leaves undefined, 0.2.0/D23): a route that starts one calls `context.Run(new
+  OperationOptions { Kind = "DEPLOY", Cancellable = true }, async (op, ct) => { … op.Report(progress:
+  40); … })` and returns `new { operationId = … }` immediately — that IS the response for the
+  long case. `context.Start` is the lower-level primitive if your lifecycle doesn't fit one
+  background body (a start outside the block, several failure branches, a resumable session).
+  Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
+  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME` under module
+  `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and no
+  per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
+  is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
+  progress strip that mounts mid-run isn't empty) and folds `OPERATION_UPDATED` by id afterward. What
+  an operation actually means — its phases, whether it queues, what a viewer looks like — stays
+  yours; the kit tracks only id/status/progress/cancel. See
+  `docs/2026-08-01-shenora-communication-core-design.md` for the full shape.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.
 
