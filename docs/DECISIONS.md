@@ -512,6 +512,36 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     running desktop sample. That session also exposed the stale-bundle defect in `docs/FIX-LOG.md` —
     worth remembering that the hands-on test found something eight green `verify` runs did not.
 
+- **D26 — the kit stays Windows-desktop-scoped. Linux is served by the SERVER-BACKED profile, not by
+  a native Linux shell.** (Owner, 2026-08-02, asked whether MAUI could cover Linux + Windows.)
+  - **A candidate shell must expose the NATIVE WINDOW, not merely host a WebView.** This is the
+    selection criterion, and it is the one that actually decides the question — earned by the owner
+    having already tried and abandoned **Photino** for exactly this: *it cannot do drop zones at all*,
+    because a window-with-a-WebView gives you nowhere to put transparent native overlays over page
+    elements, so you are back to HTML5 drop and its blob URLs (D25 — the eager byte-copy problem).
+    Its second failing was maintenance: the form/window layer was not being kept current. Any future
+    candidate gets measured against this bar before anything else; a thin WebView wrapper cannot carry
+    this kit, whatever its cross-platform reach.
+  - **MAUI does not solve the stated problem anyway** — it has no official Linux target (Android, iOS,
+    Mac Catalyst, WinUI). And MAUI *for Windows* is separately rejected: it would mean rewriting the
+    frameless chrome D24/D25 just settled, discarding the Snap Layouts / DWM / rounded-corner work,
+    for no capability gain.
+  - **Measured cost of a Linux desktop shell** (2026-08-02): `Shenora.Core` + `Shenora.Ipc` are ~6,000
+    lines and already run on Linux (`net10.0`, no UI binding, D16/D3). `Shenora.WinForms` +
+    `WebView2` + `WebView2.Sessions` are ~9,300 lines of `net10.0-windows` — **~60% of the kit's C#,
+    and it is the part that IS the value**: frameless chrome, tray, single-instance, DPI-correct
+    window state, drop-zone overlays, WebView2 hosting and sessions. None of it ports. A Linux shell
+    shares Core, Ipc and the React client, and re-implements the rest.
+  - **There is already a Linux answer, and it costs nothing:** the server-backed profile (in-process
+    Kestrel + a browser) runs on Linux today. "Usable on Linux" is solved; only "native Linux desktop
+    shell" is not, and nothing asks for that.
+  - **Zero Linux consumers** — all three donor apps are Windows desktop apps. The two-consumer bar is
+    not close to met.
+  - **What would reopen it:** a real Linux consumer, plus a shell technology that passes the
+    native-window test above. **Avalonia** is the unevaluated candidate — genuinely cross-platform and
+    a real UI framework rather than a WebView wrapper, so it is the one worth measuring against the
+    bar. Do not re-propose Photino, and do not re-propose MAUI for Linux.
+
 - **D16 AMENDMENT (2026-08-01, 0.2.0 design pass D3) — transport neutrality is now EXECUTED, and the
   claim's exact boundary is recorded with it.** D16 said the same envelopes ride WebView2 postMessage
   today and a WebSocket or mobile channel tomorrow; `NotificationPump` was extracted so "a second,

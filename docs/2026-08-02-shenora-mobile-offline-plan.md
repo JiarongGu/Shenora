@@ -117,6 +117,18 @@ Levers, strongest first, to try when there is something to measure:
 measurements for performance claims; everything above is a lever to try, not a result. Measure on a
 physical device, both sides, same hardware — emulator cold-start figures would be misleading.
 
+## §6a A related question, already settled: desktop Linux
+
+Asked in the same session and answered in **D26**: the kit stays Windows-desktop-scoped, and Linux is
+served by the server-backed profile rather than a native shell. The criterion that decided it is
+worth carrying into any mobile-host choice too — **a candidate shell must expose the NATIVE WINDOW,
+not merely host a WebView**, because the kit's differentiators (native drop overlays, frameless
+chrome) live in the window, not the page. A shell that only wraps a WebView cannot carry this kit.
+
+That test applies directly here: whatever hosts a WebView on a mobile device must still let the host
+reach platform capability the page cannot, or the on-device profile buys nothing the server-backed
+one does not already give.
+
 ## §7 Not being built, and why
 
 No mobile host package, no transport helper, no headless runner, no `IpcJson` resolver seam, no
