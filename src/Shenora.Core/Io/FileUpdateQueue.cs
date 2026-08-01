@@ -4,6 +4,32 @@ namespace Shenora.Core;
 public sealed class FileUpdateQueueOptions
 {
     /// <summary>
+    /// Optional cross-process exclusion. Supply one and the queue takes a lease on every path an
+    /// update touches before applying it, releasing them after — so the app's OWN second process, or
+    /// a child process it spawns while holding leases itself, cannot interleave with an update.
+    ///
+    /// <para>
+    /// Null (the default) means in-process serialization only, which is all a single-instance app
+    /// needs. It buys nothing against a process that does not take leases; see
+    /// <see cref="LockInspector"/> for that half.
+    /// </para>
+    /// </summary>
+    public IPathLocker? Locker { get; init; }
+
+    /// <summary>
+    /// How long to wait for leases before giving up on an update. Default 30s. Ignored without a
+    /// <see cref="Locker"/>.
+    /// </summary>
+    public TimeSpan LeaseTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Optional. When a change fails, the queue asks this who is holding the path and reports it in
+    /// <see cref="FileUpdateResult.Holders"/> — turning "the process cannot access the file" into
+    /// something an app can act on or show a user.
+    /// </summary>
+    public IFileLockInspector? LockInspector { get; init; }
+
+    /// <summary>
     /// Diagnostics sink, guarded through <see cref="AppCallback.Log"/> — a throwing sink cannot take
     /// the queue down.
     /// </summary>
@@ -56,11 +82,86 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await ApplyLockedAsync(update).ConfigureAwait(false);
+            // Leases come AFTER the in-process gate, never before: taking a cross-process lock while
+            // another thread of this same process already holds the partition would be waiting on
+            // ourselves through the filesystem.
+            var leases = await AcquireLeasesAsync(update, cancellationToken).ConfigureAwait(false);
+            if (leases is null)
+            {
+                var contested = PathsOf(update).First();
+                var error = new IOException(
+                    $"another process holds a lease on '{contested}' (waited {_options.LeaseTimeout}).");
+                return new FileUpdateResult(0, 0, error, rolledBack: false, HoldersOf(contested));
+            }
+
+            try
+            {
+                return await ApplyLockedAsync(update).ConfigureAwait(false);
+            }
+            finally
+            {
+                foreach (var lease in leases) await Guarded(lease.DisposeAsync).ConfigureAwait(false);
+            }
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Every path an update touches, in a stable order. Sorted so two updates that overlap acquire
+    /// their leases in the SAME order — the lock-ordering rule the mission scheduler avoids by
+    /// declaring claims as a set, and which returns the moment locks are taken one at a time.
+    /// </summary>
+    private static IEnumerable<string> PathsOf(FileUpdate update) =>
+        update.Changes
+            .SelectMany(change => change switch
+            {
+                FileChange.Replace replace => new[] { replace.TargetPath },
+                FileChange.Move move => [move.From, move.To],
+                FileChange.Delete delete => [delete.Path],
+                FileChange.CreateDirectory create => [create.Path],
+                _ => [],
+            })
+            .Select(PathClaims.Canonical)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Null when any lease could not be taken — everything already taken is released first.</summary>
+    private async Task<List<IPathLease>?> AcquireLeasesAsync(FileUpdate update, CancellationToken cancellationToken)
+    {
+        if (_options.Locker is not { } locker) return [];
+
+        var held = new List<IPathLease>();
+        foreach (var path in PathsOf(update))
+        {
+            var lease = await locker.TryAcquireAsync(path, _options.LeaseTimeout, cancellationToken)
+                .ConfigureAwait(false);
+            if (lease is null)
+            {
+                foreach (var acquired in held) await Guarded(acquired.DisposeAsync).ConfigureAwait(false);
+                Log(() => $"file update deferred: could not lease {path}");
+                return null;
+            }
+            held.Add(lease);
+        }
+        return held;
+    }
+
+    /// <summary>
+    /// Best-effort "who is holding this?", for a failure an app would otherwise report as an opaque
+    /// IOException. Never throws: a diagnostic that can fail the operation it is describing is worse
+    /// than no diagnostic.
+    /// </summary>
+    private IReadOnlyList<FileLockHolder> HoldersOf(string path)
+    {
+        if (_options.LockInspector is not { } inspector) return [];
+        try { return inspector.WhoHolds(path); }
+        catch (Exception ex)
+        {
+            Log(() => $"lock inspector failed for {path}: {ex.GetType().Name}");
+            return [];
         }
     }
 
@@ -98,19 +199,31 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             }
             catch (Exception ex)
             {
-                Log(() => $"file update failed at change {index} ({change.GetType().Name}): {ex.GetType().Name}");
-                if (!atomic) return new FileUpdateResult(index, index, ex, rolledBack: false);
+                var holders = FirstPathOf(change) is { } contested ? HoldersOf(contested) : [];
+                Log(() => $"file update failed at change {index} ({change.GetType().Name}): {ex.GetType().Name}"
+                          + (holders.Count > 0 ? $" — held by {string.Join(", ", holders)}" : string.Empty));
+                if (!atomic) return new FileUpdateResult(index, index, ex, rolledBack: false, holders);
 
                 await RollbackAsync(undo).ConfigureAwait(false);
-                return new FileUpdateResult(0, index, ex, rolledBack: true);
+                return new FileUpdateResult(0, index, ex, rolledBack: true, holders);
             }
         }
 
         // Only now are staged deletions real: until the last change landed, the update could still
         // have needed them back.
         foreach (var commit in staged) await Guarded(commit).ConfigureAwait(false);
-        return new FileUpdateResult(update.Changes.Count, null, null, rolledBack: false);
+        return new FileUpdateResult(update.Changes.Count, null, null, rolledBack: false, []);
     }
+
+    /// <summary>The path a failure is most likely ABOUT, for the "who holds it" question.</summary>
+    private static string? FirstPathOf(FileChange change) => change switch
+    {
+        FileChange.Replace replace => replace.TargetPath,
+        FileChange.Move move => move.To,
+        FileChange.Delete delete => delete.Path,
+        FileChange.CreateDirectory create => create.Path,
+        _ => null,
+    };
 
     private async ValueTask ApplyWithRetryAsync(
         FileChange change, bool atomic, List<Func<ValueTask>> undo, List<Func<ValueTask>> staged, RetryPolicy? retry)

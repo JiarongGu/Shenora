@@ -181,8 +181,15 @@ Change
 Create
 Delete
 Directory
+Holder
+Inspector
+Lease
+Lock
+Locker
+Manager
 Move
 Replace
+Restart
 Update
 
 # ── Data shapes ───────────────────────────────────────────────────────────────────────────────────

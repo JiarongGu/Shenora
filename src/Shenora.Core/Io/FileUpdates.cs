@@ -97,12 +97,14 @@ public sealed class FileUpdate
 /// </summary>
 public sealed class FileUpdateResult
 {
-    internal FileUpdateResult(int applied, int? failedIndex, Exception? error, bool rolledBack)
+    internal FileUpdateResult(
+        int applied, int? failedIndex, Exception? error, bool rolledBack, IReadOnlyList<FileLockHolder> holders)
     {
         Applied = applied;
         FailedIndex = failedIndex;
         Error = error;
         RolledBack = rolledBack;
+        Holders = holders;
     }
 
     /// <summary>Changes that landed. Equals the change count on success; 0 after a rollback.</summary>
@@ -116,6 +118,13 @@ public sealed class FileUpdateResult
 
     /// <summary>True when <see cref="FileAtomicity.AllOrNothing"/> undid the applied changes.</summary>
     public bool RolledBack { get; }
+
+    /// <summary>
+    /// Who was holding the contested path, when a <see cref="FileUpdateQueueOptions.LockInspector"/>
+    /// is configured and could tell. Empty otherwise — including for a path on a network share, where
+    /// the holder is on another machine and no local API can see it.
+    /// </summary>
+    public IReadOnlyList<FileLockHolder> Holders { get; }
 
     /// <summary>True when every change landed.</summary>
     public bool Succeeded => FailedIndex is null;

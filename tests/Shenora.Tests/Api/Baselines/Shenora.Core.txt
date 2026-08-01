@@ -125,6 +125,24 @@ sealed class Shenora.Core.FileDialogResult
   public static Shenora.Core.FileDialogResult Cancelled()
   public static Shenora.Core.FileDialogResult Selected(string path)
   public string? FilePath { get; init; }
+struct Shenora.Core.FileLockHolder : System.IEquatable<Shenora.Core.FileLockHolder>
+  public .ctor(int ProcessId, string ProcessName)
+  public bool Equals(Shenora.Core.FileLockHolder other)
+  public int ProcessId { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileLockHolder left, Shenora.Core.FileLockHolder right)
+  public static bool op_Inequality(Shenora.Core.FileLockHolder left, Shenora.Core.FileLockHolder right)
+  public string ProcessName { get; init; }
+  public void Deconstruct(out int ProcessId, out string ProcessName)
+sealed class Shenora.Core.FilePathLocker : Shenora.Core.IPathLocker
+  public .ctor(Shenora.Core.FilePathLockerOptions options)
+  public System.Threading.Tasks.Task<Shenora.Core.IPathLease> TryAcquireAsync(string path, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default)
+sealed class Shenora.Core.FilePathLockerOptions
+  public System.Action<string>? Log { get; init; }
+  public System.TimeSpan PollInterval { get; init; }
+  public required string LockDirectory { get; init; }
 sealed class Shenora.Core.FileUpdate
   public Shenora.Core.FileAtomicity Atomicity { get; init; }
   public Shenora.Core.RetryPolicy? Retry { get; init; }
@@ -135,8 +153,12 @@ sealed class Shenora.Core.FileUpdateQueue : Shenora.Core.IFileUpdateQueue
   public System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
 sealed class Shenora.Core.FileUpdateQueueOptions
   public .ctor()
+  public Shenora.Core.IFileLockInspector? LockInspector { get; init; }
+  public Shenora.Core.IPathLocker? Locker { get; init; }
   public System.Action<string>? Log { get; init; }
+  public System.TimeSpan LeaseTimeout { get; init; }
 sealed class Shenora.Core.FileUpdateResult
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> Holders { get; }
   public System.Exception? Error { get; }
   public bool RolledBack { get; }
   public bool Succeeded { get; }
@@ -175,6 +197,8 @@ interface Shenora.Core.IFileDialogs
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
+interface Shenora.Core.IFileLockInspector
+  public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
 interface Shenora.Core.IFileUpdateQueue
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.ILane
@@ -209,6 +233,10 @@ interface Shenora.Core.IMissionScheduler : System.IAsyncDisposable
   public abstract int PendingCount { get; }
   public abstract int RunningCount { get; }
   public abstract void Reevaluate()
+interface Shenora.Core.IPathLease : System.IAsyncDisposable
+  public abstract string Path { get; }
+interface Shenora.Core.IPathLocker
+  public abstract System.Threading.Tasks.Task<Shenora.Core.IPathLease> TryAcquireAsync(string path, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IShenoraLifecycleHook
   public virtual void OnStarting(Shenora.Core.ShenoraApplication app)
   public virtual void OnStopping(Shenora.Core.ShenoraApplication app)

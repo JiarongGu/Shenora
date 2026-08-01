@@ -1,9 +1,11 @@
 # Shenora file updates — design
 
-**Status: THE QUEUE IS IMPLEMENTED 2026-08-02** (`IFileUpdateQueue`/`FileUpdateQueue`, `FileUpdate`,
-`FileChange`, `FileAtomicity`, `FileUpdateResult` — 8 tests). **§4's cross-process LEASES are NOT
-built**: they are additive, and open question 3 — does anything need them today, or is
-single-instance the practical guarantee — is still unanswered. Nothing else here is pending.
+**Status: IMPLEMENTED 2026-08-02** — the queue (`IFileUpdateQueue`/`FileUpdateQueue`, `FileUpdate`,
+`FileChange`, `FileAtomicity`, `FileUpdateResult`) and §4's locking (`IPathLocker`/`IPathLease`/
+`FilePathLocker`, `IFileLockInspector` + `RestartManagerLockInspector` in `Shenora.WinForms`), 16
+tests. Open question 3 was answered by the owner with a real consumer — see §4.1, which also CORRECTS
+this document's original "network shares are not a target". Nothing here is pending; the durable
+intent journal (§6) remains deliberately not built.
 
 Owner direction, verbatim, which is the whole brief:
 
@@ -162,10 +164,36 @@ the implementation, because each is a trap:
   managed path outside the sanctioned path.
 - **POSIX differs.** `DeleteOnClose` semantics and file locking are not the same on Linux/macOS. The
   first implementation targets Windows honestly and the seam allows another.
-- **Network shares are not a target.** SMB lock semantics vary by server; claiming support we cannot
-  test is worse than declining it.
 - **No ordering guarantee.** A lease is not a queue: two waiters may acquire in any order. In-process
   fairness stays the scheduler's job (admission rule 2).
+
+### §4.1 Network shares — corrected (owner, 2026-08-02: "this also would happen for modifying file on NAS")
+
+This section previously said network shares were not a target. That was written as caution and is
+wrong as guidance: an app whose managed tree lives on a NAS hits exactly the contention leases exist
+for, and declining to think about it does not make the case go away. What is actually true, split by
+mechanism:
+
+- **Leases work over SMB, with one caveat.** SMB2+ carries the delete-on-close flag, so the mechanism
+  holds: a second opener cannot take the file for writing. The caveat is release on a hard failure —
+  if the holding machine crashes or the link drops, the server frees the handle when the SESSION
+  times out, not instantly. So a stale lease self-heals within tens of seconds rather than never, and
+  a lease timeout should be comfortably longer than a poll interval. That is a bounded, self-healing
+  window; it is not the permanent-wedge failure a hand-rolled `.lock` file with no OS backing has.
+- **The lock DIRECTORY has to be somewhere both contenders can see.** Same machine, several processes
+  → the app's own local storage, as `FilePathLockerOptions` recommends. Two MACHINES coordinating over
+  a share → the lock directory must be **on the share**, in a folder of the app's own making
+  (`<share>/.shenora-locks`), because a lock in one machine's AppData is invisible to the other. This
+  is the one setting an app gets wrong silently: everything appears to work, right up until two
+  machines write the same file.
+- **The inspector cannot answer for a remote holder, and says so.** Restart Manager asks the LOCAL
+  machine. A file held open from another machine is visible only on the server (its own open-files
+  list). `WhoHolds` returns empty there — which is why the contract says empty means "cannot tell",
+  never "nobody".
+- **Retry matters more, not less.** A NAS adds transient failures a local disk does not have — a
+  dropped link, a server pause, an SMB retry storm. `RetryPolicy` defaults to retrying `IOException`
+  only; over SMB an app may want to widen `IsTransient`, since the same underlying blip can surface
+  as `UnauthorizedAccessException`.
 
 **Composition, not a third mechanism.** In-process exclusion = mission claims. Cross-process
 exclusion = a lease taken by the update queue before it applies. An app that wants both declares a

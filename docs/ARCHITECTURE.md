@@ -192,6 +192,20 @@ changes, noting them in `CHANGELOG.md`).
   recorded as not-built. The internal `IFileOperations` seam exists so serialization and rollback
   ORDER are provable with a probe instead of with sleeps; the kit still ships no public filesystem
   abstraction.
+  **`Io/` — cross-process locking, the two halves of a problem claims cannot reach.** A
+  `MissionClaim` excludes missions inside one process; these cover the rest. `IPathLocker`/`IPathLease`
+  + `FilePathLocker(+Options)` are advisory leases as lock FILES in a directory of the app's own
+  (never the managed tree — an app frequently does not own the folder it manages), opened
+  `FileShare.Read` + `DeleteOnClose` so the OS releases them when a process dies, keyed by a hash of
+  the canonical path so two spellings are one lease. `FileUpdateQueueOptions.Locker` makes the queue
+  take them for every path an update touches, in sorted order so two overlapping updates cannot
+  deadlock. That covers PARTICIPANTS — a second instance, or a child process the app spawns while
+  holding leases. For a process that will never take one (a game, a mod loader, antivirus, another
+  app editing the same folder), exclusion is impossible and the answer is `IFileLockInspector`:
+  `WhoHolds(path)` → `FileLockHolder`s, surfaced on `FileUpdateResult.Holders`, so an opaque
+  `IOException` becomes a name. Empty means "cannot tell", never "nobody". Over a share, leases work
+  provided the lock directory is ON the share, and a crash-released lease returns when the SMB session
+  times out rather than instantly.
   **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
   case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
   `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
@@ -251,7 +265,11 @@ changes, noting them in `CHANGELOG.md`).
   (STA text + image-file ops); `SecondaryWindows(+SecondaryWindowOptions)` (named windows on
   own-STA-thread pumps, per-name `IWindowStateStore` geometry, activate-on-existing,
   non-blocking close); `TrayIcon(+Options)`/`TrayMenuColors` (NotifyIcon + composed menu,
-  double-click restore, close-to-tray, optional app-colored renderer).
+  double-click restore, close-to-tray, optional app-colored renderer);
+  `RestartManagerLockInspector` — the Windows implementation of `Shenora.Core`'s
+  `IFileLockInspector`, answering "who is holding this file?" through the Restart Manager API (the one
+  an installer uses to say "close these applications"). Here rather than in `Core` because it is
+  Win32; returns empty for a remote holder over a share, because that answer only exists on the server.
 - `Shenora.WebView2` — `BrowserArguments` (the measured Chromium display-optimization preset;
   single-occurrence feature lists; dev CDP-args append); `WebViewEnvironment(+Options)`
   (runtime presence probe, idempotent prewarm, thread-affine shared environment +

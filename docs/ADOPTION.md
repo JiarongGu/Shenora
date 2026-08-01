@@ -603,9 +603,48 @@ Commit = (mission, ct) => updates.ApplyAsync(new FileUpdate
 > after a hard kill is unacceptable for your product, say so — that needs a durable intent journal,
 > which is designed but deliberately not built.
 
-> ⚠ **The queue serializes only what goes THROUGH it.** It takes no OS lock, so a second instance of
-> your app, an installer, or the user's own tooling is unaffected. Cross-process leases are designed
-> (`docs/2026-08-02-shenora-file-updates-design.md` §4) and not built, pending someone who needs them.
+### Other processes touching your files — two different problems
+
+The queue and mission claims both serialize work **inside your process**. If your app manages a folder
+it does not own — a game's mod directory, a shared library on a NAS — that is not enough, and the two
+remaining cases need different tools. Reaching for the wrong one is the mistake worth avoiding:
+
+| Who is touching the file | Tool | Why the other one is useless here |
+|---|---|---|
+| **Your own second process** — another instance, or a tool you spawn (an `.exe`, a script) and wait on | `IPathLocker`/`FilePathLocker` — the parent takes the lease for the duration of the child's run | Both sides participate, so exclusion is real. Retrying would just mean two writers racing more politely. |
+| **A foreign process** — the game itself, a mod loader, antivirus, Explorer's preview handler, another app editing the same folder | `RetryPolicy` (already there) + `IFileLockInspector` to NAME the holder | A lease is advisory. A process that never takes one is completely unaffected, and no lock design changes that. |
+
+```csharp
+// The queue takes leases for you, on every path an update touches:
+new FileUpdateQueue(new FileUpdateQueueOptions
+{
+    Locker        = new FilePathLocker(new FilePathLockerOptions { LockDirectory = paths.DataArea("locks") }),
+    LockInspector = new RestartManagerLockInspector(),   // Shenora.WinForms
+});
+
+// Or hold one yourself around a tool that knows nothing about any of this:
+await using var lease = await locker.TryAcquireAsync(modFolder, TimeSpan.FromSeconds(30), ct);
+if (lease is null) return;            // someone else has it — defer, do not force
+await RunExternalFixerAsync(modFolder, ct);
+```
+
+When a change fails, `FileUpdateResult.Holders` names who had it — so "the process cannot access the
+file" becomes "held by 3DMigoto (12345)", which an app can retry against or show to a user.
+
+> ⚠ **Put the lock directory where the contenders can both see it.** Several processes on one machine
+> → your own local data folder (never the managed tree: an app that does not own that folder would be
+> scattering lock files into something the user and other applications are also editing). Two MACHINES
+> over a share → a directory ON the share. This is the setting that fails silently: everything works
+> until two machines write the same file.
+
+> ⚠ **`WhoHolds` returning empty means "cannot tell", not "nobody".** Restart Manager asks the local
+> machine only, so a file held open from another machine over a share is invisible to it — that answer
+> exists only on the server.
+
+> ⚠ **Over a network share, a lease released by a CRASH comes back in tens of seconds, not instantly** —
+> the server frees the handle when the session times out. Bounded and self-healing, but size your
+> lease timeout for it, and expect more transient IO than a local disk (widening `RetryPolicy`'s
+> `IsTransient` beyond `IOException` is reasonable over SMB).
 
 **Verify:** the same partition never overlaps *while* a different partition does — both in one run,
 for the same reason as the scheduler. Then fail a change mid-update under `AllOrNothing` and confirm

@@ -44,12 +44,12 @@ The mission queue, chains and the file-update queue were built on 2026-08-02 and
 `docs/ROADMAP.md` `## Done` + `docs/task-archive.md`. What is left of that group is one item, and it
 is waiting on a question rather than on effort:
 
-- [ ] **Cross-process path leases** (§4 of `docs/2026-08-02-shenora-file-updates-design.md`) — designed, NOT built, and additive rather
-  than breaking, so it waits on its own open question: does anything need them today, or is
-  single-instance the practical guarantee? Claims exclude inside ONE process; nothing today stops a
-  second instance, an installer or the user's own tooling. Build it when an app can say it needs it —
-  the traps (advisory only, POSIX differs, network shares out of scope, a lease is not a queue) are
-  already written down.
+- [x] ~~**Cross-process path leases**~~ — DONE 2026-08-02. The open question was answered by the
+  owner with a real consumer: a filesystem-heavy sibling that does not own its working folder, spawns
+  its own fixing tools, and competes with a mod loader and other applications — including over a NAS.
+  That evidence also SPLIT the feature: leases for participants, `IFileLockInspector` for the foreign
+  processes a lease cannot touch. The plan's "network shares are not a target" was corrected rather
+  than kept (§4.1).
 
 ### The rest — held at the two-consumer bar
 

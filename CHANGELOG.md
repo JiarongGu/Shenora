@@ -86,6 +86,32 @@ _Do not stamp this heading by hand — the release workflow does it (`docs/RELEA
 
 ### Added
 
+- **Cross-process file locking, in two halves that answer different questions.** `IPathLocker`/
+  `IPathLease` + `FilePathLocker` (`Shenora.Core`) give advisory leases; `IFileLockInspector` +
+  `RestartManagerLockInspector` (`Shenora.WinForms`) name who is holding a file. Built on an
+  adopter's evidence: a filesystem-heavy app whose managed tree it does not own, which both spawns
+  its own tools AND competes with foreign processes.
+
+  **Reaching for the wrong one is the mistake this split exists to prevent.** A lease excludes
+  PARTICIPANTS — a second instance, or a child process the app spawns while the parent holds the
+  lease — and does nothing whatsoever about a game, a mod loader, antivirus or another application
+  editing the same folder. For those, exclusion is impossible and the useful thing is a NAME:
+  `FileUpdateResult.Holders` turns "the process cannot access the file" into "held by X (pid)".
+  `WhoHolds` returning empty means "cannot tell", never "nobody".
+
+  Leases are lock FILES in a directory of the app's own — never the managed tree, since an app
+  frequently does not own the folder it manages and sidecar locks there get synced, committed, and
+  outlive the process. Opened `FileShare.Read` + `DeleteOnClose`, so the OS releases them on a crash
+  rather than leaving a permanent wedge, and keyed by a hash of the canonical path so two spellings
+  are one lease. `FileUpdateQueueOptions.Locker` makes the queue take them for every path an update
+  touches, in sorted order so two overlapping updates cannot deadlock against each other.
+
+  **Network shares are supported, correcting an earlier "not a target".** Leases work over SMB2+ —
+  provided the lock directory is ON the share, since a lock in one machine's local storage is
+  invisible to the other, and that is the setting that fails silently. A lease released by a crash
+  returns when the SMB session times out rather than instantly: bounded and self-healing, but size the
+  lease timeout for it.
+
 - **A file-update queue** — `IFileUpdateQueue`/`FileUpdateQueue`, `FileUpdate`, `FileChange`
   (`Replace`/`Move`/`Delete`/`CreateDirectory`), `FileAtomicity`, `FileUpdateResult`, in
   `Shenora.Core`'s `Io`. Filesystem MUTATIONS land one at a time while the missions that produced

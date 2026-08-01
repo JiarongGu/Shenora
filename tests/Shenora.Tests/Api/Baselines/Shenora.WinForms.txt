@@ -107,6 +107,9 @@ sealed class Shenora.WinForms.OptimizedFormOptions
   public bool NativeCaptionButtons { get; init; }
   public bool RoundedCorners { get; init; }
   public int TopResizeBorder { get; init; }
+sealed class Shenora.WinForms.RestartManagerLockInspector : Shenora.Core.IFileLockInspector
+  public .ctor()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
 sealed class Shenora.WinForms.SecondaryWindowOptions
   public Shenora.WinForms.IWindowStateStore? StateStore { get; init; }
   public Shenora.WinForms.WindowStateOptions? StateOptions { get; init; }
