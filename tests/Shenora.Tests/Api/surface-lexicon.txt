@@ -1,0 +1,190 @@
+# surface-lexicon.txt — the words a PUBLIC TYPE NAME in Shenora is allowed to be built from.
+#
+# WHY THIS IS AN ALLOW-LIST AND NOT A BLOCKLIST OF BUSINESS WORDS.
+# The owner's standing review criterion for this repo is "make sure this is a LIBRARY — we are not
+# solving specific business logic; everything here has to be generic enough that any of our
+# applications can adopt it". That is the single most important property the kit has, and until this
+# gate it was the only invariant with no tripwire at all: `ApiSurfaceTests` detects that the surface
+# CHANGED, never that a change was a good idea, and its documented workflow is to copy the `.actual`
+# file over the baseline — so it waves domain vocabulary straight through.
+#
+# A blocklist ("Invoice", "Playlist", "Skin"…) cannot work here for two reasons. It is open-ended —
+# it only ever catches the domain words someone already thought of, and the leak that matters is the
+# one from the app nobody anticipated. And writing down the domain nouns of the private sibling apps
+# would itself put what those apps DO into a public repo (`.claude/rules/sensitive-info.md`).
+#
+# Inverting it fixes both. Every word below is shell, platform, transport or hosting vocabulary. A
+# new public type built only from these words cannot be domain-specific; a type that introduces an
+# unknown word stops the build and a human decides which it is. When the answer is "this really is
+# generic", add the word here — that edit is the review, and it is cheap next to the baseline update
+# and CHANGELOG entry a new public type already needs.
+#
+# SCOPE: public TYPE names only. That is exactly what D22 governs ("every public type is named for
+# its MECHANISM"), and it is the highest-signal, lowest-noise slice of the surface. Members are not
+# swept — deliberately, so this gate keeps the property doc-drift was built on: precise checks that
+# cannot cry wolf beat broad ones that get switched off.
+#
+# Derived 2026-08-01 from the 147 public types then shipping: 134 words, every one of them a
+# mechanism. The kit passed its own criterion on the day the gate was written; the gate exists to
+# keep it that way through the adoptions that have not happened yet.
+#
+# Format: one word per line, PascalCase segment as it appears in a type name. `#` starts a comment.
+# A leading `I` on an interface is stripped before splitting, so `IClipboardService` needs only
+# Clipboard + Service.
+
+# ── The product itself ────────────────────────────────────────────────────────────────────────────
+Shenora
+
+# ── Platform / tech nouns (the "using the tech we have" half) ─────────────────────────────────────
+Api
+App
+Application
+Browser
+Clipboard
+Cookie
+Dpi
+File
+Folder
+Form
+Forms
+Ipc
+Json
+Path
+Paths
+Shell
+Ui
+Url
+View
+View2
+Web
+Win
+Window
+Windows
+
+# ── Windows desktop presentation — the frameless-chrome cluster ───────────────────────────────────
+Button
+Caption
+Colors
+Icon
+Menu
+Optimized
+Panel
+Splash
+Tray
+Viewport
+Maximizable
+Secondary
+Single
+Instance
+
+# ── Messaging / transport mechanisms ──────────────────────────────────────────────────────────────
+Batch
+Bridge
+Bus
+Call
+Categories
+Command
+Dispatcher
+Event
+Events
+Message
+Middleware
+Notification
+Payload
+Pump
+Request
+Response
+Route
+Router
+Scheme
+
+# ── Hosting, composition and lifecycle ────────────────────────────────────────────────────────────
+Base
+Bootstrap
+Builder
+Callback
+Collection
+Container
+Context
+Controller
+Environment
+Extensions
+Facade
+Guard
+Helper
+Hook
+Host
+Lifecycle
+Manager
+Module
+Pool
+Provider
+Registry
+Root
+Runner
+Scoped
+Service
+Store
+
+# ── Work, state and results ───────────────────────────────────────────────────────────────────────
+Argument
+Arguments
+End
+Ended
+Error
+Codes
+Exception
+Info
+Kind
+Label
+Operation
+Operations
+Options
+Progress
+Reason
+Report
+Result
+Source
+State
+Status
+Target
+Unhandled
+
+# ── Input, rendering and streaming ────────────────────────────────────────────────────────────────
+Action
+Custom
+Deferred
+Drop
+Embedded
+Frame
+Input
+Interaction
+Interactive
+Key
+Launcher
+Pointer
+Region
+Render
+Resource
+Session
+Streaming
+Text
+Wheel
+Zone
+
+# ── Data shapes ───────────────────────────────────────────────────────────────────────────────────
+Byte
+Dialog
+Dialogs
+Filter
+Mapping
+Range
+
+# ── Watch this one ────────────────────────────────────────────────────────────────────────────────
+# Download: a browser mechanism (a session observing a download), NOT a product feature. It is the
+# closest thing on the surface to a domain word, and it is allowed only because `DownloadHit` names
+# something the WebView2 session layer genuinely observes. A `DownloadManager`/`DownloadQueue` would
+# be the kit growing a product, and should be argued for on its own merits — not waved past because
+# this line already exists.
+Download
+Hit

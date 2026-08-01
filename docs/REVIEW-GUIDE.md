@@ -47,7 +47,25 @@ the rules — it routes you to them and flags what's already settled.
 Shenora (神阙) is a **reusable library, not an app**: the desktop "body" (WinForms + WebView2 +
 React hosting, typed IPC, modules, native services, auxiliary browser sessions) for a family of
 Windows apps, shipped as NuGet (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|WinForms`) + npm
-(`@shenora/react`), versioned in lockstep. Two properties shape every judgement:
+(`@shenora/react`), versioned in lockstep.
+
+> **The owner's standing criterion, in their words (2026-08-01) — this is the review, everything
+> below is detail:** *"make sure this is a library — we're not solving specific business logic.
+> Everything we have here needs to be generic enough that our application can adopt it. And we focus
+> on making things work — like the frameless form: it's a better visual design using the tech we
+> have, and gives a better UI."*
+>
+> Two tests, and a piece of work has to pass **both**. **Generic enough to adopt** is the veto: any
+> sibling app must be able to take it as-is, so an application's concept leaking into `src/` is a
+> defect no matter how well written. **Better than what the app would have built** is the positive
+> test, and it is the one reviews forget — the kit does not exist to deduplicate code, it exists so
+> every app gets a *better shell* than it would have hand-rolled. `OptimizedForm` is the reference
+> case: frameless chrome is not a feature any app asked for, it is the kit using the tech available
+> to raise the visual bar for all of them at once. So "this is generic" is not sufficient — ask what
+> the adopting app actually GAINS, and if the honest answer is "nothing, it's just shared", that is
+> a finding.
+
+Two properties follow from that and shape every judgement:
 
 - **It is EXTRACTED, not invented.** Code is lifted from proven in-house sibling apps, keeping
   their post-mortem comments and fixing a listed set of gaps. So "why is this shaped like the
@@ -59,6 +77,11 @@ Windows apps, shipped as NuGet (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|Win
   vocabulary in `src/`, seams over flags, options records over magic values
   (`.claude/knowledge/generic-library.md`); (b) **headless (D13)** — NO dependency on any UI
   component library, anywhere.
+  **(a) now has a tripwire** — `SurfaceVocabularyTests` checks every public TYPE name against an
+  allow-list of shell/platform words (`tests/Shenora.Tests/Api/surface-lexicon.txt`), so a domain
+  noun fails the build instead of waiting for a reviewer to notice. Note what it does NOT cover:
+  member names, parameter names, csproj `<Description>`s, and the docs — and it says nothing at all
+  about the second test above. **A green suite is not evidence that a component earns its place.**
 
 Design contract: `docs/2026-07-30-shenora-design.md`. Load-bearing choices: `docs/DECISIONS.md`
 (D1–D22 — numbered; don't relitigate, they record *why*). **D21 + D22 are the newest and the most

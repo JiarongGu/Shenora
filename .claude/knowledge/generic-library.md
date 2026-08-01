@@ -15,7 +15,14 @@ keeps the library reusable (adopted from the family's other library, where it's 
   scoped-container router", not a `ProfileId`.
 - **Name every public type for its MECHANISM, never for a scenario or product (D22).** The test:
   *could a consumer whose use case is nothing like the name still recognise this as the thing they
-  need?* This is the naming half of D21 and it needs checking SEPARATELY, because the kit twice passed
+  need?* **Enforced since 0.2.0 by `SurfaceVocabularyTests`**, an ALLOW-LIST of shell/platform words
+  (`tests/Shenora.Tests/Api/surface-lexicon.txt`) that every public TYPE name is built from — a
+  domain noun now fails the build. Allow-list, not blocklist, for two reasons: a blocklist only
+  catches the domain words someone already imagined, and writing the private siblings' domain nouns
+  into a tracked file would leak what those apps do. When it fires, renaming is the common answer;
+  adding the word is the rare one, and that edit IS the review. It sweeps type names only — member
+  names, parameters, csproj descriptions and prose are still on you.
+  This is the naming half of D21 and it needs checking SEPARATELY, because the kit twice passed
   D21 on shape while failing it on name. `LoginWindow` held no login logic — it is a busy-gated,
   profile-isolated window running an app-supplied driver until it captures a blob (→
   `InteractiveSession`). `CoBrowseSession` was an off-screen browser that streams frames and takes

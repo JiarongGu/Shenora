@@ -359,6 +359,19 @@ event hub … async from the UI, progress synced") while the HOST contract did n
 
 ### Changed
 
+- **The genericity rule finally has a tripwire — `SurfaceVocabularyTests`.** The owner's standing
+  review criterion is *"make sure this is a library — we're not solving specific business logic;
+  everything here has to be generic enough that any of our applications can adopt it"*, and it was
+  the only load-bearing invariant in the repo with nothing watching it: `ApiSurfaceTests` is a SemVer
+  gate that proves the surface CHANGED, and its documented workflow (copy `.actual` over the
+  baseline) waves domain vocabulary straight through. Every public TYPE name is now checked against
+  an allow-list of shell/platform words (`tests/Shenora.Tests/Api/surface-lexicon.txt`); an unknown
+  word fails the build and the author either renames the type (D22) or argues the word onto the list.
+  Allow-list rather than a blocklist of business nouns, because a blocklist only catches the domain
+  words someone already imagined — and listing the private siblings' nouns in a tracked file would
+  leak what those apps do. Derived from the 147 public types then shipping: 134 words, every one a
+  mechanism, so the kit passed its own criterion on the day the gate was written. Sabotage-verified
+  both ways, and a second test fails if the lexicon keeps words no type uses. No surface change.
 - **`Shenora.Core.AppCallback.Log(Action<string>? sink, Func<string> message)`** — the guarded, lazy
   diagnostic helper existed as FIVE byte-identical private copies (`WebViewHost`,
   `WebViewIpcBridge`, `EmbeddedResourceProvider`, `NotificationPump`, `OperationRegistry`), the same
