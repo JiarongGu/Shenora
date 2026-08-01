@@ -71,7 +71,7 @@ node devtools/dev.mjs shot after-click     # capture → devtools/screenshots/af
 ## The UI-thread responsiveness probe
 
 `responsiveness` re-proves the claim the one-way IPC design rests on
-(`docs/2026-07-31-shenora-oneway-ipc-design.md` §7): work left in a route's synchronous segment
+(`docs/DECISIONS.md` D23): work left in a route's synchronous segment
 stalls the UI thread; work handed off (`ctx.Run`) and streamed back does not. It clicks a control
 via `win-input`, then samples `SendMessageTimeout(hwnd, WM_NULL, …, SMTO_ABORTIFHUNG, timeoutMs)` —
 which returns only once the target thread's message loop actually PUMPS, so a failed call means the

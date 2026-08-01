@@ -92,6 +92,12 @@ function checkDependencyGraph() {
 
 const RETIRED_FILE = path.join(repo, 'devtools', 'retired-names.txt');
 
+// History BY DEFINITION — these files exist to record what the kit USED to be, so a retired name or
+// a since-deleted doc path in them is ACCURATE, not stale. Exempting them is what keeps both checks
+// signal rather than noise.
+const HISTORY_BY_DEFINITION =
+  /^(devtools\/retired-names\.txt|CHANGELOG\.md|docs\/task-archive\.md|docs\/FIX-LOG\.md|docs\/ROADMAP\.md)$/;
+
 /** `Name  # why it went` per line; blank lines and `#` comments ignored. */
 function retiredNames() {
   if (!fs.existsSync(RETIRED_FILE)) return [];
@@ -144,9 +150,7 @@ function checkRetiredNames() {
 
   for (const file of walk(repo)) {
     const rel = path.relative(repo, file).replace(/\\/g, '/');
-    // History BY DEFINITION — these files exist to record what the kit USED to be, so every mention
-    // in them is already past tense by construction and marking each one would be noise.
-    if (/^(devtools\/retired-names\.txt|CHANGELOG\.md|docs\/task-archive\.md|docs\/FIX-LOG\.md|docs\/ROADMAP\.md)$/.test(rel)) continue;
+    if (HISTORY_BY_DEFINITION.test(rel)) continue;
     const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
     const suppressed = suppressedLines(lines, rel.endsWith('.md'));
     for (let i = 0; i < lines.length; i++) {
@@ -164,6 +168,37 @@ function checkRetiredNames() {
   }
 }
 
+// ── 3. No pointer to a doc that does not exist ────────────────────────────────────────────────────
+//
+// Added when the 0.2.0 cleanup RETIRED three implemented design docs: the moment a doc can be
+// deleted, every `docs/x.md` in prose or a code comment becomes a candidate dangling pointer, and
+// nothing checked them. Cheap and exact — the path either resolves or it does not, so unlike the
+// other two checks this one needs no heuristic at all.
+
+function checkDocLinks() {
+  // `docs/foo.md`, with or without backticks/parens, anywhere in prose or a comment.
+  const reference = /(?<![\w./-])((?:docs|\.claude)\/[A-Za-z0-9._\-/]+\.md)/g;
+  for (const file of walk(repo)) {
+    const rel = path.relative(repo, file).replace(/\\/g, '/');
+    // Same exemption as the retired-name check, for the same reason: these files RECORD what the
+    // repo used to contain, so naming a since-deleted doc is accurate rather than broken. Git
+    // history holds the file itself.
+    if (HISTORY_BY_DEFINITION.test(rel)) continue;
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      // A retired doc named in a HISTORY note is fine — that is the point of recording the retirement.
+      if (HISTORY.test(lines[i])) continue;
+      for (const [, target] of lines[i].matchAll(reference)) {
+        if (fs.existsSync(path.join(repo, target))) continue;
+        problems.push(
+          `${rel}:${i + 1}: points at "${target}", which does not exist.\n` +
+          `      ${lines[i].trim().slice(0, 110)}\n` +
+          '      Retire a doc by REDIRECTING its pointers (usually to a DECISIONS D<n>), not just deleting it.');
+      }
+    }
+  }
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────────────────────────
 
 if (listOnly) {
@@ -175,9 +210,11 @@ if (listOnly) {
 
 checkDependencyGraph();
 checkRetiredNames();
+checkDocLinks();
 
 if (problems.length === 0) {
-  console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as current');
+  console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as ' +
+              'current; every docs/ pointer resolves');
   process.exit(0);
 }
 console.error(`\n\x1b[31m✖ doc-drift: ${problems.length} stale claim(s) in prose:\x1b[0m`);

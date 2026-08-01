@@ -6,7 +6,8 @@ namespace Shenora.Core;
 // with NO Windows reference, so the same logic runs on a non-Windows shell that implements these
 // contracts (D16: mobile shells are a target).
 //
-// Accepted, documented lean (see docs/2026-07-30-shenora-relayering-design.md §4.1): this contract
+// Accepted, documented lean (D20, and D16's amendment records that a transport spike does NOT
+// validate this half): this contract
 // is desktop-FLAVOURED. FileDialogOptions carries Win32 dialog vocabulary and FilePath is a path
 // string. A mobile document picker would ignore the validation hints and return a content URI. That
 // is why FilePath is specified as "a path or URI the HOST can resolve" rather than "a filesystem

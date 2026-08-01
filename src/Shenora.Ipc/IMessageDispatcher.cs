@@ -19,8 +19,8 @@ public interface IMessageDispatcher
     /// existed the whole pipeline was uncancellable, and a handler could not observe a token it was
     /// never given. It is deliberately NOT per-request client cancellation: a one-way
     /// <c>post</c> has no caller waiting, so "the client changed its mind" is an app-level CANCEL
-    /// route carrying the operation id, not a transport concern (see
-    /// <c>docs/2026-07-31-shenora-oneway-ipc-design.md</c>). Cancellation surfaces to the client as
+    /// route carrying the operation id, not a transport concern (see <c>docs/DECISIONS.md</c> D23,
+    /// and <see cref="OperationsFacade"/>, which ships that route). Cancellation surfaces to the client as
     /// <see cref="IpcErrorCodes.OperationCancelled"/>, never as a thrown exception — the
     /// never-throws contract holds.
     /// </para>

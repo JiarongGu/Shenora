@@ -438,7 +438,7 @@ switch (cmd) {
     break;
   }
 
-  // The UI-thread responsiveness probe (docs/2026-07-31-shenora-oneway-ipc-design.md §7): clicks a
+  // The UI-thread responsiveness probe behind D23 (docs/DECISIONS.md): clicks a
   // control via win-input, THEN samples SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG) sub-100ms
   // while the resulting work runs. Refuses to print sample stats unless the click actually landed
   // (win-input's own "click ok" confirmation) — the guard against the v0.1.0 vacuous pass where a

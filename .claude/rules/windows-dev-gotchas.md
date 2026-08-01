@@ -9,9 +9,13 @@
   changes nothing, and the suite keeps failing (or, in the dangerous direction, keeps PASSING against
   a stale binary while you conclude a tripwire fires when it does not). Hit live during the 0.2.0
   design pass. The sabotage-verification discipline this repo runs on depends on the restore actually
-  taking effect, so: restore by rewriting the CONTENT (Edit/Write, or `git checkout -- <path>` for a
-  tracked file) rather than moving a file back, or force it with `dotnet build -t:Rebuild`. Re-run the
-  test after restoring and confirm it is GREEN — a sabotage is only verified once both directions are.
+  taking effect, so: restore by rewriting the CONTENT (Edit/Write) rather than moving a file back, or
+  force it with `dotnet build -t:Rebuild`. Re-run the test after restoring and confirm it is GREEN —
+  a sabotage is only verified once both directions are.
+  ⚠ **`git checkout -- <path>` is NOT a safe restore either** — it reverts to HEAD, silently
+  discarding any UNCOMMITTED edits that file already carried. Also hit live: a sabotage restore threw
+  away a redirect made minutes earlier in the same file. Prefer sabotaging a file you have no pending
+  work in, or undo the sabotage with the same tool that applied it.
 - **Node 24 `fs.cpSync` crashes on this box** (fail-fast 0xC0000409, silent). Use manual
   recursive copy loops in .mjs scripts.
 - PS 5.1 quirks in scripts: no `&&`/`||` chains; `-Encoding utf8` writes a BOM (fine for

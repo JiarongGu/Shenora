@@ -48,7 +48,7 @@ Design contract: `docs/2026-07-30-shenora-design.md`. Load-bearing choices: `doc
 likely to look like violations:** a feature ships as primitives + lifecycle hooks rather than the
 product, and every public type is named for its MECHANISM (so `InteractiveSession`/`StreamingSession`
 are deliberately not named after logging in or co-browsing). D19 + D20 changed the package layering
-(`docs/2026-07-30-shenora-relayering-design.md`), and the tree still predates it. As-built map + full public surface:
+(D19 + D20 — implemented in P5.5, so the tree matches them). As-built map + full public surface:
 `docs/ARCHITECTURE.md`. Phase-by-phase narrative of what changed and how it was verified:
 `docs/ROADMAP.md` `## Done`.
 

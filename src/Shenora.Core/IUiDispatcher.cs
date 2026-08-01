@@ -22,8 +22,8 @@ public enum UiTargetState
 /// The ONE UI-thread marshalling seam. Specified in the design contract's package table from the
 /// start and never built until P5.5, which is why the pattern ended up hand-rolled 14 times across
 /// three packages with five mutually incompatible pre-handle policies — and why two of those copies
-/// carried real defects (see D19/D20 and
-/// <c>docs/2026-07-30-shenora-relayering-design.md</c> §5).
+/// carried real defects (see <c>docs/DECISIONS.md</c> D19/D20, and
+/// <c>.claude/knowledge/webview2-hosting.md</c> for the four invariants this owner keeps).
 /// <para>
 /// Portable on purpose: an app service that needs "run this on the UI thread" depends on this
 /// interface, not on WinForms, so the same logic runs on another shell. The Windows implementation is

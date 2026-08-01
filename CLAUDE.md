@@ -12,7 +12,11 @@ invented — the framework's opinions are their measured lessons. Its sibling Ly
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
 (postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See
 `docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D22) before
-relitigating anything.
+relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design docs once implemented
+(re-layering → D19/D20, one-way IPC → D23, plus the originating brief): decisions live in
+`DECISIONS.md`, as-built shape in `ARCHITECTURE.md`. One design doc survives —
+`docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the
+code cites its `§` numbers.
 
 **Status: v0.1.0 SHIPPED (2026-07-31)** — five NuGet packages + `@shenora/react` on npm, repo public.
 P1–P7 are complete and **nothing is queued**: `TASKS.md` holds two standing habits, the finished work

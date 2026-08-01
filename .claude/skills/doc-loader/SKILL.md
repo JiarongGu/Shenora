@@ -14,9 +14,7 @@ for a non-trivial task, load what the task touches — otherwise you'll miss a h
    rows as docs are added, so trust it over this list. Read the 1–2 that match:
    `docs/ARCHITECTURE.md` (**as-built, NOT the target**), `docs/2026-07-30-shenora-design.md` (the
    design contract — read its `## Amendments` too), `docs/DECISIONS.md` (why it's done this way),
-   `docs/ROADMAP.md`/`TASKS.md` (status/next), `docs/2026-07-30-shenora-relayering-design.md` (the
-   TARGET layering + where a contract belongs, D19/D20), `docs/2026-07-31-shenora-oneway-ipc-design.md`
-   (one-way `post`, shared host-fed state, why the event pipe is the desktop default),
+   `docs/ROADMAP.md`/`TASKS.md` (status/next),
    `docs/ADOPTION.md` (bringing an existing app onto the kit),
    `docs/REVIEW-GUIDE.md` (reviewing anything). Don't read all of them.
 2. **Rules.** Open `.claude/rules/RULES_INDEX.md`. The **core** rules are already auto-loaded.

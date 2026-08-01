@@ -230,7 +230,7 @@ export class ShenoraBridge {
    * Send WITHOUT awaiting a reply, and return the request id.
    *
    * This is the default shape for a desktop shell, and {@link invoke} is the special case — see
-   * `docs/2026-07-31-shenora-oneway-ipc-design.md`. Two reasons: a correlated call carries a deadline
+   * `docs/DECISIONS.md` D23. Two reasons: a correlated call carries a deadline
    * (30 s by default) and real work does not; and request/response is UI-THREAD-COUPLED here by
    * design, because the dispatch pipeline preserves the caller's synchronization context so facades
    * can touch the window. Reserve `invoke` for calls that are quick AND safe on the UI thread — the

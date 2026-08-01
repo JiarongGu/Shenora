@@ -133,7 +133,7 @@ events, that is the RIGHT default for a desktop app and Shenora does not ask you
 UI-thread-safe**, because the dispatch pipeline preserves the caller's synchronization context by
 design, so a route's synchronous segment runs on the UI thread. Measured on the sample: the same 3 s
 of work stalls the UI thread 2 027 ms when left in the route and 0 ms when handed off and streamed.
-See `docs/2026-07-31-shenora-oneway-ipc-design.md`.
+See `docs/DECISIONS.md` D23.
 
 **Write two adapters, not 200 edits.** A client shim mapping your `post`/`subscribe` pair onto the
 bridge, and a host adapter presenting your module interface to `IMessageDispatcher`. Then your

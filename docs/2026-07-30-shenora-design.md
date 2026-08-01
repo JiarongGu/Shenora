@@ -1,9 +1,13 @@
 # Shenora — design contract (2026-07-30)
 
-**Status: approved direction for the initial build-out.** Derived from `docs/BRIEF.md` (the
-originating requirements) plus a full survey of the sibling applications this framework is
-extracted from. Amend in place with dated notes; record load-bearing choices in
-`docs/DECISIONS.md`.
+**Status: approved direction, and BUILT — the kit shipped.** Derived from the originating project
+brief (retired in the 0.2.0 cleanup: its API sketches were superseded, see D11) plus a full survey of
+the sibling applications this framework is extracted from. Amend in place with dated notes; record
+load-bearing choices in `docs/DECISIONS.md`.
+
+> This doc survives the cleanup that retired its two sibling design specs because the code cites its
+> **§5** (the IPC threading model) in ~20 places, and because it is the only place the two consumption
+> PROFILES are argued. For what is true *now*, read `docs/ARCHITECTURE.md`; for why, `DECISIONS.md`.
 
 ## 1. What Shenora is
 
@@ -180,8 +184,8 @@ re-solved per project. Two consequences now explicit:
 rule "never sideways `WinForms`↔`WebView2` … revisit only if extraction proves it impossible" is
 hereby revisited on exactly that ground: extraction produced the UI-thread marshal pattern
 **hand-rolled 14 times across 3 packages with 5 incompatible pre-handle policies**, with real defects
-traced to the divergence. Two changes, designed in
-`docs/2026-07-30-shenora-relayering-design.md` and decided as D19 + D20:
+traced to the divergence. Two changes, decided as D19 + D20 (the separate re-layering design doc was
+retired once implemented — `docs/ARCHITECTURE.md` has the as-built graph):
 
 1. **`Shenora.WebView2` now depends on `Shenora.WinForms`** (D19). The two are one Windows
    presentation layer — the boundary is **primitives → hosting-on-primitives**, not two peers. All

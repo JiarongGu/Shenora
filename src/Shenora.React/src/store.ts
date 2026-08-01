@@ -84,7 +84,7 @@ export interface ShenoraStore<TState, TActions> {
  * A store fed by one module's host event stream, shared by every component that reads it.
  *
  * This is the shape a desktop app needs and the one three sibling apps each hand-built before it
- * existed here — see `docs/2026-07-31-shenora-oneway-ipc-design.md` §5 for the survey. It exists
+ * existed here — see `.claude/knowledge/generic-library.md`'s worked example for that survey. It exists
  * because status- and progress-driven UI is inherently MANY-WATCHERS: a full panel and a compact
  * progress strip want the same live state, and without a shared store each re-implements the wiring,
  * each opens its own subscription, and each starts empty.

@@ -1,5 +1,5 @@
 // ui-responsiveness — measures whether the target app's UI thread keeps PUMPING while a route
-// runs. This is the probe behind docs/2026-07-31-shenora-oneway-ipc-design.md §7's claim: work left
+// runs. This is the probe behind D23's one-way-IPC claim (docs/DECISIONS.md): work left
 // in a route's synchronous segment stalls the UI thread; work handed off and streamed back does not.
 // Rebuilt for Task 8 (2026-08-01) — the v0.1.0 probe was a one-off shell session, never kept under
 // devtools/, so only its NUMBERS survived in the doc. This is the tracked, re-runnable replacement,

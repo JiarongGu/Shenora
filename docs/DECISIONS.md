@@ -165,7 +165,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `WinForms` never references `WebView2`. Rejected:
   merging into one `Shenora.Windows` package (preserves no WebView2-free option, much larger diff
   for the same benefit) and sharing via a linked source file (two binaries carrying the same
-  internal type; solves the least). Full design: `docs/2026-07-30-shenora-relayering-design.md`.
+  internal type; solves the least). As-built layering and full surface: `docs/ARCHITECTURE.md`.
 
 - **D20 — Portable contracts live in `Shenora.Core`; only Windows implementations live in
   `Shenora.WinForms`.** (User direction, 2026-07-30.) The reusable part of a desktop kit is the
@@ -267,7 +267,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `IEventBus` while the kit's own `DropZoneManager` took one as a REQUIRED option. The bus was already
   the spine; the contract did not admit it, so every app re-agreed the conventions by hand. Layering was
   never the obstacle: `Shenora.Ipc` already references `Shenora.Core`, so this adds no package edge.
-  **(b)** This **supersedes `docs/2026-07-31-shenora-oneway-ipc-design.md` §6 bullet 1** ("no
+  **(b)** This **supersedes the one-way-IPC design's original "not shipped" list** ("no
   operation/job manager, registry, queue, or progress TYPE"), which itself said to revisit if adoption
   showed the need. It did: one sibling ships a 320-line `ProcessRegistry` feeding a status bar and an
   activity panel, a second ships the `JOB_UPDATED`/`JOB_PROGRESS` archetype, and the kit's own shipped

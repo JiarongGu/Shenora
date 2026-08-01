@@ -155,7 +155,7 @@ transport, or building the P6 adoption shims.
   route deliberately hands OFF — a long operation whose results stream back as notifications — is no
   longer the dispatch path and must NOT capture the UI context. Requiring it to would keep long work
   on the UI thread, which is the exact stall the one-way path exists to avoid
-  (`docs/2026-07-31-shenora-oneway-ipc-design.md`). So: the route's own synchronous segment and its
+  (D23, measured: 2 027 ms stalled vs 0 ms). So: the route's own synchronous segment and its
   awaits stay context-preserving; the background body it starts does not. This does not conflict with
   the never-`Task.Run`-per-message rule below — that is about the TRANSPORT spawning per inbound
   message (a measured pool-starvation freeze), not a handler offloading one long operation.
