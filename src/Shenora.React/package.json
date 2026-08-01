@@ -1,6 +1,6 @@
 {
   "name": "@shenora/react",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "React client for Shenora desktop hosts: correlated invoke/send/subscribe over the WebView2 bridge, typed module services, hooks, and a browser fallback for pure-UI development.",
   "license": "MIT",
   "author": "Jiarong Gu",
