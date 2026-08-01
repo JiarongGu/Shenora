@@ -75,7 +75,20 @@ public sealed record OperationOptions
     /// <summary>Initial progress; null (the default) means indeterminate, not zero.</summary>
     public int? Progress { get; init; }
 
-    /// <summary>Whether this operation can later be re-announced as interrupted-and-resumable after a crash.</summary>
+    /// <summary>
+    /// Whether this operation can later be re-announced as interrupted-and-resumable after a crash.
+    /// <para>
+    /// Governs ONLY the crash-checkpoint path (<see cref="IOperationRegistry.RegisterInterrupted"/>) —
+    /// NOT <see cref="IOperation.Pause"/>/<see cref="IOperation.Resume"/> (coordinator ruling, D23's
+    /// lifecycle-completion amendment). A <see cref="OperationStatus.Paused"/> operation is resumable
+    /// BY CONSTRUCTION — <see cref="IOperation.Resume"/> exists and requires no flag — so gating
+    /// <see cref="IOperationRegistry.RequestResume"/>'s Paused case on this property would silently
+    /// break the ordinary pause/resume flow for an operation that (like most) never set it. Do not
+    /// re-add that check thinking it was an oversight; it was checked against the test suite and
+    /// deliberately dropped when this property's only consumer used to be <c>RegisterInterrupted</c>'s
+    /// entry (which already throws if this is false, making the old check vacuous there too).
+    /// </para>
+    /// </summary>
     public bool Resumable { get; init; }
 
     /// <summary>Opaque app checkpoint token carried on a resumable operation; the kit never reads it.</summary>
@@ -118,10 +131,20 @@ public sealed record OperationInfo
     public OperationLabel? Detail { get; init; }
 
     /// <summary>
-    /// Why the operation is <see cref="OperationStatus.Paused"/> — an app-defined string, like
-    /// <see cref="Kind"/> (e.g. <c>"credentials"</c>/<c>"transient"</c>/<c>"dns"</c>/<c>"migration"</c>):
-    /// the app's own taxonomy driving what its UI offers, never the kit's. Null except while
-    /// <see cref="Status"/> is <see cref="OperationStatus.Paused"/>; cleared on <see cref="IOperation.Resume"/>.
+    /// Why the operation is (or WAS) <see cref="OperationStatus.Paused"/> — an app-defined string,
+    /// like <see cref="Kind"/> (e.g. <c>"credentials"</c>/<c>"transient"</c>/<c>"dns"</c>/
+    /// <c>"migration"</c>): the app's own taxonomy driving what its UI offers, never the kit's.
+    /// <para>
+    /// Lifetime (coordinator ruling, D23's lifecycle-completion amendment — stated here so the
+    /// asymmetry reads as intent, not an oversight): set when <see cref="IOperation.Pause"/> runs,
+    /// CLEARED when <see cref="IOperation.Resume"/> runs (back to null), but RETAINED through a
+    /// later terminal transition — <see cref="IOperation.Complete"/>, <see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>,
+    /// or <see cref="IOperationRegistry.Dismiss"/> — reached directly from
+    /// <see cref="OperationStatus.Paused"/> without an intervening <c>Resume</c>. "Failed while paused
+    /// waiting on credentials" is useful history for whoever reads the finished entry; only an actual
+    /// <c>Resume</c> means the app has moved past the reason, which is why clearing is <c>Resume</c>'s
+    /// job and not automatic on every exit from <see cref="OperationStatus.Paused"/>.
+    /// </para>
     /// </summary>
     public string? PauseReason { get; init; }
 

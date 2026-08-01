@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using Shenora.Core;
 using Shenora.Ipc;
 
@@ -176,6 +177,52 @@ public class OperationRegistryTests
         Assert.DoesNotContain(prod, o => o.Id == otherScope.Id);
     }
 
+    /// <summary>
+    /// The three-band sort (§5A.2, coordinator ruling on this batch): Active (`Running`) → Waiting
+    /// (`Paused`/`Interrupted`) → Terminal — NOT "Running vs everything else". Before this fix a
+    /// `Paused` entry fell into the "everything else" bucket right alongside completed history
+    /// (`FinishedAt == null`, sorted by `Sequence` ascending with no band of its own), burying the
+    /// exact row a user needs to find in order to resume or dismiss it — precisely the reason the
+    /// Waiting band exists at all (§5A.2's table).
+    /// </summary>
+    [Fact]
+    public void GetAll_orders_active_then_waiting_then_terminal()
+    {
+        var (registry, _) = Build();
+        var done = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        done.Complete();
+        var paused = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        paused.Pause("dns");
+        var running = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        var all = registry.GetAll();
+
+        Assert.Equal([running.Id, paused.Id, done.Id], all.Select(o => o.Id));
+    }
+
+    /// <summary>
+    /// Terminal sorts NEWEST-first (coordinator ruling) — a history/log view surfaces the most
+    /// recently finished work first. A `FakeTimeProvider`, advanced explicitly between the two
+    /// finishes, makes the ordering deterministic rather than racing real wall-clock resolution.
+    /// </summary>
+    [Fact]
+    public void GetAll_orders_terminal_entries_newest_finished_first()
+    {
+        var bus = new EventBus();
+        var clock = new FakeTimeProvider();
+        var registry = new OperationRegistry(bus,
+            new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero, TimeProvider = clock });
+        var first = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        first.Complete();
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var second = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        second.Fail("X");
+
+        var all = registry.GetAll();
+
+        Assert.Equal([second.Id, first.Id], all.Select(o => o.Id));
+    }
+
     // --- Pause/Resume (§5A.3, D23 amendment) ---------------------------------------------------
 
     [Fact]
@@ -223,6 +270,25 @@ public class OperationRegistryTests
         var info = Payload(events[^1]);
         Assert.Equal(OperationStatus.Running, info.Status);
         Assert.Null(info.PauseReason);
+    }
+
+    /// <summary>
+    /// The other half of `PauseReason`'s lifetime (coordinator ruling, pinned so a future
+    /// "simplification" that clears it on every terminal transition — a reasonable-LOOKING cleanup —
+    /// fails loudly instead of silently discarding useful history): a terminal transition reached
+    /// DIRECTLY from Paused (no intervening `Resume`) must retain the reason. "Failed while paused
+    /// waiting on credentials" is exactly the kind of thing a finished-history reader wants.
+    /// </summary>
+    [Fact]
+    public void A_terminal_transition_reached_directly_from_paused_retains_the_pause_reason()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("credentials");
+
+        operation.Fail("DEADLINE_EXCEEDED");
+
+        Assert.Equal("credentials", registry.GetAll().Single().PauseReason);
     }
 
     /// <summary>

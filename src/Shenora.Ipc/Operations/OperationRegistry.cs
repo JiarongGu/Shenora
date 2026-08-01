@@ -153,11 +153,22 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Sorted by the THREE BANDS (§5A.2), not "Running vs everything else" (coordinator ruling, this
+    /// batch — a real defect, not a style nit): Active (<see cref="OperationStatus.Running"/>, oldest
+    /// first) → Waiting (<see cref="OperationStatus.Paused"/>/<see cref="OperationStatus.Interrupted"/>,
+    /// oldest first) → Terminal (newest FINISHED first — a history/log view surfaces the most recent
+    /// outcome first). Before this fix, a <see cref="OperationStatus.Paused"/> entry fell into the
+    /// "everything else" bucket alongside completed history with no band of its own — burying the
+    /// exact row a user needs to find in order to resume or dismiss it, precisely the reason the
+    /// Waiting band exists (pinned by <c>OperationRegistryTests.GetAll_orders_active_then_waiting_then_terminal</c>
+    /// and <c>…_orders_terminal_entries_newest_finished_first</c>).
+    /// </remarks>
     public IReadOnlyList<OperationInfo> GetAll(string? module = null, string? scope = null)
     {
         lock (_lock)
         {
-            return _entries.Values
+            var filtered = _entries.Values
                 // Scope follows the SAME rule as IEventBus (Finding 4, whole-branch review), not
                 // strict equality: no requested scope = every scope, AND an unscoped (global) entry
                 // matches any requested scope too. Both event buses (Shenora.Core.EventBus, the TS
@@ -168,10 +179,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 // mount order relative to when the work started.
                 .Where(e => (module is null || string.Equals(e.Module, module, StringComparison.Ordinal))
                          && (scope is null || e.Scope is null || string.Equals(e.Scope, scope, StringComparison.Ordinal)))
-                .OrderBy(e => e.Status == OperationStatus.Running ? 0 : 1)
-                .ThenBy(e => e.Sequence)
-                .Select(ToInfo)
                 .ToList();
+
+            var active = filtered.Where(e => e.Status == OperationStatus.Running)
+                .OrderBy(e => e.Sequence);
+            var waiting = filtered.Where(e => e.Status is OperationStatus.Paused or OperationStatus.Interrupted)
+                .OrderBy(e => e.Sequence);
+            var terminal = filtered.Where(e => IsTerminal(e.Status))
+                .OrderByDescending(e => e.FinishedAt);
+
+            return active.Concat(waiting).Concat(terminal).Select(ToInfo).ToList();
         }
     }
 
