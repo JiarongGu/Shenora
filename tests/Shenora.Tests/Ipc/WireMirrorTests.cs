@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Shenora.Ipc;
 using Shenora.WebView2;
@@ -109,5 +110,25 @@ public class WireMirrorTests
         var match = Regex.Match(source, $@"export\s+const\s+{Regex.Escape(name)}\s*=\s*'(?<value>[^']*)'");
         Assert.True(match.Success, $"could not find `export const {name} = '…'`");
         return match.Groups["value"].Value;
+    }
+
+    /// <summary>
+    /// <see cref="OperationStatus"/> (design §4.6/§9.1) crosses the wire as its camelCase name for
+    /// free — <see cref="IpcJson"/> installs a camelCase <c>JsonStringEnumConverter</c> — so the
+    /// client's <c>OperationStatuses</c> const object must name exactly the same set of strings.
+    /// A status added on one side and not the other must fail THIS test by name, not pass a green
+    /// suite that never compared the two sets (the same disease <c>SCOPE_REQUIRED</c> had).
+    /// </summary>
+    [Fact]
+    public void Every_operation_status_exists_on_both_sides()
+    {
+        var host = Enum.GetNames<OperationStatus>()
+            .Select(n => JsonNamingPolicy.CamelCase.ConvertName(n))
+            .ToHashSet(StringComparer.Ordinal);
+        var client = ParseConstObject(ClientSource("operations.ts"), "OperationStatuses").Values.ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(host);      // parser self-check: a regex that matched nothing must not pass
+        Assert.NotEmpty(client);
+        Assert.Equal(host, client);
     }
 }

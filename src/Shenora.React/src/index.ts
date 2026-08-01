@@ -36,6 +36,17 @@ export {
 } from './store.js';
 export { BaseModuleService } from './moduleService.js';
 export {
+  OperationStatuses,
+  createOperationsStore,
+  useShenoraOperations,
+  type OperationStatus,
+  type OperationLabel,
+  type OperationInfo,
+  type OperationsState,
+  type OperationsActions,
+  type OperationsStoreOptions,
+} from './operations.js';
+export {
   WindowCommands,
   useWindowMaximized,
   type WindowResizeEdge,
