@@ -269,7 +269,11 @@ public sealed class StreamingSession : IAsyncDisposable
                     // viewport fits without clipping. The real CSS viewport is driven purely by
                     // Emulation.setDeviceMetricsOverride (below + the "viewport" input case), which
                     // is DPI-independent, so this physical size must NOT track the box.
-                    form = OffscreenWindow.Create("Co-browse session", new Size(1600, 1100));
+                    // A MECHANISM name, not a scenario one (D22) — this string is the native window's
+                    // caption, which is externally readable (Task Manager, window enumeration, a
+                    // GetWindowText probe), so it is user-visible surface in the same way the package
+                    // description is, even though the window itself never shows.
+                    form = OffscreenWindow.Create("Streaming session", new Size(1600, 1100));
                     var web = new WebView2Control { Dock = DockStyle.Fill };
                     form.Controls.Add(web);
                     // A dead renderer must COMPLETE the frame channel (P5.5 H4.4), or the app's
@@ -458,7 +462,7 @@ public sealed class StreamingSession : IAsyncDisposable
                     // that vanishes in silence, which on a stream someone is watching looks like the
                     // page hung. Say so instead.
                     SessionLog.Try(_options.Log, log =>
-                        log.LogWarning("Co-browse input of unsupported type {InputType} was ignored",
+                        log.LogWarning("Streaming session: input of unsupported type {InputType} was ignored",
                             input.GetType().Name));
                     break;
             }
@@ -550,7 +554,7 @@ public sealed class StreamingSession : IAsyncDisposable
         if (options.OnEnded is not { } handler) return;
         if (Interlocked.Exchange(ref latch.Value, 1) != 0) return;
         Shenora.Core.AppCallback.Run(() => handler(ended),
-            onError: ex => SessionLog.Try(options.Log, log => log.LogError(ex, "Co-browse OnEnded handler threw")));
+            onError: ex => SessionLog.Try(options.Log, log => log.LogError(ex, "Streaming session: OnEnded handler threw")));
     }
 
     /// <summary>

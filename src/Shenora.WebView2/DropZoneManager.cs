@@ -291,16 +291,23 @@ public sealed class DropZoneManager : IDisposable
         return true;
     }
 
-    // Wire events (the bridge forwards the bus to the page). Fire-and-forget: emission must
-    // never block the drag/drop handlers.
+    // Wire events (the bridge forwards the bus to the page). Fire-and-forget: emission must never
+    // block the drag/drop handlers — every one of these is reached from a WinForms drag event, where
+    // an escaping exception has no caller on the stack.
+    //
+    // `Emit`, not `_ = EmitAsync(…)`. The two do the same thing, and that is exactly why P6.4 added
+    // `Emit`: whether discarding the task is safe depends on an INTERNAL guarantee (the bus guards
+    // every handler, so the task cannot fault because of a subscriber), and `IEventBus.Emit`'s own doc
+    // says a caller should not have to read the implementation to learn that. This was the kit's only
+    // in-repo emitter and it still wrote the discard the new member exists to replace.
     internal void NotifyDragEnter(string zoneId) =>
-        _ = _options.EventBus.EmitAsync(Module, "DRAG_ENTER", new { ZoneId = zoneId });
+        _options.EventBus.Emit(Module, "DRAG_ENTER", new { ZoneId = zoneId });
 
     internal void NotifyDragLeave(string zoneId) =>
-        _ = _options.EventBus.EmitAsync(Module, "DRAG_LEAVE", new { ZoneId = zoneId });
+        _options.EventBus.Emit(Module, "DRAG_LEAVE", new { ZoneId = zoneId });
 
     internal void NotifyFileDrop(string zoneId, string[] files, Point position) =>
-        _ = _options.EventBus.EmitAsync(Module, "FILE_DROP",
+        _options.EventBus.Emit(Module, "FILE_DROP",
             new { ZoneId = zoneId, Files = files, Position = new { position.X, position.Y } });
 
     /// <summary>Internal seams for tests.</summary>

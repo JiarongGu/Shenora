@@ -54,9 +54,11 @@ internal sealed class SessionEnvironmentCache
             if (!existing.IsCompleted || existing.Status == TaskStatus.RanToCompletion) return existing;
 
             // FAULTED or CANCELLED → forget it, so the next attempt can genuinely retry. Caching a
-            // faulted task makes ONE transient failure terminal for the whole process — the trap
-            // Shenora.WebView2's own WebViewEnvironment still has (TASKS.md H3), which is exactly why
-            // this cache does not copy its shape.
+            // faulted task makes ONE transient failure terminal for the whole process. This comment
+            // used to say Shenora.WebView2's own WebViewEnvironment "still has" that trap and cite
+            // TASKS.md H3 — both stale: H3 fixed WebViewEnvironment.GetSharedAsync the same way
+            // (it evicts a faulted/cancelled entry on observation) and that task is long closed.
+            // The two now share ONE shape deliberately; keep them in step.
             _pending = null;
         }
 

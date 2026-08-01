@@ -272,7 +272,17 @@ public sealed class InteractiveSession
             if (_options.LoadingFallbackTimeout > TimeSpan.Zero)
             {
                 fallback = new System.Windows.Forms.Timer { Interval = (int)_options.LoadingFallbackTimeout.TotalMilliseconds };
-                fallback.Tick += (_, _) => { fallback.Stop(); onLoading(false); };
+                // GUARDED: a timer tick has no caller on its stack, so a throwing OnLoading here is an
+                // unhandled UI-thread exception — the family bootstrap's modal crash dialog — and this
+                // is a splash toggle, for which ObjectDisposedException is the obvious way to throw.
+                // The same callback is already guarded on the two paths below (see the finally block's
+                // own comment, which records what one unguarded OnLoading cost); this site was the
+                // one that still ran bare.
+                fallback.Tick += (_, _) =>
+                {
+                    fallback.Stop();
+                    Shenora.Core.AppCallback.Run(() => onLoading(false));
+                };
                 fallback.Start();
             }
         }

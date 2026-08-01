@@ -91,23 +91,47 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         CanServe = IsEmbedded || fileMode;
         if (!CanServe)
         {
-            var available = options.Assembly.GetManifestResourceNames();
-            var hint = available.Length == 0
-                ? "that assembly embeds NO resources at all — check the <EmbeddedResource> item group"
-                : "available manifest prefixes: " + string.Join(", ",
-                    available.Select(TopTwoSegments).Distinct(StringComparer.OrdinalIgnoreCase).Order().Take(10));
-            options.Log?.Invoke(
-                $"[Shenora.WebView2] Resource provider: SERVES NOTHING — no embedded resources match " +
-                $"'{options.ResourcePrefix}' in '{options.Assembly.GetName().Name}', and no usable " +
-                $"{nameof(EmbeddedResourceProviderOptions.FileFallbackDirectory)} is configured " +
-                $"(PreferFiles={options.PreferFiles}, directory='{options.FileFallbackDirectory ?? "<null>"}'). " +
-                $"Fine if the page loads from a dev URL; otherwise every request will 404. {hint}.");
+            Log(() =>
+            {
+                var available = options.Assembly.GetManifestResourceNames();
+                var hint = available.Length == 0
+                    ? "that assembly embeds NO resources at all — check the <EmbeddedResource> item group"
+                    : "available manifest prefixes: " + string.Join(", ",
+                        available.Select(TopTwoSegments).Distinct(StringComparer.OrdinalIgnoreCase).Order().Take(10));
+                return $"[Shenora.WebView2] Resource provider: SERVES NOTHING — no embedded resources match " +
+                       $"'{options.ResourcePrefix}' in '{options.Assembly.GetName().Name}', and no usable " +
+                       $"{nameof(EmbeddedResourceProviderOptions.FileFallbackDirectory)} is configured " +
+                       $"(PreferFiles={options.PreferFiles}, directory='{options.FileFallbackDirectory ?? "<null>"}'). " +
+                       $"Fine if the page loads from a dev URL; otherwise every request will 404. {hint}.";
+            });
             return;
         }
 
-        options.Log?.Invoke(IsEmbedded
+        Log(() => IsEmbedded
             ? $"[Shenora.WebView2] Resource provider: EMBEDDED ({_manifest.Count} resources under {options.ResourcePrefix})"
             : $"[Shenora.WebView2] Resource provider: FILE-BASED ({options.FileFallbackDirectory ?? "no directory configured"})");
+    }
+
+    /// <summary>
+    /// Write a diagnostic through the app's sink — GUARDED and LAZY, the same shape every other
+    /// diagnostic in this kit uses (<c>WebViewHost.Log</c>, <c>WebViewIpcBridge.Log</c>,
+    /// <c>NotificationPump.Log</c>, <c>OperationRegistry.Log</c>).
+    /// <para>
+    /// This type used to call <c>_options.Log?.Invoke(…)</c> directly at seven sites. Most were
+    /// survivable — they sit under a caller that would observe a throwing sink — but two are inside
+    /// <see cref="BeginWarmup"/>'s fire-and-forget <c>Task.Run</c>, where there is no caller at all:
+    /// an app logger throwing there escapes the very <c>catch</c> it is reporting from and becomes an
+    /// unobserved task exception. An <c>ILogger</c>/<c>Log</c> action IS an app callback
+    /// (<c>.claude/knowledge/webview2-hosting.md</c>), so it gets the one guard rather than a
+    /// try/catch remembered per site. The <see cref="Func{TResult}"/> puts message BUILDING inside the
+    /// guard too — which matters for the constructor's "serves nothing" hint, since that one
+    /// enumerates the assembly's manifest to compose itself.
+    /// </para>
+    /// </summary>
+    private void Log(Func<string> message)
+    {
+        if (_options.Log is null) return;
+        Shenora.Core.AppCallback.Run(() => _options.Log(message()));
     }
 
     /// <summary>True = serving embedded resources; false = serving <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/>.</summary>
@@ -141,10 +165,15 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                 }
                 catch (Exception ex)
                 {
-                    _options.Log?.Invoke($"[Shenora.WebView2] Warmup failed for {name}: {ex.Message}");
+                    // GUARDED (Shenora.Core.AppCallback), unlike this type's other Log calls: those sit
+                    // under a caller that would observe a throwing sink, whereas this body is a
+                    // fire-and-forget Task.Run with nothing above it — an app logger throwing here
+                    // escapes the very catch it is reporting from and becomes an unobserved task
+                    // exception. An ILogger/Log action IS an app callback (webview2-hosting.md).
+                    Log(() => $"[Shenora.WebView2] Warmup failed for {name}: {ex.Message}");
                 }
             }
-            _options.Log?.Invoke($"[Shenora.WebView2] Resource warmup complete ({_cache.Count} cached)");
+            Log(() => $"[Shenora.WebView2] Resource warmup complete ({_cache.Count} cached)");
         });
     }
 
@@ -159,7 +188,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             if (_options.FileFallbackDirectory is not { Length: > 0 } root) return null;
             if (ResolveContained(root, virtualPath) is not { } filePath)
             {
-                _options.Log?.Invoke($"[Shenora.WebView2] Rejected out-of-root resource path: {virtualPath}");
+                Log(() => $"[Shenora.WebView2] Rejected out-of-root resource path: {virtualPath}");
                 return null;
             }
             if (!File.Exists(filePath)) return null;
@@ -171,7 +200,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             }
             catch (Exception ex)
             {
-                _options.Log?.Invoke($"[Shenora.WebView2] File read failed for {virtualPath}: {ex.Message}");
+                Log(() => $"[Shenora.WebView2] File read failed for {virtualPath}: {ex.Message}");
                 return null;
             }
         }
@@ -185,7 +214,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         }
         catch (Exception ex)
         {
-            _options.Log?.Invoke($"[Shenora.WebView2] Resource load failed for {virtualPath}: {ex.Message}");
+            Log(() => $"[Shenora.WebView2] Resource load failed for {virtualPath}: {ex.Message}");
             return null;
         }
     }

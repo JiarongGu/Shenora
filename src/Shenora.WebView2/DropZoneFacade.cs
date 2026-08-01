@@ -5,8 +5,16 @@ namespace Shenora.WebView2;
 /// <summary>
 /// The IPC entry for <see cref="DropZoneManager"/> — module <see cref="DropZoneManager.Module"/>,
 /// routes REGISTER / UPDATE / UNREGISTER / SHOW (what the client's <c>useDropZone</c> sends).
-/// Map it like any facade: <c>dispatcher.MapModule(new DropZoneFacade(manager))</c> — or through
-/// <c>AddMessageDispatcher</c>'s configure callback once the manager exists.
+/// <para>
+/// REGISTRATION: map it LATE, from wherever the window is created —
+/// <c>dispatcher.MapModule(new DropZoneFacade(manager))</c> on the plain
+/// <see cref="IMessageDispatcher"/> resolved from DI (no cast; late mapping is safe while requests
+/// are in flight). This doc used to add "or through <c>AddMessageDispatcher</c>'s configure callback
+/// once the manager exists", which CANNOT work and is the same wrong advice
+/// <c>WindowCommandFacade</c>'s doc already records having carried (P5.5 H6): that callback runs at
+/// provider-build time, and a <see cref="DropZoneManager"/> requires a live <c>WebView2</c> control
+/// and <see cref="Form"/>, neither of which exists yet.
+/// </para>
 /// </summary>
 public sealed class DropZoneFacade : BaseFacade
 {

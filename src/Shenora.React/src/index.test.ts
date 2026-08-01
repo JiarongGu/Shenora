@@ -1,6 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import * as barrel from './index.js';
 import { isShenoraAvailable } from './index.js';
+import type {
+  EventMessage,
+  IpcError,
+  IpcNotification,
+  IpcNotificationBatch,
+  IpcRequest,
+  IpcResponse,
+  CaptionButtonKind,
+  CaptionButtonRect,
+  DropZoneFileDrop,
+  InvokeOptions,
+  OperationInfo,
+  OperationLabel,
+  OperationProgress,
+  OperationStatus,
+  OperationsActions,
+  OperationsState,
+  OperationsStoreOptions,
+  PostFailure,
+  PostOptions,
+  ShenoraBridgeOptions,
+  ShenoraQueryResult,
+  ShenoraStore,
+  ShenoraStoreIo,
+  ShenoraStoreOptions,
+  ShenoraStoreSnapshot,
+  ShenoraTransport,
+  UseDropZoneOptions,
+  WindowResizeEdge,
+} from './index.js';
 
 /**
  * The barrel IS the package's public surface — `exports` maps "." to it and nothing else is
@@ -21,6 +51,8 @@ const EXPECTED_EXPORTS = [
   'IpcCategories',
   'IpcErrorCodes',
   'OperationError',
+  'OperationEventTypes',
+  'OperationModuleName',
   'OperationStatuses',
   'ShenoraBridge',
   'ShenoraEventBus',
@@ -41,7 +73,38 @@ const EXPECTED_EXPORTS = [
   'useWindowMaximized',
 ] as const;
 
+/**
+ * The TYPE half of the same gate, and it needs to exist separately: `EXPECTED_EXPORTS` above compares
+ * `Object.keys(barrel)`, and a type has no runtime binding — so deleting a `type` line from
+ * `index.ts` passed both assertions above while breaking every consumer that named it.
+ *
+ * `OperationProgress` is why this was written. `OperationInfo.progress` is typed as it, so the field's
+ * own type was unnameable from outside the package; the tell was that the kit's own sample re-declared
+ * the shape inline rather than importing it. Nothing failed.
+ *
+ * This alias is the pin: it is compiled by `npm run typecheck` (the FULL tsconfig, which includes test
+ * files — the build config excludes them and vitest transpiles without checking, so a type-only pin is
+ * inert without that step; see `.claude/knowledge/ipc-contracts.md`). Removing an exported type from
+ * the barrel makes this file fail to compile, naming the type.
+ */
+type ExportedTypeSurface = [
+  EventMessage, IpcError, IpcNotification, IpcNotificationBatch, IpcRequest, IpcResponse,
+  CaptionButtonKind, CaptionButtonRect, DropZoneFileDrop, InvokeOptions,
+  OperationInfo, OperationLabel, OperationProgress, OperationStatus,
+  OperationsActions, OperationsState, OperationsStoreOptions,
+  PostFailure, PostOptions, ShenoraBridgeOptions, ShenoraQueryResult<unknown>,
+  ShenoraStore<unknown, unknown>, ShenoraStoreIo, ShenoraStoreOptions<unknown, unknown>,
+  ShenoraStoreSnapshot<unknown>, ShenoraTransport, UseDropZoneOptions, WindowResizeEdge,
+];
+
 describe('the public barrel', () => {
+  it('exports every documented TYPE (compile-time — see ExportedTypeSurface)', () => {
+    // The assertion is the ALIAS above compiling at all; this body only keeps the alias referenced
+    // so `noUnusedLocals` does not delete the pin for us.
+    const surface: ExportedTypeSurface | undefined = undefined;
+    expect(surface).toBeUndefined();
+  });
+
   it('exports exactly the documented runtime surface', () => {
     // Sorted so the failure message is a readable set difference, not an ordering complaint.
     expect(Object.keys(barrel).sort()).toEqual([...EXPECTED_EXPORTS]);

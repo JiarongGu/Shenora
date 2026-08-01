@@ -4,8 +4,14 @@ using Shenora.Core;
 namespace Shenora.Ipc;
 
 /// <summary>
-/// The <see cref="IModuleContext"/> a <see cref="BaseFacade"/> builds once, at construction — the
-/// module name is known then, and rebuilding it per request would allocate on the IPC hot path.
+/// The <see cref="IModuleContext"/> a <see cref="BaseFacade"/> builds ONCE and reuses for every
+/// request — rebuilding it per request would allocate on the IPC hot path.
+/// <para>
+/// Built lazily on first use rather than in the facade's constructor: <see cref="IModuleFacade.ModuleName"/>
+/// is abstract, so it is not readable from the base constructor (see <c>BaseFacade.Context</c>). The
+/// race is benign — two concurrent first requests may each build one, and both are immutable and
+/// equivalent.
+/// </para>
 /// </summary>
 internal sealed class ModuleContext(string module, ILogger logger, IEventBus? events, IOperationRegistry? operations) : IModuleContext
 {

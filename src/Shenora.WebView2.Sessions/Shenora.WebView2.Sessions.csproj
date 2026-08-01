@@ -8,7 +8,14 @@
     <!-- The WebView2 package always references its WPF assembly, whose WindowsBase differs from a
          WinForms-only project's — MSB3277 fires but the WPF dll is never loaded here. Demote it. -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
-    <Description>Shenora auxiliary browser sessions: off-screen driveable WebView2 sessions with a bounded pool, login windows with per-provider persistent profiles (silent refresh, cookie capture), and co-browse streaming primitives (CDP screencast frames out, input dispatch back).</Description>
+    <!-- MECHANISM vocabulary only (D22). This description used to read "login windows with
+         per-provider persistent profiles (silent refresh, cookie capture)" and "co-browse streaming
+         primitives" — the exact scenario names P5.5 H9.7/H9.8 removed from the TYPES
+         (LoginWindow -> InteractiveSession, CoBrowseSession -> StreamingSession). It survived because
+         D22's audit method is "sweep the API baselines for domain words", and a csproj Description is
+         not in any baseline — while being the single most public place that vocabulary appears (the
+         nuget.org listing). Name what the types do, not one product they enable. -->
+    <Description>Shenora auxiliary browser sessions: off-screen driveable WebView2 sessions with a bounded pool (navigate, run script, read the live DOM, intercept responses), interactive sessions — a human-in-the-loop window over an isolated persistent profile, driven by your own driver — and streaming sessions (CDP screencast frames out, synthetic input in). Mechanisms only: the kit ships no workflow.</Description>
   </PropertyGroup>
 
   <ItemGroup>

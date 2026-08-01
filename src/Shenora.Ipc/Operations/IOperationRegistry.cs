@@ -141,10 +141,13 @@ public interface IOperationRegistry
     /// Announce a crash-interrupted, resumable operation directly from the APP's own checkpoint — the
     /// kit holds the offer; the app owns what to resume and how. Requires a non-empty
     /// <see cref="OperationOptions.ResumePayload"/> (the opaque checkpoint token — its presence IS
-    /// what makes this resumable, see that property's own doc, and is also what tells this offer apart
-    /// from an ordinary <see cref="IOperation.Wait"/> once both land on the same
-    /// <see cref="OperationStatus.Waiting"/> status), throwing <see cref="ArgumentException"/> naming
-    /// it when missing — a silently-accepted unusable entry would be worse than a loud rejection.
+    /// what makes this resumable, see that property's own doc), throwing
+    /// <see cref="ArgumentException"/> naming it when missing — a silently-accepted unusable entry
+    /// would be worse than a loud rejection. What tells an offer registered HERE apart from an
+    /// ordinary <see cref="IOperation.Wait"/>, once both land on the same
+    /// <see cref="OperationStatus.Waiting"/> status, is NOT that token but the registry's own internal
+    /// record of which call site produced the entry — see <see cref="RequestResume"/> for why an
+    /// app-controlled field could not answer that question reliably.
     /// <para>
     /// Deduped on <c>(module, kind, resumePayload)</c> among already-<see cref="OperationStatus.Waiting"/>
     /// entries that themselves carry no live handle: re-announcing the SAME checkpoint (a

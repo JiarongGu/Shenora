@@ -21,13 +21,20 @@ export const OperationStatuses = {
    * one of the terminal statuses in {@link OperationsState.finished}, and never pruned as history —
    * a waiting entry is a pending offer, not something finished.
    *
-   * Reached two ways, told apart by whether {@link OperationInfo.resumePayload} is set rather than
-   * by a second status (this collapses what used to be two values, `paused` and `interrupted`,
-   * which every host transition already treated as one band): the host's own `IOperation.Wait` on a
-   * live operation (no `resumePayload` — the body is still there, just stopped), or
-   * `IOperationRegistry.RegisterWaiting` announcing a crash-interrupted checkpoint directly (a
-   * non-empty `resumePayload` — no live body at all). Exits via the host's `IOperation.Resume`
-   * (back to `running`), the `DISMISS` route (to `cancelled`), or a direct complete/fail.
+   * Reached two ways — there is only ONE waiting value, collapsing what used to be two (`paused`
+   * and `interrupted`), which every host transition already treated as one band: the host's own
+   * `IOperation.Wait` on a live operation (the body is still there, just stopped), or
+   * `IOperationRegistry.RegisterWaiting` announcing a crash-interrupted checkpoint directly (no live
+   * body at all). Exits via the host's `IOperation.Resume` (back to `running`), the `DISMISS` route
+   * (to `cancelled`), or a direct complete/fail.
+   *
+   * **How the host tells the two apart is internal to the host, and is NOT
+   * {@link OperationInfo.resumePayload}.** `RequestResume` keys on the registry's own record of which
+   * call site produced the entry, because `resumePayload` is APP-controlled — an app may attach one
+   * at `Start()` and then call `Wait()`, which is a genuinely live handle. The two DO correlate in
+   * the ordinary case, so a UI may read `resumePayload` as a display hint ("offer resume-from-
+   * checkpoint" vs. "show {@link OperationInfo.waitReason}") — never as a claim about what the host
+   * will do with the entry.
    */
   Waiting: 'waiting',
 } as const;
@@ -175,7 +182,8 @@ export interface OperationsState {
    * The WAITING band (design §5A.2): stopped, resumable, awaiting a decision — exactly what
    * `Dismiss`/`RequestResume` both accept, so a status bar can render "needs you" as one bucket
    * without caring whether the entry came from a live `Wait()` or a crash-announced checkpoint
-   * (`resumePayload` tells the two apart, if a consumer needs to).
+   * (`resumePayload` is a display HINT for a UI that wants to distinguish them — see
+   * {@link OperationStatuses.Waiting} for why it is not the host's own discriminator).
    */
   readonly waiting: OperationInfo[];
   /** Every operation that reached a terminal status (completed/failed/cancelled). */
@@ -206,8 +214,10 @@ export interface OperationsActions {
    * `RESUME { operationId }` — ask the host to continue a waiting operation. No local mutation here:
    * the host's `OPERATION_REMOVED` fold is what actually drops a no-live-handle entry (the asymmetric
    * half of design §5A.4 — an entry reached via a live `Wait()` is deliberately LEFT IN PLACE
-   * host-side, so no removal event ever arrives for it either; the host tells the two apart by
-   * `resumePayload`, not by a second status). It used to carry an optimistic local prune gated on the
+   * host-side, so no removal event ever arrives for it either; the host tells the two apart by its
+   * OWN internal provenance record, not by `resumePayload` and not by a second status — which is
+   * exactly why folding the named-id event is the only correct client behaviour: a client-side guess
+   * cannot see the signal the decision is actually made on). It used to carry an optimistic local prune gated on the
    * (now-removed) `interrupted` status, which was the source of this release's only Critical (it
    * pruned a `paused` row once, before the asymmetry was re-derived into it) — the authoritative
    * event now makes that guess unnecessary.

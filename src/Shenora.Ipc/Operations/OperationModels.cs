@@ -31,21 +31,27 @@ public enum OperationStatus
     /// terminal-finish statuses, and never pruned as history — a waiting entry is a pending offer,
     /// not something finished.
     /// <para>
-    /// Reached two ways, told apart by <see cref="OperationInfo.ResumePayload"/> rather than by a
-    /// second status (there is only one WAITING status — this collapses what used to be two,
-    /// <c>Paused</c> and <c>Interrupted</c>, which every transition in this registry already treated
-    /// as one band): <see cref="IOperation.Wait"/> on a live <see cref="Running"/> handle (no
-    /// <see cref="OperationInfo.ResumePayload"/> — the body is still there, just stopped), or
-    /// <see cref="IOperationRegistry.RegisterWaiting"/> announcing a crash-interrupted checkpoint
-    /// directly (a non-empty <see cref="OperationInfo.ResumePayload"/> — no live body at all, the
-    /// process that owned it is gone). Exits via <see cref="IOperation.Resume"/> (back to
-    /// <see cref="Running"/>), <see cref="IOperationRegistry.Dismiss"/> (to
-    /// <see cref="Cancelled"/>), or a direct
+    /// Reached two ways — there is only ONE waiting status, collapsing what used to be two
+    /// (<c>Paused</c> and <c>Interrupted</c>), which every transition in this registry already treated
+    /// as one band: <see cref="IOperation.Wait"/> on a live <see cref="Running"/> handle (the body is
+    /// still there, just stopped), or <see cref="IOperationRegistry.RegisterWaiting"/> announcing a
+    /// crash-interrupted checkpoint directly (no live body at all — the process that owned it is
+    /// gone). Exits via <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
+    /// <see cref="IOperationRegistry.Dismiss"/> (to <see cref="Cancelled"/>), or a direct
     /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
-    /// (a waiting operation can still fail on a deadline). <see cref="IOperationRegistry.RequestResume"/>
-    /// itself does NOT use this field to tell the two apart — see its own doc and
-    /// <see cref="OperationOptions.ResumePayload"/>'s for the internal, kit-owned signal it actually
-    /// keys on, and why.
+    /// (a waiting operation can still fail on a deadline).
+    /// </para>
+    /// <para>
+    /// <b>How the two are told apart is a KIT-INTERNAL fact, not a field on this snapshot.</b>
+    /// <see cref="IOperationRegistry.RequestResume"/> keys its drop-vs-keep decision on the registry's
+    /// own record of which call site produced the entry, never on
+    /// <see cref="OperationInfo.ResumePayload"/> — that field is APP-controlled (an app may attach one
+    /// to <see cref="OperationOptions"/> at <see cref="IOperationRegistry.Start"/> time and then call
+    /// <see cref="IOperation.Wait"/>, which is a genuinely LIVE handle), so reading it would drop a
+    /// live operation out of the registry. The two DO correlate in the ordinary case, so a UI may use
+    /// <see cref="OperationInfo.ResumePayload"/> as a display hint — "offer Resume-from-checkpoint"
+    /// vs. "show the wait reason" — but never as a claim about what the registry will do. See
+    /// <see cref="IOperationRegistry.RequestResume"/>'s own doc for the full rationale.
     /// </para>
     /// </summary>
     Waiting,

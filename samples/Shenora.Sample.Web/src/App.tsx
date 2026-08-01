@@ -7,6 +7,7 @@ import {
   useShenoraQuery,
   useWindowMaximized,
   WindowCommands,
+  type OperationProgress,
 } from '@shenora/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StreamViewer } from './StreamViewer';
@@ -22,8 +23,13 @@ declare global {
  * `total` present → a ratio, rendered as a rounded percent; otherwise the bare value in its own unit.
  * That division (`value / total`) is the CONSUMER's policy, not the kit's — the kit ships no percent
  * helper (see `@shenora/react`'s README) precisely so this one-liner stays here, not in `src/`.
+ *
+ * The PARAMETER type is imported, not re-declared. It used to be written out inline
+ * (`{ value: number; total?: number; unit?: string }`) — not by choice: `OperationProgress` was
+ * missing from the barrel, so the type of `OperationInfo.progress` was unnameable from outside the
+ * package, and the sample quietly duplicating the shape was the only visible symptom.
  */
-function formatProgress(progress?: { value: number; total?: number; unit?: string }): string {
+function formatProgress(progress?: OperationProgress): string {
   if (!progress) return 'starting…';
   if (progress.total) return `${Math.round((progress.value / progress.total) * 100)}%`;
   return `${progress.value}${progress.unit ? ` ${progress.unit}` : ''}`;
