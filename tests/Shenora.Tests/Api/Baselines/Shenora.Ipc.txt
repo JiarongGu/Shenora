@@ -122,6 +122,30 @@ delegate Shenora.Ipc.MessageMiddleware
 sealed class Shenora.Ipc.ModuleRouteBuilder
   public Shenora.Ipc.ModuleRouteBuilder Route(string type, System.Func<Shenora.Ipc.IpcRequest, object> handler)
   public Shenora.Ipc.ModuleRouteBuilder RouteAsync(string type, System.Func<Shenora.Ipc.IpcRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task<object>> handler)
+sealed class Shenora.Ipc.NotificationPump : System.IDisposable
+  public .ctor(Shenora.Ipc.NotificationPumpOptions options)
+  public System.TimeSpan FlushInterval { get; }
+  public bool IsOpen { get; }
+  public bool TryDrainBatch(out string? json)
+  public int PendingCount { get; }
+  public void Close()
+  public void Dispose()
+  public void Enqueue(Shenora.Ipc.IpcNotification notification)
+  public void Open()
+sealed class Shenora.Ipc.NotificationPumpOptions : System.IEquatable<Shenora.Ipc.NotificationPumpOptions>
+  public .ctor()
+  public Shenora.Core.IEventBus? EventBus { get; init; }
+  public Shenora.Ipc.NotificationPumpOptions <Clone>$()
+  public System.Action<string>? Log { get; init; }
+  public System.Func<Shenora.Ipc.IpcNotification, bool>? Filter { get; init; }
+  public System.TimeSpan FlushInterval { get; init; }
+  public bool Equals(Shenora.Ipc.NotificationPumpOptions? other)
+  public int MaxQueued { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Ipc.NotificationPumpOptions? left, Shenora.Ipc.NotificationPumpOptions? right)
+  public static bool op_Inequality(Shenora.Ipc.NotificationPumpOptions? left, Shenora.Ipc.NotificationPumpOptions? right)
 static class Shenora.Ipc.OperationEvents
   public const string ResumeRequested = "OPERATION_RESUME_REQUESTED"
   public const string Updated = "OPERATION_UPDATED"
