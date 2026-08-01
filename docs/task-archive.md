@@ -1457,7 +1457,7 @@ A second review pass then found that the client store and `Run` were never RE-DE
   Running` reliably 3/3 runs).
 
 **Docs pass (this review):** `CHANGELOG.md` (folded into 0.2.0's still-unreleased `### Added`),
-`ARCHITECTURE.md`, `docs/ADOPTION.md`, `src/Shenora.React/README.md`, and
+`ARCHITECTURE.md`, `src/Shenora.React/README.md`, and
 `.claude/knowledge/ipc-contracts.md` (two new reusable lessons: a client-side optimistic prune must
 mirror the host's own asymmetry exactly rather than applying one rule to both branches of a wire
 action, and a permission check split across two lock acquisitions must report the SECOND
