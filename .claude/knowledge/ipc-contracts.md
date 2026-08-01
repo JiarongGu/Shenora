@@ -299,13 +299,59 @@ transport, or building the P6 adoption shims.
   `WebViewIpcBridgeOptions`/`NotificationPumpOptions`.
 - **A host-side removal (`ClearFinished`, `RequestResume`) is NOT mirrored by a wire event** —
   `OPERATION_UPDATED` only ever adds/updates an id, never removes one. `@shenora/react`'s
-  `clearFinished`/`resume` actions prune their own rows from LOCAL state as an optimistic update (no
-  round trip needed — the action already knows the answer), but the host's own `MaxHistory` eviction
-  has no equivalent: a long-lived store keeps every terminal entry it has ever seen until
-  `clearFinished` is actually called client-side too.
+  `clearFinished` action prunes its own rows from LOCAL state as an optimistic update (no round trip
+  needed — the action already knows the answer), but the host's own `MaxHistory` eviction has no
+  equivalent: a long-lived store keeps every terminal entry it has ever seen until `clearFinished` is
+  actually called client-side too.
   **`Dismiss` is NOT in this category, on purpose** — it does not remove anything, it transitions the
   entry to `Cancelled` through the same `Finish` path as `Complete`/`Fail`/`Cancel`, so it publishes an
   ordinary `OPERATION_UPDATED` snapshot the wire already carries. The client's `dismiss` action
   therefore needs no optimistic local prune at all — the mistake to avoid is copying the
   `clearFinished`/`resume` shape onto it out of habit and adding dead code for a delta that never
   needed compensating.
+- **A CLIENT-side optimistic prune must mirror the HOST's own asymmetry exactly, not a uniform rule
+  applied to both branches of one wire action** (found in review, lifecycle-completion batch):
+  `resume`'s local prune used to delete the id unconditionally, written back when `RequestResume`
+  always removed the entry host-side. §5A.4 then made that conditional — `Interrupted` is still
+  removed, `Paused` is deliberately LEFT IN PLACE for the app's own `Resume()` handle to flip — and the
+  client's prune did not get re-derived alongside it. The consequence rebuilt §5A.1's original bug ONE
+  LAYER UP: a user clicking Resume on a paused entry made the row vanish locally (nothing published
+  host-side, since nothing changed), so the still-parked deploy became unreachable — no visible row to
+  click Dismiss on — until every subscriber unmounted and a fresh `LIST` ran. The fix: gate the prune
+  on the SPECIFIC branch the host actually removes (`operation.status === OperationStatuses.Interrupted`),
+  never on "the action was called." Generalizes: whenever a host-side transition is asymmetric across
+  two input states, an optimistic client mirror of it must encode that same asymmetry — a single
+  branch that reads "prune on click" is a category of client/host desync waiting on the NEXT design
+  amendment to the host's asymmetry, not just this one.
+- **`Run`'s implicit terminal transition must check the CURRENT status, not assume it** — `Run`'s tail
+  used to call `operation.Complete()` unconditionally once the awaited body returned, and `Complete`
+  itself legitimately accepts `Running` OR `Paused` (a paused deploy can still complete once unblocked
+  — see the `Cancel`/`Complete`/`Fail` band table above). So a body doing the exact shape the design
+  itself advertises — `op.Pause(reason); return;` — got silently stamped `Completed` by the very
+  primitive whose job is not to lie about a paused-but-not-crashed run. Reproduced this way: `Task.Run`
+  dispatches to a thread-pool thread, but once that thread starts, an already-completed awaited `Task`
+  does not yield — the whole `Pause()` → `Complete()` sequence runs in one synchronous burst, so a
+  test polling for "first non-`Running` observation" can transiently see `Paused` and pass BY ACCIDENT
+  depending on scheduling luck (found live: the first version of this test passed, then failed
+  reliably once it waited for the settled state instead of the first observation — see
+  `ModuleOperationTests.Run_does_not_complete_a_body_that_paused_and_returned`'s own comment). The
+  fix — peek the entry's live status and only call `Complete()` when it is still `Running` — is the
+  general rule for any "finish implicitly unless something else already happened" tail: check, don't
+  assume, especially when the thing that might have happened is itself a legitimate, newly-added
+  transition on the SAME status the unconditional call also accepts.
+- **A permission check and the transition it authorizes must not straddle two separate lock
+  acquisitions without the SECOND one's outcome being the one reported** — `Dismiss`/`Cancel(id)` each
+  validate + read a token under one `lock`, release it, then call `Finish` (which re-validates under
+  its OWN freshly re-acquired `lock`) — a deliberate gap, because `CancellationTokenSource.Cancel()`
+  must run outside any lock (its callbacks can re-enter the registry). Both callers used to return
+  `true` unconditionally once THEIR OWN check passed, trusting that gap could never change the
+  outcome — but a concurrent transition landing exactly in that gap (e.g. `Resume()` flipping a
+  `Paused` entry back to `Running` between `Dismiss`'s check and `Finish`'s re-check) makes `Finish`
+  correctly refuse while the caller still reports success to whoever asked. `Finish` (and its shared
+  tail, `CancelTokenThenFinish`) now returns whether it actually transitioned, and both callers
+  propagate that instead of assuming — verified by a many-real-threads race test in
+  `OperationDismissTests` (thread-pool tasks alone do not reliably hit a window this narrow, same
+  finding as the pre-existing `Concurrent_Cancel_and_Complete_…` test). The general rule: when a
+  method's own permission check and the mutation it gates are split across two lock acquisitions for a
+  documented reason, the SECOND acquisition's outcome is the only one that is actually true by the
+  time the caller returns — report that one, never the first.

@@ -17,16 +17,6 @@ namespace Shenora.Tests.Ipc;
 public class OperationLifecycleInvariantTests
 {
     /// <summary>
-    /// The three finish-outcomes — the one part of this test that IS a fixed list, deliberately: these
-    /// are the terminal states an exit must reach, not the set of states that need one. A future
-    /// TERMINAL addition needs no exit of its own (it IS one); a future NON-terminal addition is
-    /// automatically swept into <see cref="Every_non_terminal_status_has_a_registered_exit_that_reaches_terminal"/>'s
-    /// enumeration below and fails loudly if nobody added it to <see cref="NonTerminalExits"/>.
-    /// </summary>
-    private static bool IsTerminal(OperationStatus status) =>
-        status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
-
-    /// <summary>
     /// For each non-terminal status: how to put a FRESH operation into it through the real registry
     /// (never by touching internal state directly), and a sanctioned exit that must land it on a
     /// terminal status. Both halves are exercised for real below — this is a live transition proven
@@ -84,7 +74,12 @@ public class OperationLifecycleInvariantTests
     [Fact]
     public void Every_non_terminal_status_has_a_registered_exit_that_reaches_terminal()
     {
-        var nonTerminal = Enum.GetValues<OperationStatus>().Where(s => !IsTerminal(s)).ToArray();
+        // Enum.GetValues<T>() PLUS OperationRegistry.IsTerminal — never a second hand-copied terminal
+        // set (hardening, this batch's review): IsTerminal used to be duplicated here, so a status
+        // classified terminal in the REGISTRY but missed in this file's own copy (or vice versa) could
+        // silently be skipped by the sweep below. The registry's method is now `internal` (see its own
+        // doc) precisely so this test can defer to it instead of re-declaring the classification.
+        var nonTerminal = Enum.GetValues<OperationStatus>().Where(s => !OperationRegistry.IsTerminal(s)).ToArray();
 
         // Parser/self-check (the standing rule for every tripwire in this repo): a status set that
         // enumerated to nothing would make every assertion below vacuously pass.
@@ -112,9 +107,17 @@ public class OperationLifecycleInvariantTests
                 $"OperationStatus.{status}'s registered exit returned false — it refused to act, so " +
                 "the operation is still stranded.");
             Assert.NotNull(final);   // a terminal entry is still visible immediately after finishing (before any prune)
-            Assert.True(IsTerminal(final!.Status),
+            Assert.True(OperationRegistry.IsTerminal(final!.Status),
                 $"OperationStatus.{status}'s registered exit did not reach a terminal state " +
                 $"(ended at {final.Status} instead of Completed/Failed/Cancelled).");
+
+            // Fold PRUNABILITY into the same sweep (hardening, this batch's review): the ORIGINAL bug
+            // had two halves — no terminal exit AND never entering `_finishedOrder` — and the sweep
+            // above only ever covered the first half. An exit that reaches a terminal status but
+            // forgets to add the id to `_finishedOrder` would still strand the entry forever (never
+            // evictable by `ClearFinished`/`MaxHistory`), just one step later than the original bug.
+            registry.ClearFinished();
+            Assert.Null(registry.GetAll().SingleOrDefault(o => o.Id == id));
         }
     }
 }

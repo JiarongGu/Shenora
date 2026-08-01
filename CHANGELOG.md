@@ -123,20 +123,41 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   entry is still REMOVED (there is no live handle to flip — the body died with the process). The
   `OPERATION_RESUME_REQUESTED` payload now also carries `status`, so a handler can tell the two cases
   apart — it cannot look the entry up afterward for the `Interrupted` case, because it is gone.
+  `GetAll` sorts by the three bands, not "Running vs. everything else": Active (oldest first) →
+  Waiting (`Paused`/`Interrupted`, oldest first) → Terminal (newest FINISHED first, tiebroken by
+  newest `Sequence` — `TimeProvider.System`'s ~15.6 ms granularity on Windows means two same-tick
+  finishes would otherwise fall back to dictionary enumeration order, which reshuffles on unrelated
+  churn). `IModuleContext.Run`/`IOperationRegistry.Run` only implicitly `Complete` a body when it is
+  STILL `Running` once the work returns — a body that calls `op.Pause(reason)` and simply returns
+  ("pausing by returning") is left `Paused`, not silently stamped `Completed`; resuming it from there
+  is the app's own job. `Dismiss` and the public by-id `Cancel(id)` now report exactly what the
+  transition actually did rather than an assumed success, closing a narrow race where a concurrent
+  `Resume()`/finish landing between the caller's own permission check and the terminal transition's
+  own re-validation could otherwise answer a client `true` for a change that did not happen.
+  `OperationOptions.Resumable` governs ONLY the crash-checkpoint path (`RegisterInterrupted`) — never
+  `Pause`/`Resume`, since a `Paused` operation is resumable by construction. `OperationInfo.PauseReason`
+  is cleared by `Resume()` but RETAINED through a terminal transition reached directly from `Paused`
+  (useful history — "failed while paused waiting on credentials").
 - **`@shenora/react`: `useShenoraOperations` / `createOperationsStore`** — the client half of the
   primitive above, built the same way `createShenoraStore` already was: `OperationStatuses` (wire
   values, including `Paused`) + `OperationInfo`/`OperationLabel` types (`OperationInfo.pauseReason`
   mirrors the host's `PauseReason`), a `LIST` snapshot on first subscribe (so a progress strip that
   mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with `running`/`paused`/
   `finished` DERIVED getters computed from `byId` on every read and `cancel`/`dismiss`/
-  `clearFinished`/`resume` actions. `clearFinished`/`resume` also prune their entries from LOCAL state
-  immediately (optimistic, no wire change): the host removes them but emits no removal delta, so a
-  mounted store used to keep rendering cleared/resumed rows until every subscriber unmounted — the
-  host's `MaxHistory` pruning is NOT mirrored this way, so a long-lived store still keeps what it has
-  seen until `clearFinished` is actually called; that local prune is pinned to the TERMINAL status set
-  so it cannot remove a `paused`/`interrupted` (WAITING-band) entry, the exact thing a later
-  "simplification" would otherwise silently break. `dismiss` mirrors `cancel`'s shape and needs NO
-  optimistic prune — the host's `Dismiss` publishes an ordinary terminal snapshot for the entry, same
+  `clearFinished`/`resume` actions. `clearFinished` prunes its entries from LOCAL state immediately
+  (optimistic, no wire change): the host removes them but emits no removal delta, so a mounted store
+  used to keep rendering cleared rows until every subscriber unmounted — the host's `MaxHistory`
+  pruning is NOT mirrored this way, so a long-lived store still keeps what it has seen until
+  `clearFinished` is actually called; that local prune is pinned to the TERMINAL status set so it
+  cannot remove a `paused`/`interrupted` (WAITING-band) entry, the exact thing a later
+  "simplification" would otherwise silently break. `resume` prunes too, but NOT on the terminal set —
+  it mirrors the host's OWN asymmetry (§5A.4) instead: an `interrupted` entry is dropped locally (no
+  live handle to flip, same as host-side), while a `paused` entry is deliberately left untouched,
+  because the host itself leaves it in place for the app's own `IOperation.Resume()` to flip — pruning
+  it locally would show a resumed row that never actually resumed (a review finding on this same
+  batch: the original code pruned unconditionally, rebuilding the "waiting entry with no reachable
+  exit" bug one layer up, in the client). `dismiss` mirrors `cancel`'s shape and needs NO optimistic
+  prune — the host's `Dismiss` publishes an ordinary terminal snapshot for the entry, same
   as a real cancel. `createOperationsStore({ module?, scope? })` supports a renamed host module
   (avoiding a collision with an app's own module name) and a scope-filtered instance. **Known limit,
   deliberate:** no `byModule`/`byScope` selector — filtering by module or scope is a one-line consumer

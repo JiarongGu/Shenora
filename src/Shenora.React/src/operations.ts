@@ -145,10 +145,15 @@ export interface OperationsActions {
    */
   clearFinished: () => string;
   /**
-   * `RESUME { operationId }` — continue an interrupted, resumable operation. Also drops the id from
-   * this store's local state immediately (optimistic, same rationale as {@link clearFinished}): the
-   * host removes the offer but emits no delta for it, so the offer stayed clickable in a mounted
-   * store until unmount — a second click silently did nothing.
+   * `RESUME { operationId }` — ask the host to continue a paused or interrupted operation. Prunes
+   * the id from local state immediately (optimistic) ONLY for the `interrupted` case — mirroring the
+   * host's own asymmetry (design §5A.4): an `interrupted` entry is removed host-side too (no live
+   * body to flip), so pruning it locally is the same "the host removed it and emits no delta"
+   * rationale as {@link clearFinished}. A `paused` entry is deliberately LEFT IN PLACE host-side (the
+   * app flips it via its own handle once it has ACTUALLY resumed — the client asking is not the state
+   * changing), so pruning it here too would show the user a resumed row that never actually resumed:
+   * unreachable until every subscriber unmounts and a fresh `LIST` runs — the exact "waiting entry
+   * with no reachable exit" bug this feature exists to close, rebuilt one layer up in the client.
    */
   resume: (operationId: string) => string;
 }
@@ -246,9 +251,12 @@ export function createOperationsStore(
         return post(OperationRoutes.ClearFinished);
       },
       resume: (operationId: string) => {
-        // Optimistic local drop — see OperationsActions.resume's doc.
+        // Optimistic local drop — ONLY for the `interrupted` case (§5A.4 asymmetry — see
+        // OperationsActions.resume's doc). A `paused` entry (or an unknown id) is left untouched:
+        // the host keeps it, so pruning it here would desync the client from the host's own state.
         setState((state) => {
-          if (!(operationId in state.byId)) return state; // Object.is no-op — setState skips the render
+          const operation = state.byId[operationId];
+          if (operation?.status !== OperationStatuses.Interrupted) return state; // Object.is no-op — setState skips the render
           const byId = { ...state.byId };
           delete byId[operationId];
           return makeState(byId);

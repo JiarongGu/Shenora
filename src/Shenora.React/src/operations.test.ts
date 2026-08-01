@@ -157,6 +157,27 @@ describe('operations store', () => {
     expect(store.getState().byId['op-1']).toBeUndefined();
   });
 
+  /**
+   * CRITICAL (this batch's review): the host's asymmetry (§5A.4) means `resume` must NOT prune a
+   * `paused` row the same way it prunes an `interrupted` one — the host deliberately LEAVES a paused
+   * entry in place (the app flips it via its own `IOperation.Resume()` once it has ACTUALLY resumed),
+   * and leaving it in place publishes NOTHING (nothing changed host-side). If the client prunes it
+   * locally anyway: the row vanishes, the user cannot see the still-paused deploy to click DISMISS
+   * on it, and the host still holds the entry until every subscriber unmounts and a fresh LIST runs —
+   * a waiting entry with no reachable exit, rebuilt one layer up, in the exact place this feature
+   * exists to eliminate.
+   */
+  it('resume does NOT drop a paused entry from local state — the host deliberately keeps it', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'paused' }));
+
+    store.actions.resume('op-1');
+
+    expect(store.getState().byId['op-1']).toBeDefined();
+    expect(store.getState().paused.map((o) => o.id)).toEqual(['op-1']);
+  });
+
   it('keeps an interrupted operation out of both running and finished', () => {
     // `finished` deliberately excludes `interrupted` (a pending resume offer, not terminal history) —
     // an undocumented carve-out with no coverage is how a later cleanup silently changes behaviour.

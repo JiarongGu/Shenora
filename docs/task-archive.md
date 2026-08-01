@@ -1396,6 +1396,73 @@ row), `src/Shenora.React/README.md` (the client-side `paused`/`dismiss` usage), 
 `.claude/knowledge/ipc-contracts.md` (the §5A.1 rule — "every non-terminal state needs an exit" — as
 the reusable half, generalised past operations to any future state machine in this codebase).
 
+#### Review pass: `GetAll`'s sort, and a layer above the state machine (2026-08-01, before merge, `6b0ffad`/`af29884`)
+
+The invariant test's own review (§5A.1's structural fix above) surfaced one real defect and one
+documentation gap, both fixed in `6b0ffad`, ruled on the same day:
+
+- [x] **`GetAll` sorted `Running` vs. everything else, not the three §5A.2 bands** — a `Paused` entry
+  (`FinishedAt == null`) fell into the "everything else" bucket right alongside completed history,
+  burying the exact row a user needs to find in order to resume or dismiss it. Reordered into
+  Active (oldest first) → Waiting (`Paused`/`Interrupted`, oldest first) → Terminal (newest finished
+  first). Pinned by two tests, both confirmed RED before the fix.
+- [x] **`OperationOptions.Resumable` and `OperationInfo.PauseReason` had undocumented lifetimes** —
+  `Resumable` governs ONLY the crash-checkpoint path (`RegisterInterrupted`), never `Pause`/`Resume` (a
+  `Paused` operation is resumable by construction); `PauseReason` is cleared by `Resume()` but
+  RETAINED through a terminal transition reached directly from `Paused`. Both stated on the properties
+  themselves so a future reader does not "fix" either as an oversight.
+
+A second review pass then found that the client store and `Run` were never RE-DERIVED against the new
+`Paused`/`Interrupted` asymmetry §5A.4 introduced — four findings plus hardening, one batch:
+
+- [x] **CRITICAL — the client's `resume` pruned a row the host now deliberately KEEPS.** `resume`'s
+  local prune predated the asymmetry (written when `RequestResume` always removed the entry
+  host-side) and still deleted unconditionally. Since a kept `Paused` entry publishes NOTHING (nothing
+  changed), the row vanished locally while the host still held it — unreachable until every subscriber
+  unmounted and a fresh `LIST` ran: §5A.1's original bug, rebuilt one layer up, in the exact place this
+  feature exists to eliminate. Fixed by gating the prune on `status === OperationStatuses.Interrupted`
+  specifically, mirroring the host's own branch; pinned beside the existing `resume` test, RED
+  confirmed first (`expected undefined to be defined`).
+- [x] **IMPORTANT — `Run`'s tail marked a paused operation `Completed`.** `Complete` legitimately
+  accepts `Running` OR `Paused`, so `Run`'s unconditional `operation.Complete()` after the awaited body
+  returned stamped `Completed` on a body doing the design's own headline move
+  (`op.Pause("dns"); return;`) — a third lie alongside the two §5A.2 exists to remove. Fixed by only
+  completing implicitly when the entry is STILL `Running`; documented as "pausing by returning" on
+  both `IModuleContext.Run` and `IOperationRegistry.Run`. The first version of the pinning test PASSED
+  by accident (an already-completed awaited `Task` does not yield, so `Pause`+`Complete` ran in one
+  synchronous burst faster than the test's first poll could reliably distinguish them) — rewritten to
+  wait for the settled state, then RED confirmed 3/3 runs (`Expected: Paused, Actual: Completed`)
+  before the fix, GREEN 3/3 after.
+- [x] **IMPORTANT — the terminal band had no deterministic tiebreak.** Sorting on `FinishedAt` alone
+  ties under `TimeProvider.System`'s ~15.6 ms Windows granularity, falling back to dictionary
+  enumeration order (which reshuffles on unrelated churn). Added `.ThenByDescending(Sequence)` — a
+  strictly monotonic counter that never repeats. RED confirmed first with a frozen `FakeTimeProvider`
+  (both operations finishing at the identical instant).
+- [x] **IMPORTANT — two shipped docs asserted a guard only `clearFinished` has.** `README.md`/
+  `CHANGELOG.md` both said `clearFinished`/`resume` share ONE terminal-set pin; only `clearFinished`
+  does, and the claim was self-contradicting (removing an interrupted row is `resume`'s own job).
+  Reworded to attribute the terminal-set pin to `clearFinished` alone and describe `resume`'s prune as
+  the interrupted-case mirror of the host's own asymmetry.
+- Hardening (cheap, each closing a next-status trap): `NonTerminal` derived from
+  `Enum.GetValues<OperationStatus>().Where(s => !IsTerminal(s))` instead of hand-maintained, in the one
+  file whose thesis is "don't hand-maintain a status set"; `OperationRegistry.IsTerminal` made
+  `internal` (`InternalsVisibleTo("Shenora.Tests")` already existed) so
+  `OperationLifecycleInvariantTests` calls it directly instead of keeping its own copy; the invariant
+  sweep now also calls `ClearFinished()` and asserts the entry is gone, covering the SECOND half of the
+  original bug (never entering `_finishedOrder`), not just the first (no terminal exit); `Dismiss`/the
+  public `Cancel(id)` now report what `Finish`'s own re-validation actually decided rather than an
+  assumed `true`, closing a race where a concurrent `Resume()` landing between the two lock
+  acquisitions could report a live operation as successfully dismissed — verified by a many-real-thread
+  race test, sabotage-confirmed (reverting the honest return reproduced `dismissed=true but ended
+  Running` reliably 3/3 runs).
+
+**Docs pass (this review):** `CHANGELOG.md` (folded into 0.2.0's still-unreleased `### Added`),
+`ARCHITECTURE.md`, `docs/ADOPTION.md`, `src/Shenora.React/README.md`, and
+`.claude/knowledge/ipc-contracts.md` (two new reusable lessons: a client-side optimistic prune must
+mirror the host's own asymmetry exactly rather than applying one rule to both branches of a wire
+action, and a permission check split across two lock acquisitions must report the SECOND
+acquisition's outcome, never the first).
+
 ### 0.1.2 — Stage 1 adopted: kit-owns-DPI + plain-form maximize deferral (2026-08-01)
 
 Second round of adopter feedback, this time from the same private desktop sibling **after**

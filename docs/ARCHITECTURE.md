@@ -332,9 +332,14 @@ changes, noting them in `CHANGELOG.md`).
   every read — never a second copy a reducer has to remember to keep in sync (`finished`/`paused` stay
   disjoint by construction: the TERMINAL status set `finished` filters on excludes `paused`/
   `interrupted` on purpose, and `clearFinished`'s optimistic local prune uses that SAME set, pinned by
-  a test, so it cannot remove a `paused`/`interrupted` entry). `dismiss` mirrors `cancel`'s shape and
-  needs no optimistic prune, since the host's `Dismiss` publishes an ordinary terminal snapshot for the
-  entry over the wire. `createOperationsStore(options)` takes an
+  a test, so it cannot remove a `paused`/`interrupted` entry). `resume`'s own local prune is NOT on the
+  terminal set — it mirrors the host's `RequestResume` asymmetry (§5A.4) instead: an `interrupted`
+  entry is dropped locally (the host removes it too), a `paused` one is left untouched (the host
+  deliberately keeps it for the app's own `Resume()` to flip) — a review finding on the lifecycle
+  batch caught the client pruning both unconditionally, which rebuilt "a waiting entry with no
+  reachable exit" one layer up. `dismiss` mirrors `cancel`'s shape and needs no optimistic prune, since
+  the host's `Dismiss` publishes an ordinary terminal snapshot for the entry over the wire.
+  `createOperationsStore(options)` takes an
   optional renamed module (for an app that changed `OperationRegistryOptions.ModuleName` to avoid a
   collision) and an optional `scope`, threaded into the snapshot payload, the bus subscription AND
   the action envelopes so a scoped store stays internally consistent; `useShenoraOperations` is the

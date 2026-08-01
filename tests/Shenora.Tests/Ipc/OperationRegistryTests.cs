@@ -223,6 +223,34 @@ public class OperationRegistryTests
         Assert.Equal([second.Id, first.Id], all.Select(o => o.Id));
     }
 
+    /// <summary>
+    /// IMPORTANT 3 (this batch's review): sorting terminal entries on `FinishedAt` ALONE has no
+    /// deterministic tiebreak for same-tick finishes. `TimeProvider.System` has ~15.6 ms granularity
+    /// on Windows, so two operations finishing within the same tick — routine under real load — tie,
+    /// and LINQ's stable sort then falls back to the PRE-SORT (dictionary enumeration) order, which
+    /// reshuffles after any removal or insert unrelated to these two entries: a history panel would
+    /// reorder on churn nobody touched. `Sequence` (a strictly monotonic counter, never reused) is the
+    /// deterministic tiebreak; newest SEQUENCE first matches "newest first" without depending on clock
+    /// resolution at all. No clock advance between the two finishes here, on purpose — this is the
+    /// exact same-tick collision a real clock produces.
+    /// </summary>
+    [Fact]
+    public void GetAll_breaks_a_terminal_tie_on_finishedAt_by_sequence_not_enumeration_order()
+    {
+        var bus = new EventBus();
+        var clock = new FakeTimeProvider();   // frozen — both finish at the SAME instant, on purpose
+        var registry = new OperationRegistry(bus,
+            new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero, TimeProvider = clock });
+        var first = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        var second = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        first.Complete();     // same FinishedAt as second — clock never advanced between the two
+        second.Fail("X");
+
+        var all = registry.GetAll();
+
+        Assert.Equal([second.Id, first.Id], all.Select(o => o.Id));   // newest SEQUENCE first, tie or not
+    }
+
     // --- Pause/Resume (§5A.3, D23 amendment) ---------------------------------------------------
 
     [Fact]

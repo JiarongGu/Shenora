@@ -52,16 +52,28 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     private static readonly OperationStatus[] PausedOnly = [OperationStatus.Paused];
 
     /// <summary>
+    /// The three finish-outcomes. Everything else is a band this registry must give an exit from
+    /// (§5A.1). <c>internal</c>, not <c>private</c> (hardening, this batch's review) — the test project
+    /// sees internals (<c>src/Directory.Build.props</c>' <c>InternalsVisibleTo("Shenora.Tests")</c>),
+    /// so <c>OperationLifecycleInvariantTests</c> calls THIS method directly instead of hand-copying its
+    /// own terminal check: a status classified terminal here but missed in a second hand-copy could
+    /// otherwise let the invariant sweep silently skip it.
+    /// </summary>
+    internal static bool IsTerminal(OperationStatus status) =>
+        status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
+
+    /// <summary>
     /// ANY non-terminal status — what the owner-path terminal cancel (<see cref="CancelTerminal"/>)
     /// accepts (§5A.2/§5A.3): a <see cref="OperationStatus.Paused"/> body is still parked on its own
     /// token and must be able to unwind the same way a <see cref="OperationStatus.Running"/> one does.
+    /// DERIVED from the live enum via <see cref="IsTerminal"/> (hardening, this batch's review) — this
+    /// is the one file whose thesis is "don't hand-maintain a status set"; a hand-copied array here
+    /// would leave a future status added tomorrow silently EXCLUDED, so <c>CancelTerminal</c> would
+    /// signal the token and then refuse the flip — the token cancelled, the entry stranded in the new
+    /// state, which is exactly the class of bug this whole feature exists to close.
     /// </summary>
     private static readonly OperationStatus[] NonTerminal =
-        [OperationStatus.Running, OperationStatus.Paused, OperationStatus.Interrupted];
-
-    /// <summary>The three finish-outcomes. Everything else is a band this registry must give an exit from (§5A.1).</summary>
-    private static bool IsTerminal(OperationStatus status) =>
-        status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
+        Enum.GetValues<OperationStatus>().Where(s => !IsTerminal(s)).ToArray();
 
     /// <summary>Options are validated NOW, not on first use, so a bad value names itself at the call site.</summary>
     public OperationRegistry(IEventBus bus, OperationRegistryOptions? options = null)
@@ -124,7 +136,18 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 // caller's synchronization context would put the work back on the thread this
                 // handoff exists to free.
                 await work(operation, operation.CancellationToken).ConfigureAwait(false);
-                operation.Complete();
+                // Complete ONLY when still Running (IMPORTANT 2, this batch's review): Complete()
+                // itself accepts ActiveOrPaused (a paused deploy CAN still complete — see its own
+                // doc), so this unconditional call used to stamp Completed on a body that did the
+                // spec's own headline move — op.Pause("dns"); return; — and simply returned instead
+                // of throwing. §5A.2 exists because "keep it Running" and "Fail it" are both lies for
+                // a paused-but-not-crashed run; silently completing it here would have been a THIRD
+                // lie, introduced by the very feature meant to remove the other two. A body that
+                // paused and returned leaves the operation Paused with no live body — resuming it is
+                // the app's own job (via the SAME handle's IOperation.Resume, or the app's own
+                // checkpoint/restart path), same shape as a crash offer (see IModuleContext.Run's doc).
+                if (PeekStatus(operation.Id) == OperationStatus.Running)
+                    operation.Complete();
             }
             // NOT operation.Cancel() routed through the CLIENT-permission-checked Cancel(id) (see
             // that method's own doc) — the body itself just ended in cancellation, which is data
@@ -157,12 +180,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// Sorted by the THREE BANDS (§5A.2), not "Running vs everything else" (coordinator ruling, this
     /// batch — a real defect, not a style nit): Active (<see cref="OperationStatus.Running"/>, oldest
     /// first) → Waiting (<see cref="OperationStatus.Paused"/>/<see cref="OperationStatus.Interrupted"/>,
-    /// oldest first) → Terminal (newest FINISHED first — a history/log view surfaces the most recent
-    /// outcome first). Before this fix, a <see cref="OperationStatus.Paused"/> entry fell into the
-    /// "everything else" bucket alongside completed history with no band of its own — burying the
-    /// exact row a user needs to find in order to resume or dismiss it, precisely the reason the
-    /// Waiting band exists (pinned by <c>OperationRegistryTests.GetAll_orders_active_then_waiting_then_terminal</c>
-    /// and <c>…_orders_terminal_entries_newest_finished_first</c>).
+    /// oldest first) → Terminal (newest FINISHED first, tiebroken by newest SEQUENCE — a history/log
+    /// view surfaces the most recent outcome first; the sequence tiebreak matters because
+    /// <c>TimeProvider.System</c> has ~15.6 ms granularity on Windows, so two same-tick finishes would
+    /// otherwise fall back to dictionary enumeration order, which reshuffles on unrelated churn —
+    /// IMPORTANT 3, this batch's review). Before this fix, a <see cref="OperationStatus.Paused"/> entry
+    /// fell into the "everything else" bucket alongside completed history with no band of its own —
+    /// burying the exact row a user needs to find in order to resume or dismiss it, precisely the
+    /// reason the Waiting band exists (pinned by <c>OperationRegistryTests.GetAll_orders_active_then_waiting_then_terminal</c>,
+    /// <c>…_orders_terminal_entries_newest_finished_first</c>, and
+    /// <c>…_breaks_a_terminal_tie_on_finishedAt_by_sequence_not_enumeration_order</c>).
     /// </remarks>
     public IReadOnlyList<OperationInfo> GetAll(string? module = null, string? scope = null)
     {
@@ -185,8 +212,15 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 .OrderBy(e => e.Sequence);
             var waiting = filtered.Where(e => e.Status is OperationStatus.Paused or OperationStatus.Interrupted)
                 .OrderBy(e => e.Sequence);
+            // ThenByDescending(Sequence) is the DETERMINISTIC tiebreak (IMPORTANT 3, this batch's
+            // review) — TimeProvider.System has ~15.6 ms granularity on Windows, so two operations
+            // finishing within the same tick tie on FinishedAt alone, and LINQ's stable sort then
+            // falls back to the PRE-SORT (dictionary enumeration) order, which reshuffles after any
+            // unrelated removal/insert. Sequence is a strictly monotonic counter that never repeats,
+            // so the tie always breaks the same way regardless of _entries' internal layout.
             var terminal = filtered.Where(e => IsTerminal(e.Status))
-                .OrderByDescending(e => e.FinishedAt);
+                .OrderByDescending(e => e.FinishedAt)
+                .ThenByDescending(e => e.Sequence);
 
             return active.Concat(waiting).Concat(terminal).Select(ToInfo).ToList();
         }
@@ -227,8 +261,12 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return false;
         }
 
-        CancelTokenThenFinish(cts, id, "Cancel", ActiveOrPaused);
-        return true;
+        // The HONEST return (hardening, this batch's review — same fix as Dismiss below): report
+        // whatever Finish's OWN re-validation (under a freshly re-acquired lock) actually decided,
+        // rather than assuming success just because THIS check passed. A concurrent transition
+        // between releasing this lock and Finish's own lock (e.g. another caller's Complete/Fail/
+        // Cancel racing in) can make the id no longer eligible by the time Finish re-checks it.
+        return CancelTokenThenFinish(cts, id, "Cancel", ActiveOrPaused);
     }
 
     /// <summary>
@@ -284,8 +322,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// call's own <see cref="Finish"/> below will correctly no-op and log the miss. Swallow it —
     /// proven the same way in the harvested source app.
     /// </para>
+    /// <para>
+    /// Returns whatever <see cref="Finish"/> actually decided (hardening, this batch's review) — NOT
+    /// an assumed <c>true</c> — because the caller's own permission check ran under a DIFFERENT lock
+    /// acquisition than <see cref="Finish"/>'s re-validation, and a concurrent transition in that
+    /// window (e.g. <see cref="Resume"/> flipping a <see cref="OperationStatus.Paused"/> entry back to
+    /// <see cref="OperationStatus.Running"/> between <see cref="Dismiss"/>'s own check and this call)
+    /// must not be reported to the client as a successful transition that did not actually happen.
+    /// </para>
     /// </summary>
-    private void CancelTokenThenFinish(CancellationTokenSource? cts, string id, string caller,
+    private bool CancelTokenThenFinish(CancellationTokenSource? cts, string id, string caller,
         IReadOnlyCollection<OperationStatus> allowedStatuses)
     {
         try
@@ -297,7 +343,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             // Already disposed by a concurrent Finish()/Dispose() — see the comment above.
         }
 
-        Finish(id, OperationStatus.Cancelled, null, caller, allowedStatuses);
+        return Finish(id, OperationStatus.Cancelled, null, caller, allowedStatuses);
     }
 
     /// <inheritdoc />
@@ -337,8 +383,13 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         // Signal the token FIRST (same order as Cancel/CancelTerminal): a Paused body still parked on
         // it unwinds rather than racing a completed-then-cancelled flip. Interrupted's cts is null, so
         // this is a no-op for that case — see CancelTokenThenFinish's own null-conditional call.
-        CancelTokenThenFinish(cts, id, "Dismiss", WaitingBand);
-        return true;
+        //
+        // The HONEST return (hardening, this batch's review): a concurrent Resume() between THIS
+        // lock's release and Finish's own re-validation can flip a Paused entry back to Running before
+        // Finish ever runs — Finish then correctly refuses the transition, and this must report that
+        // refusal rather than the unconditional `true` it used to return regardless of the outcome
+        // (which would leave a live, un-cancelled operation reported as successfully dismissed).
+        return CancelTokenThenFinish(cts, id, "Dismiss", WaitingBand);
     }
 
     /// <inheritdoc />
@@ -568,7 +619,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <c>Cancel</c> accepts <see cref="ActiveOrPaused"/>, the owner-path terminal cancel accepts
     /// <see cref="NonTerminal"/>, and <c>Dismiss</c> accepts <see cref="WaitingBand"/>.
     /// </param>
-    private void Finish(string id, OperationStatus status, IpcError? error, string caller,
+    /// <returns>
+    /// Whether the transition actually happened (hardening, this batch's review) — <c>false</c> for an
+    /// unknown id or one whose CURRENT status is not in <paramref name="allowedStatuses"/>. Every
+    /// caller that itself answers a client (the public by-id <see cref="Cancel(string)"/>,
+    /// <see cref="Dismiss"/>) MUST propagate this rather than assuming success, because their own
+    /// permission check ran under a separate, earlier lock acquisition than this one — a concurrent
+    /// transition in between (see <see cref="CancelTokenThenFinish"/>'s own doc) can make this call
+    /// the one that actually decides the outcome.
+    /// </returns>
+    private bool Finish(string id, OperationStatus status, IpcError? error, string caller,
         IReadOnlyCollection<OperationStatus> allowedStatuses)
     {
         Entry? entry;
@@ -593,10 +653,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         if (miss is not null)
         {
             LogIgnored(caller, id, miss);
-            return;
+            return false;
         }
 
         Publish(entry!, immediate: true);
+        return true;
     }
 
     /// <summary>
@@ -627,6 +688,21 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         return IsTerminal(entry.Status)
             ? $"has already reached a terminal state ({entry.Status})"
             : $"is currently {entry.Status}, which does not accept this transition";
+    }
+
+    /// <summary>
+    /// A read-only status peek for <see cref="Run"/>'s tail (IMPORTANT 2, this batch's review) — NOT
+    /// a <c>Validate</c> variant, because it makes no decision and mutates nothing: it exists only so
+    /// <c>Run</c> can ask "is this still <see cref="OperationStatus.Running"/>?" before deciding
+    /// whether to call <see cref="IOperation.Complete"/>, without duplicating a dictionary lookup
+    /// inline. Returns <c>null</c> for an unknown id (defensive; not expected on <c>Run</c>'s own path).
+    /// </summary>
+    private OperationStatus? PeekStatus(string id)
+    {
+        lock (_lock)
+        {
+            return _entries.TryGetValue(id, out var entry) ? entry.Status : null;
+        }
     }
 
     /// <summary>

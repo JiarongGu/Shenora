@@ -143,4 +143,88 @@ public class OperationDismissTests
         Assert.True(dismissed);
         Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
     }
+
+    /// <summary>
+    /// Hardening (this batch's review): <c>Dismiss</c> used to return <c>true</c> unconditionally once
+    /// its OWN permission check passed, regardless of what <c>Finish</c>'s re-validation (under a
+    /// separately re-acquired lock) actually decided. The window: a concurrent <c>Resume()</c> on the
+    /// SAME paused entry, landing between <c>Dismiss</c>'s own lock release and <c>Finish</c>'s own
+    /// lock acquisition, flips the entry back to <c>Running</c> before <c>Finish</c> ever runs — so
+    /// <c>Finish</c> correctly refuses, but the OLD code still answered the client <c>true</c>,
+    /// leaving a live, un-cancelled operation reported as successfully dismissed. Same shape as
+    /// <see cref="OperationRegistryTests.Concurrent_Cancel_and_Complete_never_leak_an_exception_and_settle_on_one_terminal_state"/>
+    /// (many real-thread pairs racing at once, released by one shared gate — thread-pool tasks alone
+    /// do not reliably hit a window this narrow): whenever <c>Dismiss</c> answers <c>true</c>, the
+    /// entry's FINAL status must actually be <see cref="OperationStatus.Cancelled"/> — never a
+    /// dismissed-but-still-Running ghost.
+    /// </summary>
+    [Fact]
+    public void Concurrent_Dismiss_and_Resume_never_reports_dismissed_true_without_actually_cancelling()
+    {
+        const int Pairs = 300;
+        // MaxHistory must cover every operation this test can dismiss, or PruneHistory removes the
+        // evidence before the post-condition check below can see it — unrelated to the race itself
+        // (same caveat the sibling Cancel/Complete race test notes for the identical reason).
+        var bus = new EventBus();
+        var registry = new OperationRegistry(bus, new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero, MaxHistory = Pairs });
+        var operations = Enumerable.Range(0, Pairs)
+            .Select(_ =>
+            {
+                var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+                operation.Pause("dns");
+                return operation;
+            })
+            .ToList();
+
+        using var gate = new ManualResetEventSlim(false);
+        var escaped = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        var dismissedTrue = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>();
+        var threads = new List<Thread>(Pairs * 2);
+
+        foreach (var operation in operations)
+        {
+            var dismissThread = new Thread(() =>
+            {
+                gate.Wait();
+                try
+                {
+                    if (registry.Dismiss(operation.Id)) dismissedTrue[operation.Id] = true;
+                }
+                catch (Exception ex) { escaped.Add(ex); }
+            });
+            var resumeThread = new Thread(() =>
+            {
+                gate.Wait();
+                try { operation.Resume(); }
+                catch (Exception ex) { escaped.Add(ex); }
+            });
+            threads.Add(dismissThread);
+            threads.Add(resumeThread);
+            dismissThread.Start();
+            resumeThread.Start();
+        }
+
+        gate.Set();   // release all Pairs*2 threads at once — maximize contention
+
+        // Bounded PER-JOIN (same discipline as the sibling Cancel/Complete race test) — a single
+        // shared deadline would let one thread's ordinary scheduling delay eat the budget left for
+        // every later one.
+        foreach (var thread in threads)
+        {
+            Assert.True(thread.Join(TimeSpan.FromSeconds(5)),
+                "a Dismiss/Resume thread did not finish within the bound");
+        }
+
+        Assert.Empty(escaped);
+
+        // THE actual assertion: every operation Dismiss reported as dismissed=true must have actually
+        // ended Cancelled — never left Running (or anything else) by a race Dismiss didn't notice.
+        foreach (var operation in operations)
+        {
+            if (!dismissedTrue.ContainsKey(operation.Id)) continue;   // Resume won the race — not this test's concern
+            var status = registry.GetAll().Single(o => o.Id == operation.Id).Status;
+            Assert.True(status == OperationStatus.Cancelled,
+                $"operation {operation.Id} was reported dismissed=true but ended {status}, not Cancelled");
+        }
+    }
 }

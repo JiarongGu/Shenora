@@ -90,13 +90,17 @@ folds `OPERATION_UPDATED` by id — one subscription however many components rea
 your own `module`/`kind` is a plain `Array.filter` over either. A `paused` operation carries
 `pauseReason` — an app-defined string, like `kind` — for your UI to branch on (there is no `pause`
 action here: pausing is the HOST's own knowledge, never a client decision; only `resume`/`dismiss`
-are client routes, because resuming and declining are the human's decisions). `clearFinished`/`resume`
-also prune their own rows from local state immediately — the host removes them too but emits no
-removal event, so this is what makes them visibly work in a mounted panel rather than a no-op until
-unmount (this optimistic prune is pinned to the TERMINAL status set, so it can never remove a
-`paused`/`interrupted` row — those are a WAITING band, not history); the host's own history cap
-(`MaxHistory`) is separate and NOT mirrored this way. `dismiss` needs no such optimistic prune — the
-host's `Dismiss` publishes an ordinary terminal snapshot over the wire, the same as a real cancel. Use
+are client routes, because resuming and declining are the human's decisions). `clearFinished` prunes
+its own rows from local state immediately — the host removes them too but emits no removal event, so
+this is what makes it visibly work in a mounted panel rather than a no-op until unmount — pinned to
+the TERMINAL status set, so it can never remove a `paused`/`interrupted` row (those are a WAITING
+band, not history); the host's own history cap (`MaxHistory`) is separate and NOT mirrored this way.
+`resume` prunes too, but NOT on the terminal set — it mirrors the host's own asymmetry (design §5A.4)
+instead: an `interrupted` entry is dropped locally (the host removes it too, no live handle to flip),
+while a `paused` entry is left untouched, because the host deliberately LEAVES it in place for the
+app's own handle to flip via `Resume()` once it has actually resumed — pruning it locally would show
+a resumed row that never really resumed. `dismiss` needs no local prune at all — the host's `Dismiss`
+publishes an ordinary terminal snapshot over the wire, the same as a real cancel. Use
 `createOperationsStore({ module, scope })` instead of the default export if your host renamed
 `OperationRegistryOptions.ModuleName` or
 you need a scope-filtered instance (a secondary window, an auxiliary session).

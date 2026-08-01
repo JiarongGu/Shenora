@@ -30,6 +30,15 @@ public interface IOperationRegistry
     /// <see cref="IOperation.CancellationToken"/>: work handed off outlives whatever started it, and
     /// capturing a caller's token (a request, say) kills it the moment that caller's lifetime ends.
     /// </para>
+    /// <para>
+    /// <b>Pausing by returning</b> (§5A.3): <paramref name="work"/> can call <c>op.Pause(reason)</c>
+    /// and simply RETURN instead of throwing — <c>Complete</c> is only ever applied implicitly when
+    /// the operation is STILL <see cref="OperationStatus.Running"/> once <paramref name="work"/>
+    /// finishes, so a body that paused and returned is left <see cref="OperationStatus.Paused"/>, not
+    /// silently stamped <see cref="OperationStatus.Completed"/>. Resuming it from there is the APP's
+    /// job (the same handle's <c>op.Resume()</c>, or its own checkpoint/restart path) — see
+    /// <see cref="IModuleContext.Run"/>'s own doc for the full rationale.
+    /// </para>
     /// </summary>
     string Run(string module, OperationOptions options, Func<IOperation, CancellationToken, Task> work);
 
