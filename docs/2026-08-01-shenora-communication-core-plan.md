@@ -1064,7 +1064,8 @@ stays the primitive for shapes that do not match Run 1:1."
 **Interfaces:**
 - Consumes: `IOperationRegistry`, `BaseFacade`, `PayloadHelper`, `IpcServiceCollectionExtensions`.
 - Produces: `OperationsFacade(IOperationRegistry registry, OperationRegistryOptions? options = null)`
-  serving `LIST` / `CANCEL` / `CLEAR_FINISHED` / `RESUME` on the module named by
+  serving `LIST` / `CANCEL` / `CLEAR_FINISHED` on the module named by (`RESUME` arrives with Task 6,
+  which owns `RequestResume` — this task must not invent a registry member to serve it)
   `OperationRegistryOptions.ModuleName`; `IServiceCollection.AddShenoraOperations(Action<OperationRegistryOptions>?)`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1151,7 +1152,7 @@ Expected: FAIL — `OperationsFacade` does not exist.
 A normal `BaseFacade` — reads its payload through `PayloadHelper`, ends its switch with
 `throw UnknownType(request)`. `ModuleName` comes from the injected `OperationRegistryOptions` so the
 request module and the event module are one renameable string. `LIST` takes optional `module`/`scope`
-filters, `CANCEL`/`RESUME` take `operationId`, `CLEAR_FINISHED` takes nothing.
+filters, `CANCEL` takes `operationId`, `CLEAR_FINISHED` takes nothing. `RESUME` belongs to Task 6.
 
 - [ ] **Step 4: Implement the DI extension**
 
