@@ -76,19 +76,27 @@ way as the example above — no per-feature event wiring needed:
 import { useShenoraOperations } from '@shenora/react';
 
 const running = useShenoraOperations((s) => s.running);         // every in-flight operation
+const paused = useShenoraOperations((s) => s.paused);            // stopped mid-flight, awaiting a decision
 const importJob = useShenoraOperations((s) => s.byId[jobId]);   // one, by id
 
 useShenoraOperations.actions.cancel(jobId);       // only does anything if the op opted into Cancellable
+useShenoraOperations.actions.dismiss(jobId);      // decline a paused/interrupted offer — refuses a running one
 useShenoraOperations.actions.clearFinished();
 ```
 
 It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
-folds `OPERATION_UPDATED` by id — one subscription however many components read it. `running`/
+folds `OPERATION_UPDATED` by id — one subscription however many components read it. `running`/`paused`/
 `finished` are derived from `byId` on every read, never a second copy to keep in sync; filtering by
-your own `module`/`kind` is a plain `Array.filter` over either. `clearFinished`/`resume` also prune
-their own rows from local state immediately — the host removes them too but emits no removal event,
-so this is what makes them visibly work in a mounted panel rather than a no-op until unmount; the
-host's own history cap (`MaxHistory`) is separate and NOT mirrored this way. Use
+your own `module`/`kind` is a plain `Array.filter` over either. A `paused` operation carries
+`pauseReason` — an app-defined string, like `kind` — for your UI to branch on (there is no `pause`
+action here: pausing is the HOST's own knowledge, never a client decision; only `resume`/`dismiss`
+are client routes, because resuming and declining are the human's decisions). `clearFinished`/`resume`
+also prune their own rows from local state immediately — the host removes them too but emits no
+removal event, so this is what makes them visibly work in a mounted panel rather than a no-op until
+unmount (this optimistic prune is pinned to the TERMINAL status set, so it can never remove a
+`paused`/`interrupted` row — those are a WAITING band, not history); the host's own history cap
+(`MaxHistory`) is separate and NOT mirrored this way. `dismiss` needs no such optimistic prune — the
+host's `Dismiss` publishes an ordinary terminal snapshot over the wire, the same as a real cancel. Use
 `createOperationsStore({ module, scope })` instead of the default export if your host renamed
 `OperationRegistryOptions.ModuleName` or
 you need a scope-filtered instance (a secondary window, an auxiliary session).

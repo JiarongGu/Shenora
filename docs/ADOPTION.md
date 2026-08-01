@@ -191,14 +191,21 @@ until the page is listening.
   long case. `context.Start` is the lower-level primitive if your lifecycle doesn't fit one
   background body (a start outside the block, several failure branches, a resumable session).
   Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
-  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME` under module
-  `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and no
+  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS` under
+  module `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and no
   per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
   progress strip that mounts mid-run isn't empty) and folds `OPERATION_UPDATED` by id afterward. What
   an operation actually means — its phases, whether it queues, what a viewer looks like — stays
-  yours; the kit tracks only id/status/progress/cancel. See
-  `docs/2026-08-01-shenora-communication-core-design.md` for the full shape.
+  yours; the kit tracks only id/status/progress/cancel.
+  The lifecycle also covers a run that stops mid-flight WITHOUT crashing — expired credentials, a
+  throttling provider, DNS not yet propagated: `op.Pause("dns", …)` (`Running` → `Paused`, an
+  app-defined reason string, like `Kind`) and `op.Resume()` (`Paused` → `Running`) on the SAME handle
+  `Start`/`Run` gave you, plus `IOperationRegistry.Dismiss(id)` for the human declining a paused or
+  crash-interrupted offer outright (→ `Cancelled`, terminal). There is deliberately no client `PAUSE`
+  route — pausing is the host's own knowledge — while `RESUME`/`DISMISS` are, because resuming and
+  declining are the human's decisions. See
+  `docs/2026-08-01-shenora-communication-core-design.md` §5A for the full shape.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.
 

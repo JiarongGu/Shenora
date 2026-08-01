@@ -51,20 +51,23 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   progress emission — with NO queue, scheduler, retry, priority, phase model, `ProcessType`-style
   enum, i18n rendering, UI or persistence. What an operation IS stays the app's; the kit only tracks
   it. New in `Shenora.Ipc`: `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/
-  `Interrupted`), `OperationLabel` (`{Text?, Key?, Parameters?}` — the same i18n shape as `IpcError`),
-  `OperationOptions`, `OperationInfo` (the one snapshot type for every lifecycle transition — a
-  client folds by `Id`, last-write-wins, no cross-type ordering hazard), `IOperation`
-  (`Report`/`Complete`/`Fail`×2/`Cancel`, all idempotent once terminal, with its OWN
+  `Interrupted`/`Paused`), `OperationLabel` (`{Text?, Key?, Parameters?}` — the same i18n shape as
+  `IpcError`), `OperationOptions`, `OperationInfo` (the one snapshot type for every lifecycle
+  transition — a client folds by `Id`, last-write-wins, no cross-type ordering hazard; carries
+  `PauseReason`, an app-defined string like `Kind`), `IOperation`
+  (`Report`/`Complete`/`Fail`×2/`Cancel`/`Pause`/`Resume`, all idempotent once terminal, with its OWN
   `CancellationToken` — never the request's, because work handed off outlives the request that
   started it), `IOperationRegistry`/`OperationRegistry(+OperationRegistryOptions)`,
   `OperationEvents` (`OPERATION_UPDATED`, `OPERATION_RESUME_REQUESTED`), `OperationsFacade`
-  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME` under module `OPERATIONS` by default — also exposed as
-  the `ListType`/`CancelType`/`ClearFinishedType`/`ResumeType` constants, pinned against the client by
-  the wire-mirror test), and `AddShenoraOperations(OperationRegistryOptions? options = null)` — opt-in
-  DI wiring, so an app with no long-running work pays nothing; takes the options RECORD directly
-  (not a configure callback) so a renamed `ModuleName` etc. can actually be set, matching every other
-  options type in the kit. `GetAll(module?, scope?)`'s scope filter follows the same rule as
-  `IEventBus` — an unscoped operation matches any requested scope, not strict equality.
+  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS` under module `OPERATIONS` by default — also
+  exposed as the `ListType`/`CancelType`/`ClearFinishedType`/`ResumeType`/`DismissType` constants,
+  pinned against the client by the wire-mirror test — deliberately **no `PAUSE` route**: pausing is
+  the host's own knowledge, never a client decision), and
+  `AddShenoraOperations(OperationRegistryOptions? options = null)` — opt-in DI wiring, so an app with
+  no long-running work pays nothing; takes the options RECORD directly (not a configure callback) so
+  a renamed `ModuleName` etc. can actually be set, matching every other options type in the kit.
+  `GetAll(module?, scope?)`'s scope filter follows the same rule as `IEventBus` — an unscoped
+  operation matches any requested scope, not strict equality.
   Progress reports are throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms) with
   a TRAILING emit so the final value in a window is never dropped; every lifecycle transition emits
   immediately, never throttled. An operation failure obeys the same no-raw-exception-text boundary as
@@ -80,20 +83,64 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   the original interface sketch and deliberately dropped, because no consumer resolves a handle from
   a bare id and every public member becomes SemVer surface at 1.0; an app needing one today keeps its
   own id→handle map.
+  **The lifecycle is completed to THREE BANDS (§5A of the design doc, amendment before merge):** the
+  first adopter found that an `Interrupted` offer could only be removed by resuming it — `Validate`
+  hard-coded `Status == Running` for every caller, `ClearFinished` only ever walked `_finishedOrder`
+  (which `RegisterInterrupted` deliberately never wrote to), and `PruneHistory` skipped offers on
+  purpose — three individually-correct guards composing into a state with no exit at all, and that
+  adopter had already shipped exactly this bug and stranded a real deployment on it (paused on DNS
+  records, permanently offering Resume, permanently undeletable). **The rule this fixes generalises:
+  every non-terminal status must have a sanctioned exit to a terminal one** — enforced by
+  `OperationLifecycleInvariantTests`, which enumerates the live `OperationStatus` enum (not a
+  hardcoded list) and fails BY NAME if a future non-terminal addition has no registered exit.
+  `Validate` is reworked so each transition states what it accepts, instead of one hard-coded
+  `Running` check: `Report`/`Pause` require `Running`; `Complete`/`Fail` accept `Running` OR `Paused`
+  (a paused deploy can still fail on a deadline); the public by-id `Cancel(id)` accepts `Running` OR
+  `Paused`, keeping its `Cancellable` permission check; the owner-path terminal cancel accepts ANY
+  non-terminal status; `Resume`/`Dismiss` require the WAITING band (`Paused`/`Interrupted`). The
+  "ignored" diagnostic is also now honest about terminal vs. non-terminal — it used to say "has
+  already reached a terminal state (Interrupted)" for ANY refused status, which was simply false for
+  `Interrupted` (explicitly not terminal).
+  New: `OperationStatus.Paused` — a run that stops mid-flight WITHOUT crashing (expired cloud
+  credentials, a throttling provider, DNS not yet propagated, a migration awaiting confirmation),
+  reached via `IOperation.Pause(string reason, OperationLabel? detail = null)` (`Running` → `Paused`)
+  and exited via `IOperation.Resume()` (`Paused` → `Running`, clearing the reason) — both new members
+  on `IOperation`. `reason` is an app-defined STRING, like `Kind`, never a kit enum: the app's own
+  taxonomy for what its UI offers. `IOperationRegistry.Dismiss(string id)` declines a pending
+  `Paused`/`Interrupted` offer (`→ Cancelled`, terminal — enters bounded history, publishes an
+  ordinary `OPERATION_UPDATED` snapshot like any other terminal transition, unlike `ClearFinished`/
+  `RequestResume` which remove an entry with no wire event) — it REFUSES `Running` on purpose,
+  because declining an offer and cancelling LIVE work are different acts, and this branch's only
+  Critical came from exactly that conflation inside `Cancel`; `Dismiss` is a separate member rather
+  than `Cancel` accepting more states for the same reason. It signals the entry's own
+  `CancellationToken` first when one exists, so a paused body still parked on its token unwinds.
+  **Deliberately no `PAUSE` client route:** pausing is the host's own knowledge (it is the side that
+  discovered the block); `RESUME`/`DISMISS` ARE client routes, because resuming and declining are the
+  human's decisions.
+  `RequestResume` now also accepts a `Paused` entry, and the two cases are handled asymmetrically ON
+  PURPOSE: a `Paused` entry is LEFT IN PLACE (the app calls `IOperation.Resume()` on its own handle
+  once it has actually resumed — the client asking is not the state changing), while an `Interrupted`
+  entry is still REMOVED (there is no live handle to flip — the body died with the process). The
+  `OPERATION_RESUME_REQUESTED` payload now also carries `status`, so a handler can tell the two cases
+  apart — it cannot look the entry up afterward for the `Interrupted` case, because it is gone.
 - **`@shenora/react`: `useShenoraOperations` / `createOperationsStore`** — the client half of the
   primitive above, built the same way `createShenoraStore` already was: `OperationStatuses` (wire
-  values) + `OperationInfo`/`OperationLabel` types, a `LIST` snapshot on first subscribe (so a
-  progress strip that mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with
-  `running`/`finished` DERIVED getters computed from `byId` on every read and `cancel`/
+  values, including `Paused`) + `OperationInfo`/`OperationLabel` types (`OperationInfo.pauseReason`
+  mirrors the host's `PauseReason`), a `LIST` snapshot on first subscribe (so a progress strip that
+  mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with `running`/`paused`/
+  `finished` DERIVED getters computed from `byId` on every read and `cancel`/`dismiss`/
   `clearFinished`/`resume` actions. `clearFinished`/`resume` also prune their entries from LOCAL state
   immediately (optimistic, no wire change): the host removes them but emits no removal delta, so a
   mounted store used to keep rendering cleared/resumed rows until every subscriber unmounted — the
   host's `MaxHistory` pruning is NOT mirrored this way, so a long-lived store still keeps what it has
-  seen until `clearFinished` is actually called. `createOperationsStore({ module?, scope? })` supports
-  a renamed host module (avoiding a collision with an app's own module name) and a scope-filtered
-  instance. **Known limit, deliberate:** no `byModule`/`byScope` selector — filtering by module or
-  scope is a one-line consumer selector over `byId`, and shipping indexes for it would be duplicated
-  derived state for no gain.
+  seen until `clearFinished` is actually called; that local prune is pinned to the TERMINAL status set
+  so it cannot remove a `paused`/`interrupted` (WAITING-band) entry, the exact thing a later
+  "simplification" would otherwise silently break. `dismiss` mirrors `cancel`'s shape and needs NO
+  optimistic prune — the host's `Dismiss` publishes an ordinary terminal snapshot for the entry, same
+  as a real cancel. `createOperationsStore({ module?, scope? })` supports a renamed host module
+  (avoiding a collision with an app's own module name) and a scope-filtered instance. **Known limit,
+  deliberate:** no `byModule`/`byScope` selector — filtering by module or scope is a one-line consumer
+  selector over `byId`, and shipping indexes for it would be duplicated derived state for no gain.
 - **`Shenora.Ipc.NotificationPump`(+`NotificationPumpOptions`)** — the transport-neutral half of a
   host's outbound notification channel (bus subscribe from CONSTRUCTION → per-channel filter →
   bounded drop-oldest queue → batch → ready gate → guarded per-notification serialize), extracted out

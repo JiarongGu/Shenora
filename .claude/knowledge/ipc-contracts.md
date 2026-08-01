@@ -253,6 +253,32 @@ transport, or building the P6 adoption shims.
   disagreed with the deltas a scoped store folds afterward: it never SAW an unscoped operation in a
   scoped `LIST` snapshot but DID receive its `OPERATION_UPDATED` deltas, so a scoped store's contents
   silently depended on whether it mounted before or after the work started.
+- **Every non-terminal state must have a sanctioned exit to a terminal one — this generalises past
+  operations, and it is enforced by a test, not by reviewer attention** (§5A.1, the D23 amendment
+  before 0.2.0 merged). The bug that named the rule: an `Interrupted` offer could only be removed by
+  *resuming* it — `Validate` hard-coded `Status == Running` for every caller so `Cancel`/`Complete`/
+  `Fail` all refused it, `ClearFinished` only ever walked `_finishedOrder` (which `RegisterInterrupted`
+  deliberately never wrote to, since an offer is not finished history), and `PruneHistory` skipped
+  offers on purpose. **Three guards, each individually correct and each with a comment explaining
+  why — and together they left a state with no exit at all.** That is what makes this class of bug
+  dangerous: it is invisible in any single guard's diff, because each guard is reviewed (and passes
+  review) in isolation from the others it composes with. The same app that reviewed this branch had
+  already shipped the identical bug and stranded a real production deployment on it hours earlier
+  (paused waiting on DNS records it could not complete — permanently offering Resume, permanently
+  undeletable, because a paused run *is* the live state) — the kit's own review had flagged the gap as
+  a Minor and deferred it; the adopter's production incident was the sharper evidence.
+  The fix (`OperationStatus.Paused`, `IOperationRegistry.Dismiss`) is the specific instance; the
+  REUSABLE half is the test shape: `OperationLifecycleInvariantTests` enumerates the LIVE status enum
+  via reflection (`Enum.GetValues<OperationStatus>()`), never a hardcoded list, so a future status is
+  swept in automatically — and for each non-terminal value it looks up a registered `(reach, exit)`
+  pair, asserting `ContainsKey` explicitly (by name) rather than only iterating the dictionary's own
+  keys, which is what makes it fail LOUDLY when a new status has no exit registered, instead of
+  silently checking nothing. Verified by sabotage (the standing rule for every tripwire here): making
+  `Dismiss` temporarily refuse `Interrupted` failed the test citing `OperationStatus.Interrupted` by
+  name before the fix was restored. Any future state machine in this codebase (a session lifecycle, a
+  connection state) should get the same shape: enumerate the enum, require a registered exit per
+  non-terminal value, prove the exit actually lands on a terminal one through the real object — not a
+  static claim about what "should" transition where.
 
 ## Gotchas / traps
 
@@ -277,3 +303,9 @@ transport, or building the P6 adoption shims.
   round trip needed — the action already knows the answer), but the host's own `MaxHistory` eviction
   has no equivalent: a long-lived store keeps every terminal entry it has ever seen until
   `clearFinished` is actually called client-side too.
+  **`Dismiss` is NOT in this category, on purpose** — it does not remove anything, it transitions the
+  entry to `Cancelled` through the same `Finish` path as `Complete`/`Fail`/`Cancel`, so it publishes an
+  ordinary `OPERATION_UPDATED` snapshot the wire already carries. The client's `dismiss` action
+  therefore needs no optimistic local prune at all — the mistake to avoid is copying the
+  `clearFinished`/`resume` shape onto it out of habit and adding dead code for a delta that never
+  needed compensating.

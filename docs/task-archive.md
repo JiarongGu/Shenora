@@ -1332,6 +1332,70 @@ here, each with its reason), `CHANGELOG.md` (`### Breaking` for the `RouteMessag
 operations surface), `docs/ROADMAP.md` `## Done`, and the design + plan docs marked implemented per
 `docs/README.md`'s doc inventory. `<VersionPrefix>` bumped to `0.2.0` — the only version source.
 
+#### Amendment: the lifecycle completed to three bands (2026-08-01, before merge)
+
+Closes both findings from "the first adopter, review of the unreleased communication core
+(2026-08-01)" (`TASKS.md`) — the other two of that section's four findings from the design review
+(`docs/2026-08-01-shenora-communication-core-design.md` §5A + **D23**'s 2026-08-01 amendment to
+`docs/DECISIONS.md`). The fourth finding ("drop zones are the strongest dedup case, worth stating as
+such") remains open in `TASKS.md`.
+
+- [x] **An `Interrupted` offer could only be removed by resuming it — there was no way to decline
+  one.** The adopter's own review named the exact shape: `Validate` hard-coded `Status == Running`
+  for every caller so `Cancel`/`Complete`/`Fail` all refused an interrupted entry, `ClearFinished`
+  only ever walked `_finishedOrder` (which `RegisterInterrupted` deliberately never wrote to), and
+  `PruneHistory` skipped offers on purpose — three individually-correct, individually-commented
+  guards that together left the state with no exit. That same adopter had already shipped the
+  identical bug and stranded a real deployment on it (paused on DNS records it could not complete,
+  permanently offering Resume, permanently undeletable). Closed by `IOperationRegistry.Dismiss(id)`
+  (`b0f2dde`):
+  `Paused`/`Interrupted` → `Cancelled` (terminal — enters bounded history, publishes an ordinary
+  `OPERATION_UPDATED` snapshot, unlike `ClearFinished`/`RequestResume` which remove an entry with no
+  wire event). Refuses `Running` on purpose — a separate member from `Cancel`, not `Cancel` accepting
+  more states, because declining a pending offer and cancelling LIVE work are different acts and
+  conflating them inside `Cancel` was this branch's only Critical (Finding 1 of the earlier
+  whole-branch review). Signals the entry's own `CancellationToken` first when one exists, so a
+  paused body still parked on it unwinds the same way a running one does under `Cancel`.
+- [x] **No recoverable-but-stopped state existed for a run that halts mid-flight WITHOUT a crash.**
+  Closed by `OperationStatus.Paused` (`b0f2dde`) — the WAITING band alongside `Interrupted` (§5A.2): a run that
+  stops without crashing (expired cloud credentials, a throttling provider, DNS not yet propagated, a
+  migration awaiting confirmation), which the surveyed app reports as its most common non-success
+  deploy outcome, more common than failure. `IOperation.Pause(string reason, OperationLabel? detail =
+  null)` (`Running` → `Paused`) and `IOperation.Resume()` (`Paused` → `Running`, clearing the reason)
+  on the SAME handle `Start`/`Run` already return — `reason` is an app-defined STRING, like `Kind`,
+  never a kit enum (the app's own taxonomy for what its UI offers). `IOperationRegistry.RequestResume`
+  now also accepts `Paused`, and the two waiting-band cases are handled ASYMMETRICALLY on purpose
+  (§5A.4): a `Paused` entry is left in place for the app to flip via its own `Resume()` handle (the
+  client asking is not the state changing), while an `Interrupted` entry is still removed (no live
+  handle to flip — the body died with the process); the `OPERATION_RESUME_REQUESTED` payload gained a
+  `status` field so a handler can tell the two cases apart, since it cannot look an `Interrupted`
+  entry up afterward. **Deliberately no `PAUSE` client route** — pausing is the host's own knowledge;
+  `RESUME`/`DISMISS` are client routes because resuming and declining are the human's decisions.
+  Client (`@shenora/react`): `'paused'` in `OperationStatuses`, `pauseReason` on `OperationInfo`, a
+  `paused` derived getter alongside `running`/`finished`, and a `dismiss` action mirroring `cancel`'s
+  shape (no optimistic local prune needed — `Dismiss` publishes an ordinary wire snapshot, unlike
+  `clearFinished`/`resume`).
+
+**The rule enforced, not just the fix (§5A.1, `b0f2dde`):** *every non-terminal status must have a
+sanctioned exit to a terminal one.* `OperationLifecycleInvariantTests` enumerates the LIVE `OperationStatus` enum
+via reflection — never a hardcoded list — and requires (and exercises through the real registry) a
+registered exit for every non-terminal value; a future status added with no exit fails that test BY
+NAME instead of stranding an operation the way `Interrupted` used to. Verified by sabotage: making
+`Dismiss` temporarily refuse `Interrupted` failed the test citing `OperationStatus.Interrupted`
+specifically, before the fix was restored — the standing rule that a tripwire proves nothing until it
+has been seen to fail. `WireMirrorTests` extended for the new `DISMISS` route (also verified by
+sabotage: a mismatched client literal fails naming the two differing strings) and the new `Paused`
+status (`Every_operation_status_exists_on_both_sides` caught the gap for free, since it already
+compares the live enum against the client's `OperationStatuses` object rather than a second hardcoded
+list — it failed the moment the host gained `Paused` and the client had not, exactly as designed).
+
+**Docs pass (this amendment):** `CHANGELOG.md` (folded into 0.2.0's still-unreleased `### Added`,
+not a new version — 0.2.0 had not merged), `ARCHITECTURE.md` (the three-band lifecycle + the
+invariant test named), `docs/ADOPTION.md` (the Pause/Resume/Dismiss half of the long-running-work
+row), `src/Shenora.React/README.md` (the client-side `paused`/`dismiss` usage), and
+`.claude/knowledge/ipc-contracts.md` (the §5A.1 rule — "every non-terminal state needs an exit" — as
+the reusable half, generalised past operations to any future state machine in this codebase).
+
 ### 0.1.2 — Stage 1 adopted: kit-owns-DPI + plain-form maximize deferral (2026-08-01)
 
 Second round of adopter feedback, this time from the same private desktop sibling **after**

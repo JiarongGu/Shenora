@@ -253,31 +253,46 @@ changes, noting them in `CHANGELOG.md`).
   `AddShenoraOperations` is called), never the other way round.
   **The operations cluster** (`Shenora.Ipc.Operations` mechanism, tracked long-running work — no
   queue, scheduler, retry, priority or phase model, and no opinion on what an operation IS):
-  `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/`Interrupted` — crosses the wire
-  camelCase for free via `IpcJson`'s enum converter), `OperationLabel` (`{Text?, Key?, Parameters?}`,
+  `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/`Interrupted`/`Paused` — crosses the
+  wire camelCase for free via `IpcJson`'s enum converter), `OperationLabel` (`{Text?, Key?, Parameters?}`,
   the same i18n shape as `IpcError`), `OperationOptions` (`Kind` an app-defined string, `Title`,
   `Scope`, `Cancellable`, `Progress`, `Resumable`, `ResumePayload`), `OperationInfo` (the full
   snapshot — both the `OPERATION_UPDATED` event payload and the `LIST` response element; one type for
-  every transition, so a client folds by `Id` with no cross-type ordering hazard), `IOperation`
-  (`Id`, its OWN `CancellationToken` — never the request's — `Report`/`Complete`/`Fail`(×2)/`Cancel`,
-  all idempotent once terminal), `IOperationRegistry`/`OperationRegistry(+Options)` (one lock over
-  in-memory state; `Start`/`Run` — `Run` is `Start` + a guarded background body mapping
+  every transition, so a client folds by `Id` with no cross-type ordering hazard; carries
+  `PauseReason`, an app-defined string like `Kind`), `IOperation`
+  (`Id`, its OWN `CancellationToken` — never the request's — `Report`/`Complete`/`Fail`(×2)/`Cancel`/
+  `Pause`/`Resume`, all idempotent once terminal), `IOperationRegistry`/`OperationRegistry(+Options)`
+  (one lock over in-memory state; `Start`/`Run` — `Run` is `Start` + a guarded background body mapping
   `OperationCanceledException`→`Cancel`, `OperationException`→`Fail(code, parameters, message)`, else
   →`Fail(UnknownError, {exceptionType})`, identical to the dispatch boundary's no-raw-text rule —
   `GetAll(module?, scope?)` (scope follows the same rule as `IEventBus` — an unscoped operation
   matches any requested scope, not strict equality), `Cancel` (refuses an operation that never opted into `Cancellable`, so
-  the status can't lie about a body still running underneath it), `ClearFinished`, and
-  `RegisterInterrupted`/`RequestResume` for a crash-resumable checkpoint the app owns, deduped on
-  `(module, kind, resumePayload)`; progress emission is throttled to `ProgressInterval` — default
-  100 ms — with a TRAILING emit so the final value in a window is never dropped, and every lifecycle
-  transition emits immediately, never throttled), `OperationEvents` (`Updated` = `OPERATION_UPDATED`,
-  `ResumeRequested` = `OPERATION_RESUME_REQUESTED`), `OperationsFacade` (module `OPERATIONS` by
-  default, shared with the registry via one `OperationRegistryOptions` instance so the two can never
-  drift apart: `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`), `AddShenoraOperations` (opt-in DI wiring;
-  an app with no long-running work pays nothing). Known limit, recorded rather than guessed at: no
+  the status can't lie about a body still running underneath it), `ClearFinished`, `Dismiss` (declines
+  a pending `Paused`/`Interrupted` offer → `Cancelled`, terminal — refuses `Running` on purpose, since
+  declining an offer and cancelling LIVE work are different acts and conflating them inside `Cancel`
+  was this branch's only Critical), and `RegisterInterrupted`/`RequestResume` for a crash-resumable
+  checkpoint the app owns, deduped on `(module, kind, resumePayload)` — `RequestResume` also accepts a
+  `Paused` entry, LEAVING it in place for the app's own `IOperation.Resume()` to flip (an `Interrupted`
+  entry is still removed, since there is no live handle to flip — the `OPERATION_RESUME_REQUESTED`
+  payload carries `status` so a handler can tell the two cases apart); progress emission is throttled
+  to `ProgressInterval` — default 100 ms — with a TRAILING emit so the final value in a window is
+  never dropped, and every lifecycle transition emits immediately, never throttled), `OperationEvents`
+  (`Updated` = `OPERATION_UPDATED`, `ResumeRequested` = `OPERATION_RESUME_REQUESTED`),
+  `OperationsFacade` (module `OPERATIONS` by default, shared with the registry via one
+  `OperationRegistryOptions` instance so the two can never drift apart:
+  `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS` — deliberately no `PAUSE` route, since pausing
+  is the host's own knowledge, never a client decision), `AddShenoraOperations` (opt-in DI wiring; an
+  app with no long-running work pays nothing). Known limit, recorded rather than guessed at: no
   `Find(id)` on `IOperationRegistry` — it was in the design sketch and dropped because no consumer
   resolves a handle from a bare id and every public member is SemVer surface at 1.0; an app needing
   one today keeps its own id→handle map.
+  **The lifecycle is enforced as THREE BANDS** (§5A of the design doc — Active: `Running`; Waiting,
+  never pruned: `Paused`/`Interrupted`; Terminal: `Completed`/`Failed`/`Cancelled`), and the rule that
+  produced it is structural, not a convention: `OperationLifecycleInvariantTests` enumerates the LIVE
+  `OperationStatus` enum and asserts every non-terminal value has a registered exit reaching a
+  terminal one — a future status added with no exit fails that test by name instead of stranding an
+  operation the way an `Interrupted` offer used to (its only exit, `RequestResume`, never reached a
+  terminal status at all).
   **`NotificationPump`(+`Options`)** — the transport-neutral half of the outbound notification
   channel (design §5, D16 applied to the host side): bus subscription (from CONSTRUCTION, not
   `Open`), the per-channel `Filter` (applied at enqueue, fail-CLOSED on a throwing predicate — the
@@ -310,10 +325,16 @@ changes, noting them in `CHANGELOG.md`).
   (native drop zones synced to elements — real OS paths, unstyled drag feedback),
   `installDevInterceptor` (`window.__shenora` CDP-testing global); **`useShenoraOperations`/
   `createOperationsStore`** (0.2.0) — mirrors `Shenora.Ipc`'s operations cluster: `OperationStatuses`
-  (the wire values) + `OperationInfo`/`OperationLabel` types, and a `createShenoraStore` instance
-  (`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id }`, `actions: { cancel, clearFinished,
-  resume }`) with `running`/`finished` DERIVED getters computed from `byId` on every read — never a
-  second copy a reducer has to remember to keep in sync. `createOperationsStore(options)` takes an
+  (the wire values, including `paused`) + `OperationInfo`/`OperationLabel` types (`pauseReason`
+  mirrors the host's `PauseReason`), and a `createShenoraStore` instance
+  (`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id }`, `actions: { cancel, dismiss,
+  clearFinished, resume }`) with `running`/`paused`/`finished` DERIVED getters computed from `byId` on
+  every read — never a second copy a reducer has to remember to keep in sync (`finished`/`paused` stay
+  disjoint by construction: the TERMINAL status set `finished` filters on excludes `paused`/
+  `interrupted` on purpose, and `clearFinished`'s optimistic local prune uses that SAME set, pinned by
+  a test, so it cannot remove a `paused`/`interrupted` entry). `dismiss` mirrors `cancel`'s shape and
+  needs no optimistic prune, since the host's `Dismiss` publishes an ordinary terminal snapshot for the
+  entry over the wire. `createOperationsStore(options)` takes an
   optional renamed module (for an app that changed `OperationRegistryOptions.ModuleName` to avoid a
   collision) and an optional `scope`, threaded into the snapshot payload, the bus subscription AND
   the action envelopes so a scoped store stays internally consistent; `useShenoraOperations` is the
