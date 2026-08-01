@@ -1,8 +1,6 @@
 abstract class Shenora.Ipc.BaseFacade : Shenora.Ipc.IModuleFacade
   protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.IEventBus? events = null, Shenora.Ipc.IOperationRegistry? operations = null)
-  protected Shenora.Core.IEventBus? Events { get; }
   protected Shenora.Ipc.IModuleContext Context { get; }
-  protected Shenora.Ipc.IOperationRegistry? Operations { get; }
   protected Shenora.Ipc.OperationException UnknownType(Shenora.Ipc.IpcRequest request)
   protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   protected static System.Threading.Tasks.Task<object> Done()

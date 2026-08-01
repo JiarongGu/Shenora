@@ -17,6 +17,8 @@ namespace Shenora.Ipc;
 public abstract class BaseFacade : IModuleFacade
 {
     private readonly ILogger _logger;
+    private readonly IEventBus? _events;
+    private readonly IOperationRegistry? _operations;
     private IModuleContext? _context;
 
     /// <summary>
@@ -24,22 +26,20 @@ public abstract class BaseFacade : IModuleFacade
     /// operations registry are optional so a facade that never publishes / never starts tracked
     /// operations (and every unit test that constructs one bare) still works. A facade that DOES use
     /// one without it being supplied fails loudly at the call site — see <see cref="ModuleContext"/>.
+    /// Neither is exposed as protected surface: the sanctioned accessor for a route is
+    /// <see cref="Context"/> (<c>Publish</c>/<c>Start</c>/<c>Run</c>), and a subclass that captured
+    /// either dependency directly already holds it from its own constructor — so a protected property
+    /// here would be SemVer surface with no consumer scenario.
     /// </summary>
     protected BaseFacade(ILogger? logger = null, IEventBus? events = null, IOperationRegistry? operations = null)
     {
         _logger = logger ?? NullLogger.Instance;
-        Events = events;
-        Operations = operations;
+        _events = events;
+        _operations = operations;
     }
 
-    /// <summary>The bus this facade publishes on, if one was supplied.</summary>
-    protected IEventBus? Events { get; }
-
-    /// <summary>The registry this facade's routes start/run tracked operations through, if one was supplied.</summary>
-    protected IOperationRegistry? Operations { get; }
-
     /// <summary>Built lazily: ModuleName is an abstract property, so it is not readable from the ctor.</summary>
-    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, Events, Operations);
+    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, _events, _operations);
 
     /// <inheritdoc />
     public abstract string ModuleName { get; }

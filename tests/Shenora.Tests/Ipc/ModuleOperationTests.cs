@@ -137,4 +137,45 @@ public class ModuleOperationTests
         Assert.Equal(nameof(InvalidOperationException), info.Error.Parameters!["exceptionType"]);
         Assert.DoesNotContain("secret", IpcJson.Serialize(info));
     }
+
+    private sealed class NoRegistryFacade(IEventBus bus, bool useRun) : BaseFacade(null, bus)   // no registry supplied
+    {
+        public override string ModuleName => "WORK";
+
+        protected override Task<object?> RouteMessageAsync(
+            IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
+        {
+            if (useRun)
+                context.Run(new OperationOptions { Kind = "BUILD" }, (op, ct) => Task.CompletedTask);
+            else
+                context.Start(new OperationOptions { Kind = "BUILD" });
+            return Task.FromResult<object?>(null);
+        }
+    }
+
+    [Fact]
+    public async Task Start_without_a_registry_fails_loudly_and_names_the_fix()
+    {
+        // Same shape as ModuleContextTests.Publish_without_a_bus_fails_loudly_and_names_the_fix: the
+        // dispatch boundary still never throws (a facade-level composition mistake is not a wire
+        // fault), so assert on the mapped error shape — the fix-naming text itself is host-log-only,
+        // same as every other unexpected exception.
+        var response = await new NoRegistryFacade(new EventBus(), useRun: false)
+            .HandleMessageAsync(IpcRequests.Create("WORK", "BUILD"));
+
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.UnknownError, response.Error!.Code);
+        Assert.Equal(nameof(InvalidOperationException), response.Error.Parameters!["exceptionType"]);
+    }
+
+    [Fact]
+    public async Task Run_without_a_registry_fails_loudly_and_names_the_fix()
+    {
+        var response = await new NoRegistryFacade(new EventBus(), useRun: true)
+            .HandleMessageAsync(IpcRequests.Create("WORK", "BUILD"));
+
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.UnknownError, response.Error!.Code);
+        Assert.Equal(nameof(InvalidOperationException), response.Error.Parameters!["exceptionType"]);
+    }
 }
