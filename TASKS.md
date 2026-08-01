@@ -95,6 +95,41 @@ review remains open, below.
   <the same sibling>'s DropZoneOverlay". Four copies of one genuinely fiddly native component is the
   clearest possible argument for the kit existing; ADOPTION.md undersells it as one row in a table.
 
+### From the first adopter, second review of the communication core (2026-08-01)
+
+Re-reviewed after the Paused/Dismiss lifecycle completion. **Both findings from the first review are
+closed, and closed better than they were filed.** `Pause(reason, detail)` makes the reason REQUIRED
+("a pause with no reason gives the app nothing to branch its UI on") — that adopter's four reasons are
+the doc's own examples. `Dismiss` is a separate member rather than `Cancel` accepting more states, and
+signals the entry's token first so a paused body parked on it unwinds like a cancelled one. `Run` now
+completes only when still `Running`, so the spec's headline move (`op.Pause("dns"); return;`) is no
+longer stamped `Completed` — the comment calling that "a THIRD lie, introduced by the very feature meant
+to remove the other two" is the right instinct. The `RequestResume` asymmetry (Paused left in place, the
+app flips its own handle; Interrupted removed because no handle survived) is deliberate, documented, and
+carries `status` on the event so a handler can branch. `WireMirrorTests` derives from the host enum, so
+the new status and route could not be added unmirrored. Nothing there needs changing.
+
+One gap, in the client:
+
+- [ ] **A crash-announced `interrupted` operation appears in NONE of the client's selectors, so the
+  offer `RegisterInterrupted` exists to surface is invisible to a UI built on them.**
+  `makeState` exposes `running` / `paused` / `finished`. `TERMINAL_STATUSES` is
+  Completed/Failed/Cancelled and *deliberately* excludes `interrupted` (correctly — the comment says so).
+  `paused` matches only `'paused'`. So an `interrupted` entry is in no band: not running, not paused, not
+  finished. It is reachable only by hand-filtering `byId` — which the store's own docs discourage
+  ("`running`/`finished` are DERIVED getters … never a second copy a fold has to remember to keep in
+  sync"). The host models Paused and Interrupted as ONE waiting band (§5A.2), `Dismiss` and
+  `RequestResume` both accept exactly that band, and the client's `paused` getter even documents "the
+  WAITING band alongside `'interrupted'`" — so the concept is present on both sides; only the selector
+  for the other half is missing.
+  **Why it bites hardest at the worst moment:** a paused run is visible via `.paused` before a restart,
+  and after the app relaunches and re-announces it from its own checkpoint it becomes `interrupted` — and
+  vanishes from the UI. The one state that exists purely to say "your work did not finish, decide what to
+  do" is the one a straightforward UI silently drops, precisely when the owner most needs to see it.
+  Suggested: add an `interrupted` getter and a `waiting` one (paused + interrupted) — `waiting` being the
+  band the two lifecycle verbs already operate on, so a UI can render "needs you" as one bucket and stop
+  caring whether the process restarted in between.
+
 ### Standing (habits, not a queue)
 
 - [ ] Keep `docs/ARCHITECTURE.md` + `docs/README.md` inventory in sync as pieces land.
