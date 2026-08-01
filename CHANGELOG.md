@@ -44,10 +44,21 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   (`NotificationInterval`, `MaxQueuedNotifications`) and behavior are preserved.
 - **`OperationOptions.Resumable` / `OperationInfo.Resumable` (C#) and `resumable` (TS) are REMOVED**
   (generic-library audit finding 2, folded in before publish). The flag was consulted nowhere except
-  `RegisterInterrupted`'s own required-true gate — every caller had already forced it `true` to pass
+  `RegisterWaiting`'s own required-true gate — every caller had already forced it `true` to pass
   that gate, so it carried no information the method's existing non-empty-`ResumePayload` requirement
   didn't already express. **Migration:** drop the property from any `OperationOptions` initializer; a
-  client testing "is this resumable" already used (and should keep using) `status ∈ WAITING_STATUSES`.
+  client testing "is this resumable" already used (and should keep using) `status === OperationStatuses.Waiting`.
+- **The status collapse (owner direction, before publish — "structured like XHR"; see finding 7 under
+  `### Added` for the full rationale).** `OperationStatus.Paused`/`.Interrupted` → one value,
+  `OperationStatus.Waiting`; `OperationInfo.PauseReason` → `WaitReason`; `IOperation.Pause` →
+  `Wait(reason?, detail?)`; `IOperationRegistry.RegisterInterrupted` → `RegisterWaiting`;
+  `RequestPause` → `RequestWait`; `OperationEvents.PauseRequested`/`OPERATION_PAUSE_REQUESTED` →
+  `WaitRequested`/`OPERATION_WAIT_REQUESTED`; facade route `PAUSE` → `WAIT`; client
+  `OperationStatuses.Paused`/`.Interrupted` and the `paused`/`interrupted` getters REMOVED,
+  `Waiting: 'waiting'` added (`waiting` is now the whole band). **Migration:** rename every occurrence
+  1:1; a client testing "is this waiting" now reads `status === OperationStatuses.Waiting` instead of
+  unioning `paused`/`interrupted`; `RequestResume`'s drop-vs-keep now reads `resumePayload`, not
+  `status`, for any handler that branched on the removed values.
 
 ### Added
 
@@ -57,25 +68,25 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   progress emission — with NO queue, scheduler, retry, priority, phase model, `ProcessType`-style
   enum, i18n rendering, UI or persistence. What an operation IS stays the app's; the kit only tracks
   it. New in `Shenora.Ipc`: `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/
-  `Interrupted`/`Paused`), `OperationLabel` (`{Text?, Key?, Parameters?}` — the same i18n shape as
+  `Waiting`), `OperationLabel` (`{Text?, Key?, Parameters?}` — the same i18n shape as
   `IpcError`), `OperationProgress` (`{Value, Total?, Unit?}` — the app's own unit, not an assumed
   percent; see finding 6 below), `OperationOptions`, `OperationInfo` (the one snapshot type for every lifecycle
   transition — a client folds by `Id`, last-write-wins, no cross-type ordering hazard; carries
-  `PauseReason`, an app-defined string like `Kind`), `IOperation`
-  (`Report`/`Complete`/`Fail`×2/`Cancel`/`Pause`/`Resume`, all idempotent once terminal, with its OWN
+  `WaitReason`, an app-defined string like `Kind`), `IOperation`
+  (`Report`/`Complete`/`Fail`×2/`Cancel`/`Wait`/`Resume`, all idempotent once terminal, with its OWN
   `CancellationToken` — never the request's, because work handed off outlives the request that
   started it), `IOperationRegistry`/`OperationRegistry(+OperationRegistryOptions)`,
-  `OperationEvents` (`OPERATION_UPDATED`, `OPERATION_RESUME_REQUESTED`, `OPERATION_PAUSE_REQUESTED`,
+  `OperationEvents` (`OPERATION_UPDATED`, `OPERATION_RESUME_REQUESTED`, `OPERATION_WAIT_REQUESTED`,
   `OPERATION_REMOVED`), `OperationsFacade`
-  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`PAUSE` under module `OPERATIONS` by default —
+  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT` under module `OPERATIONS` by default —
   also exposed as the `ListType`/`CancelType`/`ClearFinishedType`/`ResumeType`/`DismissType`/
-  `PauseType` constants, pinned against the client by the wire-mirror test), and
+  `WaitType` constants, pinned against the client by the wire-mirror test), and
   `AddShenoraOperations(OperationRegistryOptions? options = null)` — opt-in DI wiring, so an app with
   no long-running work pays nothing; takes the options RECORD directly (not a configure callback) so
   a renamed `ModuleName` etc. can actually be set, matching every other options type in the kit.
   `GetAll(module?, scope?)` and `ClearFinished(module?, scope?)` share ONE scope rule with
   `IEventBus` — an unscoped operation matches any requested scope, not strict equality — and a
-  removal (`MaxHistory` eviction, `ClearFinished`, an `Interrupted` entry dropped by `RequestResume`)
+  removal (`MaxHistory` eviction, `ClearFinished`, a no-live-handle entry dropped by `RequestResume`)
   now publishes `OPERATION_REMOVED { operationIds }` so a client mirroring bounded host history
   actually hears about it (generic-library audit finding 4 — see below).
   Progress reports are throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms) with
@@ -87,7 +98,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   it — but the body's OWN end in `OperationCanceledException` (via `Run`, or a direct
   `IOperation.Cancel()` call by the operation's own owner) is always terminal regardless of
   `Cancellable`, because that is not the same permission question as an external by-id cancel
-  request. Also included: `RegisterInterrupted`/`RequestResume`, for announcing a crash-interrupted
+  request. Also included: `RegisterWaiting`/`RequestResume`, for announcing a crash-interrupted
   resumable operation from the app's own checkpoint (deduped on `(module, kind, resumePayload)` —
   requires only a non-empty `ResumePayload`; the separate `Resumable` flag this used to also require
   was removed, see the generic-library audit paragraph below).
@@ -95,58 +106,62 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   after being sketched-then-dropped pre-0.2.0 as unearned surface; see the audit paragraph below for
   why that ruling changed.
   **The lifecycle is completed to THREE BANDS (§5A of the design doc, amendment before merge):** the
-  first adopter found that an `Interrupted` offer could only be removed by resuming it — `Validate`
+  first adopter found that a crash-checkpoint offer could only be removed by resuming it — `Validate`
   hard-coded `Status == Running` for every caller, `ClearFinished` only ever walked `_finishedOrder`
-  (which `RegisterInterrupted` deliberately never wrote to), and `PruneHistory` skipped offers on
-  purpose — three individually-correct guards composing into a state with no exit at all, and that
-  adopter had already shipped exactly this bug and stranded a real deployment on it (paused on DNS
+  (which the checkpoint-registration path deliberately never wrote to), and `PruneHistory` skipped
+  offers on purpose — three individually-correct guards composing into a state with no exit at all, and
+  that adopter had already shipped exactly this bug and stranded a real deployment on it (paused on DNS
   records, permanently offering Resume, permanently undeletable). **The rule this fixes generalises:
   every non-terminal status must have a sanctioned exit to a terminal one** — enforced by
   `OperationLifecycleInvariantTests`, which enumerates the live `OperationStatus` enum (not a
   hardcoded list) and fails BY NAME if a future non-terminal addition has no registered exit.
   `Validate` is reworked so each transition states what it accepts, instead of one hard-coded
-  `Running` check: `Report`/`Pause` require `Running`; `Complete`/`Fail` accept `Running` OR `Paused`
-  (a paused operation can still fail on a deadline); the public by-id `Cancel(id)` accepts `Running` OR
-  `Paused`, keeping its `Cancellable` permission check; the owner-path terminal cancel accepts ANY
-  non-terminal status; `Resume`/`Dismiss` require the WAITING band (`Paused`/`Interrupted`). The
+  `Running` check: `Report`/`Wait` require `Running`; `Complete`/`Fail` accept `Running` OR `Waiting`
+  (a waiting operation can still fail on a deadline); the public by-id `Cancel(id)` accepts `Running` OR
+  `Waiting`, keeping its `Cancellable` permission check; the owner-path terminal cancel accepts ANY
+  non-terminal status; `Resume`/`Dismiss` require the WAITING band (`Waiting`). The
   "ignored" diagnostic is also now honest about terminal vs. non-terminal — it used to say "has
-  already reached a terminal state (Interrupted)" for ANY refused status, which was simply false for
-  `Interrupted` (explicitly not terminal).
-  New: `OperationStatus.Paused` — a run that stops mid-flight WITHOUT crashing (expired cloud
-  credentials, a throttling provider, DNS not yet propagated, a migration awaiting confirmation),
-  reached via `IOperation.Pause(string? reason = null, OperationLabel? detail = null)` (`Running` →
-  `Paused`) and exited via `IOperation.Resume()` (`Paused` → `Running`, clearing the reason) — both new
+  already reached a terminal state" for ANY refused status, which was simply false for a non-terminal
+  one.
+  New: `OperationStatus.Waiting` — a run that stops mid-flight WITHOUT crashing (expired cloud
+  credentials, a throttling provider, DNS not yet propagated, a migration awaiting confirmation, or an
+  app's own queue parking a just-started operation), reached via `IOperation.Wait(string? reason =
+  null, OperationLabel? detail = null)` (`Running` →
+  `Waiting`) and exited via `IOperation.Resume()` (`Waiting` → `Running`, clearing the reason) — both new
   members on `IOperation`. `reason` is an app-defined STRING, like `Kind`, never a kit enum, and
-  OPTIONAL (generic-library audit finding 5) — a consumer whose pause is self-evident (the user
+  OPTIONAL (generic-library audit finding 5) — a consumer whose wait is self-evident (the user
   clicked Pause) has nothing to name. `IOperationRegistry.Dismiss(string id)` declines a pending
-  `Paused`/`Interrupted` offer (`→ Cancelled`, terminal — enters bounded history, publishes an
+  `Waiting` offer (`→ Cancelled`, terminal — enters bounded history, publishes an
   ordinary `OPERATION_UPDATED` snapshot like any other terminal transition, unlike `ClearFinished`/
   `RequestResume` which remove an entry and instead publish `OPERATION_REMOVED`, see finding 4 below)
   — it REFUSES `Running` on purpose, because declining an offer and cancelling LIVE work are different
   acts, and this branch's only Critical came from exactly that conflation inside `Cancel`; `Dismiss` is
   a separate member rather than `Cancel` accepting more states for the same reason. It signals the
-  entry's own `CancellationToken` first when one exists, so a paused body still parked on its token
+  entry's own `CancellationToken` first when one exists, so a waiting body still parked on its token
   unwinds.
-  `RequestResume` now also accepts a `Paused` entry, and the two cases are handled asymmetrically ON
-  PURPOSE: a `Paused` entry is LEFT IN PLACE (the app calls `IOperation.Resume()` on its own handle
-  once it has actually resumed — the client asking is not the state changing), while an `Interrupted`
-  entry is still REMOVED (there is no live handle to flip — the body died with the process, and now
-  also publishes `OPERATION_REMOVED { operationIds: [id] }`). The `OPERATION_RESUME_REQUESTED` payload
-  now also carries `status`, so a handler can tell the two cases apart — it cannot look the entry up
-  afterward for the `Interrupted` case, because it is gone.
+  `RequestResume`'s drop-vs-keep decision keys on `ResumePayload`, not on a second status (there is
+  only one `Waiting` value — see finding 7 below), and the two cases are handled asymmetrically ON
+  PURPOSE: an entry with a null `ResumePayload` (an ordinary `Wait()`) is LEFT IN PLACE (the app calls
+  `IOperation.Resume()` on its own handle once it has actually resumed — the client asking is not the
+  state changing), while one with a non-null `ResumePayload` (a checkpoint, or one an app itself
+  attached at `Start()`) is still REMOVED (there is no live handle to flip — the body died with the
+  process, and now also publishes `OPERATION_REMOVED { operationIds: [id] }`). The
+  `OPERATION_RESUME_REQUESTED` payload also carries `status` (always `Waiting`), so a handler can keep
+  branching on that field, but `resumePayload` is what actually tells the two cases apart now — a
+  handler can no longer look the entry up afterward for the removed case, because it is gone.
   `GetAll` sorts by the three bands, not "Running vs. everything else": Active (oldest first) →
-  Waiting (`Paused`/`Interrupted`, oldest first) → Terminal (newest FINISHED first, tiebroken by
+  Waiting (oldest first) → Terminal (newest FINISHED first, tiebroken by
   newest `Sequence` — `TimeProvider.System`'s ~15.6 ms granularity on Windows means two same-tick
   finishes would otherwise fall back to dictionary enumeration order, which reshuffles on unrelated
   churn). `IModuleContext.Run`/`IOperationRegistry.Run` only implicitly `Complete` a body when it is
-  STILL `Running` once the work returns — a body that calls `op.Pause(reason)` and simply returns
-  ("pausing by returning") is left `Paused`, not silently stamped `Completed`; resuming it from there
+  STILL `Running` once the work returns — a body that calls `op.Wait(reason)` and simply returns
+  ("waiting by returning") is left `Waiting`, not silently stamped `Completed`; resuming it from there
   is the app's own job. `Dismiss` and the public by-id `Cancel(id)` now report exactly what the
   transition actually did rather than an assumed success, closing a narrow race where a concurrent
   `Resume()`/finish landing between the caller's own permission check and the terminal transition's
   own re-validation could otherwise answer a client `true` for a change that did not happen.
-  `OperationInfo.PauseReason` is cleared by `Resume()` but RETAINED through a terminal transition
-  reached directly from `Paused` (useful history — "failed while paused waiting on credentials").
+  `OperationInfo.WaitReason` is cleared by `Resume()` but RETAINED through a terminal transition
+  reached directly from `Waiting` (useful history — "failed while waiting on credentials").
 
   **Generic-library audit (2026-08-01, before publish — every change below is free since 0.2.0 was
   merged but never pushed or published):** the first release absorbed the shape of the ONE app it was
@@ -157,39 +172,37 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      did — it used to take/read nothing, so "clear completed" in one scoped window (a secondary
      window, a scoped container router) silently wiped every OTHER scope's finished history too.
   2. **`OperationOptions.Resumable`/`OperationInfo.Resumable` are REMOVED.** The flag was consulted
-     nowhere except `RegisterInterrupted`'s own required-true gate — every entry it ever produced had
-     already forced it `true` to pass that gate, making it a tautology. `RegisterInterrupted`'s
+     nowhere except `RegisterWaiting`'s own required-true gate — every entry it ever produced had
+     already forced it `true` to pass that gate, making it a tautology. `RegisterWaiting`'s
      existing non-empty-`ResumePayload` requirement already expresses "this is resumable" on its own.
-  3. **`IOperationRegistry.RequestPause(string id)` is added** — an exact mirror of `RequestResume` for
+  3. **`IOperationRegistry.RequestWait(string id)` is added** — an exact mirror of `RequestResume` for
      the direction the kit previously had no client route for at all. §5A.3 reasoned "pausing is the
      host's own knowledge" from one app's semantics (a host discovering its own blocker); that does not
      hold for the equally-common shape the kit itself already names as a consumer (a
-     download-manager-style activity panel) — a human clicking Pause on visible work. `RequestPause`
-     emits `OPERATION_PAUSE_REQUESTED { operationId, module, kind, scope }` and changes nothing itself
-     — the owner's own `IOperation.Pause` is what actually stops the work, same ASK/ACT split as
-     `RequestResume` vs. `Resume`. The facade gains a matching `PAUSE` route (`{ operationId }` →
+     download-manager-style activity panel) — a human clicking Pause on visible work. `RequestWait`
+     emits `OPERATION_WAIT_REQUESTED { operationId, module, kind, scope }` and changes nothing itself
+     — the owner's own `IOperation.Wait` is what actually stops the work, same ASK/ACT split as
+     `RequestResume` vs. `Resume`. The facade gains a matching `WAIT` route (`{ operationId }` →
      `{ requested }`).
-     **`IOperationRegistry.Find(id)` is reinstated** for the same reason: `RESUME`/`PAUSE` are both
+     **`IOperationRegistry.Find(id)` is reinstated** for the same reason: `RESUME`/`WAIT` are both
      client-request routes carrying only an id, and whoever handles them (hearing
-     `OPERATION_RESUME_REQUESTED`/`OPERATION_PAUSE_REQUESTED`) must translate that id back into a
-     handle to call `Resume`/`Pause` — a recurring shape every such consumer would otherwise re-solve
+     `OPERATION_RESUME_REQUESTED`/`OPERATION_WAIT_REQUESTED`) must translate that id back into a
+     handle to call `Resume`/`Wait` — a recurring shape every such consumer would otherwise re-solve
      with its own id→handle map. Safe to hold past the operation's life: every `IOperation` member
      re-validates current status before acting.
   4. **`OperationEvents.Removed` (`OPERATION_REMOVED`, payload `{ operationIds: string[] }`) is added**
      — emitted wherever an entry leaves the registry with no corresponding `OPERATION_UPDATED`:
-     `MaxHistory` eviction, `ClearFinished`, and the `Interrupted`-entry drop inside `RequestResume`.
+     `MaxHistory` eviction, `ClearFinished`, and the no-live-handle entry drop inside `RequestResume`.
      The host bounds its own history; the client — the side actually rendering — never heard about it,
      so a status bar that never unmounts accumulated every terminal operation for the whole session.
      This also retires the two hand-written optimistic local prunes `@shenora/react`'s `clearFinished`/
      `resume` actions used to carry (below) — one authoritative event that cannot diverge from the
      host, replacing two guesses that already produced this release's only Critical (a `resume` prune
-     that once dropped a `paused` row the host deliberately keeps).
-  5. **Minors:** `Pause`'s `reason` is optional (above); doc comments that illustrated the API with "a
-     paused deploy" now say "a paused operation" (D22 permits domain words as examples, but the cost is
-     the kit LOOKING like it ships that product); and two limits are recorded rather than solved —
-     `MaxHistory` is one global cap with no per-module/scope bounding seam, and "registered but not yet
-     started" has no representable status (an app with its own queue either omits pending rows or
-     registers them `Running` early and lies about the state).
+     that once dropped a live-`Wait()` row the host deliberately keeps).
+  5. **Minors:** `Wait`'s `reason` is optional (above); doc comments that illustrated the API with "a
+     paused deploy" now say "a waiting operation" (D22 permits domain words as examples, but the cost is
+     the kit LOOKING like it ships that product); and a limit is recorded rather than solved —
+     `MaxHistory` is one global cap with no per-module/scope bounding seam.
   6. **Progress is not percent (owner direction, before publish — "even its progress it might be
      different than 0-100%"), correcting finding 5's OWN fix above.** Stating "0–100 PERCENT" on the
      write side was the wrong fix to the right observation: percent is not the mechanism, it is one way
@@ -199,7 +212,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      `IOperation.Report(int? progress, …)` is now `Report(OperationProgress? progress, …)`. `Total`
      is the denominator when known and `null` when there is none (an absolute count with nothing to
      divide by — bytes off a chunked stream); `Unit` is app-defined and uninterpreted, exactly like
-     `Kind`/`PauseReason`. **`ClampProgress` (`Math.Clamp(value, 0, 100)`) is REMOVED and nothing
+     `Kind`/`WaitReason`. **`ClampProgress` (`Math.Clamp(value, 0, 100)`) is REMOVED and nothing
      replaces it** — the registry passes `Progress` through completely unchanged; silently rewriting an
      app's own reported number is worse than passing it through, and a `Value` above its own `Total` is
      the app's bug to see, not the kit's to hide. No validation throw was added either: progress is
@@ -212,17 +225,42 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      desktop sample and its web counterpart were updated to demonstrate the general shape
      (`new OperationProgress(step, steps, "steps")`, rendered as a ratio because `total` is set) instead
      of the percent special case. Caught before 0.2.0 was pushed or published, so free.
+  7. **The status collapse (owner direction, before publish — "I don't even think we need any specific
+     status than regular — think about this is going to be structured like XHR").** `Paused` and
+     `Interrupted` — introduced above as two states — collapse into ONE, `OperationStatus.Waiting`:
+     every transition already treated them as one band (`Dismiss`/`RequestResume` both accepted either,
+     neither was ever pruned, the client's `waiting` getter already unioned them), and the one place
+     they actually diverged (`RequestResume` dropping the crash-checkpoint case, keeping the live-`Wait()`
+     case) was always about whether the entry had a live handle, which `ResumePayload` already told the
+     registry on its own. Renamed throughout, mechanism not scenario (D22):
+     `OperationInfo.PauseReason` → `WaitReason`; `IOperation.Pause` → `Wait(reason?, detail?)`;
+     `IOperationRegistry.RegisterInterrupted` → `RegisterWaiting`; `RequestPause` → `RequestWait`;
+     `OperationEvents.PauseRequested`/`OPERATION_PAUSE_REQUESTED` → `WaitRequested`/
+     `OPERATION_WAIT_REQUESTED`; facade route `PAUSE` → `WAIT`; client `OperationStatuses.Paused`/
+     `.Interrupted` and the `paused`/`interrupted` getters → `Waiting: 'waiting'` (the existing
+     `waiting` getter is now the whole band; the two half-getters are DELETED, not deprecated).
+     `IOperation.Resume`/`RequestResume`, `Dismiss`, `OPERATION_RESUME_REQUESTED`, `RESUME`, `DISMISS`
+     keep their names — resuming and dismissing were already mechanism words. `RequestResume`'s
+     drop-vs-keep now reads `ResumePayload` directly instead of a second status (finding 4's asymmetry
+     paragraph above is updated in place to describe this). Also closes a known limit finding 5 above
+     recorded rather than solved: "registered but not yet started" is now representable with no kit
+     change — an app calls `Wait("queued")` on the handle immediately after `Start`, before real work
+     begins. Full rationale: `docs/DECISIONS.md` D23's amendment. Caught before 0.2.0 was pushed or
+     published, so free.
 - **`@shenora/react`: `useShenoraOperations` / `createOperationsStore`** — the client half of the
   primitive above, built the same way `createShenoraStore` already was: `OperationStatuses` (wire
-  values, including `Paused`) + `OperationInfo`/`OperationLabel` types (`OperationInfo.pauseReason`
-  mirrors the host's `PauseReason`), a `LIST` snapshot on first subscribe (so a progress strip that
-  mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with `running`/`paused`/
-  `interrupted`/`waiting`/`finished` DERIVED getters computed from `byId` on every read (`waiting` is
-  `paused` ∪ `interrupted`, derived from one internal status set — the exact band `Dismiss`/
-  `RequestResume` both accept — rather than a hand-listed pair repeated across getters; added because
-  an `interrupted` entry used to fall into NO getter: not `running`, not `paused` — matched only the
-  literal `'paused'` — not `finished`, reachable only by hand-filtering `byId`) and `cancel`/`dismiss`/
-  `pause`/`clearFinished`/`resume` actions. `pause` (generic-library audit finding 3) posts `PAUSE`
+  values, including `Waiting` — collapsed from the originally-shipped `Paused`/`Interrupted` pair, see
+  finding 7 above) + `OperationInfo`/`OperationLabel` types (`OperationInfo.waitReason`
+  mirrors the host's `WaitReason`), a `LIST` snapshot on first subscribe (so a progress strip that
+  mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with `running`/
+  `waiting`/`finished` DERIVED getters computed from `byId` on every read (`waiting` is now a
+  single-status filter, exactly like `running` — the originally-shipped `paused`/`interrupted`
+  half-getters and the internal status set that unioned them are DELETED, not deprecated, now that
+  the host carries only one waiting value; `interrupted` had been added because it used to fall into
+  NO getter at all: not `running`, not `paused` — matched only the literal `'paused'` — not `finished`,
+  reachable only by hand-filtering `byId`) and `cancel`/`dismiss`/
+  `wait`/`clearFinished`/`resume` actions. `wait` (generic-library audit finding 3; shipped at the
+  time as `pause`) posts `WAIT`
   (`{ operationId }`) and touches no local state, mirroring `dismiss`'s shape — asking is not acting.
   **`clearFinished`/`resume` no longer carry an optimistic local prune (generic-library audit finding
   4, folded into 0.2.0 before publish):** they used to guess at what the host had removed, because

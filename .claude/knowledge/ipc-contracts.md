@@ -273,30 +273,41 @@ transport, or building the P6 adoption shims.
   silently depended on whether it mounted before or after the work started.
 - **Every non-terminal state must have a sanctioned exit to a terminal one — this generalises past
   operations, and it is enforced by a test, not by reviewer attention** (§5A.1, the D23 amendment
-  before 0.2.0 merged). The bug that named the rule: an `Interrupted` offer could only be removed by
-  *resuming* it — `Validate` hard-coded `Status == Running` for every caller so `Cancel`/`Complete`/
-  `Fail` all refused it, `ClearFinished` only ever walked `_finishedOrder` (which `RegisterInterrupted`
-  deliberately never wrote to, since an offer is not finished history), and `PruneHistory` skipped
-  offers on purpose. **Three guards, each individually correct and each with a comment explaining
-  why — and together they left a state with no exit at all.** That is what makes this class of bug
-  dangerous: it is invisible in any single guard's diff, because each guard is reviewed (and passes
-  review) in isolation from the others it composes with. The same app that reviewed this branch had
-  already shipped the identical bug and stranded a real production deployment on it hours earlier
-  (paused waiting on DNS records it could not complete — permanently offering Resume, permanently
-  undeletable, because a paused run *is* the live state) — the kit's own review had flagged the gap as
-  a Minor and deferred it; the adopter's production incident was the sharper evidence.
-  The fix (`OperationStatus.Paused`, `IOperationRegistry.Dismiss`) is the specific instance; the
+  before 0.2.0 merged). The bug that named the rule: a crash-checkpoint offer (its own status,
+  `Interrupted`, at the time — since collapsed into `OperationStatus.Waiting`, see the amendment
+  below) could only be removed by *resuming* it — `Validate` hard-coded `Status == Running` for every
+  caller so `Cancel`/`Complete`/`Fail` all refused it, `ClearFinished` only ever walked
+  `_finishedOrder` (which the checkpoint-registration path deliberately never wrote to, since an offer
+  is not finished history), and `PruneHistory` skipped offers on purpose. **Three guards, each
+  individually correct and each with a comment explaining why — and together they left a state with no
+  exit at all.** That is what makes this class of bug dangerous: it is invisible in any single guard's
+  diff, because each guard is reviewed (and passes review) in isolation from the others it composes
+  with. The same app that reviewed this branch had already shipped the identical bug and stranded a
+  real production deployment on it hours earlier (paused waiting on DNS records it could not complete
+  — permanently offering Resume, permanently undeletable, because a waiting run *is* the live state) —
+  the kit's own review had flagged the gap as a Minor and deferred it; the adopter's production
+  incident was the sharper evidence.
+  The fix (`OperationStatus.Waiting`, `IOperationRegistry.Dismiss`) is the specific instance; the
   REUSABLE half is the test shape: `OperationLifecycleInvariantTests` enumerates the LIVE status enum
   via reflection (`Enum.GetValues<OperationStatus>()`), never a hardcoded list, so a future status is
   swept in automatically — and for each non-terminal value it looks up a registered `(reach, exit)`
   pair, asserting `ContainsKey` explicitly (by name) rather than only iterating the dictionary's own
   keys, which is what makes it fail LOUDLY when a new status has no exit registered, instead of
   silently checking nothing. Verified by sabotage (the standing rule for every tripwire here): making
-  `Dismiss` temporarily refuse `Interrupted` failed the test citing `OperationStatus.Interrupted` by
-  name before the fix was restored. Any future state machine in this codebase (a session lifecycle, a
+  `Dismiss` temporarily refuse the crash-checkpoint status failed the test citing it by name before the
+  fix was restored — re-verified the same way after the later status collapse (see below), citing
+  `OperationStatus.Waiting`. Any future state machine in this codebase (a session lifecycle, a
   connection state) should get the same shape: enumerate the enum, require a registered exit per
   non-terminal value, prove the exit actually lands on a terminal one through the real object — not a
   static claim about what "should" transition where.
+  **AMENDED (owner direction, before publish — "structured like XHR"): `Paused` and `Interrupted`
+  collapsed into the single `OperationStatus.Waiting` shown above.** Both were already one band
+  everywhere that mattered (`Dismiss`/`RequestResume` accepted either, neither was pruned, the
+  client's `waiting` getter already unioned them); the one place they diverged — `RequestResume`
+  dropping the checkpoint case, keeping the live-`Wait()` case — now keys on `ResumePayload` instead
+  of a second status. With one fewer non-terminal status, `OperationLifecycleInvariantTests`' sweep is
+  simpler, not weaker — it still enumerates the live enum rather than a hardcoded list. Full rename
+  table and rationale: `docs/DECISIONS.md` D23's amendment.
 
 ## Gotchas / traps
 
@@ -321,7 +332,7 @@ transport, or building the P6 adoption shims.
   bounded host history (`MaxHistory`) or a `ClearFinished`/`RequestResume` removal had NO wire event to
   fold — the ONLY reason `@shenora/react`'s `clearFinished`/`resume` actions used to carry a
   hand-written optimistic local prune apiece. `Removed` is emitted wherever an entry actually leaves
-  the registry (`MaxHistory` eviction inside `Finish`, `ClearFinished`, the `Interrupted`-drop inside
+  the registry (`MaxHistory` eviction inside `Finish`, `ClearFinished`, the no-live-handle drop inside
   `RequestResume`) and is scope-`null` (global) on purpose — a batch can span several scopes at once,
   and deleting an id a subscriber never had is a harmless no-op, so every store hears it regardless of
   its own scope filter. The client folds it by deleting exactly the named ids, unconditionally — no
@@ -335,11 +346,14 @@ transport, or building the P6 adoption shims.
   prune must mirror the HOST's own asymmetry exactly, never a uniform rule applied to both branches of
   one wire action** (found in review, lifecycle-completion batch, before `Removed` existed):
   `resume`'s local prune used to delete the id unconditionally, written back when `RequestResume`
-  always removed the entry host-side. §5A.4 then made that conditional — `Interrupted` is still
-  removed, `Paused` is deliberately LEFT IN PLACE for the app's own `Resume()` handle to flip — and the
-  client's prune did not get re-derived alongside it. The consequence rebuilt §5A.1's original bug ONE
-  LAYER UP: a user clicking Resume on a paused entry made the row vanish locally (nothing published
-  host-side, since nothing changed), so the still-parked operation became unreachable — no visible row
+  always removed the entry host-side. §5A.4 then made that conditional — the no-live-handle case is
+  still removed, an entry reached via a live `Wait()` is deliberately LEFT IN PLACE for the app's own
+  `Resume()` handle to flip (this asymmetry originally keyed on a second status, `Interrupted` vs.
+  `Paused`; it now keys on `ResumePayload` after the later status collapse — the client-side lesson
+  below holds either way) — and the client's prune did not get re-derived alongside it. The
+  consequence rebuilt §5A.1's original bug ONE LAYER UP: a user clicking Resume on a still-waiting
+  entry made the row vanish locally (nothing published host-side, since nothing changed), so the
+  still-parked operation became unreachable — no visible row
   to click Dismiss on — until every subscriber unmounted and a fresh `LIST` ran. This was the release's
   only Critical, and it is exactly the class of bug an authoritative removal event structurally
   prevents: a client-side guess about "what the host must have removed" can diverge from the host's own
@@ -350,16 +364,16 @@ transport, or building the P6 adoption shims.
   amendment to the host's asymmetry, not just this one.
 - **`Run`'s implicit terminal transition must check the CURRENT status, not assume it** — `Run`'s tail
   used to call `operation.Complete()` unconditionally once the awaited body returned, and `Complete`
-  itself legitimately accepts `Running` OR `Paused` (a paused operation can still complete once unblocked
-  — see the `Cancel`/`Complete`/`Fail` band table above). So a body doing the exact shape the design
-  itself advertises — `op.Pause(reason); return;` — got silently stamped `Completed` by the very
-  primitive whose job is not to lie about a paused-but-not-crashed run. Reproduced this way: `Task.Run`
+  itself legitimately accepts `Running` OR `Waiting` (a waiting operation can still complete once
+  unblocked — see the `Cancel`/`Complete`/`Fail` band table above). So a body doing the exact shape the
+  design itself advertises — `op.Wait(reason); return;` — got silently stamped `Completed` by the very
+  primitive whose job is not to lie about a waiting-but-not-crashed run. Reproduced this way: `Task.Run`
   dispatches to a thread-pool thread, but once that thread starts, an already-completed awaited `Task`
-  does not yield — the whole `Pause()` → `Complete()` sequence runs in one synchronous burst, so a
-  test polling for "first non-`Running` observation" can transiently see `Paused` and pass BY ACCIDENT
+  does not yield — the whole `Wait()` → `Complete()` sequence runs in one synchronous burst, so a
+  test polling for "first non-`Running` observation" can transiently see `Waiting` and pass BY ACCIDENT
   depending on scheduling luck (found live: the first version of this test passed, then failed
   reliably once it waited for the settled state instead of the first observation — see
-  `ModuleOperationTests.Run_does_not_complete_a_body_that_paused_and_returned`'s own comment). The
+  `ModuleOperationTests.Run_does_not_complete_a_body_that_waited_and_returned`'s own comment). The
   fix — peek the entry's live status and only call `Complete()` when it is still `Running` — is the
   general rule for any "finish implicitly unless something else already happened" tail: check, don't
   assume, especially when the thing that might have happened is itself a legitimate, newly-added
@@ -371,7 +385,7 @@ transport, or building the P6 adoption shims.
   must run outside any lock (its callbacks can re-enter the registry). Both callers used to return
   `true` unconditionally once THEIR OWN check passed, trusting that gap could never change the
   outcome — but a concurrent transition landing exactly in that gap (e.g. `Resume()` flipping a
-  `Paused` entry back to `Running` between `Dismiss`'s check and `Finish`'s re-check) makes `Finish`
+  `Waiting` entry back to `Running` between `Dismiss`'s check and `Finish`'s re-check) makes `Finish`
   correctly refuse while the caller still reports success to whoever asked. `Finish` (and its shared
   tail, `CancelTokenThenFinish`) now returns whether it actually transitioned, and both callers
   propagate that instead of assuming — verified by a many-real-threads race test in
@@ -386,12 +400,18 @@ transport, or building the P6 adoption shims.
   which reads complete against three statuses — but the host already had FIVE (`Interrupted` predates
   `Paused`), so `interrupted` fell into no getter at all: not `running`, not `paused` (matched only the
   literal string), not `finished` (`TERMINAL_STATUSES` deliberately excludes it). It was reachable only
-  by hand-filtering `byId`, exactly the workaround the store's own docs warn against. The fix
-  (`interrupted`, `waiting` = `paused` ∪ `interrupted`, both derived from one `WAITING_STATUSES` set —
-  the same one-definition discipline `TERMINAL_STATUSES` already used) is the specific instance; the
-  REUSABLE half is the same shape as the host's own `OperationLifecycleInvariantTests`: a test that
+  by hand-filtering `byId`, exactly the workaround the store's own docs warn against. The fix at the
+  time (`interrupted`, `waiting` = `paused` ∪ `interrupted`, both derived from one `WAITING_STATUSES`
+  set — the same one-definition discipline `TERMINAL_STATUSES` already used) is the specific instance;
+  the REUSABLE half is the same shape as the host's own `OperationLifecycleInvariantTests`: a test that
   enumerates the LIVE status object (`Object.values(OperationStatuses)`, never a hardcoded list) and
   asserts every value lands in exactly one getter-backed band, so a status added later with no band
   fails that test instead of silently belonging nowhere. A hand-maintained parallel status set (a
   second `paused`/`interrupted` list living inside a different getter) is precisely how this class of
   gap re-earns itself — define the set once, derive every getter that needs it from that one set.
+  **AMENDED (owner direction, before publish — the status collapse): `Paused` and `Interrupted`
+  folded into the single `OperationStatus.Waiting`, so `paused`/`interrupted` and `WAITING_STATUSES`
+  were DELETED rather than kept as aliases — `waiting` is now a single-status filter, exactly like
+  `running`, with no second internal set to derive it from.** The reusable half of this bullet is
+  unaffected — the same "enumerate the live status object" test still pins that every status lands in
+  exactly one band, now with one fewer non-terminal value to sweep.

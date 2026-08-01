@@ -360,3 +360,60 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   README documents the one-liner (`total ? (value / total) * 100 : undefined`) because that division
   is the consumer's own policy. Caught before 0.2.0 was pushed or published, so free. Full list:
   `CHANGELOG.md`'s 0.2.0 entry.
+
+  **AMENDED again 2026-08-01 (owner direction, before publish — "I don't even think we need any
+  specific status than regular — think about this is going to be structured like XHR"): `Paused` and
+  `Interrupted` collapse into ONE status, `Waiting`, closing the three-band model out with two bands'
+  worth of states instead of three.** XHR keeps a tiny closed lifecycle and puts the semantics in
+  fields, not in extra states; it has no "paused" because it does not own pausing — the same standard
+  this entry's own §5A.2 table already half-applied (three BANDS, not five states) without going the
+  last step. The evidence for going the last step was already sitting in this entry's own text, not
+  new: `Dismiss` accepted both `Paused` and `Interrupted`; `RequestResume` accepted both; NEITHER was
+  ever pruned by `PruneHistory`/`ClearFinished`; the client's `waiting` getter was already defined as
+  their UNION. The two statuses diverged in exactly one place — `RequestResume` dropping the
+  `Interrupted` entry (no live handle) while leaving `Paused` in place (a live handle to flip) — and
+  that difference was never actually ABOUT the status; it was about whether the entry had a live body,
+  which `OperationOptions.ResumePayload` already told the registry on its own (`RegisterInterrupted`
+  required it non-empty; an ordinary `Pause()` from `Running` normally has none). Recording it as a
+  second status was the D22 mistake in miniature — not a scenario name this time, but a scenario
+  ***count***: `Paused`/`Interrupted` read as two answers to "why is nothing progressing" (crashed vs.
+  not-crashed) when the mechanism only ever needed one, with the app's own reason string already
+  carrying the "why" (`"credentials"`/`"dns"`/`"queued"`/`"rate-limited"`, never a kit taxonomy). It
+  also closes a known limit this entry itself recorded: "registered but not yet started" was
+  unrepresentable (§6's own list) — now it is `Waiting("queued")`, since a just-`Start`ed operation can
+  immediately `Wait` on its own handle before real work begins, needing no kit change and no third
+  status.
+  **Renames (mechanism, not scenario, per D22 — every one earns its keep the same way `Operation`
+  already did over `Job`/`Task`/`Process`):** `OperationStatus.Paused`/`.Interrupted` → one value,
+  `OperationStatus.Waiting`; `OperationInfo.PauseReason` → `WaitReason`; `IOperation.Pause(reason,
+  detail?)` → `IOperation.Wait(string? reason = null, OperationLabel? detail = null)`;
+  `IOperationRegistry.RegisterInterrupted` → `RegisterWaiting` (still requires a non-empty
+  `ResumePayload`); `IOperationRegistry.RequestPause` → `RequestWait`; `OperationEvents.PauseRequested`
+  (`OPERATION_PAUSE_REQUESTED`) → `WaitRequested` (`OPERATION_WAIT_REQUESTED`); the `PAUSE` facade
+  route → `WAIT`; client `OperationStatuses.Paused`/`.Interrupted` and the `paused`/`interrupted`
+  half-getters → `Waiting: 'waiting'`, with the existing `waiting` getter now covering the WHOLE band
+  (the two half-getters are deleted, not deprecated — they named a distinction the wire no longer
+  carries). `IOperation.Resume`/`RequestResume`, `Dismiss`, `OPERATION_RESUME_REQUESTED`, `RESUME`,
+  `DISMISS` all keep their names: resuming and dismissing were already mechanism words, not scenario
+  words, so D22 has nothing to fix there.
+  **`RequestResume` now keys its drop-vs-keep decision on `ResumePayload`, not on status** — non-null
+  means the entry has no live handle (a reconstructed offer, whether from `RegisterWaiting`'s
+  checkpoint or one an app itself attached at `Start()`), so it is removed and the app starts fresh
+  work via `Start`/`Run`; null means an ordinary `Wait()`, left IN PLACE for the app's own `Resume()`
+  to flip. This is the intrinsic difference the two-status design was really encoding — a crash leaves
+  no live body — now expressed directly instead of through an extra enum value. The
+  `OPERATION_RESUME_REQUESTED` payload still carries `status` (always `Waiting` now) so a handler can
+  keep branching on the field without a breaking shape change, even though it can no longer
+  distinguish the two cases by itself — `resumePayload`'s presence is what does that now.
+  **What stays newly ambiguous, on purpose, and is recorded rather than solved:** an app that attaches
+  its own `ResumePayload` to `OperationOptions` at `Start()` time (not through `RegisterWaiting` at
+  all) and then calls `Wait()` on the live handle gets dropped by `RequestResume` exactly like a
+  crash-checkpoint offer would, because the decision reads the field, not the call site that produced
+  it. No consumer has done this; recording it here is the same discipline as every other known limit
+  in this file — evidence for a future seam if one ever needs it, not a guess in its absence.
+  **Enforcement, unchanged in spirit, simpler in fact:** `OperationLifecycleInvariantTests` (host) and
+  its client-side mirror still enumerate the LIVE status set via reflection and require a registered
+  exit per non-terminal value — with one fewer status to enumerate, the sweep is simpler, not weaker,
+  and still fails BY NAME the moment a future status is added with no exit.
+  Caught before 0.2.0 was pushed or published, so free — same standing as every other amendment in
+  this entry. Full list: `CHANGELOG.md`'s 0.2.0 entry.

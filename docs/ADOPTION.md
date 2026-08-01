@@ -194,7 +194,7 @@ until the page is listening.
   long case. `context.Start` is the lower-level primitive if your lifecycle doesn't fit one
   background body (a start outside the block, several failure branches, a resumable session).
   Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
-  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`PAUSE`
+  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`
   under module `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
   no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
@@ -204,16 +204,20 @@ until the page is listening.
   means — its phases, whether it queues, what a viewer looks like — stays yours; the kit tracks only
   id/status/progress/cancel.
   The lifecycle also covers a run that stops mid-flight WITHOUT crashing — expired credentials, a
-  throttling provider, DNS not yet propagated: `op.Pause("dns", …)` (`Running` → `Paused`, an
-  OPTIONAL app-defined reason string, like `Kind` — omit it when the pause is self-evident, e.g. the
-  user clicked Pause) and `op.Resume()` (`Paused` → `Running`) on the SAME handle `Start`/`Run` gave
-  you, plus `IOperationRegistry.Dismiss(id)` for the human declining a paused or crash-interrupted
-  offer outright (→ `Cancelled`, terminal). A client can also ASK the host to pause running work —
-  `IOperationRegistry.RequestPause(id)` / the `PAUSE` route — for the download-manager/activity-panel
-  shape (the user clicking Pause on visible work); it only emits `OPERATION_PAUSE_REQUESTED` and
+  throttling provider, DNS not yet propagated, or an app's own queue parking a just-started operation
+  (`op.Wait("queued")`, no kit change needed): `op.Wait("dns", …)` (`Running` → `Waiting`, an
+  OPTIONAL app-defined reason string, like `Kind` — omit it when the wait is self-evident, e.g. the
+  user clicked Pause) and `op.Resume()` (`Waiting` → `Running`) on the SAME handle `Start`/`Run` gave
+  you, plus `IOperationRegistry.Dismiss(id)` for the human declining a waiting or crash-interrupted
+  offer outright (→ `Cancelled`, terminal). A client can also ASK the host to wait running work —
+  `IOperationRegistry.RequestWait(id)` / the `WAIT` route — for the download-manager/activity-panel
+  shape (the user clicking Pause on visible work); it only emits `OPERATION_WAIT_REQUESTED` and
   changes nothing itself, the same ASK/ACT split `RESUME`/`Resume()` already draw. `Find(id)` resolves
-  a live handle back from a bare id — the shape every `RESUME`/`PAUSE` handler needs to turn the id it
-  was given back into something it can call `Resume`/`Pause` on. See
+  a live handle back from a bare id — the shape every `RESUME`/`WAIT` handler needs to turn the id it
+  was given back into something it can call `Resume`/`Wait` on.
+  `OperationStatus` carries only ONE waiting value (`Waiting`) — a live `op.Wait()` and a
+  `RegisterWaiting`-registered crash checkpoint both land there, told apart by whether
+  `ResumePayload` is set (non-null = no live handle), not by a second status. See
   `docs/2026-08-01-shenora-communication-core-design.md` §5A for the full shape.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.

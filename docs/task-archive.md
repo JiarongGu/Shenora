@@ -1262,6 +1262,20 @@ Implemented over 11 tasks in 3 staged stages (contract → operations → channe
 removed per its own "delete once the work lands" lifecycle (`docs/README.md`'s doc inventory) — this
 entry is its durable replacement. Ships as **0.2.0**, the first deliberate break since v0.1.0.
 
+**AMENDED again (owner direction, before publish — "I don't even think we need any specific status
+than regular — think about this is going to be structured like XHR"): `OperationStatus.Paused` and
+`.Interrupted`, introduced below as two statuses, later collapsed into ONE, `Waiting`.** Every
+transition already treated them as one band (`Dismiss`/`RequestResume` accepted either, neither was
+ever pruned, the client's `waiting` getter already unioned them); `RequestResume`'s drop-vs-keep now
+keys on `ResumePayload` instead of a second status. Renamed throughout (mechanism, not scenario, D22):
+`PauseReason`→`WaitReason`, `IOperation.Pause`→`Wait`, `RegisterInterrupted`→`RegisterWaiting`,
+`RequestPause`→`RequestWait`, `PauseRequested`/`OPERATION_PAUSE_REQUESTED`→`WaitRequested`/
+`OPERATION_WAIT_REQUESTED`, facade route `PAUSE`→`WAIT`, client `paused`/`interrupted`
+getters DELETED (`waiting` is now the whole band). The bullets below describe the branch as it shipped
+AT THE TIME (`Paused`/`Interrupted` as two statuses) and are kept that way as the historical record;
+the CURRENT shape, full rationale, and the complete rename table live in `docs/DECISIONS.md` D23's
+amendment and `CHANGELOG.md`'s 0.2.0 entry. Caught before 0.2.0 was pushed or published, so free.
+
 - [x] **The module contract carries the REQUEST path but not the EVENT path.** Closed by
   `IModuleContext` (`Module`, `Logger`, `Publish`, `Start`, `Run`) as the second parameter of
   `BaseFacade.RouteMessageAsync` — the one breaking change (`016bb9c`). `Publish` needs no registry

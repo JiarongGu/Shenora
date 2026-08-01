@@ -76,14 +76,12 @@ way as the example above — no per-feature event wiring needed:
 import { useShenoraOperations } from '@shenora/react';
 
 const running = useShenoraOperations((s) => s.running);         // every in-flight operation
-const waiting = useShenoraOperations((s) => s.waiting);          // paused + interrupted — "needs you", one bucket
-const paused = useShenoraOperations((s) => s.paused);            // stopped mid-flight, awaiting a decision
-const interrupted = useShenoraOperations((s) => s.interrupted);  // crash-announced, pending resume offer
+const waiting = useShenoraOperations((s) => s.waiting);          // stopped, awaiting a decision — "needs you", one bucket
 const importJob = useShenoraOperations((s) => s.byId[jobId]);   // one, by id
 
 useShenoraOperations.actions.cancel(jobId);       // only does anything if the op opted into Cancellable
-useShenoraOperations.actions.dismiss(jobId);      // decline a paused/interrupted offer — refuses a running one
-useShenoraOperations.actions.pause(jobId);        // ASK the host to pause running work — refuses anything not running
+useShenoraOperations.actions.dismiss(jobId);      // decline a waiting offer — refuses a running one
+useShenoraOperations.actions.wait(jobId);         // ASK the host to wait running work — refuses anything not running
 useShenoraOperations.actions.clearFinished();
 ```
 
@@ -103,26 +101,25 @@ That division is your own policy, not the kit's, which is why it lives here inst
 
 It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
 folds `OPERATION_UPDATED` by id — one subscription however many components read it. The client
-mirrors the host's three bands (design §5A.2), not five bare statuses: `running` (Active),
-`paused`/`interrupted`/`waiting` (Waiting — `waiting` is `paused` ∪ `interrupted`, exactly what the
-host's `Dismiss`/`RequestResume` both accept), and `finished` (Terminal). All five are derived from
-`byId` on every read, never a second copy to keep in sync — `waiting` itself is derived from one
-internal status set, not a hand-listed pair repeated across getters. Keep `paused` and `interrupted`
-apart when your UI needs to (a resume prompt reads differently from a pause-reason display); read
-`waiting` when you just want the one "needs attention" bucket for a status bar. Filtering by your own
-`module`/`kind` is a plain `Array.filter` over any of them. A `paused` operation carries `pauseReason`
-— an app-defined string, like `kind`, OPTIONAL on the host side — for your UI to branch on. An
-`interrupted` entry is a pending RESUME **offer** re-registered from the app's own crash checkpoint:
-the host never prunes it on its own — it stays offered until your UI calls `resume` or `dismiss`.
-`resume`/`dismiss`/`pause` are all fire-and-forget client requests — the host's own
-`IOperation.Pause`/`Resume` (called by whoever owns the operation, hearing
-`OPERATION_PAUSE_REQUESTED`/`OPERATION_RESUME_REQUESTED`) is what actually changes the state; asking
-is not acting. `clearFinished`/`resume`/`pause` do not touch local state themselves at all: the host's
+mirrors the host's three bands (design §5A.2): `running` (Active), `waiting` (Waiting), and `finished`
+(Terminal). All three are derived from `byId` on every read, never a second copy to keep in sync —
+`waiting` is a single-status filter, exactly like `running`. `OperationStatus` carries only ONE waiting
+value: an app calling `wait()` on a live operation and the host announcing a crash-interrupted
+checkpoint both land in `waiting`, told apart (if your UI needs to — a resume prompt reads differently
+from a wait-reason display) by whether `resumePayload` is set, not by a second status. Filtering by
+your own `module`/`kind` is a plain `Array.filter` over any of them. A `waiting` operation carries
+`waitReason` — an app-defined string, like `kind`, OPTIONAL on the host side — for your UI to branch on.
+An entry with a `resumePayload` is a pending RESUME **offer** re-registered from the app's own crash
+checkpoint: the host never prunes it on its own — it stays offered until your UI calls `resume` or
+`dismiss`. `resume`/`dismiss`/`wait` are all fire-and-forget client requests — the host's own
+`IOperation.Wait`/`Resume` (called by whoever owns the operation, hearing
+`OPERATION_WAIT_REQUESTED`/`OPERATION_RESUME_REQUESTED`) is what actually changes the state; asking
+is not acting. `clearFinished`/`resume`/`wait` do not touch local state themselves at all: the host's
 `OPERATION_REMOVED { operationIds }` is the ONE authoritative removal signal the store folds, deleting
 exactly the named ids — `MaxHistory` eviction, `clearFinished`, and a dropped crash-resume offer all
 publish it, so a long-lived store's mirror of bounded host history cannot drift from what the host
 actually did (this replaced two hand-written optimistic local prunes that a past release carried —
-one of which was this project's only Critical, a `resume` prune that dropped a still-paused row).
+one of which was this project's only Critical, a `resume` prune that dropped a still-waiting row).
 `dismiss` never needed one, since the host's `Dismiss` publishes an ordinary terminal snapshot over
 the wire, the same as a real cancel. Use `createOperationsStore({ module, scope })` instead of the
 default export if your host renamed `OperationRegistryOptions.ModuleName` or
