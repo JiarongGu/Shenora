@@ -104,9 +104,13 @@ export class WindowCommands extends BaseModuleService<WindowRequests> {
 
 /**
  * The max/restore-glyph resync pattern from the source app: the authoritative maximize state,
- * re-queried on every window resize (a maximize/restore always resizes the window, and the DOM
- * has no other signal for the manual work-area maximize). Failures (plain browser, no host)
- * leave it false.
+ * re-queried when a resize SETTLES (a maximize/restore always resizes the window, and the DOM has no
+ * other signal for the manual work-area maximize). Failures (plain browser, no host) leave it false.
+ *
+ * Read once immediately, then on the TRAILING edge of a 100 ms debounce — not once per `resize`
+ * event, which a window drag fires ~180 times in three seconds. Coalescing is the correct semantics
+ * here, not just the cheap one: maximize/restore is a single step, so only the end state matters. Do
+ * not build on intermediate values during a drag; there are none.
  */
 export function useWindowMaximized(commands?: WindowCommands): boolean {
   const [maximized, setMaximized] = useState(false);

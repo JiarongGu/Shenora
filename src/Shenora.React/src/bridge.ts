@@ -245,7 +245,10 @@ export class ShenoraBridge {
    * otherwise is. Nothing is queued and no timer is set, so there is nothing to leak and no deadline.
    *
    * No transport (a plain browser tab) is a silent no-op, matching the fire-and-forget contract —
-   * unlike `invoke`, there is no caller waiting to be told.
+   * unlike `invoke`, there is no caller waiting to be told. **A DISPOSED bridge is the same silent
+   * no-op**, and that one can surprise: `invoke` on a disposed bridge rejects with `NO_TRANSPORT`
+   * while `post` just returns the id, so a stale reference kept across a `configureBridge` swap looks
+   * like it is still sending. `isAvailable` is the check.
    */
   post<TPayload = unknown>(module: string, type: string, options: PostOptions<TPayload> = {}): string {
     const request: IpcRequest<TPayload> = {
