@@ -359,6 +359,22 @@ event hub … async from the UI, progress synced") while the HOST contract did n
 
 ### Changed
 
+- **`dev.mjs verify`/`doctor` gained `doc-drift` — the gate the prose never had** (0.2.0 design pass,
+  D4). Every code invariant in this repo has a test; no doc claim had anything, and the review that
+  prompted this pass found 8 of its ~13 findings in comments and docs. Two PRECISE checks rather than
+  one fuzzy sweep, because docs are full of BCL names, TS symbols and deliberately-historical
+  references and a matcher that cries wolf gets switched off: **(1)** the dependency graph drawn in
+  `README.md`/`docs/ADOPTION.md` is compared against the actual `ProjectReference`s — the check that
+  would have caught both files documenting a `Shenora.WinForms → Shenora.Ipc` edge that has never
+  existed; **(2)** names listed in `devtools/retired-names.txt` may not be stated as a CURRENT fact.
+  Since this repo's docs are amendment stacks, (2) allows a retired name in the PAST tense (it looks
+  for "used to / former / renamed / removed / superseded / …" around the mention) and takes an
+  explicit `doc-drift:history` marker for a preserved design sketch or rename table.
+  It found real drift on its first run: `webview2-hosting.md` still said `LoginWindow.ClearProfile`
+  and `CoBrowseSession.StartAsync`, `generic-library.md` still cited `LoginWindow` as a current
+  in-repo example, and `REVIEW-GUIDE.md` still told reviewers `CookieLoginFlow` "keeps its scenario
+  name deliberately as the one reference driver" — which P7 reversed when it moved that driver out of
+  the kit. All corrected. Both checks are sabotage-verified.
 - **Frameless chrome stays a FIXED WinForms type, and the caption-button DRAWING moved out of
   `OptimizedForm` into an internal `CaptionButtonRenderer`** (0.2.0 design pass, D24). The review
   flagged `OptimizedForm` as the kit's one inheritance-only feature and proposed making the chrome

@@ -51,6 +51,13 @@ belongs in `CreateParams` at handle creation, and attaching it later needs `SetW
 wrong answer. What DID change: the pure input-to-pixels half moved to an internal
 `CaptionButtonRenderer`, with direct tests it could never have had inside the form.
 
+**D4 (gate the prose) is DONE** — `devtools/scripts/doc-drift.mjs`, run by `verify` and `doctor`. Two
+PRECISE checks rather than a fuzzy symbol sweep: the dependency graph drawn in `README.md`/
+`ADOPTION.md` against the real `ProjectReference`s, and names in `devtools/retired-names.txt` stated
+as a CURRENT fact (past tense is fine — these docs are amendment stacks — and `doc-drift:history`
+marks a preserved sketch). It found real drift on its first run; see `CHANGELOG.md` 0.2.0
+`### Changed`. **Add a name to `devtools/retired-names.txt` the moment you delete or rename one.**
+
 - [ ] **D3 — validate D16 with a real second transport before 1.0 freezes the shapes.**
   `NotificationPump` was extracted "so a second, non-WinForms base inherits these fixes" and no second
   base exists; `ShenoraTransport` is pluggable with one transport; `IUiDispatcher` has one
@@ -59,12 +66,6 @@ wrong answer. What DID change: the pure input-to-pixels half moved to an interna
   mobile adoption breaks `IFileDialogs` — a 1.0 break the kit says it will not take. This is a SPIKE
   (throwaway, not shipped surface): stand a headless host base + a non-WebView2 transport over the
   existing envelopes and see what the seams demand.
-- [ ] **D4 — gate the prose.** 8 of the review's ~13 findings were stale or self-contradicting
-  comments/docs. Every code invariant here has a test; no prose claim has anything, and the kit's
-  whole "read the why, don't relitigate" discipline depends on the prose being true. Cheapest real
-  gate: the API baselines already enumerate every public member, so a `doctor` check can flag
-  doc/comment references to kit symbols that no longer exist. Needs an allowlist — historical names
-  (`LoginWindow`, `CoBrowseSession`, `RegisterInterrupted`) are cited on purpose.
 
 ### From the first adopter, IPC + drop-zone design review (2026-08-01)
 

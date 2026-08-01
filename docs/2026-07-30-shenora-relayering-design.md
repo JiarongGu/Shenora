@@ -235,6 +235,10 @@ not done.
 
 ### 5.4 Per-site policy table — the three sites that KEEP their own behaviour
 
+<!-- doc-drift:history — a 2026-07-30 design table, kept verbatim. Type names below predate the D22
+     renames (CoBrowseSession is now StreamingSession, LoginWindow is now InteractiveSession); the
+     as-built surface is docs/ARCHITECTURE.md. -->
+
 H4.2 replaces the *mechanism* everywhere but must preserve these decisions, each earned in a
 previous review. Each reads `State`/`IsOnUiThread` and applies its own policy on `false`:
 

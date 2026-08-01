@@ -186,12 +186,13 @@ about half the real call sites.
 
 ### 4.2 The types (`Shenora.Ipc`)
 
-**Sketch below is historical (pre-lifecycle-completion, pre-collapse) — kept as originally written,
-like the `int? Progress`/`Resumable` sketch a few lines down that the prose after it also corrects.
-The CURRENT shape (§5A.2's completed lifecycle, later collapsed to one `Waiting` status by the
-amendment at the top of this doc) has `OperationStatus { Running, Completed, Failed, Cancelled,
-Waiting }`, `IOperationRegistry.RegisterWaiting`/`RequestWait`, and no `Interrupted` value at all —
-see `docs/ARCHITECTURE.md` for the as-built surface.**
+<!-- doc-drift:history — everything to the next heading is the ORIGINAL sketch, kept verbatim. -->
+**Sketch below is historical (pre-lifecycle-completion, pre-collapse, pre-design-pass) — kept as
+originally written, like the `int? Progress` sketch a few lines down that the prose after it also
+corrects. The CURRENT shape is `OperationStatus { Running, Completed, Failed, Cancelled, Waiting }`
+with `RequestWait`/`RequestResume` as a symmetric ASK pair and no crash-checkpoint entry point at all
+(the 0.2.0 design pass cut it — see the amendment at the top of this doc) — see
+`docs/ARCHITECTURE.md` for the as-built surface.**
 
 ```csharp
 public enum OperationStatus { Running, Completed, Failed, Cancelled, Interrupted }

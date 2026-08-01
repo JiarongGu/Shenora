@@ -11,9 +11,10 @@ reuse this toolkit on another repo). The library version is parsed there from
 |---|---|
 | `build` | `dotnet build` the solution + `npm run build` in the react package |
 | `test [dotnet\|npm]` | `dotnet test` + vitest (or one side) |
-| `verify` | **the "am I done?" gate**: build · test · `check-sensitive --tree` · `knowledge check`, stop at first red |
+| `verify` | **the "am I done?" gate**: build · test · `check-sensitive --tree` · `knowledge check` · `doc-drift`, stop at first red |
 | `pack` | doctor-fix, then nupkgs + npm tarball → `publish/packages/` (lockstep `-p:Version`, sha256 printed) |
-| `doctor [--fix]` | version-drift check: npm `package.json` + README `## Status` headline vs `VersionPrefix` |
+| `doctor [--fix]` | version drift (npm `package.json` + README `## Status` headline vs `VersionPrefix`) **and doc drift** — `--fix` only applies to the version half; every doc-drift finding is a sentence a human has to rewrite |
+| — `doc-drift` (run by `doctor`/`verify`; `scripts/doc-drift.mjs --list` to inspect) | **the gate the prose never had.** Every code invariant here has a test and no doc claim had anything; a whole-codebase review found 8 of its ~13 findings in comments and docs. Two PRECISE checks, deliberately not a fuzzy symbol sweep (which would drown the signal and get switched off): (1) the dependency graph drawn in `README.md`/`ADOPTION.md` vs the actual `ProjectReference`s — both files documented a `WinForms → Ipc` edge that has never existed; (2) names in `devtools/retired-names.txt` stated as CURRENT fact. Amendment stacks are the norm here, so a retired name is fine in the PAST tense — add `doc-drift:history` to mark a preserved sketch or rename table. **Add a name to `retired-names.txt` the moment you delete or rename one.** |
 | `sample [--dev]` | run the sample desktop app (Phase 2+); `--dev` = vite URL + CDP port → `.cdp-port` |
 | `vite` | the sample web dev server (Phase 2+) |
 | `shot [name]` | PrintWindow capture of the sample window → `screenshots/` (auto-pruned, see below) |

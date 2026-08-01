@@ -53,7 +53,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 - **Cache an environment per PROFILE, scoped to the owner that opened it — never process-globally**
   (`SessionEnvironmentCache`, held by `RenderSessionPool`). Two forces meet here and only owner
   scoping satisfies both: a live environment keeps its profile's browser process AND the folder's OS
-  lock alive, so a process-lifetime cache makes `LoginWindow.ClearProfile` (what makes a logout a
+  lock alive, so a process-lifetime cache makes `InteractiveSession.ClearProfile` (what makes a logout a
   REAL logout) fail every time instead of only while a window is open; and thread affinity above
   means a global cache would need a thread key plus a lock, while an owner marshals to one anchor and
   is single-threaded by construction. Cache the IN-FLIGHT task, not just the result — `WaitAsync`
@@ -163,7 +163,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   (`RenderSessionPool.WireNavigationPolicy` records the host the guard approved and cancels an
   unvetted CROSS-HOST hop, which closes `302 → 127.0.0.1`); and full redirect/subresource policy is
   `SessionBrowserOptions.RequestFilter`, already synchronous and wired with `WebResourceContext.All`.
-  Do not "fix" this back into an awaited guard. Not applied to `LoginWindow`: interactive OAuth
+  Do not "fix" this back into an awaited guard. Not applied to `InteractiveSession`: interactive OAuth
   legitimately redirects across hosts.
 - **Guard init with a timeout** (`WebViewHostOptions.InitTimeout`, 25 s family default): an
   orphaned user-data-folder lock (zombie browser process) hangs `EnsureCoreWebView2Async`
@@ -173,7 +173,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   start cancelled during the expensive part still publishes a live off-screen window and a browser
   process holding the profile lock — with no owner left to dispose either, because the caller got a
   cancellation instead of a handle. Re-check and tear down (`RenderSessionPool.CreateInstanceAsync`,
-  `CoBrowseSession.StartAsync`), reusing the failure path's cleanup so the two can't drift. And pass
+  `StreamingSession.StartAsync`), reusing the failure path's cleanup so the two can't drift. And pass
   the LINKED token (caller + owner-dispose) into creation, not the caller's alone.
 - **A health probe must FAIL CLOSED.** `ResetToBlankAsync` swallowed its own timeout and returned
   `true` unconditionally, which made the documented "a failed reset DISCARDS the instance" rule

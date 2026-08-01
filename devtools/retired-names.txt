@@ -1,0 +1,44 @@
+# Public names this kit has REMOVED or RENAMED.
+#
+# `devtools/scripts/doc-drift.mjs` fails the build if any of these is stated as a CURRENT fact in a
+# doc, a comment or a JSDoc block. Naming one while explaining why it went is correct and expected —
+# this repo's docs are amendment stacks — so the rule is only that it must be spoken about in the
+# PAST TENSE (used to / former / renamed / removed / no longer / until / was / superseded / cut).
+#
+# That is the exact line a whole-codebase review had to walk by hand in 2026-08-01: five shipped
+# XML/JSDoc sites and three docs still described `RequestResume` keying on `ResumePayload` as
+# current, months of amendment prose around them was correct history, and nothing could tell the two
+# apart. This file is what tells them apart now.
+#
+# ADD A NAME HERE THE MOMENT YOU DELETE OR RENAME ONE. The cost of forgetting is a doc that quietly
+# describes a kit that no longer exists — which is not hypothetical, it is what this gate was built
+# after finding. CHANGELOG.md, docs/task-archive.md and docs/FIX-LOG.md are exempt by construction:
+# they are history by definition.
+#
+# Format: one name per line, `#` starts a comment.
+
+# --- 0.2.0 design pass, D1: the crash-checkpoint half of the operations cluster -------------------
+RegisterWaiting          # announced a crash-interrupted operation the kit never started
+ResumePayload            # the opaque app checkpoint token that rode with it
+resumePayload            # its TS mirror on OperationInfo
+Reconstructed            # Entry.Reconstructed — the provenance flag that decided drop-vs-keep
+
+# --- 0.2.0, before publish: earlier shapes of the same cluster ------------------------------------
+RegisterInterrupted      # renamed to RegisterWaiting, then removed entirely
+RequestPause             # renamed to RequestWait
+PauseReason              # renamed to WaitReason
+Resumable                # a required-true tautology on OperationOptions/OperationInfo
+ClampProgress            # silently rewrote an app's own reported number
+
+# --- P5.5 H9.7 / H9.8, D22: scenario names replaced by mechanism names ----------------------------
+LoginWindow              # -> InteractiveSession
+CoBrowseSession          # -> StreamingSession
+LoginCookie              # -> SessionCookie
+CookieLoginFlow          # the reference driver; moved out of the kit to the sample in P7
+DispatchInputAsync       # -> StreamingSession.DispatchAsync(SessionInput)
+
+# --- P5.5 H4.5 / H6: helpers that were removed rather than renamed --------------------------------
+TrackMappedModule        # -> IModuleRegistry.TryClaimModule(facade)
+ScalePixels              # DpiHelper helpers with zero callers and a primary-monitor default
+ScaleSize
+ScalePoint

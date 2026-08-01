@@ -318,6 +318,12 @@ switch (cmd) {
       }],
       ['check-sensitive --tree', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), '--tree'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['knowledge check', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'check'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // The gate the PROSE never had (0.2.0 design pass, D4). Every code invariant here has a test;
+      // no doc claim had anything, and a whole-codebase review found 8 of its ~13 findings in
+      // comments and docs — including a dependency graph both READMEs drew with an edge that has
+      // never existed. Two precise checks only (graph vs csproj, retired names stated as current),
+      // because a fuzzy "does this symbol exist" sweep would drown the signal and get switched off.
+      ['doc-drift', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-drift.mjs')], { stdio: 'inherit', cwd: repo }).status === 0],
       // doctor LAST and non-fixing: verify must FAIL on version/README drift rather than leave it to
       // `pack` (which runs doctor --fix, so verify was scanning pre-sync files) — P5.5 H5.
       ['doctor', () => doctor({ fix: false })],
@@ -356,9 +362,16 @@ switch (cmd) {
     break;
   }
 
-  case 'doctor':
-    process.exitCode = doctor({ fix: args.includes('--fix') }) ? 0 : 1;
+  case 'doctor': {
+    // Version/README consistency AND doc drift — both are "is what we SAY still true?" checks, so a
+    // reader running `doctor` gets both rather than having to know a second command exists.
+    // doc-drift never auto-fixes: every one of its findings is a sentence someone has to rewrite.
+    const versionOk = doctor({ fix: args.includes('--fix') });
+    const driftOk = spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-drift.mjs')],
+      { stdio: 'inherit', cwd: repo }).status === 0;
+    process.exitCode = versionOk && driftOk ? 0 : 1;
     break;
+  }
 
   case 'changelog': {
     // `--version` so the release pipeline can stamp the version it is ABOUT to publish, before that

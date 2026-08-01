@@ -144,8 +144,11 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   all** (P5.5 H4.6 then H9.7/H9.8, now **D22**). A reader asked why the library had login-specific
   business logic; it did not — `LoginWindow` held no login logic — but the NAMES made it look like it
   shipped that product, and `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`,
-  forcing a streaming consumer to name a login type. See D22 for the rule and the audit method; do NOT
-  re-raise `CookieLoginFlow`, which keeps its scenario name deliberately as the one reference driver.
+  forcing a streaming consumer to name a login type. See D22 for the rule and the audit method.
+  (This bullet used to end "do NOT re-raise `CookieLoginFlow`, which keeps its scenario name
+  deliberately as the one reference driver" — P7 reversed exactly that: a scenario name in `src/` is a
+  PLACEMENT smell, so the driver moved to the sample and the kit ships none. `generic-library.md`
+  carries the amended rule.)
 - STA-wrapping the new pool/session tests — the earned STA rule's trigger (`AllowDrop`/OLE) does not
   apply to those forms, and the tests are deterministically green.
 - `InteractiveSession`'s busy gate can be released by the cancellation fallback a beat before `ShowDialog`
@@ -173,8 +176,8 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   cannot be INSTANTIATED without a real browser core. Everything reachable only through an instance is
   therefore e2e/manual territory by construction, not by neglect: `SessionController`'s public members
   (bar `ComputeFitSize`, which is tested), `StreamingSession.DispatchAsync`/`Frames`/`DisposeAsync`, `RenderSession`'s tap BOOKKEEPING (its disposal checks *are* tested), and
-  `CookieLoginFlow`'s four-line `SessionController` → `Hooks` mapping (the flow's own poll/capture
-  logic is covered through the internal `Hooks` overload, 8 cases). The lesson H7 applied where it
+  and — until P7 moved it out of the kit — a reference driver's four-line `SessionController` →
+  `Hooks` mapping. The lesson H7 applied where it
   COULD: pure decisions get lifted out of live-object lambdas so the real rule is testable — that is
   what `ShouldBlockRequest` and the pool's `AwaitResetNavigationAsync` are. Prefer that over a mock of
   `CoreWebView2`.

@@ -105,7 +105,8 @@ keeps the library reusable (adopted from the family's other library, where it's 
   Both mean the product leaked in. And the mirror-image failure is just as real: no hook for
   *ended/faulted*, so a consumer can't tell a dead session from a quiet one. Good in-repo examples:
   `RenderSessionPool` (pool + session shipped, the app's render/analyze flows deliberately not) and
-  `LoginWindow` (window + protocol + driver SEAM, with one opt-in reference driver).
+  `InteractiveSession` (window + protocol + driver SEAM, and the kit ships NO driver — the reference
+  one moved to the sample in P7, see the placement rule above).
 - **Every public type earns its keep.** Default to `internal`; a type goes public when a consumer
   scenario needs it, not "for flexibility". Public surface is SemVer surface (API-surface
   baseline tests gate it from 1.0). **Cross-package consumption INSIDE the kit is a consumer
