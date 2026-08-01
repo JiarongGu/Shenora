@@ -15,6 +15,47 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### The mission layer's three owner-directed additions (2026-08-02) — all DONE
+
+Planned in two docs, built in the recommended order the same day, each with its own commit and its own
+`### Breaking`/`### Added` entry. The narrative is `docs/ROADMAP.md`; what is worth keeping HERE is the
+judgement in each, because two of the three shipped as something other than what was first proposed.
+
+1. **The queue's store** (`66d8d1f`) — `IMissionStore` → `IMissionQueueStore`. **The first design was
+   rejected by its own cost analysis**, and that is the part to read before proposing it again: a
+   pluggable async queue puts an `await` in the dispatch path, which cannot run under the scheduler's
+   lock, so admission would read candidates, take the lock, then RE-VALIDATE against a collection that
+   may have changed underneath. A race in the one place where a race corrupts rather than delays, in
+   exchange for a distributed-queue capability no consumer has asked for — while the part apps do vary,
+   ordering, was already theirs through `IMissionPolicy`. So the pending list stayed internal and
+   synchronous and only the STORE changed, which is why 733 tests passed unchanged.
+
+2. **Chained missions** (`3a89d38`) — `MissionChain.Sequence`, `MissionStep`, `IMissionChainContext`.
+   The fork was ONE queue entry versus N with dependency edges; the owner chose one, so the scheduler
+   learns nothing about chains and §10's "no DAG engine" survives. The accepted cost is written into
+   the XML: a chain holds the UNION of its steps' claims for its whole life, stronger mode winning, so
+   a read-then-write chain holds that key exclusively throughout. Escalating to per-step claims is
+   design (a) and wants its own pass. `RunStepAsync` deliberately duplicates the retry rule rather than
+   delegating to the scheduler's, because the scheduler retries a MISSION and a chain is one mission —
+   delegating would re-run steps 1–3 when step 4 failed.
+
+3. **The file-update queue** (`c395448`) — deliberately NOT part of mission management. Atomicity is
+   the app's choice per update, which was the owner correcting a fixed default; `AllOrNothing` then
+   forced staged deletes, since a delete is the one change that cannot be undone from nothing. Backups
+   and aside-copies are siblings of their target so every move stays same-volume — a staging directory
+   elsewhere would silently turn each replace into a cross-volume copy of the file being replaced.
+
+**Two warnings for a future session.** `.claude/knowledge/doc-claims.md` was written this day and
+immediately paid for itself twice: `doc-drift` caught a retired symbol stated as current inside the very
+plan that introduced the rename, and again inside the `TASKS.md` entry for the task doing the renaming.
+And the chain claim-union test **passed its sabotage** — it had ordered its steps shared-then-exclusive,
+so a "last wins" bug produced the same answer. It is now a `Theory` over both orders; if someone
+simplifies it back to one case, that test stops testing anything.
+
+**Still open from this group, and only this:** cross-process path leases (§4 of the file-updates
+design). Additive, not breaking, and waiting on a question rather than on effort — does anything need
+them today, or is single-instance the practical guarantee?
+
 ### Drop zones: state the gain, not just the wiring (2026-08-02)
 
 The last open finding from the first adopter's IPC + drop-zone review, and a direct application of the

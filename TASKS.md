@@ -38,25 +38,13 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
-### Designed, awaiting a go — three owner-directed pieces
+### Designed, awaiting an answer
 
-Written down rather than started, because each carries a fork that changes the build. Recommended
-order: mission queue → chains → file updates (the first is breaking, so it wants the pre-1.0 window;
-the third is independent).
+The mission queue, chains and the file-update queue were built on 2026-08-02 and are recorded in
+`docs/ROADMAP.md` `## Done` + `docs/task-archive.md`. What is left of that group is one item, and it
+is waiting on a question rather than on effort:
 
-- [x] ~~**The queue's store**~~ — DONE 2026-08-02, Part 1 of
-  `docs/2026-08-02-shenora-mission-queue-and-chains-design.md`. Shipped as `IMissionQueueStore`, not
-  as the pluggable async queue the first draft proposed: that would have put an `await` in the
-  dispatch path and forced admission to re-validate against a collection that may have changed. Moves
-  to `docs/task-archive.md` at the next tidy.
-- [x] ~~**Chained missions with a shared context**~~ — DONE 2026-08-02, Part 2 of the same doc, as
-  ONE queue entry per the owner's call. `MissionChain.Sequence` returns an ordinary definition, so
-  §10's "no DAG engine" still holds. Moves to `docs/task-archive.md` at the next tidy.
-- [x] ~~**A file-update queue**~~ — DONE 2026-08-02
-  (`docs/2026-08-02-shenora-file-updates-design.md`). Parallel compute, serialized apply, per-update
-  atomicity with compensating rollback and staged deletes. Moves to `docs/task-archive.md` at the
-  next tidy.
-- [ ] **Cross-process path leases** (§4 of the same doc) — designed, NOT built, and additive rather
+- [ ] **Cross-process path leases** (§4 of `docs/2026-08-02-shenora-file-updates-design.md`) — designed, NOT built, and additive rather
   than breaking, so it waits on its own open question: does anything need them today, or is
   single-instance the practical guarantee? Claims exclude inside ONE process; nothing today stops a
   second instance, an installer or the user's own tooling. Build it when an app can say it needs it —

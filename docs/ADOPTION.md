@@ -8,9 +8,10 @@ duplicated code for the least risk; the IPC substrate comes last because it is t
 touches every module. Keep the app runnable and shipped at the end of every stage — none of this
 requires a big-bang branch.
 
-**One section below is not a stage at all.** [The mission scheduler](#the-mission-scheduler--not-a-stage-adoptable-on-its-own)
-lives in `Shenora.Core` and needs no shell, no IPC and no Windows, so it can be taken first, last, or
-on its own by an app that wants nothing else here.
+**Two sections below are not stages at all.** [The mission scheduler](#the-mission-scheduler--not-a-stage-adoptable-on-its-own)
+and [the file-update queue](#the-file-update-queue--for-when-claims-are-too-coarse) both live in
+`Shenora.Core` and need no shell, no IPC and no Windows, so either can be taken first, last, or on
+its own by an app that wants nothing else here. They compose but neither requires the other.
 
 **What Shenora is not.** It is a library, not an application framework: it ships the desktop *body*
 and no product decisions. It has no UI components and no design system (D13), no state library, and
@@ -520,6 +521,95 @@ implementation, which is the trap, and capacity alone can produce either half. T
 workload and asserts peak concurrency twice — 1 for the contended key, more than 1 overall — and yours
 should be shaped the same way. Then lower a lane's capacity mid-run and confirm in-flight work
 survives while new work throttles.
+
+### Multi-step missions, when a later step needs what an earlier one produced
+
+Claims stop two missions overlapping. They say nothing about ORDER, dependency, or data flow — so
+"stage it, then commit it, then index it" has nowhere to live except a stack frame:
+
+```csharp
+var a = await scheduler.SubmitAsync(stage);            // hold the await, keep state in a local
+if (a.Succeeded) await scheduler.SubmitAsync(Commit(a));
+```
+
+That works, and loses three things: the chain is invisible, it dies with the awaiting code, and it
+cannot be resumed. `MissionChain.Sequence` gives you the same sequence as one mission:
+
+```csharp
+var chain = MissionChain.Sequence("IMPORT",
+    new MissionStep("stage",  (m, ctx, ct) => { ctx.Set("temp", tempPath); return Stage(ct); },
+                    Claims: [PathClaims.Exclusive(source)]),
+    new MissionStep("commit", (m, ctx, ct) => Commit(ctx.Get<string>("temp")!, ct),
+                    Claims: [PathClaims.Exclusive(target)],
+                    Retry:  new RetryPolicy()));        // retries THIS step, never the ones before
+
+await scheduler.SubmitAsync(chain);                     // an ordinary mission, as far as the scheduler knows
+```
+
+What to know before you reach for it:
+
+- **A chain is ONE queue entry**, so it holds the UNION of its steps' claims for its whole life —
+  taking the stronger mode where steps disagree, so a read-then-write chain holds that key
+  exclusively throughout. For a long chain over many paths that is a real throughput cost, and it is
+  the trade for the scheduler having no dependency graph. If it bites, that is the evidence for
+  per-step claims and it wants its own design.
+- **`IMissionChainContext` is in-memory only.** It exists to pass a temp path from step 1 to step 2
+  inside one run. A DURABLE chain that resumes after a restart carries its state in `Payload`, like
+  any other durable mission — the kit cannot serialize your object graph, and a resume that silently
+  lost the context would be worse than one that never had it.
+- A failing step fails the chain and later steps do not run. Cancelling cancels the chain. There is no
+  chain-level retry: re-running completed steps is a judgement only you can make, and you make it by
+  submitting again.
+
+---
+
+## The file-update queue — for when claims are too coarse
+
+Also `Shenora.Core`, also no shell/IPC/Windows, and **independent of the scheduler** — usable with it,
+without it, or before you adopt it.
+
+**The problem it solves.** A path claim excludes two missions for their WHOLE duration. But the
+expensive phase usually does not touch the destination at all — it writes a temp file. Only the final
+mutation needs exclusivity:
+
+```
+mission A   [ compress 8s ..................... ][ replace 3ms ]
+mission B   [ compress 7s ..................... ]      ↑ waits  [ replace 3ms ]
+```
+
+Under path claims, B's compress waits for A's replace: ~15s. Compute in parallel and serialize only
+the landing: ~8s. So the queue is the destination for anything that currently claims a path just to
+protect a rename.
+
+```csharp
+Run    = (mission, ct) => archive.CompressToTempAsync(source, temp, ct),   // parallel
+Commit = (mission, ct) => updates.ApplyAsync(new FileUpdate
+{
+    Changes    = [new FileChange.Replace(temp, target)],
+    Atomicity  = FileAtomicity.PerChange,
+    Retry      = new RetryPolicy(),
+}, ct),                                                                     // serialized
+```
+
+| You probably hand-rolled | Use | Notes |
+|---|---|---|
+| A "write temp, then `File.Replace` with retry" helper, copied per feature | `FileChange.Replace` inside a `FileUpdate` | The retry is `RetryPolicy`, the same type the scheduler uses, applied per change. |
+| A lock or flag so two features never write the same tree at once | the queue itself — one writer per `Partition` | `Partition = null` is one global writer, the setting that cannot surprise you. Partition only by trees that genuinely never touch. |
+| "Apply these five files together or not at all", hand-rolled with a backup folder | `FileAtomicity.AllOrNothing` | Undoes applied changes in reverse. A delete becomes STAGED — moved aside, really removed only once everything lands — because a delete cannot be undone from nothing. |
+| Reporting which file broke a batch | `FileUpdateResult.FailedIndex` + `Applied` | The result reports rather than throws, like `MissionResult`; `ThrowIfFailed()` if you prefer exceptions. |
+
+> ⚠ **`AllOrNothing` survives a FAILURE, not a power cut.** Rollback is compensating and in-process:
+> nothing is written down, so a process killed mid-apply leaves whatever it had reached. If a torn set
+> after a hard kill is unacceptable for your product, say so — that needs a durable intent journal,
+> which is designed but deliberately not built.
+
+> ⚠ **The queue serializes only what goes THROUGH it.** It takes no OS lock, so a second instance of
+> your app, an installer, or the user's own tooling is unaffected. Cross-process leases are designed
+> (`docs/2026-08-02-shenora-file-updates-design.md` §4) and not built, pending someone who needs them.
+
+**Verify:** the same partition never overlaps *while* a different partition does — both in one run,
+for the same reason as the scheduler. Then fail a change mid-update under `AllOrNothing` and confirm
+the earlier ones were undone in reverse, and that a staged delete came back.
 
 ---
 

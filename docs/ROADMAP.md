@@ -5,6 +5,59 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-02 (later) — the mission layer: renamed, restructured, and given a queue, chains and a file writer
+
+Five owner-directed changes to the layer that shipped hours earlier, all pre-1.0 and all landing before
+any release takes them, so a consumer sees one hop rather than five.
+
+**The naming.** `Work*` → `Mission*`. `Work` is too common a word to own or grep for; `Task` collides
+with `System.Threading.Tasks`, where `TaskScheduler` would be ambiguous against the BCL type in every
+consumer importing both namespaces. Of the owner's shortlist, `Quest` was rejected for reading as
+domain vocabulary in a games family — which is what the genericity gate exists to keep out of `src/` —
+and `Expedition` for putting ten characters in front of fifteen types.
+
+**The definition/execution split, and the rule that was being misapplied.** `MissionRequest` became
+`MissionDefinition` (what should run); `MissionContext` + `MissionView` + `MissionSnapshot` collapsed
+into `MissionExecution` (one specific run). Four types for two concepts became two. The argument for
+doing it now rather than waiting for a consumer was the owner's: *"bigger change does not mean a bad
+thing, we need to think forward for future, change is allowed, this is still pre-1.0."* That exposed a
+misapplication — the two-consumer bar governs CAPABILITY, while amendment A2 governs SHAPE and says to
+pay now where later would be BREAKING. This change alters `SubmitAsync`, every body's parameter, all
+three observer callbacks and both policy methods at once, so it is A2's case exactly.
+
+**The queue's store**, where the first design was rejected by its own cost analysis. Making the whole
+queue a pluggable async seam would put an `await` in the dispatch path, which cannot run under the
+scheduler's lock, forcing admission to re-validate against a collection that may have changed — a race
+where a race corrupts rather than delays, bought for a capability nobody asked for. Shipped instead as
+`IMissionQueueStore`: the pending list stays internal and synchronous, and durability stops being a
+concept parallel to the queue.
+
+**Chains**, as ONE queue entry. `MissionChain.Sequence` returns an ordinary `MissionDefinition`, so the
+scheduler gains no dependency edges and no blocked-on-predecessor state — the alternative was a DAG
+engine by another name, declined again. Steps share an in-memory `IMissionChainContext`; a durable
+chain carries state in `Payload`, and that limit is documented rather than papered over.
+
+**A file-update queue**, deliberately outside mission management (owner: *"it's more a different design
+rather than put them all into mission management"*). A path claim excludes two missions for their whole
+duration when only the final rename needs exclusivity, so a seven-second compress waits on a
+three-millisecond replace. Compute in parallel, hand the change set to the queue, serialize only the
+landing. Atomicity is the app's choice per update — `PerChange`, or `AllOrNothing` via compensating
+rollback, which forces STAGED deletes since a delete cannot be undone from nothing. The crash boundary
+is out of scope and says so in the enum's own XML.
+
+**Verification, and the two things it caught.** 751 dotnet tests. The file queue's serialization test
+asserts both halves in one run and was sabotage-verified (a fresh semaphore per call fails it by name).
+The chain claim-union test was sabotage-verified too — and **passed the sabotage**, because it had
+ordered its steps shared-then-exclusive so that a "last wins" bug gave the same answer; it is now a
+Theory over both orders. A worthless test found by running the sabotage rather than trusting the green
+is the argument for the whole practice.
+
+Earlier the same day: the scheduler was dogfooded in the sample (`SCHEDULE_DEMO` plus a ~35-line
+`IMissionObserver` adapter, proven live — two contending items serialized while a disjoint one
+overlapped), `.claude/knowledge/doc-claims.md` was written after three shipped doc claims turned out to
+be false, and `dev.mjs verify` gained the always-loaded rule-budget gate that had been drifting
+unwatched since the day it was built.
+
 ### 2026-08-02 — the mission scheduler: a filesystem planner and a job queue are ONE engine
 
 Harvest-driven (D15), from owner direction that *"a common usecase is filesystem operations + parallel
