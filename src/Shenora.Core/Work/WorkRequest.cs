@@ -78,6 +78,11 @@ public sealed class WorkRequest
     /// Lanes this work draws permits from, on top of the scheduler's default lane. Use for a scarce
     /// shared resource (a single GPU, a rate-limited endpoint, a memory budget) that a capacity,
     /// rather than a claim, describes.
+    ///
+    /// <para>
+    /// A name the scheduler has not seen creates that lane at the DEFAULT capacity rather than
+    /// throwing, so a typo here costs the exclusivity you configured elsewhere and reports nothing.
+    /// </para>
     /// </summary>
     public IReadOnlyList<WorkLane> Lanes { get; init; } = [];
 

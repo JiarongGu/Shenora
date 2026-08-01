@@ -323,6 +323,27 @@ public class WorkSchedulerBehaviourTests
     }
 
     [Fact]
+    public async Task An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing()
+    {
+        // The asymmetry with an unregistered SCOPE (above) is deliberate but easy to "fix" by
+        // mistake, and the XML on SubmitAsync/WorkResult claimed both threw until 2026-08-02. It is
+        // pinned here because the consequence is silent: a misspelled lane draws on a NEW lane at the
+        // default capacity, so the exclusivity the app configured on the real lane is simply gone.
+        await using var scheduler = NewScheduler(new WorkSchedulerOptions { DefaultLaneCapacity = 3 });
+        scheduler.Lane("gpu").Capacity = 1;
+
+        var result = await scheduler.SubmitAsync(new WorkRequest
+        {
+            Run = _ => Task.CompletedTask,
+            Lanes = [new WorkLane("gpu-typo")],
+        });
+
+        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(3, scheduler.Lane("gpu-typo").Capacity);   // the default, NOT the gate's 1
+        Assert.Equal(1, scheduler.Lane("gpu").Capacity);
+    }
+
+    [Fact]
     public async Task Dispose_cancels_queued_work_and_awaits_what_is_running()
     {
         var scheduler = NewScheduler(new WorkSchedulerOptions { DefaultLaneCapacity = 1 });

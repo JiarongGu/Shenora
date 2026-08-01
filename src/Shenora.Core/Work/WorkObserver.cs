@@ -5,12 +5,15 @@ namespace Shenora.Core;
 /// for wiring execution to a progress registry.
 ///
 /// <para>
-/// This is the composition point that keeps `Shenora.Core` free of any reporting dependency. The
-/// kit's own progress surface (`Shenora.Ipc`'s operation registry) attaches by implementing this
-/// ONCE, rather than every work body opening and closing an operation by hand — which is exactly
+/// This is the composition point that keeps `Shenora.Core` free of any reporting dependency. An
+/// observer that opens an operation in <see cref="OnStarted"/> and finishes it in
+/// <see cref="OnFinished"/> binds execution to a progress surface — `Shenora.Ipc`'s operation registry,
+/// say — ONCE, rather than every work body opening and closing an operation by hand, which is exactly
 /// the boilerplate the family's apps wrote at every call site and occasionally forgot, leaving
-/// operations stuck "running" forever. Layering is preserved: `Shenora.Ipc` may depend on
-/// `Shenora.Core`, never the reverse (D19/D20).
+/// operations stuck "running" forever. **The kit ships no such adapter today**: nothing in
+/// `Shenora.Ipc` implements this, so an app that wants the pairing writes those few lines itself.
+/// Layering is preserved either way: `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse
+/// (D19/D20).
 /// </para>
 ///
 /// <para>

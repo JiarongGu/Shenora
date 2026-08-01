@@ -26,9 +26,10 @@ public enum WorkOutcome
 /// A failing body does NOT throw out of <see cref="IWorkScheduler.SubmitAsync"/> — the failure is
 /// reported here. That is deliberate: this is a queue, and a submitter is frequently a batch loop
 /// that must survive one bad item, which is exactly how both of the family's planners modelled it.
-/// Callers who do want the exception call <see cref="ThrowIfFailed"/>. Programming errors (unknown
-/// lane, unknown claim scope, disposed scheduler) still throw at submit, because those are bugs in
-/// the caller rather than outcomes of the work.
+/// Callers who do want the exception call <see cref="ThrowIfFailed"/>. Programming errors (an
+/// unregistered claim scope, a disposed scheduler) still throw at submit, because those are bugs in
+/// the caller rather than outcomes of the work. An unrecognized LANE name is not one of them — it is
+/// created at the default capacity (see <see cref="IWorkScheduler.SubmitAsync"/>).
 /// </para>
 /// </summary>
 public sealed class WorkResult

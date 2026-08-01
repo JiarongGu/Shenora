@@ -60,8 +60,14 @@ public interface IWorkScheduler : IAsyncDisposable
 {
     /// <summary>
     /// Queue work and complete when it finishes. A failing body is reported in the result rather
-    /// than thrown (see <see cref="WorkResult"/>); a caller error — unknown lane or claim scope,
+    /// than thrown (see <see cref="WorkResult"/>); a caller error — an unregistered claim scope, a
     /// disposed scheduler — throws here.
+    ///
+    /// <para>
+    /// A lane name never seen before is NOT an error: it is created at the default capacity, exactly
+    /// as <see cref="Lane"/> does. So a misspelled lane silently draws on a DIFFERENT lane instead of
+    /// the one whose capacity you configured — keep lane names in constants.
+    /// </para>
     /// </summary>
     /// <param name="request">The work and the resources it needs.</param>
     /// <param name="cancellationToken">
