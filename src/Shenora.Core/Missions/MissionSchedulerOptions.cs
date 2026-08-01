@@ -1,7 +1,7 @@
 namespace Shenora.Core;
 
-/// <summary>Inputs for <see cref="WorkScheduler"/>.</summary>
-public sealed class WorkSchedulerOptions
+/// <summary>Inputs for <see cref="MissionScheduler"/>.</summary>
+public sealed class MissionSchedulerOptions
 {
     /// <summary>
     /// Permits in the default lane every request draws from — the global concurrency bound.
@@ -17,7 +17,7 @@ public sealed class WorkSchedulerOptions
     public int DefaultLaneCapacity { get; init; }
 
     /// <summary>
-    /// Claim scopes this scheduler understands. A <see cref="WorkClaim"/> naming an unregistered
+    /// Claim scopes this scheduler understands. A <see cref="MissionClaim"/> naming an unregistered
     /// scope throws at submit — silently ignoring it would drop an exclusion the caller asked for,
     /// which is the one failure mode a scheduler must never have.
     /// </summary>
@@ -25,28 +25,28 @@ public sealed class WorkSchedulerOptions
 
     /// <summary>
     /// The app's ordering and timing rules — <b>what</b> to pick up next and <b>when</b>. Null uses
-    /// <see cref="PriorityWorkPolicy"/> (priority, then FIFO). A policy can only choose among items
+    /// <see cref="PriorityMissionPolicy"/> (priority, then FIFO). A policy can only choose among items
     /// the scheduler has ALREADY found safe to run, so it can delay work but never corrupt it —
-    /// see <see cref="IWorkPolicy"/>.
+    /// see <see cref="IMissionPolicy"/>.
     /// </summary>
-    public IWorkPolicy? Policy { get; init; }
+    public IMissionPolicy? Policy { get; init; }
 
     /// <summary>
     /// Lifecycle listeners — metrics, tracing, or attaching a progress registry. Each call is
     /// guarded, so a throwing observer cannot fail the work it is watching.
     /// </summary>
-    public IReadOnlyList<IWorkObserver> Observers { get; init; } = [];
+    public IReadOnlyList<IMissionObserver> Observers { get; init; } = [];
 
-    /// <summary>Where durable work persists. Null = <see cref="WorkRequest.Durable"/> is ignored.</summary>
-    public IWorkStore? Store { get; init; }
+    /// <summary>Where durable work persists. Null = <see cref="MissionRequest.Durable"/> is ignored.</summary>
+    public IMissionStore? Store { get; init; }
 
     /// <summary>
-    /// Recovery decision per record, by <see cref="WorkRecord.Kind"/> and <see cref="WorkRecord.State"/>.
+    /// Recovery decision per record, by <see cref="MissionRecord.Kind"/> and <see cref="MissionRecord.State"/>.
     /// Null uses the safe default: <see cref="RecoveryPolicy.Requeue"/> for
-    /// <see cref="WorkState.Queued"/>, <see cref="RecoveryPolicy.Fail"/> for
-    /// <see cref="WorkState.Running"/>.
+    /// <see cref="MissionState.Queued"/>, <see cref="RecoveryPolicy.Fail"/> for
+    /// <see cref="MissionState.Running"/>.
     /// </summary>
-    public Func<WorkRecord, RecoveryPolicy>? RecoveryPolicyFor { get; init; }
+    public Func<MissionRecord, RecoveryPolicy>? RecoveryPolicyFor { get; init; }
 
     /// <summary>
     /// Diagnostics sink. Guarded and lazily formatted through <see cref="AppCallback.Log"/>, so a

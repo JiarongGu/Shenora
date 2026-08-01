@@ -1,7 +1,7 @@
 namespace Shenora.Core;
 
-/// <summary>The persisted state of a durable work item.</summary>
-public enum WorkState
+/// <summary>The persisted state of a durable mission.</summary>
+public enum MissionState
 {
     /// <summary>Accepted but not started when the record was written.</summary>
     Queued = 0,
@@ -10,17 +10,17 @@ public enum WorkState
     Running = 1,
 }
 
-/// <summary>What <see cref="IWorkStore"/> persists for one durable request.</summary>
-/// <param name="WorkId">Scheduler-assigned id; stable across a restart.</param>
-/// <param name="Kind">App-defined work type, from <see cref="WorkRequest.Kind"/>.</param>
-/// <param name="Payload">App-serialized state, from <see cref="WorkRequest.Payload"/>. Never interpreted by the kit.</param>
+/// <summary>What <see cref="IMissionStore"/> persists for one durable request.</summary>
+/// <param name="MissionId">Scheduler-assigned id; stable across a restart.</param>
+/// <param name="Kind">App-defined mission type, from <see cref="MissionRequest.Kind"/>.</param>
+/// <param name="Payload">App-serialized state, from <see cref="MissionRequest.Payload"/>. Never interpreted by the kit.</param>
 /// <param name="State">Queued or Running as of the last write.</param>
 /// <param name="CreatedUtc">Submission time.</param>
-public sealed record WorkRecord(
-    string WorkId,
+public sealed record MissionRecord(
+    string MissionId,
     string? Kind,
     string? Payload,
-    WorkState State,
+    MissionState State,
     DateTimeOffset CreatedUtc);
 
 /// <summary>
@@ -28,7 +28,7 @@ public sealed record WorkRecord(
 ///
 /// <para>
 /// The distinction is not bureaucratic — it comes from a family incident. Work found in
-/// <see cref="WorkState.Running"/> after a restart MAY BE WHAT KILLED THE PROCESS (a native GPU
+/// <see cref="MissionState.Running"/> after a restart MAY BE WHAT KILLED THE PROCESS (a native GPU
 /// render, in that case). Re-running it on every boot turns one crash into an unrecoverable loop the
 /// user cannot escape from inside the app. So the default for Running records is
 /// <see cref="Fail"/> — surface it and let a human retry — while Queued records, which by definition
@@ -37,10 +37,10 @@ public sealed record WorkRecord(
 /// </summary>
 public enum RecoveryPolicy
 {
-    /// <summary>Re-submit. The safe default for <see cref="WorkState.Queued"/>.</summary>
+    /// <summary>Re-submit. The safe default for <see cref="MissionState.Queued"/>.</summary>
     Requeue = 0,
 
-    /// <summary>Report as failed without running. The safe default for <see cref="WorkState.Running"/>.</summary>
+    /// <summary>Report as failed without running. The safe default for <see cref="MissionState.Running"/>.</summary>
     Fail = 1,
 
     /// <summary>Drop the record silently.</summary>
@@ -50,22 +50,22 @@ public enum RecoveryPolicy
 /// <summary>
 /// Where durable work is persisted. <b>The kit ships no implementation</b> — not a SQLite one, not a
 /// JSON one — because storage is the app's decision and `Shenora.Core` takes no storage dependency.
-/// Supply one via <see cref="WorkSchedulerOptions.Store"/>; leave it null and every request behaves
-/// as in-memory regardless of <see cref="WorkRequest.Durable"/>.
+/// Supply one via <see cref="MissionSchedulerOptions.Store"/>; leave it null and every request behaves
+/// as in-memory regardless of <see cref="MissionRequest.Durable"/>.
 ///
 /// <para>
 /// Implementations must tolerate being called concurrently, and should treat
-/// <see cref="SaveAsync"/> as an upsert keyed on <see cref="WorkRecord.WorkId"/>.
+/// <see cref="SaveAsync"/> as an upsert keyed on <see cref="MissionRecord.MissionId"/>.
 /// </para>
 /// </summary>
-public interface IWorkStore
+public interface IMissionStore
 {
     /// <summary>Insert or update a record.</summary>
-    Task SaveAsync(WorkRecord record, CancellationToken cancellationToken);
+    Task SaveAsync(MissionRecord record, CancellationToken cancellationToken);
 
     /// <summary>Delete a record. Must not throw when the id is already gone.</summary>
-    Task RemoveAsync(string workId, CancellationToken cancellationToken);
+    Task RemoveAsync(string missionId, CancellationToken cancellationToken);
 
-    /// <summary>Every unfinished record, for <see cref="IWorkScheduler.RecoverAsync"/>.</summary>
-    Task<IReadOnlyList<WorkRecord>> LoadPendingAsync(CancellationToken cancellationToken);
+    /// <summary>Every unfinished record, for <see cref="IMissionScheduler.RecoverAsync"/>.</summary>
+    Task<IReadOnlyList<MissionRecord>> LoadPendingAsync(CancellationToken cancellationToken);
 }

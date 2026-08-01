@@ -5,7 +5,7 @@ namespace Shenora.Core;
 /// pending or in flight completes against that one instead of queueing a second.
 /// </summary>
 /// <param name="Value">The identity. Compared ordinally.</param>
-public readonly record struct WorkKey(string Value)
+public readonly record struct MissionKey(string Value)
 {
     /// <inheritdoc/>
     public override string ToString() => Value;
@@ -34,15 +34,15 @@ public sealed class RetryPolicy
 }
 
 /// <summary>What the scheduler hands a running body.</summary>
-/// <param name="WorkId">Scheduler-assigned id, stable across retries and durable across a restart.</param>
+/// <param name="MissionId">Scheduler-assigned id, stable across retries and durable across a restart.</param>
 /// <param name="Attempt">1-based attempt number.</param>
 /// <param name="Cancellation">Observed for cancellation; the body MUST honour it.</param>
-public readonly record struct WorkContext(string WorkId, int Attempt, CancellationToken Cancellation);
+public readonly record struct MissionContext(string MissionId, int Attempt, CancellationToken Cancellation);
 
 /// <summary>
-/// A unit of work plus the resources it needs. Submit it to an <see cref="IWorkScheduler"/>.
+/// A unit of work plus the resources it needs. Submit it to an <see cref="IMissionScheduler"/>.
 /// </summary>
-public sealed class WorkRequest
+public sealed class MissionRequest
 {
     /// <summary>
     /// The body. Runs when every claim is free and every lane has a permit.
@@ -52,7 +52,7 @@ public sealed class WorkRequest
     /// this runs exactly once. See <see cref="Commit"/> for why that distinction is load-bearing.
     /// </para>
     /// </summary>
-    public required Func<WorkContext, Task> Run { get; init; }
+    public required Func<MissionContext, Task> Run { get; init; }
 
     /// <summary>
     /// Optional second phase. When set, <see cref="Run"/> executes ONCE and only this is retried.
@@ -66,13 +66,13 @@ public sealed class WorkRequest
     /// lesson does not survive; modelled here, the shape is the API.
     /// </para>
     /// </summary>
-    public Func<WorkContext, Task>? Commit { get; init; }
+    public Func<MissionContext, Task>? Commit { get; init; }
 
     /// <summary>
     /// Resources this work needs. Admitted only when NONE conflicts with in-flight work or with
     /// earlier still-pending work. Empty = no exclusion, bounded only by lanes.
     /// </summary>
-    public IReadOnlyList<WorkClaim> Claims { get; init; } = [];
+    public IReadOnlyList<MissionClaim> Claims { get; init; } = [];
 
     /// <summary>
     /// Lanes this work draws permits from, on top of the scheduler's default lane. Use for a scarce
@@ -84,7 +84,7 @@ public sealed class WorkRequest
     /// throwing, so a typo here costs the exclusivity you configured elsewhere and reports nothing.
     /// </para>
     /// </summary>
-    public IReadOnlyList<WorkLane> Lanes { get; init; } = [];
+    public IReadOnlyList<MissionLane> Lanes { get; init; } = [];
 
     /// <summary>
     /// Admission order among items that are otherwise eligible: HIGHER runs first, default 0.
@@ -99,19 +99,19 @@ public sealed class WorkRequest
     public int Priority { get; init; }
 
     /// <summary>Dedup identity. Null = never deduplicated.</summary>
-    public WorkKey? Key { get; init; }
+    public MissionKey? Key { get; init; }
 
     /// <summary>Retry policy. Null = <see cref="RetryPolicy.None"/>.</summary>
     public RetryPolicy? Retry { get; init; }
 
     /// <summary>
-    /// Persist this request through <see cref="IWorkStore"/> so it survives a restart. Per-request,
+    /// Persist this request through <see cref="IMissionStore"/> so it survives a restart. Per-request,
     /// not per-scheduler: cheap in-memory work and durable work share one queue.
     /// </summary>
     public bool Durable { get; init; }
 
     /// <summary>
-    /// App-defined work type. Carried on the <see cref="WorkRecord"/> so recovery can rebuild the
+    /// App-defined mission type. Carried on the <see cref="MissionRecord"/> so recovery can rebuild the
     /// body and choose a <see cref="RecoveryPolicy"/> per kind.
     /// </summary>
     public string? Kind { get; init; }

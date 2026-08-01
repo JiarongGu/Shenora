@@ -47,20 +47,20 @@ public interface ILane
 /// One engine covers what the family had built five times: a filesystem operation planner is this
 /// with hierarchical path keys (<see cref="PathClaims"/>), a job queue is this with lanes, and an
 /// actor is this with a single exclusive claim. See
-/// <c>docs/2026-08-02-shenora-work-scheduling-design.md</c>.
+/// <c>docs/2026-08-02-shenora-mission-scheduling-design.md</c>.
 /// </para>
 ///
 /// <para>
 /// This is the EXECUTION half of long-running work. The REPORTING half already exists as
-/// <c>Shenora.Ipc</c>'s operation registry; a work body reports progress into it. The two compose
+/// <c>Shenora.Ipc</c>'s operation registry; a mission body reports progress into it. The two compose
 /// and must not be merged — `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20).
 /// </para>
 /// </summary>
-public interface IWorkScheduler : IAsyncDisposable
+public interface IMissionScheduler : IAsyncDisposable
 {
     /// <summary>
     /// Queue work and complete when it finishes. A failing body is reported in the result rather
-    /// than thrown (see <see cref="WorkResult"/>); a caller error — an unregistered claim scope, a
+    /// than thrown (see <see cref="MissionResult"/>); a caller error — an unregistered claim scope, a
     /// disposed scheduler — throws here.
     ///
     /// <para>
@@ -72,9 +72,9 @@ public interface IWorkScheduler : IAsyncDisposable
     /// <param name="request">The work and the resources it needs.</param>
     /// <param name="cancellationToken">
     /// Cancels this item: removed from the queue if still pending, observed through
-    /// <see cref="WorkContext.Cancellation"/> if already running.
+    /// <see cref="MissionContext.Cancellation"/> if already running.
     /// </param>
-    Task<WorkResult> SubmitAsync(WorkRequest request, CancellationToken cancellationToken = default);
+    Task<MissionResult> SubmitAsync(MissionRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Get a lane by name, creating it with the default capacity on first use.</summary>
     ILane Lane(string name);
@@ -89,20 +89,20 @@ public interface IWorkScheduler : IAsyncDisposable
     /// Whether work with this key is pending or in flight — so a caller can skip building an
     /// expensive request it knows would only be deduplicated.
     /// </summary>
-    bool IsActive(WorkKey key);
+    bool IsActive(MissionKey key);
 
     /// <summary>
     /// Everything queued or running right now, for a diagnostics view or a queue UI. A copy: safe to
     /// hold, stale the moment it returns.
     /// </summary>
-    IReadOnlyList<WorkSnapshot> Snapshot();
+    IReadOnlyList<MissionSnapshot> Snapshot();
 
     /// <summary>
     /// Re-run admission now.
     ///
     /// <para>
     /// Dispatch is event-driven — it happens on submit and on completion — which covers everything
-    /// the scheduler can see for itself. An <see cref="IWorkPolicy"/> that defers work on an EXTERNAL
+    /// the scheduler can see for itself. An <see cref="IMissionPolicy"/> that defers work on an EXTERNAL
     /// condition (a clock, system load, a maintenance window) must call this when that condition
     /// changes, or the deferred item waits for unrelated traffic to wake it. The kit owns no timer
     /// on purpose: polling belongs to whoever knows what is being polled.
@@ -116,13 +116,13 @@ public interface IWorkScheduler : IAsyncDisposable
     ///
     /// <para>
     /// The kit cannot rebuild a body from a record — a delegate does not serialize — so
-    /// <paramref name="rehydrate"/> maps a <see cref="WorkRecord"/> back to a
-    /// <see cref="WorkRequest"/>. Returning null drops that record. This is also why the kit ships
+    /// <paramref name="rehydrate"/> maps a <see cref="MissionRecord"/> back to a
+    /// <see cref="MissionRequest"/>. Returning null drops that record. This is also why the kit ships
     /// no handler registry: the app already owns the record-to-body mapping here.
     /// </para>
     /// </summary>
     /// <param name="rehydrate">Rebuilds a request from a persisted record, or returns null to drop it.</param>
     /// <param name="cancellationToken">Cancels recovery.</param>
     /// <returns>Records that were re-queued.</returns>
-    Task<int> RecoverAsync(Func<WorkRecord, WorkRequest?> rehydrate, CancellationToken cancellationToken = default);
+    Task<int> RecoverAsync(Func<MissionRecord, MissionRequest?> rehydrate, CancellationToken cancellationToken = default);
 }

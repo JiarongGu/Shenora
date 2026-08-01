@@ -3,17 +3,17 @@ using Shenora.Core;
 namespace Shenora.Tests.Work;
 
 /// <summary>
-/// Conformance tests for the two claims the work-scheduling design makes that are STRONGER than the
+/// Conformance tests for the two claims the mission-scheduling design makes that are STRONGER than the
 /// harvested sources — "this behaviour is not merely preserved, it is improved". Those two were the
 /// only entries in the design's adoption table (§8) asserted with no test behind them, which is the
 /// wrong place to be relaxed: a claim that a whole class of bug is now impossible is exactly the kind
 /// that quietly stops being true.
 ///
 /// <para>
-/// See <c>docs/2026-08-02-shenora-work-scheduling-design.md</c> §8.
+/// See <c>docs/2026-08-02-shenora-mission-scheduling-design.md</c> §8.
 /// </para>
 /// </summary>
-public class WorkSchedulerAdoptionTests
+public class MissionSchedulerAdoptionTests
 {
     /// <summary>
     /// CLAIM 1 — acquiring claims as a SET makes lock-order deadlock structurally impossible.
@@ -37,7 +37,7 @@ public class WorkSchedulerAdoptionTests
     [Fact]
     public async Task Claims_acquired_as_a_set_cannot_deadlock_on_lock_order()
     {
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 8,
             Scopes = [new FlatClaimScope("entity"), new FlatClaimScope("category")],
@@ -45,19 +45,19 @@ public class WorkSchedulerAdoptionTests
 
         // Each pair wants the same two resources; the DECLARED order is deliberately opposite between
         // the two halves, which is precisely what deadlocks a lock-per-resource design.
-        var work = new List<Task<WorkResult>>();
+        var work = new List<Task<MissionResult>>();
         for (var i = 0; i < 24; i++)
         {
             var entity = $"e{i % 4}";
             var category = $"c{i % 3}";
             var forward = i % 2 == 0;
 
-            work.Add(scheduler.SubmitAsync(new WorkRequest
+            work.Add(scheduler.SubmitAsync(new MissionRequest
             {
                 Run = async _ => await Task.Delay(5),
                 Claims = forward
-                    ? [WorkClaim.Exclusive("entity", entity), WorkClaim.Exclusive("category", category)]
-                    : [WorkClaim.Exclusive("category", category), WorkClaim.Exclusive("entity", entity)],
+                    ? [MissionClaim.Exclusive("entity", entity), MissionClaim.Exclusive("category", category)]
+                    : [MissionClaim.Exclusive("category", category), MissionClaim.Exclusive("entity", entity)],
             }));
         }
 
@@ -69,7 +69,7 @@ public class WorkSchedulerAdoptionTests
 
         Assert.True(ReferenceEquals(finished, all),
             "crossing two-claim work did not all complete within 20s — claims are not being acquired as a set");
-        Assert.All(await all, r => Assert.Equal(WorkOutcome.Completed, r.Outcome));
+        Assert.All(await all, r => Assert.Equal(MissionOutcome.Completed, r.Outcome));
     }
 
     /// <summary>
@@ -85,7 +85,7 @@ public class WorkSchedulerAdoptionTests
     [Fact]
     public async Task Lowering_lane_capacity_throttles_new_work_without_killing_running_work()
     {
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 8,
             Scopes = [new FlatClaimScope("entity")],
@@ -111,11 +111,11 @@ public class WorkSchedulerAdoptionTests
             lock (gate) running--;
         }
 
-        var work = Enumerable.Range(0, 12).Select(i => scheduler.SubmitAsync(new WorkRequest
+        var work = Enumerable.Range(0, 12).Select(i => scheduler.SubmitAsync(new MissionRequest
         {
             Run = c => Body(c.Cancellation),
-            Claims = [WorkClaim.Exclusive("entity", $"k{i}")],
-            Lanes = [new WorkLane("jobs")],
+            Claims = [MissionClaim.Exclusive("entity", $"k{i}")],
+            Lanes = [new MissionLane("jobs")],
         })).ToList();
 
         // Wait until the lane is saturated, THEN turn it down mid-flight.
@@ -127,7 +127,7 @@ public class WorkSchedulerAdoptionTests
 
         // Nothing is lost: every item completes, including the four already in flight when the limit
         // dropped below their number.
-        Assert.All(results, r => Assert.Equal(WorkOutcome.Completed, r.Outcome));
+        Assert.All(results, r => Assert.Equal(MissionOutcome.Completed, r.Outcome));
         Assert.Equal(1, lane.Capacity);
     }
 
@@ -139,7 +139,7 @@ public class WorkSchedulerAdoptionTests
     [Fact]
     public async Task A_lowered_capacity_is_enforced_once_the_surplus_drains()
     {
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 8,
             Scopes = [new FlatClaimScope("entity")],
@@ -159,11 +159,11 @@ public class WorkSchedulerAdoptionTests
             lock (gate) running--;
         }
 
-        var work = Enumerable.Range(0, 6).Select(i => scheduler.SubmitAsync(new WorkRequest
+        var work = Enumerable.Range(0, 6).Select(i => scheduler.SubmitAsync(new MissionRequest
         {
             Run = c => Body(c.Cancellation),
-            Claims = [WorkClaim.Exclusive("entity", $"k{i}")],
-            Lanes = [new WorkLane("jobs")],
+            Claims = [MissionClaim.Exclusive("entity", $"k{i}")],
+            Lanes = [new MissionLane("jobs")],
         })).ToList();
 
         await Task.WhenAll(work).WaitAsync(TimeSpan.FromSeconds(20));

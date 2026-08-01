@@ -26,8 +26,8 @@ it (D16's "the seam, not the package" applied to the host half). `@shenora/react
 `createShenoraStore` already established. (That work was drafted under the name "0.2.0" and shipped as
 **0.3.0** — no 0.2.0 release exists; `CHANGELOG.md` `## 0.2.0 — never released` has the account.)
 
-**0.3.0 also carries `Shenora.Core`'s work-scheduling + filesystem-claims layer**
-(`docs/2026-08-02-shenora-work-scheduling-design.md`): one scheduler whose key spaces are pluggable, so
+**0.3.0 also carries `Shenora.Core`'s mission-scheduling + filesystem-claims layer**
+(`docs/2026-08-02-shenora-mission-scheduling-design.md`): one scheduler whose key spaces are pluggable, so
 a filesystem operation planner (paths conflict by containment) and a job queue (lanes admit N) are the
 same engine — the EXECUTION half of long-running work, composing with `Shenora.Ipc`'s operations
 cluster (the REPORTING half) rather than merging with it. Surface below; adopter-facing mapping in
@@ -73,7 +73,7 @@ Shenora.slnx
     │                                            SCHEDULER's worked example: SCHEDULE_DEMO submits
     │                                            four items (two contending for one path, two
     │                                            disjoint) under a capacity-2 lane, and
-    │                                            WorkOperationObserver is the ~35-line IWorkObserver
+    │                                            MissionOperationObserver is the ~35-line IMissionObserver
     │                                            adapter that reports them through Shenora.Ipc's
     │                                            operation registry — execution, reporting and the
     │                                            seam between them, all with no Windows reference
@@ -113,16 +113,16 @@ changes, noting them in `CHANGELOG.md`).
   global events reach scoped subscribers; handler failures logged + isolated; `EmitAsync` awaits
   every handler, `Emit` is the fire-and-forget twin for a synchronous caller; auto-registered
   by `Build()` via `TryAdd` — replaceable).
-- **`Shenora.Core`'s work-scheduling layer (0.3.0, `Work/` + `Io/`)** — the EXECUTION half of
+- **`Shenora.Core`'s mission-scheduling layer (0.3.0, `Missions/` + `Io/`)** — the EXECUTION half of
   long-running work, portable and with no DI, storage or reporting dependency of its own:
-  `IWorkScheduler`/`WorkScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `PendingCount`/
-  `RunningCount`, `IsActive(WorkKey)`, `Snapshot()`, `Reevaluate()`, `RecoverAsync(rehydrate)`;
+  `IMissionScheduler`/`MissionScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `PendingCount`/
+  `RunningCount`, `IsActive(MissionKey)`, `Snapshot()`, `Reevaluate()`, `RecoverAsync(rehydrate)`;
   `IAsyncDisposable` — dispose cancels what is queued and awaits what is running). **Admission** is
   event-driven, evaluated on submit and on each completion (no worker thread, no polling), and an item
   starts only when no in-flight AND no EARLIER-PENDING item holds a conflicting claim (rule 2 is
   fairness — it is what stops a queued item starving behind newer disjoint work) and every named lane
   has a permit; the lock covers bookkeeping only, never the body.
-  **Claims** — mutual exclusion without the caller taking a lock: `WorkClaim` (`Scope`/`Key`/`Mode` +
+  **Claims** — mutual exclusion without the caller taking a lock: `MissionClaim` (`Scope`/`Key`/`Mode` +
   `Exclusive`/`Shared` factories), `ClaimMode`, and the `IClaimScope` seam supplying each key space's
   conflict rule — `FlatClaimScope` (equal only) and `NestedClaimScope` (equal or containment, tested at
   a SEPARATOR boundary so `a/b` contains `a/b/c` but not `a/bc`; `Normalize` collapses repeated
@@ -132,26 +132,26 @@ changes, noting them in `CHANGELOG.md`).
   **Lanes** — capacity, orthogonal to exclusion: `ILane` (`Capacity` settable LIVE, floor 1 and no
   ceiling; lowering swallows permits as items finish rather than killing in-flight work; `Hold`/`Release`
   re-entrant, the mechanism a load governor actuates with — the kit ships no probe, hysteresis or
-  debounce policy), `WorkLane(Name, Permits = 1)` for a lane that is a BUDGET rather than a slot count.
+  debounce policy), `MissionLane(Name, Permits = 1)` for a lane that is a BUDGET rather than a slot count.
   Every request also draws one permit from the default lane (`DefaultLaneCapacity`, 0 = `clamp(cores-1,
   1, 4)`), which is the global concurrency bound.
-  **The request** — `WorkRequest` (`Run` + optional `Commit`: setting `Commit` makes `Run` run exactly
+  **The request** — `MissionRequest` (`Run` + optional `Commit`: setting `Commit` makes `Run` run exactly
   ONCE and retries only the commit, so a failed cheap replace never recompresses; `Claims`, `Lanes`,
-  `Priority`, `Key`, `Retry`, `Durable`, `Kind`, `Payload`), `WorkContext` (`WorkId`/`Attempt`/
-  `Cancellation`), `WorkKey` (dedup identity — a matching submission completes against the live item,
-  body once), `RetryPolicy`(+`None`) (3 × 500 ms × attempt, `IOException` only), `WorkResult`/
-  `WorkOutcome` (`Completed`/`Failed`/`Cancelled`/`Deduplicated`; a failing body is REPORTED, not
+  `Priority`, `Key`, `Retry`, `Durable`, `Kind`, `Payload`), `MissionContext` (`MissionId`/`Attempt`/
+  `Cancellation`), `MissionKey` (dedup identity — a matching submission completes against the live item,
+  body once), `RetryPolicy`(+`None`) (3 × 500 ms × attempt, `IOException` only), `MissionResult`/
+  `MissionOutcome` (`Completed`/`Failed`/`Cancelled`/`Deduplicated`; a failing body is REPORTED, not
   thrown — a batch submitter must survive one bad item — with `ThrowIfFailed()` for callers who prefer
   exceptions, while caller bugs still throw at submit).
-  **The app's own scheduling rules** — `IWorkPolicy` (`Compare` = what next, `ShouldStart` = when) +
-  `PriorityWorkPolicy` (priority, then FIFO — plain FIFO with no priorities set). Consulted ONLY about
+  **The app's own scheduling rules** — `IMissionPolicy` (`Compare` = what next, `ShouldStart` = when) +
+  `PriorityMissionPolicy` (priority, then FIFO — plain FIFO with no priorities set). Consulted ONLY about
   items that already passed admission, which is the structural reason a custom policy can delay work
   but never make conflicting work overlap or bypass a lane; a throwing policy is treated as "not now"
   rather than wedging the scheduler.
-  **Observation + durability** — `IWorkObserver` (`OnQueued`/`OnStarted`/`OnFinished`, each guarded
+  **Observation + durability** — `IMissionObserver` (`OnQueued`/`OnStarted`/`OnFinished`, each guarded
   through `AppCallback`; the seam for metrics, tracing, or binding execution to a progress registry
-  without `Core` learning what an operation is), `WorkView`/`WorkSnapshot`/`WorkSchedulerState`;
-  `IWorkStore`/`WorkRecord`/`WorkState` + `RecoveryPolicy` (`Requeue`/`Fail`/`Discard`, defaulting to
+  without `Core` learning what an operation is), `MissionView`/`MissionSnapshot`/`MissionSchedulerState`;
+  `IMissionStore`/`MissionRecord`/`MissionState` + `RecoveryPolicy` (`Requeue`/`Fail`/`Discard`, defaulting to
   `Requeue` for `Queued` and **`Fail` for `Running`** — work found running after a crash may be what
   killed the process, and re-running it turns one crash into a boot loop) and `RecoveryPolicyFor`.
   Recovery is an explicit `RecoverAsync` with an app `rehydrate` delegate, never implicit: a delegate
@@ -170,8 +170,8 @@ changes, noting them in `CHANGELOG.md`).
   corrected and pinned by `An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing`);
   (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
   whole of `Io/`, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit` models; (3) nothing
-  in `Shenora.Ipc` implements `IWorkObserver`, so wiring execution to the operation registry is the
-  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/WorkOperationObserver.cs` is the worked
+  in `Shenora.Ipc` implements `IMissionObserver`, so wiring execution to the operation registry is the
+  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionOperationObserver.cs` is the worked
   example — and `Shenora.Core` stays free of any reporting dependency either way (D19/D20). That
   adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
   cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
@@ -504,9 +504,9 @@ changes, noting them in `CHANGELOG.md`).
 - `Core` depends only on Microsoft.Extensions DI (implementation — the builder needs
   `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on `Core`.
 - **Execution and reporting compose; they do not merge.** `Core`'s `Work/` layer must never learn what
-  an operation is — a work body reports into `Shenora.Ipc`'s operation registry, and the seam pointing
-  that way is `IWorkObserver`. `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20),
-  which is also why the scheduler ships no storage dependency: `IWorkStore` is a seam, not an
+  an operation is — a mission body reports into `Shenora.Ipc`'s operation registry, and the seam pointing
+  that way is `IMissionObserver`. `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20),
+  which is also why the scheduler ships no storage dependency: `IMissionStore` is a seam, not an
   implementation.
 - **The two Windows packages are ONE layer (D19):** `Shenora.WebView2` → `Shenora.WinForms`, i.e.
   Windows **primitives** and **web hosting on top of them** — not two peers. This replaced the old

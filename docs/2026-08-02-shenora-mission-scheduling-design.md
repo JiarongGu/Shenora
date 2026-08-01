@@ -1,6 +1,6 @@
-# Shenora work scheduling + filesystem layer — design
+# Shenora mission scheduling + filesystem layer — design
 
-**Status: IMPLEMENTED 2026-08-02** — `src/Shenora.Core/Work/` + `src/Shenora.Core/Io/PathClaims.cs`,
+**Status: IMPLEMENTED 2026-08-02** — `src/Shenora.Core/Missions/` + `src/Shenora.Core/Io/PathClaims.cs`,
 33 tests. Two amendments were made DURING the build, both from the owner's "think bigger — a new
 application with a new requirement should also fit" and both recorded in `## Amendments` at the foot
 of this document. Target 0.2.0 (deliberately unpublished so this can land in the
@@ -54,7 +54,7 @@ translation.
 Two orthogonal concepts, deliberately separated (the siblings conflated them, which is why the video
 sibling's GPU gate had to be a static singleton reachable from unrelated features):
 
-- **Claims** — *mutual exclusion between work items*. "I need exclusive use of this path."
+- **Claims** — *mutual exclusion between missions*. "I need exclusive use of this path."
 - **Lanes** — *capacity-limited pools*. "I need a permit from the `gpu` lane, which admits one."
 
 An item declares both. It runs when its claims are free AND its lane permits are available.
@@ -64,7 +64,7 @@ An item declares both. It runs when its claims are free AND its lane permits are
 ```csharp
 public enum ClaimMode { Exclusive, Shared }
 
-public readonly record struct WorkClaim(string Scope, string Key, ClaimMode Mode);
+public readonly record struct MissionClaim(string Scope, string Key, ClaimMode Mode);
 ```
 
 A **scope** names a key space and supplies its conflict rule:
@@ -120,10 +120,10 @@ A lane with capacity 1 is the video sibling's GPU gate, expressed without a stat
 ## §4 The scheduler
 
 ```csharp
-public interface IWorkScheduler : IAsyncDisposable
+public interface IMissionScheduler : IAsyncDisposable
 {
-    Task<WorkResult> SubmitAsync(WorkRequest request, CancellationToken ct = default);
-    bool TryFind(WorkKey key, out WorkStatus status);   // the video sibling's HasPendingOperation
+    Task<MissionResult> SubmitAsync(MissionRequest request, CancellationToken ct = default);
+    bool TryFind(MissionKey key, out MissionStatus status);   // the video sibling's HasPendingOperation
     int PendingCount { get; }
     ILane Lane(string name);
 }
@@ -143,7 +143,7 @@ sibling planners that used one paid for it in latency or in a dedicated thread.
 on the thread pool. This is stated because it is the single easiest thing to get wrong here, and
 both planners carry a comment about it.
 
-**Deduplication** is by an app-supplied `WorkKey`: an identical request already pending or in flight
+**Deduplication** is by an app-supplied `MissionKey`: an identical request already pending or in flight
 completes eagerly against the existing one instead of queueing a second. Both planners have this;
 the video sibling additionally *merged* redundant operations accumulated during a slow batch, which
 this expresses as dedup against the pending set.
@@ -164,21 +164,21 @@ Owner direction: *"durability we must have, but configurable (say where the stat
 persists to — we don't handle persistence for now)."*
 
 ```csharp
-public interface IWorkStore
+public interface IMissionStore
 {
-    Task SaveAsync(WorkRecord record, CancellationToken ct);
-    Task RemoveAsync(string workId, CancellationToken ct);
-    Task<IReadOnlyList<WorkRecord>> LoadPendingAsync(CancellationToken ct);
+    Task SaveAsync(MissionRecord record, CancellationToken ct);
+    Task RemoveAsync(string missionId, CancellationToken ct);
+    Task<IReadOnlyList<MissionRecord>> LoadPendingAsync(CancellationToken ct);
 }
 ```
 
 - The kit ships **no** persistent implementation — no SQLite, no JSON file. An app supplies one.
   This keeps `Shenora.Core` free of a storage dependency and matches the direction above.
-- Durability is **per request** (`WorkRequest.Durable`), not global: a scheduler may mix cheap
+- Durability is **per request** (`MissionRequest.Durable`), not global: a scheduler may mix cheap
   in-memory work with durable work.
 - `RecoverAsync()` is an explicit startup call, never implicit — the app decides when recovery is
   safe relative to its own initialization.
-- **Recovery policy per work type**, because of a genuinely earned lesson from the video sibling:
+- **Recovery policy per mission type**, because of a genuinely earned lesson from the video sibling:
   work found in the RUNNING state after a crash *may have caused the crash*, and blindly re-running
   it produces an unrecoverable boot loop. So:
   `RecoveryPolicy { Requeue, Fail, Discard }`, defaulting to **`Fail`** for RUNNING records and
@@ -219,7 +219,7 @@ Owner raised the actor pattern and workflow logic. Assessed honestly:
   the two-consumer bar exists precisely to stop this kind of speculative build. Recorded as
   deliberately-not-built so the next session does not re-argue it.
 - **Progress reporting composes, it does not merge.** `Shenora.Ipc`'s `OperationRegistry` stays the
-  reporting owner; a work body reports into it. Core must not learn about operations — Ipc → Core is
+  reporting owner; a mission body reports into it. Core must not learn about operations — Ipc → Core is
   the legal direction (D19/D20), never the reverse.
 
 ## §8 Adoption proof — can each sibling actually delete its code?
@@ -232,7 +232,7 @@ owner named; the test is whether each existing implementation is expressible **w
 | Path-overlap serialization (equal/ancestor across source+target+temp) | `PathClaims` + one `Exclusive` claim per touched path | no |
 | Disjoint paths run parallel under a cap | default lane, capacity `clamp(cores-1,1,4)` | no |
 | Per-resource FIFO / no starvation | admission rule 2 | no |
-| Dedup identical pending op → eager Ok | `WorkKey` dedup | no |
+| Dedup identical pending op → eager Ok | `MissionKey` dedup | no |
 | Retry 3 × 500 ms on transient lock | `RetryPolicy` default | no |
 | Compress once, retry only the replace | `PrepareAsync`/`CommitAsync` | no |
 | Per-entity mutex, ref-counted cleanup | `FlatClaimScope` + `Exclusive`; **the ref-count race disappears** — the scheduler owns claim lifetime, so there is no per-key semaphore to remove | improved |
@@ -240,7 +240,7 @@ owner named; the test is whether each existing implementation is expressible **w
 | Global GPU exclusivity | lane `gpu`, capacity 1 | no — and no static singleton |
 | Live max-active slider | `Lane.Capacity` setter, permit-swallowing on decrease | no, **proven** |
 | Externally hold a lane under load | `Lane.Hold()/Release()`; probes+hysteresis stay in the app | no |
-| Durable jobs, resume on start | `IWorkStore` + `RecoverAsync` | no — app owns the store |
+| Durable jobs, resume on start | `IMissionStore` + `RecoverAsync` | no — app owns the store |
 | No-auto-resume for crash-prone types | `RecoveryPolicy.Fail` (the default for RUNNING) | no |
 | Pause / cancel / retry a job | cancellation token per item; pause = lane hold or claim release | partial — see below |
 | Handler registry by job type | app-side; the scheduler takes a delegate | **out of scope, deliberately** |
@@ -249,7 +249,7 @@ owner named; the test is whether each existing implementation is expressible **w
 **The two rows marked "proven" were the gap in this table.** Every other row is either a
 straightforward mapping or already covered by the concurrency suite, but those two claim a whole
 class of bug is now IMPOSSIBLE — the strongest kind of claim here, and the two that were asserted
-with nothing behind them. `WorkSchedulerAdoptionTests` now drives crossing two-claim pairs under a
+with nothing behind them. `MissionSchedulerAdoptionTests` now drives crossing two-claim pairs under a
 timeout (a deadlock manifests as a hang, so the assertion must be a timeout, not a result check) and
 lowers a lane's capacity mid-flight to show in-flight work survives AND that the new limit really
 binds once the surplus drains. The capacity pair is sabotage-verified; the deadlock test is a
@@ -284,7 +284,7 @@ Two honest gaps, stated rather than hidden:
 ## §10 Deliberately not built
 
 Recorded so the next session does not re-argue them: a workflow/DAG engine (§7); a persistent
-`IWorkStore` implementation (§5, owner direction); handler-registry-by-type (§8); per-item
+`IMissionStore` implementation (§5, owner direction); handler-registry-by-type (§8); per-item
 cooperative pause (§8); any archive, download or cleanup helper (§6).
 
 ## Amendments
@@ -297,8 +297,8 @@ which is the mistake that gets a kit forked: ordering is a PRODUCT decision. "Us
 background", "smallest first", "nothing heavy before 9am", "pause on battery" are all legitimate and
 mutually exclusive.
 
-So `IWorkPolicy` now owns **what** (`Compare`) and **when** (`ShouldStart`), with
-`PriorityWorkPolicy` as the default that reproduces the original behaviour.
+So `IMissionPolicy` now owns **what** (`Compare`) and **when** (`ShouldStart`), with
+`PriorityMissionPolicy` as the default that reproduces the original behaviour.
 
 **The safety boundary is the part that makes this safe to expose, and it is structural.** A policy is
 consulted ONLY about items that have already passed admission — claims free, lane permits available,
@@ -308,7 +308,7 @@ policy can do is DELAY work; it can never corrupt it. A throwing policy is caugh
 "not now" rather than wedging the scheduler (tested).
 
 Consequence: a policy that defers on an EXTERNAL condition (clock, load, battery) needs a nudge when
-that condition changes, because dispatch is event-driven. Hence `IWorkScheduler.Reevaluate()`. The
+that condition changes, because dispatch is event-driven. Hence `IMissionScheduler.Reevaluate()`. The
 kit deliberately owns no timer — polling belongs to whoever knows what is being polled.
 
 ### A2 — designed for requirements that do not exist yet (2026-08-02, during implementation)
@@ -318,15 +318,15 @@ long term — a new application with a new requirement should also fit."* The de
 changes that would be BREAKING to make later, as opposed to merely additive, and two were found and
 fixed before anything shipped:
 
-- **Weighted lane permits.** `WorkRequest.Lanes` was `IReadOnlyList<string>`, one permit each. A lane
+- **Weighted lane permits.** `MissionRequest.Lanes` was `IReadOnlyList<string>`, one permit each. A lane
   is often a BUDGET (memory, VRAM, bandwidth) where items cost different amounts. Adding a cost later
-  changes the property's type and breaks every caller, so `WorkLane(string Name, int Permits = 1)` is
+  changes the property's type and breaks every caller, so `MissionLane(string Name, int Permits = 1)` is
   there from the start. Cost of carrying it: one defaulted parameter.
 - **Priority.** Adding an ordering input to a strictly-FIFO scheduler changes admission semantics for
   existing callers. Present from the start, defaulted to 0 — which IS plain FIFO.
 
 Two further extension points were added for fit rather than for a current consumer:
-`IWorkObserver` (metrics, tracing, and the seam by which `Shenora.Ipc`'s operation registry attaches
+`IMissionObserver` (metrics, tracing, and the seam by which `Shenora.Ipc`'s operation registry attaches
 without `Shenora.Core` learning about it) and `Snapshot()` (a queue view; both sibling job services
 have one).
 

@@ -3,7 +3,7 @@ using Shenora.Core;
 namespace Shenora.Tests.Work;
 
 /// <summary>
-/// The load-bearing tests for <see cref="WorkScheduler"/>: they must prove BOTH halves of the
+/// The load-bearing tests for <see cref="MissionScheduler"/>: they must prove BOTH halves of the
 /// contract in the same run — that disjoint work runs in PARALLEL and that conflicting work is
 /// SERIALIZED.
 ///
@@ -21,7 +21,7 @@ namespace Shenora.Tests.Work;
 /// whichever box happens to have two cores.
 /// </para>
 /// </summary>
-public class WorkSchedulerConcurrencyTests
+public class MissionSchedulerConcurrencyTests
 {
     /// <summary>Records concurrent execution, globally and per key, so both invariants are observable.</summary>
     private sealed class ConcurrencyProbe
@@ -58,15 +58,15 @@ public class WorkSchedulerConcurrencyTests
         }
     }
 
-    private static WorkScheduler NewScheduler(int capacity, IWorkPolicy? policy = null) =>
-        new(new WorkSchedulerOptions
+    private static MissionScheduler NewScheduler(int capacity, IMissionPolicy? policy = null) =>
+        new(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = capacity,
             Scopes = [new FlatClaimScope("entity"), new NestedClaimScope("tree", '/')],
             Policy = policy,
         });
 
-    private static WorkRequest Work(Func<WorkContext, Task> run, params WorkClaim[] claims) =>
+    private static MissionRequest Work(Func<MissionContext, Task> run, params MissionClaim[] claims) =>
         new() { Run = run, Claims = claims };
 
     [Fact]
@@ -78,11 +78,11 @@ public class WorkSchedulerConcurrencyTests
         var submissions = Enumerable.Range(0, 4).Select(i =>
             scheduler.SubmitAsync(Work(
                 _ => probe.RunAsync($"item{i}", TimeSpan.FromMilliseconds(120)),
-                WorkClaim.Exclusive("entity", $"item{i}"))));
+                MissionClaim.Exclusive("entity", $"item{i}"))));
 
         var results = await Task.WhenAll(submissions);
 
-        Assert.All(results, r => Assert.Equal(WorkOutcome.Completed, r.Outcome));
+        Assert.All(results, r => Assert.Equal(MissionOutcome.Completed, r.Outcome));
         // The whole reason this component exists. A serial implementation scores 1 here.
         Assert.True(probe.MaxConcurrentTotal > 1,
             $"disjoint work never overlapped (peak {probe.MaxConcurrentTotal}) — the scheduler is running serially");
@@ -97,7 +97,7 @@ public class WorkSchedulerConcurrencyTests
         var submissions = Enumerable.Range(0, 4).Select(_ =>
             scheduler.SubmitAsync(Work(
                 _ => probe.RunAsync("shared", TimeSpan.FromMilliseconds(40)),
-                WorkClaim.Exclusive("entity", "shared"))));
+                MissionClaim.Exclusive("entity", "shared"))));
 
         await Task.WhenAll(submissions);
 
@@ -111,17 +111,17 @@ public class WorkSchedulerConcurrencyTests
         var probe = new ConcurrencyProbe();
         await using var scheduler = NewScheduler(capacity: 4);
 
-        var tasks = new List<Task<WorkResult>>();
+        var tasks = new List<Task<MissionResult>>();
         for (var i = 0; i < 3; i++)
             tasks.Add(scheduler.SubmitAsync(Work(
                 _ => probe.RunAsync("contended", TimeSpan.FromMilliseconds(60)),
-                WorkClaim.Exclusive("entity", "contended"))));
+                MissionClaim.Exclusive("entity", "contended"))));
         for (var i = 0; i < 3; i++)
         {
             var id = i;
             tasks.Add(scheduler.SubmitAsync(Work(
                 _ => probe.RunAsync($"free{id}", TimeSpan.FromMilliseconds(60)),
-                WorkClaim.Exclusive("entity", $"free{id}"))));
+                MissionClaim.Exclusive("entity", $"free{id}"))));
         }
 
         await Task.WhenAll(tasks);
@@ -139,10 +139,10 @@ public class WorkSchedulerConcurrencyTests
 
         var parent = scheduler.SubmitAsync(Work(
             _ => probe.RunAsync("nested", TimeSpan.FromMilliseconds(60)),
-            WorkClaim.Exclusive("tree", "root/a")));
+            MissionClaim.Exclusive("tree", "root/a")));
         var child = scheduler.SubmitAsync(Work(
             _ => probe.RunAsync("nested", TimeSpan.FromMilliseconds(60)),
-            WorkClaim.Exclusive("tree", "root/a/b/c")));
+            MissionClaim.Exclusive("tree", "root/a/b/c")));
 
         await Task.WhenAll(parent, child);
 
@@ -159,10 +159,10 @@ public class WorkSchedulerConcurrencyTests
 
         var a = scheduler.SubmitAsync(Work(
             _ => probe.RunAsync("x", TimeSpan.FromMilliseconds(120)),
-            WorkClaim.Exclusive("tree", "root/a")));
+            MissionClaim.Exclusive("tree", "root/a")));
         var ab = scheduler.SubmitAsync(Work(
             _ => probe.RunAsync("y", TimeSpan.FromMilliseconds(120)),
-            WorkClaim.Exclusive("tree", "root/ab")));
+            MissionClaim.Exclusive("tree", "root/ab")));
 
         await Task.WhenAll(a, ab);
 
@@ -178,20 +178,20 @@ public class WorkSchedulerConcurrencyTests
         var readers = Enumerable.Range(0, 3).Select(_ =>
             scheduler.SubmitAsync(Work(
                 _ => probe.RunAsync("reads", TimeSpan.FromMilliseconds(80)),
-                WorkClaim.Shared("entity", "doc")))).ToList();
+                MissionClaim.Shared("entity", "doc")))).ToList();
         await Task.WhenAll(readers);
 
         Assert.True(probe.MaxConcurrentByKey["reads"] > 1, "shared claims must not exclude each other");
 
         var writerProbe = new ConcurrencyProbe();
-        var mixed = new List<Task<WorkResult>>
+        var mixed = new List<Task<MissionResult>>
         {
             scheduler.SubmitAsync(Work(
                 _ => writerProbe.RunAsync("mixed", TimeSpan.FromMilliseconds(60)),
-                WorkClaim.Shared("entity", "doc"))),
+                MissionClaim.Shared("entity", "doc"))),
             scheduler.SubmitAsync(Work(
                 _ => writerProbe.RunAsync("mixed", TimeSpan.FromMilliseconds(60)),
-                WorkClaim.Exclusive("entity", "doc"))),
+                MissionClaim.Exclusive("entity", "doc"))),
         };
         await Task.WhenAll(mixed);
 
@@ -207,7 +207,7 @@ public class WorkSchedulerConcurrencyTests
         var tasks = Enumerable.Range(0, 8).Select(i =>
             scheduler.SubmitAsync(Work(
                 _ => probe.RunAsync($"k{i}", TimeSpan.FromMilliseconds(40)),
-                WorkClaim.Exclusive("entity", $"k{i}")))).ToList();
+                MissionClaim.Exclusive("entity", $"k{i}")))).ToList();
 
         await Task.WhenAll(tasks);
 
@@ -224,11 +224,11 @@ public class WorkSchedulerConcurrencyTests
         scheduler.Lane("gpu").Capacity = 1;
 
         var tasks = Enumerable.Range(0, 4).Select(i =>
-            scheduler.SubmitAsync(new WorkRequest
+            scheduler.SubmitAsync(new MissionRequest
             {
                 Run = _ => probe.RunAsync("gpu", TimeSpan.FromMilliseconds(40)),
-                Claims = [WorkClaim.Exclusive("entity", $"k{i}")],
-                Lanes = [new WorkLane("gpu")],
+                Claims = [MissionClaim.Exclusive("entity", $"k{i}")],
+                Lanes = [new MissionLane("gpu")],
             })).ToList();
 
         await Task.WhenAll(tasks);
@@ -245,11 +245,11 @@ public class WorkSchedulerConcurrencyTests
         scheduler.Lane("memory").Capacity = 4;
 
         var tasks = Enumerable.Range(0, 6).Select(i =>
-            scheduler.SubmitAsync(new WorkRequest
+            scheduler.SubmitAsync(new MissionRequest
             {
                 Run = _ => probe.RunAsync("mem", TimeSpan.FromMilliseconds(50)),
-                Claims = [WorkClaim.Exclusive("entity", $"k{i}")],
-                Lanes = [new WorkLane("memory", Permits: 2)],
+                Claims = [MissionClaim.Exclusive("entity", $"k{i}")],
+                Lanes = [new MissionLane("memory", Permits: 2)],
             })).ToList();
 
         await Task.WhenAll(tasks);
@@ -266,10 +266,10 @@ public class WorkSchedulerConcurrencyTests
         lane.Hold();
 
         var started = false;
-        var submitted = scheduler.SubmitAsync(new WorkRequest
+        var submitted = scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { started = true; return Task.CompletedTask; },
-            Lanes = [new WorkLane("held")],
+            Lanes = [new MissionLane("held")],
         });
 
         await Task.Delay(80);
@@ -278,6 +278,6 @@ public class WorkSchedulerConcurrencyTests
 
         lane.Release();
         var result = await submitted.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
     }
 }

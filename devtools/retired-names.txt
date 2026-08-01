@@ -42,3 +42,26 @@ TrackMappedModule        # -> IModuleRegistry.TryClaimModule(facade)
 ScalePixels              # DpiHelper helpers with zero callers and a primary-monitor default
 ScaleSize
 ScalePoint
+
+# --- 2026-08-02: the scheduler surface renamed Work* -> Mission* ----------------------------------
+# `Work` is too common a word to own or grep; `Task` was rejected because TaskScheduler collides with
+# the BCL. Shipped as Work* in 0.3.0, so CHANGELOG.md (exempt here) still names them correctly.
+IWorkScheduler           # -> IMissionScheduler
+WorkScheduler            # -> MissionScheduler
+WorkSchedulerOptions     # -> MissionSchedulerOptions
+WorkSchedulerState       # -> MissionSchedulerState
+WorkRequest              # -> MissionRequest
+WorkContext              # -> MissionContext
+WorkResult               # -> MissionResult
+WorkOutcome              # -> MissionOutcome
+WorkClaim                # -> MissionClaim
+WorkLane                 # -> MissionLane
+WorkKey                  # -> MissionKey
+WorkView                 # -> MissionView
+WorkSnapshot             # -> MissionSnapshot
+IWorkPolicy              # -> IMissionPolicy
+PriorityWorkPolicy       # -> PriorityMissionPolicy
+IWorkObserver            # -> IMissionObserver
+IWorkStore               # -> IMissionStore
+WorkRecord               # -> MissionRecord
+WorkState                # -> MissionState

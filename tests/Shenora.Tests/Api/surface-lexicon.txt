@@ -180,12 +180,19 @@ Filter
 Mapping
 Range
 
-# ── Work scheduling (0.2.0) ───────────────────────────────────────────────────────────────────────
-# Added for the work scheduler + filesystem claim layer. Every word here is concurrency or
+# ── Mission scheduling (0.3.0; the prefix was `Work` until 2026-08-02) ────────────────────────────
+# Added for the mission scheduler + filesystem claim layer. Every word here is concurrency or
 # scheduling vocabulary — the gate was run before the code was written and admitted these one at a
 # time, which is the review it exists to force. Note what is NOT here: no job, task-type, download,
 # archive, scan or import noun. Those are the APPLICATION's words and the reason the kit ships a
 # scheduler rather than a job system.
+#
+# `Mission` replaced `Work` (owner's call): `Work` is too common a word to grep or to own, and the
+# obvious alternative `Task` collides with System.Threading.Tasks.Task — and `TaskScheduler` would
+# have been ambiguous against the BCL type in every consumer that imports both namespaces.
+# `Mission` names a unit of work with an objective and an outcome, is unique on this surface, and is
+# still MECHANISM vocabulary rather than any app's domain noun (`Quest` was rejected for reading as
+# domain vocabulary in a games family).
 Claim
 Claims
 Flat
@@ -199,10 +206,10 @@ Priority
 Record
 Recovery
 Retry
+Mission
 Scheduler
 Scope
 Snapshot
-Work
 
 # ── Watch this one ────────────────────────────────────────────────────────────────────────────────
 # Download: a browser mechanism (a session observing a download), NOT a product feature. It is the

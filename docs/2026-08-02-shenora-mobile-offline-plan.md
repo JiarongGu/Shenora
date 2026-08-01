@@ -78,7 +78,7 @@ profile supplies it. None of that is an argument for building them now.
 
 ## §5 One platform fact to get right rather than discover
 
-`PathClaims` and the work scheduler assume a filesystem with hierarchical paths. That holds for
+`PathClaims` and the mission scheduler assume a filesystem with hierarchical paths. That holds for
 **app-private storage**, which is where a synced offline cache lives — so the offline case is served.
 It does **not** hold for user-visible media on modern Android, reached through MediaStore/SAF content
 URIs rather than raw paths.

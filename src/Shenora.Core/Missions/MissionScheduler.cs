@@ -1,7 +1,7 @@
 namespace Shenora.Core;
 
 /// <summary>
-/// The default <see cref="IWorkScheduler"/> — an event-driven, claim-aware dispatcher.
+/// The default <see cref="IMissionScheduler"/> — an event-driven, claim-aware dispatcher.
 ///
 /// <para>
 /// ADMISSION. A pending item starts when all three hold:
@@ -25,18 +25,18 @@ namespace Shenora.Core;
 /// eventually does.
 /// </para>
 /// </summary>
-public sealed class WorkScheduler : IWorkScheduler
+public sealed class MissionScheduler : IMissionScheduler
 {
     private readonly object _gate = new();
     private readonly LinkedList<Entry> _pending = new();
     private readonly List<Entry> _running = [];
-    private readonly Dictionary<WorkKey, Entry> _byKey = [];
+    private readonly Dictionary<MissionKey, Entry> _byKey = [];
     private readonly Dictionary<string, IClaimScope> _scopes;
     private readonly Dictionary<string, LaneState> _lanes = new(StringComparer.Ordinal);
     private readonly LaneState _defaultLane;
-    private readonly WorkSchedulerOptions _options;
-    private readonly IWorkPolicy _policy;
-    private readonly IReadOnlyList<IWorkObserver> _observers;
+    private readonly MissionSchedulerOptions _options;
+    private readonly IMissionPolicy _policy;
+    private readonly IReadOnlyList<IMissionObserver> _observers;
     private readonly CancellationTokenSource _shutdown = new();
     private long _nextId;
     private bool _disposed;
@@ -45,10 +45,10 @@ public sealed class WorkScheduler : IWorkScheduler
     private const string DefaultLaneName = "";
 
     /// <param name="options">Scopes, capacity, store and logging.</param>
-    public WorkScheduler(WorkSchedulerOptions? options = null)
+    public MissionScheduler(MissionSchedulerOptions? options = null)
     {
-        _options = options ?? new WorkSchedulerOptions();
-        _policy = _options.Policy ?? PriorityWorkPolicy.Instance;
+        _options = options ?? new MissionSchedulerOptions();
+        _policy = _options.Policy ?? PriorityMissionPolicy.Instance;
         _observers = _options.Observers;
         _scopes = new Dictionary<string, IClaimScope>(StringComparer.Ordinal);
         foreach (var scope in _options.Scopes)
@@ -61,7 +61,7 @@ public sealed class WorkScheduler : IWorkScheduler
             ? _options.DefaultLaneCapacity
             : Math.Clamp(Environment.ProcessorCount - 1, 1, 4);
         _defaultLane = new LaneState(DefaultLaneName, capacity, this);
-        Log(() => $"work scheduler ready (default lane capacity {capacity}, scopes: {_scopes.Count})");
+        Log(() => $"mission scheduler ready (default lane capacity {capacity}, scopes: {_scopes.Count})");
     }
 
     /// <inheritdoc/>
@@ -71,16 +71,16 @@ public sealed class WorkScheduler : IWorkScheduler
     public int RunningCount { get { lock (_gate) return _running.Count; } }
 
     /// <inheritdoc/>
-    public bool IsActive(WorkKey key) { lock (_gate) return _byKey.ContainsKey(key); }
+    public bool IsActive(MissionKey key) { lock (_gate) return _byKey.ContainsKey(key); }
 
     /// <inheritdoc/>
-    public IReadOnlyList<WorkSnapshot> Snapshot()
+    public IReadOnlyList<MissionSnapshot> Snapshot()
     {
         lock (_gate)
         {
-            var items = new List<WorkSnapshot>(_pending.Count + _running.Count);
-            foreach (var entry in _pending) items.Add(new WorkSnapshot(entry.View, IsRunning: false));
-            foreach (var entry in _running) items.Add(new WorkSnapshot(entry.View, IsRunning: true));
+            var items = new List<MissionSnapshot>(_pending.Count + _running.Count);
+            foreach (var entry in _pending) items.Add(new MissionSnapshot(entry.View, IsRunning: false));
+            foreach (var entry in _running) items.Add(new MissionSnapshot(entry.View, IsRunning: true));
             return items;
         }
     }
@@ -104,7 +104,7 @@ public sealed class WorkScheduler : IWorkScheduler
     }
 
     /// <inheritdoc/>
-    public Task<WorkResult> SubmitAsync(WorkRequest request, CancellationToken cancellationToken = default)
+    public Task<MissionResult> SubmitAsync(MissionRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Run);
@@ -119,7 +119,7 @@ public sealed class WorkScheduler : IWorkScheduler
             // completion, and the body never runs a second time.
             if (request.Key is { } key && _byKey.TryGetValue(key, out var existing))
             {
-                Log(() => $"work '{key}' deduplicated against {existing.WorkId}");
+                Log(() => $"mission '{key}' deduplicated against {existing.MissionId}");
                 return DeduplicateAsync(existing);
             }
 
@@ -130,7 +130,7 @@ public sealed class WorkScheduler : IWorkScheduler
         }
 
         // Persist, notify and start OUTSIDE the lock.
-        if (entry.Durable) _ = PersistAsync(entry, WorkState.Queued);
+        if (entry.Durable) _ = PersistAsync(entry, MissionState.Queued);
         Notify(observer => observer.OnQueued(entry.View));
         StartAll(toStart);
         return entry.Completion.Task;
@@ -138,7 +138,7 @@ public sealed class WorkScheduler : IWorkScheduler
 
     /// <inheritdoc/>
     public async Task<int> RecoverAsync(
-        Func<WorkRecord, WorkRequest?> rehydrate, CancellationToken cancellationToken = default)
+        Func<MissionRecord, MissionRequest?> rehydrate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rehydrate);
         var store = _options.Store;
@@ -155,27 +155,27 @@ public sealed class WorkScheduler : IWorkScheduler
                 // Both drop the record; Fail is distinguished only by being LOGGED, because a record
                 // that silently vanished after a crash is indistinguishable from one that ran.
                 if (policy == RecoveryPolicy.Fail)
-                    Log(() => $"work {record.WorkId} ({record.Kind}) was {record.State} at shutdown — failed, not retried");
-                await store.RemoveAsync(record.WorkId, cancellationToken).ConfigureAwait(false);
+                    Log(() => $"mission {record.MissionId} ({record.Kind}) was {record.State} at shutdown — failed, not retried");
+                await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
             var request = rehydrate(record);
             if (request is null)
             {
-                await store.RemoveAsync(record.WorkId, cancellationToken).ConfigureAwait(false);
+                await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
                 continue;
             }
             _ = SubmitAsync(request, cancellationToken);
             requeued++;
         }
-        Log(() => $"recovered {requeued} of {records.Count} durable work record(s)");
+        Log(() => $"recovered {requeued} of {records.Count} durable mission record(s)");
         return requeued;
     }
 
     /// <summary>Running records default to Fail — see <see cref="RecoveryPolicy"/> for the incident behind it.</summary>
-    private static RecoveryPolicy DefaultRecoveryPolicy(WorkRecord record) =>
-        record.State == WorkState.Running ? RecoveryPolicy.Fail : RecoveryPolicy.Requeue;
+    private static RecoveryPolicy DefaultRecoveryPolicy(MissionRecord record) =>
+        record.State == MissionState.Running ? RecoveryPolicy.Fail : RecoveryPolicy.Requeue;
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
@@ -192,7 +192,7 @@ public sealed class WorkScheduler : IWorkScheduler
 
         // Queued work never starts; in-flight work is asked to stop and then AWAITED, so a caller
         // that disposes cannot race a body still writing to disk.
-        foreach (var entry in pending) entry.TryComplete(WorkOutcome.Cancelled, 0, null);
+        foreach (var entry in pending) entry.TryComplete(MissionOutcome.Cancelled, 0, null);
         await _shutdown.CancelAsync().ConfigureAwait(false);
         foreach (var entry in running)
         {
@@ -233,7 +233,7 @@ public sealed class WorkScheduler : IWorkScheduler
                 {
                     RemovePendingLocked(node);
                     if (entry.Request.Key is { } cancelledKey) _byKey.Remove(cancelledKey);
-                    entry.TryComplete(WorkOutcome.Cancelled, 0, null);
+                    entry.TryComplete(MissionOutcome.Cancelled, 0, null);
                     node = next;
                     continue;
                 }
@@ -245,7 +245,7 @@ public sealed class WorkScheduler : IWorkScheduler
             if (eligible is null || eligible.Count == 0) break;
 
             // "What next" — the app's ordering, over the already-safe set.
-            var state = new WorkSchedulerState(_pending.Count, _running.Count);
+            var state = new MissionSchedulerState(_pending.Count, _running.Count);
             var chosen = SelectLocked(eligible, state);
             if (chosen is null) break;   // policy deferred everything it was offered
 
@@ -260,7 +260,7 @@ public sealed class WorkScheduler : IWorkScheduler
     }
 
     /// <summary>Best eligible node per the policy, skipping any the policy defers.</summary>
-    private LinkedListNode<Entry>? SelectLocked(List<LinkedListNode<Entry>> eligible, WorkSchedulerState state)
+    private LinkedListNode<Entry>? SelectLocked(List<LinkedListNode<Entry>> eligible, MissionSchedulerState state)
     {
         LinkedListNode<Entry>? best = null;
         foreach (var candidate in eligible)
@@ -273,26 +273,26 @@ public sealed class WorkScheduler : IWorkScheduler
         return best;
     }
 
-    private bool AskShouldStart(in WorkView view, in WorkSchedulerState state)
+    private bool AskShouldStart(in MissionView view, in MissionSchedulerState state)
     {
         // A throwing policy must not wedge the scheduler; treat a failure as "not now" and log it.
         // (`in` parameters cannot be captured by the logging lambda, hence the local copy.)
         try { return _policy.ShouldStart(view, state); }
         catch (Exception ex)
         {
-            var id = view.WorkId;
-            Log(() => $"work policy ShouldStart threw ({ex.GetType().Name}); deferring {id}");
+            var id = view.MissionId;
+            Log(() => $"mission policy ShouldStart threw ({ex.GetType().Name}); deferring {id}");
             return false;
         }
     }
 
-    private int ComparePolicy(in WorkView a, in WorkView b)
+    private int ComparePolicy(in MissionView a, in MissionView b)
     {
         try { return _policy.Compare(a, b); }
         catch (Exception ex)
         {
             var (seqA, seqB) = (a.Sequence, b.Sequence);
-            Log(() => $"work policy Compare threw ({ex.GetType().Name}); falling back to submission order");
+            Log(() => $"mission policy Compare threw ({ex.GetType().Name}); falling back to submission order");
             return seqA.CompareTo(seqB);
         }
     }
@@ -354,25 +354,25 @@ public sealed class WorkScheduler : IWorkScheduler
     /// logged and skipped, and the others — and the work itself — carry on. An observer is a
     /// bystander; it must never be able to fail the thing it is watching.
     /// </summary>
-    private void Notify(Action<IWorkObserver> notification)
+    private void Notify(Action<IMissionObserver> notification)
     {
         for (var i = 0; i < _observers.Count; i++)
         {
             var observer = _observers[i];
             AppCallback.Run(
                 () => notification(observer),
-                ex => Log(() => $"work observer {observer.GetType().Name} threw: {ex.GetType().Name}"));
+                ex => Log(() => $"mission observer {observer.GetType().Name} threw: {ex.GetType().Name}"));
         }
     }
 
     private async Task RunEntryAsync(Entry entry)
     {
-        var outcome = WorkOutcome.Completed;
+        var outcome = MissionOutcome.Completed;
         Exception? error = null;
         var attempts = 0;
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation, _shutdown.Token);
-        if (entry.Durable) await PersistAsync(entry, WorkState.Running).ConfigureAwait(false);
+        if (entry.Durable) await PersistAsync(entry, MissionState.Running).ConfigureAwait(false);
 
         try
         {
@@ -383,7 +383,7 @@ public sealed class WorkScheduler : IWorkScheduler
             if (hasCommit)
             {
                 attempts = 1;
-                await entry.Request.Run(new WorkContext(entry.WorkId, 1, linked.Token)).ConfigureAwait(false);
+                await entry.Request.Run(new MissionContext(entry.MissionId, 1, linked.Token)).ConfigureAwait(false);
                 attempts = await RunWithRetryAsync(entry.Request.Commit!, entry, retry, linked.Token).ConfigureAwait(false);
             }
             else
@@ -393,13 +393,13 @@ public sealed class WorkScheduler : IWorkScheduler
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
         {
-            outcome = WorkOutcome.Cancelled;
+            outcome = MissionOutcome.Cancelled;
         }
         catch (Exception ex)
         {
-            outcome = WorkOutcome.Failed;
+            outcome = MissionOutcome.Failed;
             error = ex;
-            Log(() => $"work {entry.WorkId} failed after {attempts} attempt(s): {ex.GetType().Name}");
+            Log(() => $"mission {entry.MissionId} failed after {attempts} attempt(s): {ex.GetType().Name}");
         }
 
         List<Entry> toStart;
@@ -412,14 +412,14 @@ public sealed class WorkScheduler : IWorkScheduler
         }
 
         if (entry.Durable) await ForgetAsync(entry).ConfigureAwait(false);
-        var result = new WorkResult(outcome, entry.WorkId, attempts, error);
+        var result = new MissionResult(outcome, entry.MissionId, attempts, error);
         Notify(observer => observer.OnFinished(entry.View, result));
         entry.Completion.TrySetResult(result);
         StartAll(toStart);
     }
 
     private static async Task<int> RunWithRetryAsync(
-        Func<WorkContext, Task> body, Entry entry, RetryPolicy retry, CancellationToken ct)
+        Func<MissionContext, Task> body, Entry entry, RetryPolicy retry, CancellationToken ct)
     {
         var attempt = 0;
         while (true)
@@ -427,7 +427,7 @@ public sealed class WorkScheduler : IWorkScheduler
             attempt++;
             try
             {
-                await body(new WorkContext(entry.WorkId, attempt, ct)).ConfigureAwait(false);
+                await body(new MissionContext(entry.MissionId, attempt, ct)).ConfigureAwait(false);
                 return attempt;
             }
             catch (Exception ex) when (
@@ -442,32 +442,32 @@ public sealed class WorkScheduler : IWorkScheduler
 
     // ── Durability ────────────────────────────────────────────────────────────────────────────────
 
-    private async Task PersistAsync(Entry entry, WorkState state)
+    private async Task PersistAsync(Entry entry, MissionState state)
     {
         if (_options.Store is not { } store) return;
-        var record = new WorkRecord(entry.WorkId, entry.Request.Kind, entry.Request.Payload, state, entry.CreatedUtc);
+        var record = new MissionRecord(entry.MissionId, entry.Request.Kind, entry.Request.Payload, state, entry.CreatedUtc);
         // A store failure must never take down the work it was describing — durability is a
         // best-effort overlay on execution, not a precondition for it.
         try { await store.SaveAsync(record, CancellationToken.None).ConfigureAwait(false); }
-        catch (Exception ex) { Log(() => $"work store save failed for {entry.WorkId}: {ex.GetType().Name}"); }
+        catch (Exception ex) { Log(() => $"mission store save failed for {entry.MissionId}: {ex.GetType().Name}"); }
     }
 
     private async Task ForgetAsync(Entry entry)
     {
         if (_options.Store is not { } store) return;
-        try { await store.RemoveAsync(entry.WorkId, CancellationToken.None).ConfigureAwait(false); }
-        catch (Exception ex) { Log(() => $"work store remove failed for {entry.WorkId}: {ex.GetType().Name}"); }
+        try { await store.RemoveAsync(entry.MissionId, CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception ex) { Log(() => $"mission store remove failed for {entry.MissionId}: {ex.GetType().Name}"); }
     }
 
     // ── Plumbing ──────────────────────────────────────────────────────────────────────────────────
 
-    private static async Task<WorkResult> DeduplicateAsync(Entry existing)
+    private static async Task<MissionResult> DeduplicateAsync(Entry existing)
     {
         var result = await existing.Completion.Task.ConfigureAwait(false);
-        return new WorkResult(WorkOutcome.Deduplicated, result.WorkId, 0, null);
+        return new MissionResult(MissionOutcome.Deduplicated, result.MissionId, 0, null);
     }
 
-    private Entry CreateEntry(WorkRequest request, CancellationToken cancellationToken)
+    private Entry CreateEntry(MissionRequest request, CancellationToken cancellationToken)
     {
         var claims = new List<(string Scope, string Key, ClaimMode Mode)>(request.Claims.Count);
         foreach (var claim in request.Claims)
@@ -475,7 +475,7 @@ public sealed class WorkScheduler : IWorkScheduler
             if (!_scopes.TryGetValue(claim.Scope, out var scope))
                 throw new ArgumentException(
                     $"claim scope '{claim.Scope}' is not registered on this scheduler — add it to " +
-                    $"{nameof(WorkSchedulerOptions)}.{nameof(WorkSchedulerOptions.Scopes)}. Ignoring it would " +
+                    $"{nameof(MissionSchedulerOptions)}.{nameof(MissionSchedulerOptions.Scopes)}. Ignoring it would " +
                     "silently drop an exclusion the caller asked for.", nameof(request));
             claims.Add((claim.Scope, scope.Normalize(claim.Key), claim.Mode));
         }
@@ -518,40 +518,40 @@ public sealed class WorkScheduler : IWorkScheduler
     private sealed class Entry
     {
         public Entry(
-            string workId, long sequence, WorkRequest request,
+            string missionId, long sequence, MissionRequest request,
             List<(string Scope, string Key, ClaimMode Mode)> claims,
             List<(LaneState Lane, int Permits)> lanes, CancellationToken cancellation)
         {
-            WorkId = workId;
+            MissionId = missionId;
             Request = request;
             Claims = claims;
             Lanes = lanes;
             Cancellation = cancellation;
             Node = new LinkedListNode<Entry>(this);
             CreatedUtc = DateTimeOffset.UtcNow;
-            View = new WorkView(workId, request.Kind, request.Priority, CreatedUtc, sequence);
+            View = new MissionView(missionId, request.Kind, request.Priority, CreatedUtc, sequence);
         }
 
-        public string WorkId { get; }
-        public WorkRequest Request { get; }
+        public string MissionId { get; }
+        public MissionRequest Request { get; }
         public List<(string Scope, string Key, ClaimMode Mode)> Claims { get; }
         public List<(LaneState Lane, int Permits)> Lanes { get; }
         public CancellationToken Cancellation { get; }
         public LinkedListNode<Entry> Node { get; }
         public DateTimeOffset CreatedUtc { get; }
-        public WorkView View { get; }
+        public MissionView View { get; }
         public Task? RunTask { get; set; }
         public bool Durable => Request.Durable;
 
-        public TaskCompletionSource<WorkResult> Completion { get; } =
+        public TaskCompletionSource<MissionResult> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
         /// Idempotent: a cancelled-while-pending entry can also be reached by dispose, and completing
         /// a TCS twice throws.
         /// </summary>
-        public void TryComplete(WorkOutcome outcome, int attempts, Exception? error) =>
-            Completion.TrySetResult(new WorkResult(outcome, WorkId, attempts, error));
+        public void TryComplete(MissionOutcome outcome, int attempts, Exception? error) =>
+            Completion.TrySetResult(new MissionResult(outcome, MissionId, attempts, error));
     }
 
     /// <summary>
@@ -561,12 +561,12 @@ public sealed class WorkScheduler : IWorkScheduler
     /// </summary>
     private sealed class LaneState : ILane
     {
-        private readonly WorkScheduler _owner;
+        private readonly MissionScheduler _owner;
         private int _capacity;
         private int _taken;
         private int _holds;
 
-        public LaneState(string name, int capacity, WorkScheduler owner)
+        public LaneState(string name, int capacity, MissionScheduler owner)
         {
             Name = name;
             _capacity = capacity;

@@ -88,10 +88,10 @@ internal static class Program
         // it demonstrates rather than getting it for free — the same bar every consumer faces.
         builder.Services.AddShenoraOperations();
 
-        // The work scheduler — a plain object, registered like any other singleton (Shenora.Core
+        // The mission scheduler — a plain object, registered like any other singleton (Shenora.Core
         // ships no DI extension for it, and it needs none). Composition, not framework: the app
         // chooses the scopes, the capacity, and how execution reports itself.
-        builder.Services.AddSingleton<IWorkScheduler>(sp => new WorkScheduler(new WorkSchedulerOptions
+        builder.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
         {
             // Explicit rather than the clamp(cores-1,1,4) default, so the sample behaves the same on
             // every machine — the same reason the concurrency tests pass one.
@@ -100,14 +100,14 @@ internal static class Program
             // Execution reports through the operations registry via ONE observer written in the app
             // (Shenora.Core must never learn what an operation is — D19/D20). This is the whole cost
             // of the pairing that docs/ADOPTION.md describes.
-            Observers = [new Shenora.Sample.Logic.WorkOperationObserver(
+            Observers = [new Shenora.Sample.Logic.MissionOperationObserver(
                 sp.GetRequiredService<IOperationRegistry>(), Shenora.Sample.Logic.PortableSampleFacade.Module)],
             Log = Console.WriteLine,
         }));
         // Lane capacities are configured ONCE, at startup, by name — an unknown name is created at
         // the default capacity rather than rejected, so a typo silently costs the budget you meant.
         builder.OnStarting(app =>
-            app.Services.GetRequiredService<IWorkScheduler>().Lane(Shenora.Sample.Logic.WorkLanes.DemoIo).Capacity = 2);
+            app.Services.GetRequiredService<IMissionScheduler>().Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2);
         builder.Services.AddModuleFacade<SampleFacade>();
         // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
         // resolves the same implementations through their platform-neutral contracts.

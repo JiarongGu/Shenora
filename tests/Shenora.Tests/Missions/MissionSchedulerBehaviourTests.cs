@@ -3,26 +3,26 @@ using Shenora.Core;
 namespace Shenora.Tests.Work;
 
 /// <summary>
-/// Non-concurrency behaviour of <see cref="WorkScheduler"/>: retry, the two-phase rule,
+/// Non-concurrency behaviour of <see cref="MissionScheduler"/>: retry, the two-phase rule,
 /// deduplication, cancellation, the policy seam, observers and durable recovery.
 /// </summary>
-public class WorkSchedulerBehaviourTests
+public class MissionSchedulerBehaviourTests
 {
-    private static WorkScheduler NewScheduler(WorkSchedulerOptions? options = null) =>
-        new(options ?? new WorkSchedulerOptions { DefaultLaneCapacity = 4 });
+    private static MissionScheduler NewScheduler(MissionSchedulerOptions? options = null) =>
+        new(options ?? new MissionSchedulerOptions { DefaultLaneCapacity = 4 });
 
     [Fact]
     public async Task A_failing_body_is_reported_not_thrown()
     {
         await using var scheduler = NewScheduler();
 
-        var result = await scheduler.SubmitAsync(new WorkRequest
+        var result = await scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => throw new InvalidOperationException("boom"),
         });
 
         // A queue must not tear down a batch loop because one item failed.
-        Assert.Equal(WorkOutcome.Failed, result.Outcome);
+        Assert.Equal(MissionOutcome.Failed, result.Outcome);
         Assert.IsType<InvalidOperationException>(result.Error);
         Assert.Throws<InvalidOperationException>(result.ThrowIfFailed);
     }
@@ -33,24 +33,24 @@ public class WorkSchedulerBehaviourTests
         await using var scheduler = NewScheduler();
 
         var transientAttempts = 0;
-        var transient = await scheduler.SubmitAsync(new WorkRequest
+        var transient = await scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { transientAttempts++; return transientAttempts < 3 ? throw new IOException("locked") : Task.CompletedTask; },
             Retry = new RetryPolicy { Attempts = 3, Delay = TimeSpan.FromMilliseconds(5) },
         });
 
-        Assert.Equal(WorkOutcome.Completed, transient.Outcome);
+        Assert.Equal(MissionOutcome.Completed, transient.Outcome);
         Assert.Equal(3, transient.Attempts);
 
         var permanentAttempts = 0;
-        var permanent = await scheduler.SubmitAsync(new WorkRequest
+        var permanent = await scheduler.SubmitAsync(new MissionRequest
         {
             // Not an IOException, so the default IsTransient says don't bother.
             Run = _ => { permanentAttempts++; throw new InvalidOperationException("bug"); },
             Retry = new RetryPolicy { Attempts = 3, Delay = TimeSpan.FromMilliseconds(5) },
         });
 
-        Assert.Equal(WorkOutcome.Failed, permanent.Outcome);
+        Assert.Equal(MissionOutcome.Failed, permanent.Outcome);
         Assert.Equal(1, permanentAttempts);
     }
 
@@ -62,14 +62,14 @@ public class WorkSchedulerBehaviourTests
 
         var prepared = 0;
         var committed = 0;
-        var result = await scheduler.SubmitAsync(new WorkRequest
+        var result = await scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { prepared++; return Task.CompletedTask; },
             Commit = _ => { committed++; return committed < 3 ? throw new IOException("target locked") : Task.CompletedTask; },
             Retry = new RetryPolicy { Attempts = 3, Delay = TimeSpan.FromMilliseconds(5) },
         });
 
-        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
         Assert.Equal(1, prepared);   // the whole point
         Assert.Equal(3, committed);
     }
@@ -77,20 +77,20 @@ public class WorkSchedulerBehaviourTests
     [Fact]
     public async Task An_identical_key_is_deduplicated_and_the_body_runs_once()
     {
-        await using var scheduler = NewScheduler(new WorkSchedulerOptions { DefaultLaneCapacity = 1 });
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
 
         var runs = 0;
         var gate = new TaskCompletionSource();
-        var key = new WorkKey("import:42");
+        var key = new MissionKey("import:42");
 
-        var first = scheduler.SubmitAsync(new WorkRequest
+        var first = scheduler.SubmitAsync(new MissionRequest
         {
             Run = async _ => { Interlocked.Increment(ref runs); await gate.Task; },
             Key = key,
         });
         // Submitted while the first is still in flight.
         while (!scheduler.IsActive(key)) await Task.Delay(5);
-        var second = scheduler.SubmitAsync(new WorkRequest
+        var second = scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { Interlocked.Increment(ref runs); return Task.CompletedTask; },
             Key = key,
@@ -100,21 +100,21 @@ public class WorkSchedulerBehaviourTests
         var results = await Task.WhenAll(first, second);
 
         Assert.Equal(1, runs);
-        Assert.Equal(WorkOutcome.Completed, results[0].Outcome);
-        Assert.Equal(WorkOutcome.Deduplicated, results[1].Outcome);
+        Assert.Equal(MissionOutcome.Completed, results[0].Outcome);
+        Assert.Equal(MissionOutcome.Deduplicated, results[1].Outcome);
     }
 
     [Fact]
     public async Task Cancelling_while_queued_never_runs_the_body()
     {
-        await using var scheduler = NewScheduler(new WorkSchedulerOptions { DefaultLaneCapacity = 1 });
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
 
         var blocker = new TaskCompletionSource();
-        var busy = scheduler.SubmitAsync(new WorkRequest { Run = async _ => await blocker.Task });
+        var busy = scheduler.SubmitAsync(new MissionRequest { Run = async _ => await blocker.Task });
 
         using var cts = new CancellationTokenSource();
         var ran = false;
-        var queued = scheduler.SubmitAsync(new WorkRequest { Run = _ => { ran = true; return Task.CompletedTask; } }, cts.Token);
+        var queued = scheduler.SubmitAsync(new MissionRequest { Run = _ => { ran = true; return Task.CompletedTask; } }, cts.Token);
 
         while (scheduler.PendingCount == 0) await Task.Delay(5);
         await cts.CancelAsync();
@@ -123,14 +123,14 @@ public class WorkSchedulerBehaviourTests
         var result = await queued.WaitAsync(TimeSpan.FromSeconds(5));
         await busy;
 
-        Assert.Equal(WorkOutcome.Cancelled, result.Outcome);
+        Assert.Equal(MissionOutcome.Cancelled, result.Outcome);
         Assert.False(ran);
     }
 
     [Fact]
     public async Task Priority_orders_eligible_work_without_reordering_a_conflict()
     {
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 1,   // force a strict ordering so the sequence is observable
             Scopes = [new FlatClaimScope("entity")],
@@ -138,15 +138,15 @@ public class WorkSchedulerBehaviourTests
 
         var order = new List<string>();
         var blocker = new TaskCompletionSource();
-        var busy = scheduler.SubmitAsync(new WorkRequest { Run = async _ => await blocker.Task });
+        var busy = scheduler.SubmitAsync(new MissionRequest { Run = async _ => await blocker.Task });
 
         // Queue low then high while the lane is occupied; high must start first.
-        var low = scheduler.SubmitAsync(new WorkRequest
+        var low = scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { lock (order) order.Add("low"); return Task.CompletedTask; },
             Priority = 0,
         });
-        var high = scheduler.SubmitAsync(new WorkRequest
+        var high = scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { lock (order) order.Add("high"); return Task.CompletedTask; },
             Priority = 10,
@@ -165,14 +165,14 @@ public class WorkSchedulerBehaviourTests
         var open = false;
         // ReSharper disable once AccessToModifiedClosure — deliberate: the gate flips mid-test.
         var policy = new DelegatePolicy((_, _) => open);
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 4,
             Policy = policy,
         });
 
         var started = false;
-        var submitted = scheduler.SubmitAsync(new WorkRequest
+        var submitted = scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => { started = true; return Task.CompletedTask; },
         });
@@ -184,7 +184,7 @@ public class WorkSchedulerBehaviourTests
         scheduler.Reevaluate();   // the app's job: nothing else knows the condition changed
 
         var result = await submitted.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
     }
 
     [Fact]
@@ -197,27 +197,27 @@ public class WorkSchedulerBehaviourTests
             if (Interlocked.Increment(ref throwCount) == 1) throw new InvalidOperationException("policy bug");
             return true;
         });
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
             Policy = policy,
         });
 
         var first = await scheduler
-            .SubmitAsync(new WorkRequest { Run = _ => Task.CompletedTask })
+            .SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask })
             .WaitAsync(TimeSpan.FromSeconds(5))
             .ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : null);
 
         // The first submit's dispatch threw; a later submit re-dispatches and both drain.
         if (first is null)
         {
-            var recovered = await scheduler.SubmitAsync(new WorkRequest { Run = _ => Task.CompletedTask })
+            var recovered = await scheduler.SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask })
                 .WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(WorkOutcome.Completed, recovered.Outcome);
+            Assert.Equal(MissionOutcome.Completed, recovered.Outcome);
         }
         else
         {
-            Assert.Equal(WorkOutcome.Completed, first.Outcome);
+            Assert.Equal(MissionOutcome.Completed, first.Outcome);
         }
     }
 
@@ -225,16 +225,16 @@ public class WorkSchedulerBehaviourTests
     public async Task Observers_see_the_lifecycle_and_a_throwing_one_cannot_fail_the_work()
     {
         var good = new RecordingObserver();
-        var options = new WorkSchedulerOptions
+        var options = new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
             Observers = [new ThrowingObserver(), good],
         };
-        await using var scheduler = new WorkScheduler(options);
+        await using var scheduler = new MissionScheduler(options);
 
-        var result = await scheduler.SubmitAsync(new WorkRequest { Run = _ => Task.CompletedTask, Kind = "scan" });
+        var result = await scheduler.SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask, Kind = "scan" });
 
-        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
         Assert.Equal(1, good.Queued);
         Assert.Equal(1, good.Started);
         Assert.Equal(1, good.Finished);
@@ -244,13 +244,13 @@ public class WorkSchedulerBehaviourTests
     public async Task Durable_work_is_persisted_then_forgotten_when_it_finishes()
     {
         var store = new RecordingStore();
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
             Store = store,
         });
 
-        var result = await scheduler.SubmitAsync(new WorkRequest
+        var result = await scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => Task.CompletedTask,
             Durable = true,
@@ -258,9 +258,9 @@ public class WorkSchedulerBehaviourTests
             Payload = "{\"id\":7}",
         });
 
-        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
         Assert.Contains(store.Saved, r => r.Kind == "export" && r.Payload == "{\"id\":7}");
-        Assert.Contains(result.WorkId, store.Removed);
+        Assert.Contains(result.MissionId, store.Removed);
     }
 
     [Fact]
@@ -268,10 +268,10 @@ public class WorkSchedulerBehaviourTests
     {
         // The boot-loop lesson: work that was RUNNING when the process died may be what killed it.
         var store = new RecordingStore();
-        store.Pending.Add(new WorkRecord("w-queued", "scan", null, WorkState.Queued, DateTimeOffset.UtcNow));
-        store.Pending.Add(new WorkRecord("w-running", "render", null, WorkState.Running, DateTimeOffset.UtcNow));
+        store.Pending.Add(new MissionRecord("w-queued", "scan", null, MissionState.Queued, DateTimeOffset.UtcNow));
+        store.Pending.Add(new MissionRecord("w-running", "render", null, MissionState.Running, DateTimeOffset.UtcNow));
 
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
             Store = store,
@@ -280,8 +280,8 @@ public class WorkSchedulerBehaviourTests
         var rehydrated = new List<string>();
         var requeued = await scheduler.RecoverAsync(record =>
         {
-            rehydrated.Add(record.WorkId);
-            return new WorkRequest { Run = _ => Task.CompletedTask };
+            rehydrated.Add(record.MissionId);
+            return new MissionRequest { Run = _ => Task.CompletedTask };
         });
 
         Assert.Equal(1, requeued);
@@ -293,9 +293,9 @@ public class WorkSchedulerBehaviourTests
     public async Task Recovery_honours_an_app_supplied_policy()
     {
         var store = new RecordingStore();
-        store.Pending.Add(new WorkRecord("w1", "resumable", null, WorkState.Running, DateTimeOffset.UtcNow));
+        store.Pending.Add(new MissionRecord("w1", "resumable", null, MissionState.Running, DateTimeOffset.UtcNow));
 
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
             Store = store,
@@ -303,7 +303,7 @@ public class WorkSchedulerBehaviourTests
             RecoveryPolicyFor = _ => RecoveryPolicy.Requeue,
         });
 
-        var requeued = await scheduler.RecoverAsync(_ => new WorkRequest { Run = _ => Task.CompletedTask });
+        var requeued = await scheduler.RecoverAsync(_ => new MissionRequest { Run = _ => Task.CompletedTask });
 
         Assert.Equal(1, requeued);
     }
@@ -313,10 +313,10 @@ public class WorkSchedulerBehaviourTests
     {
         await using var scheduler = NewScheduler();
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => scheduler.SubmitAsync(new WorkRequest
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => Task.CompletedTask,
-            Claims = [WorkClaim.Exclusive("nope", "k")],
+            Claims = [MissionClaim.Exclusive("nope", "k")],
         }));
 
         Assert.Contains("not registered", ex.Message, StringComparison.Ordinal);
@@ -326,19 +326,19 @@ public class WorkSchedulerBehaviourTests
     public async Task An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing()
     {
         // The asymmetry with an unregistered SCOPE (above) is deliberate but easy to "fix" by
-        // mistake, and the XML on SubmitAsync/WorkResult claimed both threw until 2026-08-02. It is
+        // mistake, and the XML on SubmitAsync/MissionResult claimed both threw until 2026-08-02. It is
         // pinned here because the consequence is silent: a misspelled lane draws on a NEW lane at the
         // default capacity, so the exclusivity the app configured on the real lane is simply gone.
-        await using var scheduler = NewScheduler(new WorkSchedulerOptions { DefaultLaneCapacity = 3 });
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 3 });
         scheduler.Lane("gpu").Capacity = 1;
 
-        var result = await scheduler.SubmitAsync(new WorkRequest
+        var result = await scheduler.SubmitAsync(new MissionRequest
         {
             Run = _ => Task.CompletedTask,
-            Lanes = [new WorkLane("gpu-typo")],
+            Lanes = [new MissionLane("gpu-typo")],
         });
 
-        Assert.Equal(WorkOutcome.Completed, result.Outcome);
+        Assert.Equal(MissionOutcome.Completed, result.Outcome);
         Assert.Equal(3, scheduler.Lane("gpu-typo").Capacity);   // the default, NOT the gate's 1
         Assert.Equal(1, scheduler.Lane("gpu").Capacity);
     }
@@ -346,11 +346,11 @@ public class WorkSchedulerBehaviourTests
     [Fact]
     public async Task Dispose_cancels_queued_work_and_awaits_what_is_running()
     {
-        var scheduler = NewScheduler(new WorkSchedulerOptions { DefaultLaneCapacity = 1 });
+        var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
 
         var entered = new TaskCompletionSource();
         var finished = false;
-        var running = scheduler.SubmitAsync(new WorkRequest
+        var running = scheduler.SubmitAsync(new MissionRequest
         {
             Run = async ct =>
             {
@@ -361,59 +361,59 @@ public class WorkSchedulerBehaviourTests
             },
         });
         await entered.Task;
-        var queued = scheduler.SubmitAsync(new WorkRequest { Run = _ => Task.CompletedTask });
+        var queued = scheduler.SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask });
 
         await scheduler.DisposeAsync();
 
         Assert.True(finished, "dispose must await in-flight work rather than abandon it");
-        Assert.Equal(WorkOutcome.Cancelled, (await queued).Outcome);
+        Assert.Equal(MissionOutcome.Cancelled, (await queued).Outcome);
         await running;
     }
 
     // ── doubles ───────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class DelegatePolicy(Func<WorkView, WorkSchedulerState, bool> shouldStart) : IWorkPolicy
+    private sealed class DelegatePolicy(Func<MissionView, MissionSchedulerState, bool> shouldStart) : IMissionPolicy
     {
-        public bool ShouldStart(in WorkView work, in WorkSchedulerState state) => shouldStart(work, state);
-        public int Compare(in WorkView a, in WorkView b) => a.Sequence.CompareTo(b.Sequence);
+        public bool ShouldStart(in MissionView mission, in MissionSchedulerState state) => shouldStart(mission, state);
+        public int Compare(in MissionView a, in MissionView b) => a.Sequence.CompareTo(b.Sequence);
     }
 
-    private sealed class RecordingObserver : IWorkObserver
+    private sealed class RecordingObserver : IMissionObserver
     {
         public int Queued;
         public int Started;
         public int Finished;
-        public void OnQueued(in WorkView work) => Queued++;
-        public void OnStarted(in WorkView work) => Started++;
-        public void OnFinished(in WorkView work, WorkResult result) => Finished++;
+        public void OnQueued(in MissionView mission) => Queued++;
+        public void OnStarted(in MissionView mission) => Started++;
+        public void OnFinished(in MissionView mission, MissionResult result) => Finished++;
     }
 
-    private sealed class ThrowingObserver : IWorkObserver
+    private sealed class ThrowingObserver : IMissionObserver
     {
-        public void OnQueued(in WorkView work) => throw new InvalidOperationException("observer bug");
-        public void OnStarted(in WorkView work) => throw new InvalidOperationException("observer bug");
-        public void OnFinished(in WorkView work, WorkResult result) => throw new InvalidOperationException("observer bug");
+        public void OnQueued(in MissionView mission) => throw new InvalidOperationException("observer bug");
+        public void OnStarted(in MissionView mission) => throw new InvalidOperationException("observer bug");
+        public void OnFinished(in MissionView mission, MissionResult result) => throw new InvalidOperationException("observer bug");
     }
 
-    private sealed class RecordingStore : IWorkStore
+    private sealed class RecordingStore : IMissionStore
     {
-        public List<WorkRecord> Saved { get; } = [];
+        public List<MissionRecord> Saved { get; } = [];
         public List<string> Removed { get; } = [];
-        public List<WorkRecord> Pending { get; } = [];
+        public List<MissionRecord> Pending { get; } = [];
 
-        public Task SaveAsync(WorkRecord record, CancellationToken cancellationToken)
+        public Task SaveAsync(MissionRecord record, CancellationToken cancellationToken)
         {
             lock (Saved) Saved.Add(record);
             return Task.CompletedTask;
         }
 
-        public Task RemoveAsync(string workId, CancellationToken cancellationToken)
+        public Task RemoveAsync(string missionId, CancellationToken cancellationToken)
         {
-            lock (Removed) Removed.Add(workId);
+            lock (Removed) Removed.Add(missionId);
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<WorkRecord>> LoadPendingAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<WorkRecord>>(Pending);
+        public Task<IReadOnlyList<MissionRecord>> LoadPendingAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<MissionRecord>>(Pending);
     }
 }

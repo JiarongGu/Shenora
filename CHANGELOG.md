@@ -14,8 +14,36 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
-_Nothing yet. Do not stamp this heading by hand — the release workflow does it
-(`docs/RELEASING.md`). See the 0.2.0 note below for what hand-stamping cost._
+_Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the
+0.2.0 note below for what hand-stamping cost._
+
+### Breaking
+
+- **The scheduler surface is renamed `Work*` → `Mission*`** (owner's call). `Work` is too common a
+  word to own or to grep for, and the obvious alternative — `Task` — collides with
+  `System.Threading.Tasks.Task`, with `TaskScheduler` ambiguous against the BCL type in every
+  consumer that imports both namespaces. `Mission` names a unit of work with an objective and an
+  outcome, is unique on this surface, and stays mechanism vocabulary rather than any app's domain
+  noun. Namespace is unchanged (`Shenora.Core`); the folder moved to `src/Shenora.Core/Missions/`.
+
+  | 0.3.0 | now |
+  |---|---|
+  | `IWorkScheduler` / `WorkScheduler` / `WorkSchedulerOptions` | `IMissionScheduler` / `MissionScheduler` / `MissionSchedulerOptions` |
+  | `WorkRequest` / `WorkContext` / `WorkResult` / `WorkOutcome` | `MissionRequest` / `MissionContext` / `MissionResult` / `MissionOutcome` |
+  | `WorkClaim` / `WorkLane` / `WorkKey` | `MissionClaim` / `MissionLane` / `MissionKey` |
+  | `WorkView` / `WorkSnapshot` / `WorkSchedulerState` | `MissionView` / `MissionSnapshot` / `MissionSchedulerState` |
+  | `IWorkPolicy` / `PriorityWorkPolicy` / `IWorkObserver` | `IMissionPolicy` / `PriorityMissionPolicy` / `IMissionObserver` |
+  | `IWorkStore` / `WorkRecord` / `WorkState` | `IMissionStore` / `MissionRecord` / `MissionState` |
+  | `WorkId` (property, and the `workId` parameter) | `MissionId` / `missionId` |
+  | `MissionSnapshot.Work` | `MissionSnapshot.Mission` |
+
+  `ILane`, `WorkLane`'s `Permits`, `IClaimScope`, `FlatClaimScope`, `NestedClaimScope`, `PathClaims`,
+  `RetryPolicy` and `RecoveryPolicy` are unchanged — only the unit-of-work prefix moved. A rename is
+  the whole change: no behaviour, no signature shapes, no defaults differ. Sed on the table above and
+  you are done.
+
+  It is a real break against a published surface (0.3.0 is on NuGet), taken deliberately while the
+  layer is days old and the realistic consumer count is zero — not a free one.
 
 ## 0.2.0 — never released
 

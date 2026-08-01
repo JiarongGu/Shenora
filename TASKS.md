@@ -8,8 +8,8 @@ release-facing log. `> DIRECTION (user):` blockquotes capture the user's steerin
 here as long as they still steer.
 
 **Status: 0.3.0 PUBLISHED (2026-08-01).** Five NuGet packages + `@shenora/react` on npm. It carries
-everything through the work scheduler — the design pass (D1–D4), the genericity gate, D25, and
-`Shenora.Core`'s `Work`/`Io` layer.
+everything through the mission scheduler — the design pass (D1–D4), the genericity gate, D25, and
+`Shenora.Core`'s `Missions`/`Io` layer.
 
 **0.2.0 does not exist and never will** — a session hand-bumped `<VersionPrefix>` to it, the release
 workflow bumped from that baseline to 0.3.0, and the number was consumed without shipping. The

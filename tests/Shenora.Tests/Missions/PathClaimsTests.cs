@@ -91,7 +91,7 @@ public class PathClaimsTests
     public async Task Registered_on_a_scheduler_it_serializes_overlapping_paths()
     {
         // The end-to-end shape an adopting app writes: this is the family's file-operation planner.
-        await using var scheduler = new WorkScheduler(new WorkSchedulerOptions
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 4,
             Scopes = [PathClaims.Scope],
@@ -108,12 +108,12 @@ public class PathClaimsTests
             lock (gate) active--;
         }
 
-        var directory = scheduler.SubmitAsync(new WorkRequest
+        var directory = scheduler.SubmitAsync(new MissionRequest
         {
             Run = c => Touch(c.Cancellation),
             Claims = [PathClaims.Exclusive(Under("mods"))],
         });
-        var fileInside = scheduler.SubmitAsync(new WorkRequest
+        var fileInside = scheduler.SubmitAsync(new MissionRequest
         {
             Run = c => Touch(c.Cancellation),
             Claims = [PathClaims.Exclusive(Under("mods", "x", "f.txt"))],

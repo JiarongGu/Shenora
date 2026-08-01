@@ -14,7 +14,7 @@ namespace Shenora.Core;
 /// </summary>
 public interface IClaimScope
 {
-    /// <summary>Scope name, matched against <see cref="WorkClaim.Scope"/>. Case-sensitive.</summary>
+    /// <summary>Scope name, matched against <see cref="MissionClaim.Scope"/>. Case-sensitive.</summary>
     string Name { get; }
 
     /// <summary>

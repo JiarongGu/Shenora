@@ -5,7 +5,7 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
-### 2026-08-02 — the work scheduler: a filesystem planner and a job queue are ONE engine
+### 2026-08-02 — the mission scheduler: a filesystem planner and a job queue are ONE engine
 
 Harvest-driven (D15), from owner direction that *"a common usecase is filesystem operations + parallel
 tasks process… we need a library to support, since those 2 major features are complex themselves"* —
@@ -14,7 +14,7 @@ just say we did some mirroring."* A survey of the three donor apps found the sam
 **five times and differently**: two file-operation planners (545 and 603 lines — one an event-driven
 path-overlap dispatcher, the other a two-plan single-worker model it had been rewritten away from), two
 job queues (463 and 664 lines), a global GPU gate and a lane-holding capacity governor. Design +
-evidence: `docs/2026-08-02-shenora-work-scheduling-design.md`; the surface is in `ARCHITECTURE.md`.
+evidence: `docs/2026-08-02-shenora-mission-scheduling-design.md`; the surface is in `ARCHITECTURE.md`.
 
 **It shipped in 0.3.0** — `CHANGELOG.md` dates that release 2026-08-01 while this entry is dated by the
 day the work was built, so the two headings differ by a day for one release only.
@@ -23,18 +23,18 @@ day the work was built, so the two headings differ by a day for one release only
 (two keys conflict when one contains the other) and a job queue is a scheduler keyed by LANE (a key
 admits N holders); everything else — submission order, bounded parallelism, event-driven dispatch,
 dedup, retry, cancellation — is identical. So `Shenora.Core` gained ONE engine plus an `IClaimScope`
-seam, in `Work/` + `Io/PathClaims.cs`, with **no new package** (D2) and no storage, DI or reporting
+seam, in `Missions/` + `Io/PathClaims.cs`, with **no new package** (D2) and no storage, DI or reporting
 dependency. Two whole classes of prior bug disappear structurally rather than by being fixed: a
 request declares its claim SET, so there is no per-key lock object to leak (the check-then-remove race
 that handed two callers different semaphores for one key) and no acquisition ORDER to remember (the
 documented entity→category rule every call site carried).
 
 Two amendments landed DURING the build, both from *"think bigger — a new application with a new
-requirement should also fit"*. **A1:** ordering and timing are PRODUCT decisions, so `IWorkPolicy`
-owns what (`Compare`) and when (`ShouldStart`) with `PriorityWorkPolicy` as the default — safe to
+requirement should also fit"*. **A1:** ordering and timing are PRODUCT decisions, so `IMissionPolicy`
+owns what (`Compare`) and when (`ShouldStart`) with `PriorityMissionPolicy` as the default — safe to
 expose because a policy only ever chooses among items that already passed admission, so the worst a
 buggy one can do is delay work. **A2:** the surface was audited for changes that would be BREAKING
-later rather than additive, which is how weighted lane permits (`WorkLane(Name, Permits)`) and
+later rather than additive, which is how weighted lane permits (`MissionLane(Name, Permits)`) and
 `Priority` shipped from the start, defaulted to today's behaviour. What that reasoning did NOT buy:
 a DAG engine, a handler registry, per-item pause — "it might be needed" is not evidence (§10).
 
@@ -42,10 +42,10 @@ a DAG engine, a handler registry, per-item pause — "it might be needed" is not
 run — peak concurrency 1 for a contended key WHILE exceeding 1 overall — because asserting only that
 results are correct passes a fully serial implementation, and every test passes an explicit lane
 capacity so a parallelism regression cannot hide on a two-core box. Two adoption claims that had been
-asserted with nothing behind them then got their own tests (`WorkSchedulerAdoptionTests`): crossing
+asserted with nothing behind them then got their own tests (`MissionSchedulerAdoptionTests`): crossing
 two-claim pairs complete under a timeout (a deadlock manifests as a hang, so the timeout IS the
 assertion), and lowering a lane's capacity mid-flight both spares in-flight work and really binds once
-the surplus drains. Adopter-facing mapping: the work-scheduler section of `docs/ADOPTION.md`.
+the surplus drains. Adopter-facing mapping: the mission-scheduler section of `docs/ADOPTION.md`.
 
 ### 2026-08-01 — 0.3.0: the module contract carries the event path, and the kit tracks operations
 

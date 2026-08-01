@@ -5,7 +5,7 @@ namespace Shenora.Core;
 /// path needs.
 ///
 /// <para>
-/// This is the whole of what makes a <see cref="WorkScheduler"/> into the family's file-operation
+/// This is the whole of what makes a <see cref="MissionScheduler"/> into the family's file-operation
 /// planner: register <see cref="Scope"/>, attach a claim per path an operation touches, and
 /// overlapping work serializes while disjoint work runs in parallel. The ~550-line planners two of
 /// the sibling apps each maintain are this plus their archive code.
@@ -13,11 +13,11 @@ namespace Shenora.Core;
 /// </summary>
 public static class PathClaims
 {
-    /// <summary>The <see cref="WorkClaim.Scope"/> name these helpers produce.</summary>
+    /// <summary>The <see cref="MissionClaim.Scope"/> name these helpers produce.</summary>
     public const string ScopeName = "path";
 
     /// <summary>
-    /// The claim scope to register in <see cref="WorkSchedulerOptions.Scopes"/>. Hierarchical, so
+    /// The claim scope to register in <see cref="MissionSchedulerOptions.Scopes"/>. Hierarchical, so
     /// <c>C:\a</c> conflicts with <c>C:\a\b</c> — which is the point: deleting a directory must not
     /// run while something writes a file inside it. Case-insensitive on Windows only.
     /// </summary>
@@ -25,14 +25,14 @@ public static class PathClaims
         new(ScopeName, Path.DirectorySeparatorChar, ignoreCase: OperatingSystem.IsWindows());
 
     /// <summary>An exclusive claim on <paramref name="path"/> — for anything that MUTATES it.</summary>
-    public static WorkClaim Exclusive(string path) => WorkClaim.Exclusive(ScopeName, Canonical(path));
+    public static MissionClaim Exclusive(string path) => MissionClaim.Exclusive(ScopeName, Canonical(path));
 
     /// <summary>
     /// A shared claim on <paramref name="path"/> — for readers. Several readers of one path run
     /// together; a writer waits for them. None of the family's planners could express this, so they
     /// serialized reads behind writes they did not conflict with.
     /// </summary>
-    public static WorkClaim Shared(string path) => WorkClaim.Shared(ScopeName, Canonical(path));
+    public static MissionClaim Shared(string path) => MissionClaim.Shared(ScopeName, Canonical(path));
 
     /// <summary>
     /// Absolute, separator-normalized form — resolving <c>..</c>, <c>.</c> and mixed separators so
