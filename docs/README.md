@@ -30,6 +30,7 @@ update the relevant entry HERE — this file is the durable index.
 | Keeping the library generic | `.claude/knowledge/generic-library.md` |
 | When did this break? | `docs/FIX-LOG.md` (use `/fix-log` to append) |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
+| Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/2026-08-02-shenora-work-scheduling-design.md` (the one-scheduler-two-key-kinds claim + what is deliberately not built) + the work-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
@@ -50,6 +51,8 @@ update the relevant entry HERE — this file is the durable index.
 |---|---|---|
 | `2026-07-30-shenora-design.md` | The design contract: profiles, packages, IPC contract, phasing. Code cites its `§5` (the threading model) | Keep in sync with reality (dated amendments) |
 | `2026-08-01-shenora-communication-core-design.md` | The 0.2.0 communication core RATIONALE: `IModuleContext`, tracked operations, `NotificationPump`, the lifecycle bands. Code cites its `§4.2/§4.3/§4.6/§5/§5A.*` | Rewritten to the current shape in the 0.2.0 cleanup; as-built surface is `ARCHITECTURE.md` |
+| `2026-08-02-shenora-work-scheduling-design.md` | The work-scheduling + filesystem-claims design: the evidence (five hand-rolled implementations), one engine with pluggable key spaces, the durability and policy seams, and `## Amendments` A1/A2 | Keep in sync with reality (dated amendments) |
+| `2026-08-02-shenora-mobile-offline-plan.md` | Assessment of an on-device/offline mobile host: the blocker is transport coupling in the ADOPTING app, not the kit | Assessment, not a queue — see `TASKS.md` |
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |

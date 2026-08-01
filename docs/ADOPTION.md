@@ -8,6 +8,10 @@ duplicated code for the least risk; the IPC substrate comes last because it is t
 touches every module. Keep the app runnable and shipped at the end of every stage — none of this
 requires a big-bang branch.
 
+**One section below is not a stage at all.** [The work scheduler](#the-work-scheduler--not-a-stage-adoptable-on-its-own)
+lives in `Shenora.Core` and needs no shell, no IPC and no Windows, so it can be taken first, last, or
+on its own by an app that wants nothing else here.
+
 **What Shenora is not.** It is a library, not an application framework: it ships the desktop *body*
 and no product decisions. It has no UI components and no design system (D13), no state library, and
 no opinion about your domain. Anything in the "stays yours" column below stays yours permanently —
@@ -314,6 +318,184 @@ finding, not a misuse.
 
 ---
 
+## The work scheduler — not a stage; adoptable on its own
+
+`Shenora.Core` ships ONE scheduler for the two things the family built five separate times: a
+**filesystem operation planner** (serialize work that touches overlapping paths, run disjoint work in
+parallel) and a **job queue** (bounded concurrency, retry, cancel, durability). They are the same
+engine with different key types — paths conflict when one CONTAINS the other, lanes admit N holders at
+once — and putting only that difference behind a seam is what makes adoption a DELETION rather than a
+translation. Evidence, rationale and the deliberately-not-built list:
+`docs/2026-08-02-shenora-work-scheduling-design.md`.
+
+**It needs nothing else from the kit.** `IWorkScheduler` is in `Shenora.Core`: no shell, no IPC, no
+Windows, and not even the host builder — `new WorkScheduler(options)`, registered as a singleton in
+whatever container you already use. Nothing above is a prerequisite.
+
+**The bugs it deletes.** Every one of these was live in a hand-rolled queue or planner in this family,
+and none of them is exotic — they are what this problem costs when each app solves it alone:
+
+- A ref-counted per-key semaphore, removed at zero holders, where a check-then-remove race handed two
+  callers *different* semaphores for the same key — so the resource that looked serialized was not.
+  There is no per-key lock object here; the scheduler owns claim lifetime, so the race has nowhere to
+  live.
+- A documented lock ORDER between two key spaces (entity, then category) that every call site had to
+  remember. A request declares its whole claim SET and is admitted only when all of it is free, so
+  there is no acquisition order to get wrong.
+- Path overlap tested with a naive `StartsWith`, which makes `a/bc` a child of `a/b`: two unrelated
+  resources then serialize against each other forever, and the symptom reads as "the queue is slow".
+  Containment is tested at a separator boundary.
+- Two spellings of one location (`data\mods\..\mods\x` and `data/mods/x`) treated as different keys,
+  so two mutations ran on one directory at once. Claims are normalized once, at submit.
+- A compress-then-replace that retried the WHOLE operation when only the replace hit a locked target —
+  seconds of recompression, up to three times, to redo a file move that takes microseconds.
+- Work found RUNNING after a crash and re-run on every boot, turning one crash into a loop the user
+  cannot escape from inside the app.
+
+### Setup
+
+```csharp
+var scheduler = new WorkScheduler(new WorkSchedulerOptions
+{
+    DefaultLaneCapacity = 0,   // 0 = clamp(cores-1, 1, 4), the value both hand-rolled planners chose
+    Scopes = [PathClaims.Scope, new FlatClaimScope("entity"), new FlatClaimScope("category")],
+    Log = message => logger.LogDebug("{Message}", message),
+});
+scheduler.Lane("gpu").Capacity = 1;   // a scarce shared resource — see the lane trap below
+```
+
+Register only the scopes you use. A claim naming an **unregistered scope throws at submit** rather
+than being ignored — silently dropping an exclusion the caller asked for is the one failure mode a
+scheduler must not have. Pass an explicit `DefaultLaneCapacity` in your own tests: a concurrency
+assertion keyed off the host's core count passes or fails by machine, which is how a parallelism
+regression hides on the one box with two cores.
+
+### What replaces what
+
+| You probably hand-rolled | Use | Notes |
+|---|---|---|
+| A planner that serializes operations touching the same file or directory | `PathClaims.Scope` + one `PathClaims.Exclusive(path)` per path an operation MUTATES (source, target and temp) | Hierarchical: `C:\a` conflicts with `C:\a\b`, because deleting a directory must not run while something writes inside it. |
+| Reads serialized behind writes they did not actually conflict with | `PathClaims.Shared(path)` | No hand-rolled planner in the family could express a reader/writer split, so all of them over-serialized. Several shared holders run together; an exclusive one waits. |
+| A per-entity mutex or per-key semaphore dictionary | `WorkClaim.Exclusive("entity", id)` over a `FlatClaimScope` | Flat keys conflict only when equal. |
+| A second lock for a coarser key, plus a lock-order rule | both claims on ONE request — `Claims = [WorkClaim.Exclusive("entity", id), WorkClaim.Exclusive("category", group)]` | Acquired as a set, so deadlock is structurally impossible and the lock-order rule stops being something anyone must remember. Guarded by `WorkSchedulerAdoptionTests.Claims_acquired_as_a_set_cannot_deadlock_on_lock_order`, which drives crossing pairs under a timeout (a deadlock shows up as a hang, so the assertion has to be the timeout). |
+| A mailbox actor that serializes one stream of items | one `Exclusive` claim on a single key | The actor falls out of the model; the kit ships no `Actor` type on purpose. |
+| A `maxConcurrency` constructor argument | `WorkSchedulerOptions.DefaultLaneCapacity` | Every request draws one permit from the default lane. |
+| A static gate/semaphore singleton over a scarce resource (one GPU, a rate-limited endpoint) | `scheduler.Lane("gpu").Capacity = 1` + `Lanes = [new WorkLane("gpu")]` on the request | Removes the singleton, so it is testable and there can be more than one. A lane that is a BUDGET rather than a slot count takes weighted permits: `new WorkLane("vram", 4)`. |
+| A live "max active" slider | the `ILane.Capacity` setter | Lowering it never cancels running work — the surplus is swallowed as items finish. Proven in both directions: `Lowering_lane_capacity_throttles_new_work_without_killing_running_work` and `A_lowered_capacity_is_enforced_once_the_surplus_drains`. The setter enforces a floor of 1 and no ceiling, so clamp to your own maximum before assigning. |
+| A capacity governor that suspends work under system load | `ILane.Hold()` / `Release()` (re-entrant) | The kit ships the mechanism and no policy: load probes, hysteresis and debounce stay yours. This is the difference between "yield the GPU while the user games" and "kill the user's transcode". |
+| Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `WorkRequest.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission completes eagerly against the existing item with `WorkOutcome.Deduplicated`, and the body runs once. |
+| `MAX_RETRY_ATTEMPTS` / `RETRY_DELAY_MS` constants | `RetryPolicy` | Same defaults as the family's measured value: 3 attempts, 500 ms × attempt, `IOException` only. `RetryPolicy.None` opts out; `Retry = null` already means none. |
+| A retry loop wrapped around an expensive operation to survive a cheap final step | `Run` (the expensive phase, runs ONCE) + `Commit` (cheap, retried) | Setting `Commit` is what makes `Run` exempt from the retry budget. |
+| A `Channel` + worker pool + gate, or a plan-swap with a signal and a worker task | the scheduler | Dispatch is event-driven — on submit and on each completion. No worker thread, no polling latency. |
+| Priority or "not now" rules baked into the queue's own loop | `IWorkPolicy` (`Compare` = what, `ShouldStart` = when); default `PriorityWorkPolicy` is priority-then-FIFO | Ordering is a PRODUCT decision, so it is yours. A policy is only consulted about items that already passed admission, so the worst a buggy one can do is DELAY work — it cannot make conflicting work overlap or bypass a lane. A throwing policy is treated as "not now" rather than wedging the scheduler. |
+| `GetPendingOperationCount()`, a queue/diagnostics view | `PendingCount`, `RunningCount`, `Snapshot()` | `Snapshot()` is a copy: safe to hold, stale the moment it returns. |
+| Durable jobs in SQLite (or JSON) + resume on startup | `IWorkStore` over your EXISTING repository, `Durable = true` per request, then `RecoverAsync(rehydrate)` at a moment you choose | The kit ships no store implementation, by design — see below. `Kind` and `Payload` are yours, never interpreted. |
+| A "do not auto-resume this crash-prone type" flag | `RecoveryPolicyFor` → `RecoveryPolicy.Fail` | Already the default for records found `Running`; `Queued` records requeue. The safe default is the one that cannot loop. |
+| Opening and closing a progress operation by hand in every work body | `IWorkObserver` — see below | Every call is guarded, so an observer that throws cannot fail the work it was only watching. |
+| A `candidate.StartsWith(root)` guard on anything that turns caller input into a path | `PathClaims.IsContained(root, candidate)` | Not scheduling, but it belongs to the same file: it resolves `..` and `.` FIRST and tests at a separator boundary, so neither an escaping segment nor `C:\data-old` passes as being inside `C:\data`. |
+
+The two-phase shape, which is what the `Run`/`Commit` split was designed from:
+
+```csharp
+var result = await scheduler.SubmitAsync(new WorkRequest
+{
+    Claims = [PathClaims.Exclusive(cachePath), PathClaims.Exclusive(archivePath)],
+    Run    = _ => archive.CompressToTempAsync(cachePath, tempPath),   // expensive, runs ONCE
+    Commit = _ => files.ReplaceAsync(tempPath, archivePath),          // cheap, retried
+    Retry  = new RetryPolicy(),
+    Key    = new WorkKey($"compress:{entityId}"),
+});
+if (!result.Succeeded)
+    logger.LogWarning(result.Error, "compress failed after {Attempts} attempt(s)", result.Attempts);
+```
+
+> ⚠ **A failing body does not throw out of `SubmitAsync`** — the failure comes back as
+> `WorkResult.Outcome`, because a submitter is usually a batch loop that must survive one bad item.
+> Check `Succeeded`/`Outcome`, or call `ThrowIfFailed()` if you prefer exceptions. Caller bugs
+> (unregistered claim scope, disposed scheduler) still throw at submit; those are not outcomes of the
+> work. If you port a call site that assumed "it threw, so it failed", it will now look like it
+> succeeded.
+
+> ⚠ **A lane is created on first mention, at the default capacity.** A misspelled lane name therefore
+> does NOT throw — it silently gives you a second lane whose capacity is not the one you configured,
+> and the exclusivity you thought you had is gone. Set lane capacities once at startup and keep the
+> names in constants.
+
+> ⚠ **The parallelism change is the real risk in this adoption, and nothing will tell you.** If your
+> current planner runs one operation at a time (a single worker, a global gate), disjoint work starts
+> overlapping the moment you switch. That is the upgrade — it is why the newer of the family's two
+> planners was rewritten — but anything that quietly depended on the old accidental global ordering
+> breaks silently. Find those call sites before you move the second batch of operations across, not
+> after.
+
+> ⚠ **A scheduler only protects what goes through it.** If you keep an audit of which call sites route
+> through your old planner, keep it: adopting the kit does not make an unrouted `Directory.Delete`
+> safe. The rule becomes "never mutate a managed resource outside a scheduled work item".
+
+> ⚠ **A policy that defers on an EXTERNAL condition needs a nudge.** Dispatch happens on submit and on
+> completion, so a clock, load or battery rule must call `Reevaluate()` when its condition changes or
+> the deferred item waits for unrelated traffic to wake it. The kit owns no timer: polling belongs to
+> whoever knows what is being polled.
+
+### Progress reporting composes — it is not merged in
+
+The scheduler is the EXECUTION half of long-running work; `Shenora.Ipc`'s operation registry (Stage 3)
+is the REPORTING half, and they stay separate because `Shenora.Ipc` may depend on `Shenora.Core` and
+never the reverse (D19/D20). `IWorkObserver` is the seam: `OnQueued`/`OnStarted`/`OnFinished` for every
+item, each call guarded so a throwing observer cannot fail the work it was only watching.
+
+**The adapter is yours to write, and it is short** — start an operation in `OnStarted`, complete or
+fail it in `OnFinished`, and no work body opens an operation by hand again. That boilerplate is
+precisely what the family's apps repeated at every call site and occasionally forgot, leaving
+operations stuck "running" forever. The same seam is where metrics and tracing attach.
+
+### What the kit does not ship here
+
+- **No filesystem abstraction and no atomic-replace helper.** If you have an `IFileSystem` plus an
+  in-memory implementation, keep it — it is the most valuable thing in that area, because an in-memory
+  filesystem that injects latency and transient `IOException`s is how the concurrency invariants become
+  provable in YOUR app. The write-to-temp-then-replace *shape* is what the kit models (`Run`/`Commit`);
+  the replace itself is your `Commit` body. `PathClaims` is the only filesystem type here.
+- **No archive, download or cleanup helpers.** Carve depth caps, leaked-handle retries, an
+  extract-never-execute rule: business logic, and it stays yours.
+- **No persistent `IWorkStore`, no handler registry by job type, no DAG/workflow engine, no per-item
+  cooperative pause.** Each is deliberate, with reasons, in §10 of the design doc.
+
+### Order to adopt
+
+1. Add the scheduler alongside the existing queue and route ONE low-risk operation through it.
+2. Move the rest of the raw-filesystem operations; delete the old planner.
+3. Move the entity/category locks; delete the operation queue — the lock-order rule disappears here.
+4. Lanes for scarce resources; delete the gate singleton.
+5. Durability last: implement `IWorkStore` over your existing storage, wire `RecoverAsync`.
+
+Steps 1, 3 and 4 are behaviour-preserving. **Step 2 is where the parallelism change lands**, so that
+is the one to verify against real workloads rather than only against tests.
+
+### Known gaps — worth knowing BEFORE you start
+
+1. **Per-item cooperative pause is weaker than a hand-rolled one.** The kit offers lane hold (coarser
+   — it suspends a lane, not an item) or cancel-and-resubmit. If you need to pause one specific
+   in-flight item, say so: that is the first extension to build, and it should be built on your
+   evidence rather than guessed at now.
+2. **No handler-registry-by-type.** Deliberate: the `rehydrate` delegate already needs your
+   record→body mapping, so the kit would be duplicating your composition.
+3. **No persistent store.** Storage is the app's decision, and `Shenora.Core` takes no storage
+   dependency.
+4. **Content URIs are not paths.** `PathClaims` assumes a hierarchical filesystem with a platform
+   separator — right for app-private storage, wrong for an Android MediaStore/SAF content URI, which
+   needs its own `IClaimScope`. Nothing else in the scheduler cares.
+
+**Verify:** one run must prove exclusion AND parallelism together — work on the same key never
+overlaps *while* disjoint work does. Asserting only that results are correct passes a fully serial
+implementation, which is the trap, and capacity alone can produce either half. The kit's own
+`Parallel_and_serialized_hold_in_the_SAME_run` submits a contended key and disjoint keys in one mixed
+workload and asserts peak concurrency twice — 1 for the contended key, more than 1 overall — and yours
+should be shaped the same way. Then lower a lane's capacity mid-run and confirm in-flight work
+survives while new work throttles.
+
+---
+
 ## What stays yours, permanently
 
 - **Your domain.** Modules, routes, payload schemas, business rules.
@@ -321,6 +503,9 @@ finding, not a misuse.
   splash colours) and ships no design system (D13).
 - **Transport-level product decisions** — what an "operation" is, its phases and progress shape,
   whether work queues, what a viewer looks like. The kit ships primitives and lifecycle hooks (D21).
+- **Your queue's product decisions** — what runs next and when (`IWorkPolicy`), where durable work
+  persists (`IWorkStore`), what a job record contains and which handler runs it. The kit owns the
+  SAFETY rules (claim exclusion, lane capacity, no starvation) and hands the rest back.
 - **Your state management.** `createShenoraStore` is built on React's `useSyncExternalStore`; if you
   already use a store library, keep it and subscribe through `useShenoraEvent`.
 - **Your event/enum vocabulary.** Module and event names are app schema.
