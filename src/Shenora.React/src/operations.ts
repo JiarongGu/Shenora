@@ -16,6 +16,15 @@ export const OperationStatuses = {
   Failed: 'failed',
   Cancelled: 'cancelled',
   Interrupted: 'interrupted',
+  /**
+   * Stopped mid-flight WITHOUT crashing, awaiting a decision (expired credentials, a throttling
+   * provider, DNS not yet propagated, a migration awaiting confirmation) — the WAITING band
+   * alongside `interrupted` (design §5A.2): never pruned as history, and not one of the terminal
+   * statuses in {@link OperationsState.finished}. Reached from `running` via the host's own
+   * `IOperation.Pause`; exits via the host's `IOperation.Resume` (back to `running`), the
+   * `DISMISS` route (to `cancelled`), or a direct complete/fail.
+   */
+  Paused: 'paused',
 } as const;
 
 /** One of {@link OperationStatuses}. */
@@ -43,6 +52,9 @@ export const OperationRoutes = {
   Cancel: 'CANCEL',
   ClearFinished: 'CLEAR_FINISHED',
   Resume: 'RESUME',
+  /** Decline a pending Paused/Interrupted offer by id — mirrors {@link Cancel}'s shape. No `PAUSE`
+   * route exists: pausing is the host's own knowledge, never a client decision (design §5A.3). */
+  Dismiss: 'DISMISS',
 } as const;
 
 /**
@@ -75,6 +87,8 @@ export interface OperationInfo {
   progress?: number;
   title?: OperationLabel;
   detail?: OperationLabel;
+  /** Why the operation is `'paused'` — an app-defined string, like `kind`; the kit never interprets it. */
+  pauseReason?: string;
   error?: IpcError;
   cancellable: boolean;
   resumable: boolean;
@@ -103,6 +117,8 @@ export interface OperationsState {
   byId: Record<string, OperationInfo>;
   /** Every currently-running operation, in `byId` order. */
   readonly running: OperationInfo[];
+  /** Every operation currently `'paused'` — the WAITING band alongside `'interrupted'` (design §5A.2). */
+  readonly paused: OperationInfo[];
   /** Every operation that reached a terminal status (completed/failed/cancelled). */
   readonly finished: OperationInfo[];
 }
@@ -111,6 +127,14 @@ export interface OperationsState {
 export interface OperationsActions {
   /** `CANCEL { operationId }` — the app-level cancel route `ipc-contracts` prescribes. */
   cancel: (operationId: string) => string;
+  /**
+   * `DISMISS { operationId }` — decline a pending `paused`/`interrupted` offer (design §5A.3),
+   * mirroring {@link cancel}'s shape. Unlike {@link clearFinished}/{@link resume}, this needs NO
+   * optimistic local prune: the host's `Dismiss` transitions the entry to `cancelled` and publishes
+   * an ordinary `OPERATION_UPDATED` snapshot for it (same as a real cancel), so the store already
+   * folds the result from the wire.
+   */
+  dismiss: (operationId: string) => string;
   /**
    * `CLEAR_FINISHED` — drop retained finished history. Also prunes the TERMINAL entries from this
    * store's local state immediately (optimistic, no wire change — whole-branch review): the host
@@ -141,6 +165,9 @@ function makeState(byId: Record<string, OperationInfo>): OperationsState {
     byId,
     get running() {
       return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Running);
+    },
+    get paused() {
+      return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Paused);
     },
     get finished() {
       return Object.values(byId).filter((operation) => TERMINAL_STATUSES.has(operation.status));
@@ -205,6 +232,7 @@ export function createOperationsStore(
     },
     actions: ({ post, setState }) => ({
       cancel: (operationId: string) => post(OperationRoutes.Cancel, { payload: { operationId } }),
+      dismiss: (operationId: string) => post(OperationRoutes.Dismiss, { payload: { operationId } }),
       clearFinished: () => {
         // Optimistic local prune — see OperationsActions.clearFinished's doc for why this is needed
         // at all: the host never emits a removal delta for what it drops.

@@ -106,6 +106,41 @@ public class OperationsFacadeTests
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
     }
 
+    /// <summary>DISMISS mirrors CANCEL's shape (§5A.3, D23 amendment): `{ operationId }` → `{ dismissed }`.</summary>
+    [Fact]
+    public async Task DISMISS_dismisses_a_paused_operation_by_id()
+    {
+        var (facade, registry) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+
+        var response = await facade.HandleMessageAsync(
+            IpcRequests.Create("OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
+
+        Assert.True(response.Success);
+        Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
+        Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
+    }
+
+    /// <summary>
+    /// The honest-refusal shape, same as CANCEL_answers_false_...: the REQUEST still succeeds; only
+    /// the dismiss itself is honestly false, because Dismiss refuses Running on purpose (that is
+    /// CANCEL's job, permission-checked against Cancellable — see IOperationRegistry.Dismiss's doc).
+    /// </summary>
+    [Fact]
+    public async Task DISMISS_answers_false_and_leaves_a_running_operation_running()
+    {
+        var (facade, registry) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        var response = await facade.HandleMessageAsync(
+            IpcRequests.Create("OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
+
+        Assert.True(response.Success);
+        Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
+    }
+
     [Fact]
     public async Task An_unknown_type_gets_the_frameworks_NO_HANDLER_shape()
     {

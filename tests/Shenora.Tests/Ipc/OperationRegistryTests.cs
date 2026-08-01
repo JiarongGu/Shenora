@@ -176,6 +176,159 @@ public class OperationRegistryTests
         Assert.DoesNotContain(prod, o => o.Id == otherScope.Id);
     }
 
+    // --- Pause/Resume (§5A.3, D23 amendment) ---------------------------------------------------
+
+    [Fact]
+    public void Pause_transitions_running_to_paused_and_publishes_immediately_with_the_reason()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        operation.Pause("dns", new OperationLabel(Text: "waiting on DNS"));
+
+        var info = Payload(events[^1]);
+        Assert.Equal(OperationStatus.Paused, info.Status);
+        Assert.Equal("dns", info.PauseReason);
+        Assert.Equal("waiting on DNS", info.Detail!.Text);
+    }
+
+    /// <summary>
+    /// Validate rework (this batch, §5A.1): Pause requires Running specifically — it must refuse an
+    /// ALREADY-paused entry (not just a terminal one), or a second Pause call would silently stomp the
+    /// existing reason with no signal that the first pause was still in effect.
+    /// </summary>
+    [Fact]
+    public void Pause_is_ignored_once_already_paused()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+        var eventsAfterFirstPause = events.Count;
+
+        operation.Pause("credentials");   // must NOT stomp the existing reason
+
+        Assert.Equal(eventsAfterFirstPause, events.Count);   // no spurious second snapshot
+        Assert.Equal("dns", registry.GetAll().Single().PauseReason);
+    }
+
+    [Fact]
+    public void Resume_transitions_paused_to_running_and_clears_the_reason()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+
+        operation.Resume();
+
+        var info = Payload(events[^1]);
+        Assert.Equal(OperationStatus.Running, info.Status);
+        Assert.Null(info.PauseReason);
+    }
+
+    /// <summary>
+    /// The handle-level Resume() (Paused → Running) is distinct from the by-id RequestResume (which
+    /// only ASKS, see OperationResumeTests) — it must refuse a plain Running operation rather than
+    /// silently no-op-ing into an indistinguishable Running state.
+    /// </summary>
+    [Fact]
+    public void Resume_is_ignored_for_an_operation_that_is_not_paused()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        var eventsAfterStart = events.Count;
+
+        operation.Resume();
+
+        Assert.Equal(eventsAfterStart, events.Count);
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
+    }
+
+    /// <summary>
+    /// Validate rework (§5A.1): Report requires Running ONLY — a paused operation is not progressing,
+    /// and letting progress tick while paused is how a UI ends up showing motion for stopped work.
+    /// </summary>
+    [Fact]
+    public void Report_is_ignored_while_paused()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+        var eventsAfterPause = events.Count;
+
+        operation.Report(50);
+
+        Assert.Equal(eventsAfterPause, events.Count);          // no spurious progress snapshot
+        Assert.Null(registry.GetAll().Single().Progress);      // untouched
+    }
+
+    /// <summary>Validate rework (§5A.1): Complete/Fail accept Running OR Paused — a paused deploy can still fail on a deadline.</summary>
+    [Fact]
+    public void Complete_accepts_a_paused_operation()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+
+        operation.Complete();
+
+        Assert.Equal(OperationStatus.Completed, registry.GetAll().Single().Status);
+    }
+
+    [Fact]
+    public void Fail_accepts_a_paused_operation()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+
+        operation.Fail("DEADLINE_EXCEEDED");
+
+        var info = registry.GetAll().Single();
+        Assert.Equal(OperationStatus.Failed, info.Status);
+        Assert.Equal("DEADLINE_EXCEEDED", info.Error!.Code);
+    }
+
+    /// <summary>Validate rework (§5A.1): the public by-id Cancel(id) accepts Running OR Paused, keeping its own Cancellable check.</summary>
+    [Fact]
+    public void Cancel_by_id_accepts_a_paused_operation()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Cancellable = true });
+        operation.Pause("dns");
+
+        Assert.True(registry.Cancel(operation.Id));
+
+        Assert.True(operation.CancellationToken.IsCancellationRequested);
+        Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
+    }
+
+    /// <summary>
+    /// The message-honesty fix (§5A.1, this batch): the OLD message unconditionally said "has already
+    /// reached a terminal state (Interrupted)" for ANY status a transition refused — which is false for
+    /// Interrupted (explicitly not terminal, see OperationStatus's own doc). A Report call against a
+    /// Paused entry must get a message that does NOT claim "terminal", since Paused is not terminal
+    /// either.
+    /// </summary>
+    [Fact]
+    public void The_ignored_diagnostic_does_not_call_a_non_terminal_status_terminal()
+    {
+        string? logged = null;
+        var bus = new EventBus();
+        var registry = new OperationRegistry(bus, new OperationRegistryOptions
+        {
+            ProgressInterval = TimeSpan.Zero,
+            Log = message => logged = message,
+        });
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+
+        operation.Report(50);   // Report only accepts Running — Paused must be refused
+
+        Assert.NotNull(logged);
+        Assert.DoesNotContain("terminal", logged, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Paused", logged, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ClearFinished_removes_history_and_keeps_running_work()
     {
@@ -186,6 +339,30 @@ public class OperationRegistryTests
         registry.ClearFinished();
 
         Assert.Equal(running.Id, registry.GetAll().Single().Id);
+    }
+
+    /// <summary>
+    /// §5A.2's table claims Paused is "never pruned" — same band as Interrupted. Verified rather than
+    /// assumed (this batch): it should follow structurally from Pause() never touching
+    /// <c>_finishedOrder</c>, but a test PINS it, the same way <c>OperationResumeTests</c> already pins
+    /// it for Interrupted. Covers BOTH eviction paths: the automatic <c>MaxHistory</c> cap and the
+    /// explicit <c>ClearFinished</c> call.
+    /// </summary>
+    [Fact]
+    public void A_paused_entry_is_not_prunable_history_and_survives_ClearFinished()
+    {
+        var bus = new EventBus();
+        var registry = new OperationRegistry(bus, new OperationRegistryOptions { MaxHistory = 1 });
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+        for (var i = 0; i < 5; i++) registry.Start("SCAN", new OperationOptions { Kind = "X" }).Complete();
+
+        Assert.Contains(registry.GetAll(), o => o.Id == operation.Id);   // survives MaxHistory eviction
+
+        registry.ClearFinished();
+
+        Assert.Contains(registry.GetAll(), o => o.Id == operation.Id);   // survives explicit ClearFinished too
+        Assert.Equal(OperationStatus.Paused, registry.GetAll().Single(o => o.Id == operation.Id).Status);
     }
 
     [Fact]

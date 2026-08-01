@@ -142,4 +142,56 @@ public class OperationResumeTests
         Assert.Empty(events);
         Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
     }
+
+    // --- The Paused/Interrupted asymmetry (§5A.4, D23 amendment) -------------------------------
+
+    /// <summary>
+    /// §5A.4's rule: RequestResume now accepts a Paused entry too, but the app calls IOperation.Resume
+    /// on its own handle once it has ACTUALLY resumed — the client ASKING is not the state changing.
+    /// So unlike the Interrupted case below, the entry must stay exactly as it was (still Paused,
+    /// still present) after a successful RequestResume.
+    /// </summary>
+    [Fact]
+    public void RequestResume_on_a_paused_entry_leaves_it_in_place_for_the_app_to_flip_via_Resume()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+        events.Clear();
+
+        Assert.True(registry.RequestResume(operation.Id));
+
+        var message = events.Single(e => e.Type == OperationEvents.ResumeRequested);
+        var payload = IpcJson.SerializeToElement(message.Payload);
+        Assert.Equal("paused", payload.GetProperty("status").GetString());
+
+        // Left IN PLACE, still Paused — the defining half of the asymmetry.
+        var info = registry.GetAll().Single(o => o.Id == operation.Id);
+        Assert.Equal(OperationStatus.Paused, info.Status);
+
+        // The app's own handle can still flip it — proves the entry is genuinely untouched, not a
+        // look-alike replacement.
+        operation.Resume();
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+    }
+
+    /// <summary>
+    /// The other half of the asymmetry: an Interrupted entry is still REMOVED by RequestResume (there
+    /// is no live handle to flip — the body died with the process), which is exactly why the payload
+    /// now carries `status`: a handler cannot look this entry up afterward to tell the two cases apart.
+    /// </summary>
+    [Fact]
+    public void RequestResume_on_an_interrupted_entry_still_removes_it_and_the_payload_names_the_status()
+    {
+        var (registry, events) = Build();
+        var id = registry.RegisterInterrupted("SCAN", Checkpoint("session-7"));
+        events.Clear();
+
+        Assert.True(registry.RequestResume(id));
+
+        var message = events.Single(e => e.Type == OperationEvents.ResumeRequested);
+        var payload = IpcJson.SerializeToElement(message.Payload);
+        Assert.Equal("interrupted", payload.GetProperty("status").GetString());
+        Assert.Empty(registry.GetAll());   // gone — the resumed op registers a FRESH one when it restarts
+    }
 }

@@ -60,6 +60,34 @@ public interface IOperationRegistry
     void ClearFinished();
 
     /// <summary>
+    /// Decline a pending offer in the WAITING band (§5A.2): <see cref="OperationStatus.Paused"/> or
+    /// <see cref="OperationStatus.Interrupted"/> → <see cref="OperationStatus.Cancelled"/> — terminal,
+    /// so it enters bounded history and is prunable/clearable like any other finished entry, and
+    /// publishes an <see cref="OperationEvents.Updated"/> snapshot like any other terminal transition
+    /// (unlike <see cref="ClearFinished"/>/<see cref="RequestResume"/>, which remove an entry with no
+    /// corresponding wire event).
+    /// <para>
+    /// <b>Refuses <see cref="OperationStatus.Running"/></b> — returns <c>false</c> and changes nothing.
+    /// Declining a pending offer and cancelling LIVE work are different acts: cancelling is
+    /// <see cref="Cancel"/>'s job, permission-checked against <see cref="OperationOptions.Cancellable"/>;
+    /// routing around that check by letting <c>Dismiss</c> also accept <see cref="OperationStatus.Running"/>
+    /// is the exact conflation that produced this branch's only Critical (§5A.3). A separate member,
+    /// not <c>Cancel</c> accepting more states, for the same reason.
+    /// </para>
+    /// <para>
+    /// Signals the entry's own <see cref="CancellationToken"/> FIRST when one exists (a
+    /// <see cref="OperationStatus.Paused"/> entry still has one; an <see cref="OperationStatus.Interrupted"/>
+    /// entry never does — see <see cref="RegisterInterrupted"/>), so a paused body still parked on its
+    /// token unwinds the same way a running one does under <see cref="Cancel"/>.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// <c>false</c> — and changes nothing — for an unknown id, a <see cref="OperationStatus.Running"/>
+    /// one, or one already terminal: the same honest-refusal shape as every other transition here.
+    /// </returns>
+    bool Dismiss(string id);
+
+    /// <summary>
     /// Announce a crash-interrupted, resumable operation from the APP's own checkpoint — the kit
     /// holds the offer; the app owns what to resume and how. Requires
     /// <see cref="OperationOptions.Resumable"/> true and a non-empty
@@ -81,15 +109,24 @@ public interface IOperationRegistry
     string RegisterInterrupted(string module, OperationOptions options);
 
     /// <summary>
-    /// The user asked to resume operation <paramref name="id"/>. Returns false — and changes
-    /// nothing — unless the entry is BOTH <see cref="OperationStatus.Interrupted"/> and
-    /// <see cref="OperationOptions.Resumable"/> (the same honest-refusal shape as <see cref="Cancel"/>
-    /// for an unknown or wrong-state id). On success, removes the entry and emits
+    /// The user asked to resume operation <paramref name="id"/>. Accepts an entry in the WAITING band
+    /// (§5A.2) — <see cref="OperationStatus.Paused"/> OR <see cref="OperationStatus.Interrupted"/> —
+    /// returning <c>false</c> and changing nothing otherwise (the same honest-refusal shape as
+    /// <see cref="Cancel"/> for an unknown or wrong-state id). On success, emits
     /// <see cref="OperationEvents.ResumeRequested"/> with
-    /// <c>{ operationId, module, kind, resumePayload, scope }</c> for the OWNING module to act on.
-    /// The entry is gone afterward because the resumed operation registers a FRESH one (via
-    /// <see cref="Start"/>/<see cref="Run"/>) when it actually restarts — this call only carries the
-    /// app's opaque token across; it never resumes anything itself.
+    /// <c>{ operationId, module, kind, resumePayload, scope, status }</c> — <c>status</c> lets a
+    /// handler tell the two cases apart, because it CANNOT look the entry up afterward for the
+    /// <see cref="OperationStatus.Interrupted"/> case (see the asymmetry below).
+    /// <para>
+    /// <b>The asymmetry is deliberate (§5A.4), not an inconsistency to tidy away:</b> for
+    /// <see cref="OperationStatus.Paused"/>, the entry is LEFT IN PLACE — the app calls
+    /// <see cref="IOperation.Resume"/> on its own handle once it has actually resumed, so the client
+    /// asking is not the state changing. For <see cref="OperationStatus.Interrupted"/>, the entry is
+    /// still REMOVED, because there is no live handle to flip — the body died with the process, and the
+    /// resumed operation registers a FRESH one (via <see cref="Start"/>/<see cref="Run"/>) when it
+    /// actually restarts. This call only carries the app's opaque token across; it never resumes
+    /// anything itself.
+    /// </para>
     /// </summary>
     bool RequestResume(string id);
 }

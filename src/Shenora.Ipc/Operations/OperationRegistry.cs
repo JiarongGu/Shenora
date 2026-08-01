@@ -30,6 +30,39 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
     private long _nextSequence;
 
+    /// <summary>The only status <see cref="Report"/> and <see cref="Pause"/> accept.</summary>
+    private static readonly OperationStatus[] ActiveOnly = [OperationStatus.Running];
+
+    /// <summary>
+    /// What <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
+    /// (via <see cref="OperationHandle"/>) and the public by-id <see cref="Cancel(string)"/> accept —
+    /// a paused deploy can still complete, fail on a deadline, or be cancelled by an external client,
+    /// exactly as a running one can (§5A.3).
+    /// </summary>
+    private static readonly OperationStatus[] ActiveOrPaused = [OperationStatus.Running, OperationStatus.Paused];
+
+    /// <summary>
+    /// The WAITING band (§5A.2) — what <see cref="RequestResume"/> and <see cref="Dismiss"/> accept.
+    /// Never entered into <see cref="_finishedOrder"/>, so never pruned by <see cref="PruneHistory"/>
+    /// or removed by <see cref="ClearFinished"/> — an offer is not history.
+    /// </summary>
+    private static readonly OperationStatus[] WaitingBand = [OperationStatus.Paused, OperationStatus.Interrupted];
+
+    /// <summary>What <see cref="Resume"/> (the handle's own — not the by-id <see cref="RequestResume"/>) accepts.</summary>
+    private static readonly OperationStatus[] PausedOnly = [OperationStatus.Paused];
+
+    /// <summary>
+    /// ANY non-terminal status — what the owner-path terminal cancel (<see cref="CancelTerminal"/>)
+    /// accepts (§5A.2/§5A.3): a <see cref="OperationStatus.Paused"/> body is still parked on its own
+    /// token and must be able to unwind the same way a <see cref="OperationStatus.Running"/> one does.
+    /// </summary>
+    private static readonly OperationStatus[] NonTerminal =
+        [OperationStatus.Running, OperationStatus.Paused, OperationStatus.Interrupted];
+
+    /// <summary>The three finish-outcomes. Everything else is a band this registry must give an exit from (§5A.1).</summary>
+    private static bool IsTerminal(OperationStatus status) =>
+        status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
+
     /// <summary>Options are validated NOW, not on first use, so a bad value names itself at the call site.</summary>
     public OperationRegistry(IEventBus bus, OperationRegistryOptions? options = null)
     {
@@ -151,7 +184,10 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         string? miss;
         lock (_lock)
         {
-            miss = Validate(id, out var entry);
+            // ActiveOrPaused (Finding 2, this batch, §5A.3): a paused operation is exactly as
+            // cancellable as a running one — nothing about being paused changes whether an external
+            // client has standing to stop it.
+            miss = Validate(id, ActiveOrPaused, out var entry);
             if (miss is null && !entry!.Cancellable)
             {
                 // The honest CANCEL contract (Task 5, carried from the Task 2 review): Start()
@@ -174,7 +210,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return false;
         }
 
-        CancelTokenThenFinish(cts, id, "Cancel");
+        CancelTokenThenFinish(cts, id, "Cancel", ActiveOrPaused);
         return true;
     }
 
@@ -201,10 +237,12 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         lock (_lock)
         {
             _entries.TryGetValue(id, out var entry);
-            cts = entry is { Status: OperationStatus.Running } ? entry.Cts : null;
+            // ANY non-terminal status, not only Running (§5A.2/§5A.3, this batch): a Paused body is
+            // still parked on this same token via IOperation.Pause and must unwind the same way.
+            cts = entry is not null && !IsTerminal(entry.Status) ? entry.Cts : null;
         }
 
-        CancelTokenThenFinish(cts, id, caller);
+        CancelTokenThenFinish(cts, id, caller, NonTerminal);
     }
 
     /// <summary>
@@ -230,7 +268,8 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// proven the same way in the harvested source app.
     /// </para>
     /// </summary>
-    private void CancelTokenThenFinish(CancellationTokenSource? cts, string id, string caller)
+    private void CancelTokenThenFinish(CancellationTokenSource? cts, string id, string caller,
+        IReadOnlyCollection<OperationStatus> allowedStatuses)
     {
         try
         {
@@ -241,7 +280,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             // Already disposed by a concurrent Finish()/Dispose() — see the comment above.
         }
 
-        Finish(id, OperationStatus.Cancelled, null, caller);
+        Finish(id, OperationStatus.Cancelled, null, caller, allowedStatuses);
     }
 
     /// <inheritdoc />
@@ -253,6 +292,36 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 _entries.Remove(id);
             _finishedOrder.Clear();
         }
+    }
+
+    /// <inheritdoc />
+    public bool Dismiss(string id)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        CancellationTokenSource? cts;
+        string? miss;
+        lock (_lock)
+        {
+            // WaitingBand (§5A.2/§5A.3, this batch): Paused or Interrupted only — Dismiss REFUSES
+            // Running on purpose. Declining a pending offer and cancelling LIVE work are different
+            // acts; letting this accept Running too would be the exact conflation (Cancel accepting
+            // states it should not) that produced this branch's only Critical.
+            miss = Validate(id, WaitingBand, out var entry);
+            cts = miss is null ? entry!.Cts : null; // Paused has one; Interrupted never does (RegisterInterrupted) — read under the lock, same discipline as Cancel(id).
+        }
+
+        if (miss is not null)
+        {
+            LogIgnored("Dismiss", id, miss);
+            return false;
+        }
+
+        // Signal the token FIRST (same order as Cancel/CancelTerminal): a Paused body still parked on
+        // it unwinds rather than racing a completed-then-cancelled flip. Interrupted's cts is null, so
+        // this is a no-op for that case — see CancelTokenThenFinish's own null-conditional call.
+        CancelTokenThenFinish(cts, id, "Dismiss", WaitingBand);
+        return true;
     }
 
     /// <inheritdoc />
@@ -335,10 +404,27 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
         Entry? entry;
         string? miss;
+        OperationStatus status = default;
         lock (_lock)
         {
-            miss = ValidateResumable(id, out entry);
-            if (miss is null) _entries.Remove(id);
+            // WaitingBand (§5A.4, this batch): Paused OR Interrupted. The asymmetry lives HERE, not in
+            // Validate — only the Interrupted case is removed.
+            miss = Validate(id, WaitingBand, out entry);
+            if (miss is null)
+            {
+                status = entry!.Status;
+                if (status == OperationStatus.Interrupted)
+                {
+                    // No live handle to flip: the body died with the process, and the resumed
+                    // operation registers a FRESH one via Start/Run when it actually restarts. This
+                    // is why the RESUME_REQUESTED payload below carries `status` — a handler cannot
+                    // look this entry up afterward to tell the two cases apart.
+                    _entries.Remove(id);
+                }
+                // Paused: deliberately LEFT IN PLACE — the app's own IOperation.Resume() flips it once
+                // it has ACTUALLY resumed. The client asking is not the state changing (§5A.4) — the
+                // same split that fixed this branch's only Critical (Cancel vs Dismiss, §5A.3).
+            }
         }
 
         if (miss is not null)
@@ -356,35 +442,24 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             kind = entry.Kind,
             resumePayload = entry.ResumePayload,
             scope = entry.Scope,
+            status,   // lets a handler tell Paused (still there) apart from Interrupted (already gone)
         }, entry.Scope);
 
         return true;
     }
 
     /// <summary>
-    /// Look up <paramref name="id"/> for <see cref="RequestResume"/>: null = found, Interrupted, and
-    /// Resumable (proceed), <paramref name="entry"/> is set; otherwise the diagnostic reason to log.
-    /// MUST be called while holding <see cref="_lock"/> — it reads <see cref="_entries"/> directly.
+    /// Called by an <see cref="OperationHandle"/>. Requires <see cref="OperationStatus.Running"/> —
+    /// NOT <see cref="OperationStatus.Paused"/> too (§5A.3): a paused operation is not progressing, and
+    /// letting progress tick while paused is how a UI ends up showing motion for work that is stopped.
     /// </summary>
-    private string? ValidateResumable(string id, out Entry? entry)
-    {
-        if (!_entries.TryGetValue(id, out entry))
-            return "is not known to this registry (a stale id usually means the caller kept a handle past the operation's life)";
-        if (entry.Status != OperationStatus.Interrupted)
-            return $"is not a pending interrupted offer (status is {entry.Status})";
-        return entry.Resumable
-            ? null
-            : "is not resumable (OperationOptions.Resumable was false)";
-    }
-
-    /// <summary>Called by an <see cref="OperationHandle"/>. Ignored once the operation is terminal.</summary>
     private void Report(string id, int? progress, OperationLabel? detail)
     {
         Entry? entry;
         string? miss;
         lock (_lock)
         {
-            miss = Validate(id, out entry);
+            miss = Validate(id, ActiveOnly, out entry);
             if (miss is null)
             {
                 if (progress.HasValue) entry!.Progress = ClampProgress(progress);
@@ -402,6 +477,65 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <summary>
+    /// Pause: <see cref="OperationStatus.Running"/> → <see cref="OperationStatus.Paused"/> (§5A.3).
+    /// Called by an <see cref="OperationHandle"/>. A lifecycle transition — emits immediately, never
+    /// throttled, same as every other band change.
+    /// </summary>
+    private void Pause(string id, string reason, OperationLabel? detail)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        Entry? entry;
+        string? miss;
+        lock (_lock)
+        {
+            miss = Validate(id, ActiveOnly, out entry);
+            if (miss is null)
+            {
+                entry!.Status = OperationStatus.Paused;
+                entry.PauseReason = reason;
+                if (detail is not null) entry.Detail = detail;
+            }
+        }
+
+        if (miss is not null)
+        {
+            LogIgnored("Pause", id, miss);
+            return;
+        }
+
+        Publish(entry!, immediate: true);
+    }
+
+    /// <summary>
+    /// Resume: <see cref="OperationStatus.Paused"/> → <see cref="OperationStatus.Running"/>, clearing
+    /// <see cref="Entry.PauseReason"/> (§5A.3). Called by an <see cref="OperationHandle"/> — distinct
+    /// from the by-id <see cref="RequestResume"/>, which only ASKS (§5A.4).
+    /// </summary>
+    private void Resume(string id)
+    {
+        Entry? entry;
+        string? miss;
+        lock (_lock)
+        {
+            miss = Validate(id, PausedOnly, out entry);
+            if (miss is null)
+            {
+                entry!.Status = OperationStatus.Running;
+                entry.PauseReason = null;
+            }
+        }
+
+        if (miss is not null)
+        {
+            LogIgnored("Resume", id, miss);
+            return;
+        }
+
+        Publish(entry!, immediate: true);
+    }
+
+    /// <summary>
     /// The one terminal transition every finish (Complete/Fail/Cancel) goes through. Idempotent:
     /// a second call for an already-terminal (or unknown) id is a safe no-op — this is what makes
     /// the "Complete at the end + Fail in the catch" pattern safe.
@@ -409,14 +543,22 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <param name="id">The operation id.</param>
     /// <param name="status">The terminal status to transition to.</param>
     /// <param name="error">The structured failure, when <paramref name="status"/> is <see cref="OperationStatus.Failed"/>; otherwise null.</param>
-    /// <param name="caller">The public API this came from (<c>"Complete"</c>/<c>"Fail"</c>/<c>"Cancel"</c>) — only for the miss diagnostic.</param>
-    private void Finish(string id, OperationStatus status, IpcError? error, string caller)
+    /// <param name="caller">The public API this came from (<c>"Complete"</c>/<c>"Fail"</c>/<c>"Cancel"</c>/<c>"Dismiss"</c>/<c>"Run"</c>) — only for the miss diagnostic.</param>
+    /// <param name="allowedStatuses">
+    /// What this particular transition accepts (Task: rework Validate, this batch) — different
+    /// callers legitimately accept different bands: <c>Complete</c>/<c>Fail</c> accept
+    /// <see cref="ActiveOrPaused"/> (a paused deploy can still fail on a deadline), the public by-id
+    /// <c>Cancel</c> accepts <see cref="ActiveOrPaused"/>, the owner-path terminal cancel accepts
+    /// <see cref="NonTerminal"/>, and <c>Dismiss</c> accepts <see cref="WaitingBand"/>.
+    /// </param>
+    private void Finish(string id, OperationStatus status, IpcError? error, string caller,
+        IReadOnlyCollection<OperationStatus> allowedStatuses)
     {
         Entry? entry;
         string? miss;
         lock (_lock)
         {
-            miss = Validate(id, out entry);
+            miss = Validate(id, allowedStatuses, out entry);
             if (miss is null)
             {
                 entry!.Status = status;
@@ -441,18 +583,33 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <summary>
-    /// Look up <paramref name="id"/>: null = found and running (proceed), <paramref name="entry"/>
-    /// is set; otherwise the diagnostic reason to log for why the caller's id was ignored (an
-    /// unknown id, or one already in a terminal state). MUST be called while holding
-    /// <see cref="_lock"/> — it reads <see cref="_entries"/> directly.
+    /// Look up <paramref name="id"/>: null = found and in one of <paramref name="allowedStatuses"/>
+    /// (proceed), <paramref name="entry"/> is set; otherwise the diagnostic reason to log for why the
+    /// caller's id was ignored. MUST be called while holding <see cref="_lock"/> — it reads
+    /// <see cref="_entries"/> directly.
+    /// <para>
+    /// Rework (this batch, §5A.1): different callers legitimately accept different statuses — a single
+    /// hard-coded <c>Status == Running</c> check here is exactly what left <see cref="OperationStatus.Interrupted"/>
+    /// with no sanctioned exit (every transition refused it, because none of them was allowed to accept
+    /// anything but <see cref="OperationStatus.Running"/>). Every call site now states what IT accepts.
+    /// </para>
+    /// <para>
+    /// The "ignored" reason is now HONEST about terminal vs. non-terminal (this batch): the old message
+    /// unconditionally said "has already reached a terminal state (Interrupted)" for an
+    /// <see cref="OperationStatus.Interrupted"/> id passed to a transition that does not accept it —
+    /// which is false, <see cref="OperationStatus.Interrupted"/> is explicitly NOT terminal (see its own
+    /// doc). Only an actually-terminal status gets that wording; anything else (a status that merely
+    /// isn't in <paramref name="allowedStatuses"/>) gets a status-naming message instead.
+    /// </para>
     /// </summary>
-    private string? Validate(string id, out Entry? entry)
+    private string? Validate(string id, IReadOnlyCollection<OperationStatus> allowedStatuses, out Entry? entry)
     {
         if (!_entries.TryGetValue(id, out entry))
             return "is not known to this registry (a stale id usually means the caller kept a handle past the operation's life)";
-        return entry.Status != OperationStatus.Running
+        if (allowedStatuses.Contains(entry.Status)) return null;
+        return IsTerminal(entry.Status)
             ? $"has already reached a terminal state ({entry.Status})"
-            : null;
+            : $"is currently {entry.Status}, which does not accept this transition";
     }
 
     /// <summary>
@@ -475,10 +632,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
     /// <summary>
     /// Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>.
-    /// Caller holds <see cref="_lock"/>. Only ever touches <see cref="_finishedOrder"/> — an
-    /// <see cref="OperationStatus.Interrupted"/> entry from <see cref="RegisterInterrupted"/> is
-    /// never added to that list (it is a pending offer, not finished history), so it structurally
-    /// cannot be evicted here regardless of how many operations finish afterward.
+    /// Caller holds <see cref="_lock"/>. Only ever touches <see cref="_finishedOrder"/> — the WAITING
+    /// band (§5A.2), <see cref="OperationStatus.Interrupted"/> (from <see cref="RegisterInterrupted"/>)
+    /// and <see cref="OperationStatus.Paused"/> (from <see cref="Pause"/>), is never added to that list
+    /// (an offer is not history), so it structurally cannot be evicted here regardless of how many
+    /// other operations finish afterward — only <see cref="Dismiss"/> moves one out of this band.
     /// </summary>
     private void PruneHistory()
     {
@@ -583,6 +741,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         Progress = entry.Progress,
         Title = entry.Title,
         Detail = entry.Detail,
+        PauseReason = entry.PauseReason,
         Error = entry.Error,
         Cancellable = entry.Cancellable,
         Resumable = entry.Resumable,
@@ -621,6 +780,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public int? Progress { get; set; }
         public OperationLabel? Title { get; init; }
         public OperationLabel? Detail { get; set; }
+        public string? PauseReason { get; set; }
         public IpcError? Error { get; set; }
         public bool Cancellable { get; init; }
         public bool Resumable { get; init; }
@@ -647,23 +807,29 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public void Report(int? progress = null, OperationLabel? detail = null) =>
             registry.Report(Id, progress, detail);
 
-        public void Complete() => registry.Finish(Id, OperationStatus.Completed, null, "Complete");
+        // ActiveOrPaused (§5A.3, this batch): a paused deploy can still complete once the human
+        // unblocks it out of band, or fail on a deadline — see Finish's own doc for the full band map.
+        public void Complete() => registry.Finish(Id, OperationStatus.Completed, null, "Complete", ActiveOrPaused);
 
         public void Fail(string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(code);
-            registry.Finish(Id, OperationStatus.Failed, new IpcError { Code = code, Message = message, Parameters = parameters }, "Fail");
+            registry.Finish(Id, OperationStatus.Failed, new IpcError { Code = code, Message = message, Parameters = parameters }, "Fail", ActiveOrPaused);
         }
 
         public void Fail(OperationException error)
         {
             ArgumentNullException.ThrowIfNull(error);
-            registry.Finish(Id, OperationStatus.Failed, error.ToError(), "Fail");
+            registry.Finish(Id, OperationStatus.Failed, error.ToError(), "Fail", ActiveOrPaused);
         }
 
         // CancelTerminal, NOT registry.Cancel(Id) (Finding 1, whole-branch review): this handle is
         // held by the operation's own owner, not an arbitrary by-id client, so ending it is never a
         // permission question the way the public by-id Cancel(id) is — see CancelTerminal's own doc.
         public void Cancel() => registry.CancelTerminal(Id, "Cancel");
+
+        public void Pause(string reason, OperationLabel? detail = null) => registry.Pause(Id, reason, detail);
+
+        public void Resume() => registry.Resume(Id);
     }
 }

@@ -161,6 +161,10 @@ public class WireMirrorTests
         Assert.Equal(OperationsFacade.CancelType, client["Cancel"]);
         Assert.Equal(OperationsFacade.ClearFinishedType, client["ClearFinished"]);
         Assert.Equal(OperationsFacade.ResumeType, client["Resume"]);
+        // ALSO IN THIS BATCH (§5A.3 amendment): DISMISS is a client route (RESUME/DISMISS are the
+        // human's decisions); PAUSE deliberately has none (pausing is the host's own knowledge) — see
+        // OperationsFacade's own class doc.
+        Assert.Equal(OperationsFacade.DismissType, client["Dismiss"]);
     }
 
     [Fact]

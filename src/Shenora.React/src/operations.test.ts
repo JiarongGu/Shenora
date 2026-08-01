@@ -125,6 +125,25 @@ describe('operations store', () => {
     expect(store.getState().finished).toEqual([]);
   });
 
+  /**
+   * Pin, don't assume (§5A.2, D23 amendment): clearFinished's optimistic local prune uses the
+   * TERMINAL set, so it must not be able to remove a `paused` OR `interrupted` entry — both are the
+   * WAITING band, "not history" by design, and this is exactly the kind of thing a later
+   * "simplification" (e.g. pruning everything that isn't literally 'running') silently breaks.
+   */
+  it('clearFinished does not remove a paused or interrupted entry — the WAITING band is not history', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'paused' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-4', status: 'interrupted' }));
+
+    store.actions.clearFinished();
+
+    expect(Object.keys(store.getState().byId).sort()).toEqual(['op-3', 'op-4']);
+    expect(store.getState().paused.map((o) => o.id)).toEqual(['op-3']);
+  });
+
   it('resume drops the resumed id from local state immediately, optimistically', () => {
     // Same shape as clearFinished: RequestResume removes the offer host-side but emits no delta for
     // it either, so the offer stayed clickable in a mounted store until unmount — a second click on
@@ -148,5 +167,34 @@ describe('operations store', () => {
     expect(store.getState().running).toEqual([]);
     expect(store.getState().finished).toEqual([]);
     expect(store.getState().byId['op-1']).toBeDefined();
+  });
+
+  /** The `paused` derived getter (§5A.2, D23 amendment) — the WAITING band alongside `running`/`finished`. */
+  it('exposes paused operations separately from running and finished', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'paused' }));
+
+    expect(store.getState().paused.map((o) => o.id)).toEqual(['op-2']);
+    expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
+    expect(store.getState().finished).toEqual([]);
+  });
+
+  /**
+   * `dismiss` (§5A.3, D23 amendment) mirrors `cancel`'s shape — no optimistic local prune, because
+   * the host's Dismiss transitions the entry to `cancelled` and publishes an ordinary
+   * OPERATION_UPDATED snapshot for it (unlike clearFinished/resume, which remove an entry with no
+   * corresponding wire event).
+   */
+  it('dismiss posts the DISMISS route with the operation id and does not touch local state', () => {
+    const { store, transport } = harness([]);
+    store.subscribe(() => {});
+
+    store.actions.dismiss('op-1');
+
+    const request = transport.lastRequest<{ operationId: string }>();
+    expect(request.type).toBe('DISMISS');
+    expect(request.payload).toEqual({ operationId: 'op-1' });
   });
 });

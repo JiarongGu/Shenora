@@ -25,6 +25,19 @@ public enum OperationStatus
     /// resume offer, distinct from finished history.
     /// </summary>
     Interrupted,
+
+    /// <summary>
+    /// Stopped mid-flight WITHOUT crashing, awaiting a decision (expired cloud credentials, a
+    /// throttling provider, DNS not yet propagated, a migration awaiting confirmation) — the
+    /// WAITING band alongside <see cref="Interrupted"/> (§5A.2): not progressing, but not one of
+    /// the terminal-finish statuses either, and never pruned as history. Reached from
+    /// <see cref="Running"/> via <see cref="IOperation.Pause"/>; exits via
+    /// <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
+    /// <see cref="IOperationRegistry.Dismiss"/> (to <see cref="Cancelled"/>), or a direct
+    /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
+    /// (a paused deploy can still fail on a deadline).
+    /// </summary>
+    Paused,
 }
 
 /// <summary>
@@ -103,6 +116,14 @@ public sealed record OperationInfo
 
     /// <summary>The latest label from a progress report, if any.</summary>
     public OperationLabel? Detail { get; init; }
+
+    /// <summary>
+    /// Why the operation is <see cref="OperationStatus.Paused"/> — an app-defined string, like
+    /// <see cref="Kind"/> (e.g. <c>"credentials"</c>/<c>"transient"</c>/<c>"dns"</c>/<c>"migration"</c>):
+    /// the app's own taxonomy driving what its UI offers, never the kit's. Null except while
+    /// <see cref="Status"/> is <see cref="OperationStatus.Paused"/>; cleared on <see cref="IOperation.Resume"/>.
+    /// </summary>
+    public string? PauseReason { get; init; }
 
     /// <summary>
     /// Structured failure — set only when <see cref="Status"/> is <see cref="OperationStatus.Failed"/>.

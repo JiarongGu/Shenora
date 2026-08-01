@@ -31,10 +31,18 @@ namespace Shenora.Ipc;
 /// what "resume" actually does with it.
 /// </para>
 /// <para>
-/// The four route types are also public constants (<see cref="ListType"/>/<see cref="CancelType"/>/
-/// <see cref="ClearFinishedType"/>/<see cref="ResumeType"/>), matching <see cref="OperationEvents"/>'s
-/// own const shape — an app or test matches by symbol, and <c>WireMirrorTests</c> pins them against
-/// the client's route literals so a host rename cannot silently leave the client deaf.
+/// The five route types are also public constants (<see cref="ListType"/>/<see cref="CancelType"/>/
+/// <see cref="ClearFinishedType"/>/<see cref="ResumeType"/>/<see cref="DismissType"/>), matching
+/// <see cref="OperationEvents"/>'s own const shape — an app or test matches by symbol, and
+/// <c>WireMirrorTests</c> pins them against the client's route literals so a host rename cannot
+/// silently leave the client deaf.
+/// </para>
+/// <para>
+/// <b>No <c>PAUSE</c> route</b> (§5A.3, D23 amendment): pausing is the HOST's own knowledge — it is
+/// the side that discovered the credentials expired, the DNS had not propagated, whatever the reason
+/// is — a client cannot pause work it does not run. <c>RESUME</c> and <c>DISMISS</c> ARE client
+/// routes, because resuming and declining a paused/interrupted offer are the human's decisions. This
+/// keeps the kit out of policy.
 /// </para>
 /// </summary>
 public sealed class OperationsFacade : BaseFacade
@@ -42,14 +50,22 @@ public sealed class OperationsFacade : BaseFacade
     /// <summary>Route: snapshot of currently-known operations — see the class doc's table.</summary>
     public const string ListType = "LIST";
 
-    /// <summary>Route: cancel a running operation by id.</summary>
+    /// <summary>Route: cancel a running (or paused) operation by id.</summary>
     public const string CancelType = "CANCEL";
 
     /// <summary>Route: drop retained finished history.</summary>
     public const string ClearFinishedType = "CLEAR_FINISHED";
 
-    /// <summary>Route: continue an interrupted, resumable operation.</summary>
+    /// <summary>Route: continue a paused or interrupted, resumable operation.</summary>
     public const string ResumeType = "RESUME";
+
+    /// <summary>
+    /// Route: decline a pending Paused/Interrupted offer by id — <see cref="IOperationRegistry.Dismiss"/>.
+    /// Mirrors <see cref="CancelType"/>'s shape (<c>{ operationId }</c> → <c>{ dismissed }</c>), a
+    /// separate route rather than <see cref="CancelType"/> accepting more states, for the same reason
+    /// <see cref="IOperationRegistry.Dismiss"/> is a separate member from <see cref="IOperationRegistry.Cancel(string)"/>.
+    /// </summary>
+    public const string DismissType = "DISMISS";
 
     private readonly IOperationRegistry _registry;
     private readonly string _moduleName;
@@ -98,6 +114,14 @@ public sealed class OperationsFacade : BaseFacade
                 var resumeId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
                 var requested = _registry.RequestResume(resumeId);
                 return Task.FromResult<object?>(new { requested });
+
+            case DismissType:
+                var dismissId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
+                // Always a response, honestly, same shape as CANCEL: Dismiss() itself refuses (and
+                // changes nothing) for Running or an unknown/already-terminal id — this route just
+                // forwards that bool rather than assuming success.
+                var dismissed = _registry.Dismiss(dismissId);
+                return Task.FromResult<object?>(new { dismissed });
 
             default:
                 throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5)
