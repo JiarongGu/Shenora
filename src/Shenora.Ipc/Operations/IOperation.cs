@@ -23,10 +23,16 @@ public interface IOperation
     /// with just one of the two to update only it. Ignored once the operation has reached a
     /// terminal state (idempotent-finish, not a progress race).
     /// </summary>
+    /// <param name="progress">
+    /// 0–100 PERCENT, clamped (generic-library audit finding 5: stated only on the read side,
+    /// <see cref="OperationInfo.Progress"/>, until now) — reporting a byte count or a raw item index
+    /// against this parameter silently clamps to a permanent 100% with no log line to explain why.
+    /// </param>
+    /// <param name="detail">Optional human-facing detail label.</param>
     void Report(int? progress = null, OperationLabel? detail = null);
 
     /// <summary>Finish successfully. Forces <see cref="OperationInfo.Progress"/> to 100. Idempotent — a no-op once terminal.</summary>
-    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused deploy can still complete once the human unblocks it out of band.</remarks>
+    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused operation can still complete once the human unblocks it out of band.</remarks>
     void Complete();
 
     /// <summary>
@@ -37,11 +43,11 @@ public interface IOperation
     /// <param name="code">Error code / i18n key (e.g. <c>"IMPORT_FAILED"</c>).</param>
     /// <param name="parameters">Optional interpolation values for the client's translation.</param>
     /// <param name="message">Optional untranslated message for host logs only; never sent as the code.</param>
-    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused deploy can still fail on a deadline.</remarks>
+    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused operation can still fail on a deadline.</remarks>
     void Fail(string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null);
 
     /// <summary>Finish, carrying the app's own structured failure through unchanged. Idempotent.</summary>
-    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused deploy can still fail on a deadline.</remarks>
+    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused operation can still fail on a deadline.</remarks>
     void Fail(OperationException error);
 
     /// <summary>
@@ -72,11 +78,16 @@ public interface IOperation
 
     /// <summary>
     /// Pause: <see cref="OperationStatus.Running"/> → <see cref="OperationStatus.Paused"/> (§5A.3),
-    /// for work that stops mid-flight WITHOUT crashing — expired cloud credentials, a throttling
-    /// provider, DNS not yet propagated, a migration awaiting confirmation. Pausing is the HOST's own
-    /// knowledge (it is the side that discovered the block), which is why there is no client route for
-    /// it — only <c>RESUME</c>/<c>DISMISS</c> are, because resuming and dismissing are the human's
-    /// decisions.
+    /// for work that stops mid-flight WITHOUT crashing. Called by the operation's OWN owner once it
+    /// has actually stopped — never by the kit itself. Deliberately distinct from
+    /// <see cref="IOperationRegistry.RequestPause"/> (generic-library audit finding 3): that is the
+    /// client ASKING; this is the state actually changing — the same ASK/ACT split
+    /// <see cref="IOperationRegistry.RequestResume"/> already draws against <see cref="Resume"/>. A
+    /// pause can originate either side of that split: the HOST's own discovery of a blocker (expired
+    /// cloud credentials, a throttling provider, DNS not yet propagated, a migration awaiting
+    /// confirmation) calls this directly with no ask involved; a human clicking Pause on visible work
+    /// goes through <c>RequestPause</c>/<c>PAUSE</c> first, and the owner calls this once it has
+    /// actually honored that ask.
     /// <para>
     /// Ignored (logged, no-op) unless the operation is currently <see cref="OperationStatus.Running"/>
     /// — the same honest-refusal shape as every other transition here.
@@ -85,11 +96,13 @@ public interface IOperation
     /// <param name="reason">
     /// App-defined, like <see cref="OperationOptions.Kind"/> (e.g. <c>"credentials"</c>/
     /// <c>"transient"</c>/<c>"dns"</c>/<c>"migration"</c>) — the app's own taxonomy for what its UI
-    /// offers; the kit never interprets it. Required (not optional): a pause with no reason gives the
-    /// app nothing to branch its UI on.
+    /// offers; the kit never interprets it. Optional (generic-library audit finding 5): a four-value
+    /// taxonomy fit the app it was surveyed from, but a consumer whose pause is self-evident (the user
+    /// clicked Pause) has nothing to name and should not have to invent a filler string just to call
+    /// this.
     /// </param>
     /// <param name="detail">Optional human-facing detail label, same shape as <see cref="Report"/>'s.</param>
-    void Pause(string reason, OperationLabel? detail = null);
+    void Pause(string? reason = null, OperationLabel? detail = null);
 
     /// <summary>
     /// Resume: <see cref="OperationStatus.Paused"/> → <see cref="OperationStatus.Running"/>, clearing

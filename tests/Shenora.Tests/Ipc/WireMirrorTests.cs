@@ -149,6 +149,9 @@ public class WireMirrorTests
         Assert.NotEmpty(client);   // parser self-check: a regex that matched nothing must not pass
         Assert.Equal(OperationEvents.Updated, client["Updated"]);
         Assert.Equal(OperationEvents.ResumeRequested, client["ResumeRequested"]);
+        // Generic-library audit finding 3: PAUSE_REQUESTED is new — pin it the same way, or a host
+        // rename leaves the client deaf to it exactly like the others this test already guards.
+        Assert.Equal(OperationEvents.PauseRequested, client["PauseRequested"]);
     }
 
     [Fact]
@@ -161,10 +164,10 @@ public class WireMirrorTests
         Assert.Equal(OperationsFacade.CancelType, client["Cancel"]);
         Assert.Equal(OperationsFacade.ClearFinishedType, client["ClearFinished"]);
         Assert.Equal(OperationsFacade.ResumeType, client["Resume"]);
-        // ALSO IN THIS BATCH (§5A.3 amendment): DISMISS is a client route (RESUME/DISMISS are the
-        // human's decisions); PAUSE deliberately has none (pausing is the host's own knowledge) — see
-        // OperationsFacade's own class doc.
+        // RESUME/DISMISS are the human's decisions (§5A.3 amendment); PAUSE (generic-library audit
+        // finding 3) is the client ASKING the host to pause — see OperationsFacade's own class doc.
         Assert.Equal(OperationsFacade.DismissType, client["Dismiss"]);
+        Assert.Equal(OperationsFacade.PauseType, client["Pause"]);
     }
 
     [Fact]

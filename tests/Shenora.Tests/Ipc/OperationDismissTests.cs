@@ -43,7 +43,7 @@ public class OperationDismissTests
     {
         var (registry, _) = Build();
         var id = registry.RegisterInterrupted("SCAN",
-            new OperationOptions { Kind = "ANALYSIS", Resumable = true, ResumePayload = "session-7" });
+            new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
 
         Assert.True(registry.Dismiss(id));
 
@@ -136,7 +136,7 @@ public class OperationDismissTests
     {
         var (registry, _) = Build();
         var id = registry.RegisterInterrupted("SCAN",
-            new OperationOptions { Kind = "ANALYSIS", Resumable = true, ResumePayload = "session-7" });
+            new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
 
         var dismissed = registry.Dismiss(id);   // must not throw
 

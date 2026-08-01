@@ -253,6 +253,24 @@ public class OperationRegistryTests
 
     // --- Pause/Resume (§5A.3, D23 amendment) ---------------------------------------------------
 
+    /// <summary>
+    /// FINDING 5 minor (generic-library audit): a pause whose cause is self-evident (the user clicked
+    /// Pause) has nothing to branch a UI on — the surveyed app's four-value reason taxonomy does not
+    /// generalize to every consumer, so a required parameter forced one on a caller who has none.
+    /// </summary>
+    [Fact]
+    public void Pause_with_no_reason_succeeds_and_leaves_PauseReason_null()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        operation.Pause();
+
+        var info = registry.GetAll().Single();
+        Assert.Equal(OperationStatus.Paused, info.Status);
+        Assert.Null(info.PauseReason);
+    }
+
     [Fact]
     public void Pause_transitions_running_to_paused_and_publishes_immediately_with_the_reason()
     {
@@ -436,6 +454,125 @@ public class OperationRegistryTests
     }
 
     /// <summary>
+    /// FINDING 1 (Critical, generic-library audit): <c>ClearFinished</c> used to take NO filter at
+    /// all while its own read counterpart (<c>GetAll</c>) is properly filtered by module/scope — so
+    /// "clear completed" in one scoped window (a secondary window, a scoped container) wiped every
+    /// OTHER scope's finished history too. Mirrors <c>GetAll</c> exactly, including the same
+    /// unscoped-entry-matches-any-requested-scope rule.
+    /// </summary>
+    [Fact]
+    public void ClearFinished_with_a_scope_filter_only_clears_that_scopes_finished_history()
+    {
+        var (registry, _) = Build();
+        var prodDone = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "prod" });
+        prodDone.Complete();
+        var devDone = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "dev" });
+        devDone.Complete();
+
+        registry.ClearFinished(scope: "prod");
+
+        var remaining = registry.GetAll();
+        Assert.DoesNotContain(remaining, o => o.Id == prodDone.Id);
+        Assert.Contains(remaining, o => o.Id == devDone.Id);
+    }
+
+    /// <summary>Same shape as the scope test above, filtering by owning MODULE instead.</summary>
+    [Fact]
+    public void ClearFinished_with_a_module_filter_only_clears_that_modules_finished_history()
+    {
+        var (registry, _) = Build();
+        var deployDone = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        deployDone.Complete();
+        var scanDone = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
+        scanDone.Complete();
+
+        registry.ClearFinished(module: "DEPLOY");
+
+        var remaining = registry.GetAll();
+        Assert.DoesNotContain(remaining, o => o.Id == deployDone.Id);
+        Assert.Contains(remaining, o => o.Id == scanDone.Id);
+    }
+
+    /// <summary>
+    /// The exact multi-window bug the finding describes: clearing scope A's finished history must
+    /// leave scope B's completely untouched, running work aside.
+    /// </summary>
+    [Fact]
+    public void ClearFinished_scoped_to_one_window_does_not_wipe_another_windows_finished_history()
+    {
+        var (registry, _) = Build();
+        var windowA = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "window-a" });
+        windowA.Complete();
+        var windowB = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "window-b" });
+        windowB.Complete();
+
+        registry.ClearFinished(scope: "window-a");
+
+        Assert.Single(registry.GetAll(), o => o.Id == windowB.Id);
+        Assert.Equal(OperationStatus.Completed, registry.GetAll().Single(o => o.Id == windowB.Id).Status);
+    }
+
+    /// <summary>
+    /// FINDING 4 (Important, generic-library audit): the host bounds finished history
+    /// (<see cref="OperationRegistryOptions.MaxHistory"/>) but the CLIENT — the side actually
+    /// rendering — never heard about it: <see cref="OperationEvents.Updated"/> only ever adds or
+    /// updates an id, so an evicted id used to just vanish from the host with no wire event at all.
+    /// <see cref="OperationEvents.Removed"/> closes that: eviction now publishes the evicted id(s).
+    /// </summary>
+    [Fact]
+    public void MaxHistory_eviction_emits_OPERATION_REMOVED_naming_the_evicted_id()
+    {
+        var bus = new EventBus();
+        var events = new List<EventMessage>();
+        bus.SubscribeToAll(m => { lock (events) events.Add(m); return Task.CompletedTask; });
+        var registry = new OperationRegistry(bus, new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero, MaxHistory = 1 });
+        var evicted = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        evicted.Complete();
+        events.Clear();
+
+        registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" }).Complete();   // pushes MaxHistory=1 over the cap
+
+        var removed = events.Single(e => e.Type == OperationEvents.Removed);
+        var ids = IpcJson.SerializeToElement(removed.Payload).GetProperty("operationIds")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Equal([evicted.Id], ids);
+    }
+
+    /// <summary>Mirrors the eviction test above, for the explicit <see cref="IOperationRegistry.ClearFinished"/> route.</summary>
+    [Fact]
+    public void ClearFinished_emits_OPERATION_REMOVED_naming_every_id_it_actually_removed()
+    {
+        var (registry, events) = Build();
+        var kept = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });   // still running — not removed
+        var removedA = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        removedA.Complete();
+        var removedB = registry.Start("SCAN", new OperationOptions { Kind = "X" });
+        removedB.Complete();
+        events.Clear();
+
+        registry.ClearFinished();
+
+        var message = events.Single(e => e.Type == OperationEvents.Removed);
+        var ids = IpcJson.SerializeToElement(message.Payload).GetProperty("operationIds")
+            .EnumerateArray().Select(e => e.GetString()!).ToHashSet();
+        Assert.Equal(new HashSet<string> { removedA.Id, removedB.Id }, ids);
+        Assert.DoesNotContain(kept.Id, ids);
+    }
+
+    /// <summary>ClearFinished with nothing to remove must not publish an empty/spurious OPERATION_REMOVED.</summary>
+    [Fact]
+    public void ClearFinished_with_no_matching_history_does_not_emit_OPERATION_REMOVED()
+    {
+        var (registry, events) = Build();
+        registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });   // still running
+        events.Clear();
+
+        registry.ClearFinished();
+
+        Assert.DoesNotContain(events, e => e.Type == OperationEvents.Removed);
+    }
+
+    /// <summary>
     /// §5A.2's table claims Paused is "never pruned" — same band as Interrupted. Verified rather than
     /// assumed (this batch): it should follow structurally from Pause() never touching
     /// <c>_finishedOrder</c>, but a test PINS it, the same way <c>OperationResumeTests</c> already pins
@@ -457,6 +594,58 @@ public class OperationRegistryTests
 
         Assert.Contains(registry.GetAll(), o => o.Id == operation.Id);   // survives explicit ClearFinished too
         Assert.Equal(OperationStatus.Paused, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+    }
+
+    // --- Find (generic-library audit finding 3, reinstated) ------------------------------------
+
+    /// <summary>
+    /// <c>Find</c> was dropped pre-0.2.0 as unearned surface ("no consumer resolves a handle from a
+    /// bare id"). That ruling is now wrong on evidence: <c>RESUME</c>/<c>PAUSE</c> are both
+    /// CLIENT-request routes whose handlers must translate the id they carry back into a handle to
+    /// call <see cref="IOperation.Resume"/>/<see cref="IOperation.Pause"/> — every consumer of those
+    /// two routes would otherwise keep its own id→handle map alongside the registry.
+    /// </summary>
+    [Fact]
+    public void Find_returns_a_handle_that_can_act_on_the_live_entry()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        var found = registry.Find(operation.Id);
+
+        Assert.NotNull(found);
+        Assert.Equal(operation.Id, found!.Id);
+        found.Report(50);
+        Assert.Equal(50, registry.GetAll().Single().Progress);
+    }
+
+    [Fact]
+    public void Find_returns_null_for_an_unknown_id()
+    {
+        var (registry, _) = Build();
+
+        Assert.Null(registry.Find("no-such-id"));
+    }
+
+    /// <summary>
+    /// "A returned handle validates state on every call, so a stale one is safe" — a handle resolved
+    /// BEFORE the operation finished must still be a safe no-op afterward, not a dangling reference to
+    /// guard against.
+    /// </summary>
+    [Fact]
+    public void Find_returned_handle_is_safe_to_use_after_the_operation_has_finished()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        var found = registry.Find(operation.Id)!;
+        operation.Complete();
+        var eventsAfterComplete = events.Count;
+
+        found.Report(50);      // must be ignored — Report only accepts Running
+        found.Complete();      // already terminal — idempotent no-op
+
+        Assert.Equal(eventsAfterComplete, events.Count);   // no spurious snapshot from the stale handle
+        Assert.Equal(OperationStatus.Completed, registry.GetAll().Single().Status);
     }
 
     [Fact]

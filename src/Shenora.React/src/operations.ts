@@ -47,6 +47,22 @@ export type OperationStatus = (typeof OperationStatuses)[keyof typeof OperationS
 export const OperationEventTypes = {
   Updated: 'OPERATION_UPDATED',
   ResumeRequested: 'OPERATION_RESUME_REQUESTED',
+  /**
+   * A client asked to pause a running operation (generic-library audit finding 3) — the owning
+   * module should call the host's `IOperation.Pause` once it has actually stopped. Not subscribed by
+   * {@link createOperationsStore} itself, same as {@link ResumeRequested}: it targets the owning
+   * module's own service, not the generic operations store.
+   */
+  PauseRequested: 'OPERATION_PAUSE_REQUESTED',
+  /**
+   * One or more operation ids left the host registry with no corresponding `Updated` snapshot —
+   * `MaxHistory` eviction, `CLEAR_FINISHED`, and the interrupted-entry drop on `RESUME` (Finding 4,
+   * generic-library audit). Payload is `{ operationIds: string[] }`; {@link createOperationsStore}
+   * folds it by deleting those ids, which is what let the two hand-written optimistic prunes
+   * (`clearFinished`/`resume` used to carry one each) be removed — one authoritative event that
+   * cannot diverge from what the host actually did, replacing two guesses that could.
+   */
+  Removed: 'OPERATION_REMOVED',
 } as const;
 
 /**
@@ -60,9 +76,15 @@ export const OperationRoutes = {
   Cancel: 'CANCEL',
   ClearFinished: 'CLEAR_FINISHED',
   Resume: 'RESUME',
-  /** Decline a pending Paused/Interrupted offer by id — mirrors {@link Cancel}'s shape. No `PAUSE`
-   * route exists: pausing is the host's own knowledge, never a client decision (design §5A.3). */
+  /** Decline a pending Paused/Interrupted offer by id — mirrors {@link Cancel}'s shape. */
   Dismiss: 'DISMISS',
+  /**
+   * Ask the owning module to pause a running operation by id (generic-library audit finding 3) —
+   * mirrors {@link Resume}'s shape (`{ operationId }` → `{ requested }`). Asking is not acting: the
+   * owning module's own `IOperation.Pause` is what actually stops the work and publishes the
+   * transition, same split as {@link Resume} vs the host's `IOperation.Resume`.
+   */
+  Pause: 'PAUSE',
 } as const;
 
 /**
@@ -99,7 +121,6 @@ export interface OperationInfo {
   pauseReason?: string;
   error?: IpcError;
   cancellable: boolean;
-  resumable: boolean;
   resumePayload?: string;
   startedAt: string;
   finishedAt?: string;
@@ -172,33 +193,37 @@ export interface OperationsActions {
   cancel: (operationId: string) => string;
   /**
    * `DISMISS { operationId }` — decline a pending `paused`/`interrupted` offer (design §5A.3),
-   * mirroring {@link cancel}'s shape. Unlike {@link clearFinished}/{@link resume}, this needs NO
-   * optimistic local prune: the host's `Dismiss` transitions the entry to `cancelled` and publishes
-   * an ordinary `OPERATION_UPDATED` snapshot for it (same as a real cancel), so the store already
-   * folds the result from the wire.
+   * mirroring {@link cancel}'s shape. No optimistic local prune: the host's `Dismiss` transitions the
+   * entry to `cancelled` and publishes an ordinary `OPERATION_UPDATED` snapshot for it (same as a real
+   * cancel), so the store already folds the result from the wire.
    */
   dismiss: (operationId: string) => string;
   /**
-   * `CLEAR_FINISHED` — drop retained finished history. Also prunes the TERMINAL entries from this
-   * store's local state immediately (optimistic, no wire change — whole-branch review): the host
-   * removes entries but never emits a removal delta (`OPERATION_UPDATED` only ever adds/updates an
-   * id), so without this a mounted panel kept rendering the cleared rows until every subscriber
-   * unmounted and the store was rebuilt from a fresh `LIST`. The host's `MaxHistory` pruning is NOT
-   * mirrored this way — a long-lived store still keeps everything IT has seen until this is called.
+   * `CLEAR_FINISHED { scope? }` — drop retained finished history, forwarding this store's own
+   * configured scope (generic-library audit finding 1) so a scoped store's "clear completed" cannot
+   * wipe another scope's history host-side. No local mutation here: the host's
+   * `OPERATION_REMOVED` (finding 4) is the only thing that removes a row from this store now — see
+   * {@link OperationEventTypes.Removed}. It used to carry an optimistic local prune of every TERMINAL
+   * entry, added because removals had no wire event at all; that guess is retired now that one exists.
    */
   clearFinished: () => string;
   /**
-   * `RESUME { operationId }` — ask the host to continue a paused or interrupted operation. Prunes
-   * the id from local state immediately (optimistic) ONLY for the `interrupted` case — mirroring the
-   * host's own asymmetry (design §5A.4): an `interrupted` entry is removed host-side too (no live
-   * body to flip), so pruning it locally is the same "the host removed it and emits no delta"
-   * rationale as {@link clearFinished}. A `paused` entry is deliberately LEFT IN PLACE host-side (the
-   * app flips it via its own handle once it has ACTUALLY resumed — the client asking is not the state
-   * changing), so pruning it here too would show the user a resumed row that never actually resumed:
-   * unreachable until every subscriber unmounts and a fresh `LIST` runs — the exact "waiting entry
-   * with no reachable exit" bug this feature exists to close, rebuilt one layer up in the client.
+   * `RESUME { operationId }` — ask the host to continue a paused or interrupted operation. No local
+   * mutation here: the host's `OPERATION_REMOVED` fold is what actually drops an `interrupted` entry
+   * (the asymmetric half of design §5A.4 — a `paused` entry is deliberately LEFT IN PLACE host-side,
+   * so no removal event ever arrives for it either). It used to carry an optimistic local prune
+   * gated on the `interrupted` status, which was the source of this release's only Critical (it
+   * pruned a `paused` row once, before the asymmetry was re-derived into it) — the authoritative
+   * event now makes that guess unnecessary.
    */
   resume: (operationId: string) => string;
+  /**
+   * `PAUSE { operationId }` — ask the owning module to pause a running operation (generic-library
+   * audit finding 3), mirroring {@link dismiss}'s shape. No optimistic local prune: asking never
+   * changes the state by itself — the owning module's own `IOperation.Pause` is what publishes the
+   * `paused` transition, and the store folds it from the wire like any other `OPERATION_UPDATED`.
+   */
+  pause: (operationId: string) => string;
 }
 
 function index(list: OperationInfo[]): Record<string, OperationInfo> {
@@ -286,35 +311,29 @@ export function createOperationsStore(
       // no ordering logic and no cross-type races.
       [OperationEventTypes.Updated]: (state, payload: OperationInfo) =>
         makeState({ ...state.byId, [payload.id]: payload }),
+      // The ONE removal delta (Finding 4, generic-library audit), replacing the two hand-written
+      // optimistic prunes `clearFinished`/`resume` used to carry (see their own docs below) — deletes
+      // exactly the ids the host named, regardless of status; an id this store never had is a no-op.
+      [OperationEventTypes.Removed]: (state, payload: { operationIds: string[] }) => {
+        const byId = { ...state.byId };
+        for (const id of payload.operationIds) delete byId[id];
+        return makeState(byId);
+      },
     },
-    actions: ({ post, setState }) => ({
+    actions: ({ post }) => ({
       cancel: (operationId: string) => post(OperationRoutes.Cancel, { payload: { operationId } }),
       dismiss: (operationId: string) => post(OperationRoutes.Dismiss, { payload: { operationId } }),
-      clearFinished: () => {
-        // Optimistic local prune — see OperationsActions.clearFinished's doc for why this is needed
-        // at all: the host never emits a removal delta for what it drops.
-        setState((state) => {
-          const byId: Record<string, OperationInfo> = {};
-          for (const [id, operation] of Object.entries(state.byId)) {
-            if (!TERMINAL_STATUSES.has(operation.status)) byId[id] = operation;
-          }
-          return makeState(byId);
-        });
-        return post(OperationRoutes.ClearFinished);
-      },
-      resume: (operationId: string) => {
-        // Optimistic local drop — ONLY for the `interrupted` case (§5A.4 asymmetry — see
-        // OperationsActions.resume's doc). A `paused` entry (or an unknown id) is left untouched:
-        // the host keeps it, so pruning it here would desync the client from the host's own state.
-        setState((state) => {
-          const operation = state.byId[operationId];
-          if (operation?.status !== OperationStatuses.Interrupted) return state; // Object.is no-op — setState skips the render
-          const byId = { ...state.byId };
-          delete byId[operationId];
-          return makeState(byId);
-        });
-        return post(OperationRoutes.Resume, { payload: { operationId } });
-      },
+      pause: (operationId: string) => post(OperationRoutes.Pause, { payload: { operationId } }),
+      clearFinished: () =>
+        // Forward THIS store's own configured scope (Finding 1, generic-library audit) — the same
+        // key the LIST snapshot payload already carries above. No local mutation here any more
+        // (Finding 4): the host's OPERATION_REMOVED is the ONLY thing that removes a row now, which
+        // is also what makes the scope threading safe to add — nothing here can diverge from what
+        // the host actually cleared.
+        post(OperationRoutes.ClearFinished, {
+          payload: options.scope !== undefined ? { scope: options.scope } : undefined,
+        }),
+      resume: (operationId: string) => post(OperationRoutes.Resume, { payload: { operationId } }),
     }),
     scope: options.scope,
     bridge: options.bridge,

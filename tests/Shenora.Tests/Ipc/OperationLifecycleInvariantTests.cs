@@ -58,7 +58,7 @@ public class OperationLifecycleInvariantTests
             // removes the entry), which is exactly §5A.1's bug: no sanctioned TERMINAL exit existed.
             [OperationStatus.Interrupted] = (
                 registry => registry.RegisterInterrupted("TEST",
-                    new OperationOptions { Kind = "X", Resumable = true, ResumePayload = "checkpoint" }),
+                    new OperationOptions { Kind = "X", ResumePayload = "checkpoint" }),
                 (registry, id) => registry.Dismiss(id)),
         };
 

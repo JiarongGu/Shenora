@@ -32,18 +32,20 @@ interface Shenora.Ipc.IOperation
   public abstract void Complete()
   public abstract void Fail(Shenora.Ipc.OperationException error)
   public abstract void Fail(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
-  public abstract void Pause(string reason, Shenora.Ipc.OperationLabel? detail = null)
+  public abstract void Pause(string? reason = null, Shenora.Ipc.OperationLabel? detail = null)
   public abstract void Report(int? progress = null, Shenora.Ipc.OperationLabel? detail = null)
   public abstract void Resume()
 interface Shenora.Ipc.IOperationRegistry
   public abstract Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
+  public abstract Shenora.Ipc.IOperation? Find(string id)
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public abstract bool Cancel(string id)
   public abstract bool Dismiss(string id)
+  public abstract bool RequestPause(string id)
   public abstract bool RequestResume(string id)
   public abstract string RegisterInterrupted(string module, Shenora.Ipc.OperationOptions options)
   public abstract string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
-  public abstract void ClearFinished()
+  public abstract void ClearFinished(string? module = null, string? scope = null)
 static class Shenora.Ipc.IpcCategories
   public const string Ipc = "ipc"
   public const string Notification = "notification"
@@ -150,6 +152,8 @@ sealed class Shenora.Ipc.NotificationPumpOptions : System.IEquatable<Shenora.Ipc
   public static bool op_Equality(Shenora.Ipc.NotificationPumpOptions? left, Shenora.Ipc.NotificationPumpOptions? right)
   public static bool op_Inequality(Shenora.Ipc.NotificationPumpOptions? left, Shenora.Ipc.NotificationPumpOptions? right)
 static class Shenora.Ipc.OperationEvents
+  public const string PauseRequested = "OPERATION_PAUSE_REQUESTED"
+  public const string Removed = "OPERATION_REMOVED"
   public const string ResumeRequested = "OPERATION_RESUME_REQUESTED"
   public const string Updated = "OPERATION_UPDATED"
 class Shenora.Ipc.OperationException : System.Exception
@@ -168,7 +172,6 @@ sealed class Shenora.Ipc.OperationInfo : System.IEquatable<Shenora.Ipc.Operation
   public System.DateTimeOffset? FinishedAt { get; init; }
   public bool Cancellable { get; init; }
   public bool Equals(Shenora.Ipc.OperationInfo? other)
-  public bool Resumable { get; init; }
   public int? Progress { get; init; }
   public override bool Equals(object? obj)
   public override int GetHashCode()
@@ -199,7 +202,6 @@ sealed class Shenora.Ipc.OperationOptions : System.IEquatable<Shenora.Ipc.Operat
   public Shenora.Ipc.OperationOptions <Clone>$()
   public bool Cancellable { get; init; }
   public bool Equals(Shenora.Ipc.OperationOptions? other)
-  public bool Resumable { get; init; }
   public int? Progress { get; init; }
   public override bool Equals(object? obj)
   public override int GetHashCode()
@@ -212,13 +214,15 @@ sealed class Shenora.Ipc.OperationOptions : System.IEquatable<Shenora.Ipc.Operat
 sealed class Shenora.Ipc.OperationRegistry : Shenora.Ipc.IOperationRegistry, System.IDisposable
   public .ctor(Shenora.Core.IEventBus bus, Shenora.Ipc.OperationRegistryOptions? options = null)
   public Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
+  public Shenora.Ipc.IOperation? Find(string id)
   public System.Collections.Generic.IReadOnlyList<Shenora.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public bool Cancel(string id)
   public bool Dismiss(string id)
+  public bool RequestPause(string id)
   public bool RequestResume(string id)
   public string RegisterInterrupted(string module, Shenora.Ipc.OperationOptions options)
   public string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
-  public void ClearFinished()
+  public void ClearFinished(string? module = null, string? scope = null)
   public void Dispose()
 sealed class Shenora.Ipc.OperationRegistryOptions
   public .ctor()
@@ -244,6 +248,7 @@ sealed class Shenora.Ipc.OperationsFacade : Shenora.Ipc.BaseFacade
   public const string ClearFinishedType = "CLEAR_FINISHED"
   public const string DismissType = "DISMISS"
   public const string ListType = "LIST"
+  public const string PauseType = "PAUSE"
   public const string ResumeType = "RESUME"
   public override string ModuleName { get; }
 static class Shenora.Ipc.PayloadHelper

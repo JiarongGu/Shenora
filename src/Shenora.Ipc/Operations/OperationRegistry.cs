@@ -36,7 +36,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <summary>
     /// What <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
     /// (via <see cref="OperationHandle"/>) and the public by-id <see cref="Cancel(string)"/> accept —
-    /// a paused deploy can still complete, fail on a deadline, or be cancelled by an external client,
+    /// a paused operation can still complete, fail on a deadline, or be cancelled by an external client,
     /// exactly as a running one can (§5A.3).
     /// </summary>
     private static readonly OperationStatus[] ActiveOrPaused = [OperationStatus.Running, OperationStatus.Paused];
@@ -106,7 +106,6 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             Progress = ClampProgress(options.Progress),
             Title = options.Title,
             Cancellable = options.Cancellable,
-            Resumable = options.Resumable,
             ResumePayload = options.ResumePayload,
             StartedAt = _options.TimeProvider.GetUtcNow(),
             Cts = cts,
@@ -137,7 +136,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 // handoff exists to free.
                 await work(operation, operation.CancellationToken).ConfigureAwait(false);
                 // Complete ONLY when still Running (IMPORTANT 2, this batch's review): Complete()
-                // itself accepts ActiveOrPaused (a paused deploy CAN still complete — see its own
+                // itself accepts ActiveOrPaused (a paused operation CAN still complete — see its own
                 // doc), so this unconditional call used to stamp Completed on a body that did the
                 // spec's own headline move — op.Pause("dns"); return; — and simply returned instead
                 // of throwing. §5A.2 exists because "keep it Running" and "Fail it" are both lies for
@@ -195,18 +194,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     {
         lock (_lock)
         {
-            var filtered = _entries.Values
-                // Scope follows the SAME rule as IEventBus (Finding 4, whole-branch review), not
-                // strict equality: no requested scope = every scope, AND an unscoped (global) entry
-                // matches any requested scope too. Both event buses (Shenora.Core.EventBus, the TS
-                // ShenoraEventBus) already apply this — a scope-less event still reaches scoped
-                // subscribers — so a scoped GetAll snapshot that excluded unscoped entries disagreed
-                // with the deltas a scoped store folds afterward: it never SAW an unscoped operation
-                // in LIST but DID receive its OPERATION_UPDATED deltas, so its contents depended on
-                // mount order relative to when the work started.
-                .Where(e => (module is null || string.Equals(e.Module, module, StringComparison.Ordinal))
-                         && (scope is null || e.Scope is null || string.Equals(e.Scope, scope, StringComparison.Ordinal)))
-                .ToList();
+            var filtered = _entries.Values.Where(e => MatchesFilter(e, module, scope)).ToList();
 
             var active = filtered.Where(e => e.Status == OperationStatus.Running)
                 .OrderBy(e => e.Sequence);
@@ -225,6 +213,20 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return active.Concat(waiting).Concat(terminal).Select(ToInfo).ToList();
         }
     }
+
+    /// <summary>
+    /// The ONE filter rule, shared by <see cref="GetAll"/> and <see cref="ClearFinished"/> (Finding 1,
+    /// generic-library audit — the two used to diverge: <c>GetAll</c> had this rule from day one,
+    /// <c>ClearFinished</c> took no filter at all). Scope follows the SAME rule as
+    /// <see cref="Shenora.Core.IEventBus"/>, not strict equality: no requested scope = every scope,
+    /// AND an unscoped (global) entry matches any requested scope too — both event buses
+    /// (<c>Shenora.Core.EventBus</c>, the TS <c>ShenoraEventBus</c>) already apply this, so an entry
+    /// point that instead required strict equality would disagree with the deltas a scoped store folds
+    /// afterward.
+    /// </summary>
+    private static bool MatchesFilter(Entry entry, string? module, string? scope) =>
+        (module is null || string.Equals(entry.Module, module, StringComparison.Ordinal))
+        && (scope is null || entry.Scope is null || string.Equals(entry.Scope, scope, StringComparison.Ordinal));
 
     /// <inheritdoc />
     public bool Cancel(string id)
@@ -347,14 +349,34 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <inheritdoc />
-    public void ClearFinished()
+    public void ClearFinished(string? module = null, string? scope = null)
     {
+        var removed = new List<string>();
         lock (_lock)
         {
-            foreach (var id in _finishedOrder)
-                _entries.Remove(id);
-            _finishedOrder.Clear();
+            // Walk _finishedOrder (never _entries directly — the WAITING band, Paused/Interrupted,
+            // is deliberately never added to this list, so it structurally cannot be touched here
+            // regardless of the filter) and only drop entries MatchesFilter agrees to — same rule
+            // GetAll applies, so "clear completed" in one scoped window can no longer wipe another
+            // scope's finished history (Finding 1, generic-library audit).
+            var node = _finishedOrder.First;
+            while (node is not null)
+            {
+                var next = node.Next;
+                if (_entries.TryGetValue(node.Value, out var entry) && MatchesFilter(entry, module, scope))
+                {
+                    _entries.Remove(node.Value);
+                    _finishedOrder.Remove(node);
+                    removed.Add(node.Value);
+                }
+                node = next;
+            }
         }
+
+        // Outside the lock, same discipline as every other bus emission here (Finding 4,
+        // generic-library audit): ClearFinished used to remove entries with no wire trace at all,
+        // which is why the client carried a hand-written optimistic prune for this action.
+        EmitRemoved(removed);
     }
 
     /// <inheritdoc />
@@ -398,12 +420,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(module);
         ArgumentNullException.ThrowIfNull(options);
         // A silently-accepted unusable entry is worse than a loud rejection: nobody could ever
-        // resume this, so it would sit as a dead offer with no way for the app to act on it.
-        if (!options.Resumable)
-            throw new ArgumentException(
-                $"Registering an interrupted operation requires {nameof(OperationOptions.Resumable)} " +
-                "to be true — the kit only offers a resume the app itself marked resumable.",
-                nameof(options));
+        // resume this, so it would sit as a dead offer with no way for the app to act on it. This is
+        // the ONLY resumability gate (generic-library audit finding 2 removed the separate `Resumable`
+        // bool that used to sit beside it — every entry it ever produced already forced that flag
+        // true to get past it, so it added no information the payload check below doesn't already
+        // carry: a non-empty checkpoint token IS what makes an operation resumable).
         if (string.IsNullOrEmpty(options.ResumePayload))
             throw new ArgumentException(
                 $"Registering an interrupted operation requires a non-empty " +
@@ -441,7 +462,6 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                     Progress = ClampProgress(options.Progress),
                     Title = options.Title,
                     Cancellable = options.Cancellable,
-                    Resumable = options.Resumable,
                     ResumePayload = options.ResumePayload,
                     StartedAt = _options.TimeProvider.GetUtcNow(),
                     // No CTS: an interrupted entry is not running work, just a pending offer —
@@ -473,6 +493,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         Entry? entry;
         string? miss;
         OperationStatus status = default;
+        var dropped = false;
         lock (_lock)
         {
             // WaitingBand (§5A.4, this batch): Paused OR Interrupted. The asymmetry lives HERE, not in
@@ -488,6 +509,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                     // is why the RESUME_REQUESTED payload below carries `status` — a handler cannot
                     // look this entry up afterward to tell the two cases apart.
                     _entries.Remove(id);
+                    dropped = true;
                 }
                 // Paused: deliberately LEFT IN PLACE — the app's own IOperation.Resume() flips it once
                 // it has ACTUALLY resumed. The client asking is not the state changing (§5A.4) — the
@@ -513,7 +535,66 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             status,   // lets a handler tell Paused (still there) apart from Interrupted (already gone)
         }, entry.Scope);
 
+        // The Interrupted drop above left the registry with no wire trace of its own (Finding 4,
+        // generic-library audit) — this is the one place the client-side asymmetry the docs already
+        // describe (Paused kept, Interrupted gone) now has an authoritative removal event to match,
+        // instead of a hand-written optimistic prune guessing at it.
+        if (dropped) EmitRemoved([id]);
+
         return true;
+    }
+
+    /// <inheritdoc />
+    public bool RequestPause(string id)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        Entry? entry;
+        string? miss;
+        lock (_lock)
+        {
+            // ActiveOnly: only a RUNNING operation can be asked to pause — an already-paused,
+            // interrupted, or terminal entry refuses, same honest-refusal shape as every other
+            // transition here.
+            miss = Validate(id, ActiveOnly, out entry);
+        }
+
+        if (miss is not null)
+        {
+            LogIgnored("RequestPause", id, miss);
+            return false;
+        }
+
+        // Outside the lock, same discipline as every other bus emission here. Deliberately no status
+        // flip and no _entries mutation: the client ASKING is not the state changing (mirrors
+        // RequestResume's Paused case) — the owning module's OWN IOperation.Pause is what actually
+        // stops the work and publishes the Paused snapshot.
+        _bus.Emit(_options.ModuleName, OperationEvents.PauseRequested, new
+        {
+            operationId = entry!.Id,
+            module = entry.Module,
+            kind = entry.Kind,
+            scope = entry.Scope,
+        }, entry.Scope);
+
+        return true;
+    }
+
+    /// <inheritdoc />
+    public IOperation? Find(string id)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        lock (_lock)
+        {
+            // entry.Cts is null for an Interrupted entry (no live work to cancel — see
+            // RegisterInterrupted's own doc) and for anything already terminal (Finish disposes and
+            // clears it) — `default` in either case is a harmless no-cancellation token, since the
+            // handle's own methods re-validate status before doing anything with it anyway.
+            return _entries.TryGetValue(id, out var entry)
+                ? new OperationHandle(this, entry.Id, entry.Cts?.Token ?? default)
+                : null;
+        }
     }
 
     /// <summary>
@@ -547,12 +628,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <summary>
     /// Pause: <see cref="OperationStatus.Running"/> → <see cref="OperationStatus.Paused"/> (§5A.3).
     /// Called by an <see cref="OperationHandle"/>. A lifecycle transition — emits immediately, never
-    /// throttled, same as every other band change.
+    /// throttled, same as every other band change. <paramref name="reason"/> is optional
+    /// (generic-library audit finding 5) — a consumer whose pause is self-evident has nothing to name.
     /// </summary>
-    private void Pause(string id, string reason, OperationLabel? detail)
+    private void Pause(string id, string? reason, OperationLabel? detail)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
-
         Entry? entry;
         string? miss;
         lock (_lock)
@@ -615,7 +695,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <param name="allowedStatuses">
     /// What this particular transition accepts (Task: rework Validate, this batch) — different
     /// callers legitimately accept different bands: <c>Complete</c>/<c>Fail</c> accept
-    /// <see cref="ActiveOrPaused"/> (a paused deploy can still fail on a deadline), the public by-id
+    /// <see cref="ActiveOrPaused"/> (a paused operation can still fail on a deadline), the public by-id
     /// <c>Cancel</c> accepts <see cref="ActiveOrPaused"/>, the owner-path terminal cancel accepts
     /// <see cref="NonTerminal"/>, and <c>Dismiss</c> accepts <see cref="WaitingBand"/>.
     /// </param>
@@ -633,6 +713,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     {
         Entry? entry;
         string? miss;
+        IReadOnlyList<string> evicted = [];
         lock (_lock)
         {
             miss = Validate(id, allowedStatuses, out entry);
@@ -646,7 +727,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 entry.Cts = null;
 
                 _finishedOrder.AddLast(id);
-                PruneHistory();
+                evicted = PruneHistory();
             }
         }
 
@@ -657,6 +738,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         }
 
         Publish(entry!, immediate: true);
+        // MaxHistory eviction (Finding 4, generic-library audit): the entries PruneHistory just
+        // dropped never get their own OPERATION_UPDATED, so a client mirroring bounded host history
+        // would otherwise never hear they are gone. Emitted AFTER the entry's own snapshot, outside
+        // the lock, same discipline as every other bus emission here.
+        EmitRemoved(evicted);
         return true;
     }
 
@@ -731,14 +817,37 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// (an offer is not history), so it structurally cannot be evicted here regardless of how many
     /// other operations finish afterward — only <see cref="Dismiss"/> moves one out of this band.
     /// </summary>
-    private void PruneHistory()
+    /// <returns>
+    /// The ids actually evicted this call (Finding 4, generic-library audit) — <see cref="Finish"/>
+    /// publishes these under <see cref="OperationEvents.Removed"/> once the lock is released, since
+    /// eviction used to leave no wire trace at all.
+    /// </returns>
+    private List<string> PruneHistory()
     {
+        var evicted = new List<string>();
         while (_finishedOrder.Count > _options.MaxHistory)
         {
             var oldest = _finishedOrder.First!.Value;
             _finishedOrder.RemoveFirst();
             _entries.Remove(oldest);
+            evicted.Add(oldest);
         }
+        return evicted;
+    }
+
+    /// <summary>
+    /// The one place a removal reaches the bus (Finding 4, generic-library audit) — a no-op for an
+    /// empty batch, so a normal <see cref="Finish"/> call (nothing evicted) does not publish a
+    /// spurious empty event. Emitted with scope <c>null</c> (global): a batch can span several
+    /// scopes at once (<see cref="ClearFinished"/> with no scope filter, say), and deleting an id a
+    /// subscriber never had is a harmless no-op, so every store hears it regardless of its own scope
+    /// filter — the same rule an unscoped event already follows for a scoped subscriber
+    /// (<see cref="Shenora.Core.IEventBus"/>).
+    /// </summary>
+    private void EmitRemoved(IReadOnlyCollection<string> ids)
+    {
+        if (ids.Count == 0) return;
+        _bus.Emit(_options.ModuleName, OperationEvents.Removed, new { operationIds = ids });
     }
 
     /// <summary>
@@ -837,7 +946,6 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         PauseReason = entry.PauseReason,
         Error = entry.Error,
         Cancellable = entry.Cancellable,
-        Resumable = entry.Resumable,
         ResumePayload = entry.ResumePayload,
         StartedAt = entry.StartedAt,
         FinishedAt = entry.FinishedAt,
@@ -876,7 +984,6 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public string? PauseReason { get; set; }
         public IpcError? Error { get; set; }
         public bool Cancellable { get; init; }
-        public bool Resumable { get; init; }
         public string? ResumePayload { get; set; }
         public DateTimeOffset StartedAt { get; init; }
         public DateTimeOffset? FinishedAt { get; set; }
@@ -900,7 +1007,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public void Report(int? progress = null, OperationLabel? detail = null) =>
             registry.Report(Id, progress, detail);
 
-        // ActiveOrPaused (§5A.3, this batch): a paused deploy can still complete once the human
+        // ActiveOrPaused (§5A.3, this batch): a paused operation can still complete once the human
         // unblocks it out of band, or fail on a deadline — see Finish's own doc for the full band map.
         public void Complete() => registry.Finish(Id, OperationStatus.Completed, null, "Complete", ActiveOrPaused);
 
@@ -921,7 +1028,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         // permission question the way the public by-id Cancel(id) is — see CancelTerminal's own doc.
         public void Cancel() => registry.CancelTerminal(Id, "Cancel");
 
-        public void Pause(string reason, OperationLabel? detail = null) => registry.Pause(Id, reason, detail);
+        public void Pause(string? reason = null, OperationLabel? detail = null) => registry.Pause(Id, reason, detail);
 
         public void Resume() => registry.Resume(Id);
     }

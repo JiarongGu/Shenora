@@ -35,7 +35,7 @@ public enum OperationStatus
     /// <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
     /// <see cref="IOperationRegistry.Dismiss"/> (to <see cref="Cancelled"/>), or a direct
     /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
-    /// (a paused deploy can still fail on a deadline).
+    /// (a paused operation can still fail on a deadline).
     /// </summary>
     Paused,
 }
@@ -47,7 +47,7 @@ public enum OperationStatus
 /// carries the pieces (headless by design).
 /// </summary>
 /// <param name="Text">Untranslated fallback, for logs/dev or an app with no i18n layer.</param>
-/// <param name="Key">The app's own i18n key (e.g. <c>"deploy.stage.upload"</c>).</param>
+/// <param name="Key">The app's own i18n key (e.g. <c>"import.stage.upload"</c>).</param>
 /// <param name="Parameters">Interpolation values for <paramref name="Key"/>.</param>
 public sealed record OperationLabel(
     string? Text = null,
@@ -72,26 +72,30 @@ public sealed record OperationOptions
     /// <summary>Whether a client should be offered a cancel affordance for this operation.</summary>
     public bool Cancellable { get; init; }
 
-    /// <summary>Initial progress; null (the default) means indeterminate, not zero.</summary>
+    /// <summary>
+    /// Initial progress as 0–100 PERCENT (generic-library audit finding 5: the unit was only ever
+    /// stated on the read side, <see cref="OperationInfo.Progress"/> — a consumer reporting bytes or a
+    /// raw count against this WRITE side silently gets clamped to a permanent 100%, with no log line
+    /// to explain why). Null (the default) means indeterminate, not zero.
+    /// </summary>
     public int? Progress { get; init; }
 
     /// <summary>
-    /// Whether this operation can later be re-announced as interrupted-and-resumable after a crash.
+    /// Opaque app checkpoint token; presence is what makes an operation resumable after a crash.
     /// <para>
-    /// Governs ONLY the crash-checkpoint path (<see cref="IOperationRegistry.RegisterInterrupted"/>) —
-    /// NOT <see cref="IOperation.Pause"/>/<see cref="IOperation.Resume"/> (coordinator ruling, D23's
-    /// lifecycle-completion amendment). A <see cref="OperationStatus.Paused"/> operation is resumable
-    /// BY CONSTRUCTION — <see cref="IOperation.Resume"/> exists and requires no flag — so gating
-    /// <see cref="IOperationRegistry.RequestResume"/>'s Paused case on this property would silently
-    /// break the ordinary pause/resume flow for an operation that (like most) never set it. Do not
-    /// re-add that check thinking it was an oversight; it was checked against the test suite and
-    /// deliberately dropped when this property's only consumer used to be <c>RegisterInterrupted</c>'s
-    /// entry (which already throws if this is false, making the old check vacuous there too).
+    /// There used to be a separate <c>Resumable</c> bool gating
+    /// <see cref="IOperationRegistry.RegisterInterrupted"/> — removed (generic-library audit finding
+    /// 2) because it was consulted NOWHERE else: every entry it ever produced already forced it
+    /// <c>true</c> to get past that same check, so the flag was a required-true tautology, not a
+    /// choice. <see cref="IOperationRegistry.RegisterInterrupted"/>'s own non-empty-payload
+    /// requirement already expresses "this is resumable" — a second flag added no information. It also
+    /// governed nothing for <see cref="IOperation.Pause"/>/<see cref="IOperation.Resume"/>: a
+    /// <see cref="OperationStatus.Paused"/> operation is resumable BY CONSTRUCTION (<see cref="IOperation.Resume"/>
+    /// needs no flag), so a future re-add gating <see cref="IOperationRegistry.RequestResume"/>'s
+    /// <see cref="OperationStatus.Paused"/> case on a resumable bool would silently break the ordinary
+    /// pause/resume flow for an operation that — like most — never set one.
     /// </para>
     /// </summary>
-    public bool Resumable { get; init; }
-
-    /// <summary>Opaque app checkpoint token carried on a resumable operation; the kit never reads it.</summary>
     public string? ResumePayload { get; init; }
 }
 
@@ -157,9 +161,6 @@ public sealed record OperationInfo
 
     /// <summary>Echoes <see cref="OperationOptions.Cancellable"/>.</summary>
     public bool Cancellable { get; init; }
-
-    /// <summary>Echoes <see cref="OperationOptions.Resumable"/>.</summary>
-    public bool Resumable { get; init; }
 
     /// <summary>Echoes <see cref="OperationOptions.ResumePayload"/>.</summary>
     public string? ResumePayload { get; init; }

@@ -109,11 +109,61 @@ describe('operations store', () => {
     expect(request.payload).toEqual({ scope: 'tenant-1' });
   });
 
-  it('clearFinished prunes terminal entries from local state immediately, optimistically', () => {
-    // FINDING 3 (Important, whole-branch review): the host removes finished entries on
-    // CLEAR_FINISHED but never emits a removal delta (OPERATION_UPDATED only ever adds/updates an
-    // id), so without a local prune a mounted panel kept rendering the cleared rows until every
-    // subscriber unmounted and the store was rebuilt from a fresh LIST.
+  /**
+   * FINDING 1 (Critical, generic-library audit): `clearFinished` used to post `CLEAR_FINISHED` with
+   * no payload at all, even though the host route now reads the same `scope` key `LIST` does — so a
+   * scope-filtered store's "clear completed" silently cleared every OTHER scope's finished history
+   * on the host, even though this store's own local prune only ever touched its own rows.
+   */
+  it('clearFinished forwards this stores configured scope in the payload', () => {
+    const { store, transport } = harness([], { scope: 'tenant-1' });
+    store.subscribe(() => {});
+
+    store.actions.clearFinished();
+
+    const request = transport.lastRequest<{ scope?: string }>();
+    expect(request.type).toBe('CLEAR_FINISHED');
+    expect(request.payload).toEqual({ scope: 'tenant-1' });
+  });
+
+  /**
+   * FINDING 4 (Important, generic-library audit): removals used to have NO wire event at all
+   * (`OPERATION_UPDATED` only ever adds/updates an id), so `clearFinished`/`resume` each carried a
+   * hand-written optimistic local prune to guess at what the host had removed — one of which
+   * (`resume`) shipped with a bug this very release (pruning a `paused` row the host deliberately
+   * keeps). `OPERATION_REMOVED` replaces both guesses with one authoritative event: the client folds
+   * it by deleting exactly the named ids, regardless of their status — the host decided, not a local
+   * status rule.
+   */
+  it('OPERATION_REMOVED deletes the named ids from local state, regardless of status', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'paused' }));
+
+    bus.emit('OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['op-2', 'op-3'] });
+
+    expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
+  });
+
+  /** An id the store never had is a harmless no-op — the same shape as deleting an absent key. */
+  it('OPERATION_REMOVED naming an unknown id is a harmless no-op', () => {
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({}));
+
+    bus.emit('OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['no-such-id'] });
+
+    expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
+  });
+
+  /**
+   * `clearFinished`/`resume` no longer locally mutate state at all (Finding 4) — the host's
+   * `OPERATION_REMOVED` is the ONLY thing that removes a row now, so calling either action must not
+   * change anything by itself, however the host eventually answers.
+   */
+  it('clearFinished does not locally mutate state — only the hosts OPERATION_REMOVED does', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
     bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
@@ -121,61 +171,17 @@ describe('operations store', () => {
 
     store.actions.clearFinished();
 
-    expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
-    expect(store.getState().finished).toEqual([]);
+    expect(Object.keys(store.getState().byId).sort()).toEqual(['op-1', 'op-2']);
   });
 
-  /**
-   * Pin, don't assume (§5A.2, D23 amendment): clearFinished's optimistic local prune uses the
-   * TERMINAL set, so it must not be able to remove a `paused` OR `interrupted` entry — both are the
-   * WAITING band, "not history" by design, and this is exactly the kind of thing a later
-   * "simplification" (e.g. pruning everything that isn't literally 'running') silently breaks.
-   */
-  it('clearFinished does not remove a paused or interrupted entry — the WAITING band is not history', () => {
-    const { store, bus } = harness([]);
-    store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'paused' }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-4', status: 'interrupted' }));
-
-    store.actions.clearFinished();
-
-    expect(Object.keys(store.getState().byId).sort()).toEqual(['op-3', 'op-4']);
-    expect(store.getState().paused.map((o) => o.id)).toEqual(['op-3']);
-  });
-
-  it('resume drops the resumed id from local state immediately, optimistically', () => {
-    // Same shape as clearFinished: RequestResume removes the offer host-side but emits no delta for
-    // it either, so the offer stayed clickable in a mounted store until unmount — a second click on
-    // it silently did nothing.
+  it('resume does not locally mutate state — only the hosts OPERATION_REMOVED does', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
     bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'interrupted' }));
 
     store.actions.resume('op-1');
 
-    expect(store.getState().byId['op-1']).toBeUndefined();
-  });
-
-  /**
-   * CRITICAL (this batch's review): the host's asymmetry (§5A.4) means `resume` must NOT prune a
-   * `paused` row the same way it prunes an `interrupted` one — the host deliberately LEAVES a paused
-   * entry in place (the app flips it via its own `IOperation.Resume()` once it has ACTUALLY resumed),
-   * and leaving it in place publishes NOTHING (nothing changed host-side). If the client prunes it
-   * locally anyway: the row vanishes, the user cannot see the still-paused deploy to click DISMISS
-   * on it, and the host still holds the entry until every subscriber unmounts and a fresh LIST runs —
-   * a waiting entry with no reachable exit, rebuilt one layer up, in the exact place this feature
-   * exists to eliminate.
-   */
-  it('resume does NOT drop a paused entry from local state — the host deliberately keeps it', () => {
-    const { store, bus } = harness([]);
-    store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'paused' }));
-
-    store.actions.resume('op-1');
-
     expect(store.getState().byId['op-1']).toBeDefined();
-    expect(store.getState().paused.map((o) => o.id)).toEqual(['op-1']);
   });
 
   it('keeps an interrupted operation out of both running and finished', () => {
@@ -291,5 +297,25 @@ describe('operations store', () => {
     const request = transport.lastRequest<{ operationId: string }>();
     expect(request.type).toBe('DISMISS');
     expect(request.payload).toEqual({ operationId: 'op-1' });
+  });
+
+  /**
+   * FINDING 3 (Important, generic-library audit): the kit shipped RESUME/DISMISS but no client route
+   * to ASK the host to pause running work — a real gap for the download-manager/activity-panel shape
+   * the kit itself already names as a consumer. `pause` mirrors `dismiss`'s shape exactly: no
+   * optimistic local prune, since asking never changes the state by itself (the owning module's own
+   * `IOperation.Pause` is what publishes the transition).
+   */
+  it('pause posts the PAUSE route with the operation id and does not touch local state', () => {
+    const { store, transport, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+
+    store.actions.pause('op-1');
+
+    const request = transport.lastRequest<{ operationId: string }>();
+    expect(request.type).toBe('PAUSE');
+    expect(request.payload).toEqual({ operationId: 'op-1' });
+    expect(store.getState().byId['op-1']?.status).toBe('running');   // unchanged — asking is not acting
   });
 });

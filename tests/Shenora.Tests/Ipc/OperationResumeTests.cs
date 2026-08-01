@@ -14,7 +14,24 @@ public class OperationResumeTests
     }
 
     private static OperationOptions Checkpoint(string payload) =>
-        new() { Kind = "ANALYSIS", Resumable = true, ResumePayload = payload, Scope = "p1" };
+        new() { Kind = "ANALYSIS", ResumePayload = payload, Scope = "p1" };
+
+    /// <summary>
+    /// FINDING 2 (Important, generic-library audit): <c>Resumable</c> used to be a required-true gate
+    /// on <see cref="IOperationRegistry.RegisterInterrupted"/> even though it was consulted NOWHERE
+    /// else — every entry it ever produced already had it forced <c>true</c> to get past that same
+    /// check, making the flag vacuous. The non-empty <see cref="OperationOptions.ResumePayload"/> this
+    /// method already requires expresses "this is resumable" on its own; the field is removed.
+    /// </summary>
+    [Fact]
+    public void RegisterInterrupted_succeeds_from_only_a_resume_payload_no_separate_flag_needed()
+    {
+        var (registry, _) = Build();
+
+        var id = registry.RegisterInterrupted("SCAN", new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
+
+        Assert.Equal(OperationStatus.Interrupted, registry.GetAll().Single(o => o.Id == id).Status);
+    }
 
     [Fact]
     public void RegisterInterrupted_announces_a_resumable_entry_from_the_apps_checkpoint()
@@ -89,21 +106,6 @@ public class OperationResumeTests
         registry.ClearFinished();
 
         Assert.Contains(registry.GetAll(), o => o.Id == offerId);
-    }
-
-    /// <summary>
-    /// A silently-accepted unusable entry would be worse than a loud rejection: without a resume
-    /// payload nobody — kit or app — could ever act on the offer.
-    /// </summary>
-    [Fact]
-    public void RegisterInterrupted_rejects_non_resumable_options_naming_Resumable()
-    {
-        var (registry, _) = Build();
-
-        var ex = Assert.Throws<ArgumentException>(() =>
-            registry.RegisterInterrupted("SCAN", Checkpoint("session-7") with { Resumable = false }));
-
-        Assert.Contains(nameof(OperationOptions.Resumable), ex.Message);
     }
 
     [Fact]
@@ -193,5 +195,40 @@ public class OperationResumeTests
         var payload = IpcJson.SerializeToElement(message.Payload);
         Assert.Equal("interrupted", payload.GetProperty("status").GetString());
         Assert.Empty(registry.GetAll());   // gone — the resumed op registers a FRESH one when it restarts
+    }
+
+    /// <summary>
+    /// FINDING 4 (Important, generic-library audit): dropping the Interrupted entry used to leave no
+    /// wire trace at all — a client's mirror of it could only stay correct via a hand-written
+    /// optimistic local prune, one of the two the audit calls out as no-longer-needed once removals
+    /// are authoritative. <see cref="OperationEvents.Removed"/> now fires for this drop too.
+    /// </summary>
+    [Fact]
+    public void RequestResume_on_an_interrupted_entry_also_emits_OPERATION_REMOVED()
+    {
+        var (registry, events) = Build();
+        var id = registry.RegisterInterrupted("SCAN", Checkpoint("session-7"));
+        events.Clear();
+
+        Assert.True(registry.RequestResume(id));
+
+        var removed = events.Single(e => e.Type == OperationEvents.Removed);
+        var ids = IpcJson.SerializeToElement(removed.Payload).GetProperty("operationIds")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Equal([id], ids);
+    }
+
+    /// <summary>The Paused case is left in place (§5A.4) — RequestResume there must NOT emit a removal.</summary>
+    [Fact]
+    public void RequestResume_on_a_paused_entry_does_not_emit_OPERATION_REMOVED()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+        events.Clear();
+
+        Assert.True(registry.RequestResume(operation.Id));
+
+        Assert.DoesNotContain(events, e => e.Type == OperationEvents.Removed);
     }
 }

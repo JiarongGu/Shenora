@@ -18,7 +18,17 @@ public sealed class OperationRegistryOptions
     /// </summary>
     public TimeSpan ProgressInterval { get; init; } = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>Cap on retained FINISHED entries (oldest dropped first); running work is never pruned.</summary>
+    /// <summary>
+    /// Cap on retained FINISHED entries (oldest dropped first); running (and WAITING-band) work is
+    /// never pruned.
+    /// <para>
+    /// <b>Known limit, recorded rather than solved (generic-library audit finding 5):</b> ONE global
+    /// cap across every module and scope — there is no per-module or per-scope bounding seam, so a
+    /// chatty module's finished history can crowd out a quiet one's under the same registry. No
+    /// consumer has asked for per-module bounding; recording this is how the next one that does turns
+    /// into evidence for a real seam instead of a re-argument from scratch.
+    /// </para>
+    /// </summary>
     public int MaxHistory { get; init; } = 50;
 
     /// <summary>Clock used for <see cref="OperationInfo.StartedAt"/>/<see cref="OperationInfo.FinishedAt"/> and progress throttling — overridable in tests for deterministic timing.</summary>

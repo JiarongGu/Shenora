@@ -79,12 +79,36 @@ public class OperationsFacadeTests
         Assert.Equal(running.Id, registry.GetAll().Single().Id);
     }
 
+    /// <summary>
+    /// FINDING 1 (Critical, generic-library audit): the route used to read NO payload at all, even
+    /// though <c>LIST</c> already reads both <c>module</c>/<c>scope</c> keys — so a scope-filtered
+    /// client store's <c>CLEAR_FINISHED</c> silently cleared every OTHER scope's finished history
+    /// too. The route now reads the SAME two payload keys <c>LIST</c> reads.
+    /// </summary>
+    [Fact]
+    public async Task CLEAR_FINISHED_reads_the_scope_payload_and_leaves_other_scopes_finished_history_alone()
+    {
+        var (facade, registry) = Build();
+        var prodDone = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "prod" });
+        prodDone.Complete();
+        var devDone = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "dev" });
+        devDone.Complete();
+
+        var response = await facade.HandleMessageAsync(
+            IpcRequests.Create("OPERATIONS", "CLEAR_FINISHED", payload: new { scope = "prod" }));
+
+        Assert.True(response.Success);
+        var remaining = registry.GetAll();
+        Assert.DoesNotContain(remaining, o => o.Id == prodDone.Id);
+        Assert.Contains(remaining, o => o.Id == devDone.Id);
+    }
+
     [Fact]
     public async Task RESUME_forwards_to_the_registry_and_answers_requested_true()
     {
         var (facade, registry) = Build();
         var id = registry.RegisterInterrupted("SCAN",
-            new OperationOptions { Kind = "ANALYSIS", Resumable = true, ResumePayload = "session-7" });
+            new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
 
         var response = await facade.HandleMessageAsync(
             IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = id }));
@@ -139,6 +163,35 @@ public class OperationsFacadeTests
         Assert.True(response.Success);
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
         Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
+    }
+
+    /// <summary>PAUSE mirrors RESUME's shape (generic-library audit finding 3): `{ operationId }` → `{ requested }`.</summary>
+    [Fact]
+    public async Task PAUSE_forwards_to_the_registry_and_answers_requested_true_leaving_the_operation_running()
+    {
+        var (facade, registry) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        var response = await facade.HandleMessageAsync(
+            IpcRequests.Create("OPERATIONS", "PAUSE", payload: new { operationId = operation.Id }));
+
+        Assert.True(response.Success);
+        Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);   // asking is not acting
+    }
+
+    [Fact]
+    public async Task PAUSE_answers_requested_false_for_an_operation_that_is_not_running()
+    {
+        var (facade, registry) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        operation.Pause("dns");
+
+        var response = await facade.HandleMessageAsync(
+            IpcRequests.Create("OPERATIONS", "PAUSE", payload: new { operationId = operation.Id }));
+
+        Assert.True(response.Success);
+        Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
     }
 
     [Fact]

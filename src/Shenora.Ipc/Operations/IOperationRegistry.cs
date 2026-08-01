@@ -11,6 +11,15 @@ public interface IOperationRegistry
     /// <summary>
     /// Start a tracked operation owned by <paramref name="module"/> and get its handle. Publishes
     /// an immediate <see cref="OperationStatus.Running"/> snapshot.
+    /// <para>
+    /// <b>Known limit, recorded rather than solved (generic-library audit finding 5):</b> "registered
+    /// but not yet started" has no representation — <see cref="OperationStatus.Running"/> is the
+    /// FIRST snapshot this (or <see cref="Run"/>) ever publishes. An app with its own queue in front
+    /// of this registry either omits its pending rows entirely, or registers them
+    /// <see cref="OperationStatus.Running"/> early and misrepresents queued time as active time. No
+    /// consumer has asked for a queued/pending status — the kit ships no queue or scheduler at all
+    /// (see the class doc) — so this is recorded as a limit, not guessed at as a new status.
+    /// </para>
     /// </summary>
     IOperation Start(string module, OperationOptions options);
 
@@ -43,6 +52,27 @@ public interface IOperationRegistry
     string Run(string module, OperationOptions options, Func<IOperation, CancellationToken, Task> work);
 
     /// <summary>
+    /// Resolve a live handle for an already-started operation by id — reinstated (generic-library
+    /// audit finding 3) after being sketched-then-dropped pre-0.2.0 as unearned surface ("no consumer
+    /// resolves a handle from a bare id"). That ruling did not survive contact with
+    /// <see cref="RequestPause"/>/<see cref="RequestResume"/>: both are client-request routes that
+    /// carry only an id, and whoever handles them (the owning module, hearing
+    /// <see cref="OperationEvents.PauseRequested"/>/<see cref="OperationEvents.ResumeRequested"/>) must
+    /// translate that id back into a handle to call <see cref="IOperation.Pause"/>/
+    /// <see cref="IOperation.Resume"/> — a recurring shape every such consumer would otherwise
+    /// re-solve with its own id→handle map kept alongside the registry. Returns <c>null</c> for an
+    /// unknown id.
+    /// <para>
+    /// Safe to hold past the operation's life: every <see cref="IOperation"/> member re-validates the
+    /// entry's CURRENT status before acting (the same <c>Validate</c> gate every other transition goes
+    /// through), so a handle resolved here for an entry that later finishes — or looked up again after
+    /// it already has — is a no-op on every subsequent call, never a dangling reference the caller
+    /// must guard.
+    /// </para>
+    /// </summary>
+    IOperation? Find(string id);
+
+    /// <summary>
     /// Snapshot of currently-known operations (running plus retained finished history, capped by
     /// <see cref="OperationRegistryOptions.MaxHistory"/>), optionally filtered by owning module
     /// and/or scope. Running operations sort first.
@@ -65,8 +95,19 @@ public interface IOperationRegistry
     /// </summary>
     bool Cancel(string id);
 
-    /// <summary>Drop all finished (terminal) history, keeping running work untouched.</summary>
-    void ClearFinished();
+    /// <summary>
+    /// Drop finished (terminal) history, keeping running (and WAITING-band) work untouched.
+    /// Filtered EXACTLY like <see cref="GetAll"/> — same two keys, same rule (<paramref name="scope"/>
+    /// follows <see cref="Shenora.Core.IEventBus"/>'s scope matching: <c>null</c> clears every scope,
+    /// and an unscoped finished entry is cleared by ANY requested scope).
+    /// <para>
+    /// Was unfilterable for one release (generic-library audit finding 1): the kit ships secondary
+    /// windows and a scoped container router, so "clear completed" in one scoped window used to wipe
+    /// every OTHER scope's finished history too — the read side (<see cref="GetAll"/>) had the filter
+    /// from day one; the removal side did not.
+    /// </para>
+    /// </summary>
+    void ClearFinished(string? module = null, string? scope = null);
 
     /// <summary>
     /// Decline a pending offer in the WAITING band (§5A.2): <see cref="OperationStatus.Paused"/> or
@@ -98,11 +139,11 @@ public interface IOperationRegistry
 
     /// <summary>
     /// Announce a crash-interrupted, resumable operation from the APP's own checkpoint — the kit
-    /// holds the offer; the app owns what to resume and how. Requires
-    /// <see cref="OperationOptions.Resumable"/> true and a non-empty
-    /// <see cref="OperationOptions.ResumePayload"/> (the opaque checkpoint token), throwing
-    /// <see cref="ArgumentException"/> naming whichever is missing — a silently-accepted unusable
-    /// entry would be worse than a loud rejection.
+    /// holds the offer; the app owns what to resume and how. Requires a non-empty
+    /// <see cref="OperationOptions.ResumePayload"/> (the opaque checkpoint token — its presence IS
+    /// what makes this resumable, see that property's own doc), throwing <see cref="ArgumentException"/>
+    /// naming it when missing — a silently-accepted unusable entry would be worse than a loud
+    /// rejection.
     /// <para>
     /// Deduped on <c>(module, kind, resumePayload)</c> among already-<see cref="OperationStatus.Interrupted"/>
     /// entries: re-announcing the SAME checkpoint (a profile/session switch, say) returns the
@@ -138,4 +179,21 @@ public interface IOperationRegistry
     /// </para>
     /// </summary>
     bool RequestResume(string id);
+
+    /// <summary>
+    /// The user asked to pause operation <paramref name="id"/> — generic-library audit finding 3, an
+    /// EXACT mirror of <see cref="RequestResume"/> for the other direction. Accepts only
+    /// <see cref="OperationStatus.Running"/>, returning <c>false</c> and changing nothing otherwise
+    /// (unknown id, already <see cref="OperationStatus.Paused"/>, <see cref="OperationStatus.Interrupted"/>,
+    /// or terminal — the same honest-refusal shape as every other transition here). On success, emits
+    /// <see cref="OperationEvents.PauseRequested"/> with <c>{ operationId, module, kind, scope }</c>
+    /// and leaves the entry untouched — the owning module's OWN <see cref="IOperation.Pause"/> is what
+    /// actually flips the status once it has stopped. **The client asking is not the state
+    /// changing** — the same split <see cref="RequestResume"/> already draws against
+    /// <see cref="IOperation.Resume"/>, applied to the direction the kit previously had no client
+    /// route for at all ("pausing is the host's own knowledge" is true for a host discovering its OWN
+    /// blocker, not for the equally-common shape of a human clicking Pause on visible work — a
+    /// download, a sync, a backup — that the kit itself already names as a consumer).
+    /// </summary>
+    bool RequestPause(string id);
 }
