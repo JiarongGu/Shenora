@@ -17,10 +17,31 @@ that is the design, not a gap.
 
 ## Stage 0 — consume the packages, change nothing
 
-Reference the **leaf** package you need; the rest arrive transitively
-(`Shenora.WebView2.Sessions` → `Shenora.WebView2` → `Shenora.WinForms` → `Shenora.Ipc` +
-`Shenora.Core`). Reference `Shenora.WinForms` directly only for a shell with no web frontend. Pin
-exact versions — see `docs/RELEASING.md` for the pre-release feed recipe.
+Reference the **leaf** package you need; the rest arrive transitively. The graph is a DIAMOND over
+`Shenora.Core`, not a single chain:
+
+```
+                    Shenora.Core          net10.0        portable: no Windows reference
+                      ↑          ↑
+        Shenora.Ipc ──┘          └── Shenora.WinForms    net10.0-windows
+          net10.0                          ↑
+              ↑                            │
+              └──── Shenora.WebView2 ──────┘             net10.0-windows
+                            ↑
+              Shenora.WebView2.Sessions                  net10.0-windows
+```
+
+Reference `Shenora.WinForms` directly only for a shell with no web frontend. Pin exact versions —
+see `docs/RELEASING.md` for the pre-release feed recipe.
+
+> ⚠ **`Shenora.WinForms` does NOT bring `Shenora.Ipc` with it** — they are SIBLINGS over
+> `Shenora.Core`, not a chain. The edge is absent on purpose, in both directions: `Shenora.Ipc` binds
+> to no UI framework (it targets `net10.0`, which is what lets the same envelopes ride a WebSocket or
+> a mobile channel, D16), and `Shenora.WinForms` carries no IPC dependency — which is why the two
+> IPC-facing desktop facades, `WindowCommandFacade` and `DropZoneFacade`, live in `Shenora.WebView2`,
+> the first package that may see both halves. So a WinForms-only shell that wants typed messaging
+> adds `Shenora.Ipc` as a second, explicit `PackageReference`. Without it `BaseFacade`/`IpcRequest`
+> simply do not resolve, and the error names a missing namespace rather than a missing package.
 
 > ⚠ **Pre-release trap that costs an afternoon.** NuGet's global folder (`~/.nuget/packages`) is
 > keyed on id+**version** and beats every source, so re-consuming the same pre-release version can
@@ -216,8 +237,12 @@ until the page is listening.
   a live handle back from a bare id — the shape every `RESUME`/`WAIT` handler needs to turn the id it
   was given back into something it can call `Resume`/`Wait` on.
   `OperationStatus` carries only ONE waiting value (`Waiting`) — a live `op.Wait()` and a
-  `RegisterWaiting`-registered crash checkpoint both land there, told apart by whether
-  `ResumePayload` is set (non-null = no live handle), not by a second status. See
+  `RegisterWaiting`-registered crash checkpoint both land there, and the kit tells them apart by its
+  OWN record of which call produced the entry, not by a second status and **not** by `ResumePayload`
+  (that field is yours: you may attach one at `Start()` and still hold a live handle, so the kit
+  cannot read it as "this entry has no body"). For YOUR UI, `ResumePayload` is a fine display hint —
+  offer "resume from checkpoint" when it is set, show `WaitReason` when it is not — just don't infer
+  from it what `RequestResume` will do. See
   `docs/2026-08-01-shenora-communication-core-design.md` §5A for the full shape.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.

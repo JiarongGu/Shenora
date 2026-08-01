@@ -1,13 +1,29 @@
 # REVIEW-GUIDE.md — orientation for a full code review of Shenora
 
-Written to hand a whole-codebase code review the context it needs without re-deriving it. Shenora
-has been built in phases (P0–P5) across five commits. Read this, then review `src/` against the
-invariants it points at. Nothing here overrides the design contract or the rules — it routes you to
-them and flags what's already settled.
+Written to hand a whole-codebase code review the context it needs without re-deriving it. Read this,
+then review `src/` against the invariants it points at. Nothing here overrides the design contract or
+the rules — it routes you to them and flags what's already settled.
 
-> **The first full review already ran, at `130d4cd`.** Its ~60 open findings are `TASKS.md`
-> `### P5.5` (batches H1–H8), summarised in `docs/ROADMAP.md` `### P5.5`. **Verify and extend that
-> list — do not re-derive it.** A second reviewer's value is in what H1–H8 missed.
+> **Two full reviews have already run. Verify and EXTEND them — do not re-derive them.**
+>
+> 1. **The P0–P5 review** (at `130d4cd`) — ~60 findings, executed as batches H1–H8 and now closed;
+>    the record is `docs/task-archive.md` `### P5.5`, summarised in `docs/ROADMAP.md` `### P5.5`.
+> 2. **The whole-codebase review** (2026-08-01, before 0.2.0 was published) —
+>    `docs/task-archive.md` `### 0.2.0 — whole-codebase review`.
+>
+> **What the second one found is the more useful hint about where to spend YOUR budget.** It found
+> nothing in the threading, UI-thread marshalling, resource-ownership or IPC-error-boundary hot spots
+> §4 below points at hardest — those have been reviewed repeatedly and it shows. Everything real was
+> in the surface no gate looks at: **docs that SHIP** (XML/JSDoc, the README — read by consumers,
+> compiled by nothing), **the parts of the public surface a gate is structurally blind to** (the npm
+> barrel test compares `Object.keys`, so it cannot see a missing `export type`; the D22 domain-word
+> audit sweeps the API baselines, so it cannot see a csproj `<Description>`), and **the kit failing to
+> follow its own earned rules at one site out of N** (one unguarded app callback in a timer tick; one
+> emitter still using the discard shape a member was added to replace).
+>
+> So: treat a claim in a doc as a claim to CHECK against the code, not as context. Where an invariant
+> has a gate, ask what that gate cannot see. And when the kit states a rule in a knowledge file, grep
+> for the sites that don't follow it — the exceptions are where the defects were.
 
 ## 1. What Shenora is (the review lens)
 

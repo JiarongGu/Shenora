@@ -22,6 +22,18 @@ transport, or building the P6 adoption shims.
 - **`@ts-expect-error` assertions are INERT unless something type-checks the tests.** The npm build
   config excludes test files and vitest transpiles without checking, so the client's typed-service pins
   proved nothing until `npm run typecheck` (the full tsconfig) was wired into `dev.mjs verify`.
+- **A RUNTIME export gate proves nothing about TYPE exports — the npm surface needs both halves.**
+  `index.test.ts` pins the barrel by comparing `Object.keys(barrel)` against an explicit array, which
+  is the right shape for values and structurally blind to `export type`: a type has no runtime
+  binding, so deleting one from `index.ts` passes every assertion in that file while breaking every
+  consumer that named it. Found live (whole-codebase review, 2026-08-01): `OperationInfo.progress` is
+  typed `OperationProgress`, `OperationInfo` was exported and `OperationProgress` was not, so the
+  field's own type was unnameable from outside the package for a whole release — and the only visible
+  symptom was the kit's OWN sample re-declaring the shape inline rather than importing it. The fix is
+  a second pin in the same file: a type-only `import type { … } from './index.js'` consumed by a tuple
+  alias, which `npm run typecheck` compiles (per the bullet above — without that step it would be
+  inert too). Verified the standing way, by sabotage: dropping the export fails the typecheck naming
+  the type. **When a package exports types, pin the types.**
 - **A typed request map is constrained to `object`, never `Record<string, unknown>`.** The stricter
   bound is unsatisfiable by a plain `interface` (no implicit index signature), so the documented example
   did not compile; and satisfying it widens `keyof TRequests & string` back to `string`, which makes
@@ -43,6 +55,20 @@ transport, or building the P6 adoption shims.
   (design §5) and reordering it fails in ways that do not look like an ordering bug. Release removes
   the ROUTE and nothing else: in-flight requests finish, and the facade is NOT disposed (its lifetime
   belongs to whoever built it — usually DI).
+  **KNOWN LIMIT the registry does NOT cover, and it is the composition path most apps use:
+  DI-registered facades are invisible to it** (whole-codebase review, 2026-08-01).
+  `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` — one terminal middleware
+  resolving them on the first dispatch — precisely because claiming a name needs to READ the names,
+  and resolving facades inside the `IMessageDispatcher` singleton factory is the silent
+  `StackOverflow` the bullet further down describes. So `IsModuleMapped("OPERATIONS")` is `false`
+  while `OPERATIONS` is routed, and `TryMapModule` answers `true` for a name a DI facade already owns
+  — after which the plug-in never runs, because the lazy middleware is composed earlier and answers
+  first. That is the silent-shadowing defect this whole seam exists to prevent, re-entering through
+  the composition path rather than through the registry. The PRECEDENCE is right (the app's own
+  modules win); only the answer is dishonest. Recorded rather than fixed: closing it needs a
+  name-reservation seam the registry does not have, or re-opening the deadlock. Until a consumer hits
+  it, map anything a plug-in must be able to collide with EXPLICITLY (`MapModule(facade)` /
+  `TryMapModule`), not through `AddModuleFacade`.
 - **The dispatch token is a LIFETIME, not a per-request cancel — and the boundary still never
   throws.** `DispatchAsync`/`SendAsync`/`MessageMiddleware`/`IModuleFacade`/`BaseFacade.RouteMessageAsync`
   all carry a `CancellationToken` (P6.4; before that the whole pipeline was uncancellable, so a handler

@@ -311,6 +311,79 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   with `SubscribeToAll`, so with two windows every bus event reached both — an auxiliary session or a
   remote client would receive the whole app's traffic with no way to narrow it. Default: deliver
   everything, unchanged for an app that doesn't need the seam.
+- **`@shenora/react` exports `OperationProgress`, `OperationEventTypes` and `OperationModuleName`**
+  (whole-codebase review, before publish). `OperationInfo.progress` is typed as `OperationProgress`
+  and `OperationInfo` was exported, so the field's own type was unnameable from outside the package —
+  the tell is that the kit's OWN sample re-declared the shape inline (`{ value: number; total?:
+  number; unit?: string }`) to write a one-line formatter. The other two close the same gap for the
+  two events `createOperationsStore` deliberately does not subscribe to
+  (`OPERATION_RESUME_REQUESTED`/`OPERATION_WAIT_REQUESTED`, which target the OWNING module's own
+  service): the app writing that handler had to hard-code the literals the wire-mirror tests exist to
+  stop it hard-coding. **The barrel gate could not have caught any of it** — `index.test.ts` compares
+  `Object.keys(barrel)`, and a type has no runtime binding; the type half is now pinned by a
+  type-only import in that same file, which `npm run typecheck` (the full tsconfig, which includes
+  tests) compiles. Verified by sabotage: dropping `OperationProgress` from the barrel fails the
+  typecheck naming it.
+
+### Fixed
+
+- **Docs on shipped surface still described `RequestResume`'s superseded rule** (whole-codebase
+  review, before publish). Five XML/JSDoc sites and three docs said the drop-vs-keep decision is told
+  apart by `ResumePayload`; the released behaviour keys on the registry's own internal provenance
+  record (see the `### Breaking` note above and D23's closing amendment). An adopter following the
+  shipped doc would attach its own `ResumePayload` at `Start()` and expect `RequestResume` to drop the
+  entry — the kit now keeps it, which is the whole point of the fix. Corrected in
+  `OperationStatus.Waiting`, `IOperationRegistry.RegisterWaiting`, the three TS mirrors in
+  `operations.ts`, `docs/ARCHITECTURE.md` (which contradicted its own `RequestResume` paragraph 50
+  lines earlier), `docs/ADOPTION.md`, and the design doc's §4.3/§5A.2/§5A.4.
+- **`README.md`/`docs/ADOPTION.md` documented a dependency chain the packages do not have** — both
+  drew `Shenora.WinForms → Shenora.Ipc`. The graph is a DIAMOND over `Shenora.Core`:
+  `Shenora.Ipc` and `Shenora.WinForms` are siblings, and `Shenora.WebView2` is the first package that
+  sees both. `Shenora.Ipc` targets `net10.0` and binds to no UI framework — that is what D16's
+  transport story rests on, and why the two IPC-facing desktop facades live in `Shenora.WebView2`
+  rather than either base. An adopter following ADOPTION Stage 0/1 for "a shell with no web frontend"
+  would reference `Shenora.WinForms`, write a `BaseFacade`, and get an unresolved-namespace error the
+  docs said could not happen. Both now show the real graph, the TFM per package, and the explicit
+  "add `Shenora.Ipc` as a second reference" note.
+- **`README.md` still said "Not yet published to NuGet/npm"** — stale since 0.1.0 and the first thing
+  an evaluating reader saw, directly under the version headline (first-adopter finding, 2026-07-31).
+  The package table also gained a target-framework column, so an adopter no longer has to download a
+  nupkg to learn whether it fits (same finding).
+- **`Shenora.WebView2.Sessions`' NuGet package description still shipped the scenario vocabulary D22
+  removed from the types** — "login windows … (silent refresh, cookie capture)" and "co-browse
+  streaming primitives", for types renamed `InteractiveSession`/`StreamingSession` in P5.5 H9.7/H9.8.
+  D22's audit method is "sweep the API baselines for domain words", and a csproj `<Description>` is in
+  no baseline — while being the single most public place that vocabulary appears (the nuget.org
+  listing). Also renamed the off-screen window's caption and two log messages, which are externally
+  readable for the same reason.
+- **`InteractiveSession`'s loading-fallback timer invoked the app's `OnLoading` unguarded.** A
+  WinForms timer tick has no caller on its stack, so a throwing splash toggle (`ObjectDisposedException`
+  is the obvious way) was an unhandled UI-thread exception — the bootstrap's modal crash dialog. The
+  same callback was already guarded on the two paths below it in the same method, with a comment
+  recording what one unguarded `OnLoading` cost last time. Now routed through `AppCallback.Run`.
+- **`EmbeddedResourceProvider` called the app's `Log` sink directly at seven sites**, two of them
+  inside `BeginWarmup`'s fire-and-forget `Task.Run` where a throwing sink escapes the `catch` it is
+  reporting from and becomes an unobserved task exception. All seven now go through the guarded, lazy
+  `Log(Func<string>)` every other type in the kit uses.
+- **`DropZoneManager` emitted with `_ = EventBus.EmitAsync(…)`** — the discard shape `IEventBus.Emit`
+  was added in P6.4 to replace, and whose doc says a caller should not have to read the implementation
+  to know the discard is safe. It was the kit's only in-repo emitter and it did not use its own member.
+- **Stale/self-contradicting XML docs:** `DropZoneFacade` recommended mapping through
+  `AddMessageDispatcher`'s configure callback — the advice `WindowCommandFacade`'s doc already records
+  as impossible (that callback runs before any form exists, P5.5 H6); `SessionEnvironmentCache` said
+  `WebViewEnvironment` "still has" the faulted-task-caching trap and cited a `TASKS.md H3` that no
+  longer exists (H3 fixed it, and the two now share one shape); `ModuleContext` said it is built "at
+  construction" while `BaseFacade` builds it lazily and says why; `docs/ARCHITECTURE.md` carried
+  "known limit: a mapped module cannot be released" in the same sentence that lists
+  `TryReleaseModule`.
+- **Recorded a real known limit in its place: `IModuleRegistry` cannot see DI-registered facades.**
+  `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` (one terminal middleware) and
+  not through `TryClaimModule`, because claiming needs the module names and resolving facades inside
+  the `IMessageDispatcher` singleton factory is the silent `StackOverflow` P5.5 H2 fixed. So
+  `IsModuleMapped` answers `false` for a routed module, and a plug-in offering a name a DI facade owns
+  gets `true` from `TryMapModule` and then never runs. Precedence is correct; the answer is not.
+  Documented on `TryMapModule` and in `ARCHITECTURE.md` rather than guessed at — closing it needs a
+  name-reservation seam or re-opening the deadlock, and no consumer has hit it.
 
 ## 0.1.2 — 2026-07-31
 

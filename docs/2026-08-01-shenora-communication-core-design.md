@@ -324,8 +324,8 @@ The registry publishes on the bus under a kit module (`OperationRegistryOptions.
 - `OPERATION_REMOVED` (generic-library audit finding 4) — payload `{ operationIds: string[] }`,
   emitted with `Scope = null` (global, since one batch can span several scopes). Fires wherever an
   entry leaves the registry with no corresponding `OPERATION_UPDATED`: `MaxHistory` eviction,
-  `ClearFinished`, and the no-live-handle entry drop inside `RequestResume` (§5A.4 — keyed on
-  `ResumePayload`, not on a second status). The host bounds its own
+  `ClearFinished`, and the no-live-handle entry drop inside `RequestResume` (§5A.4 — keyed on the
+  registry's own provenance record, not on `ResumePayload` and not on a second status). The host bounds its own
   history (`MaxHistory`); before this event existed, the client — the side actually rendering — never
   heard about a removal, so a long-lived store's mirror of bounded host history was itself unbounded,
   and `@shenora/react` compensated with two hand-written optimistic local prunes (`clearFinished`,
@@ -508,7 +508,8 @@ something that never terminated, plus a second entry). Both states were later co
 `Waiting` value shown above, on the observation that this table's own "Pruned?"/"Exits" columns already
 treated them identically — the two-state design was tracking WHICH mechanism reached the band
 (`Wait()` vs. a checkpoint registration), not anything the band itself needed to distinguish; that
-distinction now lives on `ResumePayload` (§5A.4) instead of on the enum.
+distinction now lives on the registry's own internal provenance record (§5A.4) instead of on the enum
+— it moved to `ResumePayload` first and was corrected before publish, see §5A.4's amendment stack.
 
 ### 5A.3 The surface
 
@@ -561,8 +562,9 @@ Four decisions worth stating, because each has a plausible-looking alternative:
 
 `RequestResume` on an entry reached via a live `Wait()` emits `OPERATION_RESUME_REQUESTED` and leaves
 the entry alone — the app calls `Resume()` when it has actually resumed. On one with no live handle
-(originally its own `Interrupted` status; now identified by a non-null `ResumePayload` instead — see
-§5A.2's collapse) it still drops the entry, because there is no live handle to flip: the body died with
+(originally its own `Interrupted` status; then briefly a non-null `ResumePayload`; now the registry's
+own provenance record — see §5A.2's collapse and the two amendments below) it still drops the entry,
+because there is no live handle to flip: the body died with
 the process, and the app's resume path starts fresh work. That is intrinsic rather than an inconsistency
 to tidy away, and it follows the same split that fixed the Critical — *the client asking* is not *the
 state changing*.

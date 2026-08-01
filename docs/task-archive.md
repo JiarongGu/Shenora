@@ -15,6 +15,68 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### 0.2.0 — whole-codebase review (2026-08-01, before 0.2.0 was pushed or published)
+
+A full read of `src/` (~13 k lines across the five packages + `@shenora/react`), the samples and the
+docs, run against `docs/REVIEW-GUIDE.md`'s invariant map and the five classes five consecutive phase
+reviews once missed. Baseline was green before and after (`verify` PASSED; 680 dotnet + 101 vitest),
+so **every finding below is a latent defect, not a regression** — and the shape of the list is worth
+noting for the next reviewer: nothing was found in the threading, marshalling, resource-ownership or
+error-boundary hot spots the guide points at hardest. Those areas have been reviewed repeatedly and it
+shows. What was left was the surface NO existing gate looks at:
+
+- **Docs that ship.** Three defects lived in XML/JSDoc and the README — the places a consumer reads
+  and no test compiles. The `RequestResume`/`ResumePayload` drift is the cleanest example: the code fix
+  (commit `7c4313c`) was correct and its DECISIONS/design-doc amendment stacks were complete, but five
+  shipped doc sites and three docs still described the superseded rule, and `docs/ARCHITECTURE.md`
+  contradicted its own paragraph 50 lines earlier.
+- **The dependency graph, which no doc had ever drawn correctly.** `README.md` and `docs/ADOPTION.md`
+  both claimed `Shenora.WinForms → Shenora.Ipc`. It has never existed: the graph is a DIAMOND over
+  `Shenora.Core`, and the absence of that edge is load-bearing in both directions — it is why
+  `Shenora.Ipc` is `net10.0` and binds to no UI framework (D16's transport story), and why
+  `WindowCommandFacade`/`DropZoneFacade` live in `Shenora.WebView2`. Four separate code comments state
+  the invariant; the two documents an adopter actually reads stated its opposite.
+- **Gates with a blind half.** `index.test.ts` pins the npm barrel by comparing `Object.keys(barrel)`
+  — structurally blind to `export type`, so `OperationProgress` was missing from the public surface for
+  a release with nothing failing. The only symptom was the kit's own sample re-declaring the shape
+  inline. Now pinned by a type-only import in the same file (sabotage-verified). Same class:
+  D22's audit method is "sweep the API baselines for domain words", and a csproj `<Description>` is in
+  no baseline — so the `Shenora.WebView2.Sessions` package description still advertised "login
+  windows … (silent refresh, cookie capture)" and "co-browse streaming primitives" on nuget.org, for
+  types renamed in P5.5 H9.7/H9.8.
+- **One live operational gap:** the git hooks were not installed in this clone, so the sensitive
+  guard's pre-commit and commit-msg halves were inert on a public repo. `sensitive-info.md` names this
+  exact failure ("a fresh clone has no hooks, so the guard silently does nothing — hit live, two
+  commits nearly landed unguarded"). Fixed with `dev.mjs install-hooks`; the rule was right and the
+  clone had simply never run it.
+- **Small guard/consistency fixes** where the kit did not follow its own earned rules:
+  `InteractiveSession`'s loading-fallback timer tick ran the app's `OnLoading` unguarded (a timer tick
+  is the AppCallback rule's own named shape, and the same callback is guarded twice below it in the
+  same method); `EmbeddedResourceProvider` called the app's `Log` sink directly at seven sites, two of
+  them in a fire-and-forget `Task.Run`; `DropZoneManager` — the kit's only in-repo emitter — still used
+  `_ = EmitAsync(…)` rather than the `IEventBus.Emit` added in P6.4 to replace exactly that.
+- **One known limit recorded rather than guessed at:** `IModuleRegistry` cannot see DI-registered
+  facades, because `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` rather than
+  `TryClaimModule` — which is not an oversight but the P5.5 H2 `StackOverflow` fix. So
+  `IsModuleMapped` answers `false` for a routed module and `TryMapModule` answers `true` for a taken
+  name. Precedence is correct (the app's own modules win); only the answer is dishonest, no consumer
+  has hit it, and closing it needs a name-reservation seam or re-opening the deadlock. Documented on
+  `TryMapModule`, in `ARCHITECTURE.md` and in `ipc-contracts.md`.
+
+This also closed the last of the **first adopter's Stage-0 findings (2026-07-31)** — the stale "not
+yet published to NuGet/npm" line and the missing TFM column — which had stayed open through 0.1.1 and
+0.1.2 because they were docs, not API. Their context, retired from `TASKS.md` with them: a private
+desktop sibling reached Stage 0 with `Shenora.WebView2.Sessions` 0.1.0 referenced, every package
+resolving transitively from the leaf, and the host building 0 errors against `net10.0-windows` —
+nothing consuming the kit yet, so the whole batch was packaging/docs rather than API. Worth noting
+against the dependency-graph defect above: that adopter took the leaf, so the transitive close was
+correct for them and the wrong chain in the docs never bit. It would have bitten the FIRST adopter who
+followed the README's own "a shell with no web frontend references `Shenora.WinForms` directly" advice.
+
+Full list with rationale: `CHANGELOG.md` 0.2.0 `### Added`/`### Fixed`. Reusable lessons promoted to
+`.claude/knowledge/ipc-contracts.md`: a runtime export gate proves nothing about type exports, and the
+DI-registry limit.
+
 ### P5.5 — Consolidation: cleanup, re-layer, roadmap revisit (2026-07-30) — DO BEFORE P6
 
 The consolidation checkpoint after P0–P5 put the whole body of the kit down fast (see

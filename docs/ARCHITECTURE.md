@@ -238,8 +238,21 @@ changes, noting them in `CHANGELOG.md`).
   `MessageDispatcher`) + `TryMapModule` — the seam for a DYNAMICALLY composed surface (plug-ins,
   licence-gated or per-tenant modules), kept OFF `IMessageDispatcher` so that interface stays the
   four things a dispatcher IS. `MapModule(facade)` throws on a duplicate; `TryMapModule` returns
-  false instead, and throws rather than answering when the dispatcher cannot know. Known limit: a
-  mapped module cannot be released — the pipeline only grows.
+  false instead, and throws rather than answering when the dispatcher cannot know. (The line that
+  used to sit here — "known limit: a mapped module cannot be released, the pipeline only grows" —
+  was stale from the release that added `TryReleaseModule`, and contradicted this same sentence's
+  own member list.)
+  **Known limit, recorded rather than solved: the registry does not see DI-registered facades.**
+  `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` — ONE terminal middleware
+  resolving them on first dispatch — not through `TryClaimModule`, because claiming needs the module
+  NAMES and reading those means resolving the facades, which inside the `IMessageDispatcher` singleton
+  factory is the silent `StackOverflow` P5.5 H2 fixed. Two consequences: `IsModuleMapped("OPERATIONS")`
+  is `false` while `OPERATIONS` is routed, and a plug-in offering a name a DI facade already owns gets
+  `true` from `TryMapModule` and then never runs, because the lazy middleware is composed earlier and
+  answers first. Precedence is the one you want (the app's own modules win); the honesty is not.
+  Closing it needs either a name-reservation seam the registry does not have or re-opening the
+  deadlock — so until a consumer actually hits it, map anything that must be checkable through
+  `MapModule(facade)`/`TryMapModule` explicitly rather than through DI registration.
   **The module contract's event half (0.2.0, D23):** `IModuleContext` (`Module`, `Logger`,
   `Publish(type, payload?, scope?)`, `Start(OperationOptions)`, `Run(OperationOptions, work)`) is the
   second parameter of `BaseFacade.RouteMessageAsync` — the release's one breaking change, because
@@ -330,7 +343,9 @@ changes, noting them in `CHANGELOG.md`).
   reached (a live `IOperation.Wait()` vs. `RegisterWaiting`'s checkpoint) — every transition already
   treated them as one band (`Dismiss`/`RequestResume` both accepted either, neither was ever pruned,
   the client's `waiting` getter already unioned them), so they collapsed into the single `Waiting`
-  value shown above, with the drop-vs-keep distinction moved onto `ResumePayload`. Full rationale and
+  value shown above. The drop-vs-keep distinction moved onto `ResumePayload` for one release and then
+  onto the registry's own `Entry.Reconstructed` provenance flag — see the `RequestResume` description
+  above for the as-built rule and why an app-controlled field could not carry it. Full rationale and
   the complete rename table: `docs/DECISIONS.md` D23's amendment.
   **`NotificationPump`(+`Options`)** — the transport-neutral half of the outbound notification
   channel (design §5, D16 applied to the host side): bus subscription (from CONSTRUCTION, not
@@ -364,7 +379,10 @@ changes, noting them in `CHANGELOG.md`).
   (native drop zones synced to elements — real OS paths, unstyled drag feedback),
   `installDevInterceptor` (`window.__shenora` CDP-testing global); **`useShenoraOperations`/
   `createOperationsStore`** (0.2.0) — mirrors `Shenora.Ipc`'s operations cluster: `OperationStatuses`
-  (the wire values, including `waiting`) + `OperationInfo`/`OperationLabel` types (`waitReason`
+  (the wire values, including `waiting`), `OperationEventTypes` + `OperationModuleName` (the event
+  vocabulary and default module, for the two events the store deliberately does NOT subscribe to —
+  `RESUME_REQUESTED`/`WAIT_REQUESTED` target the OWNING module's service), and the
+  `OperationInfo`/`OperationLabel`/`OperationProgress` types (`waitReason`
   mirrors the host's `WaitReason`; `resumable` removed post-audit, see below), and a
   `createShenoraStore` instance (`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id,
   OPERATION_REMOVED: delete-named-ids }`, `actions: { cancel, dismiss, wait, clearFinished, resume }`)

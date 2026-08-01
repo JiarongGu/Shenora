@@ -85,19 +85,36 @@ useShenoraOperations.actions.wait(jobId);         // ASK the host to wait runnin
 useShenoraOperations.actions.clearFinished();
 ```
 
-`operation.progress` is `{ value: number; total?: number; unit?: string }` — the APP's own unit
+`operation.progress` is an exported `OperationProgress` (`{ value: number; total?: number; unit?:
+string }`) — import the type rather than re-declaring the shape — the APP's own unit
 (bytes-of-a-known-total, items-of-a-known-total, an absolute count with no known total, or a genuine
 percent), never a kit-assumed percentage: `total` is the denominator when one is known and `undefined`
 when there isn't one, and `unit` is app-defined and uninterpreted, exactly like `kind`. The kit ships
 no percent helper — render a ratio only when you have a `total`:
 
 ```ts
-const pct = importJob?.progress?.total
-  ? (importJob.progress.value / importJob.progress.total) * 100
-  : undefined;   // no known total — show the bare value/unit instead, or an indeterminate spinner
+import type { OperationProgress } from '@shenora/react';
+
+function format(progress?: OperationProgress): string {
+  if (!progress) return 'starting…';
+  return progress.total
+    ? `${Math.round((progress.value / progress.total) * 100)}%`
+    : `${progress.value}${progress.unit ? ` ${progress.unit}` : ''}`;   // no known total
+}
 ```
 
 That division is your own policy, not the kit's, which is why it lives here instead of in `src/`.
+
+For the two events the store deliberately does NOT subscribe to — `OPERATION_RESUME_REQUESTED` and
+`OPERATION_WAIT_REQUESTED`, which target the OWNING module's service rather than this generic store —
+the module name and the event vocabulary are exported too, so you match by symbol and stay inside the
+host↔client mirror the wire tests pin:
+
+```ts
+import { OperationEventTypes, OperationModuleName, useShenoraEvent } from '@shenora/react';
+
+useShenoraEvent(OperationModuleName, OperationEventTypes.ResumeRequested, (payload) => …);
+```
 
 It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
 folds `OPERATION_UPDATED` by id — one subscription however many components read it. The client

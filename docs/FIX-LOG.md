@@ -14,6 +14,56 @@ entry template:
 
 ## 2026-08-01
 
+### 0.2.0: the documented package dependency chain had an edge the packages do not have
+
+- **Symptom.** `README.md` and `docs/ADOPTION.md` both drew the graph as a single chain,
+  `Shenora.WebView2.Sessions → Shenora.WebView2 → Shenora.WinForms → Shenora.Ipc → Shenora.Core`,
+  and immediately told the reader "a shell with no web frontend references `Shenora.WinForms`
+  directly". Following that, an adopter's `BaseFacade`/`IpcRequest` code does not compile, and the
+  error names a missing NAMESPACE rather than a missing package.
+- **Root cause.** The `Shenora.WinForms → Shenora.Ipc` edge has never existed.
+  `Shenora.WinForms.csproj` references only `Shenora.Core`; the real graph is a diamond, with
+  `Shenora.Ipc` (`net10.0`, no UI-framework binding) and `Shenora.WinForms` (`net10.0-windows`) as
+  SIBLINGS over `Shenora.Core`, joined for the first time by `Shenora.WebView2`. That absence is
+  load-bearing in both directions — it is what keeps the IPC envelopes transport-neutral (D16) and
+  the reason `WindowCommandFacade`/`DropZoneFacade` live in `Shenora.WebView2` rather than in
+  `Shenora.WinForms`. Four code comments state the invariant (the WebView2 csproj, `ShellLauncher`,
+  `DropZoneManager`, `WindowCommandFacade`); the two documents an adopter actually reads stated its
+  opposite, and no test compares a doc to a csproj.
+- **Fix.** Both documents now draw the real diamond with the TFM per package, lead with "`Shenora.Ipc`
+  is platform-neutral and stays that way", and carry an explicit warning that `Shenora.WinForms` does
+  not bring `Shenora.Ipc` with it. `README.md`, `docs/ADOPTION.md`.
+- **Verify.** `dotnet list <proj> reference` on each of the five packables, plus the built output TFM
+  (`src/Shenora.Ipc/bin/Debug/net10.0`), plus a grep of `Shenora.Ipc` for any Windows binding (the one
+  hit is a doc comment naming WinForms as an example base). `dev.mjs verify` clean — 680 dotnet +
+  101 vitest.
+- **Commit:** the docs commit immediately following `6697697` (this fix is documentation-only — the
+  packages themselves were always right).
+
+### 0.2.0: `@shenora/react` did not export `OperationProgress`, and the barrel gate could not see it
+
+- **Symptom.** `OperationInfo` is exported and its `progress` field is typed `OperationProgress`, but
+  that type was not on the barrel — so the field's own type was unnameable from outside the package.
+  The only visible symptom was in the kit's OWN sample: `samples/Shenora.Sample.Web/src/App.tsx`
+  re-declared the shape inline (`{ value: number; total?: number; unit?: string }`) to write a
+  one-line progress formatter, and the npm README's example did the same.
+- **Root cause.** `OperationProgress` was added in commit `71e09f5` (progress-is-not-percent) and
+  wired through the C# side, the TS mirror and its wire tripwire — but not added to `index.ts`.
+  Nothing failed, because the npm surface gate (`index.test.ts`) pins the barrel by comparing
+  `Object.keys(barrel)` against an explicit array. A `export type` has no runtime binding, so the
+  gate is structurally blind to the entire type half of the public surface.
+- **Fix.** Exported `OperationProgress` — plus `OperationEventTypes` and `OperationModuleName`, the
+  same gap for the two events `createOperationsStore` deliberately does not subscribe to. Added the
+  missing half of the gate: a type-only `import type { … } from './index.js'` in `index.test.ts`
+  consumed by an `ExportedTypeSurface` tuple alias, which `npm run typecheck` (the full tsconfig,
+  which includes test files) compiles. `src/Shenora.React/src/index.ts`, `index.test.ts`, plus the
+  sample and npm README now importing the type instead of re-declaring it.
+- **Verify.** Sabotage, per the standing tripwire rule: removing `type OperationProgress` from
+  `index.ts` fails the typecheck with
+  `src/index.test.ts(17,3): error TS2305: Module '"./index.js"' has no exported member 'OperationProgress'`,
+  restored and green. `dev.mjs verify` clean — 680 dotnet + 101 vitest, both typechecks.
+- **Commit:** `6697697`
+
 ### 0.1.2: WindowStateManager.Apply(Form) resolved DPI on the wrong monitor on cross-monitor mixed-DPI setups
 
 - **Symptom.** First cut of the 0.1.2 fix (commit `109654c`) made `Apply(Form)` defer to

@@ -19,25 +19,52 @@ bus, postMessage transport, `@shenora/react` client), the native desktop surface
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
 the auxiliary browser sessions (off-screen render pool, interactive sessions, streaming sessions) are
 extracted from proven in-house applications and verified end-to-end against the sample app. Every
-public and protected member is documented and gated by API-surface baselines. Not yet published to
-NuGet/npm — see `docs/ROADMAP.md`.
+public and protected member is documented and gated by API-surface baselines. **All six packages are
+published** — see `docs/RELEASING.md` for how a version is cut and `CHANGELOG.md` for what each one
+carries.
 
 ## Packages
 
 Version in lockstep; reference the **leaf** you need and the rest arrive transitively.
 
-| Package | Registry | In one line |
-|---|---|---|
-| `Shenora.Core` | NuGet | The application host, and the platform-neutral contracts your logic compiles against. |
-| `Shenora.Ipc` | NuGet | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.WinForms` | NuGet | The native Windows shell: bootstrap, windows, tray, dialogs, single-instance. |
-| `Shenora.WebView2` | NuGet | Hosting a WebView2: serving, policies, and the postMessage bridge. |
-| `Shenora.WebView2.Sessions` | NuGet | Extra browser sessions: a render pool, interactive windows, frame streaming. |
-| `@shenora/react` | npm | The client half — bridge, event bus, store, hooks. |
+| Package | Registry | Target framework | In one line |
+|---|---|---|---|
+| `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
+| `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
+| `Shenora.WinForms` | NuGet | `net10.0-windows` | The native Windows shell: bootstrap, windows, tray, dialogs, single-instance. |
+| `Shenora.WebView2` | NuGet | `net10.0-windows` | Hosting a WebView2: serving, policies, and the postMessage bridge. |
+| `Shenora.WebView2.Sessions` | NuGet | `net10.0-windows` | Extra browser sessions: a render pool, interactive windows, frame streaming. |
+| `@shenora/react` | npm | ES2022 / ESM | The client half — bridge, event bus, store, hooks. |
 
-Dependency chain: `Shenora.WebView2.Sessions` → `Shenora.WebView2` → `Shenora.WinForms` →
-`Shenora.Ipc` → `Shenora.Core`. A shell with no web frontend references `Shenora.WinForms` directly;
-app logic that must stay portable references only `Shenora.Core`.
+The Windows packages ship as `net10.0-windows7.0` in `lib/` — the TFM column is here so an adopter
+can tell whether a package fits without downloading the nupkg to inspect it.
+
+Dependencies — the graph is a **diamond, not a chain**:
+
+```
+                    Shenora.Core          net10.0        portable: no Windows reference
+                      ↑          ↑
+        Shenora.Ipc ──┘          └── Shenora.WinForms    net10.0-windows
+          net10.0                          ↑
+              ↑                            │
+              └──── Shenora.WebView2 ──────┘             net10.0-windows
+                            ↑
+              Shenora.WebView2.Sessions                  net10.0-windows
+```
+
+**`Shenora.Ipc` is platform-neutral and stays that way.** It targets `net10.0`, references only
+`Shenora.Core`, and binds to no UI framework at all — the whole transport story (D16) rests on that:
+the same envelopes ride WebView2 postMessage today and a WebSocket or a mobile shell's channel
+tomorrow, and a server-side or headless host can dispatch them with no WinForms anywhere in the
+graph. Anything that genuinely needs a window lives one layer up: the UI-thread seam is the portable
+`IUiDispatcher` in `Shenora.Core`, implemented once in `Shenora.WinForms`, and the two IPC-facing
+desktop facades (`WindowCommandFacade`, `DropZoneFacade`) live in `Shenora.WebView2` — which is the
+first package that may see both halves — rather than in either base.
+
+The corollary for adopters: `Shenora.WinForms` does **not** bring `Shenora.Ipc` with it. They are
+siblings over `Shenora.Core`, so a WinForms-only shell that wants typed messaging adds
+`Shenora.Ipc` as a second, explicit reference. App logic that must stay portable references only
+`Shenora.Core`.
 
 Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and **server-backed**
 (the app runs its own in-process HTTP server shared with mobile/LAN clients; Shenora provides the
