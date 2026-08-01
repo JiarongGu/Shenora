@@ -30,4 +30,23 @@ public interface IModuleContext
     /// subscriber cannot fault the caller.
     /// </summary>
     void Publish(string type, object? payload = null, string? scope = null);
+
+    /// <summary>
+    /// Start a tracked operation owned by this module and get its handle — for work whose lifecycle
+    /// does not match <see cref="Run"/> 1:1 (a start outside the background body, several failure
+    /// branches, a resumable session). This is the real primitive; <see cref="Run"/> is the sugar.
+    /// </summary>
+    IOperation Start(OperationOptions options);
+
+    /// <summary>
+    /// Start the operation, hand <paramref name="work"/> OFF to the background, and finish it:
+    /// <c>Complete</c> on success, <c>Cancel</c> on <see cref="OperationCanceledException"/>,
+    /// <c>Fail</c> otherwise. Returns the operation id IMMEDIATELY — a route that awaits long work
+    /// blocks the dispatch, and the dispatch is on the UI thread.
+    /// <para>
+    /// The work gets the OPERATION's token, never the request's: work handed off outlives the
+    /// request, and capturing the request token kills it the moment the page navigates.
+    /// </para>
+    /// </summary>
+    string Run(OperationOptions options, Func<IOperation, CancellationToken, Task> work);
 }

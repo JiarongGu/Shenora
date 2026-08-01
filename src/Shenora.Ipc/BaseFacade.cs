@@ -20,21 +20,26 @@ public abstract class BaseFacade : IModuleFacade
     private IModuleContext? _context;
 
     /// <summary>
-    /// The logger is optional so composition works without <c>AddLogging</c>; the bus is optional so a
-    /// facade that never publishes (and every unit test that constructs one bare) still works. A facade
-    /// that DOES publish without one fails loudly at the call site — see <see cref="ModuleContext"/>.
+    /// The logger is optional so composition works without <c>AddLogging</c>; the bus and the
+    /// operations registry are optional so a facade that never publishes / never starts tracked
+    /// operations (and every unit test that constructs one bare) still works. A facade that DOES use
+    /// one without it being supplied fails loudly at the call site — see <see cref="ModuleContext"/>.
     /// </summary>
-    protected BaseFacade(ILogger? logger = null, IEventBus? events = null)
+    protected BaseFacade(ILogger? logger = null, IEventBus? events = null, IOperationRegistry? operations = null)
     {
         _logger = logger ?? NullLogger.Instance;
         Events = events;
+        Operations = operations;
     }
 
     /// <summary>The bus this facade publishes on, if one was supplied.</summary>
     protected IEventBus? Events { get; }
 
+    /// <summary>The registry this facade's routes start/run tracked operations through, if one was supplied.</summary>
+    protected IOperationRegistry? Operations { get; }
+
     /// <summary>Built lazily: ModuleName is an abstract property, so it is not readable from the ctor.</summary>
-    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, Events);
+    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, Events, Operations);
 
     /// <inheritdoc />
     public abstract string ModuleName { get; }

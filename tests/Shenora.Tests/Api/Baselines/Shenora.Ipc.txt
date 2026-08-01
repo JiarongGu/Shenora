@@ -1,7 +1,8 @@
 abstract class Shenora.Ipc.BaseFacade : Shenora.Ipc.IModuleFacade
-  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.IEventBus? events = null)
+  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.IEventBus? events = null, Shenora.Ipc.IOperationRegistry? operations = null)
   protected Shenora.Core.IEventBus? Events { get; }
   protected Shenora.Ipc.IModuleContext Context { get; }
+  protected Shenora.Ipc.IOperationRegistry? Operations { get; }
   protected Shenora.Ipc.OperationException UnknownType(Shenora.Ipc.IpcRequest request)
   protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   protected static System.Threading.Tasks.Task<object> Done()
@@ -14,7 +15,9 @@ interface Shenora.Ipc.IMessageDispatcher
   public abstract System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Ipc.IModuleContext
   public abstract Microsoft.Extensions.Logging.ILogger Logger { get; }
+  public abstract Shenora.Ipc.IOperation Start(Shenora.Ipc.OperationOptions options)
   public abstract string Module { get; }
+  public abstract string Run(Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public abstract void Publish(string type, object? payload = null, string? scope = null)
 interface Shenora.Ipc.IModuleFacade
   public abstract System.Threading.Tasks.Task<Shenora.Ipc.IpcResponse> HandleMessageAsync(Shenora.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
@@ -36,6 +39,7 @@ interface Shenora.Ipc.IOperationRegistry
   public abstract Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public abstract bool Cancel(string id)
+  public abstract string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public abstract void ClearFinished()
 static class Shenora.Ipc.IpcCategories
   public const string Ipc = "ipc"
@@ -182,6 +186,7 @@ sealed class Shenora.Ipc.OperationRegistry : Shenora.Ipc.IOperationRegistry, Sys
   public Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
   public System.Collections.Generic.IReadOnlyList<Shenora.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public bool Cancel(string id)
+  public string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public void ClearFinished()
   public void Dispose()
 sealed class Shenora.Ipc.OperationRegistryOptions

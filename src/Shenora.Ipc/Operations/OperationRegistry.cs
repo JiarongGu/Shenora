@@ -78,6 +78,39 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <inheritdoc />
+    public string Run(string module, OperationOptions options, Func<IOperation, CancellationToken, Task> work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        var operation = Start(module, options);   // validates module/options; publishes the Running snapshot
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // ConfigureAwait(false) is REQUIRED here and BANNED in the dispatch path (see
+                // ipc-contracts.md): this body is deliberately NOT the dispatch path — capturing the
+                // caller's synchronization context would put the work back on the thread this
+                // handoff exists to free.
+                await work(operation, operation.CancellationToken).ConfigureAwait(false);
+                operation.Complete();
+            }
+            catch (OperationCanceledException) { operation.Cancel(); }
+            catch (OperationException expected) { operation.Fail(expected); }
+            catch (Exception ex)
+            {
+                // The boundary rule, identical to MessageDispatcher's: the app never sees the raw
+                // message. No ILogger on this type (the registry is transport/UI agnostic) — route
+                // the detail through the same guarded/lazy Log() every other diagnostic here uses,
+                // not a second logging path.
+                Log(() => $"[Shenora.Ipc] Run: operation {operation.Id} ({options.Kind} in {module}) " +
+                    $"failed with {ex.GetType().Name}: {ex.Message}");
+                operation.Fail(IpcErrorCodes.UnknownError,
+                    new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name });
+            }
+        });
+        return operation.Id;
+    }
+
+    /// <inheritdoc />
     public IReadOnlyList<OperationInfo> GetAll(string? module = null, string? scope = null)
     {
         lock (_lock)

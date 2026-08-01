@@ -15,6 +15,25 @@ public interface IOperationRegistry
     IOperation Start(string module, OperationOptions options);
 
     /// <summary>
+    /// Start the operation, hand <paramref name="work"/> OFF to the background, and finish it:
+    /// <c>Complete</c> on success, <c>Cancel</c> on <see cref="OperationCanceledException"/>,
+    /// <c>Fail</c> otherwise (never a raw exception — see the type doc). Returns the operation id
+    /// IMMEDIATELY.
+    /// <para>
+    /// This is the primitive; <see cref="IModuleContext.Run"/> is a one-line delegation onto it. It
+    /// lives HERE, not on the context, so it is reachable from ordinary services too — a download
+    /// service starting an installer fetch, not only an IPC facade route. One implementation,
+    /// reachable from both call-site shapes.
+    /// </para>
+    /// <para>
+    /// The work gets the OPERATION's own token, never a caller's — see
+    /// <see cref="IOperation.CancellationToken"/>: work handed off outlives whatever started it, and
+    /// capturing a caller's token (a request, say) kills it the moment that caller's lifetime ends.
+    /// </para>
+    /// </summary>
+    string Run(string module, OperationOptions options, Func<IOperation, CancellationToken, Task> work);
+
+    /// <summary>
     /// Snapshot of currently-known operations (running plus retained finished history, capped by
     /// <see cref="OperationRegistryOptions.MaxHistory"/>), optionally filtered by owning module
     /// and/or scope. Running operations sort first.
