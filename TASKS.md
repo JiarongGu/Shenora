@@ -7,12 +7,15 @@ of this file is the size of the remaining work, which is the whole point of look
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
-**Status: 0.1.2 PUBLISHED (2026-07-31); 0.2.0 BUILT AND MERGED, NOT YET PUSHED OR PUBLISHED** — five
-NuGet packages + `@shenora/react` on npm, from the manual Release workflow. Growth from here is
+**Status: 0.1.2 PUBLISHED (2026-07-31); 0.2.0 IS ON `main` AND ON GITHUB, BUT UNPUBLISHED** — no
+`v0.2.0` tag exists and the registries still serve 0.1.2, because publishing is the MANUAL Release
+workflow. Keep the two apart: pushing costs nothing, **publishing is what freezes the surface**. Five
+NuGet packages + `@shenora/react` on npm, from that workflow. Growth from here is
 harvest-driven (D15) and adoption-driven: the next real work arrives when a sibling app adopts the kit
 and hits something, or when a feature worth generalising emerges while building one. **Because 0.2.0 is
 unpublished, its surface is still free to change** — which is why several corrections landed in it
-rather than as a 0.2.1, and why its two breaking changes (D1, D2) cost nothing yet.
+rather than as a 0.2.1, and why its two breaking changes (D1, D2) cost nothing yet. That freedom ends
+at the Release workflow, not at `git push`.
 
 > DIRECTION (user, 2026-07-30): Shenora is the shared infrastructure library for ALL sibling
 > projects — a "UI kit for non-web applications" in the headless sense: it holds the desktop

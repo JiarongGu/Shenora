@@ -167,7 +167,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   reached directly from `Waiting` (useful history — "failed while waiting on credentials").
 
   **Generic-library audit (2026-08-01, before publish — every change below is free since 0.2.0 was
-  merged but never pushed or published):** the first release absorbed the shape of the ONE app it was
+  never published):** the first release absorbed the shape of the ONE app it was
   harvested from on the removal and asking halves of the lifecycle, which that app's own host never
   had to solve. Fixed:
   1. **`ClearFinished` is now `ClearFinished(string? module = null, string? scope = null)`**, mirroring

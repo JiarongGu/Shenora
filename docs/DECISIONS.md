@@ -314,8 +314,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `Interrupted` one still drops it, because a crash leaves no live body to flip. An `Adopt(id)` unifying
   the two was considered and rejected as unearned surface (recorded as a known limit).
 
-  **AMENDED again 2026-08-01 (generic-library audit, before publish — free, since 0.2.0 was merged but
-  never pushed/published).** The audit asked not "is this correct" but "has the kit absorbed ONE
+  **AMENDED again 2026-08-01 (generic-library audit, before publish — free, since 0.2.0 was never
+  published; publishing is the gate that freezes a surface, not pushing).** The audit asked not "is this correct" but "has the kit absorbed ONE
   application's shape" on the removal/asking halves of this lifecycle, and found four things this
   entry's own reasoning needs correcting for: (1) **"`Pause` has no client route" was too narrow** —
   true for a host discovering its OWN blocker, false for the equally-common shape of a human clicking
