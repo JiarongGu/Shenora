@@ -1,12 +1,20 @@
 # The communication core: event-first module contract, tracked operations, base-agnostic channel — design (2026-08-01)
 
 Status: **IMPLEMENTED (2026-08-01), shipped as 0.2.0** with a `### Breaking` section — the first
-deliberate break since v0.1.0. The as-built shape is recorded in `docs/ARCHITECTURE.md`'s
-`Shenora.Ipc`/`@shenora/react` inventory; this doc stays for the rationale. What shipped task by task,
-the review findings fixed along the way, and the deliberate known limits (`Find(id)`, client
-`byModule`/`byScope` selectors): `docs/task-archive.md` `### 0.2.0`. The task-by-task plan this design
-was implemented from has been removed per its own "delete once the work lands" lifecycle
-(`docs/README.md`'s doc inventory) — its content is superseded by the archive entry above.
+deliberate break since v0.1.0. **AMENDED again (generic-library audit, 2026-08-01, before publish —
+free, since 0.2.0 was merged but never pushed/published):** the audit asked not "is this correct" but
+"has the kit absorbed ONE application's shape", and found the removal/asking halves of the lifecycle
+had — the harvested app's own host never had to solve either. Fixed: `ClearFinished` gained the
+`module?`/`scope?` filter §4.6's table already promised for `LIST`; `Resumable` (§4.2) was removed as
+a tautological flag; `RequestPause` was added as `RequestResume`'s missing mirror and `Find(id)` was
+reinstated (§4.2's "NOT shipped" note below is superseded); `OperationEvents.Removed` closes the gap
+§4.3 left (a removal published nothing). Full list: `CHANGELOG.md`'s 0.2.0 entry. The as-built shape
+is recorded in `docs/ARCHITECTURE.md`'s `Shenora.Ipc`/`@shenora/react` inventory; this doc stays for
+the rationale, AMENDED in place below rather than left to contradict the current shape. What shipped
+task by task, the review findings fixed along the way, and the (now superseded) `Find(id)` known
+limit: `docs/task-archive.md` `### 0.2.0`. The task-by-task plan this design was implemented from has
+been removed per its own "delete once the work lands" lifecycle (`docs/README.md`'s doc inventory) —
+its content is superseded by the archive entry above.
 
 Read first: `.claude/knowledge/ipc-contracts.md` (this design is constrained by it in several places
 and contradicts it in none) and `docs/2026-07-31-shenora-oneway-ipc-design.md` (this **supersedes its §6
@@ -215,18 +223,33 @@ public interface IOperationRegistry
 `JsonStringEnumConverter(CamelCase)`, so the sibling's hard-won enum-serialization trap does not exist
 here.
 
-**`Find(id)` is sketched above and was NOT shipped — a known limit, not an oversight.** It was in this
-interface from the first draft, and was dropped during implementation because no consumer resolves a
-handle from a bare id (`Start`/`Run` already return one), and every public member becomes SemVer
-surface at 1.0 — a member with no call site is exactly the kind of surface `generic-library` asks to
-justify before shipping, not after. An app that genuinely needs to resolve an id to a handle today
-keeps its own id→handle map alongside the registry.
+**`Find(id)` was sketched above, dropped pre-0.2.0, then REINSTATED (generic-library audit, 2026-08-01,
+before publish) — the sketch above is once again the shipped shape.** The original ruling was "no
+consumer resolves a handle from a bare id"; that stopped being true the moment `RequestPause` shipped
+alongside `RequestResume` (§5A.3's amendment below): both are client-request routes carrying only an
+id, and whoever handles them (hearing `OPERATION_PAUSE_REQUESTED`/`OPERATION_RESUME_REQUESTED`) must
+translate that id back into a handle to call `Pause`/`Resume` — a recurring shape every such consumer
+would otherwise re-solve with its own id→handle map, which is this repo's own stated bar for public
+surface. Safe to hold past the operation's life: every `IOperation` member re-validates the entry's
+current status before acting, so a stale handle is a no-op, not a dangling reference to guard.
 
-**Provenance note, so a future reviewer can cut it cleanly:** `Interrupted` / `Resumable` /
-`ResumePayload` / `RegisterInterrupted` / `RequestResume` come from **one** app, not two. They are
-included because they are pure mechanism (a state, an opaque token, an event — the app owns the
-checkpoint and the resume entrypoint) and cost five members. Everything else in §4 clears the two-app
-bar. If a 1.0 audit wants surface removed, this is the first candidate.
+**Provenance note, so a future reviewer can cut it cleanly:** `Interrupted` / `ResumePayload` /
+`RegisterInterrupted` / `RequestResume` come from **one** app, not two. They are included because they
+are pure mechanism (a state, an opaque token, an event — the app owns the checkpoint and the resume
+entrypoint). Everything else in §4 clears the two-app bar. **`Resumable` (shown on `OperationOptions`/
+`OperationInfo` above) was REMOVED by the generic-library audit** — it was consulted nowhere except
+`RegisterInterrupted`'s own required-true gate, and every caller had already forced it `true` to pass
+that gate, so it carried no information `RegisterInterrupted`'s existing non-empty-`ResumePayload`
+requirement didn't already express. It was this section's own first-named candidate for removal ("if
+a 1.0 audit wants surface removed, this is the first candidate") — the audit took it pre-1.0 instead,
+since 0.2.0 was still free to change.
+
+**Two more audit fixes to this section's sketch, both additive:** `void ClearFinished();` above is now
+`ClearFinished(string? module = null, string? scope = null)`, mirroring `GetAll` exactly — it shipped
+with NO filter at all, so "clear completed" in one scoped window could wipe another scope's finished
+history. And `IOperationRegistry` gained `bool RequestPause(string id)`, an exact mirror of
+`RequestResume` for the direction §5A.3 originally shipped with no client route at all — see that
+section's own amendment.
 
 ### 4.3 The event contract
 
@@ -236,6 +259,19 @@ The registry publishes on the bus under a kit module (`OperationRegistryOptions.
 - `OPERATION_UPDATED` — payload is the full `OperationInfo`, for **every** transition: start, progress,
   terminal. Event `Scope` = the operation's scope.
 - `OPERATION_RESUME_REQUESTED` — payload `{ operationId, module, kind, resumePayload, scope }`.
+- `OPERATION_PAUSE_REQUESTED` (generic-library audit, before publish) — payload
+  `{ operationId, module, kind, scope }`. Exact mirror of `ResumeRequested`'s ASK/ACT split: emitted by
+  `RequestPause`, changes nothing itself, and the owning module's own `IOperation.Pause` is what
+  actually stops the work and publishes the resulting `OPERATION_UPDATED`.
+- `OPERATION_REMOVED` (generic-library audit finding 4) — payload `{ operationIds: string[] }`,
+  emitted with `Scope = null` (global, since one batch can span several scopes). Fires wherever an
+  entry leaves the registry with no corresponding `OPERATION_UPDATED`: `MaxHistory` eviction,
+  `ClearFinished`, and the `Interrupted`-entry drop inside `RequestResume`. The host bounds its own
+  history (`MaxHistory`); before this event existed, the client — the side actually rendering — never
+  heard about a removal, so a long-lived store's mirror of bounded host history was itself unbounded,
+  and `@shenora/react` compensated with two hand-written optimistic local prunes (`clearFinished`,
+  `resume`) that this event now retires — one of which produced this release's only Critical (§5A.4's
+  amendment note).
 
 **One event type, not `STARTED`/`PROGRESS`/`ENDED`.** Each emission is a complete snapshot of one
 operation, so it is last-write-wins per id: no ordering hazard, no cross-type races, and the client
@@ -300,16 +336,21 @@ the long case:
 |---|---|---|
 | `LIST` | `{ module?, scope? }` | `OperationInfo[]` — the client store's **snapshot** |
 | `CANCEL` | `{ operationId }` | `{ cancelled: bool }` |
-| `CLEAR_FINISHED` | — | — |
+| `CLEAR_FINISHED` | `{ module?, scope? }` (generic-library audit finding 1 — was `—`, unfilterable) | — |
 | `RESUME` | `{ operationId }` | `{ requested: bool }` |
+| `DISMISS` (§5A.3) | `{ operationId }` | `{ dismissed: bool }` |
+| `PAUSE` (generic-library audit finding 3) | `{ operationId }` | `{ requested: bool }` |
 
 `CANCEL` is the app-level cancel route `ipc-contracts` already prescribes ("what the client 'cancel this
 operation' case needs is an app-level CANCEL route carrying the operation id, never a transport
-concern") — the kit now ships it instead of describing it.
+concern") — the kit now ships it instead of describing it. `PAUSE` mirrors `RESUME`'s shape exactly:
+the request always succeeds, the bool says whether the operation was actually `Running` and eligible
+to be asked, and asking never changes the state itself — the owning module's `IOperation.Pause` does.
 
 Client (`@shenora/react`): `useShenoraOperations()`, one `createShenoraStore` instance —
-`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id }`, `actions: { cancel, clearFinished, resume }`,
-plus `running`/`finished` selectors derived from `byId` on every read. **Not shipped, deliberately:**
+`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id, OPERATION_REMOVED: delete-named-ids }`,
+`actions: { cancel, dismiss, pause, clearFinished, resume }`,
+plus `running`/`waiting`/`finished` selectors derived from `byId` on every read. **Not shipped, deliberately:**
 `byModule`/`byScope` selectors — an earlier revision of this section promised them, but filtering by
 module or scope is a one-line consumer selector over `byId`
 (`Object.values(state.byId).filter(o => o.module === 'X')`), and shipping indexes for it would be
@@ -409,11 +450,12 @@ failure.
 
 ```csharp
 // IOperation — the owner's handle
-void Pause(string reason, OperationLabel? detail = null);   // Running → Paused
-void Resume();                                              // Paused → Running, clears the reason
+void Pause(string? reason = null, OperationLabel? detail = null);   // Running → Paused
+void Resume();                                                       // Paused → Running, clears the reason
 
 // IOperationRegistry
-bool Dismiss(string id);   // Paused|Interrupted → Cancelled (terminal, prunable). Refuses Running.
+bool Dismiss(string id);       // Paused|Interrupted → Cancelled (terminal, prunable). Refuses Running.
+bool RequestPause(string id);  // ASKS a Running operation to pause — added by the generic-library audit, see below
 
 // OperationInfo
 string? PauseReason { get; init; }   // app-defined, like Kind — the kit never interprets it
@@ -424,15 +466,28 @@ Four decisions worth stating, because each has a plausible-looking alternative:
 - **`reason` is an app-defined STRING, not an enum** — the surveyed app switches on `credentials` /
   `transient` / `dns` / `migration` to decide what the UI offers. That is its taxonomy, not the kit's,
   exactly as `Kind` is. The optional `OperationLabel` carries the human-facing half, i18n-ready.
+  **OPTIONAL, not required (generic-library audit, before publish):** the surveyed app's four-value
+  taxonomy does not generalize to every consumer — a pause whose cause is self-evident (the user
+  clicked Pause) has nothing to name, and a required parameter forced a filler string on that caller.
 - **`Dismiss` is its own member, not `Cancel` accepting more states.** Declining a pending offer and
   cancelling live work are different acts: one removes an offer, the other signals a token and is
   permission-checked against `Cancellable`. This branch's only Critical came from precisely that
   conflation inside `Cancel`; rebuilding it in a new place would be a poor use of the lesson. `Dismiss`
   refuses `Running` for the same reason — dismissing live work would route around the permission check.
   It DOES signal the token first when one exists, so a paused body parked on a token still unwinds.
-- **`Pause` has no client route.** Pausing is the host's knowledge (it is the side that discovered the
-  credentials expired); a client cannot pause work it does not run. `RESUME` and `DISMISS` are client
-  routes because they are the human's decisions. This keeps the kit out of policy.
+- **`Pause` (the ACT) still has no client route — but `RequestPause` (the ASK) now does (generic-library
+  audit finding 3, amended before publish).** The original reasoning — "pausing is the host's own
+  knowledge; a client cannot pause work it does not run" — is true for a host discovering its OWN
+  blocker (the credentials/DNS/migration shape this section surveyed), but it is not the only pause
+  semantics that exists: the equally-common shape is a human clicking Pause on VISIBLE work — a
+  download, a sync, a backup — which the kit itself already names as a consumer (a
+  download-manager-style activity panel, "a download service starting an installer fetch"). For that
+  shape the client needs to ASK, so `IOperationRegistry.RequestPause(id)` was added as an exact mirror
+  of `RequestResume`: it emits `OPERATION_PAUSE_REQUESTED { operationId, module, kind, scope }`, refuses
+  anything not `Running`, and changes NOTHING itself — the owning module's own `Pause()` is still what
+  actually stops the work, same ASK/ACT split as `RequestResume` vs. `Resume()`. `RESUME`/`DISMISS`/
+  `PAUSE` are ALL client routes now, because asking is never itself a policy decision; only the ACT
+  (`Pause()`/`Resume()`, called by the operation's own owner) stays out of the client's hands.
 - **`Report` still requires `Running`.** A paused operation is not progressing, and letting progress
   tick while paused is how a UI ends up showing motion for work that is stopped.
 
@@ -443,6 +498,15 @@ the app calls `Resume()` when it has actually resumed. On an **`Interrupted`** e
 entry, because there is no live handle to flip: the body died with the process, and the app's resume
 path starts fresh work. That is intrinsic rather than an inconsistency to tidy away, and it follows the
 same split that fixed the Critical — *the client asking* is not *the state changing*.
+
+**Amended (generic-library audit, before publish): the `Interrupted` drop now ALSO publishes
+`OPERATION_REMOVED { operationIds: [id] }`.** This asymmetry used to have no wire trace at all — the
+`Paused` case publishes nothing (nothing changed), and the `Interrupted` case ALSO published nothing
+(the entry just vanished from the host), so `@shenora/react`'s `resume` action carried its own local
+guess at the asymmetry to keep the client in sync. That guess was this release's only Critical: it
+once pruned unconditionally, dropping a `Paused` row the host deliberately keeps. `OPERATION_REMOVED`
+retires the guess — the client folds a named-id removal instead of re-deriving the host's asymmetry
+on its own, so it structurally cannot diverge from it again.
 
 Considered and rejected: an `Adopt(id) → IOperation` that re-attaches a handle to an interrupted entry,
 unifying both paths and preserving the activity row's identity across a crash. It is genuinely tidier,
@@ -467,6 +531,14 @@ that test rather than waiting for an adopter to strand a deployment on it.
 - **No envelope change.** Operations ride ordinary requests and notifications, so `WireMirrorTests` must
   stay green **untouched** — if it needs editing, the design has drifted into a wire change and that is
   the signal to stop.
+- **Two more limits recorded rather than solved (generic-library audit, before publish):**
+  `OperationRegistryOptions.MaxHistory` is ONE global cap across every module and scope — no
+  per-module or per-scope bounding seam, so a chatty module's finished history can crowd out a quiet
+  one's. And "registered but not yet started" has no representable status — `Start`/`Run`'s FIRST
+  snapshot is already `Running`; an app with its own queue in front of the registry either omits its
+  pending rows or registers them `Running` early and misrepresents queued time as active time. No
+  consumer has asked for either; recording them is how the next one that does turns into evidence for
+  a real seam instead of a re-argument from scratch.
 - **No mobile transport package.** D16 stands: the seam, not the package.
 
 ## 7. Prior decisions this touches
@@ -501,6 +573,7 @@ that test rather than waiting for an adopter to strand a deployment on it.
 | `RouteMessageAsync(IpcRequest, CancellationToken)` → `(IpcRequest, IModuleContext, CancellationToken)` | add the parameter; ignore it if unused |
 | `BaseFacade(ILogger?)` → `BaseFacade(ILogger?, IEventBus?, IOperationRegistry?)` | source-compatible (optional params); pass the bus to publish |
 | `WebViewIpcBridge` internals move to `NotificationPump` | none — options names and public surface preserved, plus `NotificationFilter` |
+| `OperationOptions.Resumable` / `OperationInfo.Resumable` (C#) and `resumable` (TS) REMOVED (generic-library audit, before publish) | drop the property; test resumability via `status ∈ WAITING_STATUSES` (already the correct client test) |
 
 `IModuleFacade.HandleMessageAsync` is unchanged: a facade still always produces a response. What changes
 is that the response to a long operation is now *specified* — an immediate `{ operationId }` ack, with

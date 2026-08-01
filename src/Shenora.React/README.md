@@ -83,6 +83,7 @@ const importJob = useShenoraOperations((s) => s.byId[jobId]);   // one, by id
 
 useShenoraOperations.actions.cancel(jobId);       // only does anything if the op opted into Cancellable
 useShenoraOperations.actions.dismiss(jobId);      // decline a paused/interrupted offer — refuses a running one
+useShenoraOperations.actions.pause(jobId);        // ASK the host to pause running work — refuses anything not running
 useShenoraOperations.actions.clearFinished();
 ```
 
@@ -96,24 +97,23 @@ internal status set, not a hand-listed pair repeated across getters. Keep `pause
 apart when your UI needs to (a resume prompt reads differently from a pause-reason display); read
 `waiting` when you just want the one "needs attention" bucket for a status bar. Filtering by your own
 `module`/`kind` is a plain `Array.filter` over any of them. A `paused` operation carries `pauseReason`
-— an app-defined string, like `kind` — for your UI to branch on (there is no `pause` action here:
-pausing is the HOST's own knowledge, never a client decision; only `resume`/`dismiss` are client
-routes, because resuming and declining are the human's decisions). An `interrupted` entry is a
-pending RESUME **offer** re-registered from the app's own crash checkpoint: the host never prunes it
-on its own — it stays offered until your UI calls `resume` or `dismiss`. `clearFinished` prunes
-its own rows from local state immediately — the host removes them too but emits no removal event, so
-this is what makes it visibly work in a mounted panel rather than a no-op until unmount — pinned to
-the TERMINAL status set, so it can never remove a `paused`/`interrupted` row (those are the WAITING
-band, not history); the host's own history cap (`MaxHistory`) is separate and NOT mirrored this way.
-`resume` prunes too, but NOT on the terminal set — it mirrors the host's own asymmetry (design §5A.4)
-instead: an `interrupted` entry is dropped locally (the host removes it too, no live handle to flip),
-while a `paused` entry is left untouched, because the host deliberately LEAVES it in place for the
-app's own handle to flip via `Resume()` once it has actually resumed — pruning it locally would show
-a resumed row that never really resumed. `dismiss` needs no local prune at all — the host's `Dismiss`
-publishes an ordinary terminal snapshot over the wire, the same as a real cancel. Use
-`createOperationsStore({ module, scope })` instead of the default export if your host renamed
-`OperationRegistryOptions.ModuleName` or
-you need a scope-filtered instance (a secondary window, an auxiliary session).
+— an app-defined string, like `kind`, OPTIONAL on the host side — for your UI to branch on. An
+`interrupted` entry is a pending RESUME **offer** re-registered from the app's own crash checkpoint:
+the host never prunes it on its own — it stays offered until your UI calls `resume` or `dismiss`.
+`resume`/`dismiss`/`pause` are all fire-and-forget client requests — the host's own
+`IOperation.Pause`/`Resume` (called by whoever owns the operation, hearing
+`OPERATION_PAUSE_REQUESTED`/`OPERATION_RESUME_REQUESTED`) is what actually changes the state; asking
+is not acting. `clearFinished`/`resume`/`pause` do not touch local state themselves at all: the host's
+`OPERATION_REMOVED { operationIds }` is the ONE authoritative removal signal the store folds, deleting
+exactly the named ids — `MaxHistory` eviction, `clearFinished`, and a dropped crash-resume offer all
+publish it, so a long-lived store's mirror of bounded host history cannot drift from what the host
+actually did (this replaced two hand-written optimistic local prunes that a past release carried —
+one of which was this project's only Critical, a `resume` prune that dropped a still-paused row).
+`dismiss` never needed one, since the host's `Dismiss` publishes an ordinary terminal snapshot over
+the wire, the same as a real cancel. Use `createOperationsStore({ module, scope })` instead of the
+default export if your host renamed `OperationRegistryOptions.ModuleName` or
+you need a scope-filtered instance (a secondary window, an auxiliary session) — `clearFinished`
+forwards that scope so clearing history in one window cannot wipe another's.
 
 ### Observing the whole stream
 

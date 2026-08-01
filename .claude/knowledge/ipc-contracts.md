@@ -297,35 +297,42 @@ transport, or building the P6 adoption shims.
   (CS8852): the callback could only ever read a freshly-defaulted instance, never configure one. Pass
   a built `new OperationRegistryOptions { ModuleName = "X" }` instead, same as
   `WebViewIpcBridgeOptions`/`NotificationPumpOptions`.
-- **A host-side removal (`ClearFinished`, `RequestResume`) is NOT mirrored by a wire event** —
-  `OPERATION_UPDATED` only ever adds/updates an id, never removes one. `@shenora/react`'s
-  `clearFinished` action prunes its own rows from LOCAL state as an optimistic update (no round trip
-  needed — the action already knows the answer), but the host's own `MaxHistory` eviction has no
-  equivalent: a long-lived store keeps every terminal entry it has ever seen until `clearFinished` is
-  actually called client-side too.
-  **`Dismiss` is NOT in this category, on purpose** — it does not remove anything, it transitions the
-  entry to `Cancelled` through the same `Finish` path as `Complete`/`Fail`/`Cancel`, so it publishes an
-  ordinary `OPERATION_UPDATED` snapshot the wire already carries. The client's `dismiss` action
-  therefore needs no optimistic local prune at all — the mistake to avoid is copying the
-  `clearFinished`/`resume` shape onto it out of habit and adding dead code for a delta that never
-  needed compensating.
-- **A CLIENT-side optimistic prune must mirror the HOST's own asymmetry exactly, not a uniform rule
-  applied to both branches of one wire action** (found in review, lifecycle-completion batch):
+- **A host-side removal now publishes `OperationEvents.Removed` (`OPERATION_REMOVED`,
+  `{ operationIds: string[] }`) — generic-library audit finding 4, closing a gap that used to require
+  client-side guessing.** `OPERATION_UPDATED` only ever adds/updates an id, so a client mirroring
+  bounded host history (`MaxHistory`) or a `ClearFinished`/`RequestResume` removal had NO wire event to
+  fold — the ONLY reason `@shenora/react`'s `clearFinished`/`resume` actions used to carry a
+  hand-written optimistic local prune apiece. `Removed` is emitted wherever an entry actually leaves
+  the registry (`MaxHistory` eviction inside `Finish`, `ClearFinished`, the `Interrupted`-drop inside
+  `RequestResume`) and is scope-`null` (global) on purpose — a batch can span several scopes at once,
+  and deleting an id a subscriber never had is a harmless no-op, so every store hears it regardless of
+  its own scope filter. The client folds it by deleting exactly the named ids, unconditionally — no
+  status check, because the HOST already decided what left. `clearFinished`/`resume` are now plain
+  fire-and-forget posts with no local mutation of their own.
+  **`Dismiss` was never in this category, and still isn't** — it does not remove anything, it
+  transitions the entry to `Cancelled` through the same `Finish` path as `Complete`/`Fail`/`Cancel`, so
+  it publishes an ordinary `OPERATION_UPDATED` snapshot the wire already carries. Don't wire `Removed`
+  handling onto it out of habit; there is no delta to compensate for.
+- **The retired lesson, worth keeping even though the fix is now structural: a CLIENT-side optimistic
+  prune must mirror the HOST's own asymmetry exactly, never a uniform rule applied to both branches of
+  one wire action** (found in review, lifecycle-completion batch, before `Removed` existed):
   `resume`'s local prune used to delete the id unconditionally, written back when `RequestResume`
   always removed the entry host-side. §5A.4 then made that conditional — `Interrupted` is still
   removed, `Paused` is deliberately LEFT IN PLACE for the app's own `Resume()` handle to flip — and the
   client's prune did not get re-derived alongside it. The consequence rebuilt §5A.1's original bug ONE
   LAYER UP: a user clicking Resume on a paused entry made the row vanish locally (nothing published
-  host-side, since nothing changed), so the still-parked deploy became unreachable — no visible row to
-  click Dismiss on — until every subscriber unmounted and a fresh `LIST` ran. The fix: gate the prune
-  on the SPECIFIC branch the host actually removes (`operation.status === OperationStatuses.Interrupted`),
-  never on "the action was called." Generalizes: whenever a host-side transition is asymmetric across
+  host-side, since nothing changed), so the still-parked operation became unreachable — no visible row
+  to click Dismiss on — until every subscriber unmounted and a fresh `LIST` ran. This was the release's
+  only Critical, and it is exactly the class of bug an authoritative removal event structurally
+  prevents: a client-side guess about "what the host must have removed" can diverge from the host's own
+  asymmetric rule the moment that rule changes, while folding a named-id event never can. Generalizes:
+  whenever a host-side transition is asymmetric across
   two input states, an optimistic client mirror of it must encode that same asymmetry — a single
   branch that reads "prune on click" is a category of client/host desync waiting on the NEXT design
   amendment to the host's asymmetry, not just this one.
 - **`Run`'s implicit terminal transition must check the CURRENT status, not assume it** — `Run`'s tail
   used to call `operation.Complete()` unconditionally once the awaited body returned, and `Complete`
-  itself legitimately accepts `Running` OR `Paused` (a paused deploy can still complete once unblocked
+  itself legitimately accepts `Running` OR `Paused` (a paused operation can still complete once unblocked
   — see the `Cancel`/`Complete`/`Fail` band table above). So a body doing the exact shape the design
   itself advertises — `op.Pause(reason); return;` — got silently stamped `Completed` by the very
   primitive whose job is not to lie about a paused-but-not-crashed run. Reproduced this way: `Task.Run`

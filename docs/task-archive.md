@@ -1289,6 +1289,11 @@ entry is its durable replacement. Ships as **0.2.0**, the first deliberate break
   **Deliberately dropped from the original interface sketch, recorded as a known limit, not an
   oversight:** `IOperationRegistry.Find(id)` — no consumer resolves a handle from a bare id, and
   every public member is SemVer surface at 1.0; an app needing one keeps its own id→handle map.
+  **AMENDED (generic-library audit, 2026-08-01, before publish): reinstated.** The ruling above did
+  not survive contact with `RequestPause`/`RequestResume` — both are client-request routes carrying
+  only an id, and whoever handles them must translate that id back into a handle to call
+  `Pause`/`Resume`, a recurring shape every such consumer would otherwise re-solve with its own
+  id→handle map. See `CHANGELOG.md`'s 0.2.0 entry for the full audit list.
   Also dropped during review: a protected `Events`/`Operations` accessor on `BaseFacade` that the
   Task 1 plan snippet had sketched — no consumer scenario existed for reaching the raw dependencies
   once `Context` (`Publish`/`Start`/`Run`) exists, so it would have been unwanted SemVer surface
@@ -1411,6 +1416,10 @@ documentation gap, both fixed in `6b0ffad`, ruled on the same day:
   `Paused` operation is resumable by construction); `PauseReason` is cleared by `Resume()` but
   RETAINED through a terminal transition reached directly from `Paused`. Both stated on the properties
   themselves so a future reader does not "fix" either as an oversight.
+  **AMENDED (generic-library audit, 2026-08-01, before publish): `Resumable` itself was REMOVED**, not
+  just documented — the lifetime note above proved it was consulted nowhere except
+  `RegisterInterrupted`'s own required-true gate, which every caller had already satisfied. See
+  `CHANGELOG.md`'s 0.2.0 entry.
 
 A second review pass then found that the client store and `Run` were never RE-DERIVED against the new
 `Paused`/`Interrupted` asymmetry §5A.4 introduced — four findings plus hardening, one batch:

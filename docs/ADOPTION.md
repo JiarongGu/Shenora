@@ -191,20 +191,26 @@ until the page is listening.
   long case. `context.Start` is the lower-level primitive if your lifecycle doesn't fit one
   background body (a start outside the block, several failure branches, a resumable session).
   Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
-  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS` under
-  module `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and no
-  per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
+  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`PAUSE`
+  under module `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
+  no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
-  progress strip that mounts mid-run isn't empty) and folds `OPERATION_UPDATED` by id afterward. What
-  an operation actually means — its phases, whether it queues, what a viewer looks like — stays
-  yours; the kit tracks only id/status/progress/cancel.
+  progress strip that mounts mid-run isn't empty), folds `OPERATION_UPDATED` by id afterward, and
+  folds `OPERATION_REMOVED { operationIds }` by deleting those ids — the one authoritative signal for
+  `MaxHistory` eviction, `ClearFinished`, and a dropped crash-resume offer. What an operation actually
+  means — its phases, whether it queues, what a viewer looks like — stays yours; the kit tracks only
+  id/status/progress/cancel.
   The lifecycle also covers a run that stops mid-flight WITHOUT crashing — expired credentials, a
   throttling provider, DNS not yet propagated: `op.Pause("dns", …)` (`Running` → `Paused`, an
-  app-defined reason string, like `Kind`) and `op.Resume()` (`Paused` → `Running`) on the SAME handle
-  `Start`/`Run` gave you, plus `IOperationRegistry.Dismiss(id)` for the human declining a paused or
-  crash-interrupted offer outright (→ `Cancelled`, terminal). There is deliberately no client `PAUSE`
-  route — pausing is the host's own knowledge — while `RESUME`/`DISMISS` are, because resuming and
-  declining are the human's decisions. See
+  OPTIONAL app-defined reason string, like `Kind` — omit it when the pause is self-evident, e.g. the
+  user clicked Pause) and `op.Resume()` (`Paused` → `Running`) on the SAME handle `Start`/`Run` gave
+  you, plus `IOperationRegistry.Dismiss(id)` for the human declining a paused or crash-interrupted
+  offer outright (→ `Cancelled`, terminal). A client can also ASK the host to pause running work —
+  `IOperationRegistry.RequestPause(id)` / the `PAUSE` route — for the download-manager/activity-panel
+  shape (the user clicking Pause on visible work); it only emits `OPERATION_PAUSE_REQUESTED` and
+  changes nothing itself, the same ASK/ACT split `RESUME`/`Resume()` already draw. `Find(id)` resolves
+  a live handle back from a bare id — the shape every `RESUME`/`PAUSE` handler needs to turn the id it
+  was given back into something it can call `Resume`/`Pause` on. See
   `docs/2026-08-01-shenora-communication-core-design.md` §5A for the full shape.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.

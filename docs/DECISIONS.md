@@ -313,3 +313,23 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   purpose: resuming a `Paused` entry leaves it for the app to flip via the handle, while resuming an
   `Interrupted` one still drops it, because a crash leaves no live body to flip. An `Adopt(id)` unifying
   the two was considered and rejected as unearned surface (recorded as a known limit).
+
+  **AMENDED again 2026-08-01 (generic-library audit, before publish — free, since 0.2.0 was merged but
+  never pushed/published).** The audit asked not "is this correct" but "has the kit absorbed ONE
+  application's shape" on the removal/asking halves of this lifecycle, and found four things this
+  entry's own reasoning needs correcting for: (1) **"`Pause` has no client route" was too narrow** —
+  true for a host discovering its OWN blocker, false for the equally-common shape of a human clicking
+  Pause on visible work (a download, a sync, a backup), which the kit itself already names as a
+  consumer. `IOperationRegistry.RequestPause(id)` was added as an exact mirror of `RequestResume`: it
+  ASKS (emits `OPERATION_PAUSE_REQUESTED`, changes nothing), the owner's own `Pause()` still ACTS —
+  `RESUME`/`DISMISS`/`PAUSE` are now all client routes, only the act itself stays out of the client's
+  hands. (2) **`Resumable` was removed** — consulted nowhere except `RegisterInterrupted`'s own
+  required-true gate, which every caller had already satisfied, making it a tautology; the existing
+  non-empty-`ResumePayload` requirement already expresses resumability. (3) **`Find(id)`** (dropped
+  pre-0.2.0 as unearned surface — see the design doc §4.2) **was reinstated**, because `RequestPause`/
+  `RequestResume` both need an id→handle translation every such consumer would otherwise re-solve by
+  hand. (4) **`ClearFinished` gained the `module?`/`scope?` filter `GetAll` always had**, and a removal
+  (`MaxHistory` eviction, `ClearFinished`, the `Interrupted`-drop above) now publishes
+  `OperationEvents.Removed`, retiring the two client-side optimistic prunes that guessed at removals
+  before — one of which reproduced this entry's own Critical one layer up in the client. Full list:
+  `CHANGELOG.md`'s 0.2.0 entry.
