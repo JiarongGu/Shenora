@@ -135,11 +135,17 @@ changes, noting them in `CHANGELOG.md`).
   debounce policy), `MissionLane(Name, Permits = 1)` for a lane that is a BUDGET rather than a slot count.
   Every request also draws one permit from the default lane (`DefaultLaneCapacity`, 0 = `clamp(cores-1,
   1, 4)`), which is the global concurrency bound.
-  **The request** — `MissionRequest` (`Run` + optional `Commit`: setting `Commit` makes `Run` run exactly
-  ONCE and retries only the commit, so a failed cheap replace never recompresses; `Claims`, `Lanes`,
-  `Priority`, `Key`, `Retry`, `Durable`, `Kind`, `Payload`), `MissionContext` (`MissionId`/`Attempt`/
-  `Cancellation`), `MissionKey` (dedup identity — a matching submission completes against the live item,
-  body once), `RetryPolicy`(+`None`) (3 × 500 ms × attempt, `IOException` only), `MissionResult`/
+  **Definition vs execution — the split the rest of the layer is built on.** `MissionDefinition` is
+  WHAT should run (`Run` + optional `Commit`: setting `Commit` makes `Run` run exactly ONCE and retries
+  only the commit, so a failed cheap replace never recompresses; plus `Claims`, `Lanes`, `Priority`,
+  `Key`, `Retry`, `Durable`, `Kind`, `Payload`). `MissionExecution` is ONE specific run of it
+  (`MissionId`, `Kind`, `Priority`, `QueuedUtc`, `Sequence`, `Attempt`, `IsRunning`) — the single value
+  handed to the body, to all three observer callbacks, to the policy, and back out of `Snapshot()`,
+  where four differently-shaped types used to sit. It carries NO `CancellationToken`: the body takes
+  its token as a second parameter (`Func<MissionExecution, CancellationToken, Task>`), matching the
+  rest of the kit and keeping an execution a pure value that is safe to hold in a diagnostics view.
+  Also `MissionKey` (dedup identity — a matching submission completes against the live item, body
+  once), `RetryPolicy`(+`None`) (3 × 500 ms × attempt, `IOException` only), and `MissionResult`/
   `MissionOutcome` (`Completed`/`Failed`/`Cancelled`/`Deduplicated`; a failing body is REPORTED, not
   thrown — a batch submitter must survive one bad item — with `ThrowIfFailed()` for callers who prefer
   exceptions, while caller bugs still throw at submit).
@@ -150,7 +156,8 @@ changes, noting them in `CHANGELOG.md`).
   rather than wedging the scheduler.
   **Observation + durability** — `IMissionObserver` (`OnQueued`/`OnStarted`/`OnFinished`, each guarded
   through `AppCallback`; the seam for metrics, tracing, or binding execution to a progress registry
-  without `Core` learning what an operation is), `MissionView`/`MissionSnapshot`/`MissionSchedulerState`;
+  without `Core` learning what an operation is), `MissionSchedulerState` (what the scheduler is doing
+  right now, for the policy);
   `IMissionStore`/`MissionRecord`/`MissionState` + `RecoveryPolicy` (`Requeue`/`Fail`/`Discard`, defaulting to
   `Requeue` for `Queued` and **`Fail` for `Running`** — work found running after a crash may be what
   killed the process, and re-running it turns one crash into a boot loop) and `RecoveryPolicyFor`.
@@ -161,8 +168,9 @@ changes, noting them in `CHANGELOG.md`).
   `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
   `IsContained(root, candidate)` (the containment guard for anything mapping caller input to a file —
   resolves `..` first, boundary-tested, so `C:\data-old` is not inside `C:\data`).
-  Naming is `Work*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary, and
-  reusing the word would blur the one distinction the design rests on.
+  Naming is `Mission*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary,
+  and reusing the word would blur the one distinction the design rests on. It was `Work*` until
+  2026-08-02 — too common a word to own or grep, while `Task*` would collide with the BCL.
   **Three as-built facts worth recording, because a reader of the design doc or the XML would expect
   otherwise:** (1) an unknown LANE does NOT throw — it is created at the default capacity on first
   mention, so only an unregistered claim SCOPE is a submit-time error (the trap is a misspelled name

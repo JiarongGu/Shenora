@@ -122,7 +122,7 @@ A lane with capacity 1 is the video sibling's GPU gate, expressed without a stat
 ```csharp
 public interface IMissionScheduler : IAsyncDisposable
 {
-    Task<MissionResult> SubmitAsync(MissionRequest request, CancellationToken ct = default);
+    Task<MissionResult> SubmitAsync(MissionDefinition request, CancellationToken ct = default);
     bool TryFind(MissionKey key, out MissionStatus status);   // the video sibling's HasPendingOperation
     int PendingCount { get; }
     ILane Lane(string name);
@@ -174,7 +174,7 @@ public interface IMissionStore
 
 - The kit ships **no** persistent implementation — no SQLite, no JSON file. An app supplies one.
   This keeps `Shenora.Core` free of a storage dependency and matches the direction above.
-- Durability is **per request** (`MissionRequest.Durable`), not global: a scheduler may mix cheap
+- Durability is **per request** (`MissionDefinition.Durable`), not global: a scheduler may mix cheap
   in-memory work with durable work.
 - `RecoverAsync()` is an explicit startup call, never implicit — the app decides when recovery is
   safe relative to its own initialization.
@@ -318,7 +318,7 @@ long term — a new application with a new requirement should also fit."* The de
 changes that would be BREAKING to make later, as opposed to merely additive, and two were found and
 fixed before anything shipped:
 
-- **Weighted lane permits.** `MissionRequest.Lanes` was `IReadOnlyList<string>`, one permit each. A lane
+- **Weighted lane permits.** `MissionDefinition.Lanes` was `IReadOnlyList<string>`, one permit each. A lane
   is often a BUDGET (memory, VRAM, bandwidth) where items cost different amounts. Adding a cost later
   changes the property's type and breaks every caller, so `MissionLane(string Name, int Permits = 1)` is
   there from the start. Cost of carrying it: one defaulted parameter.
@@ -333,3 +333,42 @@ have one).
 **What was NOT added on this reasoning:** a DAG engine, a handler registry, per-item pause. "It might
 be needed" is not evidence, and §10 stands. The line drawn here is narrow and deliberate — pay the
 cost now only where the later change would be BREAKING rather than additive.
+
+### A3 — `Work*` becomes `Mission*`, and the unit splits in two (2026-08-02, after 0.3.0)
+
+Two owner decisions, applied together because they touch the same signatures.
+
+**The rename.** `Work` is too common a word to own or to grep for; `Task` was the obvious alternative
+and collides with `System.Threading.Tasks` — `TaskScheduler` would be ambiguous against the BCL type
+in every consumer importing both namespaces. `Quest` reads as domain vocabulary in a games family,
+which is what `SurfaceVocabularyTests` exists to keep out of `src/`; `Expedition` puts ten characters
+in front of fifteen types. `Mission` is unique here, mechanism vocabulary, and short. The full mapping
+is in `CHANGELOG.md`; the old names are in `devtools/retired-names.txt` so prose cannot quietly state
+one as current again.
+
+**The split, and the reasoning that flipped it.** The owner proposed a fuller structure —
+definition / schedule / execution / result, with typed handlers, a queue and a runner. Most of it was
+declined on the evidence already recorded here (§7, §8, §10): a handler registry is app composition
+and would make the kit own serialization of app types; a separate queue and runner rebuild the
+two-component shape §1 exists to collapse; an `IMission` interface pushes toward class-per-mission.
+`MissionStatus` beside `MissionState`, and `MissionOptions` beside `MissionSchedulerOptions`, are
+second words for one axis.
+
+But the **definition/execution** half was accepted, and the argument for it is A2's own test rather
+than "a consumer asked": introducing it later would be BREAKING — it changes `SubmitAsync`, every
+mission body's parameter, all three `IMissionObserver` methods and both `IMissionPolicy` methods at
+once — while doing it now costs a changelog entry. The owner's steer was the corrective: *"bigger
+change does not mean a bad thing, we need to think forward for future, change is allowed, this is
+still pre-1.0."* Holding a breaking-later change behind a two-consumer bar meant for CAPABILITY was a
+misapplication of the bar.
+
+It also removes a type rather than adding one. `MissionContext` (what the body got),
+`MissionView` (what the policy got) and `MissionSnapshot` (what a diagnostics view got) were three
+shapes of one thing; they are now `MissionExecution`, carrying `Attempt` and `IsRunning` so a running
+execution reports both. It carries no `CancellationToken` — the body takes one as a second parameter,
+matching every other callback seam in the kit and keeping an execution a pure value.
+
+**What this unlocks additively**, and is therefore NOT built yet: a `MissionSchedule` — a time or
+recurrence trigger that submits a definition repeatedly, one definition to many executions. That is a
+real capability gap (the kit owns no timer at all, by A1), but adding it changes no existing signature
+now that the split exists, so it waits for a consumer rather than being guessed at.

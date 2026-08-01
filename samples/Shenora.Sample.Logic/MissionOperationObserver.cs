@@ -36,7 +36,7 @@ public sealed class MissionOperationObserver(IOperationRegistry operations, stri
     /// whose own queue sits in front of the registry. Without it, work waiting behind a claim would
     /// be invisible until it started, which is exactly when a user asks "is it stuck?".
     /// </summary>
-    public void OnQueued(in MissionView mission)
+    public void OnQueued(in MissionExecution mission)
     {
         var operation = operations.Start(module, new OperationOptions
         {
@@ -51,7 +51,7 @@ public sealed class MissionOperationObserver(IOperationRegistry operations, stri
     }
 
     /// <summary>Queued → running, on the same handle. Called once per item, not once per retry.</summary>
-    public void OnStarted(in MissionView mission)
+    public void OnStarted(in MissionExecution mission)
     {
         if (_live.TryGetValue(mission.MissionId, out var operation)) operation.Resume();
     }
@@ -60,7 +60,7 @@ public sealed class MissionOperationObserver(IOperationRegistry operations, stri
     /// Terminal in both worlds. <see cref="MissionOutcome.Deduplicated"/> completes rather than fails:
     /// the caller's work DID happen — it was carried by an identical item already in flight.
     /// </summary>
-    public void OnFinished(in MissionView mission, MissionResult result)
+    public void OnFinished(in MissionExecution mission, MissionResult result)
     {
         if (!_live.TryRemove(mission.MissionId, out var operation)) return;
         switch (result.Outcome)

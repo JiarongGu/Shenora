@@ -6,7 +6,7 @@ namespace Shenora.Core;
 /// <para>
 /// The permit COUNT exists for long-term fit rather than for any current consumer: a lane is often a
 /// budget (memory, VRAM, bandwidth) where items cost different amounts, not a slot count where every
-/// item costs one. Adding this later would change the type of <see cref="MissionRequest.Lanes"/> and
+/// item costs one. Adding this later would change the type of <see cref="MissionDefinition.Lanes"/> and
 /// break every caller, so it is here from the start — the cost of carrying it is one defaulted
 /// parameter.
 /// </para>
@@ -14,15 +14,6 @@ namespace Shenora.Core;
 /// <param name="Name">Lane name.</param>
 /// <param name="Permits">Permits required. Must be at least 1; may exceed the lane's capacity only if capacity later grows.</param>
 public readonly record struct MissionLane(string Name, int Permits = 1);
-
-/// <summary>Read-only view of a queued item, passed to <see cref="IMissionPolicy"/>.</summary>
-/// <param name="MissionId">Scheduler-assigned id.</param>
-/// <param name="Kind">App-defined mission type from <see cref="MissionRequest.Kind"/>.</param>
-/// <param name="Priority">From <see cref="MissionRequest.Priority"/>.</param>
-/// <param name="QueuedUtc">When it was accepted.</param>
-/// <param name="Sequence">Monotonic submission counter — the tie-break that makes ordering total and stable.</param>
-public readonly record struct MissionView(
-    string MissionId, string? Kind, int Priority, DateTimeOffset QueuedUtc, long Sequence);
 
 /// <summary>What the scheduler is doing right now, passed to <see cref="IMissionPolicy"/>.</summary>
 /// <param name="Pending">Accepted but not started.</param>
@@ -62,17 +53,17 @@ public interface IMissionPolicy
     /// unrelated traffic to wake it. The kit deliberately owns no timer.
     /// </para>
     /// </summary>
-    bool ShouldStart(in MissionView mission, in MissionSchedulerState state);
+    bool ShouldStart(in MissionExecution mission, in MissionSchedulerState state);
 
     /// <summary>
     /// <b>What.</b> Order two eligible items: negative if <paramref name="a"/> should start first.
     /// Must be a consistent total order — an inconsistent comparison makes dispatch order arbitrary.
     /// </summary>
-    int Compare(in MissionView a, in MissionView b);
+    int Compare(in MissionExecution a, in MissionExecution b);
 }
 
 /// <summary>
-/// The default policy: start anything eligible, highest <see cref="MissionRequest.Priority"/> first,
+/// The default policy: start anything eligible, highest <see cref="MissionDefinition.Priority"/> first,
 /// ties broken by submission order. With no priorities set this is plain FIFO, which is what every
 /// implementation in the family did.
 /// </summary>
@@ -82,10 +73,10 @@ public sealed class PriorityMissionPolicy : IMissionPolicy
     public static PriorityMissionPolicy Instance { get; } = new();
 
     /// <inheritdoc/>
-    public bool ShouldStart(in MissionView mission, in MissionSchedulerState state) => true;
+    public bool ShouldStart(in MissionExecution mission, in MissionSchedulerState state) => true;
 
     /// <inheritdoc/>
-    public int Compare(in MissionView a, in MissionView b)
+    public int Compare(in MissionExecution a, in MissionExecution b)
     {
         var byPriority = b.Priority.CompareTo(a.Priority);   // higher priority first
         return byPriority != 0 ? byPriority : a.Sequence.CompareTo(b.Sequence);

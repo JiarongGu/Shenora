@@ -33,16 +33,21 @@ public sealed class RetryPolicy
     public static RetryPolicy None { get; } = new() { Attempts = 1 };
 }
 
-/// <summary>What the scheduler hands a running body.</summary>
-/// <param name="MissionId">Scheduler-assigned id, stable across retries and durable across a restart.</param>
-/// <param name="Attempt">1-based attempt number.</param>
-/// <param name="Cancellation">Observed for cancellation; the body MUST honour it.</param>
-public readonly record struct MissionContext(string MissionId, int Attempt, CancellationToken Cancellation);
-
 /// <summary>
-/// A unit of work plus the resources it needs. Submit it to an <see cref="IMissionScheduler"/>.
+/// WHAT should run, and the resources it needs — the reusable half. Submit it to an
+/// <see cref="IMissionScheduler"/>, which turns it into a <see cref="MissionExecution"/>.
+///
+/// <para>
+/// The definition/execution split is deliberate and it is the shape the rest of this layer is built
+/// on: a definition is a description that can be submitted more than once (and, when
+/// <see cref="Durable"/>, rebuilt from a <see cref="MissionRecord"/> after a restart), while an
+/// execution is one specific run of it with its own id, attempt count and lifetime. Today one submit
+/// produces one execution; the split is here from the start because introducing it later would change
+/// <see cref="IMissionScheduler.SubmitAsync"/>, every mission body's parameter, all three
+/// <see cref="IMissionObserver"/> methods and both <see cref="IMissionPolicy"/> methods at once.
+/// </para>
 /// </summary>
-public sealed class MissionRequest
+public sealed class MissionDefinition
 {
     /// <summary>
     /// The body. Runs when every claim is free and every lane has a permit.
@@ -52,7 +57,7 @@ public sealed class MissionRequest
     /// this runs exactly once. See <see cref="Commit"/> for why that distinction is load-bearing.
     /// </para>
     /// </summary>
-    public required Func<MissionContext, Task> Run { get; init; }
+    public required Func<MissionExecution, CancellationToken, Task> Run { get; init; }
 
     /// <summary>
     /// Optional second phase. When set, <see cref="Run"/> executes ONCE and only this is retried.
@@ -66,7 +71,7 @@ public sealed class MissionRequest
     /// lesson does not survive; modelled here, the shape is the API.
     /// </para>
     /// </summary>
-    public Func<MissionContext, Task>? Commit { get; init; }
+    public Func<MissionExecution, CancellationToken, Task>? Commit { get; init; }
 
     /// <summary>
     /// Resources this work needs. Admitted only when NONE conflicts with in-flight work or with

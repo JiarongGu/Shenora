@@ -65,3 +65,10 @@ IWorkObserver            # -> IMissionObserver
 IWorkStore               # -> IMissionStore
 WorkRecord               # -> MissionRecord
 WorkState                # -> MissionState
+
+# --- 2026-08-02: the unit split into a definition and an execution --------------------------------
+# Never released under these names — they existed between the rename and the split, on the same day.
+MissionRequest           # -> MissionDefinition (what should run)
+MissionContext           # -> MissionExecution (one specific run; the token is now its own parameter)
+MissionView              # -> MissionExecution
+MissionSnapshot          # -> MissionExecution, whose IsRunning replaced the wrapper

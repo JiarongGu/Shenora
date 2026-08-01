@@ -69,12 +69,12 @@ public interface IMissionScheduler : IAsyncDisposable
     /// the one whose capacity you configured — keep lane names in constants.
     /// </para>
     /// </summary>
-    /// <param name="request">The work and the resources it needs.</param>
+    /// <param name="definition">What to run and the resources it needs.</param>
     /// <param name="cancellationToken">
-    /// Cancels this item: removed from the queue if still pending, observed through
-    /// <see cref="MissionContext.Cancellation"/> if already running.
+    /// Cancels this execution: removed from the queue if still pending, and surfaced as the token
+    /// handed to <see cref="MissionDefinition.Run"/> if it is already running.
     /// </param>
-    Task<MissionResult> SubmitAsync(MissionRequest request, CancellationToken cancellationToken = default);
+    Task<MissionResult> SubmitAsync(MissionDefinition definition, CancellationToken cancellationToken = default);
 
     /// <summary>Get a lane by name, creating it with the default capacity on first use.</summary>
     ILane Lane(string name);
@@ -95,7 +95,7 @@ public interface IMissionScheduler : IAsyncDisposable
     /// Everything queued or running right now, for a diagnostics view or a queue UI. A copy: safe to
     /// hold, stale the moment it returns.
     /// </summary>
-    IReadOnlyList<MissionSnapshot> Snapshot();
+    IReadOnlyList<MissionExecution> Snapshot();
 
     /// <summary>
     /// Re-run admission now.
@@ -117,12 +117,12 @@ public interface IMissionScheduler : IAsyncDisposable
     /// <para>
     /// The kit cannot rebuild a body from a record — a delegate does not serialize — so
     /// <paramref name="rehydrate"/> maps a <see cref="MissionRecord"/> back to a
-    /// <see cref="MissionRequest"/>. Returning null drops that record. This is also why the kit ships
+    /// <see cref="MissionDefinition"/>. Returning null drops that record. This is also why the kit ships
     /// no handler registry: the app already owns the record-to-body mapping here.
     /// </para>
     /// </summary>
     /// <param name="rehydrate">Rebuilds a request from a persisted record, or returns null to drop it.</param>
     /// <param name="cancellationToken">Cancels recovery.</param>
     /// <returns>Records that were re-queued.</returns>
-    Task<int> RecoverAsync(Func<MissionRecord, MissionRequest?> rehydrate, CancellationToken cancellationToken = default);
+    Task<int> RecoverAsync(Func<MissionRecord, MissionDefinition?> rehydrate, CancellationToken cancellationToken = default);
 }

@@ -104,7 +104,7 @@ public sealed class PortableSampleFacade(
         // Deliberately not awaited: SubmitAsync completes when the WORK does. A caller error (an
         // unregistered claim scope, a disposed scheduler) still throws right here, synchronously,
         // which is why this is a plain call and not a fire-and-forget Task.Run.
-        _ = scheduler.SubmitAsync(new MissionRequest
+        _ = scheduler.SubmitAsync(new MissionDefinition
         {
             Kind = kind,
             Claims = [PathClaims.Exclusive(path)],
@@ -112,16 +112,16 @@ public sealed class PortableSampleFacade(
             // there rather than a literal here would be better still in a real app: an unknown lane
             // name is CREATED at the default capacity rather than rejected.
             Lanes = [new MissionLane(MissionLanes.DemoIo)],
-            Run = async work =>
+            Run = async (mission, ct) =>
             {
                 // Real mutation of the claimed path, so the exclusion is doing something observable
                 // rather than being asserted by a comment — and STAMPED, so the log proves both halves
                 // at once: two entries for one path never overlap, while entries for different paths
                 // do. A demo that only proves exclusion would pass on a fully serial scheduler.
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                await File.AppendAllTextAsync(path, Stamp(work.MissionId, kind, "in"), work.Cancellation);
-                await Task.Delay(TimeSpan.FromSeconds(1.5), work.Cancellation);
-                await File.AppendAllTextAsync(path, Stamp(work.MissionId, kind, "out"), work.Cancellation);
+                await File.AppendAllTextAsync(path, Stamp(mission.MissionId, kind, "in"), ct);
+                await Task.Delay(TimeSpan.FromSeconds(1.5), ct);
+                await File.AppendAllTextAsync(path, Stamp(mission.MissionId, kind, "out"), ct);
             },
         });
 

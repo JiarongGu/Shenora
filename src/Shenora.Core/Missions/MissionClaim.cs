@@ -14,7 +14,7 @@ public enum ClaimMode
 }
 
 /// <summary>
-/// One resource a <see cref="MissionRequest"/> needs before it may run: a key inside a named
+/// One resource a <see cref="MissionDefinition"/> needs before it may run: a key inside a named
 /// <see cref="IClaimScope"/>, held either exclusively or shared.
 ///
 /// <para>

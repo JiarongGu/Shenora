@@ -74,13 +74,13 @@ public sealed class MissionScheduler : IMissionScheduler
     public bool IsActive(MissionKey key) { lock (_gate) return _byKey.ContainsKey(key); }
 
     /// <inheritdoc/>
-    public IReadOnlyList<MissionSnapshot> Snapshot()
+    public IReadOnlyList<MissionExecution> Snapshot()
     {
         lock (_gate)
         {
-            var items = new List<MissionSnapshot>(_pending.Count + _running.Count);
-            foreach (var entry in _pending) items.Add(new MissionSnapshot(entry.View, IsRunning: false));
-            foreach (var entry in _running) items.Add(new MissionSnapshot(entry.View, IsRunning: true));
+            var items = new List<MissionExecution>(_pending.Count + _running.Count);
+            foreach (var entry in _pending) items.Add(entry.Execution());
+            foreach (var entry in _running) items.Add(entry.Execution(running: true));
             return items;
         }
     }
@@ -104,10 +104,10 @@ public sealed class MissionScheduler : IMissionScheduler
     }
 
     /// <inheritdoc/>
-    public Task<MissionResult> SubmitAsync(MissionRequest request, CancellationToken cancellationToken = default)
+    public Task<MissionResult> SubmitAsync(MissionDefinition definition, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(request.Run);
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(definition.Run);
 
         Entry entry;
         List<Entry> toStart;
@@ -117,28 +117,28 @@ public sealed class MissionScheduler : IMissionScheduler
 
             // Dedup BEFORE building state: an identical key already active carries this caller's
             // completion, and the body never runs a second time.
-            if (request.Key is { } key && _byKey.TryGetValue(key, out var existing))
+            if (definition.Key is { } key && _byKey.TryGetValue(key, out var existing))
             {
                 Log(() => $"mission '{key}' deduplicated against {existing.MissionId}");
                 return DeduplicateAsync(existing);
             }
 
-            entry = CreateEntry(request, cancellationToken);   // throws for unknown scope/lane
+            entry = CreateEntry(definition, cancellationToken);   // throws for unknown scope/lane
             _pending.AddLast(entry.Node);
-            if (request.Key is { } newKey) _byKey[newKey] = entry;
+            if (definition.Key is { } newKey) _byKey[newKey] = entry;
             toStart = DispatchLocked();
         }
 
         // Persist, notify and start OUTSIDE the lock.
         if (entry.Durable) _ = PersistAsync(entry, MissionState.Queued);
-        Notify(observer => observer.OnQueued(entry.View));
+        Notify(observer => observer.OnQueued(entry.Execution()));
         StartAll(toStart);
         return entry.Completion.Task;
     }
 
     /// <inheritdoc/>
     public async Task<int> RecoverAsync(
-        Func<MissionRecord, MissionRequest?> rehydrate, CancellationToken cancellationToken = default)
+        Func<MissionRecord, MissionDefinition?> rehydrate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rehydrate);
         var store = _options.Store;
@@ -232,7 +232,7 @@ public sealed class MissionScheduler : IMissionScheduler
                 if (entry.Cancellation.IsCancellationRequested)
                 {
                     RemovePendingLocked(node);
-                    if (entry.Request.Key is { } cancelledKey) _byKey.Remove(cancelledKey);
+                    if (entry.Definition.Key is { } cancelledKey) _byKey.Remove(cancelledKey);
                     entry.TryComplete(MissionOutcome.Cancelled, 0, null);
                     node = next;
                     continue;
@@ -265,15 +265,15 @@ public sealed class MissionScheduler : IMissionScheduler
         LinkedListNode<Entry>? best = null;
         foreach (var candidate in eligible)
         {
-            var view = candidate.Value.View;
+            var view = candidate.Value.Execution();
             // "When" — a policy may hold this item back for a reason only the app can see.
             if (!AskShouldStart(view, state)) continue;
-            if (best is null || ComparePolicy(view, best.Value.View) < 0) best = candidate;
+            if (best is null || ComparePolicy(view, best.Value.Execution()) < 0) best = candidate;
         }
         return best;
     }
 
-    private bool AskShouldStart(in MissionView view, in MissionSchedulerState state)
+    private bool AskShouldStart(in MissionExecution view, in MissionSchedulerState state)
     {
         // A throwing policy must not wedge the scheduler; treat a failure as "not now" and log it.
         // (`in` parameters cannot be captured by the logging lambda, hence the local copy.)
@@ -286,7 +286,7 @@ public sealed class MissionScheduler : IMissionScheduler
         }
     }
 
-    private int ComparePolicy(in MissionView a, in MissionView b)
+    private int ComparePolicy(in MissionExecution a, in MissionExecution b)
     {
         try { return _policy.Compare(a, b); }
         catch (Exception ex)
@@ -342,7 +342,7 @@ public sealed class MissionScheduler : IMissionScheduler
     {
         foreach (var entry in entries)
         {
-            Notify(observer => observer.OnStarted(entry.View));
+            Notify(observer => observer.OnStarted(entry.Execution(running: true)));
             // Task.Run so a synchronous-until-first-await body cannot run on the submitting thread,
             // which would make SubmitAsync's cost depend on whether a slot happened to be free.
             entry.RunTask = Task.Run(() => RunEntryAsync(entry), CancellationToken.None);
@@ -376,19 +376,20 @@ public sealed class MissionScheduler : IMissionScheduler
 
         try
         {
-            var retry = entry.Request.Retry ?? RetryPolicy.None;
-            var hasCommit = entry.Request.Commit is not null;
+            var retry = entry.Definition.Retry ?? RetryPolicy.None;
+            var hasCommit = entry.Definition.Commit is not null;
 
             // The two-phase rule: with a Commit, Run happens ONCE and only Commit is retried.
             if (hasCommit)
             {
                 attempts = 1;
-                await entry.Request.Run(new MissionContext(entry.MissionId, 1, linked.Token)).ConfigureAwait(false);
-                attempts = await RunWithRetryAsync(entry.Request.Commit!, entry, retry, linked.Token).ConfigureAwait(false);
+                entry.Attempt = 1;
+                await entry.Definition.Run(entry.Execution(running: true), linked.Token).ConfigureAwait(false);
+                attempts = await RunWithRetryAsync(entry.Definition.Commit!, entry, retry, linked.Token).ConfigureAwait(false);
             }
             else
             {
-                attempts = await RunWithRetryAsync(entry.Request.Run, entry, retry, linked.Token).ConfigureAwait(false);
+                attempts = await RunWithRetryAsync(entry.Definition.Run, entry, retry, linked.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
@@ -407,19 +408,19 @@ public sealed class MissionScheduler : IMissionScheduler
         {
             _running.Remove(entry);
             foreach (var (lane, permits) in entry.Lanes) lane.GiveBackLocked(permits);
-            if (entry.Request.Key is { } key) _byKey.Remove(key);
+            if (entry.Definition.Key is { } key) _byKey.Remove(key);
             toStart = _disposed ? [] : DispatchLocked();
         }
 
         if (entry.Durable) await ForgetAsync(entry).ConfigureAwait(false);
         var result = new MissionResult(outcome, entry.MissionId, attempts, error);
-        Notify(observer => observer.OnFinished(entry.View, result));
+        Notify(observer => observer.OnFinished(entry.Execution(), result));
         entry.Completion.TrySetResult(result);
         StartAll(toStart);
     }
 
     private static async Task<int> RunWithRetryAsync(
-        Func<MissionContext, Task> body, Entry entry, RetryPolicy retry, CancellationToken ct)
+        Func<MissionExecution, CancellationToken, Task> body, Entry entry, RetryPolicy retry, CancellationToken ct)
     {
         var attempt = 0;
         while (true)
@@ -427,7 +428,8 @@ public sealed class MissionScheduler : IMissionScheduler
             attempt++;
             try
             {
-                await body(new MissionContext(entry.MissionId, attempt, ct)).ConfigureAwait(false);
+                entry.Attempt = attempt;
+                await body(entry.Execution(running: true), ct).ConfigureAwait(false);
                 return attempt;
             }
             catch (Exception ex) when (
@@ -445,7 +447,7 @@ public sealed class MissionScheduler : IMissionScheduler
     private async Task PersistAsync(Entry entry, MissionState state)
     {
         if (_options.Store is not { } store) return;
-        var record = new MissionRecord(entry.MissionId, entry.Request.Kind, entry.Request.Payload, state, entry.CreatedUtc);
+        var record = new MissionRecord(entry.MissionId, entry.Definition.Kind, entry.Definition.Payload, state, entry.CreatedUtc);
         // A store failure must never take down the work it was describing — durability is a
         // best-effort overlay on execution, not a precondition for it.
         try { await store.SaveAsync(record, CancellationToken.None).ConfigureAwait(false); }
@@ -467,24 +469,24 @@ public sealed class MissionScheduler : IMissionScheduler
         return new MissionResult(MissionOutcome.Deduplicated, result.MissionId, 0, null);
     }
 
-    private Entry CreateEntry(MissionRequest request, CancellationToken cancellationToken)
+    private Entry CreateEntry(MissionDefinition definition, CancellationToken cancellationToken)
     {
-        var claims = new List<(string Scope, string Key, ClaimMode Mode)>(request.Claims.Count);
-        foreach (var claim in request.Claims)
+        var claims = new List<(string Scope, string Key, ClaimMode Mode)>(definition.Claims.Count);
+        foreach (var claim in definition.Claims)
         {
             if (!_scopes.TryGetValue(claim.Scope, out var scope))
                 throw new ArgumentException(
                     $"claim scope '{claim.Scope}' is not registered on this scheduler — add it to " +
                     $"{nameof(MissionSchedulerOptions)}.{nameof(MissionSchedulerOptions.Scopes)}. Ignoring it would " +
-                    "silently drop an exclusion the caller asked for.", nameof(request));
+                    "silently drop an exclusion the caller asked for.", nameof(definition));
             claims.Add((claim.Scope, scope.Normalize(claim.Key), claim.Mode));
         }
 
-        var lanes = new List<(LaneState Lane, int Permits)>(request.Lanes.Count + 1) { (_defaultLane, 1) };
-        foreach (var (name, permits) in request.Lanes)
+        var lanes = new List<(LaneState Lane, int Permits)>(definition.Lanes.Count + 1) { (_defaultLane, 1) };
+        foreach (var (name, permits) in definition.Lanes)
         {
-            ArgumentException.ThrowIfNullOrEmpty(name, nameof(request));
-            ArgumentOutOfRangeException.ThrowIfLessThan(permits, 1, nameof(request));
+            ArgumentException.ThrowIfNullOrEmpty(name, nameof(definition));
+            ArgumentOutOfRangeException.ThrowIfLessThan(permits, 1, nameof(definition));
             if (!_lanes.TryGetValue(name, out var lane))
             {
                 lane = new LaneState(name, _defaultLane.Capacity, this);
@@ -497,7 +499,7 @@ public sealed class MissionScheduler : IMissionScheduler
         }
 
         var sequence = Interlocked.Increment(ref _nextId);
-        return new Entry($"w{sequence}", sequence, request, claims, lanes, cancellationToken);
+        return new Entry($"m{sequence}", sequence, definition, claims, lanes, cancellationToken);
     }
 
     private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
@@ -518,30 +520,40 @@ public sealed class MissionScheduler : IMissionScheduler
     private sealed class Entry
     {
         public Entry(
-            string missionId, long sequence, MissionRequest request,
+            string missionId, long sequence, MissionDefinition definition,
             List<(string Scope, string Key, ClaimMode Mode)> claims,
             List<(LaneState Lane, int Permits)> lanes, CancellationToken cancellation)
         {
             MissionId = missionId;
-            Request = request;
+            Definition = definition;
             Claims = claims;
             Lanes = lanes;
             Cancellation = cancellation;
             Node = new LinkedListNode<Entry>(this);
             CreatedUtc = DateTimeOffset.UtcNow;
-            View = new MissionView(missionId, request.Kind, request.Priority, CreatedUtc, sequence);
+            Queued = new MissionExecution(missionId, definition.Kind, definition.Priority, CreatedUtc, sequence);
         }
 
         public string MissionId { get; }
-        public MissionRequest Request { get; }
+        public MissionDefinition Definition { get; }
         public List<(string Scope, string Key, ClaimMode Mode)> Claims { get; }
         public List<(LaneState Lane, int Permits)> Lanes { get; }
         public CancellationToken Cancellation { get; }
         public LinkedListNode<Entry> Node { get; }
         public DateTimeOffset CreatedUtc { get; }
-        public MissionView View { get; }
+
+        /// <summary>The execution as first accepted: attempt 0, not running. Every other view is a `with`.</summary>
+        public MissionExecution Queued { get; }
+
+        /// <summary>Current attempt, so a snapshot of running work reports the attempt it is on.</summary>
+        public int Attempt { get; set; }
+
+        /// <summary>The execution as it stands now — the one value handed to bodies, observers and views.</summary>
+        public MissionExecution Execution(bool running = false) =>
+            Queued with { Attempt = Attempt, IsRunning = running };
+
         public Task? RunTask { get; set; }
-        public bool Durable => Request.Durable;
+        public bool Durable => Definition.Durable;
 
         public TaskCompletionSource<MissionResult> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -187,6 +187,10 @@ Range
 # archive, scan or import noun. Those are the APPLICATION's words and the reason the kit ships a
 # scheduler rather than a job system.
 #
+# `Definition` (what should run) and `Execution` (one specific run) are the definition/execution
+# split: they replaced `Request`, `Context`, `View` and `Snapshot` on this surface, which were four
+# names for two concepts.
+#
 # `Mission` replaced `Work` (owner's call): `Work` is too common a word to grep or to own, and the
 # obvious alternative `Task` collides with System.Threading.Tasks.Task — and `TaskScheduler` would
 # have been ambiguous against the BCL type in every consumer that imports both namespaces.
@@ -195,6 +199,8 @@ Range
 # domain vocabulary in a games family).
 Claim
 Claims
+Definition
+Execution
 Flat
 Lane
 Mode
@@ -209,7 +215,6 @@ Retry
 Mission
 Scheduler
 Scope
-Snapshot
 
 # ── Watch this one ────────────────────────────────────────────────────────────────────────────────
 # Download: a browser mechanism (a session observing a download), NOT a product feature. It is the

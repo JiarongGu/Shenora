@@ -383,7 +383,7 @@ regression hides on the one box with two cores.
 | A static gate/semaphore singleton over a scarce resource (one GPU, a rate-limited endpoint) | `scheduler.Lane("gpu").Capacity = 1` + `Lanes = [new MissionLane("gpu")]` on the request | Removes the singleton, so it is testable and there can be more than one. A lane that is a BUDGET rather than a slot count takes weighted permits: `new MissionLane("vram", 4)`. |
 | A live "max active" slider | the `ILane.Capacity` setter | Lowering it never cancels running work — the surplus is swallowed as items finish. Proven in both directions: `Lowering_lane_capacity_throttles_new_work_without_killing_running_work` and `A_lowered_capacity_is_enforced_once_the_surplus_drains`. The setter enforces a floor of 1 and no ceiling, so clamp to your own maximum before assigning. |
 | A capacity governor that suspends work under system load | `ILane.Hold()` / `Release()` (re-entrant) | The kit ships the mechanism and no policy: load probes, hysteresis and debounce stay yours. This is the difference between "yield the GPU while the user games" and "kill the user's transcode". |
-| Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `MissionRequest.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission completes eagerly against the existing item with `MissionOutcome.Deduplicated`, and the body runs once. |
+| Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `MissionDefinition.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission completes eagerly against the existing item with `MissionOutcome.Deduplicated`, and the body runs once. |
 | `MAX_RETRY_ATTEMPTS` / `RETRY_DELAY_MS` constants | `RetryPolicy` | Same defaults as the family's measured value: 3 attempts, 500 ms × attempt, `IOException` only. `RetryPolicy.None` opts out; `Retry = null` already means none. |
 | A retry loop wrapped around an expensive operation to survive a cheap final step | `Run` (the expensive phase, runs ONCE) + `Commit` (cheap, retried) | Setting `Commit` is what makes `Run` exempt from the retry budget. |
 | A `Channel` + worker pool + gate, or a plan-swap with a signal and a worker task | the scheduler | Dispatch is event-driven — on submit and on each completion. No worker thread, no polling latency. |
@@ -394,14 +394,22 @@ regression hides on the one box with two cores.
 | Opening and closing a progress operation by hand in every mission body | `IMissionObserver` — see below | Every call is guarded, so an observer that throws cannot fail the work it was only watching. |
 | A `candidate.StartsWith(root)` guard on anything that turns caller input into a path | `PathClaims.IsContained(root, candidate)` | Not scheduling, but it belongs to the same file: it resolves `..` and `.` FIRST and tests at a separator boundary, so neither an escaping segment nor `C:\data-old` passes as being inside `C:\data`. |
 
+**Definition and execution are separate types, and the distinction is worth ten seconds up front.** A
+`MissionDefinition` is WHAT should run — body, claims, lanes, retry, dedup key. A `MissionExecution` is
+ONE specific run of it: id, attempt, position in the queue, whether it is running. You construct
+definitions; the scheduler hands you executions (to the body, to observers, to a policy, and out of
+`Snapshot()`). Today one submit produces one execution, so the split buys you consistent vocabulary
+rather than new power — it is there because a recurring or re-hydrated mission is one definition with
+many executions, and introducing that later would change every one of those signatures at once.
+
 The two-phase shape, which is what the `Run`/`Commit` split was designed from:
 
 ```csharp
-var result = await scheduler.SubmitAsync(new MissionRequest
+var result = await scheduler.SubmitAsync(new MissionDefinition
 {
     Claims = [PathClaims.Exclusive(cachePath), PathClaims.Exclusive(archivePath)],
-    Run    = _ => archive.CompressToTempAsync(cachePath, tempPath),   // expensive, runs ONCE
-    Commit = _ => files.ReplaceAsync(tempPath, archivePath),          // cheap, retried
+    Run    = (_, ct) => archive.CompressToTempAsync(cachePath, tempPath, ct),   // expensive, ONCE
+    Commit = (_, ct) => files.ReplaceAsync(tempPath, archivePath, ct),          // cheap, retried
     Retry  = new RetryPolicy(),
     Key    = new MissionKey($"compress:{entityId}"),
 });

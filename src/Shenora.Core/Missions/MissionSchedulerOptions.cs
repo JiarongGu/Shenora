@@ -37,7 +37,7 @@ public sealed class MissionSchedulerOptions
     /// </summary>
     public IReadOnlyList<IMissionObserver> Observers { get; init; } = [];
 
-    /// <summary>Where durable work persists. Null = <see cref="MissionRequest.Durable"/> is ignored.</summary>
+    /// <summary>Where durable work persists. Null = <see cref="MissionDefinition.Durable"/> is ignored.</summary>
     public IMissionStore? Store { get; init; }
 
     /// <summary>

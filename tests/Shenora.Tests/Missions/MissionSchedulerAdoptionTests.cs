@@ -1,6 +1,6 @@
 using Shenora.Core;
 
-namespace Shenora.Tests.Work;
+namespace Shenora.Tests.Missions;
 
 /// <summary>
 /// Conformance tests for the two claims the mission-scheduling design makes that are STRONGER than the
@@ -52,9 +52,9 @@ public class MissionSchedulerAdoptionTests
             var category = $"c{i % 3}";
             var forward = i % 2 == 0;
 
-            work.Add(scheduler.SubmitAsync(new MissionRequest
+            work.Add(scheduler.SubmitAsync(new MissionDefinition
             {
-                Run = async _ => await Task.Delay(5),
+                Run = async (_, _) => await Task.Delay(5),
                 Claims = forward
                     ? [MissionClaim.Exclusive("entity", entity), MissionClaim.Exclusive("category", category)]
                     : [MissionClaim.Exclusive("category", category), MissionClaim.Exclusive("entity", entity)],
@@ -111,9 +111,9 @@ public class MissionSchedulerAdoptionTests
             lock (gate) running--;
         }
 
-        var work = Enumerable.Range(0, 12).Select(i => scheduler.SubmitAsync(new MissionRequest
+        var work = Enumerable.Range(0, 12).Select(i => scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = c => Body(c.Cancellation),
+            Run = (_, ct) => Body(ct),
             Claims = [MissionClaim.Exclusive("entity", $"k{i}")],
             Lanes = [new MissionLane("jobs")],
         })).ToList();
@@ -159,9 +159,9 @@ public class MissionSchedulerAdoptionTests
             lock (gate) running--;
         }
 
-        var work = Enumerable.Range(0, 6).Select(i => scheduler.SubmitAsync(new MissionRequest
+        var work = Enumerable.Range(0, 6).Select(i => scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = c => Body(c.Cancellation),
+            Run = (_, ct) => Body(ct),
             Claims = [MissionClaim.Exclusive("entity", $"k{i}")],
             Lanes = [new MissionLane("jobs")],
         })).ToList();

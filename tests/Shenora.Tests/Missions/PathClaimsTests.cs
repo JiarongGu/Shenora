@@ -1,6 +1,6 @@
 using Shenora.Core;
 
-namespace Shenora.Tests.Work;
+namespace Shenora.Tests.Missions;
 
 /// <summary>
 /// <see cref="PathClaims"/> — the bridge from filesystem paths to scheduler claims, and the
@@ -108,14 +108,14 @@ public class PathClaimsTests
             lock (gate) active--;
         }
 
-        var directory = scheduler.SubmitAsync(new MissionRequest
+        var directory = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = c => Touch(c.Cancellation),
+            Run = (_, ct) => Touch(ct),
             Claims = [PathClaims.Exclusive(Under("mods"))],
         });
-        var fileInside = scheduler.SubmitAsync(new MissionRequest
+        var fileInside = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = c => Touch(c.Cancellation),
+            Run = (_, ct) => Touch(ct),
             Claims = [PathClaims.Exclusive(Under("mods", "x", "f.txt"))],
         });
 

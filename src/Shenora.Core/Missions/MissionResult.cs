@@ -1,6 +1,6 @@
 namespace Shenora.Core;
 
-/// <summary>How a submitted <see cref="MissionRequest"/> ended.</summary>
+/// <summary>How a submitted <see cref="MissionDefinition"/> ended.</summary>
 public enum MissionOutcome
 {
     /// <summary>The body ran to completion.</summary>
@@ -13,7 +13,7 @@ public enum MissionOutcome
     Cancelled = 2,
 
     /// <summary>
-    /// An identical <see cref="MissionRequest.Key"/> was already pending or in flight; this submission
+    /// An identical <see cref="MissionDefinition.Key"/> was already pending or in flight; this submission
     /// carries THAT work's outcome and its body never ran.
     /// </summary>
     Deduplicated = 3,

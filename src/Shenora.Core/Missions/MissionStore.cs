@@ -12,8 +12,8 @@ public enum MissionState
 
 /// <summary>What <see cref="IMissionStore"/> persists for one durable request.</summary>
 /// <param name="MissionId">Scheduler-assigned id; stable across a restart.</param>
-/// <param name="Kind">App-defined mission type, from <see cref="MissionRequest.Kind"/>.</param>
-/// <param name="Payload">App-serialized state, from <see cref="MissionRequest.Payload"/>. Never interpreted by the kit.</param>
+/// <param name="Kind">App-defined mission type, from <see cref="MissionDefinition.Kind"/>.</param>
+/// <param name="Payload">App-serialized state, from <see cref="MissionDefinition.Payload"/>. Never interpreted by the kit.</param>
 /// <param name="State">Queued or Running as of the last write.</param>
 /// <param name="CreatedUtc">Submission time.</param>
 public sealed record MissionRecord(
@@ -51,7 +51,7 @@ public enum RecoveryPolicy
 /// Where durable work is persisted. <b>The kit ships no implementation</b> — not a SQLite one, not a
 /// JSON one — because storage is the app's decision and `Shenora.Core` takes no storage dependency.
 /// Supply one via <see cref="MissionSchedulerOptions.Store"/>; leave it null and every request behaves
-/// as in-memory regardless of <see cref="MissionRequest.Durable"/>.
+/// as in-memory regardless of <see cref="MissionDefinition.Durable"/>.
 ///
 /// <para>
 /// Implementations must tolerate being called concurrently, and should treat

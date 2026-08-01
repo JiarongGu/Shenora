@@ -25,16 +25,11 @@ namespace Shenora.Core;
 public interface IMissionObserver
 {
     /// <summary>Accepted into the queue. Not called for a deduplicated submission.</summary>
-    void OnQueued(in MissionView mission) { }
+    void OnQueued(in MissionExecution mission) { }
 
-    /// <summary>About to run. Called once per item, not once per retry attempt.</summary>
-    void OnStarted(in MissionView mission) { }
+    /// <summary>About to run. Called once per execution, not once per retry attempt.</summary>
+    void OnStarted(in MissionExecution mission) { }
 
     /// <summary>Finished, however it ended.</summary>
-    void OnFinished(in MissionView mission, MissionResult result) { }
+    void OnFinished(in MissionExecution mission, MissionResult result) { }
 }
-
-/// <summary>A point-in-time view of one item, from <see cref="IMissionScheduler.Snapshot"/>.</summary>
-/// <param name="Mission">Identity and ordering inputs.</param>
-/// <param name="IsRunning">True if executing, false if still queued.</param>
-public readonly record struct MissionSnapshot(MissionView Mission, bool IsRunning);

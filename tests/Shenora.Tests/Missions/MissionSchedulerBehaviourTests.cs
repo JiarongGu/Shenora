@@ -1,6 +1,6 @@
 using Shenora.Core;
 
-namespace Shenora.Tests.Work;
+namespace Shenora.Tests.Missions;
 
 /// <summary>
 /// Non-concurrency behaviour of <see cref="MissionScheduler"/>: retry, the two-phase rule,
@@ -16,9 +16,9 @@ public class MissionSchedulerBehaviourTests
     {
         await using var scheduler = NewScheduler();
 
-        var result = await scheduler.SubmitAsync(new MissionRequest
+        var result = await scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => throw new InvalidOperationException("boom"),
+            Run = (_, _) => throw new InvalidOperationException("boom"),
         });
 
         // A queue must not tear down a batch loop because one item failed.
@@ -33,9 +33,9 @@ public class MissionSchedulerBehaviourTests
         await using var scheduler = NewScheduler();
 
         var transientAttempts = 0;
-        var transient = await scheduler.SubmitAsync(new MissionRequest
+        var transient = await scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => { transientAttempts++; return transientAttempts < 3 ? throw new IOException("locked") : Task.CompletedTask; },
+            Run = (_, _) => { transientAttempts++; return transientAttempts < 3 ? throw new IOException("locked") : Task.CompletedTask; },
             Retry = new RetryPolicy { Attempts = 3, Delay = TimeSpan.FromMilliseconds(5) },
         });
 
@@ -43,10 +43,10 @@ public class MissionSchedulerBehaviourTests
         Assert.Equal(3, transient.Attempts);
 
         var permanentAttempts = 0;
-        var permanent = await scheduler.SubmitAsync(new MissionRequest
+        var permanent = await scheduler.SubmitAsync(new MissionDefinition
         {
             // Not an IOException, so the default IsTransient says don't bother.
-            Run = _ => { permanentAttempts++; throw new InvalidOperationException("bug"); },
+            Run = (_, _) => { permanentAttempts++; throw new InvalidOperationException("bug"); },
             Retry = new RetryPolicy { Attempts = 3, Delay = TimeSpan.FromMilliseconds(5) },
         });
 
@@ -62,10 +62,10 @@ public class MissionSchedulerBehaviourTests
 
         var prepared = 0;
         var committed = 0;
-        var result = await scheduler.SubmitAsync(new MissionRequest
+        var result = await scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => { prepared++; return Task.CompletedTask; },
-            Commit = _ => { committed++; return committed < 3 ? throw new IOException("target locked") : Task.CompletedTask; },
+            Run = (_, _) => { prepared++; return Task.CompletedTask; },
+            Commit = (_, _) => { committed++; return committed < 3 ? throw new IOException("target locked") : Task.CompletedTask; },
             Retry = new RetryPolicy { Attempts = 3, Delay = TimeSpan.FromMilliseconds(5) },
         });
 
@@ -83,16 +83,16 @@ public class MissionSchedulerBehaviourTests
         var gate = new TaskCompletionSource();
         var key = new MissionKey("import:42");
 
-        var first = scheduler.SubmitAsync(new MissionRequest
+        var first = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = async _ => { Interlocked.Increment(ref runs); await gate.Task; },
+            Run = async (_, _) => { Interlocked.Increment(ref runs); await gate.Task; },
             Key = key,
         });
         // Submitted while the first is still in flight.
         while (!scheduler.IsActive(key)) await Task.Delay(5);
-        var second = scheduler.SubmitAsync(new MissionRequest
+        var second = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => { Interlocked.Increment(ref runs); return Task.CompletedTask; },
+            Run = (_, _) => { Interlocked.Increment(ref runs); return Task.CompletedTask; },
             Key = key,
         });
 
@@ -110,11 +110,11 @@ public class MissionSchedulerBehaviourTests
         await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
 
         var blocker = new TaskCompletionSource();
-        var busy = scheduler.SubmitAsync(new MissionRequest { Run = async _ => await blocker.Task });
+        var busy = scheduler.SubmitAsync(new MissionDefinition { Run = async (_, _) => await blocker.Task });
 
         using var cts = new CancellationTokenSource();
         var ran = false;
-        var queued = scheduler.SubmitAsync(new MissionRequest { Run = _ => { ran = true; return Task.CompletedTask; } }, cts.Token);
+        var queued = scheduler.SubmitAsync(new MissionDefinition { Run = (_, _) => { ran = true; return Task.CompletedTask; } }, cts.Token);
 
         while (scheduler.PendingCount == 0) await Task.Delay(5);
         await cts.CancelAsync();
@@ -138,17 +138,17 @@ public class MissionSchedulerBehaviourTests
 
         var order = new List<string>();
         var blocker = new TaskCompletionSource();
-        var busy = scheduler.SubmitAsync(new MissionRequest { Run = async _ => await blocker.Task });
+        var busy = scheduler.SubmitAsync(new MissionDefinition { Run = async (_, _) => await blocker.Task });
 
         // Queue low then high while the lane is occupied; high must start first.
-        var low = scheduler.SubmitAsync(new MissionRequest
+        var low = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => { lock (order) order.Add("low"); return Task.CompletedTask; },
+            Run = (_, _) => { lock (order) order.Add("low"); return Task.CompletedTask; },
             Priority = 0,
         });
-        var high = scheduler.SubmitAsync(new MissionRequest
+        var high = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => { lock (order) order.Add("high"); return Task.CompletedTask; },
+            Run = (_, _) => { lock (order) order.Add("high"); return Task.CompletedTask; },
             Priority = 10,
         });
 
@@ -172,9 +172,9 @@ public class MissionSchedulerBehaviourTests
         });
 
         var started = false;
-        var submitted = scheduler.SubmitAsync(new MissionRequest
+        var submitted = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => { started = true; return Task.CompletedTask; },
+            Run = (_, _) => { started = true; return Task.CompletedTask; },
         });
 
         await Task.Delay(60);
@@ -204,14 +204,14 @@ public class MissionSchedulerBehaviourTests
         });
 
         var first = await scheduler
-            .SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask })
+            .SubmitAsync(new MissionDefinition { Run = (_, _) => Task.CompletedTask })
             .WaitAsync(TimeSpan.FromSeconds(5))
             .ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : null);
 
         // The first submit's dispatch threw; a later submit re-dispatches and both drain.
         if (first is null)
         {
-            var recovered = await scheduler.SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask })
+            var recovered = await scheduler.SubmitAsync(new MissionDefinition { Run = (_, _) => Task.CompletedTask })
                 .WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(MissionOutcome.Completed, recovered.Outcome);
         }
@@ -232,7 +232,7 @@ public class MissionSchedulerBehaviourTests
         };
         await using var scheduler = new MissionScheduler(options);
 
-        var result = await scheduler.SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask, Kind = "scan" });
+        var result = await scheduler.SubmitAsync(new MissionDefinition { Run = (_, _) => Task.CompletedTask, Kind = "scan" });
 
         Assert.Equal(MissionOutcome.Completed, result.Outcome);
         Assert.Equal(1, good.Queued);
@@ -250,9 +250,9 @@ public class MissionSchedulerBehaviourTests
             Store = store,
         });
 
-        var result = await scheduler.SubmitAsync(new MissionRequest
+        var result = await scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => Task.CompletedTask,
+            Run = (_, _) => Task.CompletedTask,
             Durable = true,
             Kind = "export",
             Payload = "{\"id\":7}",
@@ -281,7 +281,7 @@ public class MissionSchedulerBehaviourTests
         var requeued = await scheduler.RecoverAsync(record =>
         {
             rehydrated.Add(record.MissionId);
-            return new MissionRequest { Run = _ => Task.CompletedTask };
+            return new MissionDefinition { Run = (_, _) => Task.CompletedTask };
         });
 
         Assert.Equal(1, requeued);
@@ -303,7 +303,7 @@ public class MissionSchedulerBehaviourTests
             RecoveryPolicyFor = _ => RecoveryPolicy.Requeue,
         });
 
-        var requeued = await scheduler.RecoverAsync(_ => new MissionRequest { Run = _ => Task.CompletedTask });
+        var requeued = await scheduler.RecoverAsync(_ => new MissionDefinition { Run = (_, _) => Task.CompletedTask });
 
         Assert.Equal(1, requeued);
     }
@@ -313,9 +313,9 @@ public class MissionSchedulerBehaviourTests
     {
         await using var scheduler = NewScheduler();
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => scheduler.SubmitAsync(new MissionRequest
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => Task.CompletedTask,
+            Run = (_, _) => Task.CompletedTask,
             Claims = [MissionClaim.Exclusive("nope", "k")],
         }));
 
@@ -332,9 +332,9 @@ public class MissionSchedulerBehaviourTests
         await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 3 });
         scheduler.Lane("gpu").Capacity = 1;
 
-        var result = await scheduler.SubmitAsync(new MissionRequest
+        var result = await scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = _ => Task.CompletedTask,
+            Run = (_, _) => Task.CompletedTask,
             Lanes = [new MissionLane("gpu-typo")],
         });
 
@@ -350,9 +350,9 @@ public class MissionSchedulerBehaviourTests
 
         var entered = new TaskCompletionSource();
         var finished = false;
-        var running = scheduler.SubmitAsync(new MissionRequest
+        var running = scheduler.SubmitAsync(new MissionDefinition
         {
-            Run = async ct =>
+            Run = async (_, ct) =>
             {
                 entered.SetResult();
                 // Ignores the token deliberately: dispose must WAIT, not tear a body mid-write.
@@ -361,7 +361,7 @@ public class MissionSchedulerBehaviourTests
             },
         });
         await entered.Task;
-        var queued = scheduler.SubmitAsync(new MissionRequest { Run = _ => Task.CompletedTask });
+        var queued = scheduler.SubmitAsync(new MissionDefinition { Run = (_, _) => Task.CompletedTask });
 
         await scheduler.DisposeAsync();
 
@@ -372,10 +372,10 @@ public class MissionSchedulerBehaviourTests
 
     // ── doubles ───────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class DelegatePolicy(Func<MissionView, MissionSchedulerState, bool> shouldStart) : IMissionPolicy
+    private sealed class DelegatePolicy(Func<MissionExecution, MissionSchedulerState, bool> shouldStart) : IMissionPolicy
     {
-        public bool ShouldStart(in MissionView mission, in MissionSchedulerState state) => shouldStart(mission, state);
-        public int Compare(in MissionView a, in MissionView b) => a.Sequence.CompareTo(b.Sequence);
+        public bool ShouldStart(in MissionExecution mission, in MissionSchedulerState state) => shouldStart(mission, state);
+        public int Compare(in MissionExecution a, in MissionExecution b) => a.Sequence.CompareTo(b.Sequence);
     }
 
     private sealed class RecordingObserver : IMissionObserver
@@ -383,16 +383,16 @@ public class MissionSchedulerBehaviourTests
         public int Queued;
         public int Started;
         public int Finished;
-        public void OnQueued(in MissionView mission) => Queued++;
-        public void OnStarted(in MissionView mission) => Started++;
-        public void OnFinished(in MissionView mission, MissionResult result) => Finished++;
+        public void OnQueued(in MissionExecution mission) => Queued++;
+        public void OnStarted(in MissionExecution mission) => Started++;
+        public void OnFinished(in MissionExecution mission, MissionResult result) => Finished++;
     }
 
     private sealed class ThrowingObserver : IMissionObserver
     {
-        public void OnQueued(in MissionView mission) => throw new InvalidOperationException("observer bug");
-        public void OnStarted(in MissionView mission) => throw new InvalidOperationException("observer bug");
-        public void OnFinished(in MissionView mission, MissionResult result) => throw new InvalidOperationException("observer bug");
+        public void OnQueued(in MissionExecution mission) => throw new InvalidOperationException("observer bug");
+        public void OnStarted(in MissionExecution mission) => throw new InvalidOperationException("observer bug");
+        public void OnFinished(in MissionExecution mission, MissionResult result) => throw new InvalidOperationException("observer bug");
     }
 
     private sealed class RecordingStore : IMissionStore

@@ -45,6 +45,31 @@ _Do not stamp this heading by hand — the release workflow does it (`docs/RELEA
   It is a real break against a published surface (0.3.0 is on NuGet), taken deliberately while the
   layer is days old and the realistic consumer count is zero — not a free one.
 
+- **The unit is split into a DEFINITION and an EXECUTION**, in the same window and for the same
+  reason: introducing it later would be breaking, whereas doing it now is free of anything except this
+  entry. `MissionRequest` → **`MissionDefinition`** (what should run), and `MissionContext` +
+  `MissionView` + `MissionSnapshot` collapse into **`MissionExecution`** (one specific run) — four
+  types for two concepts became two.
+
+  ```csharp
+  // before                                    // now
+  Run = ctx => DoAsync(ctx.Cancellation)       Run = (mission, ct) => DoAsync(ct)
+  IReadOnlyList<MissionSnapshot> Snapshot()    IReadOnlyList<MissionExecution> Snapshot()
+  void OnStarted(in MissionView work)          void OnStarted(in MissionExecution mission)
+  bool ShouldStart(in MissionView work, …)     bool ShouldStart(in MissionExecution mission, …)
+  ```
+
+  `MissionExecution` deliberately carries no `CancellationToken`: the body takes one as a second
+  parameter, which matches every other callback seam in the kit and keeps an execution a pure value
+  that is safe to hold, copy, and hand to a diagnostics view. `MissionSnapshot`'s `IsRunning` moved
+  onto the execution itself, and `Attempt` is now visible on a running execution rather than only
+  inside the body.
+
+  One submit still produces exactly one execution. The split earns its keep the moment a mission
+  recurs or is rebuilt from a `MissionRecord` — one definition, many executions — which is precisely
+  the change that would otherwise have altered `SubmitAsync`, every body, all three observer callbacks
+  and both policy methods on the same day.
+
 ## 0.2.0 — never released
 
 **This version number was consumed without ever shipping.** A session hand-edited
