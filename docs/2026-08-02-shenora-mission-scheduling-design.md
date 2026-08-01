@@ -164,11 +164,14 @@ Owner direction: *"durability we must have, but configurable (say where the stat
 persists to — we don't handle persistence for now)."*
 
 ```csharp
-public interface IMissionStore
+// Sketched here as IMissionStore with SaveAsync/LoadPendingAsync; shipped, and later renamed to say
+// what it actually is — the queue's storage rather than a durability service beside it (A3, Part 1 of
+// docs/2026-08-02-shenora-mission-queue-and-chains-design.md).
+public interface IMissionQueueStore
 {
-    Task SaveAsync(MissionRecord record, CancellationToken ct);
+    Task AppendAsync(MissionRecord record, CancellationToken ct);
     Task RemoveAsync(string missionId, CancellationToken ct);
-    Task<IReadOnlyList<MissionRecord>> LoadPendingAsync(CancellationToken ct);
+    Task<IReadOnlyList<MissionRecord>> LoadAsync(CancellationToken ct);
 }
 ```
 
@@ -240,7 +243,7 @@ owner named; the test is whether each existing implementation is expressible **w
 | Global GPU exclusivity | lane `gpu`, capacity 1 | no — and no static singleton |
 | Live max-active slider | `Lane.Capacity` setter, permit-swallowing on decrease | no, **proven** |
 | Externally hold a lane under load | `Lane.Hold()/Release()`; probes+hysteresis stay in the app | no |
-| Durable jobs, resume on start | `IMissionStore` + `RecoverAsync` | no — app owns the store |
+| Durable jobs, resume on start | `IMissionQueueStore` + `RecoverAsync` | no — app owns the store |
 | No-auto-resume for crash-prone types | `RecoveryPolicy.Fail` (the default for RUNNING) | no |
 | Pause / cancel / retry a job | cancellation token per item; pause = lane hold or claim release | partial — see below |
 | Handler registry by job type | app-side; the scheduler takes a delegate | **out of scope, deliberately** |
@@ -284,7 +287,7 @@ Two honest gaps, stated rather than hidden:
 ## §10 Deliberately not built
 
 Recorded so the next session does not re-argue them: a workflow/DAG engine (§7); a persistent
-`IMissionStore` implementation (§5, owner direction); handler-registry-by-type (§8); per-item
+`IMissionQueueStore` implementation (§5, owner direction); handler-registry-by-type (§8); per-item
 cooperative pause (§8); any archive, download or cleanup helper (§6).
 
 ## Amendments

@@ -389,7 +389,7 @@ regression hides on the one box with two cores.
 | A `Channel` + worker pool + gate, or a plan-swap with a signal and a worker task | the scheduler | Dispatch is event-driven — on submit and on each completion. No worker thread, no polling latency. |
 | Priority or "not now" rules baked into the queue's own loop | `IMissionPolicy` (`Compare` = what, `ShouldStart` = when); default `PriorityMissionPolicy` is priority-then-FIFO | Ordering is a PRODUCT decision, so it is yours. A policy is only consulted about items that already passed admission, so the worst a buggy one can do is DELAY work — it cannot make conflicting work overlap or bypass a lane. A throwing policy is treated as "not now" rather than wedging the scheduler. |
 | `GetPendingOperationCount()`, a queue/diagnostics view | `PendingCount`, `RunningCount`, `Snapshot()` | `Snapshot()` is a copy: safe to hold, stale the moment it returns. |
-| Durable jobs in SQLite (or JSON) + resume on startup | `IMissionStore` over your EXISTING repository, `Durable = true` per request, then `RecoverAsync(rehydrate)` at a moment you choose | The kit ships no store implementation, by design — see below. `Kind` and `Payload` are yours, never interpreted. |
+| Durable jobs in SQLite (or JSON) + resume on startup | `IMissionQueueStore` over your EXISTING repository, `Durable = true` per request, then `RecoverAsync(rehydrate)` at a moment you choose | The kit ships no store implementation, by design — see below. `Kind` and `Payload` are yours, never interpreted. |
 | A "do not auto-resume this crash-prone type" flag | `RecoveryPolicyFor` → `RecoveryPolicy.Fail` | Already the default for records found `Running`; `Queued` records requeue. The safe default is the one that cannot loop. |
 | Opening and closing a progress operation by hand in every mission body | `IMissionObserver` — see below | Every call is guarded, so an observer that throws cannot fail the work it was only watching. |
 | A `candidate.StartsWith(root)` guard on anything that turns caller input into a path | `PathClaims.IsContained(root, candidate)` | Not scheduling, but it belongs to the same file: it resolves `..` and `.` FIRST and tests at a separator boundary, so neither an escaping segment nor `C:\data-old` passes as being inside `C:\data`. |
@@ -485,7 +485,7 @@ things Stage 4's guard keeps honest.
   the replace itself is your `Commit` body. `PathClaims` is the only filesystem type here.
 - **No archive, download or cleanup helpers.** Carve depth caps, leaked-handle retries, an
   extract-never-execute rule: business logic, and it stays yours.
-- **No persistent `IMissionStore`, no handler registry by job type, no DAG/workflow engine, no per-item
+- **No persistent `IMissionQueueStore`, no handler registry by job type, no DAG/workflow engine, no per-item
   cooperative pause.** Each is deliberate, with reasons, in §10 of the design doc.
 
 ### Order to adopt
@@ -494,7 +494,7 @@ things Stage 4's guard keeps honest.
 2. Move the rest of the raw-filesystem operations; delete the old planner.
 3. Move the entity/category locks; delete the operation queue — the lock-order rule disappears here.
 4. Lanes for scarce resources; delete the gate singleton.
-5. Durability last: implement `IMissionStore` over your existing storage, wire `RecoverAsync`.
+5. Durability last: implement `IMissionQueueStore` over your existing storage, wire `RecoverAsync`.
 
 Steps 1, 3 and 4 are behaviour-preserving. **Step 2 is where the parallelism change lands**, so that
 is the one to verify against real workloads rather than only against tests.
@@ -530,9 +530,9 @@ survives while new work throttles.
   splash colours) and ships no design system (D13).
 - **Transport-level product decisions** — what an "operation" is, its phases and progress shape,
   whether work queues, what a viewer looks like. The kit ships primitives and lifecycle hooks (D21).
-- **Your queue's product decisions** — what runs next and when (`IMissionPolicy`), where durable work
-  persists (`IMissionStore`), what a job record contains and which handler runs it. The kit owns the
-  SAFETY rules (claim exclusion, lane capacity, no starvation) and hands the rest back.
+- **Your queue's product decisions** — what runs next and when (`IMissionPolicy`), where the queue
+  lives across restarts (`IMissionQueueStore`), what a job record contains and which handler runs it.
+  The kit owns the SAFETY rules (claim exclusion, lane capacity, no starvation) and hands the rest back.
 - **Your state management.** `createShenoraStore` is built on React's `useSyncExternalStore`; if you
   already use a store library, keep it and subscribe through `useShenoraEvent`.
 - **Your event/enum vocabulary.** Module and event names are app schema.

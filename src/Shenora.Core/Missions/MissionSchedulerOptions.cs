@@ -37,8 +37,12 @@ public sealed class MissionSchedulerOptions
     /// </summary>
     public IReadOnlyList<IMissionObserver> Observers { get; init; } = [];
 
-    /// <summary>Where durable work persists. Null = <see cref="MissionDefinition.Durable"/> is ignored.</summary>
-    public IMissionStore? Store { get; init; }
+    /// <summary>
+    /// Where the pending queue lives across restarts. Null (the default) keeps the queue entirely in
+    /// memory, and <see cref="MissionDefinition.Durable"/> is then ignored — a mission is durable
+    /// because the queue holding it is backed by a store.
+    /// </summary>
+    public IMissionQueueStore? QueueStore { get; init; }
 
     /// <summary>
     /// Recovery decision per record, by <see cref="MissionRecord.Kind"/> and <see cref="MissionRecord.State"/>.

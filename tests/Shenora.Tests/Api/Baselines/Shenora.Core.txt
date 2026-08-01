@@ -95,6 +95,10 @@ interface Shenora.Core.IMissionObserver
 interface Shenora.Core.IMissionPolicy
   public abstract bool ShouldStart(in Shenora.Core.MissionExecution mission, in Shenora.Core.MissionSchedulerState state)
   public abstract int Compare(in Shenora.Core.MissionExecution a, in Shenora.Core.MissionExecution b)
+interface Shenora.Core.IMissionQueueStore
+  public abstract System.Threading.Tasks.Task AppendAsync(Shenora.Core.MissionRecord record, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task RemoveAsync(string missionId, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionRecord>> LoadAsync(System.Threading.CancellationToken cancellationToken)
 interface Shenora.Core.IMissionScheduler : System.IAsyncDisposable
   public abstract Shenora.Core.ILane Lane(string name)
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionExecution> Snapshot()
@@ -104,10 +108,6 @@ interface Shenora.Core.IMissionScheduler : System.IAsyncDisposable
   public abstract int PendingCount { get; }
   public abstract int RunningCount { get; }
   public abstract void Reevaluate()
-interface Shenora.Core.IMissionStore
-  public abstract System.Threading.Tasks.Task RemoveAsync(string missionId, System.Threading.CancellationToken cancellationToken)
-  public abstract System.Threading.Tasks.Task SaveAsync(Shenora.Core.MissionRecord record, System.Threading.CancellationToken cancellationToken)
-  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionRecord>> LoadPendingAsync(System.Threading.CancellationToken cancellationToken)
 interface Shenora.Core.IShenoraLifecycleHook
   public virtual void OnStarting(Shenora.Core.ShenoraApplication app)
   public virtual void OnStopping(Shenora.Core.ShenoraApplication app)
@@ -233,7 +233,7 @@ sealed class Shenora.Core.MissionScheduler : Shenora.Core.IMissionScheduler, Sys
 sealed class Shenora.Core.MissionSchedulerOptions
   public .ctor()
   public Shenora.Core.IMissionPolicy? Policy { get; init; }
-  public Shenora.Core.IMissionStore? Store { get; init; }
+  public Shenora.Core.IMissionQueueStore? QueueStore { get; init; }
   public System.Action<string>? Log { get; init; }
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.IClaimScope> Scopes { get; init; }
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.IMissionObserver> Observers { get; init; }

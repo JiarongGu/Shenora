@@ -70,6 +70,20 @@ _Do not stamp this heading by hand — the release workflow does it (`docs/RELEA
   the change that would otherwise have altered `SubmitAsync`, every body, all three observer callbacks
   and both policy methods on the same day.
 
+- **`IMissionStore` → `IMissionQueueStore`**, and with it
+  `MissionSchedulerOptions.Store` → `.QueueStore`, `SaveAsync` → `AppendAsync`, `LoadPendingAsync` →
+  `LoadAsync`. Same three operations, same `MissionRecord`, same `RecoveryPolicy` — what changed is
+  what the seam CLAIMS to be. It is not a "durable missions" service sitting beside the queue; it is
+  where the queue's own entries live when they must survive a restart. Describing it as a separate
+  concept is what made recovery read oddly, as though records arrived from somewhere other than the
+  queue they were enqueued into.
+
+  A fuller change was designed and rejected: making the whole queue a pluggable async seam. It would
+  put an `await` in the dispatch path, which cannot run under the scheduler's lock, so admission would
+  have to read candidates, take the lock, and then re-validate against a collection that may have
+  changed underneath — a race in the one place where a race corrupts rather than delays, bought for a
+  capability no consumer has asked for. Ordering was already the app's, through `IMissionPolicy`.
+
 ## 0.2.0 — never released
 
 **This version number was consumed without ever shipping.** A session hand-edited

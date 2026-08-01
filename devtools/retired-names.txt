@@ -72,3 +72,7 @@ MissionRequest           # -> MissionDefinition (what should run)
 MissionContext           # -> MissionExecution (one specific run; the token is now its own parameter)
 MissionView              # -> MissionExecution
 MissionSnapshot          # -> MissionExecution, whose IsRunning replaced the wrapper
+
+# --- 2026-08-02: the store is the QUEUE's store -----------------------------------------------------
+IMissionStore            # -> IMissionQueueStore (where the pending queue lives across a restart)
+LoadPendingAsync         # -> IMissionQueueStore.LoadAsync

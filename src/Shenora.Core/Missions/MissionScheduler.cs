@@ -141,10 +141,10 @@ public sealed class MissionScheduler : IMissionScheduler
         Func<MissionRecord, MissionDefinition?> rehydrate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rehydrate);
-        var store = _options.Store;
+        var store = _options.QueueStore;
         if (store is null) return 0;
 
-        var records = await store.LoadPendingAsync(cancellationToken).ConfigureAwait(false);
+        var records = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
         var requeued = 0;
         foreach (var record in records)
         {
@@ -446,17 +446,17 @@ public sealed class MissionScheduler : IMissionScheduler
 
     private async Task PersistAsync(Entry entry, MissionState state)
     {
-        if (_options.Store is not { } store) return;
+        if (_options.QueueStore is not { } store) return;
         var record = new MissionRecord(entry.MissionId, entry.Definition.Kind, entry.Definition.Payload, state, entry.CreatedUtc);
         // A store failure must never take down the work it was describing — durability is a
         // best-effort overlay on execution, not a precondition for it.
-        try { await store.SaveAsync(record, CancellationToken.None).ConfigureAwait(false); }
+        try { await store.AppendAsync(record, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { Log(() => $"mission store save failed for {entry.MissionId}: {ex.GetType().Name}"); }
     }
 
     private async Task ForgetAsync(Entry entry)
     {
-        if (_options.Store is not { } store) return;
+        if (_options.QueueStore is not { } store) return;
         try { await store.RemoveAsync(entry.MissionId, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { Log(() => $"mission store remove failed for {entry.MissionId}: {ex.GetType().Name}"); }
     }

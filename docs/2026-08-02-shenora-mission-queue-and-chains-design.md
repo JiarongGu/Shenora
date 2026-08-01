@@ -1,6 +1,6 @@
-# Shenora missions — the queue, and chained missions — design (PLAN, not implemented)
+# Shenora missions — the queue, and chained missions — design
 
-**Status: PLANNED 2026-08-02.** Nothing is built. Two owner-directed additions to the mission layer
+**Status: PART 1 IMPLEMENTED 2026-08-02** (`IMissionQueueStore`); **PART 2 PLANNED**, nothing built. Two owner-directed additions to the mission layer
 that shipped in 0.3.0 (`docs/2026-08-02-shenora-mission-scheduling-design.md`, renamed and split by
 its A3). Written to be argued with; retired into `DECISIONS.md` + `ARCHITECTURE.md` once built.
 
@@ -17,14 +17,15 @@ its A3). Written to be argued with; retired into `DECISIONS.md` + `ARCHITECTURE.
 ## §1 What exists, and why it is not enough
 
 The pending collection is a **private `LinkedList<Entry>` inside `MissionScheduler`**. Ordering comes
-from `IMissionPolicy`, capacity from lanes, persistence from `IMissionStore`. So there is no *queue*
-in the surface at all: an app cannot inspect it beyond `Snapshot()`, cannot supply its own, and
-cannot have the pending set survive a restart without the separate store seam.
+from `IMissionPolicy`, capacity from lanes, and persistence used to come from a seam called
+`IMissionStore`. So there was no *queue* in the surface at all: an app could not inspect it beyond
+`Snapshot()`, could not supply its own, and could not have the pending set survive a restart except
+through that separate store.
 
-`IMissionStore` is the awkward half. It persists durable missions and is read back by
-`RecoverAsync(rehydrate)` — which means the queue's contents live in two places with two shapes: an
-in-memory list of live entries, and a store of `MissionRecord`s the app must rebuild definitions from.
-That split is why recovery needs a rehydrate delegate at all.
+The store was the awkward half. It formerly described itself as persisting "durable work", read back
+by `RecoverAsync(rehydrate)` — which meant the queue's contents lived in two places with two shapes:
+an in-memory list of live entries, and a store of `MissionRecord`s the app must rebuild definitions
+from. That split is why recovery needs a rehydrate delegate at all.
 
 ## §2 The proposal — the queue is a first-class concept; the store is where it LIVES
 

@@ -110,8 +110,9 @@ public sealed class MissionDefinition
     public RetryPolicy? Retry { get; init; }
 
     /// <summary>
-    /// Persist this request through <see cref="IMissionStore"/> so it survives a restart. Per-request,
-    /// not per-scheduler: cheap in-memory work and durable work share one queue.
+    /// Write this mission through to <see cref="MissionSchedulerOptions.QueueStore"/> so it survives a
+    /// restart. Per-mission, not per-scheduler: cheap in-memory missions and durable ones share ONE
+    /// queue, and only the durable ones reach storage. Ignored when no store is configured.
     /// </summary>
     public bool Durable { get; init; }
 

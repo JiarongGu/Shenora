@@ -44,11 +44,11 @@ Written down rather than started, because each carries a fork that changes the b
 order: mission queue → chains → file updates (the first is breaking, so it wants the pre-1.0 window;
 the third is independent).
 
-- [ ] **`IMissionQueue` replaces `IMissionStore`** (`docs/2026-08-02-shenora-mission-queue-and-chains-design.md`
-  Part 1). Today the pending set is a private `LinkedList` and durability is a separate seam, so the
-  queue's contents live in two shapes. One seam owns where pending missions live; in-memory by
-  default, durable when the app supplies one. The real work is not the interface — it is that
-  `PeekPendingAsync` cannot be called under the scheduler's lock, so admission must re-validate.
+- [x] ~~**The queue's store**~~ — DONE 2026-08-02, Part 1 of
+  `docs/2026-08-02-shenora-mission-queue-and-chains-design.md`. Shipped as `IMissionQueueStore`, not
+  as the pluggable async queue the first draft proposed: that would have put an `await` in the
+  dispatch path and forced admission to re-validate against a collection that may have changed. Moves
+  to `docs/task-archive.md` at the next tidy.
 - [ ] **Chained missions with a shared context** (same doc, Part 2). Claims prevent overlap but cannot
   express order, dependency or data flow, so a chain today lives in a stack frame and cannot be
   resumed or seen in `Snapshot()`. **Blocked on one decision:** is a chain ONE queue entry or N? That

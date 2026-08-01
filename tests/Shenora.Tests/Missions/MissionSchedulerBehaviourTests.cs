@@ -247,7 +247,7 @@ public class MissionSchedulerBehaviourTests
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
-            Store = store,
+            QueueStore = store,
         });
 
         var result = await scheduler.SubmitAsync(new MissionDefinition
@@ -274,7 +274,7 @@ public class MissionSchedulerBehaviourTests
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
-            Store = store,
+            QueueStore = store,
         });
 
         var rehydrated = new List<string>();
@@ -298,7 +298,7 @@ public class MissionSchedulerBehaviourTests
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
             DefaultLaneCapacity = 2,
-            Store = store,
+            QueueStore = store,
             // This app knows "resumable" work checkpoints safely, so overrides the cautious default.
             RecoveryPolicyFor = _ => RecoveryPolicy.Requeue,
         });
@@ -395,13 +395,13 @@ public class MissionSchedulerBehaviourTests
         public void OnFinished(in MissionExecution mission, MissionResult result) => throw new InvalidOperationException("observer bug");
     }
 
-    private sealed class RecordingStore : IMissionStore
+    private sealed class RecordingStore : IMissionQueueStore
     {
         public List<MissionRecord> Saved { get; } = [];
         public List<string> Removed { get; } = [];
         public List<MissionRecord> Pending { get; } = [];
 
-        public Task SaveAsync(MissionRecord record, CancellationToken cancellationToken)
+        public Task AppendAsync(MissionRecord record, CancellationToken cancellationToken)
         {
             lock (Saved) Saved.Add(record);
             return Task.CompletedTask;
@@ -413,7 +413,7 @@ public class MissionSchedulerBehaviourTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<MissionRecord>> LoadPendingAsync(CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<MissionRecord>> LoadAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<MissionRecord>>(Pending);
     }
 }

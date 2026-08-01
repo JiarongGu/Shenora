@@ -158,7 +158,7 @@ changes, noting them in `CHANGELOG.md`).
   through `AppCallback`; the seam for metrics, tracing, or binding execution to a progress registry
   without `Core` learning what an operation is), `MissionSchedulerState` (what the scheduler is doing
   right now, for the policy);
-  `IMissionStore`/`MissionRecord`/`MissionState` + `RecoveryPolicy` (`Requeue`/`Fail`/`Discard`, defaulting to
+  `IMissionQueueStore`/`MissionRecord`/`MissionState` + `RecoveryPolicy` (`Requeue`/`Fail`/`Discard`, defaulting to
   `Requeue` for `Queued` and **`Fail` for `Running`** — work found running after a crash may be what
   killed the process, and re-running it turns one crash into a boot loop) and `RecoveryPolicyFor`.
   Recovery is an explicit `RecoverAsync` with an app `rehydrate` delegate, never implicit: a delegate
@@ -514,7 +514,7 @@ changes, noting them in `CHANGELOG.md`).
 - **Execution and reporting compose; they do not merge.** `Core`'s `Work/` layer must never learn what
   an operation is — a mission body reports into `Shenora.Ipc`'s operation registry, and the seam pointing
   that way is `IMissionObserver`. `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20),
-  which is also why the scheduler ships no storage dependency: `IMissionStore` is a seam, not an
+  which is also why the scheduler ships no storage dependency: `IMissionQueueStore` is a seam, not an
   implementation.
 - **The two Windows packages are ONE layer (D19):** `Shenora.WebView2` → `Shenora.WinForms`, i.e.
   Windows **primitives** and **web hosting on top of them** — not two peers. This replaced the old
