@@ -15,6 +15,21 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### Drop zones: state the gain, not just the wiring (2026-08-02)
+
+The last open finding from the first adopter's IPC + drop-zone review, and a direct application of the
+owner's second review criterion — *"we focus on making things work… a better UI"* — which asks what the
+ADOPTER GAINS, not merely what code they delete. `ADOPTION.md`'s drop-zone row was a dense, accurate
+description of how to WIRE the manager that never said why anyone would want it. It now leads with the
+capability: an HTML5 drop hands the page a blob and withholds the path, so a page-side drop target
+cannot open, hash, watch or move the file — the native overlays read the OS drag data directly and
+yield the real path, including drags from another app while the window is backgrounded. A callout under
+the Stage-1 table carries the dedup argument the review asked for: four independent ports of one fiddly
+component (the kit's own header notes its third copy was already annotated "ported from…"; the first
+adopter was carrying a fourth at 387 C# + 84 TS lines) is the case for a shared body in one row.
+
+No code changed — the component was always right, only the argument for it was missing.
+
 ### 0.2.0 design pass — judging the DESIGN, not the code (2026-08-01, before publish)
 
 Owner direction after the whole-codebase review below: *"usually if you do the code review, you

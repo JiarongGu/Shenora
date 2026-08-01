@@ -359,6 +359,13 @@ event hub … async from the UI, progress synced") while the HOST contract did n
 
 ### Changed
 
+- **`docs/ADOPTION.md`'s drop-zone entry now states the GAIN, not just the wiring.** It described
+  accurately how to attach `DropZoneManager` and never said why an app would want it. It now leads
+  with the capability an app cannot get any other way: an HTML5 drop hands the page a blob and
+  withholds the path, so a page-side target cannot open, hash, watch or move the dropped file — the
+  native overlays read the OS drag data and yield the real path, including drags from another app
+  while the window is backgrounded. A callout under the Stage-1 table carries the dedup case (four
+  independent ports of this one component across the family). Docs only.
 - **The genericity rule finally has a tripwire — `SurfaceVocabularyTests`.** The owner's standing
   review criterion is *"make sure this is a library — we're not solving specific business logic;
   everything here has to be generic enough that any of our applications can adopt it"*, and it was

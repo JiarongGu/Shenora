@@ -64,17 +64,6 @@ scratch; at that point the shape is already known.
   waiting at the first real mobile adoption, and it is still a 1.0 break the kit says it will not
   take. Narrowing it needs a real mobile consumer, not another spike.
 
-### Worth saying better (documentation, not code)
-
-- [ ] **Drop zones are the strongest dedup case in the kit, and worth stating as such.** The native
-  approach is right for the goal (transparent overlays over the page's zone elements capturing REAL OS
-  file paths, which the page can never see because HTML5 drop gives it blob URLs — including drags from
-  other apps while backgrounded). It is also demonstrably the most-copied component in the family: the
-  kit's own header says "its third copy was already annotated 'ported from…' — this ends that", and this
-  adopter independently carries a fourth (387 C# + 84 TS lines) whose header reads "Ported from
-  <the same sibling>'s DropZoneOverlay". Four copies of one genuinely fiddly native component is the
-  clearest possible argument for the kit existing; ADOPTION.md undersells it as one row in a table.
-
 ### Standing (habits, not a queue)
 
 - [ ] Keep `docs/ARCHITECTURE.md` + `docs/README.md` inventory in sync as pieces land.
