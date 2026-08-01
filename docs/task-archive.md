@@ -15,6 +15,55 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### 0.2.0 design pass — judging the DESIGN, not the code (2026-08-01, before publish)
+
+Owner direction after the whole-codebase review below: *"usually if you do the code review, you
+should be getting the purpose of the project rethinking if this is a good design, instead just check
+if the code itself works or not"* — then *"lets do all, make a proper 0.2.0"*. The review had audited
+the kit against its OWN stated intentions and never asked whether those intentions were right. Four
+items (D1–D4), all free only because 0.2.0 was built but unpublished. Commits `351313f`, `8214f89`,
+`fe0a10a` + the D3 spike.
+
+**D1 — cut the crash-checkpoint half of the operations cluster.** Three facts pointed the same way:
+the design doc's own §4.2 note already admitted `RegisterWaiting`/`ResumePayload`/`RequestResume`
+"come from ONE app, not two" against a two-app bar; the cluster took ~8 reshapes inside one
+unpublished release; and it produced the release's only Critical. The root cause was structural —
+accepting entries the kit never started forced every caller to answer "does this one still have a
+live body?", and the three answers tried (a second status with no terminal exit, an app-controlled
+field that dropped live operations, an internal provenance flag) are the amendment stack. Removing
+the question removed all three. `OperationRegistry.cs` 992 → 826 lines. **The cut landed NARROWER
+than first scoped**, and that correction matters: `RequestWait`/`RequestResume` stayed, because they
+are the ask-act pair for the download-manager shape the kit itself names as a consumer, and cutting
+`RequestResume` would have left a client able to pause but never resume.
+
+**D2 — frameless chrome: a REJECTION plus a narrower change.** The review flagged `OptimizedForm` as
+the kit's one inheritance-only feature and proposed making the chrome attachable. Rejected on
+evidence (D24): the window style belongs in `CreateParams` at handle creation, so attaching it later
+needs `SetWindowLong`+`SWP_FRAMECHANGED` as a second mechanism — doubling the verification surface in
+the one area where a green unit suite has twice been wrong — and `WindowCommandOptions` already lets
+a non-`OptimizedForm` window drive the commands, so only the chrome itself needs the type. Owner
+direction settled the placement ("a style of our winform design" / "a fixed winform type"). The
+cohesion complaint was still fair, so the part with NO message-loop responsibility moved to an
+internal `CaptionButtonRenderer` (998 → 905 lines). **The split line is the reusable rule:** extract
+what is pure input → pixels; leave anything that answers a window message where the OS can see it.
+
+**D3 — validate D16 with a real second transport. PASSED.** `NotificationPump` had been extracted
+"so a second, non-WinForms base inherits these already-fixed bugs" and no second base existed, so the
+claim had never been executed. A throwaway `net10.0` console app (`devtools/_transport-spike/`,
+gitignored) referencing ONLY `Shenora.Core` + `Shenora.Ipc` ran request/response, the structured
+error boundary, the pump on a `PeriodicTimer`, and a `ctx.Run` operation streamed as batched
+notifications — all green, with no change to `Shenora.Ipc`. The TFM is the proof: a Windows type
+anywhere in that graph turns the project red. Three follow-ups are in `TASKS.md` — a host-side
+transport helper (~40 lines every non-WinForms base will write identically; NOT built, because the
+spike is one consumer and the bar is two), no headless `IShenoraRunner` in Core, and the honest limit
+that a transport spike says nothing about the desktop-flavoured SERVICE contracts (`IFileDialogs`),
+which still await a real mobile consumer.
+
+**D4 — gate the prose.** See `CHANGELOG.md` 0.2.0 `### Changed`. Two precise checks, sabotage-verified
+both ways; it found real drift on its first run (three knowledge/guide files still naming types
+renamed in P5.5/P7, including `REVIEW-GUIDE.md` telling reviewers to stand down on a finding P7 had
+already accepted).
+
 ### 0.2.0 — whole-codebase review (2026-08-01, before 0.2.0 was pushed or published)
 
 A full read of `src/` (~13 k lines across the five packages + `@shenora/react`), the samples and the

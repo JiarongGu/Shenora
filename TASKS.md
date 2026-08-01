@@ -58,14 +58,37 @@ as a CURRENT fact (past tense is fine — these docs are amendment stacks — an
 marks a preserved sketch). It found real drift on its first run; see `CHANGELOG.md` 0.2.0
 `### Changed`. **Add a name to `devtools/retired-names.txt` the moment you delete or rename one.**
 
-- [ ] **D3 — validate D16 with a real second transport before 1.0 freezes the shapes.**
-  `NotificationPump` was extracted "so a second, non-WinForms base inherits these fixes" and no second
-  base exists; `ShenoraTransport` is pluggable with one transport; `IUiDispatcher` has one
-  implementation. `FileDialogContracts.cs` already CONCEDES its contract is "desktop-FLAVOURED" and
-  that a mobile picker would ignore half the options and return a content URI. So the first real
-  mobile adoption breaks `IFileDialogs` — a 1.0 break the kit says it will not take. This is a SPIKE
-  (throwaway, not shipped surface): stand a headless host base + a non-WebView2 transport over the
-  existing envelopes and see what the seams demand.
+**D3 (validate D16 with a real second transport) is DONE, and it PASSED** — the spike lived in
+`devtools/_transport-spike/` (gitignored, like `_dpi-probe` before it) and its findings are the
+deliverable. A `net10.0` console app referencing ONLY `Shenora.Core` + `Shenora.Ipc` ran a full
+request/response, the structured error boundary, a `NotificationPump` on a `PeriodicTimer`, and a
+`ctx.Run` operation streamed to a client as batched notifications. **The TFM is the proof**: adding a
+Windows type anywhere in that graph turns the project red, so "the IPC stack binds to no UI
+framework" is now enforced rather than asserted. Three follow-ups it surfaced are listed below —
+`Shenora.Ipc` needed no change at all.
+
+- [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
+  base (see the design-pass record in `docs/task-archive.md`) showed the IPC half needs NOTHING to run
+  headless — but it made me hand-write ~40 lines every non-WinForms base will write identically: the
+  transport read loop → deserialize → `DispatchAsync` → serialize → write, plus the pump tick. The
+  CLIENT half has had this since P3 (`ShenoraBridge` owns correlation, category demux and the batch
+  unbundle); the HOST half has no mirror, so `WebViewIpcBridge` is the only thing that knows the shape
+  and it is welded to WinForms. **Not built yet on purpose:** the spike is ONE consumer, and the kit's
+  bar is two (`generic-library.md`). It is recorded here so the next real non-WebView2 base is
+  EVIDENCE rather than a re-argument from scratch — at which point the shape is already known.
+  Candidate placement is `Shenora.Ipc` (no new package, D2).
+- [ ] **`Shenora.Core` ships no headless `IShenoraRunner`.** Also from the D3 spike: `CreateBuilder`
+  → `Build()` → `Run()` throws without a runner, and the only implementation lives in
+  `Shenora.WinForms`. So Core's "application host" half is WinForms-only in practice even though every
+  type in it is portable, and the spike had to bypass the builder entirely and wire DI by hand. An app
+  CAN implement `IShenoraRunner` itself (it is a one-method interface), so this is a missing
+  convenience rather than a missing capability — recorded, not guessed at.
+- [ ] **D3's other half is still unvalidated: the desktop-FLAVOURED service contracts.** The spike
+  proves the IPC/transport story and nothing else, because a transport needs no file dialogs.
+  `FileDialogContracts.cs` still CONCEDES in writing that `FileDialogOptions` carries Win32 vocabulary
+  and that a mobile picker would ignore half of it and return a content URI. That break is still
+  waiting at the first real mobile adoption, and it is still a 1.0 break the kit says it will not
+  take. Narrowing it needs a real mobile consumer, not another spike.
 
 ### From the first adopter, IPC + drop-zone design review (2026-08-01)
 

@@ -359,6 +359,18 @@ event hub … async from the UI, progress synced") while the HOST contract did n
 
 ### Changed
 
+- **D16's host half is now EXECUTED rather than asserted — no code change was needed, which is the
+  result.** `NotificationPump` was extracted in this release "so a second, non-WinForms base inherits
+  these already-fixed bugs", and no second base existed, so nothing had ever run the kit's IPC stack
+  without a Windows presentation layer. A throwaway spike (`devtools/_transport-spike/`, gitignored
+  like `_dpi-probe` before it) did: a `net10.0` console app referencing ONLY `Shenora.Core` +
+  `Shenora.Ipc`, with a pair of channels standing in for a socket, ran a typed request/response, the
+  structured error boundary (`OperationException` → its code; unknown route → `NO_HANDLER`), the pump
+  driven by a `PeriodicTimer` instead of a `Forms.Timer`, and a `ctx.Run` operation streamed back as
+  batched notifications — all green. **The target framework is the proof**: a Windows type anywhere in
+  that graph turns the project red, the same enforcement `samples/Shenora.Sample.Logic` already gives
+  app logic, applied to the host half. Follow-ups it surfaced are recorded in `TASKS.md` rather than
+  built, since one spike is one consumer and the kit's bar is two.
 - **`dev.mjs verify`/`doctor` gained `doc-drift` — the gate the prose never had** (0.2.0 design pass,
   D4). Every code invariant in this repo has a test; no doc claim had anything, and the review that
   prompted this pass found 8 of its ~13 findings in comments and docs. Two PRECISE checks rather than

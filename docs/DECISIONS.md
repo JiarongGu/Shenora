@@ -485,3 +485,22 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   handle and no pump — including a guard that every glyph is a single Private Use Area codepoint,
   which pins the documented mojibake trap that a BOM-less UTF-8 source on a CJK-locale machine
   otherwise turns into silently empty buttons.
+
+- **D16 AMENDMENT (2026-08-01, 0.2.0 design pass D3) — transport neutrality is now EXECUTED, and the
+  claim's exact boundary is recorded with it.** D16 said the same envelopes ride WebView2 postMessage
+  today and a WebSocket or mobile channel tomorrow; `NotificationPump` was extracted so "a second,
+  non-WinForms base" would inherit its fixes. No such base existed, so none of it had ever run — the
+  kit's own `generic-library.md` calls that shape speculation. A throwaway spike
+  (`devtools/_transport-spike/`, gitignored) closed the gap: a `net10.0` console app referencing ONLY
+  `Shenora.Core` + `Shenora.Ipc` ran request/response, the error boundary, the pump on a
+  `PeriodicTimer`, and a `ctx.Run` operation streamed as batched notifications. It passed with **no
+  change to `Shenora.Ipc`**, and the TFM enforces it: a Windows type anywhere in that graph turns the
+  project red.
+  **What that does NOT license.** The spike validates the IPC/transport half only. It says nothing
+  about the desktop-FLAVOURED service contracts, because a transport needs no file dialogs —
+  `FileDialogContracts.cs` still concedes in writing that `FileDialogOptions` carries Win32 vocabulary
+  and a mobile picker would ignore half of it and return a content URI. That narrowing is still an
+  accepted pre-1.0 possibility awaiting a real mobile consumer (D15), not something a second spike can
+  settle. Two convenience gaps the spike also surfaced are in `TASKS.md` and deliberately unbuilt: the
+  host-side mirror of `ShenoraBridge` (~40 lines every non-WinForms base rewrites) and a headless
+  `IShenoraRunner`, both held to the two-consumer bar rather than built for the spike that found them.
