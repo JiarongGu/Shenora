@@ -48,7 +48,7 @@ function harness(initialList: unknown[], storeOptions: { module?: string; scope?
   };
 }
 
-const info = (over: Partial<{ id: string; status: string; progress: number }>) => ({
+const info = (over: Partial<{ id: string; status: string; progress: { value: number; total?: number; unit?: string } }>) => ({
   id: 'op-1', module: 'DEPLOY', kind: 'PUSH', status: 'running', ...over,
 });
 
@@ -65,10 +65,10 @@ describe('operations store', () => {
     const { store, bus } = harness([info({})]);
     store.subscribe(() => {});
 
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ progress: 40 }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ progress: 80 }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 40 } }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 80 } }));
 
-    expect(store.getState().byId['op-1']!.progress).toBe(80);
+    expect(store.getState().byId['op-1']!.progress).toEqual({ value: 80 });
     expect(Object.keys(store.getState().byId)).toHaveLength(1);
   });
 

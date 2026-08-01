@@ -255,12 +255,16 @@ changes, noting them in `CHANGELOG.md`).
   queue, scheduler, retry, priority or phase model, and no opinion on what an operation IS):
   `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/`Interrupted`/`Paused` — crosses the
   wire camelCase for free via `IpcJson`'s enum converter), `OperationLabel` (`{Text?, Key?, Parameters?}`,
-  the same i18n shape as `IpcError`), `OperationOptions` (`Kind` an app-defined string, `Title`,
-  `Scope`, `Cancellable`, `Progress` — 0–100 percent, `ResumePayload`), `OperationInfo` (the full
+  the same i18n shape as `IpcError`), `OperationProgress` (`{Value, Total?, Unit?}` — the app's own
+  unit, e.g. bytes-of-a-known-total, items-of-a-known-total, an absolute count with no known total
+  (`Total = null`), or a genuine percent; `Unit` is app-defined and uninterpreted, like `Kind`),
+  `OperationOptions` (`Kind` an app-defined string, `Title`, `Scope`, `Cancellable`, `Progress`,
+  `ResumePayload`), `OperationInfo` (the full
   snapshot — both the `OPERATION_UPDATED` event payload and the `LIST` response element; one type for
   every transition, so a client folds by `Id` with no cross-type ordering hazard; carries
   `PauseReason`, an app-defined string like `Kind`), `IOperation`
-  (`Id`, its OWN `CancellationToken` — never the request's — `Report`(0–100 percent)/`Complete`/
+  (`Id`, its OWN `CancellationToken` — never the request's — `Report`(`OperationProgress?`, passed
+  through unchanged — no clamp, no validation)/`Complete`/
   `Fail`(×2)/`Cancel`/`Pause`(reason OPTIONAL)/`Resume`, all idempotent once terminal),
   `IOperationRegistry`/`OperationRegistry(+Options)`
   (one lock over in-memory state; `Start`/`Run` — `Run` is `Start` + a guarded background body mapping
@@ -302,6 +306,11 @@ changes, noting them in `CHANGELOG.md`).
   `IOperation.Pause`'s `reason` became optional. Two limits recorded rather than solved: `MaxHistory`
   is one global cap with no per-module/scope bounding seam, and "registered but not yet started" has
   no representable status.
+  **Progress is not percent (owner direction, before publish, correcting this same audit's own first
+  pass):** `Progress` was `int?` (implicitly 0–100) with a silent `ClampProgress`; it is now
+  `OperationProgress?` (`Value`/`Total?`/`Unit?`, above) passed through completely unchanged —
+  `ClampProgress` is deleted, and `Complete()` sets `Value = Total` only when a `Total` was ever
+  reported, never a hardcoded 100.
   **The lifecycle is enforced as THREE BANDS** (§5A of the design doc — Active: `Running`; Waiting,
   never pruned: `Paused`/`Interrupted`; Terminal: `Completed`/`Failed`/`Cancelled`), and the rule that
   produced it is structural, not a convention: `OperationLifecycleInvariantTests` enumerates the LIVE

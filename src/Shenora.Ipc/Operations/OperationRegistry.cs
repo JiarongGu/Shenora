@@ -103,7 +103,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             Kind = options.Kind,
             Scope = options.Scope,
             Status = OperationStatus.Running,
-            Progress = ClampProgress(options.Progress),
+            Progress = options.Progress,
             Title = options.Title,
             Cancellable = options.Cancellable,
             ResumePayload = options.ResumePayload,
@@ -459,7 +459,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                     Kind = options.Kind,
                     Scope = options.Scope,
                     Status = OperationStatus.Interrupted,
-                    Progress = ClampProgress(options.Progress),
+                    Progress = options.Progress,
                     Title = options.Title,
                     Cancellable = options.Cancellable,
                     ResumePayload = options.ResumePayload,
@@ -602,7 +602,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// NOT <see cref="OperationStatus.Paused"/> too (§5A.3): a paused operation is not progressing, and
     /// letting progress tick while paused is how a UI ends up showing motion for work that is stopped.
     /// </summary>
-    private void Report(string id, int? progress, OperationLabel? detail)
+    private void Report(string id, OperationProgress? progress, OperationLabel? detail)
     {
         Entry? entry;
         string? miss;
@@ -611,7 +611,11 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             miss = Validate(id, ActiveOnly, out entry);
             if (miss is null)
             {
-                if (progress.HasValue) entry!.Progress = ClampProgress(progress);
+                // Passed through UNCHANGED — no clamp, no validation (generic-library audit, before
+                // publish): silently rewriting an app's own reported data is worse than passing it
+                // through, and a Value above its own Total is the app's bug to see, not the kit's to
+                // hide. See OperationProgress's own doc.
+                if (progress is not null) entry!.Progress = progress;
                 if (detail is not null) entry!.Detail = detail;
             }
         }
@@ -722,7 +726,13 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 entry!.Status = status;
                 entry.Error = error;
                 entry.FinishedAt = _options.TimeProvider.GetUtcNow();
-                if (status == OperationStatus.Completed) entry.Progress = 100;
+                // Never fabricate a number the app never reported (generic-library audit, before
+                // publish — this used to force Progress = 100 unconditionally, which assumed every
+                // consumer measures in percent). If the last report carried a known Total, completing
+                // means "all of it" — Value becomes Total. Otherwise leave the last reported value
+                // (or the absence of one) exactly as it was.
+                if (status == OperationStatus.Completed && entry.Progress is { Total: { } total } current)
+                    entry.Progress = current with { Value = total };
                 entry.Cts?.Dispose();
                 entry.Cts = null;
 
@@ -951,8 +961,6 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         FinishedAt = entry.FinishedAt,
     };
 
-    private static int? ClampProgress(int? value) => value is null ? null : Math.Clamp(value.Value, 0, 100);
-
     /// <inheritdoc />
     public void Dispose()
     {
@@ -978,7 +986,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public required string Kind { get; init; }
         public string? Scope { get; init; }
         public OperationStatus Status { get; set; }
-        public int? Progress { get; set; }
+        public OperationProgress? Progress { get; set; }
         public OperationLabel? Title { get; init; }
         public OperationLabel? Detail { get; set; }
         public string? PauseReason { get; set; }
@@ -1004,7 +1012,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
         public CancellationToken CancellationToken { get; } = token;
 
-        public void Report(int? progress = null, OperationLabel? detail = null) =>
+        public void Report(OperationProgress? progress = null, OperationLabel? detail = null) =>
             registry.Report(Id, progress, detail);
 
         // ActiveOrPaused (§5A.3, this batch): a paused operation can still complete once the human

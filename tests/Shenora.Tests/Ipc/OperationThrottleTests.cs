@@ -55,7 +55,7 @@ public class OperationThrottleTests
         var operation = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
         events.Clear();   // drop the Start emission
 
-        for (var i = 1; i <= 50; i++) operation.Report(i);
+        for (var i = 1; i <= 50; i++) operation.Report(new OperationProgress(i));
 
         Assert.Single(events);   // 50 reports, one frame
     }
@@ -65,7 +65,7 @@ public class OperationThrottleTests
     {
         var (registry, events, clock) = Build();
         var operation = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
-        for (var i = 1; i <= 50; i++) operation.Report(i);
+        for (var i = 1; i <= 50; i++) operation.Report(new OperationProgress(i));
 
         int beforeAdvance;
         lock (events) { beforeAdvance = events.Count; }
@@ -73,7 +73,7 @@ public class OperationThrottleTests
         WaitForEventCount(events, beforeAdvance + 1, TimeSpan.FromSeconds(5));   // bounded: see WaitForEventCount
 
         var last = Assert.IsType<OperationInfo>(events[^1].Payload);
-        Assert.Equal(50, last.Progress);
+        Assert.Equal(new OperationProgress(50), last.Progress);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public class OperationThrottleTests
     {
         var (registry, events, _) = Build();
         var operation = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
-        operation.Report(10);
+        operation.Report(new OperationProgress(10));
         events.Clear();
 
         operation.Complete();   // same window as the report above
@@ -134,9 +134,9 @@ public class OperationThrottleTests
         var operation = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
         events.Clear();   // drop the Start emission
 
-        operation.Report(1);   // first-ever progress report: window trivially "elapsed" -> emits immediately
-        operation.Report(2);   // throttled: schedules a trailing emit whose CreateTimer call FAULTS
-        operation.Report(3);   // if the flag had stuck at true, this would be silently dropped forever
+        operation.Report(new OperationProgress(1));   // first-ever progress report: window trivially "elapsed" -> emits immediately
+        operation.Report(new OperationProgress(2));   // throttled: schedules a trailing emit whose CreateTimer call FAULTS
+        operation.Report(new OperationProgress(3));   // if the flag had stuck at true, this would be silently dropped forever
 
         int beforeAdvance;
         lock (events) { beforeAdvance = events.Count; }
@@ -145,7 +145,7 @@ public class OperationThrottleTests
 
         Assert.Equal(2, events.Count);   // the immediate emit, plus exactly one trailing catch-up
         var last = Assert.IsType<OperationInfo>(events[^1].Payload);
-        Assert.Equal(3, last.Progress);  // the operation is NOT permanently muted
+        Assert.Equal(new OperationProgress(3), last.Progress);  // the operation is NOT permanently muted
     }
 
     /// <summary>

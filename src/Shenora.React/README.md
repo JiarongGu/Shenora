@@ -87,6 +87,20 @@ useShenoraOperations.actions.pause(jobId);        // ASK the host to pause runni
 useShenoraOperations.actions.clearFinished();
 ```
 
+`operation.progress` is `{ value: number; total?: number; unit?: string }` — the APP's own unit
+(bytes-of-a-known-total, items-of-a-known-total, an absolute count with no known total, or a genuine
+percent), never a kit-assumed percentage: `total` is the denominator when one is known and `undefined`
+when there isn't one, and `unit` is app-defined and uninterpreted, exactly like `kind`. The kit ships
+no percent helper — render a ratio only when you have a `total`:
+
+```ts
+const pct = importJob?.progress?.total
+  ? (importJob.progress.value / importJob.progress.total) * 100
+  : undefined;   // no known total — show the bare value/unit instead, or an indeterminate spinner
+```
+
+That division is your own policy, not the kit's, which is why it lives here instead of in `src/`.
+
 It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
 folds `OPERATION_UPDATED` by id — one subscription however many components read it. The client
 mirrors the host's three bands (design §5A.2), not five bare statuses: `running` (Active),

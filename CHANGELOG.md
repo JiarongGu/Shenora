@@ -58,7 +58,8 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   enum, i18n rendering, UI or persistence. What an operation IS stays the app's; the kit only tracks
   it. New in `Shenora.Ipc`: `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/
   `Interrupted`/`Paused`), `OperationLabel` (`{Text?, Key?, Parameters?}` — the same i18n shape as
-  `IpcError`), `OperationOptions`, `OperationInfo` (the one snapshot type for every lifecycle
+  `IpcError`), `OperationProgress` (`{Value, Total?, Unit?}` — the app's own unit, not an assumed
+  percent; see finding 6 below), `OperationOptions`, `OperationInfo` (the one snapshot type for every lifecycle
   transition — a client folds by `Id`, last-write-wins, no cross-type ordering hazard; carries
   `PauseReason`, an app-defined string like `Kind`), `IOperation`
   (`Report`/`Complete`/`Fail`×2/`Cancel`/`Pause`/`Resume`, all idempotent once terminal, with its OWN
@@ -183,15 +184,34 @@ event hub … async from the UI, progress synced") while the HOST contract did n
      `resume` actions used to carry (below) — one authoritative event that cannot diverge from the
      host, replacing two guesses that already produced this release's only Critical (a `resume` prune
      that once dropped a `paused` row the host deliberately keeps).
-  5. **Minors:** `Pause`'s `reason` is optional (above); `OperationOptions.Progress`/
-     `IOperation.Report`'s `progress` parameter now states its unit is 0–100 PERCENT on the write side
-     too (only `OperationInfo.Progress` said so before — a consumer reporting a raw count or byte
-     total silently clamped to a permanent 100% with no log line); doc comments that illustrated the
-     API with "a paused deploy" now say "a paused operation" (D22 permits domain words as examples, but
-     the cost is the kit LOOKING like it ships that product); and two limits are recorded rather than
-     solved — `MaxHistory` is one global cap with no per-module/scope bounding seam, and "registered but
-     not yet started" has no representable status (an app with its own queue either omits pending rows
-     or registers them `Running` early and lies about the state).
+  5. **Minors:** `Pause`'s `reason` is optional (above); doc comments that illustrated the API with "a
+     paused deploy" now say "a paused operation" (D22 permits domain words as examples, but the cost is
+     the kit LOOKING like it ships that product); and two limits are recorded rather than solved —
+     `MaxHistory` is one global cap with no per-module/scope bounding seam, and "registered but not yet
+     started" has no representable status (an app with its own queue either omits pending rows or
+     registers them `Running` early and lies about the state).
+  6. **Progress is not percent (owner direction, before publish — "even its progress it might be
+     different than 0-100%"), correcting finding 5's OWN fix above.** Stating "0–100 PERCENT" on the
+     write side was the wrong fix to the right observation: percent is not the mechanism, it is one way
+     an app happens to measure. `OperationOptions.Progress`/`OperationInfo.Progress` (C#) and
+     `OperationInfo.progress` (TS) are now a new record, `OperationProgress(double Value, double? Total
+     = null, string? Unit = null)` (TS: `{ value: number; total?: number; unit?: string }`), and
+     `IOperation.Report(int? progress, …)` is now `Report(OperationProgress? progress, …)`. `Total`
+     is the denominator when known and `null` when there is none (an absolute count with nothing to
+     divide by — bytes off a chunked stream); `Unit` is app-defined and uninterpreted, exactly like
+     `Kind`/`PauseReason`. **`ClampProgress` (`Math.Clamp(value, 0, 100)`) is REMOVED and nothing
+     replaces it** — the registry passes `Progress` through completely unchanged; silently rewriting an
+     app's own reported number is worse than passing it through, and a `Value` above its own `Total` is
+     the app's bug to see, not the kit's to hide. No validation throw was added either: progress is
+     reported from background work on a hot path, and throwing there would kill an operation over a
+     cosmetic number. **`Complete()` no longer fabricates `Progress = 100`:** it now sets `Value =
+     Total` only when the last report carried a known `Total` (the honest "all of it"), and otherwise
+     leaves the last reported value exactly as it was — never inventing a figure the app never gave it.
+     `@shenora/react` ships NO percent helper; the README documents the one-liner (`total ? (value /
+     total) * 100 : undefined`) because that division is the consumer's own policy, not the kit's. The
+     desktop sample and its web counterpart were updated to demonstrate the general shape
+     (`new OperationProgress(step, steps, "steps")`, rendered as a ratio because `total` is set) instead
+     of the percent special case. Caught before 0.2.0 was pushed or published, so free.
 - **`@shenora/react`: `useShenoraOperations` / `createOperationsStore`** — the client half of the
   primitive above, built the same way `createShenoraStore` already was: `OperationStatuses` (wire
   values, including `Paused`) + `OperationInfo`/`OperationLabel` types (`OperationInfo.pauseReason`

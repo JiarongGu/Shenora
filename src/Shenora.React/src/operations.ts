@@ -104,6 +104,22 @@ export interface OperationLabel {
 }
 
 /**
+ * Mirrors `Shenora.Ipc.OperationProgress` — how far a tracked operation has gotten, in the APP's own
+ * unit, never a kit-assumed percent (generic-library audit, before publish: percent is not the
+ * mechanism, it is one way an app happens to measure). `total` is the denominator when one is known;
+ * `undefined` means there is NO known total — an absolute count with nothing to divide by (bytes
+ * streamed so far off a chunked response, say), never zero. `unit` is app-defined, like `kind`
+ * (`'bytes'`, `'files'`, `'percent'`) — the kit never interprets it and ships no percent helper: render
+ * a ratio only when `total` is set, e.g. `total ? (value / total) * 100 : undefined` — that division
+ * is the consumer's own policy (see the README example).
+ */
+export interface OperationProgress {
+  value: number;
+  total?: number;
+  unit?: string;
+}
+
+/**
  * Mirrors `Shenora.Ipc.OperationInfo` — a full snapshot of one tracked operation. Every lifecycle
  * transition (start, progress, terminal) publishes one of these under `OPERATION_UPDATED`, so the
  * client folds by `id`: last write wins, with no cross-type ordering hazard.
@@ -114,7 +130,7 @@ export interface OperationInfo {
   kind: string;
   scope?: string;
   status: OperationStatus;
-  progress?: number;
+  progress?: OperationProgress;
   title?: OperationLabel;
   detail?: OperationLabel;
   /** Why the operation is `'paused'` — an app-defined string, like `kind`; the kit never interprets it. */

@@ -40,6 +40,23 @@ public class WireMirrorTests
             .ToDictionary(m => m.Groups["key"].Value, m => m.Groups["value"].Value, StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// Every top-level field name inside a named <c>export interface X { … }</c> block — a lighter
+    /// parser than <see cref="ParseConstObject"/> because an interface names TYPES, not string
+    /// literals, so only the key before each <c>:</c>/<c>?:</c> is comparable across languages.
+    /// </summary>
+    private static HashSet<string> ParseInterfaceFieldNames(string source, string exportName)
+    {
+        var block = Regex.Match(source,
+            $@"export\s+interface\s+{Regex.Escape(exportName)}\s*\{{(?<body>.*?)\}}",
+            RegexOptions.Singleline);
+        Assert.True(block.Success, $"could not find `export interface {exportName} {{ … }}`");
+
+        return Regex.Matches(block.Groups["body"].Value, @"(?<key>\w+)\s*\??\s*:")
+            .Select(m => m.Groups["key"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
     private static string[] ParseStringArray(string source, string exportName)
     {
         var block = Regex.Match(source,
@@ -176,5 +193,26 @@ public class WireMirrorTests
         var source = ClientSource("operations.ts");
 
         Assert.Equal(new OperationRegistryOptions().ModuleName, ParseExportedString(source, "OperationModuleName"));
+    }
+
+    /// <summary>
+    /// <see cref="OperationProgress"/> replaced a bare 0–100 <c>int?</c> (generic-library audit, before
+    /// publish) — a NEW wire shape both sides name, so it needs its own tripwire the same way
+    /// <see cref="OperationInfo"/>'s other fields are pinned by <c>[JsonPropertyName]</c> +
+    /// the API baseline on the host side. This compares the SET of field names (camelCased) rather
+    /// than trusting the two sides to stay in step by inspection — the exact disease this whole file
+    /// exists to catch for everything else on this wire.
+    /// </summary>
+    [Fact]
+    public void OperationProgress_fields_match_the_host()
+    {
+        var host = typeof(OperationProgress).GetProperties()
+            .Select(p => JsonNamingPolicy.CamelCase.ConvertName(p.Name))
+            .ToHashSet(StringComparer.Ordinal);
+        var client = ParseInterfaceFieldNames(ClientSource("operations.ts"), "OperationProgress");
+
+        Assert.NotEmpty(host);      // parser/reflection self-check
+        Assert.NotEmpty(client);
+        Assert.Equal(host, client);
     }
 }

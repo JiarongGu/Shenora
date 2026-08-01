@@ -33,7 +33,7 @@ interface Shenora.Ipc.IOperation
   public abstract void Fail(Shenora.Ipc.OperationException error)
   public abstract void Fail(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
   public abstract void Pause(string? reason = null, Shenora.Ipc.OperationLabel? detail = null)
-  public abstract void Report(int? progress = null, Shenora.Ipc.OperationLabel? detail = null)
+  public abstract void Report(Shenora.Ipc.OperationProgress? progress = null, Shenora.Ipc.OperationLabel? detail = null)
   public abstract void Resume()
 interface Shenora.Ipc.IOperationRegistry
   public abstract Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
@@ -167,12 +167,12 @@ sealed class Shenora.Ipc.OperationInfo : System.IEquatable<Shenora.Ipc.Operation
   public Shenora.Ipc.OperationInfo <Clone>$()
   public Shenora.Ipc.OperationLabel? Detail { get; init; }
   public Shenora.Ipc.OperationLabel? Title { get; init; }
+  public Shenora.Ipc.OperationProgress? Progress { get; init; }
   public Shenora.Ipc.OperationStatus Status { get; init; }
   public System.DateTimeOffset StartedAt { get; init; }
   public System.DateTimeOffset? FinishedAt { get; init; }
   public bool Cancellable { get; init; }
   public bool Equals(Shenora.Ipc.OperationInfo? other)
-  public int? Progress { get; init; }
   public override bool Equals(object? obj)
   public override int GetHashCode()
   public override string ToString()
@@ -200,9 +200,9 @@ sealed class Shenora.Ipc.OperationLabel : System.IEquatable<Shenora.Ipc.Operatio
 sealed class Shenora.Ipc.OperationOptions : System.IEquatable<Shenora.Ipc.OperationOptions>
   public Shenora.Ipc.OperationLabel? Title { get; init; }
   public Shenora.Ipc.OperationOptions <Clone>$()
+  public Shenora.Ipc.OperationProgress? Progress { get; init; }
   public bool Cancellable { get; init; }
   public bool Equals(Shenora.Ipc.OperationOptions? other)
-  public int? Progress { get; init; }
   public override bool Equals(object? obj)
   public override int GetHashCode()
   public override string ToString()
@@ -211,6 +211,19 @@ sealed class Shenora.Ipc.OperationOptions : System.IEquatable<Shenora.Ipc.Operat
   public static bool op_Inequality(Shenora.Ipc.OperationOptions? left, Shenora.Ipc.OperationOptions? right)
   public string? ResumePayload { get; init; }
   public string? Scope { get; init; }
+sealed class Shenora.Ipc.OperationProgress : System.IEquatable<Shenora.Ipc.OperationProgress>
+  public .ctor(double Value, double? Total = null, string? Unit = null)
+  public Shenora.Ipc.OperationProgress <Clone>$()
+  public bool Equals(Shenora.Ipc.OperationProgress? other)
+  public double Value { get; init; }
+  public double? Total { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Ipc.OperationProgress? left, Shenora.Ipc.OperationProgress? right)
+  public static bool op_Inequality(Shenora.Ipc.OperationProgress? left, Shenora.Ipc.OperationProgress? right)
+  public string? Unit { get; init; }
+  public void Deconstruct(out double Value, out double? Total, out string? Unit)
 sealed class Shenora.Ipc.OperationRegistry : Shenora.Ipc.IOperationRegistry, System.IDisposable
   public .ctor(Shenora.Core.IEventBus bus, Shenora.Ipc.OperationRegistryOptions? options = null)
   public Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)

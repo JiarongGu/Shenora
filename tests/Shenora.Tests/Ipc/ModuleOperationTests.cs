@@ -48,7 +48,7 @@ public class ModuleOperationTests
     {
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();
-        var (facade, registry) = Build(async (op, ct) => { started.SetResult(); await release.Task; op.Report(90); });
+        var (facade, registry) = Build(async (op, ct) => { started.SetResult(); await release.Task; op.Report(new OperationProgress(90)); });
 
         var response = await facade.HandleMessageAsync(IpcRequests.Create("WORK", "BUILD"));
         var id = IpcJson.SerializeToElement(response.Data).GetProperty("operationId").GetString()!;

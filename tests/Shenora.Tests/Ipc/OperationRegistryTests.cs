@@ -46,23 +46,33 @@ public class OperationRegistryTests
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
-        operation.Report(40, new OperationLabel(Text: "uploading", Key: "deploy.stage.upload"));
+        operation.Report(new OperationProgress(40, 100, "percent"), new OperationLabel(Text: "uploading", Key: "deploy.stage.upload"));
 
         var info = Payload(events[^1]);
-        Assert.Equal(40, info.Progress);
+        Assert.Equal(new OperationProgress(40, 100, "percent"), info.Progress);
         Assert.Equal("deploy.stage.upload", info.Detail!.Key);
         Assert.Equal("uploading", info.Detail.Text);
     }
 
+    /// <summary>
+    /// DELIBERATE REVERSAL (generic-library audit, before publish): this used to pin a silent 0–100
+    /// CLAMP (<c>ClampProgress</c>) — a consumer reporting bytes or a raw item count against
+    /// <c>OperationOptions.Progress</c>/<c>IOperation.Report</c> got permanently stamped 100% with no
+    /// diagnostic. Percent is not the mechanism; it is one app's unit, carried in
+    /// <see cref="OperationProgress"/> alongside an optional <c>Total</c> and an app-defined
+    /// <c>Unit</c>. The kit now passes <see cref="OperationProgress"/> through UNCHANGED — a
+    /// <c>Value</c> above its own <c>Total</c> (or any other "out of range" shape) is the app's own
+    /// bug to see, not the kit's to silently hide.
+    /// </summary>
     [Fact]
-    public void Progress_is_clamped_to_the_0_100_range()
+    public void Report_passes_progress_through_unchanged_even_when_Value_exceeds_Total()
     {
         var (registry, events) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
-        operation.Report(140);
+        operation.Report(new OperationProgress(140, 100, "percent"));
 
-        Assert.Equal(100, Payload(events[^1]).Progress);
+        Assert.Equal(new OperationProgress(140, 100, "percent"), Payload(events[^1]).Progress);
     }
 
     [Fact]
@@ -74,13 +84,50 @@ public class OperationRegistryTests
         operation.Complete();
         var afterComplete = events.Count;
         operation.Fail("TOO_LATE");                 // the "Complete at the end + Fail in the catch" pattern
-        operation.Report(50);
+        operation.Report(new OperationProgress(50));
 
         Assert.Equal(afterComplete, events.Count);  // nothing after the terminal transition
         var info = Payload(events[^1]);
         Assert.Equal(OperationStatus.Completed, info.Status);
-        Assert.Equal(100, info.Progress);           // completion implies 100
+        Assert.Null(info.Progress);                 // never reported — Complete must not invent a number
         Assert.NotNull(info.FinishedAt);
+    }
+
+    /// <summary>
+    /// DELIBERATE REVERSAL (generic-library audit, before publish): <c>Complete</c> used to force
+    /// <c>Progress = 100</c> unconditionally, which assumed every consumer measures in percent. When a
+    /// known <c>Total</c> exists, completing means "all of it" — <c>Value</c> becomes <c>Total</c>,
+    /// never a hardcoded 100.
+    /// </summary>
+    [Fact]
+    public void Complete_sets_progress_value_to_total_when_a_total_is_known()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
+        operation.Report(new OperationProgress(47, 1200, "files"));
+
+        operation.Complete();
+
+        Assert.Equal(new OperationProgress(1200, 1200, "files"), registry.GetAll().Single().Progress);
+    }
+
+    /// <summary>
+    /// The other half of the same reversal: when the last report carried NO known total (an absolute
+    /// count with nothing to divide by — bytes off a chunked stream, say), <c>Complete</c> must not
+    /// invent one. Leaving the value untouched is the honest answer; fabricating a <c>Total</c> the
+    /// app never gave the kit would be exactly the "hide the app's own data" failure the clamp used to
+    /// commit.
+    /// </summary>
+    [Fact]
+    public void Complete_leaves_progress_untouched_when_no_total_is_known()
+    {
+        var (registry, _) = Build();
+        var operation = registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
+        operation.Report(new OperationProgress(4096, Unit: "bytes"));   // no Total — an absolute count
+
+        operation.Complete();
+
+        Assert.Equal(new OperationProgress(4096, Unit: "bytes"), registry.GetAll().Single().Progress);
     }
 
     [Fact]
@@ -367,7 +414,7 @@ public class OperationRegistryTests
         operation.Pause("dns");
         var eventsAfterPause = events.Count;
 
-        operation.Report(50);
+        operation.Report(new OperationProgress(50));
 
         Assert.Equal(eventsAfterPause, events.Count);          // no spurious progress snapshot
         Assert.Null(registry.GetAll().Single().Progress);      // untouched
@@ -434,7 +481,7 @@ public class OperationRegistryTests
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
         operation.Pause("dns");
 
-        operation.Report(50);   // Report only accepts Running — Paused must be refused
+        operation.Report(new OperationProgress(50));   // Report only accepts Running — Paused must be refused
 
         Assert.NotNull(logged);
         Assert.DoesNotContain("terminal", logged, StringComparison.OrdinalIgnoreCase);
@@ -615,8 +662,8 @@ public class OperationRegistryTests
 
         Assert.NotNull(found);
         Assert.Equal(operation.Id, found!.Id);
-        found.Report(50);
-        Assert.Equal(50, registry.GetAll().Single().Progress);
+        found.Report(new OperationProgress(50));
+        Assert.Equal(new OperationProgress(50), registry.GetAll().Single().Progress);
     }
 
     [Fact]
@@ -641,7 +688,7 @@ public class OperationRegistryTests
         operation.Complete();
         var eventsAfterComplete = events.Count;
 
-        found.Report(50);      // must be ignored — Report only accepts Running
+        found.Report(new OperationProgress(50));      // must be ignored — Report only accepts Running
         found.Complete();      // already terminal — idempotent no-op
 
         Assert.Equal(eventsAfterComplete, events.Count);   // no spurious snapshot from the stale handle

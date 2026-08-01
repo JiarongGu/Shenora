@@ -18,6 +18,17 @@ declare global {
   }
 }
 
+/**
+ * `total` present → a ratio, rendered as a rounded percent; otherwise the bare value in its own unit.
+ * That division (`value / total`) is the CONSUMER's policy, not the kit's — the kit ships no percent
+ * helper (see `@shenora/react`'s README) precisely so this one-liner stays here, not in `src/`.
+ */
+function formatProgress(progress?: { value: number; total?: number; unit?: string }): string {
+  if (!progress) return 'starting…';
+  if (progress.total) return `${Math.round((progress.value / progress.total) * 100)}%`;
+  return `${progress.value}${progress.unit ? ` ${progress.unit}` : ''}`;
+}
+
 const value: React.CSSProperties = { color: '#7fd18c', fontWeight: 600 };
 const missing: React.CSSProperties = { color: '#d1907f', fontWeight: 600 };
 const row: React.CSSProperties = { margin: '0.25rem 0', fontSize: '1rem' };
@@ -151,7 +162,7 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
         {operation
           // `detail.text` already carries "onUiThread: False" from the host's Report() call — the
           // proof the work really left the UI thread, rather than the design merely claiming it does.
-          ? `${operation.progress ?? 0}% — ${operation.detail?.text ?? 'starting…'}`
+          ? `${formatProgress(operation.progress)} — ${operation.detail?.text ?? 'starting…'}`
           : 'slow route: idle'}
       </span>
       {operation?.cancellable && (

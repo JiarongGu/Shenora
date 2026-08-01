@@ -24,14 +24,23 @@ public interface IOperation
     /// terminal state (idempotent-finish, not a progress race).
     /// </summary>
     /// <param name="progress">
-    /// 0–100 PERCENT, clamped (generic-library audit finding 5: stated only on the read side,
-    /// <see cref="OperationInfo.Progress"/>, until now) — reporting a byte count or a raw item index
-    /// against this parameter silently clamps to a permanent 100% with no log line to explain why.
+    /// In the app's own unit — see <see cref="OperationProgress"/>. Passed through unchanged: the kit
+    /// does not clamp, validate, or otherwise interpret it (generic-library audit, before publish —
+    /// percent is not the mechanism, it is one app's unit; <see cref="OperationProgress.Total"/> is the
+    /// denominator when known, null when there isn't one, and <see cref="OperationProgress.Unit"/> is an
+    /// app-defined string like <see cref="OperationOptions.Kind"/>).
     /// </param>
     /// <param name="detail">Optional human-facing detail label.</param>
-    void Report(int? progress = null, OperationLabel? detail = null);
+    void Report(OperationProgress? progress = null, OperationLabel? detail = null);
 
-    /// <summary>Finish successfully. Forces <see cref="OperationInfo.Progress"/> to 100. Idempotent — a no-op once terminal.</summary>
+    /// <summary>
+    /// Finish successfully. Idempotent — a no-op once terminal.
+    /// <see cref="OperationInfo.Progress"/> is set to its own <see cref="OperationProgress.Total"/> when
+    /// one was ever reported (the honest "all of it"); otherwise it is left exactly as last reported —
+    /// the kit never invents a number the app never gave it (generic-library audit, before publish: the
+    /// previous behavior forced <c>Progress = 100</c> unconditionally, which assumed every consumer
+    /// measures in percent).
+    /// </summary>
     /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Paused"/> — a paused operation can still complete once the human unblocks it out of band.</remarks>
     void Complete();
 

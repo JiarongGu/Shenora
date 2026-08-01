@@ -136,7 +136,10 @@ internal sealed class SampleFacade(
                             for (var step = 1; step <= steps; step++)
                             {
                                 await Task.Delay(totalMs / steps, ct).ConfigureAwait(false);
-                                operation.Report(step * 100 / steps,
+                                // The general shape, not the percent special case (adopters copy this
+                                // sample): Value/Total/Unit in the app's own terms — a UI renders a
+                                // ratio because Total is set, never because the kit assumed percent.
+                                operation.Report(new OperationProgress(step, steps, "steps"),
                                     new OperationLabel(Text: $"step {step}/{steps} (onUiThread: {Application.MessageLoop})"));
                             }
                         }

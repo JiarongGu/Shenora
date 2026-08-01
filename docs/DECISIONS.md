@@ -333,3 +333,30 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `OperationEvents.Removed`, retiring the two client-side optimistic prunes that guessed at removals
   before — one of which reproduced this entry's own Critical one layer up in the client. Full list:
   `CHANGELOG.md`'s 0.2.0 entry.
+
+  **AMENDED again 2026-08-01 (owner direction, before publish — "even its progress it might be
+  different than 0-100%"): progress is not percent, and the previous fix to this said otherwise.**
+  (5) **`OperationOptions.Progress`/`OperationInfo.Progress`/`IOperation.Report`'s `progress` were
+  `int?` — implicitly 0–100 percent — and finding 5 above only patched the WRITE side's doc comment to
+  SAY so, which was the wrong fix to a right observation.** Percent is not the mechanism; it is one way
+  an app happens to measure. Real consumers measure differently — bytes transferred against a known
+  total, items processed against a known total, an absolute count with NO known denominator (bytes off
+  a chunked stream), or a genuine percent — and forcing percent makes an app pre-compute a ratio and
+  discard the numbers its own UI wants to render. Worse, the silent `ClampProgress` (`Math.Clamp(value,
+  0, 100)`) meant a consumer reporting bytes got a permanent 100% with no diagnostic — the exact trap
+  this decision's own finding 5 named and then only half-fixed. This is the same class of mistake as
+  `Kind` being an app string rather than the source app's enum (D22): the kit must carry the
+  measurement, not define its unit. Fixed: a new record, `OperationProgress(double Value, double?
+  Total = null, string? Unit = null)`, replaces `int?` in all three members (TS mirror: `{ value:
+  number; total?: number; unit?: string }`). `Total = null` means no known denominator, never zero;
+  `Unit` is app-defined and uninterpreted, exactly like `Kind`/`PauseReason`. `ClampProgress` is
+  DELETED and nothing is clamped or validated in its place — silently rewriting an app's own reported
+  number is worse than passing it through untouched, and a `Value` above its own `Total` is the app's
+  bug to see, not the kit's to hide; no validation throw was added either, because progress is
+  reported from background work on a hot path and throwing there would kill an operation over a
+  cosmetic number. `Complete()` stops fabricating a number: it sets `Value = Total` only when the last
+  report carried a known `Total` (the honest "all of it"), and otherwise leaves the last reported value
+  untouched — never inventing a figure the app never gave it. The kit ships no percent helper; the
+  README documents the one-liner (`total ? (value / total) * 100 : undefined`) because that division
+  is the consumer's own policy. Caught before 0.2.0 was pushed or published, so free. Full list:
+  `CHANGELOG.md`'s 0.2.0 entry.

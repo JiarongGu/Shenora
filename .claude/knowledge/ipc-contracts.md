@@ -209,6 +209,24 @@ transport, or building the P6 adoption shims.
   this). Lifecycle transitions (start, complete, fail, cancel, interrupt) are never throttled — they
   always emit immediately, because a terminal state arriving late or not at all is a different class
   of bug than a missed progress tick.
+- **Progress is the app's own unit, never a kit-assumed percent — and the kit does not clamp, validate,
+  or interpret it (owner direction, before 0.2.0 published — "even its progress it might be different
+  than 0-100%").** `OperationOptions.Progress`/`OperationInfo.Progress`/`IOperation.Report`'s `progress`
+  parameter are `OperationProgress?` (`Value`, `Total?`, `Unit?` — TS mirror `{ value, total?, unit? }`),
+  not an `int?` percent: `Total = null` means an absolute count with no known denominator (bytes off a
+  chunked stream), never zero, and `Unit` is app-defined and uninterpreted exactly like `Kind`. A
+  previous pass fixed the wrong half of this — it patched the write-side XML doc to SAY "0–100 percent"
+  instead of removing the assumption, which is the same mistake `Kind`-as-an-app-string already avoided
+  for the app's taxonomy. `OperationRegistry`'s old `ClampProgress` (`Math.Clamp(value, 0, 100)`) is
+  DELETED with nothing put in its place: silently rewriting an app's own reported number is worse than
+  passing it through, so a `Value` above its own `Total` is the app's bug to see, not the kit's to hide
+  — and no validation throw was added either, because `Report` runs on a hot path from background work
+  and throwing there would kill an operation over a cosmetic number. `IOperation.Complete()` no longer
+  fabricates `Progress = 100`: it sets `Value = Total` only when the last report carried a known `Total`
+  (the honest "all of it"), otherwise it leaves the last reported value untouched. `OperationProgress` is
+  a NEW wire shape both sides name, so it gets its own tripwire
+  (`WireMirrorTests.OperationProgress_fields_match_the_host`) rather than trusting the two sides to stay
+  in step by inspection, the same discipline every other shape on this wire already gets.
 - **An operation failure obeys the same no-raw-exception-text boundary as a request/response
   failure.** `OperationRegistry.Run`'s guarded background body maps `OperationCanceledException` →
   the operation's own `Cancel()`, `OperationException` → `Fail(code, parameters, message)` (the app's

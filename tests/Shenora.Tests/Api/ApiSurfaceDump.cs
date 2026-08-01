@@ -396,8 +396,24 @@ internal static class ApiSurfaceDump
 
     // ── type names ────────────────────────────────────────────────────────────────────────────────
 
-    private static string TypeName(ParameterInfo parameter, NullabilityState nullability) =>
-        Annotate(TypeName(parameter.ParameterType), parameter.ParameterType, nullability);
+    /// <summary>
+    /// <see cref="Annotate"/> decides whether to add its OWN <c>?</c> by checking <c>IsValueType</c> —
+    /// but a <c>ref</c>/<c>out</c> parameter's <see cref="ParameterInfo.ParameterType"/> is the BYREF
+    /// wrapper (e.g. <c>System.Double&amp;</c>), which reports <c>IsValueType == false</c> regardless of
+    /// what it points to. For an ordinary reference type that coincidentally reads as correct; for a
+    /// nullable VALUE type passed by reference (a record's synthesized <c>Deconstruct(out double? Total,
+    /// …)</c>, first hit by <c>OperationProgress</c>) it made <see cref="Annotate"/> add a second <c>?</c>
+    /// on top of the one <see cref="TypeName(Type)"/>'s own <c>Nullable&lt;T&gt;</c> unwrap already
+    /// produced — rendering the invalid <c>double??</c>. Unwrap the byref FIRST, matching what
+    /// <see cref="TypeName(Type)"/> itself already does, so <c>Annotate</c> sees the pointee's real
+    /// value-type-ness.
+    /// </summary>
+    private static string TypeName(ParameterInfo parameter, NullabilityState nullability)
+    {
+        var type = parameter.ParameterType;
+        if (type.IsByRef) type = type.GetElementType()!;
+        return Annotate(TypeName(parameter.ParameterType), type, nullability);
+    }
 
     private static string TypeName(PropertyInfo property, NullabilityState nullability) =>
         Annotate(TypeName(property.PropertyType), property.PropertyType, nullability);

@@ -10,7 +10,12 @@ public enum OperationStatus
     /// <summary>In progress. The only status that accepts further progress reports.</summary>
     Running,
 
-    /// <summary>Finished successfully. Terminal — <see cref="OperationInfo.Progress"/> is forced to 100.</summary>
+    /// <summary>
+    /// Finished successfully. Terminal. <see cref="OperationInfo.Progress"/> is set to its own
+    /// <c>Total</c> when one was ever reported (the honest "all of it") and otherwise left exactly
+    /// as last reported — the kit never invents a number the app never gave it (see
+    /// <see cref="IOperation.Complete"/>).
+    /// </summary>
     Completed,
 
     /// <summary>Finished with a structured error (<see cref="OperationInfo.Error"/>). Terminal.</summary>
@@ -54,6 +59,26 @@ public sealed record OperationLabel(
     string? Key = null,
     IReadOnlyDictionary<string, string>? Parameters = null);
 
+/// <summary>
+/// How far a tracked operation has gotten, in the APP's own unit — never a kit-assumed percent
+/// (generic-library audit, before publish: percent is not the mechanism, it is one way an app
+/// happens to measure — bytes transferred against a known total, items processed against a known
+/// total, an absolute count with no known denominator, or a genuine percent are all the SAME shape
+/// here, distinguished only by whether <see cref="Total"/> is set).
+/// </summary>
+/// <param name="Value">How far along, in the app's own unit.</param>
+/// <param name="Total">
+/// The denominator, when one is known (e.g. total bytes, total item count). <c>null</c> means there
+/// is NO known total — an absolute count with nothing to divide by (bytes streamed so far off a
+/// chunked response, say) — never zero. A UI renders a ratio when this is set and a bare figure
+/// otherwise.
+/// </param>
+/// <param name="Unit">
+/// App-defined, like <see cref="OperationOptions.Kind"/> (e.g. <c>"bytes"</c>, <c>"files"</c>,
+/// <c>"percent"</c>) — the kit never interprets it and ships no taxonomy of units.
+/// </param>
+public sealed record OperationProgress(double Value, double? Total = null, string? Unit = null);
+
 /// <summary>Inputs to starting a tracked operation.</summary>
 public sealed record OperationOptions
 {
@@ -73,12 +98,14 @@ public sealed record OperationOptions
     public bool Cancellable { get; init; }
 
     /// <summary>
-    /// Initial progress as 0–100 PERCENT (generic-library audit finding 5: the unit was only ever
-    /// stated on the read side, <see cref="OperationInfo.Progress"/> — a consumer reporting bytes or a
-    /// raw count against this WRITE side silently gets clamped to a permanent 100%, with no log line
-    /// to explain why). Null (the default) means indeterminate, not zero.
+    /// Initial progress, in the app's own unit — see <see cref="OperationProgress"/>. Passed through
+    /// UNCHANGED: the kit does not clamp, validate, or otherwise interpret <see cref="OperationProgress.Value"/>/
+    /// <see cref="OperationProgress.Total"/>/<see cref="OperationProgress.Unit"/> (generic-library audit,
+    /// before publish — silently rewriting an app's own data, the previous 0–100 clamp, is worse than
+    /// passing it through: a value above its own total is the app's bug to see, not the kit's to hide).
+    /// Null (the default) means indeterminate, not zero.
     /// </summary>
-    public int? Progress { get; init; }
+    public OperationProgress? Progress { get; init; }
 
     /// <summary>
     /// Opaque app checkpoint token; presence is what makes an operation resumable after a crash.
@@ -125,8 +152,11 @@ public sealed record OperationInfo
     /// <summary>Current lifecycle state.</summary>
     public OperationStatus Status { get; init; }
 
-    /// <summary>0–100, clamped; null = indeterminate.</summary>
-    public int? Progress { get; init; }
+    /// <summary>
+    /// How far along, in the app's own unit — see <see cref="OperationProgress"/>. Passed through from
+    /// whatever was last reported, never clamped or otherwise rewritten by the kit. Null = indeterminate.
+    /// </summary>
+    public OperationProgress? Progress { get; init; }
 
     /// <summary>Echoes <see cref="OperationOptions.Title"/>.</summary>
     public OperationLabel? Title { get; init; }

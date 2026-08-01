@@ -32,7 +32,7 @@ struct Shenora.WinForms.CaptionButtonState : System.IEquatable<Shenora.WinForms.
   public override string ToString()
   public static bool op_Equality(Shenora.WinForms.CaptionButtonState left, Shenora.WinForms.CaptionButtonState right)
   public static bool op_Inequality(Shenora.WinForms.CaptionButtonState left, Shenora.WinForms.CaptionButtonState right)
-  public void Deconstruct(out Shenora.WinForms.CaptionButtonKind?? Hot, out Shenora.WinForms.CaptionButtonKind?? Pressed)
+  public void Deconstruct(out Shenora.WinForms.CaptionButtonKind? Hot, out Shenora.WinForms.CaptionButtonKind? Pressed)
 sealed class Shenora.WinForms.ClipboardService : Shenora.Core.IClipboardService
   public .ctor()
   public System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
@@ -234,7 +234,7 @@ sealed class Shenora.WinForms.WindowState : System.IEquatable<Shenora.WinForms.W
   public override string ToString()
   public static bool op_Equality(Shenora.WinForms.WindowState? left, Shenora.WinForms.WindowState? right)
   public static bool op_Inequality(Shenora.WinForms.WindowState? left, Shenora.WinForms.WindowState? right)
-  public void Deconstruct(out int?? Width, out int?? Height, out int?? X, out int?? Y, out bool Maximized)
+  public void Deconstruct(out int? Width, out int? Height, out int? X, out int? Y, out bool Maximized)
 sealed class Shenora.WinForms.WindowStateHostOptions
   public Shenora.WinForms.WindowStateOptions? Options { get; init; }
   public required System.Func<System.IServiceProvider, Shenora.WinForms.IWindowStateStore> Store { get; init; }

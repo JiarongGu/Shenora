@@ -139,7 +139,7 @@ bar and a download-manager-style activity panel); the other has the `JOB_UPDATED
 
 | Lifted (mechanism) | Left with the app (product) |
 |---|---|
-| id, owning module, `Kind` (app-defined **string**), `Scope`, status, `Progress` (`int?`, null = indeterminate), timestamps | a `ProcessType` **enum** — 15 domain values; the kit ships none |
+| id, owning module, `Kind` (app-defined **string**), `Scope`, status, `Progress` (`OperationProgress?` — `Value`/`Total?`/`Unit?`, the app's own unit, null = indeterminate — see the progress amendment below), timestamps | a `ProcessType` **enum** — 15 domain values; the kit ships none |
 | idempotent finish, bounded history, cancellable→CTS map, token lookup | what an operation *means*, its phases, whether it queues |
 | **throttled progress emission (≤1 per window + a trailing emit)** | i18n *rendering* — the kit carries key + parameters, the app renders |
 | `Run(...)` = the exact fire-and-forget shape their `RunTrackedAsync` proved | the activity-panel/status-bar **UI** (D13: headless) |
@@ -243,6 +243,30 @@ that gate, so it carried no information `RegisterInterrupted`'s existing non-emp
 requirement didn't already express. It was this section's own first-named candidate for removal ("if
 a 1.0 audit wants surface removed, this is the first candidate") — the audit took it pre-1.0 instead,
 since 0.2.0 was still free to change.
+
+**Progress stopped being an assumed percent (owner direction, before publish — "even its progress it
+might be different than 0-100%").** The sketch above (`int? Progress` on both types, `Report(int?
+progress, …)`) — and this section's own FIRST audit pass — both assumed 0–100 percent; that pass even
+amended the write-side XML doc to SAY so (CHANGELOG 0.2.0 finding 5), which was the wrong fix to the
+right observation. Percent is not the mechanism, it is one way an app happens to measure: a consumer
+reports bytes transferred against a known total, items processed against a known total, an absolute
+count with no known denominator (bytes off a chunked stream), or a genuine percent, and forcing percent
+makes it pre-compute a ratio and discard the numbers its own UI wants to render. `OperationOptions.Progress`/
+`OperationInfo.Progress` and `IOperation.Report`'s `progress` parameter are now a new record,
+`OperationProgress(double Value, double? Total = null, string? Unit = null)` (TS mirror: `{ value:
+number; total?: number; unit?: string }`) — `Total = null` means no known denominator, never zero, and
+`Unit` is app-defined and uninterpreted, exactly like `Kind`. `ClampProgress` (`Math.Clamp(value, 0,
+100)`) is REMOVED with nothing put in its place: silently rewriting an app's own reported number is
+worse than passing it through untouched, so a `Value` above its own `Total` is the app's bug to see, not
+the kit's to hide — and no validation throw was added either, since `Report` runs on a hot path from
+background work and throwing there would kill an operation over a cosmetic number.
+`IOperation.Complete()` no longer forces `Progress = 100`: it sets `Value = Total` only when the last
+report carried a known `Total` (the honest "all of it"), otherwise it leaves the last reported value
+untouched — never inventing a figure the app never gave it. `@shenora/react` ships no percent helper;
+the README documents the one-liner (`total ? (value / total) * 100 : undefined`) because that division
+is the consumer's own policy. `OperationProgress` is a new wire shape both sides name, so it gets its
+own mirror tripwire (`WireMirrorTests.OperationProgress_fields_match_the_host`) rather than trusting the
+two sides to stay in step by inspection.
 
 **Two more audit fixes to this section's sketch, both additive:** `void ClearFinished();` above is now
 `ClearFinished(string? module = null, string? scope = null)`, mirroring `GetAll` exactly — it shipped
@@ -574,6 +598,7 @@ that test rather than waiting for an adopter to strand a deployment on it.
 | `BaseFacade(ILogger?)` → `BaseFacade(ILogger?, IEventBus?, IOperationRegistry?)` | source-compatible (optional params); pass the bus to publish |
 | `WebViewIpcBridge` internals move to `NotificationPump` | none — options names and public surface preserved, plus `NotificationFilter` |
 | `OperationOptions.Resumable` / `OperationInfo.Resumable` (C#) and `resumable` (TS) REMOVED (generic-library audit, before publish) | drop the property; test resumability via `status ∈ WAITING_STATUSES` (already the correct client test) |
+| `OperationOptions.Progress`/`OperationInfo.Progress`: `int?` → `OperationProgress?`; `IOperation.Report(int?, …)` → `Report(OperationProgress?, …)` (TS: `progress?: number` → `progress?: OperationProgress`) — progress is not percent, before publish | wrap the reported number: `new OperationProgress(value, total, unit)`; a bare percent is `new OperationProgress(pct, 100, "percent")` |
 
 `IModuleFacade.HandleMessageAsync` is unchanged: a facade still always produces a response. What changes
 is that the response to a long operation is now *specified* — an immediate `{ operationId }` ack, with
