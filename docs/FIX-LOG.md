@@ -12,6 +12,40 @@ entry template:
 - **Commit:** <hash>
 ```
 
+## 2026-08-02
+
+### devtools: `dev.mjs sample` ran an arbitrarily STALE frontend, silently
+
+- **Symptom.** A hands-on test of the drop zone (owner, on the running sample) found the drop itself
+  working — real OS paths arriving — but **no hover feedback**: the zone never lit up as a drag
+  entered it. Nothing in the source explained it. `.drop-hover` was defined in
+  `samples/Shenora.Sample.Web/index.html`, the hook was called with `dropClassName: 'drop-hover'`,
+  the class-toggle code was correct, and `verify` was fully green.
+- **Root cause.** Not the React side at all. Production mode serves the EMBEDDED `wwwroot`, and
+  `dev.mjs sample` was a bare `dotnet run` — it never built the bundle. `wwwroot/` is gitignored (a
+  local build output emitted by `npm run build` in the web project), so the command ran whatever
+  happened to be on disk: a bundle from 30 July, three days older than the `.drop-hover` rule. Its
+  `index.html` was 552 bytes and carried only the base `html, body` rule. The comparison that makes
+  the gap obvious: `dev.mjs vite` has always done the full chain (install deps → build
+  `@shenora/react` → install sample deps → serve), and the production path had no equivalent.
+- **Why it is more than cosmetic.** `.claude/rules/phase-workflow.md` says behavioural claims about
+  the desktop shell are proven against the sample rather than asserted. A silently stale bundle means
+  such a claim can be proven against arbitrarily old frontend code — the verification path itself was
+  unsound. Sharper still: that CSS was added by P5.5 H7 *because* the hover feedback "is the part an
+  adopter most wants to see working, was invisible" — the fix landed in source and never reached the
+  thing anyone runs, so the defect it fixed persisted unnoticed for three days.
+- **Fix.** `devtools/dev.mjs` `case 'sample'` builds the packaged frontend before launching whenever
+  `--dev` is absent (in `--dev`, vite serves source, so a bundle build is pointless). `--no-build`
+  skips it for a quick relaunch when only the C# side changed. The comment records the incident so
+  the step is not "optimised away" later.
+- **Verify.** Deleted `samples/Shenora.Sample.Desktop/wwwroot` entirely, ran `node devtools/dev.mjs
+  sample`, and watched it rebuild (`index.html` 1.13 kB, hover rule present) and boot to
+  `Client ready` — i.e. proven in the FAILING direction, not just observed green. Then re-tested by
+  hand: hover feedback now fires. Both features re-confirmed live on the running sample — frameless
+  chrome (Snap Layouts on maximize-hover, work-area maximize with no DPI gap, top-edge resize,
+  rounded↔square corners) and drop zones (real OS paths, background drags, hover feedback).
+- **Commit:** see the devtools commit dated 2026-08-02.
+
 ## 2026-08-01
 
 ### 0.2.0: the documented package dependency chain had an edge the packages do not have

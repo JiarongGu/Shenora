@@ -359,6 +359,16 @@ event hub … async from the UI, progress synced") while the HOST contract did n
 
 ### Changed
 
+- **`dev.mjs sample` now builds the packaged frontend before launching** (skip with `--no-build`;
+  `--dev` is unaffected, vite serves source there). It was a bare `dotnet run`, and Production mode
+  serves the EMBEDDED `wwwroot` — a gitignored local build output — so it silently ran whatever
+  bundle was on disk. Found by hands-on testing: the sample's drop zone showed no hover feedback
+  because the bundle predated the `.drop-hover` rule by three days. That makes the verification path
+  itself unsound, since `phase-workflow.md` proves desktop behaviour against the sample. Full account
+  in `docs/FIX-LOG.md`.
+- **D25 — frameless chrome and native drop zones recorded as the kit's flagship pair**, settled after
+  live testing; not open to redesign on symmetry or cohesion grounds without adopter evidence. See
+  `docs/DECISIONS.md`.
 - **`docs/ADOPTION.md`'s drop-zone entry now states the GAIN, not just the wiring.** It described
   accurately how to attach `DropZoneManager` and never said why an app would want it. It now leads
   with the capability an app cannot get any other way: an HTML5 drop hands the page a blob and

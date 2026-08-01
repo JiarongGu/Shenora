@@ -397,6 +397,22 @@ switch (cmd) {
       env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = `--remote-debugging-port=${cdpPort}`;
       fs.writeFileSync(path.join(repo, 'devtools', '.cdp-port'), String(cdpPort));
       console.log(`sample starting in DEV mode (vite @${config.vitePort}, CDP @${cdpPort})`);
+    } else if (!args.includes('--no-build')) {
+      // BUILD THE BUNDLE FIRST. Production mode serves the EMBEDDED wwwroot, and this command used
+      // to be a bare `dotnet run` — so it happily ran whatever bundle happened to be on disk, with
+      // no signal that it was stale. Found live 2026-08-02: a hands-on test of the drop zone showed
+      // no hover feedback, and the cause was a wwwroot built three days BEFORE the `.drop-hover`
+      // rule was added. The rule had been added (P5.5 H7) precisely because that feedback "is the
+      // part an adopter most wants to see working" — and it never reached the thing anyone runs.
+      // That is worse than a cosmetic miss: `phase-workflow.md` says desktop behaviour is proven
+      // against the sample, so a stale bundle silently proves it against arbitrarily old frontend
+      // code. `vite` has always done this chain; the production path had no equivalent.
+      // `--no-build` skips it for a quick relaunch when only the C# side changed.
+      const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
+      if (!fs.existsSync(webDir)) { console.error(`sample web not created yet (${config.sampleWebDir})`); process.exitCode = 1; break; }
+      console.log('sample: building the packaged frontend (use --no-build to skip)…');
+      if (!ensureNpmDeps(npmDirAbs) || !runNpm('run build', { cwd: npmDirAbs }) ||
+          !ensureNpmDeps(webDir) || !runNpm('run build', { cwd: webDir })) { process.exitCode = 1; break; }
     }
     run('dotnet', ['run', '--project', config.sampleProject], { env });
     break;

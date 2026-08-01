@@ -486,6 +486,32 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   which pins the documented mojibake trap that a BOM-less UTF-8 source on a CJK-locale machine
   otherwise turns into silently empty buttons.
 
+- **D25 — Frameless chrome and native drop zones are the kit's FLAGSHIP pair. Settled; do not
+  redesign without adopter evidence.** (Owner, 2026-08-02, after testing both by hand on the running
+  sample: *"testing done all good… those 2 features kind important"*, plus *"the frameless winform
+  was developed properly so don't really change that"* and, on the drop stack, *"I have been there
+  before so do not change this"*.) These two carry most of the kit's answer to "why adopt a shared
+  body at all", and they are the two most likely to be *rediscovered* by a future reviewer as
+  candidates for a tidier design — so the verdict is recorded rather than left to be re-derived.
+  - **Why they are the flagship pair.** They are the clearest instances of the owner's two review
+    criteria (`REVIEW-GUIDE.md` §1) holding at once: fully generic — no app concept in either — and
+    each delivers something the adopting app would not have got by hand. The chrome is the kit
+    RAISING the UI bar using the tech available (Snap Layouts via HTMAXBUTTON, Win11 rounded corners
+    squared while maximized, immersive dark mode, DWM border colour, runtime theme resync — the exact
+    things a hand-rolled frameless window loses). Drop zones deliver a capability the page cannot
+    have at all: a page-side drop yields a `File` whose only accessor is its CONTENT, forcing a full,
+    EAGER byte copy of every dropped file across the IPC boundary at drop time — before the app knows
+    whether it wants any of them. Native overlays yield `string[]` paths instead. This is also the
+    kit's strongest dedup case: four independent ports of the drop component across the family.
+  - **Consequences.** `useDropZone` is not optional sugar — it is THE file-drop path for a page on
+    this kit, and a DOM drop handler for files is the thing it replaces, not an alternative to it.
+    Neither component's design is open for restructuring on symmetry or cohesion grounds; D24 already
+    rejected one such proposal for the chrome. Reopen either only on a real adopter hitting a real
+    limit — the same bar as D24, and the same bar the three `TASKS.md` follow-ups are held to.
+  - **Verified live, not asserted** (2026-08-02, `dev.mjs sample`): both exercised by hand on the
+    running desktop sample. That session also exposed the stale-bundle defect in `docs/FIX-LOG.md` —
+    worth remembering that the hands-on test found something eight green `verify` runs did not.
+
 - **D16 AMENDMENT (2026-08-01, 0.2.0 design pass D3) — transport neutrality is now EXECUTED, and the
   claim's exact boundary is recorded with it.** D16 said the same envelopes ride WebView2 postMessage
   today and a WebSocket or mobile channel tomorrow; `NotificationPump` was extracted so "a second,
