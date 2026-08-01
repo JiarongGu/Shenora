@@ -432,15 +432,18 @@ switch (cmd) {
   // failed launch reported "0 stalls" for having measured nothing.
   //   node devtools/dev.mjs responsiveness <fx> <fy> [--label block|stream] [--duration|--interval|--timeout ms]
   case 'responsiveness': {
-    const winInput = ensureTool('win-input');
-    const probe = ensureTool('ui-responsiveness');
-    if (!winInput || !probe) { process.exitCode = 1; break; }
+    // Check the args BEFORE paying for two `dotnet build` runs — a mistyped invocation used to build
+    // both native tools first and only then print the usage error.
     if (args.length < 2 || args[0]?.startsWith('--')) {
       console.error('usage: node devtools/dev.mjs responsiveness <fx> <fy> [--label name] '
-        + '[--duration ms] [--interval ms] [--timeout ms]');
+        + '[--duration ms] [--interval ms] [--timeout ms] [--title-contains text] '
+        + '[--start-timeout ms] [--start-poll ms]');
       process.exitCode = 2;
       break;
     }
+    const winInput = ensureTool('win-input');
+    const probe = ensureTool('ui-responsiveness');
+    if (!winInput || !probe) { process.exitCode = 1; break; }
     const env = { ...process.env, DEVTOOL_PROC: config.processName };
     run(probe, [args[0], args[1], '--win-input', winInput, '--proc', config.processName, ...args.slice(2)], { env });
     break;

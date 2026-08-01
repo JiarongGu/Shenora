@@ -14,8 +14,27 @@ internal sealed class SampleFacade(
     IShellLauncher shell,
     SecondaryWindows windows,
     IEventBus events,
-    IOperationRegistry operations) : BaseFacade(events: events, operations: operations)
+    IOperationRegistry operations,
+    MainForm mainForm,
+    IUiDispatcher ui) : BaseFacade(events: events, operations: operations)
 {
+    /// <summary>
+    /// The SLOW route's independent "it actually started" signal — a substring of the native
+    /// window's TITLE (never the page's HTML title; this app is frameless and draws its own title
+    /// bar in React, but the underlying Win32 window still has a real caption `GetWindowText` can
+    /// read). This exists because a click can land on the WebView2 render surface — which spans the
+    /// whole client area — WITHOUT ever reaching the intended button (stale fraction coordinates, a
+    /// moved layout, a disabled control): `win-input` would still report "click ok" in that case,
+    /// so `devtools/ui-responsiveness` cannot trust the click alone as proof the operation ran. The
+    /// title is set HERE, synchronously, on the UI thread, BEFORE either shape's slow work begins —
+    /// deliberately, because `block` freezes this very thread for the rest of the route, and Win32
+    /// caches a window's title in shared, cross-process-readable state that a foreign process can
+    /// read even while the owning thread is unresponsive (the same reason Alt-Tab/Task Manager still
+    /// show a hung app's title). Setting it AFTER the freeze began would be too late to observe.
+    /// Kept in sync with the literal `--title-contains` default in `devtools/ui-responsiveness`.
+    /// </summary>
+    private const string RunningTitleMarker = "SLOW running";
+
     public override string ModuleName => "SAMPLE";
 
     protected override async Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
@@ -73,13 +92,22 @@ internal sealed class SampleFacade(
 
                 if (mode == "block")
                 {
+                    // Set BEFORE the freeze, on the UI thread we are already (synchronously) on —
+                    // see RunningTitleMarker's doc for why this ordering is load-bearing.
+                    mainForm.Text = $"Shenora Sample - {RunningTitleMarker} (block)";
                     // DELIBERATELY THE WRONG SHAPE, kept as the demonstration: heavy work left in the
                     // route's synchronous segment. The window stops repainting for the duration —
                     // including the 1 Hz tick — which is exactly why `invoke` is reserved for calls
                     // that are quick AND UI-thread-safe. Do not copy this into an app.
                     Thread.Sleep(totalMs);
+                    // Still the UI thread, still synchronous — no marshalling needed for the reset either.
+                    mainForm.Text = "Shenora Sample";
                     return new { Mode = mode, RanOnUiThread = onUiThread };
                 }
+
+                // Same signal for the streamed shape, set synchronously before the handoff below —
+                // ctx.Run's own Start() call is synchronous, so this still runs on the UI thread.
+                mainForm.Text = $"Shenora Sample - {RunningTitleMarker} (stream)";
 
                 // The right shape, now one call: Run owns the handoff, the guarded body, the terminal
                 // transition and the token. What the sample used to hand-roll here — Task.Run, a catch
@@ -96,12 +124,25 @@ internal sealed class SampleFacade(
                     new OperationOptions { Kind = "SLOW", Cancellable = true, Title = new OperationLabel(Text: "Slow work") },
                     async (operation, ct) =>
                     {
-                        const int steps = 6;
-                        for (var step = 1; step <= steps; step++)
+                        // finally, not just a trailing statement after the loop: this body can also
+                        // exit via OperationCanceledException (a CANCEL request) or a fault, and the
+                        // title must not stick at "running" forever on either of those paths either.
+                        // Off the UI thread here (ConfigureAwait(false) below, per D23/ipc-contracts),
+                        // so the reset is marshalled through the ONE seam rather than touching the
+                        // Form directly from a background thread.
+                        try
                         {
-                            await Task.Delay(totalMs / steps, ct).ConfigureAwait(false);
-                            operation.Report(step * 100 / steps,
-                                new OperationLabel(Text: $"step {step}/{steps} (onUiThread: {Application.MessageLoop})"));
+                            const int steps = 6;
+                            for (var step = 1; step <= steps; step++)
+                            {
+                                await Task.Delay(totalMs / steps, ct).ConfigureAwait(false);
+                                operation.Report(step * 100 / steps,
+                                    new OperationLabel(Text: $"step {step}/{steps} (onUiThread: {Application.MessageLoop})"));
+                            }
+                        }
+                        finally
+                        {
+                            ui.Post(() => mainForm.Text = "Shenora Sample");
                         }
                     });
                 return new { Mode = mode, RanOnUiThread = onUiThread, OperationId = operationId };

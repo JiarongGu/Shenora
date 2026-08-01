@@ -117,9 +117,10 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
  */
 function SlowPanel({ hosted }: { hosted: boolean }) {
   // The store is shared/module-wide (any op, any module); this pane selects only ITS operation by
-  // the module + kind the host route sets (SampleFacade's SLOW case: Kind = "SLOW").
-  const operation = useShenoraOperations((s) =>
-    Object.values(s.byId).find((o) => o.module === 'SAMPLE' && o.kind === 'SLOW' && o.status === 'running'));
+  // the module + kind the host route sets (SampleFacade's SLOW case: Kind = "SLOW"). `s.running` is
+  // the store's own shipped selector for "currently running", not a hand-rolled status check — the
+  // supported idiom its own doc recommends.
+  const operation = useShenoraOperations((s) => s.running.find((o) => o.module === 'SAMPLE' && o.kind === 'SLOW'));
 
   // `post`, not `invoke`: the route's own response carries only an echo (mode/ranOnUiThread/
   // operationId) that this pane does not need — the operation store is the source of truth.

@@ -78,12 +78,35 @@ thread is genuinely busy, not just slow. Sampling is sub-100ms by default (both 
 sample's own timeout), because ~1s sampling cannot resolve a multi-second freeze (a real v0.1.0
 mistake).
 
-**It refuses to print numbers unless the click actually landed** — the other real v0.1.0 mistake was
-a run where the app never launched, the click never arrived, and the probe still reported "0 stalls"
-as if that were a pass. Three guards, in order, any of which aborts with a nonzero exit and NO sample
-stats: (1) a live process with a real main window is found (retries briefly — a GUI app can take a
-moment to create its window), (2) one baseline `WM_NULL` sample succeeds BEFORE the click (the thread
-pumps at all), (3) `win-input`'s own "click ok on hwnd=0x.." confirmation is present in its output.
+**It refuses to print numbers unless the click actually landed AND the operation actually started** —
+four guards, in order, any of which aborts with a nonzero exit and NO sample stats:
+
+1. A live process with a real main window is found (retries briefly — a GUI app can take a moment to
+   create its window). Fixes the v0.1.0 mistake where the app never launched, the click never
+   arrived, and the probe still reported "0 stalls" as if that were a pass.
+2. One baseline `WM_NULL` sample succeeds BEFORE the click (the thread pumps at all) — catches a
+   process that exists but is already stuck for an unrelated reason.
+3. `win-input`'s own "click ok on hwnd=0x.." confirmation is present in its captured output.
+4. **The window TITLE (`GetWindowText`) shows a marker substring (`--title-contains`, default
+   `"SLOW running"`) within a short grace period after the click.** Guard 3 alone is NOT sufficient:
+   `win-input` reports "click ok" for any coordinate that resolves to *some* leaf window under the
+   point, and for a WebView2 host that leaf is the render surface, which spans the whole client area
+   — so stale fraction coordinates, a moved button, or a disabled control would all still "land" a
+   click and produce a clean `unresponsive=0` result that measured nothing real. `SampleFacade` sets
+   the title BEFORE either shape's slow work begins (see `RunningTitleMarker`'s doc comment there),
+   deliberately, because in `block` mode the UI thread freezes for the rest of the route and a title
+   set only during the freeze would not be observable in time — a window's title, unlike responses to
+   most messages, is cached by Windows and readable cross-process even while the owning thread is
+   hung (the same reason Task Manager / Alt-Tab still show a hung app's real title). A companion check
+   (guard 1b) also refuses if the marker is ALREADY present *before* the click, so a stale "running"
+   title left over from a prior, unfinished run cannot be mistaken for fresh evidence.
+
+**Residual limit, named rather than hidden:** guard 4 proves *some* operation matching the title
+marker started at roughly the right time — for a busier app with several concurrently-running,
+same-marker operations it would not by itself say WHICH one. This sample has exactly one SLOW route
+behind both buttons, so the ambiguity does not arise here; a consumer reusing this probe against a
+busier app should give each operation kind its own marker. Guard 4 also requires the app under test
+to cooperate with the title convention — unlike guards 1-3, it is not fully app-agnostic.
 
 ```
 node devtools/dev.mjs sample --dev &            # or a second terminal — leave it running
@@ -93,7 +116,9 @@ node devtools/dev.mjs responsiveness 0.62 0.85 --label stream --duration 4000
 ```
 
 Prints `RESULT label=<name> samples=<n> unresponsive=<n> longestStallMs=<n>` — record the numbers in
-`local/PROJECT_NOTES.md`, never only in a screenshot (this repo's evidence is numbers and prose).
+`local/PROJECT_NOTES.md`, never only in a screenshot (this repo's evidence is numbers and prose). A
+wrong-coordinates run instead prints `REFUSING to report - ... the operation never appeared to start`
+and exits nonzero, rather than a vacuous clean zero.
 
 ## Ground rules (keep the loop prompt-free)
 
