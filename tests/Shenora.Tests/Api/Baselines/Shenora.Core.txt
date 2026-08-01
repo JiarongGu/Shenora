@@ -29,6 +29,81 @@ sealed class Shenora.Core.EventMessage
   public required string Type { get; init; }
   public string Id { get; init; }
   public string? Scope { get; init; }
+enum Shenora.Core.FileAtomicity (int)
+  public const Shenora.Core.FileAtomicity AllOrNothing = 1
+  public const Shenora.Core.FileAtomicity PerChange = 0
+  public int value__
+abstract class Shenora.Core.FileChange : System.IEquatable<Shenora.Core.FileChange>
+  protected .ctor(Shenora.Core.FileChange original)
+  protected virtual System.Type EqualityContract { get; }
+  protected virtual bool PrintMembers(System.Text.StringBuilder builder)
+  public abstract Shenora.Core.FileChange <Clone>$()
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileChange? left, Shenora.Core.FileChange? right)
+  public static bool op_Inequality(Shenora.Core.FileChange? left, Shenora.Core.FileChange? right)
+  public virtual bool Equals(Shenora.Core.FileChange? other)
+sealed class Shenora.Core.FileChange+CreateDirectory : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+CreateDirectory>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string Path)
+  public bool Equals(Shenora.Core.FileChange+CreateDirectory? other)
+  public override bool Equals(Shenora.Core.FileChange? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileChange+CreateDirectory? left, Shenora.Core.FileChange+CreateDirectory? right)
+  public static bool op_Inequality(Shenora.Core.FileChange+CreateDirectory? left, Shenora.Core.FileChange+CreateDirectory? right)
+  public string Path { get; init; }
+  public virtual Shenora.Core.FileChange+CreateDirectory <Clone>$()
+  public void Deconstruct(out string Path)
+sealed class Shenora.Core.FileChange+Delete : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+Delete>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string Path, bool Recursive = false)
+  public bool Equals(Shenora.Core.FileChange+Delete? other)
+  public bool Recursive { get; init; }
+  public override bool Equals(Shenora.Core.FileChange? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileChange+Delete? left, Shenora.Core.FileChange+Delete? right)
+  public static bool op_Inequality(Shenora.Core.FileChange+Delete? left, Shenora.Core.FileChange+Delete? right)
+  public string Path { get; init; }
+  public virtual Shenora.Core.FileChange+Delete <Clone>$()
+  public void Deconstruct(out string Path, out bool Recursive)
+sealed class Shenora.Core.FileChange+Move : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+Move>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string From, string To, bool Overwrite = false)
+  public bool Equals(Shenora.Core.FileChange+Move? other)
+  public bool Overwrite { get; init; }
+  public override bool Equals(Shenora.Core.FileChange? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileChange+Move? left, Shenora.Core.FileChange+Move? right)
+  public static bool op_Inequality(Shenora.Core.FileChange+Move? left, Shenora.Core.FileChange+Move? right)
+  public string From { get; init; }
+  public string To { get; init; }
+  public virtual Shenora.Core.FileChange+Move <Clone>$()
+  public void Deconstruct(out string From, out string To, out bool Overwrite)
+sealed class Shenora.Core.FileChange+Replace : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+Replace>
+  protected override System.Type EqualityContract { get; }
+  protected override bool PrintMembers(System.Text.StringBuilder builder)
+  public .ctor(string TempPath, string TargetPath)
+  public bool Equals(Shenora.Core.FileChange+Replace? other)
+  public override bool Equals(Shenora.Core.FileChange? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileChange+Replace? left, Shenora.Core.FileChange+Replace? right)
+  public static bool op_Inequality(Shenora.Core.FileChange+Replace? left, Shenora.Core.FileChange+Replace? right)
+  public string TargetPath { get; init; }
+  public string TempPath { get; init; }
+  public virtual Shenora.Core.FileChange+Replace <Clone>$()
+  public void Deconstruct(out string TempPath, out string TargetPath)
 sealed class Shenora.Core.FileDialogFilter
   public required System.Collections.Generic.IReadOnlyList<string> Extensions { get; init; }
   public required string Name { get; init; }
@@ -50,6 +125,24 @@ sealed class Shenora.Core.FileDialogResult
   public static Shenora.Core.FileDialogResult Cancelled()
   public static Shenora.Core.FileDialogResult Selected(string path)
   public string? FilePath { get; init; }
+sealed class Shenora.Core.FileUpdate
+  public Shenora.Core.FileAtomicity Atomicity { get; init; }
+  public Shenora.Core.RetryPolicy? Retry { get; init; }
+  public required System.Collections.Generic.IReadOnlyList<Shenora.Core.FileChange> Changes { get; init; }
+  public string? Partition { get; init; }
+sealed class Shenora.Core.FileUpdateQueue : Shenora.Core.IFileUpdateQueue
+  public .ctor(Shenora.Core.FileUpdateQueueOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
+sealed class Shenora.Core.FileUpdateQueueOptions
+  public .ctor()
+  public System.Action<string>? Log { get; init; }
+sealed class Shenora.Core.FileUpdateResult
+  public System.Exception? Error { get; }
+  public bool RolledBack { get; }
+  public bool Succeeded { get; }
+  public int Applied { get; }
+  public int? FailedIndex { get; }
+  public void ThrowIfFailed()
 sealed class Shenora.Core.FlatClaimScope : Shenora.Core.IClaimScope
   public .ctor(string name, bool ignoreCase = false)
   public bool Conflicts(string normalizedA, string normalizedB)
@@ -82,6 +175,8 @@ interface Shenora.Core.IFileDialogs
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
+interface Shenora.Core.IFileUpdateQueue
+  public abstract System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.ILane
   public abstract bool IsHeld { get; }
   public abstract int Capacity { get; set; }

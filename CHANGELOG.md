@@ -86,6 +86,29 @@ _Do not stamp this heading by hand — the release workflow does it (`docs/RELEA
 
 ### Added
 
+- **A file-update queue** — `IFileUpdateQueue`/`FileUpdateQueue`, `FileUpdate`, `FileChange`
+  (`Replace`/`Move`/`Delete`/`CreateDirectory`), `FileAtomicity`, `FileUpdateResult`, in
+  `Shenora.Core`'s `Io`. Filesystem MUTATIONS land one at a time while the missions that produced
+  them run in parallel.
+
+  **Why it is not part of the scheduler:** a path claim excludes two missions for their whole
+  duration, but the expensive phase usually touches only a temp file — so under claims alone a
+  seven-second compress waits on another mission's three-millisecond rename. Compute in parallel,
+  hand the finished change set to the queue, and only the landing is serialized. The failure modes
+  do not overlap either: a scheduler's are starvation and deadlock, an applier's are partial writes
+  and locked targets.
+
+  **Atomicity is the app's choice per update.** `PerChange` applies in order and stops at the first
+  failure, reporting the index it reached. `AllOrNothing` undoes what it applied, in reverse — which
+  is why a delete under it is STAGED: moved aside and only really removed once the whole set lands,
+  a delete being the one change that cannot be undone from nothing. Backups and aside-copies are
+  siblings of their target so every move stays same-volume. **The limit is in the enum's own XML:
+  this survives a failure, not a power cut** — crash-atomicity needs a durable intent journal, which
+  is deliberately not built and additive when it comes.
+
+  Cross-process path leases are designed but NOT shipped: claims exclude inside one process only, and
+  whether anything needs more than that today is still an open question in the design doc.
+
 - **Chained missions** — `MissionChain.Sequence(kind, params MissionStep[])`, `MissionStep`,
   `IMissionChainContext`. Steps run in order sharing one context, so a later step can use what an
   earlier one produced — the case claims cannot express, since they prevent overlap but say nothing

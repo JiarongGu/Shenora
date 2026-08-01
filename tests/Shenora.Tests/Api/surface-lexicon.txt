@@ -172,6 +172,19 @@ Text
 Wheel
 Zone
 
+# ── Filesystem updates (2026-08-02) ─────────────────────────────────────────────────────────────
+# The file-update queue: serialized mutations, per-update atomicity. Update and Change are
+# mechanism nouns — what the queue applies — and Atomicity is the property an app chooses per
+# update. Note what is still NOT here: no archive, download, install or sync noun.
+Atomicity
+Change
+Create
+Delete
+Directory
+Move
+Replace
+Update
+
 # ── Data shapes ───────────────────────────────────────────────────────────────────────────────────
 Byte
 Dialog

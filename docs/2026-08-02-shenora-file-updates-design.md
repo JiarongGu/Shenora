@@ -1,8 +1,9 @@
-# Shenora file updates — design (PLAN, not implemented)
+# Shenora file updates — design
 
-**Status: PLANNED 2026-08-02.** Nothing is built. This document exists to be argued with before code
-is written; when it is implemented, its rationale moves to `DECISIONS.md` and the as-built surface to
-`ARCHITECTURE.md`, and this file is retired (`docs/README.md`'s retirement note).
+**Status: THE QUEUE IS IMPLEMENTED 2026-08-02** (`IFileUpdateQueue`/`FileUpdateQueue`, `FileUpdate`,
+`FileChange`, `FileAtomicity`, `FileUpdateResult` — 8 tests). **§4's cross-process LEASES are NOT
+built**: they are additive, and open question 3 — does anything need them today, or is
+single-instance the practical guarantee — is still unanswered. Nothing else here is pending.
 
 Owner direction, verbatim, which is the whole brief:
 
@@ -118,7 +119,20 @@ rollback bookkeeping is already the journal's content), so it is not built now, 
 promise what it does not do. `FileAtomicity.AllOrNothing` means "no partial result from a failure",
 not "no partial result from a power cut", and the XML will say exactly that.
 
-## §4 Locking — cross-process, because claims are not
+### §3.2 What the build changed from this plan
+
+Two things worth recording, because the plan is what a reader trusts:
+
+- **The temp-ownership question answered itself.** Missions own their temps, as proposed — but
+  `AllOrNothing` forces the queue to own the ones IT creates: the backup of a replaced file, and the
+  aside-copy of a staged delete. Both are siblings of the target (`<path>.shenora-bak-<n>`,
+  `.shenora-del-<n>`) so the move is same-volume and therefore atomic; a staging directory elsewhere
+  would silently turn every replace into a cross-volume copy of the file being replaced.
+- **A cancellation token is accepted but stops mattering once an update starts applying.** It cancels
+  the WAIT for the partition. Abandoning a half-applied set on a cancel is the one outcome no caller
+  can do anything with, so it is not offered.
+
+## §4 Locking — cross-process, because claims are not (NOT BUILT — see the status note)
 
 This is the gap the owner named, and it is real. A `MissionClaim` excludes work **inside one
 scheduler in one process**. It does nothing about a second instance of the app, an installer, a

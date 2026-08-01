@@ -172,6 +172,21 @@ changes, noting them in `CHANGELOG.md`).
   exclusively), and the retry repeats only that step, never the ones before it. A failing step fails
   the chain; cancelling cancels the chain. The context is IN-MEMORY only: a durable chain carries
   state in `Payload`, because an arbitrary object graph is what the kit cannot serialize for an app.
+  **`Io/` — the file-update queue (2026-08-02), independent of the scheduler.**
+  `IFileUpdateQueue`/`FileUpdateQueue(+Options)` serializes filesystem MUTATIONS so missions can
+  compute in parallel and land one at a time: `ApplyAsync(FileUpdate)` completes when that update has
+  landed. A `FileUpdate` is an ordered `FileChange` list (`Replace`, `Move`, `Delete`,
+  `CreateDirectory` — a closed hierarchy), a `Partition` (null = one global writer; different
+  partitions land concurrently), a `RetryPolicy` applied per change, and a `FileAtomicity`:
+  `PerChange` stops at the first failure and reports its index, `AllOrNothing` undoes applied changes
+  in REVERSE — which is why a delete under it is STAGED (moved aside, really removed only once the
+  whole set lands), a delete being the one change that cannot be undone from nothing. Backups and
+  aside-copies are siblings of the target, so every move is same-volume. `FileUpdateResult` reports
+  rather than throws, like `MissionResult`. **The honest limit, stated in the enum's own XML:** this
+  survives a FAILURE, not a power cut — crash-atomicity needs a durable intent journal, which is
+  recorded as not-built. The internal `IFileOperations` seam exists so serialization and rollback
+  ORDER are provable with a probe instead of with sleeps; the kit still ships no public filesystem
+  abstraction.
   **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
   case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
   `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and

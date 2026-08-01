@@ -52,12 +52,16 @@ the third is independent).
 - [x] ~~**Chained missions with a shared context**~~ — DONE 2026-08-02, Part 2 of the same doc, as
   ONE queue entry per the owner's call. `MissionChain.Sequence` returns an ordinary definition, so
   §10's "no DAG engine" still holds. Moves to `docs/task-archive.md` at the next tidy.
-- [ ] **A file-update queue + cross-process path leases** (`docs/2026-08-02-shenora-file-updates-design.md`).
-  Owner-directed, deliberately NOT part of mission management: the scheduler decides which missions
-  run, this decides how their mutations land. The point is that a path claim excludes two missions for
-  their whole duration when only the final replace needs exclusivity — parallel compute, serialized
-  apply. Atomicity is per update, the app's choice (owner, 2026-08-02) — per-file or all-or-nothing
-  via compensating rollback, with the crash boundary explicitly out of scope. Two open questions left.
+- [x] ~~**A file-update queue**~~ — DONE 2026-08-02
+  (`docs/2026-08-02-shenora-file-updates-design.md`). Parallel compute, serialized apply, per-update
+  atomicity with compensating rollback and staged deletes. Moves to `docs/task-archive.md` at the
+  next tidy.
+- [ ] **Cross-process path leases** (§4 of the same doc) — designed, NOT built, and additive rather
+  than breaking, so it waits on its own open question: does anything need them today, or is
+  single-instance the practical guarantee? Claims exclude inside ONE process; nothing today stops a
+  second instance, an installer or the user's own tooling. Build it when an app can say it needs it —
+  the traps (advisory only, POSIX differs, network shares out of scope, a lease is not a queue) are
+  already written down.
 
 ### The rest — held at the two-consumer bar
 
