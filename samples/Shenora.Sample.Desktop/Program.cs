@@ -84,6 +84,9 @@ internal static class Program
         // (error handler → app middleware → registered facades). The window-facing facades
         // (WINDOW commands, DROP_ZONE) map later, in MainForm, once the form exists.
         builder.Services.AddSingleton<Shenora.WinForms.SecondaryWindows>();
+        // Opt-in (D21): SampleFacade's SLOW route uses ctx.Run, so the sample pays for the registry
+        // it demonstrates rather than getting it for free — the same bar every consumer faces.
+        builder.Services.AddShenoraOperations();
         builder.Services.AddModuleFacade<SampleFacade>();
         // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
         // resolves the same implementations through their platform-neutral contracts.

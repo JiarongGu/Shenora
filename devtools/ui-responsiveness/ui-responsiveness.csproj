@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Measures whether the target app's UI thread keeps PUMPING while a route runs — the probe
+       behind docs/2026-07-31-shenora-oneway-ipc-design.md §7's claim (work left in a route's
+       synchronous segment stalls the UI thread; handed-off work does not). Rebuilt for Task 8
+       (2026-08-01) because the v0.1.0 probe was a one-off script, never kept, so only its NUMBERS
+       survived in the doc. This is the tracked, re-runnable replacement. Dev tool — never shipped
+       in the app build. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- BOM-less UTF-8 sources on a CJK-locale machine mojibake without this (csc reads them as
+         ANSI) — matches devtools/win-input's csproj. -->
+    <CodePage>65001</CodePage>
+    <AssemblyName>ui-responsiveness</AssemblyName>
+  </PropertyGroup>
+</Project>

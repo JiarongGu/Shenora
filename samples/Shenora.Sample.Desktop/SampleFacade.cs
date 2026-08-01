@@ -13,7 +13,8 @@ internal sealed class SampleFacade(
     IFileDialogs dialogs,
     IShellLauncher shell,
     SecondaryWindows windows,
-    IEventBus events) : BaseFacade
+    IEventBus events,
+    IOperationRegistry operations) : BaseFacade(events: events, operations: operations)
 {
     public override string ModuleName => "SAMPLE";
 
@@ -80,37 +81,30 @@ internal sealed class SampleFacade(
                     return new { Mode = mode, RanOnUiThread = onUiThread };
                 }
 
-                // The right shape: hand the work OFF, return immediately, stream progress as
-                // notifications. The background body must NOT capture the UI context (see
-                // .claude/knowledge/ipc-contracts.md) or it would put the work back on the thread
-                // this exists to free.
+                // The right shape, now one call: Run owns the handoff, the guarded body, the terminal
+                // transition and the token. What the sample used to hand-roll here — Task.Run, a catch
+                // that existed only to stop an unobserved fault, ConfigureAwait(false) and a hardcoded
+                // "SAMPLE" literal — is the kit's job as of 0.2.0 (D23).
                 //
-                // And note what it does NOT do: it ignores `cancellationToken`, deliberately. That
-                // token is the REQUEST's lifetime, and this work outlives the request by design —
-                // capturing it would kill a long operation the moment the page navigated. A route
-                // that hands work off owns that work's lifetime and gives it its own token.
-                _ = Task.Run(async () =>
-                {
-                    try
+                // The body gets the OPERATION's own token (via `operation`/`ct`), never the request's:
+                // this route still does not observe `cancellationToken` (the request's lifetime) —
+                // work handed off outlives the request by design, and capturing the request token would
+                // kill a long operation the moment the page navigated. Using the operation's own token
+                // also means the CANCEL route (OperationsFacade) can now actually stop this work, which
+                // the old hand-rolled version could not offer.
+                var operationId = context.Run(
+                    new OperationOptions { Kind = "SLOW", Cancellable = true, Title = new OperationLabel(Text: "Slow work") },
+                    async (operation, ct) =>
                     {
                         const int steps = 6;
                         for (var step = 1; step <= steps; step++)
                         {
-                            await Task.Delay(totalMs / steps).ConfigureAwait(false);
-                            await events.EmitAsync("SAMPLE", "SLOW_PROGRESS",
-                                new { Step = step, Steps = steps, OnUiThread = Application.MessageLoop })
-                                .ConfigureAwait(false);
+                            await Task.Delay(totalMs / steps, ct).ConfigureAwait(false);
+                            operation.Report(step * 100 / steps,
+                                new OperationLabel(Text: $"step {step}/{steps} (onUiThread: {Application.MessageLoop})"));
                         }
-                        await events.EmitAsync("SAMPLE", "SLOW_DONE", new { Ok = true }).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        // An unguarded Task.Run body makes any fault an UNOBSERVED task exception —
-                        // the same defect the streaming sample route was fixed for in P5.5 H9.
-                        Console.Error.WriteLine($"[sample] SLOW stream failed: {ex}");
-                    }
-                });
-                return new { Mode = mode, RanOnUiThread = onUiThread };
+                    });
+                return new { Mode = mode, RanOnUiThread = onUiThread, OperationId = operationId };
 
             default:
                 // BaseFacade owns the unknown-type shape now — an app no longer retypes it.

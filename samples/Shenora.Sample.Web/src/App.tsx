@@ -1,9 +1,9 @@
 import {
-  createShenoraStore,
   getBridge,
   isShenoraAvailable,
   useDropZone,
   useShenoraEvent,
+  useShenoraOperations,
   useShenoraQuery,
   useWindowMaximized,
   WindowCommands,
@@ -102,45 +102,37 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
 }
 
 /**
- * The one-way path (P6.3a): `post` + a store fed by the module's event stream — the shape a desktop
- * app uses for anything that is not a quick, UI-thread-safe call.
+ * The one-way path (P6.3a), now on the kit's own operations primitive (D23/0.2.0): `post` starts
+ * the SLOW route, `ctx.Run` hands the work off host-side, and `useShenoraOperations` is the
+ * shared, HOST-BACKED store that reports its progress — no hand-rolled `SLOW_PROGRESS`/`SLOW_DONE`
+ * reducer, no per-app wiring. This is also the sample's adoption example: the supported shape for
+ * anything that is not a quick, UI-thread-safe call.
  *
- * ONE subscription is opened here no matter how many components read `useSlow`, and a component
- * mounting mid-run would be caught up by a `snapshot` (this demo has no prior state to fetch, so it
- * declares none). The two buttons drive the SAME route in its two shapes so the difference is
- * visible rather than argued: `block` leaves the work in the route's synchronous segment, which runs
- * on the host's UI thread and freezes the window — watch the tick above stop — while `stream` hands
- * off and reports progress.
+ * ONE subscription is opened no matter how many components read `useShenoraOperations`, and a
+ * component mounting mid-run is caught up by the store's `LIST` snapshot. The two buttons drive
+ * the SAME route in its two shapes so the difference is visible rather than argued: `block` leaves
+ * the work in the route's synchronous segment, which runs on the host's UI thread and freezes the
+ * window — watch the tick above stop — while `stream` hands off through `ctx.Run` and reports
+ * progress, cancellable mid-flight (the operation was started with `Cancellable = true`).
  */
-const useSlow = createShenoraStore<
-  { running: boolean; step: number; steps: number; workLeftUiThread?: boolean },
-  { block: () => void; stream: () => void }
->('SAMPLE', {
-  initial: { running: false, step: 0, steps: 0 },
-  on: {
-    // `onUiThread` is reported by the host's BACKGROUND body: false is the proof the work really
-    // left the UI thread, rather than the design merely claiming it does.
-    SLOW_PROGRESS: (s, p: { step: number; steps: number; onUiThread: boolean }) =>
-      ({ ...s, running: true, step: p.step, steps: p.steps, workLeftUiThread: !p.onUiThread }),
-    SLOW_DONE: (s) => ({ ...s, running: false }),
-  },
-  actions: ({ post }) => ({
-    // The anti-example. Its evidence is the frozen window, so nothing needs to come back.
-    block: () => post('SLOW', { payload: { mode: 'block', ms: 3000 } }),
-    stream: () => post('SLOW', { payload: { mode: 'stream', ms: 3000 } }),
-  }),
-});
-
-/** Reads the store above — one of possibly many components doing so, on one subscription. */
 function SlowPanel({ hosted }: { hosted: boolean }) {
-  const slow = useSlow();
+  // The store is shared/module-wide (any op, any module); this pane selects only ITS operation by
+  // the module + kind the host route sets (SampleFacade's SLOW case: Kind = "SLOW").
+  const operation = useShenoraOperations((s) =>
+    Object.values(s.byId).find((o) => o.module === 'SAMPLE' && o.kind === 'SLOW' && o.status === 'running'));
+
+  // `post`, not `invoke`: the route's own response carries only an echo (mode/ranOnUiThread/
+  // operationId) that this pane does not need — the operation store is the source of truth.
+  const block = () => getBridge().post('SAMPLE', 'SLOW', { payload: { mode: 'block', ms: 3000 } });
+  const stream = () => getBridge().post('SAMPLE', 'SLOW', { payload: { mode: 'stream', ms: 3000 } });
+
   return (
     <p style={row} data-testid="slow-state">
       <button
         style={{ padding: '0.35rem 0.75rem' }}
         disabled={!hosted}
         data-testid="btn-slow-block"
-        onClick={() => useSlow.actions.block()}
+        onClick={block}
       >
         block the UI thread (3s)
       </button>
@@ -149,16 +141,30 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
         style={{ padding: '0.35rem 0.75rem' }}
         disabled={!hosted}
         data-testid="btn-slow-stream"
-        onClick={() => useSlow.actions.stream()}
+        onClick={stream}
       >
         stream it instead
       </button>
       {' '}
-      <span style={slow.running ? value : { color: '#9a9a9a' }}>
-        {slow.running
-          ? `streaming ${slow.step}/${slow.steps}${slow.workLeftUiThread ? ' (off the UI thread)' : ''}`
+      <span style={operation ? value : { color: '#9a9a9a' }}>
+        {operation
+          // `detail.text` already carries "onUiThread: False" from the host's Report() call — the
+          // proof the work really left the UI thread, rather than the design merely claiming it does.
+          ? `${operation.progress ?? 0}% — ${operation.detail?.text ?? 'starting…'}`
           : 'slow route: idle'}
       </span>
+      {operation?.cancellable && (
+        <>
+          {' '}
+          <button
+            style={{ padding: '0.2rem 0.6rem' }}
+            data-testid="btn-slow-cancel"
+            onClick={() => useShenoraOperations.actions.cancel(operation.id)}
+          >
+            cancel
+          </button>
+        </>
+      )}
     </p>
   );
 }

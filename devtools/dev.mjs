@@ -11,6 +11,8 @@
 //   node devtools/dev.mjs click|rclick|move <fx> <fy>       - background mouse at client fractions (no CDP, no focus steal)
 //   node devtools/dev.mjs drag <fx1> <fy1> <fx2> <fy2>      - background press-move-release between two fractions
 //   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | move | drag)
+//   node devtools/dev.mjs responsiveness <fx> <fy> [--label name] [--duration|--interval|--timeout ms]
+//                                           - click + SendMessageTimeout(WM_NULL) UI-thread stall probe
 //   node devtools/dev.mjs knowledge <…>    - two-tier rule-base doctor (check | footprint | new <name> [--core])
 //   node devtools/dev.mjs clean [--all]     - drop devtools/_* build output (--all: sources + publish/ too)
 //   node devtools/dev.mjs check-sensitive [--tree|--history] - leak scan (--history = one-off audit)
@@ -245,6 +247,26 @@ function doctor({ fix = false } = {}) {
   return problems === 0;
 }
 
+// ONE owner for "where a native devtool's exe lives and whether it needs building" — win-input,
+// wgc-shot and ui-responsiveness each had (or would have had) their own copy of this, which is
+// exactly the kind of drift the `shotTarget` comment above already warns about. Built on demand
+// into their gitignored bin/ (never shipped in the app build).
+const TOOL_TFM = {
+  'win-input': 'net10.0-windows',
+  'wgc-shot': 'net10.0-windows10.0.22621.0',
+  'ui-responsiveness': 'net10.0-windows',
+};
+function ensureTool(toolName) {
+  const exe = path.join(repo, 'devtools', toolName, 'bin', 'Release', TOOL_TFM[toolName], `${toolName}.exe`);
+  if (!fs.existsSync(exe)) {
+    console.log(`building ${toolName} (first run)…`);
+    const b = spawnSync('dotnet', ['build', path.join(repo, 'devtools', toolName, `${toolName}.csproj`),
+      '-c', 'Release', '-v', 'quiet'], { stdio: 'inherit', cwd: repo });
+    if (b.status !== 0) return null;
+  }
+  return exe;
+}
+
 switch (cmd) {
   case 'build': {
     // No -clp:ErrorsOnly: warnings must be VISIBLE (they are errors under TreatWarningsAsErrors,
@@ -390,14 +412,8 @@ switch (cmd) {
   // clicks; wgc-shot is an occlusion-immune capture). Built on demand into their gitignored bin/.
   case 'wgc': case 'click': case 'rclick': case 'move': case 'drag': case 'input': {
     const toolName = cmd === 'wgc' ? 'wgc-shot' : 'win-input';
-    const toolTfm = { 'win-input': 'net10.0-windows', 'wgc-shot': 'net10.0-windows10.0.22621.0' };
-    const exe = path.join(repo, 'devtools', toolName, 'bin', 'Release', toolTfm[toolName], `${toolName}.exe`);
-    if (!fs.existsSync(exe)) {
-      console.log(`building ${toolName} (first run)…`);
-      const b = spawnSync('dotnet', ['build', path.join(repo, 'devtools', toolName, `${toolName}.csproj`),
-        '-c', 'Release', '-v', 'quiet'], { stdio: 'inherit', cwd: repo });
-      if (b.status !== 0) { process.exitCode = 1; break; }
-    }
+    const exe = ensureTool(toolName);
+    if (!exe) { process.exitCode = 1; break; }
     const env = { ...process.env, DEVTOOL_PROC: config.processName };
     if (cmd === 'wgc') {
       run(exe, ['--out', shotTarget(args[0]?.startsWith('--') ? undefined : args[0], args)], { env });
@@ -406,6 +422,27 @@ switch (cmd) {
     } else {
       run(exe, [cmd, ...args], { env });
     }
+    break;
+  }
+
+  // The UI-thread responsiveness probe (docs/2026-07-31-shenora-oneway-ipc-design.md §7): clicks a
+  // control via win-input, THEN samples SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG) sub-100ms
+  // while the resulting work runs. Refuses to print sample stats unless the click actually landed
+  // (win-input's own "click ok" confirmation) — the guard against the v0.1.0 vacuous pass where a
+  // failed launch reported "0 stalls" for having measured nothing.
+  //   node devtools/dev.mjs responsiveness <fx> <fy> [--label block|stream] [--duration|--interval|--timeout ms]
+  case 'responsiveness': {
+    const winInput = ensureTool('win-input');
+    const probe = ensureTool('ui-responsiveness');
+    if (!winInput || !probe) { process.exitCode = 1; break; }
+    if (args.length < 2 || args[0]?.startsWith('--')) {
+      console.error('usage: node devtools/dev.mjs responsiveness <fx> <fy> [--label name] '
+        + '[--duration ms] [--interval ms] [--timeout ms]');
+      process.exitCode = 2;
+      break;
+    }
+    const env = { ...process.env, DEVTOOL_PROC: config.processName };
+    run(probe, [args[0], args[1], '--win-input', winInput, '--proc', config.processName, ...args.slice(2)], { env });
     break;
   }
 
@@ -475,6 +512,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|knowledge|clean|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }
