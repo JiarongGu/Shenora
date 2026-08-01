@@ -43,6 +43,12 @@ Surfaced by the D3 transport spike, which PASSED — `Shenora.Ipc` needed no cha
 recorded so the next real non-WebView2 base arrives as EVIDENCE rather than a re-argument from
 scratch; at that point the shape is already known.
 
+> **The anticipated consumer #2 for the first two is an on-device mobile host** — see
+> `docs/2026-08-02-shenora-mobile-offline-plan.md`, which assesses what an offline Sonora would need
+> and finds that the real prerequisite is on Sonora's side (28 HTTP controllers to factor into
+> transport-neutral modules), not the kit's. Do NOT build these because that plan exists; build them
+> when the consumer does.
+
 - [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
   base (see the design-pass record in `docs/task-archive.md`) showed the IPC half needs NOTHING to run
   headless — but it made me hand-write ~40 lines every non-WinForms base will write identically: the
@@ -57,6 +63,15 @@ scratch; at that point the shape is already known.
   type in it is portable, and the spike had to bypass the builder entirely and wire DI by hand. An app
   CAN implement `IShenoraRunner` itself (it is a one-method interface), so this is a missing
   convenience rather than a missing capability — recorded, not guessed at.
+- [ ] **`IpcJson.Options` cannot take an app-supplied `JsonSerializerContext`.** Found 2026-08-02
+  while assessing on-device mobile. The instance is frozen with
+  `MakeReadOnly(populateMissingResolver: true)` — i.e. a REFLECTION resolver — which is fine on
+  desktop and Android but is exactly the pattern iOS (Mono AOT + trimming) strips the metadata for,
+  failing at runtime rather than build time. The fix is additive (let an app contribute an
+  `IJsonTypeInfoResolver` to chain) and must not reintroduce the drifting-copies problem the frozen
+  single instance was created to solve. No consumer yet; do not pre-build. Worth knowing it pays
+  twice: the same change is what unlocks full/NativeAOT on Android, which is the strongest cold-start
+  lever an on-device host has.
 - [ ] **D3's other half is still unvalidated: the desktop-FLAVOURED service contracts.** The spike
   proves the IPC/transport story and nothing else, because a transport needs no file dialogs.
   `FileDialogContracts.cs` still CONCEDES in writing that `FileDialogOptions` carries Win32 vocabulary
