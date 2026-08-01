@@ -42,8 +42,11 @@ public interface IOperationRegistry
 
     /// <summary>
     /// Cancel a running operation by id: cancels its own <see cref="CancellationToken"/> first,
-    /// then transitions it to <see cref="OperationStatus.Cancelled"/>. Returns false for an
-    /// unknown id or one that has already reached a terminal state.
+    /// then transitions it to <see cref="OperationStatus.Cancelled"/>. Returns false — and changes
+    /// nothing — for an unknown id, one that has already reached a terminal state, or one started
+    /// with <see cref="OperationOptions.Cancellable"/> false: that flag is documented as "exposes a
+    /// WORKING cancel", so honoring a cancel the operation never opted into would flip its status
+    /// while the body kept running to completion underneath it.
     /// </summary>
     bool Cancel(string id);
 

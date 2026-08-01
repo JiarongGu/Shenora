@@ -108,6 +108,29 @@ public class OperationRegistryTests
         Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
     }
 
+    /// <summary>
+    /// Carried finding (routed from the Task 2 review, fixed in Task 5): a non-cancellable operation
+    /// has no CTS, so cancelling it used to flip the status to Cancelled while the body kept running
+    /// to completion underneath it — the UI showed "cancelled" for work that was still going, and the
+    /// body's own later <c>Complete()</c> silently no-op'd because the entry was already terminal.
+    /// <c>Cancellable</c> is documented as "exposes a WORKING cancel", so the honest contract is:
+    /// refuse and change nothing.
+    /// </summary>
+    [Fact]
+    public void Cancel_returns_false_and_changes_nothing_for_a_non_cancellable_operation()
+    {
+        var (registry, events) = Build();
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" }); // Cancellable defaults to false
+        var eventsAfterStart = events.Count;
+
+        var cancelled = registry.Cancel(operation.Id);
+
+        Assert.False(cancelled);
+        Assert.False(operation.CancellationToken.IsCancellationRequested);
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
+        Assert.Equal(eventsAfterStart, events.Count); // no spurious Cancelled snapshot published
+    }
+
     [Fact]
     public void GetAll_filters_by_module_and_scope_and_lists_running_first()
     {

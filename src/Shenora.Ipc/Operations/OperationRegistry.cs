@@ -135,6 +135,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         lock (_lock)
         {
             miss = Validate(id, out var entry);
+            if (miss is null && !entry!.Cancellable)
+            {
+                // The honest CANCEL contract (Task 5, carried from the Task 2 review): Cancellable is
+                // documented as "exposes a WORKING cancel" — an operation that opted OUT has no CTS,
+                // so flipping it to Cancelled here would lie to the UI while the body keeps running to
+                // its own Complete()/Fail() (which then no-ops, since the entry would already be
+                // terminal). Same "ignored" path as an unknown/already-terminal id, just a different
+                // reason: this operation was simply never cancellable.
+                miss = "is not cancellable (OperationOptions.Cancellable was false)";
+            }
             cts = miss is null ? entry!.Cts : null; // read under the lock — Finish()/Dispose() may dispose it concurrently otherwise
         }
 

@@ -13,7 +13,10 @@ public class ModuleOperationTests
 
         protected override Task<object?> RouteMessageAsync(
             IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
-            => Task.FromResult<object?>(new { operationId = context.Run(new OperationOptions { Kind = "BUILD" }, work) });
+            // Cancellable: true — Task 5's honest CANCEL contract refuses (and changes nothing) for an
+            // operation that didn't opt in, and this facade's own cancel test needs the cancel to
+            // actually take effect.
+            => Task.FromResult<object?>(new { operationId = context.Run(new OperationOptions { Kind = "BUILD", Cancellable = true }, work) });
     }
 
     private static (WorkFacade Facade, OperationRegistry Registry) Build(Func<IOperation, CancellationToken, Task> work)
