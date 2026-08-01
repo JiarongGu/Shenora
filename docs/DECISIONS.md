@@ -450,3 +450,38 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   and still fails BY NAME the moment a future status is added with no exit.
   Caught before 0.2.0 was pushed or published, so free — same standing as every other amendment in
   this entry. Full list: `CHANGELOG.md`'s 0.2.0 entry.
+
+- **D24 — Frameless chrome is a FIXED WinForms type, not an attachable behaviour.** (0.2.0 design
+  pass, owner direction: *"Frameless chrome should be part of winform (as a style of our winform
+  design)"* / *"or you can make a fixed winform type"*.) A whole-codebase review flagged that
+  OptimizedForm is the ONE piece of the kit reachable only by inheritance — everything else
+  composes (WindowStateManager.AttachTo(form), TrayIcon(form), DropZoneManager(form),
+  SecondaryWindows(Func<Form>)) — and proposed extracting the chrome into a
+  FramelessChrome.AttachTo(form) behaviour so an app with its own Form base could take it.
+  **That proposal was considered and REJECTED**, and the reasoning is worth keeping because the
+  observation behind it was correct:
+  - The window STYLE (WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX) is naturally set in
+    CreateParams, i.e. at handle creation. Attaching after the fact needs SetWindowLong +
+    SWP_FRAMECHANGED — a SECOND mechanism for the same property, and both would have to be
+    verified against the OS. That doubles the verification surface in the exact area where a green
+    unit suite has twice been the wrong answer here (P5.6; docs/REVIEW-GUIDE.md §6).
+  - The benefit is narrower than it first looks. WindowCommandOptions already takes a plain
+    Form plus delegates — deliberately, so it never assumes the form type — so a window that is
+    NOT an OptimizedForm can already drive minimize/maximize/close/drag/resize over IPC. Only the
+    chrome itself needs the type, and an app adopting the kit's frameless SHELL window is adopting
+    the kit's window: MainForm : OptimizedForm is the normal shape.
+  - "A fixed type" is the coherent expression of "a style of our WinForms design": the style is
+    selected by OptimizedFormOptions.FramelessChrome, and the type is what carries it.
+  **ACCEPTED LIMIT, recorded so it is not re-raised as a defect:** an app that cannot change its
+  form base cannot take the frameless chrome. It can still take every other Stage-1 primitive and
+  drive the window commands. If a real adopter hits this, the evidence — not the symmetry argument —
+  is what should reopen it.
+  **What DID change, because the cohesion complaint was fair:** OptimizedForm was 998 lines doing
+  five loosely-related jobs. The part that carries no message-loop responsibility — caption-button
+  RENDERING (palette fallback, glyph selection, the DPI-scaled icon font, painting) — moved to an
+  internal CaptionButtonRenderer (905 lines left). The split line is deliberate and is the rule to
+  follow next time: **extract what is pure input → pixels; leave anything that answers a window
+  message where the OS can see it.** The renderer is unit-tested directly with no STA thread, no
+  handle and no pump — including a guard that every glyph is a single Private Use Area codepoint,
+  which pins the documented mojibake trap that a BOM-less UTF-8 source on a CJK-locale machine
+  otherwise turns into silently empty buttons.

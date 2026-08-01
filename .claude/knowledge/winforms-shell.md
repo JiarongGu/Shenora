@@ -74,6 +74,19 @@ owner, `IUiDispatcher`) — don't restate it here.
   paint on the FORM. Do not put a child control in the hole: it becomes what `WindowFromPoint` finds,
   re-creating the coverage problem, and a child answering `HTTRANSPARENT` passes the hit DOWN the
   z-order rather than up to the form.
+- **Frameless chrome is a FIXED TYPE, and the split line inside it is "pure pixels out, window
+  messages stay" (D24).** A review flagged `OptimizedForm` as the one kit feature reachable only by
+  inheritance and proposed a `FramelessChrome.AttachTo(form)` behaviour; it was rejected because the
+  window style belongs in `CreateParams` at handle creation, and attaching it later needs
+  `SetWindowLong` + `SWP_FRAMECHANGED` as a SECOND mechanism — doubling the verification surface in
+  the one area where a green suite has twice been wrong (the `SendMessage` bullet above). What DID
+  move out is `CaptionButtonRenderer`: palette fallback, glyph selection, the DPI-scaled icon font and
+  the painting — all pure input → pixels, unit-testable with no STA thread, no handle and no pump.
+  **Apply the same line to anything else split out of a form:** if it answers a window message,
+  hit-tests, or reshapes a region, it stays where the OS can see it.
+  ⚠ The glyphs are Private Use Area codepoints written as `\uXXXX` ESCAPES, never literal characters
+  (the CJK-locale mojibake trap). A test now pins that every glyph is a single PUA codepoint, because
+  a mangled literal paints an EMPTY button — silently, with a green suite.
 - **When the window owns pixels, changing their STATE is not enough — invalidate them.** The hover
   and pressed states flipped, the callback fired, `WM_NCMOUSEMOVE` arrived and `OnPaint` was correct,
   yet the buttons never visibly reacted, because nothing asked for a repaint. It was harmless while

@@ -119,7 +119,15 @@ changes, noting them in `CHANGELOG.md`).
   reported to `SetCaptionButtons` out of the window region of every covering child so the OS routes
   real input to the form (Snap Layouts), and the form paints it with app-supplied
   `CaptionButtonColors`; `CaptionButtonStateChanged` remains for the un-clipped mode where the app
-  draws them itself; the native services, TryAdd-registered by `UseWinForms` —
+  draws them itself. **Frameless chrome is deliberately a FIXED TYPE rather than an attachable
+  behaviour (D24)** — the window style belongs in `CreateParams` at handle creation, and attaching it
+  later would need `SetWindowLong`+`SWP_FRAMECHANGED` as a second mechanism in the one area where a
+  green unit suite has twice been wrong; the accepted limit (an app that cannot change its form base
+  cannot take the chrome, though it can still drive the window commands) is recorded there. The
+  drawing itself lives in the internal `CaptionButtonRenderer` (0.2.0 design pass): pure input →
+  pixels — palette fallback, glyph selection, the DPI-scaled icon font — so it is unit-tested with no
+  STA thread, no handle and no pump, while everything that answers a window message stayed in the
+  form. The native services, TryAdd-registered by `UseWinForms` —
   `IFormInteraction`/`FormInteraction` (main-window registry, runner-wired; nested modal
   blocking), `IFileDialogs`/`FileDialogs(+Options)` + `FileDialogOptions`/`Filter`/`Result` +
   `IFileDialogPathStore` seam (dedicated-STA open/folder/save dialogs, owner-handle z-order,

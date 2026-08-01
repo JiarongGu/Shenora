@@ -357,6 +357,25 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   two remaining sources — `MaxHistory` eviction and `ClearFinished` — are unchanged, and the client
   folds it identically.
 
+### Changed
+
+- **Frameless chrome stays a FIXED WinForms type, and the caption-button DRAWING moved out of
+  `OptimizedForm` into an internal `CaptionButtonRenderer`** (0.2.0 design pass, D24). The review
+  flagged `OptimizedForm` as the kit's one inheritance-only feature and proposed making the chrome
+  attachable; that was rejected on the evidence — the window style belongs in `CreateParams` at handle
+  creation, and attaching it later needs `SetWindowLong`+`SWP_FRAMECHANGED` as a second mechanism,
+  doubling the verification surface in the one area where a green unit suite has twice been the wrong
+  answer here (P5.6). The cohesion complaint was fair, though, so the part with NO message-loop
+  responsibility was split out: palette fallback, glyph selection, the DPI-scaled icon font and the
+  painting. `OptimizedForm` 998 → 905 lines. **No public surface change** — the renderer is internal
+  and the form's behaviour is identical. The reusable rule (D24): extract what is pure input →
+  pixels; leave anything that answers a window message where the OS can see it.
+  New direct tests cover glyph choice, the fallback palette, DPI font scaling and its cache — none of
+  which previously had any, since they were unreachable without a real window. One of them pins that
+  every glyph is a single Private Use Area codepoint, guarding the documented CJK-locale mojibake trap
+  that otherwise turns a caption button silently blank; sabotage-verified (a mangled glyph fails it
+  reporting `Actual: 63`).
+
 ### Fixed
 
 - **`OperationInfo` had no cross-language field mirror** — the single biggest shape on this wire (it

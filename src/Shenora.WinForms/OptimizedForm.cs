@@ -117,7 +117,9 @@ public class OptimizedForm : Form, IAppMaximizable
     private readonly HashSet<Control> _trackedChildren = [];
     private readonly HashSet<Control> _clippedChildren = [];
     private CaptionButtonColors? _captionButtonColors;
-    private Font? _captionGlyphFont;
+    // Input → pixels only. Everything about WHERE the buttons are and who receives a click stays in
+    // this form's WndProc — see CaptionButtonRenderer for why the split line sits exactly there.
+    private readonly CaptionButtonRenderer _captionRenderer = new();
 
     /// <summary>A form with the default options: double-buffered, framed, no manual maximize.</summary>
     public OptimizedForm() : this(null)
@@ -204,8 +206,7 @@ public class OptimizedForm : Form, IAppMaximizable
             ControlAdded -= OnCaptionChildAdded;
             ControlRemoved -= OnCaptionChildRemoved;
             foreach (var child in _trackedChildren.ToArray()) Untrack(child);
-            _captionGlyphFont?.Dispose();
-            _captionGlyphFont = null;
+            _captionRenderer.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -485,124 +486,20 @@ public class OptimizedForm : Form, IAppMaximizable
     /// walks outward to this form. The form's own client area needs none of that: it is already the
     /// window the OS asks, which is what the clip proved.
     /// </para>
+    /// <para>
+    /// The DRAWING itself moved to <see cref="CaptionButtonRenderer"/> (0.2.0 design pass): it is pure
+    /// input-to-pixels, so it is independently testable and does not belong in a form whose real job
+    /// here is deciding who receives a click. What stayed is this override — the decision to paint at
+    /// all, and on this surface.
+    /// </para>
     /// </summary>
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (!NativeCaptionButtonsEnabled || _captionButtons.Length == 0 || _captionUnion.IsEmpty) return;
-
-        var colors = _captionButtonColors ?? FallbackCaptionButtonColors();
-        var g = e.Graphics;
-
-        // The whole union, so the GAPS between buttons are filled too — the web view no longer
-        // renders any of it, and an unpainted gap shows as a tear beside the buttons.
-        using (var surface = new SolidBrush(colors.Surface))
-            g.FillRectangle(surface, _captionUnion);
-
-        var font = CaptionGlyphFont();
-        foreach (var region in _captionButtons)
-        {
-            var hot = _hotCaptionButton == region.Kind;
-            var pressed = _pressedCaptionButton == region.Kind;
-            var isClose = region.Kind == CaptionButtonKind.Close;
-
-            if (hot || pressed)
-            {
-                var back = pressed
-                    ? (isClose ? colors.ClosePressed : colors.Pressed)
-                    : (isClose ? colors.CloseHover : colors.Hover);
-                using var brush = new SolidBrush(back);
-                g.FillRectangle(brush, region.Bounds);
-            }
-
-            var glyph = isClose && (hot || pressed) ? colors.CloseGlyphHot ?? colors.Glyph : colors.Glyph;
-            TextRenderer.DrawText(g, CaptionGlyph(region.Kind), font, region.Bounds, glyph,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
-                | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping);
-        }
-    }
-
-    /// <summary>
-    /// The Windows chrome glyphs — the same codepoints the OS draws in a real caption, so the
-    /// buttons match every other window on the desktop. Maximize swaps to RESTORE while maximized,
-    /// which is behaviour, not styling: a maximize glyph on a maximized window is simply wrong.
-    /// </summary>
-    /// <remarks>
-    /// ESCAPE SEQUENCES, never the literal characters. These are Private Use Area codepoints, and a
-    /// BOM-less UTF-8 source on this repo's CJK-locale build machine is a documented mojibake trap
-    /// (the CodePage note in <c>src/Directory.Build.props</c>). An escape is plain ASCII in the file,
-    /// so nothing between an editor and the compiler can mangle it. Unlike a mangled glyph, a
-    /// mangled escape fails to COMPILE instead of silently painting an empty button.
-    /// </remarks>
-    private string CaptionGlyph(CaptionButtonKind kind) => kind switch
-    {
-        CaptionButtonKind.Minimize => "\uE921",                             // ChromeMinimize
-        CaptionButtonKind.Maximize => IsAppMaximized ? "\uE923" : "\uE922", // ChromeRestore / ChromeMaximize
-        _ => "\uE8BB",                                                      // ChromeClose
-    };
-
-    /// <summary>
-    /// The icon font at this monitor's scale, cached until the scale changes.
-    /// <para>
-    /// "Segoe Fluent Icons" is Windows 11's; Windows 10 ships only "Segoe MDL2 Assets". Both carry
-    /// these four glyphs at the SAME codepoints, so the fallback is exact rather than approximate,
-    /// and one of the two is present on every Windows this package targets.
-    /// </para>
-    /// </summary>
-    private Font CaptionGlyphFont()
-    {
-        // 10 logical px is the size Windows itself draws caption glyphs at.
-        var size = (float)(10 * DpiHelper.ScaleFromDeviceDpi(DeviceDpi));
-        if (_captionGlyphFont is { } cached && Math.Abs(cached.Size - size) < 0.01f) return cached;
-        _captionGlyphFont?.Dispose();
-        _captionGlyphFont = new Font(CaptionGlyphFamily(), size, GraphicsUnit.Pixel);
-        return _captionGlyphFont;
-    }
-
-    private static string? _captionGlyphFamily;
-
-    private static string CaptionGlyphFamily()
-    {
-        if (_captionGlyphFamily is not null) return _captionGlyphFamily;
-        foreach (var candidate in new[] { "Segoe Fluent Icons", "Segoe MDL2 Assets" })
-        {
-            // FontFamily throws when the family is not installed; there is no TryGet.
-            try
-            {
-                using var family = new FontFamily(candidate);
-                return _captionGlyphFamily = candidate;
-            }
-            catch (ArgumentException)
-            {
-                // Not on this machine — try the older name.
-            }
-        }
-        return _captionGlyphFamily = FontFamily.GenericSansSerif.Name;
-    }
-
-    /// <summary>
-    /// A last-resort palette derived from the form's own fill, used only when an app set
-    /// <see cref="OptimizedFormOptions.NativeCaptionButtons"/> without <see cref="CaptionButtonColors"/>. Refusing to paint
-    /// would be worse: the clip has already taken those pixels away from the page, so the buttons
-    /// would silently vanish — the same "degrades to silence" failure the resource-prefix check
-    /// exists to prevent.
-    /// </summary>
-    private CaptionButtonColors FallbackCaptionButtonColors()
-    {
-        var back = BackColor;
-        var dark = back.GetBrightness() <= 0.5;
-        return new CaptionButtonColors
-        {
-            Surface = back,
-            Hover = dark ? ControlPaint.Light(back, 0.4f) : ControlPaint.Dark(back, 0.06f),
-            Pressed = dark ? ControlPaint.Light(back, 0.8f) : ControlPaint.Dark(back, 0.12f),
-            Glyph = dark ? Color.White : Color.Black,
-            // Close goes red on hover on every Windows app; that is the platform convention users
-            // read as "this closes", not a design choice of ours.
-            CloseHover = Color.FromArgb(196, 43, 28),
-            ClosePressed = Color.FromArgb(163, 36, 23),
-            CloseGlyphHot = Color.White,
-        };
+        if (!NativeCaptionButtonsEnabled) return;
+        _captionRenderer.Paint(e.Graphics, _captionButtons, _captionUnion,
+            _hotCaptionButton, _pressedCaptionButton, IsAppMaximized, DeviceDpi, BackColor,
+            _captionButtonColors);
     }
 
     /// <summary>

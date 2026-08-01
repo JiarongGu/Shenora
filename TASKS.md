@@ -44,17 +44,13 @@ free only while 0.2.0 is unpublished** — after publish, D1 and D2 are breaking
 `RequestWait`/`RequestResume` ask-act pair stayed, because cutting it would have left a client able to
 pause but never resume.
 
-- [ ] **D2 — make frameless chrome attachable instead of inherited.** Everything else in the kit
-  composes (`WindowStateManager.AttachTo(form)`, `TrayIcon(form)`, `DropZoneManager(form)`,
-  `SecondaryWindows(Func<Form>)`, and `WindowCommandOptions` takes a plain `Form` + delegates
-  *deliberately* so it does not assume the form type). Frameless chrome + native caption buttons are
-  the one feature reachable only by deriving from `OptimizedForm` (998 lines) — and an app mature
-  enough to have hand-rolled a shell already has its own `Form` base, so the feature most likely to
-  sell adoption is the one it cannot take. Extract the behaviour (`NativeWindow` subclass for
-  `WM_NCCALCSIZE`/`WM_NCHITTEST`/`WM_SYSCOMMAND`, `SetWindowLong`+`SWP_FRAMECHANGED` for the style
-  the `CreateParams` override currently sets), keep `OptimizedForm` as a thin convenience over it.
-  **Needs live verification against the sample** — per `REVIEW-GUIDE.md` §6 this is the area where a
-  green unit suite has twice been the wrong answer (P5.6).
+**D2 (frameless chrome) is DONE, and it landed as a REJECTION plus a narrower change** — see
+`docs/DECISIONS.md` D24. Making the chrome attachable was rejected on evidence: the window style
+belongs in `CreateParams` at handle creation, and attaching it later needs `SetWindowLong` +
+`SWP_FRAMECHANGED` as a second mechanism, in the one area where a green unit suite has twice been the
+wrong answer. What DID change: the pure input-to-pixels half moved to an internal
+`CaptionButtonRenderer`, with direct tests it could never have had inside the form.
+
 - [ ] **D3 — validate D16 with a real second transport before 1.0 freezes the shapes.**
   `NotificationPump` was extracted "so a second, non-WinForms base inherits these fixes" and no second
   base exists; `ShenoraTransport` is pluggable with one transport; `IUiDispatcher` has one
