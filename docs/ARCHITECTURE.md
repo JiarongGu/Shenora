@@ -4,7 +4,7 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state — **v0.1.0 SHIPPED (2026-07-31)**, P1–P7 complete; **0.2.0 communication core landed**
+## Current state — **0.3.0 PUBLISHED (2026-08-01)**; v0.1.0 shipped 2026-07-31, P1–P7 complete
 
 Five NuGet packages + `@shenora/react` on npm. Since the summary below was written, P5.5 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
@@ -23,7 +23,15 @@ transport-neutral half of the outbound notification pipeline moved out of `WebVi
 `Shenora.Ipc`'s `NotificationPump`, so `WebViewIpcBridge` is now a thin WinForms/WebView2 adapter over
 it (D16's "the seam, not the package" applied to the host half). `@shenora/react` gained
 `useShenoraOperations`/`createOperationsStore`, a host-backed store mirroring the pattern
-`createShenoraStore` already established.
+`createShenoraStore` already established. (That work was drafted under the name "0.2.0" and shipped as
+**0.3.0** — no 0.2.0 release exists; `CHANGELOG.md` `## 0.2.0 — never released` has the account.)
+
+**0.3.0 also carries `Shenora.Core`'s work-scheduling + filesystem-claims layer**
+(`docs/2026-08-02-shenora-work-scheduling-design.md`): one scheduler whose key spaces are pluggable, so
+a filesystem operation planner (paths conflict by containment) and a job queue (lanes admit N) are the
+same engine — the EXECUTION half of long-running work, composing with `Shenora.Ipc`'s operations
+cluster (the REPORTING half) rather than merging with it. Surface below; adopter-facing mapping in
+`docs/ADOPTION.md`.
 
 P2 delivered the core host (builder, WinForms runner, WebView2 hosting + serving, samples). P3
 delivered the full IPC stack (wire contract, dispatcher + facades, event bus, postMessage
@@ -98,6 +106,65 @@ changes, noting them in `CHANGELOG.md`).
   global events reach scoped subscribers; handler failures logged + isolated; `EmitAsync` awaits
   every handler, `Emit` is the fire-and-forget twin for a synchronous caller; auto-registered
   by `Build()` via `TryAdd` — replaceable).
+- **`Shenora.Core`'s work-scheduling layer (0.3.0, `Work/` + `Io/`)** — the EXECUTION half of
+  long-running work, portable and with no DI, storage or reporting dependency of its own:
+  `IWorkScheduler`/`WorkScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `PendingCount`/
+  `RunningCount`, `IsActive(WorkKey)`, `Snapshot()`, `Reevaluate()`, `RecoverAsync(rehydrate)`;
+  `IAsyncDisposable` — dispose cancels what is queued and awaits what is running). **Admission** is
+  event-driven, evaluated on submit and on each completion (no worker thread, no polling), and an item
+  starts only when no in-flight AND no EARLIER-PENDING item holds a conflicting claim (rule 2 is
+  fairness — it is what stops a queued item starving behind newer disjoint work) and every named lane
+  has a permit; the lock covers bookkeeping only, never the body.
+  **Claims** — mutual exclusion without the caller taking a lock: `WorkClaim` (`Scope`/`Key`/`Mode` +
+  `Exclusive`/`Shared` factories), `ClaimMode`, and the `IClaimScope` seam supplying each key space's
+  conflict rule — `FlatClaimScope` (equal only) and `NestedClaimScope` (equal or containment, tested at
+  a SEPARATOR boundary so `a/b` contains `a/b/c` but not `a/bc`; `Normalize` collapses repeated
+  separators and trims a trailing one, once, at submit). A request declares its whole claim SET, so
+  there is no per-key lock object to leak and no acquisition ORDER to get wrong — the two bugs the
+  family's hand-rolled versions had.
+  **Lanes** — capacity, orthogonal to exclusion: `ILane` (`Capacity` settable LIVE, floor 1 and no
+  ceiling; lowering swallows permits as items finish rather than killing in-flight work; `Hold`/`Release`
+  re-entrant, the mechanism a load governor actuates with — the kit ships no probe, hysteresis or
+  debounce policy), `WorkLane(Name, Permits = 1)` for a lane that is a BUDGET rather than a slot count.
+  Every request also draws one permit from the default lane (`DefaultLaneCapacity`, 0 = `clamp(cores-1,
+  1, 4)`), which is the global concurrency bound.
+  **The request** — `WorkRequest` (`Run` + optional `Commit`: setting `Commit` makes `Run` run exactly
+  ONCE and retries only the commit, so a failed cheap replace never recompresses; `Claims`, `Lanes`,
+  `Priority`, `Key`, `Retry`, `Durable`, `Kind`, `Payload`), `WorkContext` (`WorkId`/`Attempt`/
+  `Cancellation`), `WorkKey` (dedup identity — a matching submission completes against the live item,
+  body once), `RetryPolicy`(+`None`) (3 × 500 ms × attempt, `IOException` only), `WorkResult`/
+  `WorkOutcome` (`Completed`/`Failed`/`Cancelled`/`Deduplicated`; a failing body is REPORTED, not
+  thrown — a batch submitter must survive one bad item — with `ThrowIfFailed()` for callers who prefer
+  exceptions, while caller bugs still throw at submit).
+  **The app's own scheduling rules** — `IWorkPolicy` (`Compare` = what next, `ShouldStart` = when) +
+  `PriorityWorkPolicy` (priority, then FIFO — plain FIFO with no priorities set). Consulted ONLY about
+  items that already passed admission, which is the structural reason a custom policy can delay work
+  but never make conflicting work overlap or bypass a lane; a throwing policy is treated as "not now"
+  rather than wedging the scheduler.
+  **Observation + durability** — `IWorkObserver` (`OnQueued`/`OnStarted`/`OnFinished`, each guarded
+  through `AppCallback`; the seam for metrics, tracing, or binding execution to a progress registry
+  without `Core` learning what an operation is), `WorkView`/`WorkSnapshot`/`WorkSchedulerState`;
+  `IWorkStore`/`WorkRecord`/`WorkState` + `RecoveryPolicy` (`Requeue`/`Fail`/`Discard`, defaulting to
+  `Requeue` for `Queued` and **`Fail` for `Running`** — work found running after a crash may be what
+  killed the process, and re-running it turns one crash into a boot loop) and `RecoveryPolicyFor`.
+  Recovery is an explicit `RecoverAsync` with an app `rehydrate` delegate, never implicit: a delegate
+  does not serialize, and that same delegate is why the kit ships no handler-registry-by-type.
+  **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
+  case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
+  `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
+  `IsContained(root, candidate)` (the containment guard for anything mapping caller input to a file —
+  resolves `..` first, boundary-tested, so `C:\data-old` is not inside `C:\data`).
+  Naming is `Work*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary, and
+  reusing the word would blur the one distinction the design rests on.
+  **Three as-built facts worth recording, because a reader of the design doc or the XML would expect
+  otherwise:** (1) an unknown LANE does NOT throw — it is created at the default capacity on first
+  mention, so only an unregistered claim SCOPE is a submit-time error (two XML remarks still list the
+  lane case; the trap is a misspelled name silently costing the exclusivity that was configured);
+  (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
+  whole of `Io/`, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit` models; (3) nothing
+  in `Shenora.Ipc` implements `IWorkObserver` yet, so wiring execution to the operation registry is
+  currently the app's own short adapter, and `Shenora.Core` stays free of any reporting dependency
+  either way (D19/D20).
 - `Shenora.WinForms` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
   internal-element helpers); `WindowState`/`WindowStateOptions`/`IWindowStateStore`/
   `JsonFileWindowStateStore`/`WindowStateManager` (logical-px persistence, physical restore,
@@ -425,6 +492,11 @@ changes, noting them in `CHANGELOG.md`).
 
 - `Core` depends only on Microsoft.Extensions DI (implementation — the builder needs
   `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on `Core`.
+- **Execution and reporting compose; they do not merge.** `Core`'s `Work/` layer must never learn what
+  an operation is — a work body reports into `Shenora.Ipc`'s operation registry, and the seam pointing
+  that way is `IWorkObserver`. `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20),
+  which is also why the scheduler ships no storage dependency: `IWorkStore` is a seam, not an
+  implementation.
 - **The two Windows packages are ONE layer (D19):** `Shenora.WebView2` → `Shenora.WinForms`, i.e.
   Windows **primitives** and **web hosting on top of them** — not two peers. This replaced the old
   "never sideways" rule on evidence (the UI-thread marshal pattern had been hand-rolled 14 times with
