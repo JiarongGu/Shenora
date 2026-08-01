@@ -54,10 +54,8 @@ public interface IModuleContext
     /// finishes, so a body that waited and returned is left exactly as
     /// <see cref="OperationStatus.Waiting"/>, with no live body watching it. Resuming it from there is
     /// the APP's job — the same handle's <c>op.Resume()</c> if the app kept a reference, or its own
-    /// checkpoint/restart path otherwise — the same shape as a crash-interrupted offer
-    /// (<see cref="IOperationRegistry.RegisterWaiting"/>), just without the crash. This is
-    /// deliberate: completing it here anyway would be a third lie alongside "keep it Running" and
-    /// "Fail it", the two lies §5A.2 exists to remove.
+    /// restart path otherwise. This is deliberate: completing it here anyway would be a third lie
+    /// alongside "keep it Running" and "Fail it", the two lies §5A.2 exists to remove.
     /// </para>
     /// </summary>
     string Run(OperationOptions options, Func<IOperation, CancellationToken, Task> work);

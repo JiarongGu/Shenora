@@ -199,22 +199,61 @@ public class WireMirrorTests
 
     /// <summary>
     /// <see cref="OperationProgress"/> replaced a bare 0–100 <c>int?</c> (generic-library audit, before
-    /// publish) — a NEW wire shape both sides name, so it needs its own tripwire the same way
-    /// <see cref="OperationInfo"/>'s other fields are pinned by <c>[JsonPropertyName]</c> +
-    /// the API baseline on the host side. This compares the SET of field names (camelCased) rather
-    /// than trusting the two sides to stay in step by inspection — the exact disease this whole file
-    /// exists to catch for everything else on this wire.
+    /// publish) — a NEW wire shape both sides name, so it needs its own tripwire. This compares the
+    /// SET of field names (camelCased) rather than trusting the two sides to stay in step by
+    /// inspection — the exact disease this whole file exists to catch for everything else on this wire.
     /// </summary>
     [Fact]
     public void OperationProgress_fields_match_the_host()
     {
-        var host = typeof(OperationProgress).GetProperties()
+        AssertMirroredFields(typeof(OperationProgress), "OperationProgress");
+    }
+
+    /// <summary>
+    /// <b><see cref="OperationInfo"/> is the biggest shape on this wire and had NO mirror at all until
+    /// the 0.2.0 design pass</b> — it is both the entire <c>OPERATION_UPDATED</c> payload and the
+    /// element type of the <c>LIST</c> response, so a field present on one side and not the other is a
+    /// silent hole in every operation-driven UI.
+    /// <para>
+    /// It was missed because of a plausible-sounding claim, which is why this comment records it:
+    /// <see cref="OperationProgress_fields_match_the_host"/>'s own doc used to assert that
+    /// "<c>OperationInfo</c>'s other fields are pinned by <c>[JsonPropertyName]</c> + the API baseline
+    /// on the host side". Both halves are true and together they still prove nothing about the MIRROR —
+    /// they pin the HOST's names against the HOST's own baseline, and no test compared them to the TS
+    /// interface. The smaller, newer type got a tripwire; the one that actually carries the payload did
+    /// not. (Found when a whole-codebase review removed <c>ResumePayload</c> from both sides by hand
+    /// and nothing verified that both hands had moved.)
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OperationInfo_fields_match_the_host()
+    {
+        AssertMirroredFields(typeof(OperationInfo), "OperationInfo");
+    }
+
+    /// <summary>
+    /// The shared mirror check: a host record's property names, camelCased the way
+    /// <see cref="IpcJson"/> serializes them, must equal the TS interface's field names exactly.
+    /// One helper so a third wire shape cannot be added with a subtly weaker check.
+    /// </summary>
+    private static void AssertMirroredFields(Type hostType, string clientInterface)
+    {
+        var host = hostType.GetProperties()
             .Select(p => JsonNamingPolicy.CamelCase.ConvertName(p.Name))
             .ToHashSet(StringComparer.Ordinal);
-        var client = ParseInterfaceFieldNames(ClientSource("operations.ts"), "OperationProgress");
+        var client = ParseInterfaceFieldNames(ClientSource("operations.ts"), clientInterface);
 
-        Assert.NotEmpty(host);      // parser/reflection self-check
+        Assert.NotEmpty(host);      // parser/reflection self-check: neither side may be silently empty
         Assert.NotEmpty(client);
-        Assert.Equal(host, client);
+
+        var missingOnClient = host.Except(client).Order(StringComparer.Ordinal).ToArray();
+        Assert.True(missingOnClient.Length == 0,
+            $"The host's {hostType.Name} carries these fields but the client's `{clientInterface}` does not name " +
+            $"them: {string.Join(", ", missingOnClient)}. A consumer cannot read what it cannot name.");
+
+        var extraOnClient = client.Except(host).Order(StringComparer.Ordinal).ToArray();
+        Assert.True(extraOnClient.Length == 0,
+            $"The client's `{clientInterface}` names these fields but the host's {hostType.Name} never sends " +
+            $"them: {string.Join(", ", extraOnClient)}. They will always be undefined at runtime.");
     }
 }

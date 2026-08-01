@@ -43,7 +43,6 @@ interface Shenora.Ipc.IOperationRegistry
   public abstract bool Dismiss(string id)
   public abstract bool RequestResume(string id)
   public abstract bool RequestWait(string id)
-  public abstract string RegisterWaiting(string module, Shenora.Ipc.OperationOptions options)
   public abstract string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public abstract void ClearFinished(string? module = null, string? scope = null)
 static class Shenora.Ipc.IpcCategories
@@ -181,7 +180,6 @@ sealed class Shenora.Ipc.OperationInfo : System.IEquatable<Shenora.Ipc.Operation
   public required string Module { get; init; }
   public static bool op_Equality(Shenora.Ipc.OperationInfo? left, Shenora.Ipc.OperationInfo? right)
   public static bool op_Inequality(Shenora.Ipc.OperationInfo? left, Shenora.Ipc.OperationInfo? right)
-  public string? ResumePayload { get; init; }
   public string? Scope { get; init; }
   public string? WaitReason { get; init; }
 sealed class Shenora.Ipc.OperationLabel : System.IEquatable<Shenora.Ipc.OperationLabel>
@@ -209,7 +207,6 @@ sealed class Shenora.Ipc.OperationOptions : System.IEquatable<Shenora.Ipc.Operat
   public required string Kind { get; init; }
   public static bool op_Equality(Shenora.Ipc.OperationOptions? left, Shenora.Ipc.OperationOptions? right)
   public static bool op_Inequality(Shenora.Ipc.OperationOptions? left, Shenora.Ipc.OperationOptions? right)
-  public string? ResumePayload { get; init; }
   public string? Scope { get; init; }
 sealed class Shenora.Ipc.OperationProgress : System.IEquatable<Shenora.Ipc.OperationProgress>
   public .ctor(double Value, double? Total = null, string? Unit = null)
@@ -233,7 +230,6 @@ sealed class Shenora.Ipc.OperationRegistry : Shenora.Ipc.IOperationRegistry, Sys
   public bool Dismiss(string id)
   public bool RequestResume(string id)
   public bool RequestWait(string id)
-  public string RegisterWaiting(string module, Shenora.Ipc.OperationOptions options)
   public string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public void ClearFinished(string? module = null, string? scope = null)
   public void Dispose()

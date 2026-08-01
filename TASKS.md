@@ -29,6 +29,47 @@ which is why several corrections landed in it rather than as a 0.2.1.
 
 ## Open
 
+### 0.2.0 design pass — "make a proper 0.2.0" (owner direction, 2026-08-01)
+
+> DIRECTION (user, 2026-08-01): *"usually if you do the code review, you should be getting the purpose
+> of the project rethinking if this is a good design, instead just check if the code itself works or
+> not"* — then: *"lets do all, make a proper 0.2.0."*
+
+The whole-codebase review (`docs/task-archive.md`) audited the kit against its OWN stated intentions
+and never asked whether those intentions were right. This is that second pass. **All four items are
+free only while 0.2.0 is unpublished** — after publish, D1 and D2 are breaking changes.
+
+**D1 (cut the crash-checkpoint half of the operations cluster) is DONE** — record and rationale in
+`docs/task-archive.md` `### 0.2.0 design pass`. It landed narrower than first scoped: the
+`RequestWait`/`RequestResume` ask-act pair stayed, because cutting it would have left a client able to
+pause but never resume.
+
+- [ ] **D2 — make frameless chrome attachable instead of inherited.** Everything else in the kit
+  composes (`WindowStateManager.AttachTo(form)`, `TrayIcon(form)`, `DropZoneManager(form)`,
+  `SecondaryWindows(Func<Form>)`, and `WindowCommandOptions` takes a plain `Form` + delegates
+  *deliberately* so it does not assume the form type). Frameless chrome + native caption buttons are
+  the one feature reachable only by deriving from `OptimizedForm` (998 lines) — and an app mature
+  enough to have hand-rolled a shell already has its own `Form` base, so the feature most likely to
+  sell adoption is the one it cannot take. Extract the behaviour (`NativeWindow` subclass for
+  `WM_NCCALCSIZE`/`WM_NCHITTEST`/`WM_SYSCOMMAND`, `SetWindowLong`+`SWP_FRAMECHANGED` for the style
+  the `CreateParams` override currently sets), keep `OptimizedForm` as a thin convenience over it.
+  **Needs live verification against the sample** — per `REVIEW-GUIDE.md` §6 this is the area where a
+  green unit suite has twice been the wrong answer (P5.6).
+- [ ] **D3 — validate D16 with a real second transport before 1.0 freezes the shapes.**
+  `NotificationPump` was extracted "so a second, non-WinForms base inherits these fixes" and no second
+  base exists; `ShenoraTransport` is pluggable with one transport; `IUiDispatcher` has one
+  implementation. `FileDialogContracts.cs` already CONCEDES its contract is "desktop-FLAVOURED" and
+  that a mobile picker would ignore half the options and return a content URI. So the first real
+  mobile adoption breaks `IFileDialogs` — a 1.0 break the kit says it will not take. This is a SPIKE
+  (throwaway, not shipped surface): stand a headless host base + a non-WebView2 transport over the
+  existing envelopes and see what the seams demand.
+- [ ] **D4 — gate the prose.** 8 of the review's ~13 findings were stale or self-contradicting
+  comments/docs. Every code invariant here has a test; no prose claim has anything, and the kit's
+  whole "read the why, don't relitigate" discipline depends on the prose being true. Cheapest real
+  gate: the API baselines already enumerate every public member, so a `doctor` check can flag
+  doc/comment references to kit symbols that no longer exist. Needs an allowlist — historical names
+  (`LoginWindow`, `CoBrowseSession`, `RegisterInterrupted`) are cited on purpose.
+
 ### From the first adopter, IPC + drop-zone design review (2026-08-01)
 
 Requested review of whether the CURRENT implementation matches the stated design intent — *"not a sync

@@ -334,19 +334,26 @@ transport, or building the P6 adoption shims.
   instead of a second status. With one fewer non-terminal status, `OperationLifecycleInvariantTests`'
   sweep is simpler, not weaker — it still enumerates the live enum rather than a hardcoded list. Full
   rename table and rationale: `docs/DECISIONS.md` D23's amendment.
-  **CLOSED (2026-08-01, before 0.2.0 pushed/published): keying on `ResumePayload` was a residual
-  hole, not the final shape — that field is APP-controlled (an app may set it on `OperationOptions` at
-  `Start()`), so it could not reliably answer "does this entry have a live handle".** An app that
-  attached its own `ResumePayload` at `Start()` and then called `Wait()` had a genuinely live operation
-  (handle intact, body parked) dropped by `RequestResume` anyway — silently orphaning later
-  `Report`/`Complete`/`Fail` calls on it, the same defect class `IModuleContext` closed for module
-  drift (a decision keyed on a value the caller also controls, not on the fact the kit itself knows for
-  certain). `RequestResume` now keys the drop-vs-keep decision on an internal `Entry.Reconstructed`
-  flag instead — set `true` only by `RegisterWaiting` (the one call site that legitimately reconstructs
-  an entry with no live body), left `false` by `Start` (which always allocates one) — never exposed on
-  `OperationInfo`, since no consumer needs it and every public member is SemVer surface at 1.0.
-  `ResumePayload`'s other roles are unchanged: `RegisterWaiting` still requires it non-empty, the
-  dedupe key still uses it, and it still rides `OPERATION_RESUME_REQUESTED`.
+  **CLOSED BY REMOVAL (2026-08-01, the 0.2.0 design pass, before publish) — and the WAY it closed is
+  the reusable lesson, so read this bullet's whole amendment stack as one symptom.** The same question
+  ("does this entry still have a live body?") was answered three times: a second status
+  (`Interrupted`, which turned out to have no terminal exit at all), then `ResumePayload` (APP-
+  controlled, so an app that attached one at `Start()` and then called `Wait()` had a genuinely live
+  operation dropped out of the registry, orphaning later `Report`/`Complete`/`Fail` calls), then an
+  internal `Entry.Reconstructed` provenance flag. Each fix was correct about the previous bug and none
+  addressed why the question existed: the registry accepted entries it had never started
+  (`RegisterWaiting` + `ResumePayload`), which the design doc's own §4.2 note had already flagged as
+  single-app provenance against a two-app bar. **The cut removes the question rather than answering it
+  a fourth time** — `RegisterWaiting`, `OperationOptions.ResumePayload` and `OperationInfo.ResumePayload`
+  are gone, `RequestResume` is an exact mirror of `RequestWait` (validate, emit, mutate nothing), and
+  crash recovery returns to the app that owned the checkpoint all along.
+  **Generalize it:** when one decision needs its third rewrite, the bug is usually the decision's
+  EXISTENCE, not its current answer — check whether some earlier acceptance created the case you keep
+  re-deciding. And note what survived, because the cut had to be narrower than the phrase "the
+  crash-resume half": `OperationStatus.Waiting`, `IOperation.Wait`/`Resume`, `Dismiss` and the
+  `RequestWait`/`RequestResume` ask-act PAIR all stay — cutting `RequestResume` too would have left a
+  client able to pause but never resume, which is the download-manager shape the kit itself names as a
+  consumer.
 
 ## Gotchas / traps
 

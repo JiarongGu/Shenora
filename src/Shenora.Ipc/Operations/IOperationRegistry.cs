@@ -125,10 +125,10 @@ public interface IOperationRegistry
     /// not <c>Cancel</c> accepting more states, for the same reason.
     /// </para>
     /// <para>
-    /// Signals the entry's own <see cref="CancellationToken"/> FIRST when one exists (an entry reached
-    /// via <see cref="IOperation.Wait"/> still has one; one registered directly via
-    /// <see cref="RegisterWaiting"/> never does — see that method's own doc), so a waiting body still
-    /// parked on its token unwinds the same way a running one does under <see cref="Cancel"/>.
+    /// Signals the entry's own <see cref="CancellationToken"/> FIRST, so a waiting body still parked on
+    /// its token unwinds the same way a running one does under <see cref="Cancel"/> — a
+    /// <see cref="OperationStatus.Waiting"/> entry always has a live token, because the only way to
+    /// reach that status is <see cref="IOperation.Wait"/> on a handle <see cref="Start"/> produced.
     /// </para>
     /// </summary>
     /// <returns>
@@ -138,53 +138,25 @@ public interface IOperationRegistry
     bool Dismiss(string id);
 
     /// <summary>
-    /// Announce a crash-interrupted, resumable operation directly from the APP's own checkpoint — the
-    /// kit holds the offer; the app owns what to resume and how. Requires a non-empty
-    /// <see cref="OperationOptions.ResumePayload"/> (the opaque checkpoint token — its presence IS
-    /// what makes this resumable, see that property's own doc), throwing
-    /// <see cref="ArgumentException"/> naming it when missing — a silently-accepted unusable entry
-    /// would be worse than a loud rejection. What tells an offer registered HERE apart from an
-    /// ordinary <see cref="IOperation.Wait"/>, once both land on the same
-    /// <see cref="OperationStatus.Waiting"/> status, is NOT that token but the registry's own internal
-    /// record of which call site produced the entry — see <see cref="RequestResume"/> for why an
-    /// app-controlled field could not answer that question reliably.
+    /// The user asked to resume operation <paramref name="id"/> — the exact mirror of
+    /// <see cref="RequestWait"/> for the other direction. Accepts <see cref="OperationStatus.Waiting"/>
+    /// only, returning <c>false</c> and changing nothing otherwise (an unknown id, a
+    /// <see cref="OperationStatus.Running"/> one, or a terminal one — the same honest-refusal shape as
+    /// every other transition here). On success, emits <see cref="OperationEvents.ResumeRequested"/>
+    /// with <c>{ operationId, module, kind, scope }</c> and leaves the entry untouched: **the client
+    /// asking is not the state changing** — the owning module's OWN <see cref="IOperation.Resume"/> is
+    /// what restarts the work and publishes the transition.
     /// <para>
-    /// Deduped on <c>(module, kind, resumePayload)</c> among already-<see cref="OperationStatus.Waiting"/>
-    /// entries that themselves carry no live handle: re-announcing the SAME checkpoint (a
-    /// profile/session switch, say) returns the existing id rather than stacking a second offer for
-    /// what is still the same interrupted checkpoint.
-    /// </para>
-    /// <para>
-    /// The returned entry is a pending OFFER, not finished history: the registry's automatic history
-    /// pruning (capped by <see cref="OperationRegistryOptions.MaxHistory"/>) never evicts it — only
-    /// <see cref="RequestResume"/> removes it.
-    /// </para>
-    /// </summary>
-    string RegisterWaiting(string module, OperationOptions options);
-
-    /// <summary>
-    /// The user asked to resume operation <paramref name="id"/>. Accepts
-    /// <see cref="OperationStatus.Waiting"/> only, returning <c>false</c> and changing nothing
-    /// otherwise (the same honest-refusal shape as <see cref="Cancel"/> for an unknown or wrong-state
-    /// id). On success, emits <see cref="OperationEvents.ResumeRequested"/> with
-    /// <c>{ operationId, module, kind, resumePayload, scope, status }</c> — <c>status</c> is kept so a
-    /// handler can still branch, even though it is always <see cref="OperationStatus.Waiting"/> here
-    /// now that there is only one such value (see the asymmetry below for what a handler actually needs
-    /// to tell apart).
-    /// <para>
-    /// <b>The drop-vs-keep decision is deliberate (§5A.4), and keys on how the entry REACHED
-    /// <see cref="OperationStatus.Waiting"/> — kit-owned provenance the registry knows for certain —
-    /// not on <see cref="OperationOptions.ResumePayload"/>, which is app-controlled data and so cannot
-    /// answer that question reliably:</b> an entry reached via a live <see cref="IOperation.Wait"/>
-    /// (through <see cref="Start"/>/<see cref="Run"/>) is LEFT IN PLACE, because the app calls
-    /// <see cref="IOperation.Resume"/> on its own handle once it has actually resumed, so the client
-    /// asking is not the state changing — this holds even when the app also attached its own
-    /// <see cref="OperationOptions.ResumePayload"/> at <see cref="Start"/> time, since the handle is
-    /// still live either way. An entry <see cref="RegisterWaiting"/> reconstructed directly from the
-    /// app's own crash checkpoint has no live handle at all — the process that owned it is gone — so it
-    /// is REMOVED, and the resumed operation registers a FRESH one (via <see cref="Start"/>/
-    /// <see cref="Run"/>) when it actually restarts. This call only carries the app's opaque token
-    /// across; it never resumes anything itself.
+    /// <b>This used to be asymmetric, and un-asymmetring it is the 0.2.0 design pass (D1).</b> The
+    /// registry once also accepted crash-checkpoint entries the kit had never started
+    /// (<c>RegisterWaiting</c> + <c>OperationOptions.ResumePayload</c>), and this method REMOVED those
+    /// while keeping live ones — so every call had to answer "does this entry still have a body?".
+    /// That question produced a stranded state (a status with no terminal exit), then a bug that
+    /// dropped genuinely live operations, then an internal provenance flag to paper over it. The
+    /// checkpoint half is now cut: crash recovery is the APP's business — it owns the checkpoint, and a
+    /// resumed run is simply a fresh <see cref="Start"/>/<see cref="Run"/>. Every entry here reached
+    /// <see cref="OperationStatus.Waiting"/> through a live <see cref="IOperation.Wait"/>, so there is
+    /// always a handle to flip and nothing is ever removed.
     /// </para>
     /// </summary>
     bool RequestResume(string id);

@@ -229,20 +229,21 @@ until the page is listening.
   (`op.Wait("queued")`, no kit change needed): `op.Wait("dns", …)` (`Running` → `Waiting`, an
   OPTIONAL app-defined reason string, like `Kind` — omit it when the wait is self-evident, e.g. the
   user clicked Pause) and `op.Resume()` (`Waiting` → `Running`) on the SAME handle `Start`/`Run` gave
-  you, plus `IOperationRegistry.Dismiss(id)` for the human declining a waiting or crash-interrupted
-  offer outright (→ `Cancelled`, terminal). A client can also ASK the host to wait running work —
-  `IOperationRegistry.RequestWait(id)` / the `WAIT` route — for the download-manager/activity-panel
-  shape (the user clicking Pause on visible work); it only emits `OPERATION_WAIT_REQUESTED` and
-  changes nothing itself, the same ASK/ACT split `RESUME`/`Resume()` already draw. `Find(id)` resolves
-  a live handle back from a bare id — the shape every `RESUME`/`WAIT` handler needs to turn the id it
-  was given back into something it can call `Resume`/`Wait` on.
-  `OperationStatus` carries only ONE waiting value (`Waiting`) — a live `op.Wait()` and a
-  `RegisterWaiting`-registered crash checkpoint both land there, and the kit tells them apart by its
-  OWN record of which call produced the entry, not by a second status and **not** by `ResumePayload`
-  (that field is yours: you may attach one at `Start()` and still hold a live handle, so the kit
-  cannot read it as "this entry has no body"). For YOUR UI, `ResumePayload` is a fine display hint —
-  offer "resume from checkpoint" when it is set, show `WaitReason` when it is not — just don't infer
-  from it what `RequestResume` will do. See
+  you, plus `IOperationRegistry.Dismiss(id)` for the human declining a waiting offer outright
+  (→ `Cancelled`, terminal). A client can ASK for either direction —
+  `IOperationRegistry.RequestWait(id)`/`RequestResume(id)`, the `WAIT`/`RESUME` routes — for the
+  download-manager/activity-panel shape (the user clicking Pause, then Resume, on visible work). Both
+  only emit (`OPERATION_WAIT_REQUESTED`/`OPERATION_RESUME_REQUESTED`, same
+  `{ operationId, module, kind, scope }` payload) and change nothing themselves: **asking is not
+  acting** — your module's own `op.Wait()`/`op.Resume()` is what moves the state. `Find(id)` resolves
+  a live handle back from a bare id, which is exactly what those two handlers need.
+  `OperationStatus` carries ONE waiting value reached ONE way (a live `op.Wait()`), so there is no
+  sub-case to tell apart. **Crash recovery is deliberately yours.** The kit briefly carried a
+  `RegisterWaiting` + `ResumePayload` pair for announcing an operation it had never started; it was
+  cut before publish because it forced everything to answer "does this entry still have a body?", and
+  every way of answering that produced a defect. Keep your checkpoint token in your own store, and on
+  restart begin the resumed run as an ordinary `Start()`/`Run()`. Want the pending offer visible while
+  the user decides? `Start()` it and immediately `op.Wait("interrupted")`. See
   `docs/2026-08-01-shenora-communication-core-design.md` §5A for the full shape.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.

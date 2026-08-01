@@ -100,10 +100,9 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   it — but the body's OWN end in `OperationCanceledException` (via `Run`, or a direct
   `IOperation.Cancel()` call by the operation's own owner) is always terminal regardless of
   `Cancellable`, because that is not the same permission question as an external by-id cancel
-  request. Also included: `RegisterWaiting`/`RequestResume`, for announcing a crash-interrupted
-  resumable operation from the app's own checkpoint (deduped on `(module, kind, resumePayload)` —
-  requires only a non-empty `ResumePayload`; the separate `Resumable` flag this used to also require
-  was removed, see the generic-library audit paragraph below).
+  request. `RequestWait`/`RequestResume` are the ASK half of the waiting band — a client asks, the
+  owning module's own `IOperation.Wait`/`Resume` acts (see the design-pass note under `### Removed`
+  for the crash-checkpoint half that was cut before publish).
   `IOperationRegistry.Find(id)` resolves a live handle for an already-started operation — reinstated
   after being sketched-then-dropped pre-0.2.0 as unearned surface; see the audit paragraph below for
   why that ruling changed.
@@ -325,8 +324,50 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   tests) compiles. Verified by sabotage: dropping `OperationProgress` from the barrel fails the
   typecheck naming it.
 
+### Removed
+
+- **The crash-checkpoint half of the operations cluster: `IOperationRegistry.RegisterWaiting`,
+  `OperationOptions.ResumePayload` and `OperationInfo.ResumePayload` (and `resumePayload` on the TS
+  mirror).** The 0.2.0 design pass, prompted by the owner asking a review to judge the DESIGN rather
+  than only the code. The kit's own bar is "generalize what the survey shows at least TWO apps need"
+  (`generic-library.md`), and the design doc's §4.2 provenance note had already admitted in writing
+  that `Interrupted`/`ResumePayload`/`RegisterWaiting`/`RequestResume` "come from **one** app, not
+  two". Shipping it anyway cost more than it carried: that cluster took roughly eight reshapes inside
+  this single unpublished release and produced the release's only Critical.
+  **The root cause was structural, not a sequence of unlucky bugs.** Accepting an entry the kit had
+  never started meant every caller had to answer "does this one still have a live body?" — and each
+  answer failed in its own way. A second status (`Interrupted`) turned out to have no terminal exit at
+  all, stranding operations forever. Keying on `ResumePayload` read APP-controlled data, so an app that
+  attached a token at `Start()` and then called `Wait()` had a genuinely live operation dropped out of
+  the registry. An internal provenance flag finally worked, at the cost of a concept no consumer could
+  see. Removing the question removes all three.
+  **What stays, and why it is not the same thing:** `OperationStatus.Waiting`, `IOperation.Wait`/
+  `Resume`, `Dismiss`, and the `RequestWait`/`RequestResume` ask-act pair. Those are the
+  download-manager shape the kit itself names as a consumer — a human clicks Pause, then Resume — and
+  cutting `RequestResume` too would have left a client able to pause but never resume. `RequestResume`
+  is now an EXACT mirror of `RequestWait`: validate, emit, change nothing. Its payload drops
+  `resumePayload` and `status` (the latter carried no information once there was one reach), so both
+  ask-events are `{ operationId, module, kind, scope }` — pinned by a new test.
+  **Migration:** crash recovery is the app's, which is where the checkpoint already lived — the kit
+  only ever held an opaque token it could not interpret. Keep the token in your own store; on restart,
+  begin the resumed run as an ordinary `Start()`/`Run()`. If you want the pending offer visible while
+  the user decides, `Start()` it and immediately `Wait("interrupted")` — the same one-line shape that
+  already covers "registered but not yet started".
+- **`OPERATION_REMOVED` no longer fires from `RequestResume`** (it never removes an entry now). Its
+  two remaining sources — `MaxHistory` eviction and `ClearFinished` — are unchanged, and the client
+  folds it identically.
+
 ### Fixed
 
+- **`OperationInfo` had no cross-language field mirror** — the single biggest shape on this wire (it
+  is both the whole `OPERATION_UPDATED` payload and the `LIST` element) while the much smaller, newer
+  `OperationProgress` had one. It was missed behind a plausible claim recorded in that test's own doc:
+  "`OperationInfo`'s other fields are pinned by `[JsonPropertyName]` + the API baseline". Both halves
+  are true and together they prove nothing about the MIRROR — they pin the host's names against the
+  host's own baseline, and nothing compared them to the TS interface. Found when the cut above removed
+  a field from both sides by hand and nothing verified that both hands had moved.
+  `WireMirrorTests.OperationInfo_fields_match_the_host` now checks it in both directions, sabotage-
+  verified (a client-only `resumePayload` fails naming it).
 - **Docs on shipped surface still described `RequestResume`'s superseded rule** (whole-codebase
   review, before publish). Five XML/JSDoc sites and three docs said the drop-vs-keep decision is told
   apart by `ResumePayload`; the released behaviour keys on the registry's own internal provenance

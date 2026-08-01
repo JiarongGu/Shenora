@@ -423,6 +423,27 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `OPERATION_RESUME_REQUESTED` event so a handler knows which checkpoint to continue. The
   `OPERATION_RESUME_REQUESTED` payload still carries `status` (always `Waiting` now) so a handler can
   keep branching on the field without a breaking shape change.
+  **SUPERSEDED by the 0.2.0 design pass (2026-08-01, still before publish): the crash-checkpoint half
+  is CUT, so the drop-vs-keep decision no longer exists in any form.** The owner asked a review to
+  judge the design rather than only the code, and this cluster is what it found. Three things line up
+  and they point the same way: this entry's own §4.2 provenance note already recorded in writing that
+  `Interrupted`/`ResumePayload`/`RegisterWaiting`/`RequestResume` "come from **one** app, not two",
+  against a standing bar of "generalize what the survey shows at least TWO apps need"
+  (`generic-library.md`); the cluster then took ~8 reshapes inside one unpublished release; and it
+  produced the release's only Critical. The amendments above are the record of a single question being
+  answered three times — a second status, then an app-controlled field, then an internal provenance
+  flag — which is what a design defect looks like from the inside. The question was "does this entry
+  still have a live body?", and it only existed because the registry accepted entries it had never
+  started. Removing that removes the question: `RegisterWaiting`, `OperationOptions.ResumePayload` and
+  `OperationInfo.ResumePayload` are gone; `RequestResume` is now an exact mirror of `RequestWait`
+  (validate, emit, mutate nothing) and both carry `{ operationId, module, kind, scope }`.
+  **What stays is what more than one app needed:** `OperationStatus.Waiting`, `IOperation.Wait`/
+  `Resume`, `Dismiss`, and the ask-act pair — the download-manager shape the kit itself names as a
+  consumer. Cutting `RequestResume` as well would have left a client able to pause but never resume,
+  which is why the cut is narrower than "the crash-resume half" as a whole. Crash recovery returns to
+  the app, where the checkpoint already lived: the kit only ever held an opaque token it could not
+  interpret, and a resumed run is a fresh `Start()`. Full migration note: `CHANGELOG.md` 0.2.0
+  `### Removed`.
   **Enforcement, unchanged in spirit, simpler in fact:** `OperationLifecycleInvariantTests` (host) and
   its client-side mirror still enumerate the LIVE status set via reflection and require a registered
   exit per non-terminal value — with one fewer status to enumerate, the sweep is simpler, not weaker,

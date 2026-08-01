@@ -108,11 +108,8 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             Progress = options.Progress,
             Title = options.Title,
             Cancellable = options.Cancellable,
-            ResumePayload = options.ResumePayload,
             StartedAt = _options.TimeProvider.GetUtcNow(),
             Cts = cts,
-            // Reconstructed defaults false: this path always has a live body (the cts above), even
-            // when the app also attaches its own ResumePayload here — see Entry.Reconstructed's own doc.
         };
 
         lock (_lock)
@@ -397,7 +394,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             // too would be the exact conflation (Cancel accepting states it should not) that produced
             // this branch's only Critical.
             miss = Validate(id, WaitingOnly, out var entry);
-            cts = miss is null ? entry!.Cts : null; // an entry reached via Wait() has one; one registered via RegisterWaiting never does — read under the lock, same discipline as Cancel(id).
+            cts = miss is null ? entry!.Cts : null; // read under the lock — Finish()/Dispose() may dispose it concurrently otherwise
         }
 
         if (miss is not null)
@@ -406,10 +403,9 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return false;
         }
 
-        // Signal the token FIRST (same order as Cancel/CancelTerminal): an entry reached via Wait()
-        // still has one and unwinds rather than racing a completed-then-cancelled flip. An entry
-        // registered via RegisterWaiting has a null cts, so this is a no-op for that case — see
-        // CancelTokenThenFinish's own null-conditional call.
+        // Signal the token FIRST (same order as Cancel/CancelTerminal): a Waiting entry still has a
+        // live token — its body is parked, not gone — so it unwinds rather than racing a
+        // completed-then-cancelled flip.
         //
         // The HONEST return (hardening, this batch's review): a concurrent Resume() between THIS
         // lock's release and Finish's own re-validation can flip a Waiting entry back to Running before
@@ -420,128 +416,17 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     }
 
     /// <inheritdoc />
-    public string RegisterWaiting(string module, OperationOptions options)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(module);
-        ArgumentNullException.ThrowIfNull(options);
-        // A silently-accepted unusable entry is worse than a loud rejection: nobody could ever
-        // resume this, so it would sit as a dead offer with no way for the app to act on it. This is
-        // the ONLY resumability gate (generic-library audit finding 2 removed the separate `Resumable`
-        // bool that used to sit beside it — every entry it ever produced already forced that flag
-        // true to get past it, so it added no information the payload check below doesn't already
-        // carry: a non-empty checkpoint token IS what makes an operation resumable).
-        if (string.IsNullOrEmpty(options.ResumePayload))
-            throw new ArgumentException(
-                $"Registering a waiting operation from a crash checkpoint requires a non-empty " +
-                $"{nameof(OperationOptions.ResumePayload)} — it is the opaque checkpoint token the " +
-                "app resumes from.",
-                nameof(options));
-
-        Entry entry;
-        var isNew = false;
-        lock (_lock)
-        {
-            // Dedupe on (module, kind, resumePayload) among already-Waiting entries that carry no live
-            // handle (Cts is null — i.e. themselves registered this way, not reached via Wait() on a
-            // live operation): a profile/session switch re-announces the SAME checkpoint, and that must
-            // return the existing offer rather than stack a second one for what is still the same
-            // interrupted checkpoint. The `Cts is null` guard keeps this from ever matching an
-            // ordinary live-but-waiting operation that happens to share a module/kind/resumePayload.
-            var existing = _entries.Values.FirstOrDefault(e =>
-                e.Status == OperationStatus.Waiting
-                && e.Cts is null
-                && string.Equals(e.Module, module, StringComparison.Ordinal)
-                && string.Equals(e.Kind, options.Kind, StringComparison.Ordinal)
-                && string.Equals(e.ResumePayload, options.ResumePayload, StringComparison.Ordinal));
-
-            if (existing is not null)
-            {
-                entry = existing;
-            }
-            else
-            {
-                entry = new Entry
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Module = module,
-                    Kind = options.Kind,
-                    Scope = options.Scope,
-                    Status = OperationStatus.Waiting,
-                    Progress = options.Progress,
-                    Title = options.Title,
-                    Cancellable = options.Cancellable,
-                    ResumePayload = options.ResumePayload,
-                    StartedAt = _options.TimeProvider.GetUtcNow(),
-                    // No CTS: a checkpoint-registered entry is not running work, just a pending offer —
-                    // there is nothing to cancel until the app's own resume restarts it as a fresh
-                    // Start()/Run(), which allocates its own.
-                    Cts = null,
-                    // THE reconstructed-from-checkpoint path (see Entry.Reconstructed's own doc) —
-                    // RequestResume's drop-vs-keep decision keys on this, not on ResumePayload.
-                    Reconstructed = true,
-                };
-                entry.Sequence = _nextSequence++;
-                _entries[entry.Id] = entry;
-                // Deliberately NEVER added to _finishedOrder. That list is PruneHistory's eviction
-                // queue for TERMINAL history, and Waiting is not terminal (see OperationStatus) — it
-                // is a pending offer that only RequestResume (or Dismiss) removes. Adding it here would
-                // let an unrelated flood of finished operations silently evict a crash offer the app
-                // has not yet had a chance to show the user; this is the structural half of that guard
-                // (see also PruneHistory's own note).
-                isNew = true;
-            }
-        }
-
-        if (isNew) Publish(entry, immediate: true);
-        return entry.Id;
-    }
-
-    /// <inheritdoc />
     public bool RequestResume(string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
 
         Entry? entry;
         string? miss;
-        OperationStatus status = default;
-        var dropped = false;
         lock (_lock)
         {
+            // WaitingOnly: only a WAITING operation can be asked to resume. An EXACT mirror of
+            // RequestWait below — validate, emit, mutate nothing.
             miss = Validate(id, WaitingOnly, out entry);
-            if (miss is null)
-            {
-                status = entry!.Status;   // captured under the lock — see the field's own doc below
-                // The drop-vs-keep decision keys on Entry.Reconstructed, NOT on ResumePayload (§5A.4) —
-                // provenance is the signal because it is the one thing the KIT owns: RegisterWaiting
-                // sets it true precisely because that path reconstructs an entry with no live body at
-                // all (the process that owned it is gone); Start always leaves it false because that
-                // path always has one. ResumePayload cannot answer the same question, because the APP
-                // also controls it — an app that attaches its own ResumePayload to OperationOptions at
-                // Start() and later calls IOperation.Wait has a genuinely LIVE handle (body parked, not
-                // dead), and keying on the payload used to drop that entry out of the registry here
-                // anyway, silently orphaning every later Report/Complete/Fail call on it. Keying on
-                // Reconstructed instead reads the fact the registry already knows for certain, so that
-                // combination is no longer ambiguous: a live handle is always left in place, whether or
-                // not the app also attached a payload. This is why the RESUME_REQUESTED payload below
-                // still carries `status` — a handler can no longer tell the two cases apart from status
-                // alone, but the field stays for wire stability and so a handler can still branch on it.
-                if (entry.Reconstructed)
-                {
-                    // No Cts to dispose here (see Entry.Reconstructed's own doc): a reconstructed entry
-                    // — the only kind that ever reaches this branch now — is exactly the RegisterWaiting
-                    // path, which never allocates one. Do NOT reinstate a disposal call in this branch:
-                    // a live-handle entry (Cts possibly still in use by its parked body) can no longer
-                    // reach here at all, so there is nothing to gain and, were this branch ever widened
-                    // again, the same live-body hazard the earlier attempt at this was reverted for.
-                    _entries.Remove(id);
-                    dropped = true;
-                }
-                // Not reconstructed: deliberately LEFT IN PLACE — a live handle (reached via Start,
-                // whether or not the app also attached its own ResumePayload) always has a body to flip,
-                // and the app's own IOperation.Resume() does that once it has ACTUALLY resumed. The
-                // client asking is not the state changing (§5A.4) — the same split that fixed this
-                // branch's only Critical (Cancel vs Dismiss, §5A.3).
-            }
         }
 
         if (miss is not null)
@@ -550,23 +435,25 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return false;
         }
 
-        // Outside the lock, same discipline as every other bus emission here: nothing calls out to
-        // app code while holding _lock.
+        // Outside the lock, same discipline as every other bus emission here. Deliberately no status
+        // flip and no _entries mutation: the client ASKING is not the state changing — the owning
+        // module's OWN IOperation.Resume is what restarts the work and publishes the Running snapshot.
+        //
+        // THIS METHOD USED TO BE ASYMMETRIC, and removing that asymmetry is the 0.2.0 design pass (D1).
+        // It also REMOVED the entry when that entry had no live body — the crash-checkpoint case the
+        // former RegisterWaiting registered. Every attempt to answer "does this entry have a live
+        // handle?" produced a defect: first a second status (Interrupted, which turned out to have no
+        // terminal exit at all — §5A.1's stranded-state bug), then ResumePayload (APP-controlled, so it
+        // dropped genuinely live operations — §5A.4), then an internal provenance flag. With the
+        // checkpoint half cut, the question no longer exists: every entry reaches Waiting through a
+        // live IOperation.Wait, so there is always a handle to flip and nothing is ever removed here.
         _bus.Emit(_options.ModuleName, OperationEvents.ResumeRequested, new
         {
             operationId = entry!.Id,
             module = entry.Module,
             kind = entry.Kind,
-            resumePayload = entry.ResumePayload,
             scope = entry.Scope,
-            status,   // always Waiting now — kept so a handler can still branch on it (see the field's own doc above)
         }, entry.Scope);
-
-        // The no-live-handle drop above left the registry with no wire trace of its own (Finding 4,
-        // generic-library audit) — this is the one place the client-side asymmetry the docs already
-        // describe (a live Wait() kept, a reconstructed offer gone) now has an authoritative removal
-        // event to match, instead of a hand-written optimistic prune guessing at it.
-        if (dropped) EmitRemoved([id]);
 
         return true;
     }
@@ -613,10 +500,9 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
 
         lock (_lock)
         {
-            // entry.Cts is null for a checkpoint-registered Waiting entry (no live work to cancel —
-            // see RegisterWaiting's own doc) and for anything already terminal (Finish disposes and
-            // clears it) — `default` in either case is a harmless no-cancellation token, since the
-            // handle's own methods re-validate status before doing anything with it anyway.
+            // entry.Cts is null for anything already terminal (Finish disposes and clears it) —
+            // `default` is a harmless no-cancellation token there, since the handle's own methods
+            // re-validate status before doing anything with it anyway.
             return _entries.TryGetValue(id, out var entry)
                 ? new OperationHandle(this, entry.Id, entry.Cts?.Token ?? default)
                 : null;
@@ -849,10 +735,10 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
     /// <summary>
     /// Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>.
     /// Caller holds <see cref="_lock"/>. Only ever touches <see cref="_finishedOrder"/> — the WAITING
-    /// band (§5A.2), <see cref="OperationStatus.Waiting"/> (reached via <see cref="RegisterWaiting"/>
-    /// or <see cref="Wait"/>), is never added to that list (an offer is not history), so it
-    /// structurally cannot be evicted here regardless of how many other operations finish afterward —
-    /// only <see cref="Dismiss"/> moves one out of this band.
+    /// band (§5A.2), <see cref="OperationStatus.Waiting"/> (reached via <see cref="Wait"/>), is never
+    /// added to that list (work that is stopped is not finished history), so it structurally cannot be
+    /// evicted here regardless of how many other operations finish afterward — only
+    /// <see cref="Resume"/> or <see cref="Dismiss"/> moves one out of this band.
     /// </summary>
     /// <returns>
     /// The ids actually evicted this call (Finding 4, generic-library audit) — <see cref="Finish"/>
@@ -983,7 +869,6 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         WaitReason = entry.WaitReason,
         Error = entry.Error,
         Cancellable = entry.Cancellable,
-        ResumePayload = entry.ResumePayload,
         StartedAt = entry.StartedAt,
         FinishedAt = entry.FinishedAt,
     };
@@ -1019,23 +904,10 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         public string? WaitReason { get; set; }
         public IpcError? Error { get; set; }
         public bool Cancellable { get; init; }
-        public string? ResumePayload { get; set; }
         public DateTimeOffset StartedAt { get; init; }
         public DateTimeOffset? FinishedAt { get; set; }
         public CancellationTokenSource? Cts { get; set; }
         public long Sequence { get; set; }
-
-        /// <summary>
-        /// True ONLY for an entry <see cref="RegisterWaiting"/> reconstructed directly from an app
-        /// checkpoint — never a live body (<see cref="Start"/> always leaves this <c>false</c>). This
-        /// is the signal <see cref="RequestResume"/> keys its drop-vs-keep decision on (§5A.4): it is
-        /// set by the KIT, at the one call site that legitimately means "no live handle exists", so it
-        /// cannot drift the way <see cref="ResumePayload"/> can — that field is app-controlled data the
-        /// app may also attach to <see cref="OperationOptions"/> at <see cref="Start"/> time, which used
-        /// to make it a false signal for provenance. Internal, never exposed on <see cref="OperationInfo"/>:
-        /// no consumer needs it, and every public member is SemVer surface at 1.0.
-        /// </summary>
-        public bool Reconstructed { get; init; }
 
         /// <summary>When this entry last actually emitted — the anchor the throttle window is measured from.</summary>
         public DateTimeOffset LastEmitUtc { get; set; }

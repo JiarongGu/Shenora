@@ -27,10 +27,9 @@ namespace Shenora.Ipc;
 /// <para>
 /// <c>RESUME</c> forwards <c>{ operationId }</c> straight to
 /// <see cref="IOperationRegistry.RequestResume"/> and answers <c>{ requested: bool }</c> — the same
-/// honest-bool shape as <c>CANCEL</c>: the request always succeeds, and the bool says whether the
-/// operation actually was a pending, resumable, waiting offer. This is single-app-provenance
-/// mechanism (design §4.2) — a state, an opaque token, an event; the app owns the checkpoint and
-/// what "resume" actually does with it.
+/// honest-bool shape as <c>WAIT</c>, and its exact mirror: the request always succeeds, and the bool
+/// says whether the operation actually was waiting and eligible to be asked. Asking is not acting —
+/// the owning module's own <see cref="IOperation.Resume"/> is what restarts the work.
 /// </para>
 /// <para>
 /// The route types are also public constants (<see cref="ListType"/>/<see cref="CancelType"/>/
@@ -65,7 +64,7 @@ public sealed class OperationsFacade : BaseFacade
     /// <summary>Route: drop retained finished history.</summary>
     public const string ClearFinishedType = "CLEAR_FINISHED";
 
-    /// <summary>Route: continue a waiting, resumable operation.</summary>
+    /// <summary>Route: ask the owning module to resume a waiting operation — the mirror of <see cref="WaitType"/>.</summary>
     public const string ResumeType = "RESUME";
 
     /// <summary>

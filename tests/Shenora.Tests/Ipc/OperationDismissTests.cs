@@ -31,7 +31,7 @@ public class OperationDismissTests
 
         Assert.True(registry.Dismiss(operation.Id));
 
-        // Unlike ClearFinished/RequestResume (which remove an entry with NO wire event), Dismiss
+        // Unlike ClearFinished (which removes entries with no OPERATION_UPDATED of their own), Dismiss
         // publishes an ordinary OPERATION_UPDATED snapshot — the entry becomes terminal, not gone.
         Assert.True(events.Count > eventsBeforeDismiss);
         var info = registry.GetAll().Single();
@@ -39,17 +39,10 @@ public class OperationDismissTests
         Assert.NotNull(info.FinishedAt);
     }
 
-    [Fact]
-    public void Dismiss_transitions_a_checkpoint_offer_to_cancelled()
-    {
-        var (registry, _) = Build();
-        var id = registry.RegisterWaiting("SCAN",
-            new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
-
-        Assert.True(registry.Dismiss(id));
-
-        Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
-    }
+    // A second Dismiss case used to live here, covering an entry registered from a crash checkpoint
+    // (RegisterWaiting) — a shape that had no CancellationTokenSource at all. The 0.2.0 design pass
+    // cut that half of the feature, so there is only ONE way to reach Waiting now and the case above
+    // already covers it.
 
     /// <summary>
     /// A dismissed entry is now ORDINARY finished history (terminal, prunable) — the whole point of
@@ -129,21 +122,21 @@ public class OperationDismissTests
     }
 
     /// <summary>
-    /// A checkpoint entry (reached via <see cref="IOperationRegistry.RegisterWaiting"/>) never has a
-    /// CTS at all (see that method's own doc) — Dismiss must not throw reaching for one that was never
-    /// allocated.
+    /// Dismiss must not throw on an ALREADY-TERMINAL entry whose CTS <c>Finish</c> has disposed and
+    /// nulled — the one remaining way <c>Dismiss</c> can meet a null token now that the
+    /// checkpoint-registered (never-had-a-CTS) shape is gone. It refuses honestly instead.
     /// </summary>
     [Fact]
-    public void Dismiss_does_not_throw_for_a_checkpoint_entry_with_no_token()
+    public void Dismiss_does_not_throw_for_an_entry_whose_token_is_already_disposed()
     {
         var (registry, _) = Build();
-        var id = registry.RegisterWaiting("SCAN",
-            new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
+        var operation = registry.Start("SCAN", new OperationOptions { Kind = "ANALYSIS" });
+        operation.Complete();   // Finish disposes and clears the CTS
 
-        var dismissed = registry.Dismiss(id);   // must not throw
+        var dismissed = registry.Dismiss(operation.Id);   // must not throw
 
-        Assert.True(dismissed);
-        Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
+        Assert.False(dismissed);   // terminal, so refused — honestly, not by crashing
+        Assert.Equal(OperationStatus.Completed, registry.GetAll().Single().Status);
     }
 
     /// <summary>

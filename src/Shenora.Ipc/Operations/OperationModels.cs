@@ -31,27 +31,22 @@ public enum OperationStatus
     /// terminal-finish statuses, and never pruned as history — a waiting entry is a pending offer,
     /// not something finished.
     /// <para>
-    /// Reached two ways — there is only ONE waiting status, collapsing what used to be two
-    /// (<c>Paused</c> and <c>Interrupted</c>), which every transition in this registry already treated
-    /// as one band: <see cref="IOperation.Wait"/> on a live <see cref="Running"/> handle (the body is
-    /// still there, just stopped), or <see cref="IOperationRegistry.RegisterWaiting"/> announcing a
-    /// crash-interrupted checkpoint directly (no live body at all — the process that owned it is
-    /// gone). Exits via <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
+    /// Reached ONE way, and that is the point: <see cref="IOperation.Wait"/> on a live
+    /// <see cref="Running"/> handle. The body is parked, not gone, so there is always something to
+    /// resume. Exits via <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
     /// <see cref="IOperationRegistry.Dismiss"/> (to <see cref="Cancelled"/>), or a direct
     /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
     /// (a waiting operation can still fail on a deadline).
     /// </para>
     /// <para>
-    /// <b>How the two are told apart is a KIT-INTERNAL fact, not a field on this snapshot.</b>
-    /// <see cref="IOperationRegistry.RequestResume"/> keys its drop-vs-keep decision on the registry's
-    /// own record of which call site produced the entry, never on
-    /// <see cref="OperationInfo.ResumePayload"/> — that field is APP-controlled (an app may attach one
-    /// to <see cref="OperationOptions"/> at <see cref="IOperationRegistry.Start"/> time and then call
-    /// <see cref="IOperation.Wait"/>, which is a genuinely LIVE handle), so reading it would drop a
-    /// live operation out of the registry. The two DO correlate in the ordinary case, so a UI may use
-    /// <see cref="OperationInfo.ResumePayload"/> as a display hint — "offer Resume-from-checkpoint"
-    /// vs. "show the wait reason" — but never as a claim about what the registry will do. See
-    /// <see cref="IOperationRegistry.RequestResume"/>'s own doc for the full rationale.
+    /// This status has been through two simplifications, both worth knowing because both were driven
+    /// by the same mistake — encoding HOW an entry arrived rather than WHAT state it is in. It was
+    /// once two values (<c>Paused</c> and <c>Interrupted</c>) that every transition already treated as
+    /// one band, and the registry once also accepted a crash-checkpoint entry with no live body at all
+    /// (<c>RegisterWaiting</c> + <c>ResumePayload</c>), which forced every caller to answer "does this
+    /// one have a handle?" — a question that produced a stranded state, then a dropped-live-operation
+    /// bug, before the whole checkpoint half was cut in 0.2.0. Crash recovery is the APP's business:
+    /// it owns the checkpoint, and a resumed run is simply a fresh <see cref="IOperationRegistry.Start"/>.
     /// </para>
     /// </summary>
     Waiting,
@@ -106,6 +101,14 @@ public sealed record OperationOptions
     /// <summary>App-defined scope; also drives the published event's scope and client-side filtering.</summary>
     public string? Scope { get; init; }
 
+    // NO ResumePayload (0.2.0 design pass, D1). An opaque app checkpoint token used to live here, to
+    // support announcing a crash-interrupted operation the kit never started. That was single-app
+    // provenance the design doc itself flagged, and it cost more than it carried: because the field
+    // was APP-controlled, nothing could reliably answer "does this entry still have a live body?",
+    // and every attempt to (a second status, then this field, then an internal provenance flag)
+    // produced a defect. Crash recovery belongs to the app — it owns the checkpoint, and a resumed
+    // run is a fresh Start()/Run() like any other. Carry your token in your own store.
+
     /// <summary>Whether a client should be offered a cancel affordance for this operation.</summary>
     public bool Cancellable { get; init; }
 
@@ -118,40 +121,6 @@ public sealed record OperationOptions
     /// Null (the default) means indeterminate, not zero.
     /// </summary>
     public OperationProgress? Progress { get; init; }
-
-    /// <summary>
-    /// Opaque app checkpoint token; presence is what makes an operation resumable after a crash.
-    /// <para>
-    /// There used to be a separate <c>Resumable</c> bool gating
-    /// <see cref="IOperationRegistry.RegisterWaiting"/> — removed (generic-library audit finding
-    /// 2) because it was consulted NOWHERE else: every entry it ever produced already forced it
-    /// <c>true</c> to get past that same check, so the flag was a required-true tautology, not a
-    /// choice. <see cref="IOperationRegistry.RegisterWaiting"/>'s own non-empty-payload
-    /// requirement already expresses "this is resumable" — a second flag added no information. It also
-    /// governed nothing for <see cref="IOperation.Wait"/>/<see cref="IOperation.Resume"/>: a
-    /// <see cref="OperationStatus.Waiting"/> operation reached via <c>Wait</c> is resumable BY
-    /// CONSTRUCTION (<see cref="IOperation.Resume"/> needs no flag), so a future re-add gating
-    /// <see cref="IOperationRegistry.RequestResume"/>'s live-handle case on a resumable bool would
-    /// silently break the ordinary wait/resume flow for an operation that — like most — never set one.
-    /// </para>
-    /// <para>
-    /// <b>NOT what <see cref="IOperationRegistry.RequestResume"/> keys its drop-vs-keep decision on</b>
-    /// — the two often correlate, but keying on this field directly used to be a real defect: an app
-    /// that attaches its own checkpoint token here at <see cref="IOperationRegistry.Start"/> time (not
-    /// through <see cref="IOperationRegistry.RegisterWaiting"/> at all) and later calls
-    /// <see cref="IOperation.Wait"/> has a genuinely LIVE handle, and a decision that read this field
-    /// would drop that entry out of the registry exactly like a crash checkpoint, orphaning every later
-    /// <see cref="IOperation.Report"/>/<see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
-    /// call on it. <see cref="IOperationRegistry.RequestResume"/> instead keys on how the entry reached
-    /// <see cref="OperationStatus.Waiting"/> — a signal only the registry itself sets, so it cannot
-    /// drift the way this app-controlled field can. See that method's own doc for the full rationale.
-    /// This field keeps its other roles unchanged: <see cref="IOperationRegistry.RegisterWaiting"/>
-    /// still requires it non-empty, the dedupe key still uses it, and it still rides the
-    /// <see cref="OperationEvents.ResumeRequested"/> event so the app's handler knows which checkpoint
-    /// to continue.
-    /// </para>
-    /// </summary>
-    public string? ResumePayload { get; init; }
 }
 
 /// <summary>
@@ -220,9 +189,6 @@ public sealed record OperationInfo
 
     /// <summary>Echoes <see cref="OperationOptions.Cancellable"/>.</summary>
     public bool Cancellable { get; init; }
-
-    /// <summary>Echoes <see cref="OperationOptions.ResumePayload"/>.</summary>
-    public string? ResumePayload { get; init; }
 
     /// <summary>When the operation was started.</summary>
     public DateTimeOffset StartedAt { get; init; }

@@ -107,15 +107,17 @@ public class OperationsFacadeTests
     public async Task RESUME_forwards_to_the_registry_and_answers_requested_true()
     {
         var (facade, registry) = Build();
-        var id = registry.RegisterWaiting("SCAN",
-            new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
+        var operation = registry.Start("SCAN", new OperationOptions { Kind = "ANALYSIS" });
+        operation.Wait("credentials");
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = id }));
+            IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
-        Assert.Empty(registry.GetAll());   // the offer is gone; the resumed op registers a fresh one
+        // Still there, still Waiting: RESUME ASKS, it does not act (0.2.0 design pass — this route
+        // used to remove a crash-checkpoint entry, the asymmetry that half of the feature carried).
+        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == operation.Id).Status);
     }
 
     [Fact]

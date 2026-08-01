@@ -271,8 +271,8 @@ changes, noting them in `CHANGELOG.md`).
   the same i18n shape as `IpcError`), `OperationProgress` (`{Value, Total?, Unit?}` — the app's own
   unit, e.g. bytes-of-a-known-total, items-of-a-known-total, an absolute count with no known total
   (`Total = null`), or a genuine percent; `Unit` is app-defined and uninterpreted, like `Kind`),
-  `OperationOptions` (`Kind` an app-defined string, `Title`, `Scope`, `Cancellable`, `Progress`,
-  `ResumePayload`), `OperationInfo` (the full
+  `OperationOptions` (`Kind` an app-defined string, `Title`, `Scope`, `Cancellable`, `Progress`),
+  `OperationInfo` (the full
   snapshot — both the `OPERATION_UPDATED` event payload and the `LIST` response element; one type for
   every transition, so a client folds by `Id` with no cross-type ordering hazard; carries
   `WaitReason`, an app-defined string like `Kind`), `IOperation`
@@ -290,21 +290,12 @@ changes, noting them in `CHANGELOG.md`).
   opted into `Cancellable`, so the status can't lie about a body still running underneath it),
   `Dismiss` (declines a pending `Waiting` offer → `Cancelled`, terminal — refuses
   `Running` on purpose, since declining an offer and cancelling LIVE work are different acts and
-  conflating them inside `Cancel` was this branch's only Critical), `RegisterWaiting`/
-  `RequestResume` for a crash-resumable checkpoint the app owns (deduped on
-  `(module, kind, resumePayload)`, resumability expressed by a non-empty `ResumePayload` alone —
-  `RequestResume`'s drop-vs-keep decision keys on the registry's own internal provenance record
-  (`Entry.Reconstructed`, set only by `RegisterWaiting`), not on `ResumePayload`, which is app-controlled
-  data and so cannot reliably answer "does this entry have a live handle": an entry reached via an
-  ordinary `IOperation.Wait()` is LEFT IN PLACE for the app's own `IOperation.Resume()` to flip — even
-  when the app also attached its own `ResumePayload` at `Start()` time, since the handle is still live
-  either way; an entry `RegisterWaiting` reconstructed from a checkpoint is REMOVED, since there is no
-  live handle to flip — the `OPERATION_RESUME_REQUESTED` payload still carries `status` (always
-  `Waiting` now) so a handler can keep branching on it), and `RequestWait` (post-audit: an exact mirror of `RequestResume`
-  for the direction the kit previously had no client route for at all — asks, does not act; the
-  owner's own `IOperation.Wait` is what stops the work). A removal (`MaxHistory` eviction,
-  `ClearFinished`, the no-live-handle drop inside `RequestResume`) publishes `OperationEvents.Removed`
-  naming the ids, so a client mirroring bounded host history actually hears about it. Progress
+  conflating them inside `Cancel` was this branch's only Critical), and the ASK pair
+  `RequestWait`/`RequestResume` — exact mirrors of each other, both emitting
+  `{ operationId, module, kind, scope }` and changing NOTHING: the client asks, the owning module's own
+  `IOperation.Wait`/`Resume` acts. A removal (`MaxHistory` eviction, `ClearFinished`) publishes
+  `OperationEvents.Removed` naming the ids, so a client mirroring bounded host history actually hears
+  about it. Progress
   emission is throttled to `ProgressInterval` — default 100 ms — with a TRAILING emit so the final
   value in a window is never dropped, and every lifecycle transition emits immediately, never
   throttled. `OperationEvents`
@@ -318,8 +309,9 @@ changes, noting them in `CHANGELOG.md`).
   app's shape on the removal/asking halves of the lifecycle its own source never had to solve.
   `ClearFinished` gained the `module?`/`scope?` filter above (was unfilterable — a scoped window's
   "clear completed" could wipe another scope's history); `OperationOptions.Resumable`/
-  `OperationInfo.Resumable` were REMOVED (consulted nowhere except `RegisterWaiting`'s own
-  required-true gate, which every caller had already satisfied — a tautological flag); `RequestWait`
+  `OperationInfo.Resumable` were REMOVED (consulted nowhere except the then-existing
+  `RegisterWaiting`'s required-true gate, which every caller had already satisfied — a tautological
+  flag, and the whole checkpoint path it gated went the same way in the design pass); `RequestWait`
   (shipped at the time as `RequestPause`) and the reinstated `Find(id)` were added (above);
   `OperationEvents.Removed` was added (above).
   `IOperation.Wait`'s `reason` became optional. One limit recorded rather than solved: `MaxHistory`
@@ -338,15 +330,17 @@ changes, noting them in `CHANGELOG.md`).
   terminal one — a future status added with no exit fails that test by name instead of stranding an
   operation the way a no-live-handle offer used to (its only exit, `RequestResume`, never reached a
   terminal status at all).
-  **The status collapse (owner direction, before publish — "structured like XHR"):** `Paused` and
-  `Interrupted` were originally two statuses in this band, distinguished only by how the entry was
-  reached (a live `IOperation.Wait()` vs. `RegisterWaiting`'s checkpoint) — every transition already
-  treated them as one band (`Dismiss`/`RequestResume` both accepted either, neither was ever pruned,
-  the client's `waiting` getter already unioned them), so they collapsed into the single `Waiting`
-  value shown above. The drop-vs-keep distinction moved onto `ResumePayload` for one release and then
-  onto the registry's own `Entry.Reconstructed` provenance flag — see the `RequestResume` description
-  above for the as-built rule and why an app-controlled field could not carry it. Full rationale and
-  the complete rename table: `docs/DECISIONS.md` D23's amendment.
+  **How the band got to ONE status and ONE reach, in two steps — the second is the 0.2.0 design pass
+  (D1) and it is the reason none of the machinery above exists any more.** `Paused` and `Interrupted`
+  were originally two statuses distinguished only by how the entry was reached (a live
+  `IOperation.Wait()` vs. a crash checkpoint registered by the former `RegisterWaiting`); every
+  transition already treated them as one band, so they collapsed into `Waiting`. That left the
+  distinction to be carried some other way, and each attempt failed: `ResumePayload` (app-controlled,
+  so it dropped live operations), then an internal provenance flag. The design pass removed the
+  QUESTION instead — the crash-checkpoint half is gone, so every entry reaches `Waiting` through a
+  live `IOperation.Wait` and `RequestResume` mutates nothing. Crash recovery is the app's: it owns the
+  checkpoint, and a resumed run is a fresh `Start()`. Full rationale: `docs/DECISIONS.md` D23's
+  amendments and `CHANGELOG.md` 0.2.0 `### Removed`.
   **`NotificationPump`(+`Options`)** — the transport-neutral half of the outbound notification
   channel (design §5, D16 applied to the host side): bus subscription (from CONSTRUCTION, not
   `Open`), the per-channel `Filter` (applied at enqueue, fail-CLOSED on a throwing predicate — the

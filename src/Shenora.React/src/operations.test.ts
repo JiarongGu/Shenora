@@ -200,8 +200,8 @@ describe('operations store', () => {
    * The `waiting` derived getter (§5A.2, D23 amendment) — the WHOLE waiting band alongside
    * `running`/`finished`. `OperationStatus` carries only one waiting value now (the former
    * `paused`/`interrupted` pair collapsed into it, since every host transition already treated them
-   * as one band), so this single getter covers both a live `Wait()` and a crash-announced checkpoint
-   * — a consumer that needs to tell them apart reads `resumePayload` on the entry itself.
+   * as one band, and the 0.2.0 design pass then cut the crash-checkpoint way of reaching it too), so
+   * there is exactly one kind of entry in this band and nothing for a consumer to disambiguate.
    */
   it('exposes waiting operations separately from running and finished', () => {
     const { store, bus } = harness([]);
@@ -247,8 +247,8 @@ describe('operations store', () => {
   /**
    * `dismiss` (§5A.3, D23 amendment) mirrors `cancel`'s shape — no optimistic local prune, because
    * the host's Dismiss transitions the entry to `cancelled` and publishes an ordinary
-   * OPERATION_UPDATED snapshot for it (unlike clearFinished/resume, which remove an entry with no
-   * corresponding wire event).
+   * OPERATION_UPDATED snapshot for it (unlike clearFinished, which removes entries with no
+   * corresponding snapshot of their own and is why OPERATION_REMOVED exists).
    */
   it('dismiss posts the DISMISS route with the operation id and does not touch local state', () => {
     const { store, transport } = harness([]);

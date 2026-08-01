@@ -3,6 +3,24 @@ using Shenora.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
+/// <summary>
+/// <see cref="IOperationRegistry.RequestResume"/> — the ASK half of resume, and the exact mirror of
+/// <see cref="IOperationRegistry.RequestWait"/> (see <c>OperationWaitRequestTests</c>). It emits and
+/// changes nothing; the owning module's own <see cref="IOperation.Resume"/> is what actually restarts
+/// the work.
+/// <para>
+/// <b>This file used to be twice this size, and the deleted half is the point (0.2.0 design pass, D1).</b>
+/// The registry once also accepted crash-checkpoint entries it had never started
+/// (<c>RegisterWaiting</c> + <c>OperationOptions.ResumePayload</c>), and <c>RequestResume</c> REMOVED
+/// those while KEEPING live ones — so every call had to answer "does this entry still have a body?".
+/// Three answers were tried and each produced a defect: a second status (<c>Interrupted</c>, which
+/// turned out to have no terminal exit at all — the stranded-state bug), then <c>ResumePayload</c>
+/// (APP-controlled, so it dropped genuinely live operations), then an internal provenance flag. The
+/// checkpoint half is now cut — crash recovery is the app's business, and a resumed run is a fresh
+/// <see cref="IOperationRegistry.Start"/> — so the question no longer exists and neither do the tests
+/// that pinned each attempt at answering it.
+/// </para>
+/// </summary>
 public class OperationResumeTests
 {
     private static (OperationRegistry Registry, List<EventMessage> Events) Build()
@@ -13,110 +31,91 @@ public class OperationResumeTests
         return (new OperationRegistry(bus, new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero }), events);
     }
 
-    private static OperationOptions Checkpoint(string payload) =>
-        new() { Kind = "ANALYSIS", ResumePayload = payload, Scope = "p1" };
-
-    /// <summary>
-    /// FINDING 2 (Important, generic-library audit): <c>Resumable</c> used to be a required-true gate
-    /// on <see cref="IOperationRegistry.RegisterWaiting"/> even though it was consulted NOWHERE
-    /// else — every entry it ever produced already had it forced <c>true</c> to get past that same
-    /// check, making the flag vacuous. The non-empty <see cref="OperationOptions.ResumePayload"/> this
-    /// method already requires expresses "this is resumable" on its own; the field is removed.
-    /// </summary>
-    [Fact]
-    public void RegisterWaiting_succeeds_from_only_a_resume_payload_no_separate_flag_needed()
+    private static IOperation StartWaiting(OperationRegistry registry)
     {
-        var (registry, _) = Build();
-
-        var id = registry.RegisterWaiting("SCAN", new OperationOptions { Kind = "ANALYSIS", ResumePayload = "session-7" });
-
-        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == id).Status);
+        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "p1" });
+        operation.Wait("dns");
+        return operation;
     }
 
     [Fact]
-    public void RegisterWaiting_announces_a_resumable_entry_from_the_apps_checkpoint()
-    {
-        var (registry, _) = Build();
-
-        var id = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-
-        var info = registry.GetAll().Single();
-        Assert.Equal(id, info.Id);
-        Assert.Equal(OperationStatus.Waiting, info.Status);
-        Assert.Equal("session-7", info.ResumePayload);
-    }
-
-    [Fact]
-    public void Re_announcing_the_same_checkpoint_does_not_stack_entries()
-    {
-        var (registry, _) = Build();
-
-        var first = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-        var second = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-
-        Assert.Equal(first, second);
-        Assert.Single(registry.GetAll());
-    }
-
-    [Fact]
-    public void RequestResume_emits_for_the_owning_module_and_drops_the_offer()
+    public void RequestResume_emits_for_the_owning_module()
     {
         var (registry, events) = Build();
-        var id = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
+        var operation = StartWaiting(registry);
         events.Clear();
 
-        Assert.True(registry.RequestResume(id));
+        Assert.True(registry.RequestResume(operation.Id));
 
         var message = events.Single(e => e.Type == OperationEvents.ResumeRequested);
         var payload = IpcJson.SerializeToElement(message.Payload);
-        Assert.Equal("SCAN", payload.GetProperty("module").GetString());
-        Assert.Equal("session-7", payload.GetProperty("resumePayload").GetString());
-        Assert.Empty(registry.GetAll());   // the resumed op registers a FRESH operation when it restarts
-    }
-
-    [Fact]
-    public void A_waiting_entry_registered_via_RegisterWaiting_is_not_prunable_history()
-    {
-        var bus = new EventBus();
-        var registry = new OperationRegistry(bus, new OperationRegistryOptions { MaxHistory = 1 });
-        var id = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-        for (var i = 0; i < 5; i++) registry.Start("SCAN", new OperationOptions { Kind = "X" }).Complete();
-
-        Assert.Contains(registry.GetAll(), o => o.Id == id);   // a pending resume OFFER, not history
+        Assert.Equal(operation.Id, payload.GetProperty("operationId").GetString());
+        Assert.Equal("DEPLOY", payload.GetProperty("module").GetString());
+        Assert.Equal("PUSH", payload.GetProperty("kind").GetString());
+        Assert.Equal("p1", payload.GetProperty("scope").GetString());
     }
 
     /// <summary>
-    /// ALSO IN THIS BATCH (whole-branch review): a regression guard distinct from
-    /// <see cref="A_waiting_entry_registered_via_RegisterWaiting_is_not_prunable_history"/> above —
-    /// that one covers the AUTOMATIC <see cref="OperationRegistryOptions.MaxHistory"/> eviction path,
-    /// this one covers the explicit <see cref="IOperationRegistry.ClearFinished"/> call a
-    /// client-triggered <c>CLEAR_FINISHED</c> route drives. It is correct TODAY only structurally —
-    /// <c>ClearFinished</c> walks <c>_finishedOrder</c>, and only <c>Finish</c> (never
-    /// <c>RegisterWaiting</c>) ever writes to it — so nothing previously proved it, and a future
-    /// rewrite that instead filtered <c>_entries</c> by terminal STATUS would silently destroy a
-    /// pending offer with this suite still green.
+    /// The payload is now the SAME four fields <see cref="OperationEvents.WaitRequested"/> carries.
+    /// It used to also carry <c>resumePayload</c> and <c>status</c> — the former is gone with the
+    /// checkpoint half, and the latter carried no information even before that (it was always
+    /// <c>waiting</c>, kept only so a handler could branch between the two reaches that no longer
+    /// exist). Pinned so the two ask-events cannot drift apart again.
     /// </summary>
     [Fact]
-    public void ClearFinished_does_not_evict_a_pending_resume_offer()
+    public void RequestResume_and_RequestWait_emit_the_same_payload_shape()
     {
-        var (registry, _) = Build();
-        var offerId = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-        registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" }).Complete(); // ordinary finished history
+        var (registry, events) = Build();
+        var waiting = StartWaiting(registry);
+        var running = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "p1" });
+        events.Clear();
 
-        registry.ClearFinished();
+        Assert.True(registry.RequestResume(waiting.Id));
+        Assert.True(registry.RequestWait(running.Id));
 
-        Assert.Contains(registry.GetAll(), o => o.Id == offerId);
+        string[] Fields(string type) =>
+            IpcJson.SerializeToElement(events.Single(e => e.Type == type).Payload)
+                .EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(new[] { "kind", "module", "operationId", "scope" }, Fields(OperationEvents.ResumeRequested));
+        Assert.Equal(Fields(OperationEvents.WaitRequested), Fields(OperationEvents.ResumeRequested));
     }
 
+    /// <summary>
+    /// The defining property after D1: RequestResume NEVER removes or mutates the entry, whoever asks.
+    /// The app's own handle is what flips it, which also proves the entry is genuinely untouched
+    /// rather than a look-alike replacement (its CancellationTokenSource is still live).
+    /// </summary>
     [Fact]
-    public void RegisterWaiting_rejects_a_missing_resume_payload_naming_ResumePayload()
+    public void RequestResume_leaves_the_entry_in_place_for_the_app_to_flip_via_Resume()
     {
         var (registry, _) = Build();
+        var operation = StartWaiting(registry);
 
-        var ex = Assert.Throws<ArgumentException>(() =>
-            registry.RegisterWaiting("SCAN", Checkpoint("session-7") with { ResumePayload = null }));
+        Assert.True(registry.RequestResume(operation.Id));
 
-        Assert.Contains(nameof(OperationOptions.ResumePayload), ex.Message);
+        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+
+        operation.Resume();
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+    }
+
+    /// <summary>
+    /// The client-side counterpart of the test above, and the reason the release's only Critical
+    /// happened: an optimistic local prune that deleted a row the host deliberately kept made a
+    /// still-waiting operation unreachable. Nothing may leave the registry here.
+    /// </summary>
+    [Fact]
+    public void RequestResume_never_emits_OPERATION_REMOVED()
+    {
+        var (registry, events) = Build();
+        var operation = StartWaiting(registry);
+        events.Clear();
+
+        Assert.True(registry.RequestResume(operation.Id));
+
+        Assert.DoesNotContain(events, e => e.Type == OperationEvents.Removed);
+        Assert.Contains(registry.GetAll(), o => o.Id == operation.Id);
     }
 
     [Fact]
@@ -130,8 +129,8 @@ public class OperationResumeTests
 
     /// <summary>
     /// The BOTH-conditions contract: a Running operation's id is known to the registry but is not
-    /// Waiting, so RequestResume must refuse it exactly like an unknown id — never resume (or remove)
-    /// work that is still actively running.
+    /// Waiting, so RequestResume must refuse it exactly like an unknown id — never "resume" work that
+    /// is already running.
     /// </summary>
     [Fact]
     public void RequestResume_returns_false_for_a_running_operation()
@@ -145,138 +144,37 @@ public class OperationResumeTests
         Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
     }
 
-    // --- The live-handle / no-live-handle asymmetry (§5A.4, D23 amendment) ----------------------
-    //
-    // OperationStatus carries only ONE waiting value now — the former Paused/Interrupted pair
-    // collapsed into it, because every transition in this registry already treated them as one band.
-    // RequestResume's drop-vs-keep decision therefore keys on ResumePayload, not on a second status:
-    // non-null means no live handle (RegisterWaiting's checkpoint, or one the app itself attached at
-    // Start()), so the entry is removed; null means an ordinary IOperation.Wait() — left in place for
-    // the app's own Resume() to flip.
-
-    /// <summary>
-    /// §5A.4's rule: RequestResume accepts an entry reached via <see cref="IOperation.Wait"/> (no
-    /// <see cref="OperationOptions.ResumePayload"/>), but the app calls <see cref="IOperation.Resume"/>
-    /// on its own handle once it has ACTUALLY resumed — the client ASKING is not the state changing.
-    /// So unlike the checkpoint case below, the entry must stay exactly as it was (still Waiting,
-    /// still present) after a successful RequestResume.
-    /// </summary>
     [Fact]
-    public void RequestResume_on_an_entry_reached_via_Wait_leaves_it_in_place_for_the_app_to_flip_via_Resume()
+    public void RequestResume_returns_false_for_a_terminal_operation()
     {
         var (registry, events) = Build();
-        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Wait("dns");
+        var operation = registry.Start("SCAN", new OperationOptions { Kind = "X" });
+        operation.Complete();
         events.Clear();
 
-        Assert.True(registry.RequestResume(operation.Id));
-
-        var message = events.Single(e => e.Type == OperationEvents.ResumeRequested);
-        var payload = IpcJson.SerializeToElement(message.Payload);
-        // status is kept on the payload so a handler can still branch, but it is always "waiting" now
-        // — there is no second value left to distinguish; ResumePayload (null here) is the actual
-        // signal a handler reads to tell the two cases apart.
-        Assert.Equal("waiting", payload.GetProperty("status").GetString());
-
-        // Left IN PLACE, still Waiting — the defining half of the asymmetry.
-        var info = registry.GetAll().Single(o => o.Id == operation.Id);
-        Assert.Equal(OperationStatus.Waiting, info.Status);
-
-        // The app's own handle can still flip it — proves the entry is genuinely untouched, not a
-        // look-alike replacement.
-        operation.Resume();
-        Assert.Equal(OperationStatus.Running, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+        Assert.False(registry.RequestResume(operation.Id));
+        Assert.Empty(events);
     }
 
     /// <summary>
-    /// The other half of the asymmetry: an entry with a non-null <see cref="OperationOptions.ResumePayload"/>
-    /// (registered via <see cref="IOperationRegistry.RegisterWaiting"/>'s checkpoint) is still REMOVED
-    /// by RequestResume (there is no live handle to flip — the body died with the process). The payload
-    /// still carries `status` (always "waiting" now) so a handler can branch on it, but the actual
-    /// intrinsic difference — no live body — is what `resumePayload` being non-null already told it.
+    /// A waiting operation is NOT finished history: neither the automatic
+    /// <see cref="OperationRegistryOptions.MaxHistory"/> eviction nor an explicit
+    /// <see cref="IOperationRegistry.ClearFinished"/> may take it away, or the user loses the row they
+    /// need in order to resume or dismiss it. Correct TODAY only structurally (both paths walk
+    /// <c>_finishedOrder</c>, which only <c>Finish</c> ever writes), so a future rewrite that instead
+    /// filtered <c>_entries</c> by status would silently destroy it with the suite still green.
     /// </summary>
     [Fact]
-    public void RequestResume_on_a_checkpoint_entry_still_removes_it_and_the_payload_names_the_status()
+    public void A_waiting_operation_is_not_prunable_or_clearable_history()
     {
-        var (registry, events) = Build();
-        var id = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-        events.Clear();
+        var bus = new EventBus();
+        var registry = new OperationRegistry(bus, new OperationRegistryOptions { MaxHistory = 1 });
+        var waiting = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+        waiting.Wait("dns");
 
-        Assert.True(registry.RequestResume(id));
+        for (var i = 0; i < 5; i++) registry.Start("SCAN", new OperationOptions { Kind = "X" }).Complete();
+        registry.ClearFinished();
 
-        var message = events.Single(e => e.Type == OperationEvents.ResumeRequested);
-        var payload = IpcJson.SerializeToElement(message.Payload);
-        Assert.Equal("waiting", payload.GetProperty("status").GetString());
-        Assert.Equal("session-7", payload.GetProperty("resumePayload").GetString());
-        Assert.Empty(registry.GetAll());   // gone — the resumed op registers a FRESH one when it restarts
-    }
-
-    /// <summary>
-    /// FINDING 4 (Important, generic-library audit): dropping a no-live-handle entry used to leave no
-    /// wire trace at all — a client's mirror of it could only stay correct via a hand-written
-    /// optimistic local prune, one of the two the audit calls out as no-longer-needed once removals
-    /// are authoritative. <see cref="OperationEvents.Removed"/> now fires for this drop too.
-    /// </summary>
-    [Fact]
-    public void RequestResume_on_a_checkpoint_entry_also_emits_OPERATION_REMOVED()
-    {
-        var (registry, events) = Build();
-        var id = registry.RegisterWaiting("SCAN", Checkpoint("session-7"));
-        events.Clear();
-
-        Assert.True(registry.RequestResume(id));
-
-        var removed = events.Single(e => e.Type == OperationEvents.Removed);
-        var ids = IpcJson.SerializeToElement(removed.Payload).GetProperty("operationIds")
-            .EnumerateArray().Select(e => e.GetString()!).ToArray();
-        Assert.Equal([id], ids);
-    }
-
-    /// <summary>The Wait() case is left in place (§5A.4) — RequestResume there must NOT emit a removal.</summary>
-    [Fact]
-    public void RequestResume_on_an_entry_reached_via_Wait_does_not_emit_OPERATION_REMOVED()
-    {
-        var (registry, events) = Build();
-        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Wait("dns");
-        events.Clear();
-
-        Assert.True(registry.RequestResume(operation.Id));
-
-        Assert.DoesNotContain(events, e => e.Type == OperationEvents.Removed);
-    }
-
-    /// <summary>
-    /// The hole this closes: <c>RequestResume</c> used to key its drop-vs-keep decision on
-    /// <see cref="OperationOptions.ResumePayload"/> being non-null rather than on how the entry reached
-    /// <see cref="OperationStatus.Waiting"/> — but that field is APP-controlled data, not a signal the
-    /// kit owns. An app that attaches its own <see cref="OperationOptions.ResumePayload"/> at
-    /// <see cref="IOperationRegistry.Start"/> time (not through <see cref="IOperationRegistry.RegisterWaiting"/>
-    /// at all) and then calls <see cref="IOperation.Wait"/> has a genuinely LIVE handle — the body is
-    /// parked, not dead — so it must be treated exactly like any other live-<c>Wait()</c> entry: LEFT IN
-    /// PLACE, with the handle's own <see cref="IOperation.Resume"/> still able to flip it back to
-    /// <see cref="OperationStatus.Running"/>. The registry now keys this on internal provenance
-    /// (<c>Entry.Reconstructed</c>, set only by <see cref="IOperationRegistry.RegisterWaiting"/>) instead
-    /// of the payload, so this combination is no longer ambiguous.
-    /// </summary>
-    [Fact]
-    public void RequestResume_on_a_live_handle_leaves_it_in_place_even_when_its_own_ResumePayload_was_set_at_Start()
-    {
-        var (registry, events) = Build();
-        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", ResumePayload = "checkpoint-attached-at-start" });
-        operation.Wait("dns");
-        events.Clear();
-
-        Assert.True(registry.RequestResume(operation.Id));
-
-        // Left IN PLACE, still Waiting — same shape as the ordinary live-Wait() case, not dropped.
-        var info = registry.GetAll().Single(o => o.Id == operation.Id);
-        Assert.Equal(OperationStatus.Waiting, info.Status);
-        Assert.DoesNotContain(events, e => e.Type == OperationEvents.Removed);
-
-        // The live handle still works — proves the entry is genuinely untouched, not a look-alike
-        // replacement, and that its CancellationTokenSource was never disposed out from under it.
-        operation.Resume();
-        Assert.Equal(OperationStatus.Running, registry.GetAll().Single(o => o.Id == operation.Id).Status);
+        Assert.Contains(registry.GetAll(), o => o.Id == waiting.Id);
     }
 }

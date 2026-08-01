@@ -21,20 +21,17 @@ export const OperationStatuses = {
    * one of the terminal statuses in {@link OperationsState.finished}, and never pruned as history —
    * a waiting entry is a pending offer, not something finished.
    *
-   * Reached two ways — there is only ONE waiting value, collapsing what used to be two (`paused`
-   * and `interrupted`), which every host transition already treated as one band: the host's own
-   * `IOperation.Wait` on a live operation (the body is still there, just stopped), or
-   * `IOperationRegistry.RegisterWaiting` announcing a crash-interrupted checkpoint directly (no live
-   * body at all). Exits via the host's `IOperation.Resume` (back to `running`), the `DISMISS` route
-   * (to `cancelled`), or a direct complete/fail.
+   * Reached ONE way, and that is the point: the host's `IOperation.Wait` on a live operation. The
+   * body is parked, not gone, so there is always something to resume. Exits via the host's
+   * `IOperation.Resume` (back to `running`), the `DISMISS` route (to `cancelled`), or a direct
+   * complete/fail.
    *
-   * **How the host tells the two apart is internal to the host, and is NOT
-   * {@link OperationInfo.resumePayload}.** `RequestResume` keys on the registry's own record of which
-   * call site produced the entry, because `resumePayload` is APP-controlled — an app may attach one
-   * at `Start()` and then call `Wait()`, which is a genuinely live handle. The two DO correlate in
-   * the ordinary case, so a UI may read `resumePayload` as a display hint ("offer resume-from-
-   * checkpoint" vs. "show {@link OperationInfo.waitReason}") — never as a claim about what the host
-   * will do with the entry.
+   * Two simplifications got it here, both undoing the same mistake — encoding HOW an entry arrived
+   * rather than WHAT state it is in. It was once two values (`paused` and `interrupted`) that every
+   * host transition already treated as one band, and the host once also accepted crash-checkpoint
+   * entries with no live body at all (`RegisterWaiting` + `resumePayload`), which forced every caller
+   * to answer "does this one have a handle?". The checkpoint half was cut in 0.2.0: crash recovery is
+   * the APP's business — it owns the checkpoint, and a resumed run is a fresh `Start()` like any other.
    */
   Waiting: 'waiting',
 } as const;
@@ -142,7 +139,9 @@ export interface OperationInfo {
   waitReason?: string;
   error?: IpcError;
   cancellable: boolean;
-  resumePayload?: string;
+  // No `resumePayload` (0.2.0 design pass): an opaque app checkpoint token used to ride here, for
+  // announcing crash-interrupted work the host never started. Cut with the rest of that half — the
+  // app owns its own checkpoints, and a resumed run is a fresh operation.
   startedAt: string;
   finishedAt?: string;
 }
@@ -180,10 +179,9 @@ export interface OperationsState {
   readonly running: OperationInfo[];
   /**
    * The WAITING band (design §5A.2): stopped, resumable, awaiting a decision — exactly what
-   * `Dismiss`/`RequestResume` both accept, so a status bar can render "needs you" as one bucket
-   * without caring whether the entry came from a live `Wait()` or a crash-announced checkpoint
-   * (`resumePayload` is a display HINT for a UI that wants to distinguish them — see
-   * {@link OperationStatuses.Waiting} for why it is not the host's own discriminator).
+   * `Dismiss`/`RequestResume` both accept, so a status bar can render "needs you" as one bucket.
+   * Every entry here reached the band the same way (a live `Wait()` on the host), so there is no
+   * sub-case to distinguish — see {@link OperationStatuses.Waiting}.
    */
   readonly waiting: OperationInfo[];
   /** Every operation that reached a terminal status (completed/failed/cancelled). */
@@ -211,16 +209,16 @@ export interface OperationsActions {
    */
   clearFinished: () => string;
   /**
-   * `RESUME { operationId }` — ask the host to continue a waiting operation. No local mutation here:
-   * the host's `OPERATION_REMOVED` fold is what actually drops a no-live-handle entry (the asymmetric
-   * half of design §5A.4 — an entry reached via a live `Wait()` is deliberately LEFT IN PLACE
-   * host-side, so no removal event ever arrives for it either; the host tells the two apart by its
-   * OWN internal provenance record, not by `resumePayload` and not by a second status — which is
-   * exactly why folding the named-id event is the only correct client behaviour: a client-side guess
-   * cannot see the signal the decision is actually made on). It used to carry an optimistic local prune gated on the
-   * (now-removed) `interrupted` status, which was the source of this release's only Critical (it
-   * pruned a `paused` row once, before the asymmetry was re-derived into it) — the authoritative
-   * event now makes that guess unnecessary.
+   * `RESUME { operationId }` — ask the host to resume a waiting operation, mirroring {@link wait}.
+   * No local mutation: asking never changes state by itself — the owning module's own
+   * `IOperation.Resume` publishes the `running` transition, and the store folds it from the wire like
+   * any other `OPERATION_UPDATED`.
+   *
+   * This action carried an optimistic local prune through two designs and was the source of the
+   * release's only Critical — it deleted a row the host deliberately kept, making a still-waiting
+   * operation unreachable. The prune existed because the host's `RequestResume` was ASYMMETRIC
+   * (removing crash-checkpoint entries, keeping live ones). The 0.2.0 design pass cut the checkpoint
+   * half, so the asymmetry is gone at the source and there is nothing left for a client to mirror.
    */
   resume: (operationId: string) => string;
   /**
@@ -348,8 +346,8 @@ export function createOperationsStore(
  * because the host is authoritative (the store primitive's own late-mounter case is now
  * host-backed end to end). `running`/`waiting`/`finished` are selectors an activity panel or status
  * bar reads directly: `useShenoraOperations((s) => s.waiting)` for the one "needs you" bucket
- * (filter further on `resumePayload` if the UI distinguishes a resume prompt from a wait-reason
- * display). Bound to the default module/no scope — use
+ * (every entry in it reached the band the same way, so there is no sub-case to filter for; read
+ * `waitReason` for WHY it is waiting). Bound to the default module/no scope — use
  * {@link createOperationsStore} directly for a renamed module or a scope-filtered instance.
  *
  * Headless, per D13: no component, no UI opinion, no `ProcessType`-style enum — what an operation

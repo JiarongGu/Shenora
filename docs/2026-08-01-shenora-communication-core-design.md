@@ -27,7 +27,16 @@ drop-vs-keep decision on `ResumePayload` rather than on status at this point —
 closed "registered but not started" limit, and every rename: **D23's amendment**, `docs/DECISIONS.md`.
 **Superseded again (2026-08-01, before push/publish — see §5A.4's own amendment stack below): keying on
 `ResumePayload` was itself a residual hole, since that field is app-controlled, not kit-owned —
-`RequestResume` now keys on the registry's internal provenance record instead.** Full
+`RequestResume` then keyed on the registry's internal provenance record instead.**
+**AND SUPERSEDED ONCE MORE, BY REMOVAL (2026-08-01, the 0.2.0 DESIGN PASS, still before publish): the
+crash-checkpoint half is CUT.** `RegisterWaiting` and `ResumePayload` are gone, and `RequestResume` is
+now an exact mirror of `RequestWait` — validate, emit, mutate nothing. Read the amendment stack above
+as ONE symptom rather than three fixes: the same question ("does this entry still have a live body?")
+got three different answers — a second status, an app-controlled field, an internal provenance flag —
+and each produced a defect, because the registry was accepting entries it had never started. That is
+single-app provenance this doc's own §4.2 note had already flagged in writing. Removing the question
+is the fix; crash recovery belongs to the app, and a resumed run is a fresh `Start()`. See
+`docs/DECISIONS.md` D23's closing amendment. Full
 list: `CHANGELOG.md`'s 0.2.0 entry. This doc is AMENDED IN PLACE below (§4.2, §4.3, §5A, §6) rather
 than left to describe a two-status band that no longer exists — sections not touched by either audit
 still describe the as-shipped shape accurately.
@@ -315,7 +324,11 @@ The registry publishes on the bus under a kit module (`OperationRegistryOptions.
 
 - `OPERATION_UPDATED` — payload is the full `OperationInfo`, for **every** transition: start, progress,
   terminal. Event `Scope` = the operation's scope.
-- `OPERATION_RESUME_REQUESTED` — payload `{ operationId, module, kind, resumePayload, scope, status }`.
+- `OPERATION_RESUME_REQUESTED` — payload `{ operationId, module, kind, scope }`. **AMENDED (0.2.0
+  design pass, before publish):** the payload used to also carry `resumePayload` (gone with the
+  crash-checkpoint half) and `status` (which only ever meant `waiting`, kept solely so a handler could
+  branch between two reaches that no longer exist). It is now byte-identical in shape to
+  `OPERATION_WAIT_REQUESTED` — both are pure ASKS — and a test pins the two together.
 - `OPERATION_WAIT_REQUESTED` (generic-library audit, before publish; sketched/shipped at the time as
   `OPERATION_PAUSE_REQUESTED`, renamed by the status collapse — see the amendment at the top of this
   doc) — payload `{ operationId, module, kind, scope }`. Exact mirror of `ResumeRequested`'s ASK/ACT
@@ -323,9 +336,9 @@ The registry publishes on the bus under a kit module (`OperationRegistryOptions.
   `IOperation.Wait` is what actually stops the work and publishes the resulting `OPERATION_UPDATED`.
 - `OPERATION_REMOVED` (generic-library audit finding 4) — payload `{ operationIds: string[] }`,
   emitted with `Scope = null` (global, since one batch can span several scopes). Fires wherever an
-  entry leaves the registry with no corresponding `OPERATION_UPDATED`: `MaxHistory` eviction,
-  `ClearFinished`, and the no-live-handle entry drop inside `RequestResume` (§5A.4 — keyed on the
-  registry's own provenance record, not on `ResumePayload` and not on a second status). The host bounds its own
+  entry leaves the registry with no corresponding `OPERATION_UPDATED`: `MaxHistory` eviction and
+  `ClearFinished`. (**AMENDED, 0.2.0 design pass:** `RequestResume` was a third source until the
+  crash-checkpoint half was cut — it removes nothing now.) The host bounds its own
   history (`MaxHistory`); before this event existed, the client — the side actually rendering — never
   heard about a removal, so a long-lived store's mirror of bounded host history was itself unbounded,
   and `@shenora/react` compensated with two hand-written optimistic local prunes (`clearFinished`,
@@ -508,8 +521,9 @@ something that never terminated, plus a second entry). Both states were later co
 `Waiting` value shown above, on the observation that this table's own "Pruned?"/"Exits" columns already
 treated them identically — the two-state design was tracking WHICH mechanism reached the band
 (`Wait()` vs. a checkpoint registration), not anything the band itself needed to distinguish; that
-distinction now lives on the registry's own internal provenance record (§5A.4) instead of on the enum
-— it moved to `ResumePayload` first and was corrected before publish, see §5A.4's amendment stack.
+distinction moved off the enum and onto `ResumePayload`, then onto an internal provenance record, and
+was finally REMOVED ALTOGETHER with the crash-checkpoint half (0.2.0 design pass) — there is now one
+status reached one way, and nothing to distinguish. See §5A.4's amendment stack.
 
 ### 5A.3 The surface
 
@@ -601,6 +615,20 @@ public member is SemVer surface at 1.0). The Start-with-`ResumePayload`-then-`Wa
 used to be a recorded, deliberate ambiguity is now simply an ordinary live-`Wait()` entry: left in place,
 same as any other, with `ResumePayload` unchanged in its other roles (`RegisterWaiting`'s non-empty
 requirement, the dedupe key, riding the resume event).
+
+**AMENDED a final time, BY REMOVAL (2026-08-01, the 0.2.0 design pass, still before publish): there is
+no drop-vs-keep decision left to make, because the no-live-handle case is gone.** Three amendments to
+one decision is the signal this section should be read for: each fix was correct about the previous
+bug, and none asked why the decision existed at all. It existed because the registry accepted entries
+it had never started — `RegisterWaiting` + `ResumePayload`, which §4.2's own provenance note had
+already flagged as coming from ONE app against a two-app bar. Both are now cut. `RequestResume`
+validates `Waiting`, emits, and mutates nothing — an exact mirror of `RequestWait` — so §5A.4 is no
+longer an asymmetry section at all. Crash recovery is the app's: it owns the checkpoint (the kit only
+ever held an opaque token it could not interpret), and a resumed run is a fresh `Start()`/`Run()`. An
+app that wants the pending offer VISIBLE while the user decides writes `Start()` then
+`Wait("interrupted")` — the same one-liner that already covered "registered but not yet started".
+The reusable lesson, promoted to `.claude/knowledge/ipc-contracts.md`: **when one decision needs its
+third rewrite, suspect the decision's EXISTENCE rather than its current answer.**
 
 Considered and rejected: an `Adopt(id) → IOperation` that re-attaches a handle to a no-live-handle
 entry, unifying both paths and preserving the activity row's identity across a crash. It is genuinely

@@ -29,14 +29,13 @@ public class OperationLifecycleInvariantTests
     /// catches it.
     /// </para>
     /// <para>
-    /// Two entries, not three: the former <c>Paused</c>/<c>Interrupted</c> pair collapsed into the
-    /// single <see cref="OperationStatus.Waiting"/> value (they were already one band everywhere that
-    /// mattered — <c>Dismiss</c> and <c>RequestResume</c> both accepted either, neither was ever
-    /// pruned), so the sweep below is simpler, not weaker. The <see cref="OperationStatus.Waiting"/>
-    /// row reaches it via <see cref="IOperation.Wait"/> — <see cref="Waiting_reached_via_RegisterWaiting_also_has_a_registered_exit_that_reaches_terminal"/>
-    /// separately proves the OTHER way to reach the same status (<see cref="IOperationRegistry.RegisterWaiting"/>'s
-    /// crash checkpoint) also has a sanctioned exit, since a dictionary keyed by status can only hold
-    /// one representative reach per key.
+    /// Two entries, not three — and one reach per status rather than two, which is the 0.2.0 design
+    /// pass showing up here as SIMPLIFICATION. The former <c>Paused</c>/<c>Interrupted</c> pair had
+    /// already collapsed into the single <see cref="OperationStatus.Waiting"/> value; the crash-
+    /// checkpoint way of REACHING that value (<c>RegisterWaiting</c>) is now cut too, so this table's
+    /// one-representative-reach-per-key limitation no longer hides anything: every entry reaches
+    /// <see cref="OperationStatus.Waiting"/> through <see cref="IOperation.Wait"/>, and the companion
+    /// test that used to cover the second reach is gone with the feature.
     /// </para>
     /// </summary>
     private static readonly IReadOnlyDictionary<OperationStatus, (
@@ -53,9 +52,7 @@ public class OperationLifecycleInvariantTests
 
             // Waiting's sanctioned exit under test is Dismiss — the fix this whole feature exists to
             // add (§5A.2/§5A.3). Complete/Fail/Cancel(id) are ALSO valid exits (see
-            // OperationRegistryTests), but Dismiss is the one the sabotage below targets. This reach
-            // (via IOperation.Wait) is the "live handle" shape; the checkpoint shape
-            // (RegisterWaiting) is covered separately below.
+            // OperationRegistryTests), but Dismiss is the one the sabotage below targets.
             [OperationStatus.Waiting] = (
                 registry =>
                 {
@@ -67,30 +64,27 @@ public class OperationLifecycleInvariantTests
         };
 
     /// <summary>
-    /// The OTHER way to reach <see cref="OperationStatus.Waiting"/> — <see cref="IOperationRegistry.RegisterWaiting"/>'s
-    /// crash checkpoint, which has no live handle at all (unlike the <see cref="IOperation.Wait"/> row
-    /// in <see cref="NonTerminalExits"/>). Before this feature, its ONLY exit was
-    /// <see cref="IOperationRegistry.RequestResume"/>, which does not reach a terminal status at all
-    /// (it just removes the entry) — exactly §5A.1's bug: no sanctioned TERMINAL exit existed. Kept as
-    /// its own test rather than a second dictionary entry, because <see cref="NonTerminalExits"/> is
-    /// keyed by status and can only hold one representative reach per key.
+    /// <b>The ASK routes are not exits, and this pins that they never became one.</b>
+    /// <see cref="IOperationRegistry.RequestWait"/> and <see cref="IOperationRegistry.RequestResume"/>
+    /// both return <c>true</c> without moving the operation anywhere — asking is not acting. That
+    /// matters to THIS file specifically: §5A.1's original bug was a status whose only "exit"
+    /// (<c>RequestResume</c>) did not reach a terminal state at all, it merely removed the entry. The
+    /// removal is gone with the crash-checkpoint half (0.2.0 design pass), so the honest statement now
+    /// is that these two routes are not exits and the sweep above must not be able to mistake them for
+    /// one.
     /// </summary>
     [Fact]
-    public void Waiting_reached_via_RegisterWaiting_also_has_a_registered_exit_that_reaches_terminal()
+    public void The_ask_routes_are_not_exits_they_leave_the_operation_exactly_where_it_was()
     {
         var registry = BuildRegistry();
-        var id = registry.RegisterWaiting("TEST", new OperationOptions { Kind = "X", ResumePayload = "checkpoint" });
-        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == id).Status);
+        var operation = registry.Start("TEST", new OperationOptions { Kind = "X" });
 
-        var exited = registry.Dismiss(id);
+        Assert.True(registry.RequestWait(operation.Id));
+        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);   // still Running: asking ≠ acting
 
-        Assert.True(exited);
-        var final = registry.GetAll().SingleOrDefault(o => o.Id == id);
-        Assert.NotNull(final);
-        Assert.True(OperationRegistry.IsTerminal(final!.Status));
-
-        registry.ClearFinished();
-        Assert.Null(registry.GetAll().SingleOrDefault(o => o.Id == id));
+        operation.Wait("reason");                                                    // the OWNER acts
+        Assert.True(registry.RequestResume(operation.Id));
+        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single().Status);   // still Waiting, and still THERE
     }
 
     private static OperationRegistry BuildRegistry() =>

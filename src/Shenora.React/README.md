@@ -120,20 +120,17 @@ It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-
 folds `OPERATION_UPDATED` by id — one subscription however many components read it. The client
 mirrors the host's three bands (design §5A.2): `running` (Active), `waiting` (Waiting), and `finished`
 (Terminal). All three are derived from `byId` on every read, never a second copy to keep in sync —
-`waiting` is a single-status filter, exactly like `running`. `OperationStatus` carries only ONE waiting
-value: an app calling `wait()` on a live operation and the host announcing a crash-interrupted
-checkpoint both land in `waiting`, told apart (if your UI needs to — a resume prompt reads differently
-from a wait-reason display) by whether `resumePayload` is set, not by a second status. Filtering by
-your own `module`/`kind` is a plain `Array.filter` over any of them. A `waiting` operation carries
-`waitReason` — an app-defined string, like `kind`, OPTIONAL on the host side — for your UI to branch on.
-An entry with a `resumePayload` is a pending RESUME **offer** re-registered from the app's own crash
-checkpoint: the host never prunes it on its own — it stays offered until your UI calls `resume` or
-`dismiss`. `resume`/`dismiss`/`wait` are all fire-and-forget client requests — the host's own
-`IOperation.Wait`/`Resume` (called by whoever owns the operation, hearing
+`waiting` is a single-status filter, exactly like `running`. `OperationStatus` carries ONE waiting
+value reached ONE way — the host's `IOperation.Wait` on a live operation — so there is no sub-case to
+tell apart. Filtering by your own `module`/`kind` is a plain `Array.filter` over any of them. A
+`waiting` operation carries `waitReason` — an app-defined string, like `kind`, OPTIONAL on the host
+side — for your UI to branch on. The host never prunes a waiting entry on its own: it stays until
+someone resumes, dismisses, or finishes it. `resume`/`dismiss`/`wait` are all fire-and-forget client
+requests — the host's own `IOperation.Wait`/`Resume` (called by whoever owns the operation, hearing
 `OPERATION_WAIT_REQUESTED`/`OPERATION_RESUME_REQUESTED`) is what actually changes the state; asking
 is not acting. `clearFinished`/`resume`/`wait` do not touch local state themselves at all: the host's
 `OPERATION_REMOVED { operationIds }` is the ONE authoritative removal signal the store folds, deleting
-exactly the named ids — `MaxHistory` eviction, `clearFinished`, and a dropped crash-resume offer all
+exactly the named ids — `MaxHistory` eviction and `clearFinished`
 publish it, so a long-lived store's mirror of bounded host history cannot drift from what the host
 actually did (this replaced two hand-written optimistic local prunes that a past release carried —
 one of which was this project's only Critical, a `resume` prune that dropped a still-waiting row).
