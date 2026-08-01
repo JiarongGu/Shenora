@@ -120,6 +120,7 @@ sealed class Shenora.WebView2.WebViewIpcBridgeOptions
   public Shenora.Core.IEventBus? EventBus { get; init; }
   public System.Action<Shenora.Ipc.IpcRequest>? OnClientReady { get; init; }
   public System.Action<string>? Log { get; init; }
+  public System.Func<Shenora.Ipc.IpcNotification, bool>? NotificationFilter { get; init; }
   public System.TimeSpan NotificationInterval { get; init; }
   public int MaxQueuedNotifications { get; init; }
   public required Shenora.Ipc.IMessageDispatcher Dispatcher { get; init; }

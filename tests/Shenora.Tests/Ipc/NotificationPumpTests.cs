@@ -71,6 +71,21 @@ public class NotificationPumpTests
     }
 
     [Fact]
+    public void A_throwing_filter_fails_closed_dropping_the_notification_not_the_pump()
+    {
+        // The filter is app-supplied and guarded (AppCallback.RunOrDefault, fallback: false) like every
+        // other app callback on a UI-thread-reachable path — a throwing predicate must resolve to a
+        // policy decision (drop), never propagate out of Enqueue and crash whatever called it.
+        using var pump = Pump(new NotificationPumpOptions { Filter = _ => throw new InvalidOperationException("boom") });
+        pump.Open();
+
+        pump.Enqueue(Note()); // must not throw despite the filter throwing
+
+        Assert.Equal(0, pump.PendingCount);       // failed CLOSED — dropped, not queued
+        Assert.False(pump.TryDrainBatch(out _));  // nothing pending to drain
+    }
+
+    [Fact]
     public void One_unserializable_payload_does_not_lose_the_rest_of_its_batch()
     {
         using var pump = Pump();

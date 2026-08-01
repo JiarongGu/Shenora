@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Shenora.Core;
 using Shenora.Ipc;
 // Inside namespace Shenora.WebView2 the bare identifier "WebView2" resolves to the namespace, so
@@ -36,6 +35,15 @@ public sealed class WebViewIpcBridgeOptions
     /// overflow is fine, an OOM isn't. (The family's measured cap.)
     /// </summary>
     public int MaxQueuedNotifications { get; init; } = 10_000;
+
+    /// <summary>
+    /// Per-channel delivery policy, applied at ENQUEUE (a direct <see cref="WebViewIpcBridge.SendNotification"/>
+    /// call AND a forwarded bus event alike). Default: deliver everything. This is the seam that lets
+    /// one bridge per window, or an auxiliary/remote session, receive only the slice of the app's
+    /// traffic it should — every bridge subscribing with the bus's wildcard forward otherwise means
+    /// every event reaches every window. Forwarded to <see cref="Shenora.Ipc.NotificationPumpOptions.Filter"/>.
+    /// </summary>
+    public Func<IpcNotification, bool>? NotificationFilter { get; init; }
 
     /// <summary>
     /// Invoked on the ready handshake with the handshake request (its payload is app-defined).
@@ -76,11 +84,8 @@ public sealed class WebViewIpcBridge : IDisposable
     private readonly WebViewIpcBridgeOptions _options;
     private readonly Action<string>? _log;
     private readonly Shenora.Core.IUiDispatcher _ui;
-    private readonly ConcurrentQueue<IpcNotification> _pending = new();
-    private int _pendingCount;
-    private string? _busSubscriptionId;
+    private readonly NotificationPump _pump;
     private System.Windows.Forms.Timer? _flushTimer;
-    private volatile bool _clientReady;
     private bool _attached;
     private bool _disposed;
 
@@ -112,22 +117,13 @@ public sealed class WebViewIpcBridge : IDisposable
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
-        // Validate at CONSTRUCTION (P5.5 H3), the kit's convention. Both of these otherwise fail far
-        // from their cause:
-        //
-        // MaxQueuedNotifications = 0 makes Enqueue dequeue the item it just enqueued, so EVERY
-        // notification for the life of the process vanishes with no error and no log line — the worst
-        // possible shape for a misconfiguration.
-        //
-        // NotificationInterval below 1 ms truncates to 0 and threw out of Attach() instead, as an
-        // opaque ArgumentOutOfRangeException from the WinForms Timer, at a call site that has nothing
-        // to do with the option.
-        if (options.MaxQueuedNotifications < 1)
-            throw new ArgumentOutOfRangeException(nameof(options),
-                $"{nameof(WebViewIpcBridgeOptions.MaxQueuedNotifications)} must be at least 1 — 0 would silently discard every notification.");
-        if (options.NotificationInterval < TimeSpan.FromMilliseconds(1))
-            throw new ArgumentOutOfRangeException(nameof(options),
-                $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must be at least 1 ms.");
+        // Bridge-specific, NOT carried by NotificationPump (P5.5 H3, re-added here): a
+        // System.Windows.Forms.Timer's Interval is an int32 millisecond count, a fact that belongs to
+        // whichever base actually constructs that timer — this one. NotificationInterval below 1 ms
+        // (the pump's own lower-bound check, still enforced at construction below) truncates to 0 and
+        // used to throw out of Attach() instead, as an opaque ArgumentOutOfRangeException from the
+        // WinForms Timer's own setter, at a call site that has nothing to do with the option that
+        // caused it. Checked HERE, before the timer is ever constructed, for the same reason.
         if (options.NotificationInterval.TotalMilliseconds > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must fit in an int32 millisecond count (the WinForms timer's limit).");
@@ -140,27 +136,24 @@ public sealed class WebViewIpcBridge : IDisposable
         _ui = new Shenora.WinForms.WinFormsUiDispatcher(webView,
             ex => options.Log?.Invoke($"[Shenora.WebView2] Posted UI work failed: {ex.Message}"));
 
-        // Subscribe NOW, not at Attach: the bus hands us events from any thread and the queue
-        // buffers them until the client is ready — so nothing emitted during WebView2 init or
-        // page load is lost (the buffered-startup lesson from the server-backed sibling).
-        if (_options.EventBus is { } bus)
+        // Everything transport-neutral — the bounded drop-oldest queue, the ready gate, batch
+        // building, the per-notification serialize guard, and the bus subscription itself (which
+        // starts buffering at CONSTRUCTION, not at Attach, so nothing emitted during the slow WebView2
+        // init is lost) — lives in NotificationPump now (design §5). The pump's own construction
+        // re-validates MaxQueuedNotifications/NotificationInterval (its MaxQueued/FlushInterval) with
+        // its own self-naming messages.
+        _pump = new NotificationPump(new NotificationPumpOptions
         {
-            _busSubscriptionId = bus.SubscribeToAll(message =>
-            {
-                Enqueue(new IpcNotification
-                {
-                    Module = message.Module,
-                    Type = message.Type,
-                    Payload = message.Payload,
-                    Scope = message.Scope,
-                });
-                return Task.CompletedTask;
-            });
-        }
+            EventBus = options.EventBus,
+            FlushInterval = options.NotificationInterval,
+            MaxQueued = options.MaxQueuedNotifications,
+            Filter = options.NotificationFilter,
+            Log = options.Log,
+        });
     }
 
     /// <summary>True once the client has completed the ready handshake (notifications flow).</summary>
-    public bool IsClientReady => _clientReady;
+    public bool IsClientReady => _pump.IsOpen;
 
     /// <summary>
     /// Hook <c>WebMessageReceived</c> and start the flush timer. Call on the UI thread after
@@ -233,15 +226,7 @@ public sealed class WebViewIpcBridge : IDisposable
     /// rarely call this directly — emitting on the bus reaches every attached bridge.
     /// </summary>
     public void SendNotification(string module, string type, object? payload = null, string? scope = null) =>
-        Enqueue(new IpcNotification { Module = module, Type = type, Payload = payload, Scope = scope });
-
-    private void Enqueue(IpcNotification notification)
-    {
-        _pending.Enqueue(notification);
-        // Bound the buffer (see MaxQueuedNotifications): over the cap, drop the oldest to make room.
-        if (Interlocked.Increment(ref _pendingCount) > _options.MaxQueuedNotifications && _pending.TryDequeue(out _))
-            Interlocked.Decrement(ref _pendingCount);
-    }
+        _pump.Enqueue(new IpcNotification { Module = module, Type = type, Payload = payload, Scope = scope });
 
     /// <summary>
     /// Handle messages from the page. Async ON THE UI THREAD: each <c>await</c> yields the
@@ -290,8 +275,11 @@ public sealed class WebViewIpcBridge : IDisposable
     /// <summary>Close the ready gate — the page that handshook can no longer receive. Internal seam for tests.</summary>
     internal void ResetClientReady(string reason = "the page is being replaced")
     {
-        if (!_clientReady) return;
-        _clientReady = false;
+        if (!_pump.IsOpen) return;
+        _pump.Close();
+        // The pump itself no longer logs this transition — ContentLoading/ProcessFailed are WebView2
+        // vocabulary that belongs here, not in a base-agnostic type. Kept so the diagnostic survives:
+        // a gate that closes silently is very hard to debug (P5.5 H3 was found the hard way without it).
         Log(() => $"[Shenora.WebView2] Buffering notifications until the client is ready again — {reason}");
     }
 
@@ -339,7 +327,7 @@ public sealed class WebViewIpcBridge : IDisposable
 
     private IpcResponse HandleHandshake(IpcRequest request)
     {
-        _clientReady = true;
+        _pump.Open();
         Log(() => "[Shenora.WebView2] Client ready");
         // Per-page glue (splash, overlays) failing must not fail the client's init await. The report
         // sink goes through the guarded Log for the same reason the callback is guarded at all.
@@ -353,15 +341,15 @@ public sealed class WebViewIpcBridge : IDisposable
 
     private void Flush()
     {
-        // Catch-all: this runs on a WinForms timer, so ANYTHING that escapes here is an unhandled
-        // UI-thread exception — a modal crash dialog under the family bootstrap, repeating every
-        // interval. The incoming path has always been guarded; this one was not (found in the P0–P5
-        // review).
+        // NotificationPump.TryDrainBatch never throws (its own doc guarantees it — a catch-all moved
+        // in with it), but this try/catch stays: it runs on a WinForms timer, so ANYTHING that escaped
+        // here would be an unhandled UI-thread exception — a modal crash dialog under the family
+        // bootstrap, repeating every interval. Belt-and-suspenders around a call that also guards
+        // itself is cheap; a hole here was expensive once (found in the P0–P5 review).
         try
         {
-            var batchJson = TryBuildBatchJson();
-            if (batchJson is null) return;
-            PostJson(batchJson);
+            if (_pump.TryDrainBatch(out var batchJson) && batchJson is not null)
+                PostJson(batchJson);
         }
         catch (Exception ex)
         {
@@ -372,52 +360,13 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Drain the queue into a batch envelope; null when empty or the client isn't ready yet.
-    /// Internal seam for tests.
+    /// Drain the queue into a batch envelope; null when empty or the client isn't ready yet. Thin
+    /// wrapper over <see cref="NotificationPump.TryDrainBatch"/>. Internal seam for tests.
     /// </summary>
-    internal string? TryBuildBatchJson()
-    {
-        // Hold delivery (queue intact) until the page's listeners exist — a batch posted before
-        // the client subscribed would be silently lost, which is worse than arriving 50 ms late.
-        if (!_clientReady) return null;
-        if (_pending.IsEmpty) return null;
-
-        var batch = new List<IpcNotification>();
-        while (_pending.TryDequeue(out var notification))
-        {
-            Interlocked.Decrement(ref _pendingCount);
-            batch.Add(notification);
-        }
-        if (batch.Count == 0) return null;
-
-        // Payloads are APP-supplied objects, so serialization can throw on data the framework never
-        // sees until here: a cyclic object graph (parent/child entities), a Type/delegate member, a
-        // throwing getter. The queue is already drained at this point, so an unguarded throw lost the
-        // WHOLE batch as well as crashing the UI thread. Serialize per-notification and drop only the
-        // offender, so one bad event can't take its batch down with it.
-        var serializable = new List<IpcNotification>(batch.Count);
-        foreach (var notification in batch)
-        {
-            try
-            {
-                _ = IpcJson.Serialize(notification);
-                serializable.Add(notification);
-            }
-            catch (Exception ex)
-            {
-                // Module/type only — a payload that fails to serialize must not have its contents
-                // logged either (it may carry app data).
-                Log(() => $"[Shenora.WebView2] Dropped unserializable notification " +
-                          $"{notification.Module}/{notification.Type}: {ex.GetType().Name}");
-            }
-        }
-        if (serializable.Count == 0) return null;
-
-        return IpcJson.Serialize(new IpcNotificationBatch { Payload = serializable });
-    }
+    internal string? TryBuildBatchJson() => _pump.TryDrainBatch(out var json) ? json : null;
 
     /// <summary>Buffered notification count. Internal seam for tests.</summary>
-    internal int PendingNotificationCount => _pendingCount;
+    internal int PendingNotificationCount => _pump.PendingCount;
 
     private void PostJson(string json)
     {
@@ -457,11 +406,7 @@ public sealed class WebViewIpcBridge : IDisposable
         _flushTimer?.Stop();
         _flushTimer?.Dispose();
 
-        if (_busSubscriptionId is { } id)
-        {
-            _options.EventBus?.Unsubscribe(id);
-            _busSubscriptionId = null;
-        }
+        _pump.Dispose(); // unsubscribes from the bus; idempotent
 
         // Best-effort: CoreWebView2 may already be gone at teardown.
         try
