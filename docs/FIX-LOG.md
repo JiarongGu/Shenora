@@ -14,6 +14,35 @@ entry template:
 
 ## 2026-08-02
 
+### core: two XML comments on the work scheduler described a kit that does not exist
+
+- **Symptom.** Nothing failed. `IWorkScheduler.SubmitAsync` and `WorkResult` both listed "unknown
+  lane" among the caller errors that throw at submit, and `IWorkObserver` read as though the kit ships
+  the observer that binds execution to `Shenora.Ipc`'s operation registry. An adopter trusting the
+  first writes `Lanes = [new WorkLane("gpu")]`, mistypes the name once, and gets no error and no
+  exclusivity; an adopter trusting the second goes looking for a type that is not there.
+- **Root cause.** `WorkScheduler.CreateEntry` resolves a lane exactly as `Lane(name)` does — creating
+  it at the DEFAULT capacity when the name is new. Only an unregistered claim *scope* throws, and
+  deliberately so (silently dropping an exclusion the caller asked for is the one failure a scheduler
+  must not have). The XML was written from the design's intent rather than from the code, and prose is
+  the one surface with no compiler — the same class of defect the `doc-drift` gate exists for, but
+  below that gate's reach: it checks retired names, doc links and the dependency graph, not whether a
+  remark about runtime behaviour is true. Nothing implements `IWorkObserver` either.
+- **Found by.** Writing the adopter-facing scheduler section of `docs/ADOPTION.md` **against the
+  source instead of against the design doc**. Three claims did not survive that check; the third —
+  design §6's `IFileSystem` and atomic-replace helper, which never shipped — needed no code change and
+  is recorded in `ARCHITECTURE.md`.
+- **Fix.** The remarks in `IWorkScheduler.cs`, `WorkResult.cs` and `WorkObserver.cs` now say what the
+  code does, and `WorkRequest.Lanes` carries the consequence at the property a caller is looking at
+  when they get it wrong. Comments only — no behaviour change.
+- **Verify.** The asymmetry is now pinned by
+  `WorkSchedulerBehaviourTests.An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing`,
+  which also asserts the typo'd lane carries the default capacity rather than the configured gate's.
+  Sabotage-verified both ways: making `CreateEntry` throw for an unknown lane failed the new test by
+  name; restoring with the same tool left `WorkScheduler.cs` byte-identical to HEAD and the test green.
+  Gate: 733 dotnet + 101 vitest, 0 warnings.
+- **Commit:** `49bfc0c` (docs half: `d47d8c9`, `82b1380`).
+
 ### devtools: `dev.mjs sample` ran an arbitrarily STALE frontend, silently
 
 - **Symptom.** A hands-on test of the drop zone (owner, on the running sample) found the drop itself
