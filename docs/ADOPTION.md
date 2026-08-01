@@ -444,10 +444,29 @@ is the REPORTING half, and they stay separate because `Shenora.Ipc` may depend o
 never the reverse (D19/D20). `IWorkObserver` is the seam: `OnQueued`/`OnStarted`/`OnFinished` for every
 item, each call guarded so a throwing observer cannot fail the work it was only watching.
 
-**The adapter is yours to write, and it is short** — start an operation in `OnStarted`, complete or
-fail it in `OnFinished`, and no work body opens an operation by hand again. That boilerplate is
-precisely what the family's apps repeated at every call site and occasionally forgot, leaving
-operations stuck "running" forever. The same seam is where metrics and tracing attach.
+**The adapter is yours to write. It is about 35 lines** — measured, not estimated: the kit's own
+sample now carries one (`samples/Shenora.Sample.Logic/WorkOperationObserver.cs`), a
+`ConcurrentDictionary<string, IOperation>` plus the three methods. Copy it. No work body opens an
+operation by hand again, which is the boilerplate the family's apps repeated at every call site and
+occasionally forgot, leaving operations stuck "running" forever. The same seam is where metrics and
+tracing attach.
+
+Two things that adapter learned the moment it ran, both of which you will hit:
+
+- **Open the operation in `OnQueued`, then `op.Wait("queued")` immediately** — the shape
+  `IOperationRegistry.Start` documents for an app whose own queue sits in front of the registry.
+  Without it, an item waiting behind a claim is invisible until it starts, which is exactly when a
+  user asks whether it is stuck. `OnStarted` then calls `op.Resume()` on the same handle.
+- **Start those operations with `Cancellable = false` unless you wire cancellation yourself.** The
+  scheduler cancels through the token you passed to `SubmitAsync`, and the registry's `Cancel` signals
+  the OPERATION's own token — a different one, which no work body observes. A cancel button wired
+  straight through would flip the status while the work ran on underneath it, so the registry refuses
+  to advertise it. To offer a real cancel, keep your own `CancellationTokenSource` per submission and
+  expose your own route; the kit deliberately does not guess a link between the two lifetimes.
+
+**Both halves are portable.** In the sample, the scheduler, the observer and the facade that submits
+all live in the `net10.0` project that cannot reference Windows — so this composition is one of the
+things Stage 4's guard keeps honest.
 
 ### What the kit does not ship here
 

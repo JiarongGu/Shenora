@@ -24,7 +24,9 @@ public sealed class PortableSampleFacade(
     IFileDialogs dialogs,
     IClipboardService clipboard,
     IUrlLauncher urls,
-    IUiDispatcher ui) : BaseFacade
+    IUiDispatcher ui,
+    IWorkScheduler scheduler,
+    ShenoraPaths paths) : BaseFacade
 {
     /// <summary>The reserved module name for the portable half of the sample.</summary>
     public const string Module = "SAMPLE_LOGIC";
@@ -68,8 +70,68 @@ public sealed class PortableSampleFacade(
             case "UI_STATE":
                 return new { State = ui.State.ToString(), OnUiThread = ui.IsOnUiThread };
 
+            // Scheduling is portable too (Shenora.Core's Work layer), so it belongs on this side of
+            // the split. Four items go in at once: two contend for ONE path and must serialize, two
+            // are disjoint and must overlap. Nothing is awaited here — the route returns immediately
+            // and the page watches the operations list, which is the D23 shape for anything slow.
+            case "SCHEDULE_DEMO":
+                return ScheduleDemo();
+
             default:
                 throw UnknownType(request);
         }
     }
+
+    /// <summary>
+    /// Submits the demo batch and returns at once. What proves the point is the ORDER the page sees:
+    /// the two <c>CONTENDED</c> operations never run at the same time, while a <c>DISJOINT</c> one
+    /// runs alongside them.
+    /// </summary>
+    private object ScheduleDemo()
+    {
+        var root = paths.DataArea("work-demo");
+        var contended = Path.Combine(root, "contended.txt");
+
+        Submit("CONTENDED", contended);
+        Submit("CONTENDED", contended);
+        Submit("DISJOINT", Path.Combine(root, "a.txt"));
+        Submit("DISJOINT", Path.Combine(root, "b.txt"));
+
+        return new { Submitted = 4, Root = root };
+    }
+
+    private void Submit(string kind, string path) =>
+        // Deliberately not awaited: SubmitAsync completes when the WORK does. A caller error (an
+        // unregistered claim scope, a disposed scheduler) still throws right here, synchronously,
+        // which is why this is a plain call and not a fire-and-forget Task.Run.
+        _ = scheduler.SubmitAsync(new WorkRequest
+        {
+            Kind = kind,
+            Claims = [PathClaims.Exclusive(path)],
+            // A budget lane the app configured at startup — see Program.cs. Named through a constant
+            // there rather than a literal here would be better still in a real app: an unknown lane
+            // name is CREATED at the default capacity rather than rejected.
+            Lanes = [new WorkLane(WorkLanes.DemoIo)],
+            Run = async work =>
+            {
+                // Real mutation of the claimed path, so the exclusion is doing something observable
+                // rather than being asserted by a comment — and STAMPED, so the log proves both halves
+                // at once: two entries for one path never overlap, while entries for different paths
+                // do. A demo that only proves exclusion would pass on a fully serial scheduler.
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                await File.AppendAllTextAsync(path, Stamp(work.WorkId, kind, "in"), work.Cancellation);
+                await Task.Delay(TimeSpan.FromSeconds(1.5), work.Cancellation);
+                await File.AppendAllTextAsync(path, Stamp(work.WorkId, kind, "out"), work.Cancellation);
+            },
+        });
+
+    private static string Stamp(string workId, string kind, string edge) =>
+        $"{DateTimeOffset.Now:HH:mm:ss.fff}  {workId,-4} {kind,-9} {edge}\n";
+}
+
+/// <summary>Lane names the app configures once at startup and references by constant everywhere else.</summary>
+public static class WorkLanes
+{
+    /// <summary>The demo's IO budget — capacity set in the desktop composition root.</summary>
+    public const string DemoIo = "demo-io";
 }

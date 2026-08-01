@@ -188,6 +188,42 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
 }
 
 /**
+ * The work scheduler (`Shenora.Core`'s `Work` layer), reported through the SAME operations store the
+ * slow route uses — because the host bound the two with one `IWorkObserver` written in the app. The
+ * kit ships no such adapter: execution must not learn what an operation is (D19/D20).
+ *
+ * Four items are submitted at once. Two contend for ONE path and can never overlap; two touch
+ * disjoint paths and can. A lane of capacity 2 caps the whole batch, so the counts below settle at
+ * `2 running` while the rest sit `queued` — which is the app calling `op.Wait("queued")` the instant
+ * it opens the operation, so work waiting behind a claim is visible instead of looking stuck.
+ */
+function SchedulerPanel({ hosted }: { hosted: boolean }) {
+  const running = useShenoraOperations((s) => s.running.filter((o) => o.module === 'SAMPLE_LOGIC'));
+  const queued = useShenoraOperations((s) => s.waiting.filter((o) => o.module === 'SAMPLE_LOGIC'));
+  const kinds = (list: { kind: string }[]) =>
+    list.map((o) => o.kind).sort().join(', ') || '—';
+
+  return (
+    <p style={row} data-testid="scheduler-state">
+      <button
+        style={{ padding: '0.35rem 0.75rem' }}
+        disabled={!hosted}
+        data-testid="btn-schedule-demo"
+        onClick={() => getBridge().post('SAMPLE_LOGIC', 'SCHEDULE_DEMO')}
+      >
+        schedule 4 items (2 contend)
+      </button>
+      {' '}
+      <span style={running.length || queued.length ? value : { color: '#9a9a9a' }}>
+        {running.length || queued.length
+          ? `running ${running.length} [${kinds(running)}] · queued ${queued.length} [${kinds(queued)}]`
+          : 'scheduler: idle'}
+      </span>
+    </p>
+  );
+}
+
+/**
  * Shows what the host wired up, so a screenshot proves the whole stack: page rendered (virtual
  * host or Vite), bridge present, injected global, a typed IPC round-trip, the native event
  * stream, page-driven window chrome, a native drop zone, and a secondary window.
@@ -332,6 +368,7 @@ export function App() {
             </span>
           </p>
           <SlowPanel hosted={hosted} />
+          <SchedulerPanel hosted={hosted} />
           {/* The kit ships the streaming PRIMITIVE; this pane is the product built on it, and it
               lives here in the sample precisely because the library must not decide it (D21/D22). */}
           <StreamViewer hosted={hosted} />

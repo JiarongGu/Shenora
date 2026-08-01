@@ -69,7 +69,14 @@ Shenora.slnx
     │                                            Windows reference, referenced by the desktop sample
     │                                            and in the solution — so a Windows type dragged into
     │                                            a portable contract turns the build RED instead of
-    │                                            leaving D20's portability merely asserted
+    │                                            leaving D20's portability merely asserted. Also the
+    │                                            SCHEDULER's worked example: SCHEDULE_DEMO submits
+    │                                            four items (two contending for one path, two
+    │                                            disjoint) under a capacity-2 lane, and
+    │                                            WorkOperationObserver is the ~35-line IWorkObserver
+    │                                            adapter that reports them through Shenora.Ipc's
+    │                                            operation registry — execution, reporting and the
+    │                                            seam between them, all with no Windows reference
     └── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
                                                  into the desktop sample's wwwroot; page-owned title
                                                  bar (WindowCommands + useWindowMaximized), notifyReady,
@@ -158,13 +165,17 @@ changes, noting them in `CHANGELOG.md`).
   reusing the word would blur the one distinction the design rests on.
   **Three as-built facts worth recording, because a reader of the design doc or the XML would expect
   otherwise:** (1) an unknown LANE does NOT throw — it is created at the default capacity on first
-  mention, so only an unregistered claim SCOPE is a submit-time error (two XML remarks still list the
-  lane case; the trap is a misspelled name silently costing the exclusivity that was configured);
+  mention, so only an unregistered claim SCOPE is a submit-time error (the trap is a misspelled name
+  silently costing the exclusivity that was configured; two XML remarks used to claim the lane threw,
+  corrected and pinned by `An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing`);
   (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
   whole of `Io/`, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit` models; (3) nothing
-  in `Shenora.Ipc` implements `IWorkObserver` yet, so wiring execution to the operation registry is
-  currently the app's own short adapter, and `Shenora.Core` stays free of any reporting dependency
-  either way (D19/D20).
+  in `Shenora.Ipc` implements `IWorkObserver`, so wiring execution to the operation registry is the
+  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/WorkOperationObserver.cs` is the worked
+  example — and `Shenora.Core` stays free of any reporting dependency either way (D19/D20). That
+  adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
+  cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
+  work observes the one handed to `SubmitAsync`.
 - `Shenora.WinForms` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
   internal-element helpers); `WindowState`/`WindowStateOptions`/`IWindowStateStore`/
   `JsonFileWindowStateStore`/`WindowStateManager` (logical-px persistence, physical restore,
