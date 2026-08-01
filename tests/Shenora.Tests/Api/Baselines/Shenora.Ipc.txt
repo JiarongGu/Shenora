@@ -223,7 +223,7 @@ sealed class Shenora.Ipc.OperationRegistryOptions
   public int MaxHistory { get; init; }
   public string ModuleName { get; init; }
 static class Shenora.Ipc.OperationServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraOperations(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<Shenora.Ipc.OperationRegistryOptions>? configure = null)
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraOperations(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Ipc.OperationRegistryOptions? options = null)
 enum Shenora.Ipc.OperationStatus (int)
   public const Shenora.Ipc.OperationStatus Cancelled = 3
   public const Shenora.Ipc.OperationStatus Completed = 1
@@ -234,6 +234,10 @@ enum Shenora.Ipc.OperationStatus (int)
 sealed class Shenora.Ipc.OperationsFacade : Shenora.Ipc.BaseFacade
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.Ipc.IOperationRegistry registry, Shenora.Ipc.OperationRegistryOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.OperationsFacade>? logger = null)
+  public const string CancelType = "CANCEL"
+  public const string ClearFinishedType = "CLEAR_FINISHED"
+  public const string ListType = "LIST"
+  public const string ResumeType = "RESUME"
   public override string ModuleName { get; }
 static class Shenora.Ipc.PayloadHelper
   public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)

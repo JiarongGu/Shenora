@@ -109,6 +109,35 @@ describe('operations store', () => {
     expect(request.payload).toEqual({ scope: 'tenant-1' });
   });
 
+  it('clearFinished prunes terminal entries from local state immediately, optimistically', () => {
+    // FINDING 3 (Important, whole-branch review): the host removes finished entries on
+    // CLEAR_FINISHED but never emits a removal delta (OPERATION_UPDATED only ever adds/updates an
+    // id), so without a local prune a mounted panel kept rendering the cleared rows until every
+    // subscriber unmounted and the store was rebuilt from a fresh LIST.
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+
+    store.actions.clearFinished();
+
+    expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
+    expect(store.getState().finished).toEqual([]);
+  });
+
+  it('resume drops the resumed id from local state immediately, optimistically', () => {
+    // Same shape as clearFinished: RequestResume removes the offer host-side but emits no delta for
+    // it either, so the offer stayed clickable in a mounted store until unmount — a second click on
+    // it silently did nothing.
+    const { store, bus } = harness([]);
+    store.subscribe(() => {});
+    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'interrupted' }));
+
+    store.actions.resume('op-1');
+
+    expect(store.getState().byId['op-1']).toBeUndefined();
+  });
+
   it('keeps an interrupted operation out of both running and finished', () => {
     // `finished` deliberately excludes `interrupted` (a pending resume offer, not terminal history) —
     // an undocumented carve-out with no coverage is how a later cleanup silently changes behaviour.

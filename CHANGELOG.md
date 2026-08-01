@@ -58,15 +58,23 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   `CancellationToken` — never the request's, because work handed off outlives the request that
   started it), `IOperationRegistry`/`OperationRegistry(+OperationRegistryOptions)`,
   `OperationEvents` (`OPERATION_UPDATED`, `OPERATION_RESUME_REQUESTED`), `OperationsFacade`
-  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME` under module `OPERATIONS` by default), and
-  `AddShenoraOperations` — opt-in DI wiring, so an app with no long-running work pays nothing.
+  (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME` under module `OPERATIONS` by default — also exposed as
+  the `ListType`/`CancelType`/`ClearFinishedType`/`ResumeType` constants, pinned against the client by
+  the wire-mirror test), and `AddShenoraOperations(OperationRegistryOptions? options = null)` — opt-in
+  DI wiring, so an app with no long-running work pays nothing; takes the options RECORD directly
+  (not a configure callback) so a renamed `ModuleName` etc. can actually be set, matching every other
+  options type in the kit. `GetAll(module?, scope?)`'s scope filter follows the same rule as
+  `IEventBus` — an unscoped operation matches any requested scope, not strict equality.
   Progress reports are throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms) with
   a TRAILING emit so the final value in a window is never dropped; every lifecycle transition emits
   immediately, never throttled. An operation failure obeys the same no-raw-exception-text boundary as
   a request/response failure: an unexpected exception crosses as `IpcErrorCodes.UnknownError` plus the
   exception type name, with the real detail logged host-side only. `Cancel` refuses an operation that
   never opted into `Cancellable`, rather than flipping its status while the body runs on underneath
-  it. Also included: `RegisterInterrupted`/`RequestResume`, for announcing a crash-interrupted
+  it — but the body's OWN end in `OperationCanceledException` (via `Run`, or a direct
+  `IOperation.Cancel()` call by the operation's own owner) is always terminal regardless of
+  `Cancellable`, because that is not the same permission question as an external by-id cancel
+  request. Also included: `RegisterInterrupted`/`RequestResume`, for announcing a crash-interrupted
   resumable operation from the app's own checkpoint (deduped on `(module, kind, resumePayload)`).
   **Known limit, recorded rather than guessed at:** no `Find(id)` on `IOperationRegistry` — it was in
   the original interface sketch and deliberately dropped, because no consumer resolves a handle from
@@ -77,11 +85,15 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   values) + `OperationInfo`/`OperationLabel` types, a `LIST` snapshot on first subscribe (so a
   progress strip that mounts mid-run isn't empty), folding `OPERATION_UPDATED` by id afterward, with
   `running`/`finished` DERIVED getters computed from `byId` on every read and `cancel`/
-  `clearFinished`/`resume` actions. `createOperationsStore({ module?, scope? })` supports a renamed
-  host module (avoiding a collision with an app's own module name) and a scope-filtered instance.
-  **Known limit, deliberate:** no `byModule`/`byScope` selector — filtering by module or scope is a
-  one-line consumer selector over `byId`, and shipping indexes for it would be duplicated derived
-  state for no gain.
+  `clearFinished`/`resume` actions. `clearFinished`/`resume` also prune their entries from LOCAL state
+  immediately (optimistic, no wire change): the host removes them but emits no removal delta, so a
+  mounted store used to keep rendering cleared/resumed rows until every subscriber unmounted — the
+  host's `MaxHistory` pruning is NOT mirrored this way, so a long-lived store still keeps what it has
+  seen until `clearFinished` is actually called. `createOperationsStore({ module?, scope? })` supports
+  a renamed host module (avoiding a collision with an app's own module name) and a scope-filtered
+  instance. **Known limit, deliberate:** no `byModule`/`byScope` selector — filtering by module or
+  scope is a one-line consumer selector over `byId`, and shipping indexes for it would be duplicated
+  derived state for no gain.
 - **`Shenora.Ipc.NotificationPump`(+`NotificationPumpOptions`)** — the transport-neutral half of a
   host's outbound notification channel (bus subscribe from CONSTRUCTION → per-channel filter →
   bounded drop-oldest queue → batch → ready gate → guarded per-notification serialize), extracted out

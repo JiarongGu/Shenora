@@ -15,7 +15,12 @@ public class ModuleOperationTests
             IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
             // Cancellable: true — Task 5's honest CANCEL contract refuses (and changes nothing) for an
             // operation that didn't opt in, and this facade's own cancel test needs the cancel to
-            // actually take effect.
+            // actually take effect. The Cancellable: false path — a body that ends in
+            // OperationCanceledException on its own, with nobody having asked for a CLIENT cancel — is
+            // covered directly against the registry below
+            // (Run_with_a_non_cancellable_body_that_throws_OperationCanceledException_still_ends_cancelled),
+            // not through this facade, because it needs the DEFAULT Cancellable value this facade
+            // deliberately overrides.
             => Task.FromResult<object?>(new { operationId = context.Run(new OperationOptions { Kind = "BUILD", Cancellable = true }, work) });
     }
 
@@ -82,6 +87,41 @@ public class ModuleOperationTests
         Assert.True(registry.Cancel(id));
 
         Assert.Equal(OperationStatus.Cancelled, (await WaitForTerminalAsync(registry, id)).Status);
+    }
+
+    /// <summary>
+    /// FINDING 1 (Critical, whole-branch review): <c>Run</c>'s catch used to call
+    /// <c>operation.Cancel()</c>, which delegated straight to the CLIENT-permission-checked
+    /// <c>IOperationRegistry.Cancel(id)</c> — refused for a non-<c>Cancellable</c> operation and
+    /// returned BEFORE <c>Finish</c>, so the entry was stranded <c>Running</c> forever: no terminal
+    /// transition, no <c>OPERATION_UPDATED</c>, the CTS never disposed, and — proven below — never
+    /// evictable by <c>ClearFinished</c> either, because it never entered <c>_finishedOrder</c>.
+    /// Reachable on the DEFAULT option value (<see cref="OperationOptions.Cancellable"/> defaults to
+    /// false), and <see cref="TaskCanceledException"/> derives from
+    /// <see cref="OperationCanceledException"/> — an <c>HttpClient</c> timeout, a linked shutdown
+    /// token, or a plain <c>ct.ThrowIfCancellationRequested()"</c> in the body all land here. Called
+    /// directly against the registry (not through <see cref="WorkFacade"/>) because that facade
+    /// hardcodes <c>Cancellable: true</c>.
+    /// </summary>
+    [Fact]
+    public async Task Run_with_a_non_cancellable_body_that_throws_OperationCanceledException_still_ends_cancelled()
+    {
+        var bus = new EventBus();
+        var registry = new OperationRegistry(bus, new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero });
+
+        // Cancellable defaults to false — nobody asked the CLIENT-facing Cancel(id) for anything;
+        // the body itself simply ended in cancellation (e.g. ct.ThrowIfCancellationRequested()).
+        var id = registry.Run("WORK", new OperationOptions { Kind = "BUILD" },
+            (op, ct) => throw new OperationCanceledException());
+
+        var info = await WaitForTerminalAsync(registry, id);
+        Assert.Equal(OperationStatus.Cancelled, info.Status);
+
+        // The second half of the leak this finding describes: a stranded Running entry never enters
+        // _finishedOrder, so ClearFinished can never evict it either. Prove the entry is now ordinary
+        // finished history, not a permanent leak.
+        registry.ClearFinished();
+        Assert.Empty(registry.GetAll());
     }
 
     [Fact]

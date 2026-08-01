@@ -211,11 +211,13 @@ transport, or building the P6 adoption shims.
   of bug than a missed progress tick.
 - **An operation failure obeys the same no-raw-exception-text boundary as a request/response
   failure.** `OperationRegistry.Run`'s guarded background body maps `OperationCanceledException` →
-  `Cancel()`, `OperationException` → `Fail(code, parameters, message)` (the app's own sanctioned
-  words, same rule as `IpcErrorMapping`), and anything else → `Fail(IpcErrorCodes.UnknownError,
-  {exceptionType})` with the real exception logged host-side only. One boundary, two entry points
-  (a response and an `OperationInfo.Error`) — a second copy of the policy is exactly how the
-  `ex.Message`-in-a-wrapper bypass gets re-earned.
+  the operation's own `Cancel()`, `OperationException` → `Fail(code, parameters, message)` (the app's
+  own sanctioned words, same rule as `IpcErrorMapping`), and anything else → `Fail(IpcErrorCodes.
+  UnknownError, {exceptionType})` with the real exception logged host-side only. One boundary, two
+  entry points (a response and an `OperationInfo.Error`) — a second copy of the policy is exactly how
+  the `ex.Message`-in-a-wrapper bypass gets re-earned. **That `Cancel()` is the handle's own
+  (`IOperation.Cancel`), NOT the registry's public by-id `Cancel(string id)`** — see the next bullet
+  for why conflating the two used to strand a non-`Cancellable` operation `Running` forever.
 - **`NotificationPump` owns the gate, the cap and the batch; a base owns only the tick.** The pump
   subscribes to the bus at construction (buffering starts before any client could exist to receive
   anything), applies the per-channel `Filter` at enqueue, bounds the queue with drop-oldest, and
@@ -234,7 +236,23 @@ transport, or building the P6 adoption shims.
   every subscriber while the background body kept running to its own `Complete()`/`Fail()` —
   observable state that no longer describes reality. Same honest-refusal shape as an unknown or
   already-terminal id: `Cancel` returns `false` and changes nothing, rather than pretending to
-  succeed.
+  succeed. **This refusal is ONLY on the public, by-id `IOperationRegistry.Cancel(string id)`** — the
+  route an external CLIENT's `CANCEL` request goes through, where the permission question is real.
+  `IOperation.Cancel()` (the handle held by the operation's own owner, and what `Run`'s catch calls
+  when the body itself ends in `OperationCanceledException`) is deliberately unconditional: the work
+  is over, and refusing to RECORD that — regardless of `Cancellable` — is data loss, not honesty. A
+  whole-branch review found this conflated: `Run`'s catch used to call through the by-id route,
+  refusing on the DEFAULT `Cancellable = false` and stranding the entry `Running` forever (no
+  terminal transition, never evictable by `ClearFinished`, its CTS never disposed) — reachable any
+  time a body's cancellation isn't a client's `CANCEL` request at all (an `HttpClient` timeout, a
+  linked shutdown token: `TaskCanceledException` derives from `OperationCanceledException`).
+- **`GetAll`'s `scope` filter follows the SAME rule as `IEventBus`, not strict equality** — no
+  requested scope matches every scope, AND an operation started with no `Scope` of its own (a global
+  operation) matches ANY requested scope. Both event buses already apply exactly this (a scope-less
+  event still reaches scoped subscribers), so a `GetAll` that instead required strict equality
+  disagreed with the deltas a scoped store folds afterward: it never SAW an unscoped operation in a
+  scoped `LIST` snapshot but DID receive its `OPERATION_UPDATED` deltas, so a scoped store's contents
+  silently depended on whether it mounted before or after the work started.
 
 ## Gotchas / traps
 
@@ -247,3 +265,15 @@ transport, or building the P6 adoption shims.
   `undefined`) — `PayloadHelper` treats an explicit null as missing on purpose.
 - The client bridge fails fast after `dispose()` (`NO_TRANSPORT`) — stale instances captured
   before `configureBridge` replaced the default otherwise burn the full 30 s timeout per call.
+- **`AddShenoraOperations` takes the `OperationRegistryOptions` RECORD, not a configure callback** —
+  every property on it is `{ get; init; }` (the kit's one immutability convention), so an
+  `Action<OperationRegistryOptions>` callback shape made `o => o.ModuleName = "X"` a compile error
+  (CS8852): the callback could only ever read a freshly-defaulted instance, never configure one. Pass
+  a built `new OperationRegistryOptions { ModuleName = "X" }` instead, same as
+  `WebViewIpcBridgeOptions`/`NotificationPumpOptions`.
+- **A host-side removal (`ClearFinished`, `RequestResume`) is NOT mirrored by a wire event** —
+  `OPERATION_UPDATED` only ever adds/updates an id, never removes one. `@shenora/react`'s
+  `clearFinished`/`resume` actions prune their own rows from LOCAL state as an optimistic update (no
+  round trip needed — the action already knows the answer), but the host's own `MaxHistory` eviction
+  has no equivalent: a long-lived store keeps every terminal entry it has ever seen until
+  `clearFinished` is actually called client-side too.

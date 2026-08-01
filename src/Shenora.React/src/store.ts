@@ -3,8 +3,8 @@ import { getBridge, type ShenoraBridge, type PostOptions } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 import type { EventMessage } from './types.js';
 
-/** The IPC handles a store's `actions` are built over. */
-export interface ShenoraStoreIo {
+/** The IPC handles + local-state seam a store's `actions` are built over. */
+export interface ShenoraStoreIo<TState = unknown> {
   /** Fire-and-forget send to this store's module. Returns the request id. */
   post: <TPayload = unknown>(type: string, options?: PostOptions<TPayload>) => string;
   /** Correlated request to this store's module — for calls that are quick AND UI-thread-safe. */
@@ -12,6 +12,17 @@ export interface ShenoraStoreIo {
     type: string,
     options?: { payload?: TPayload; timeoutMs?: number },
   ) => Promise<TData>;
+  /** Current state — for an action that needs to compute an OPTIMISTIC update from it. */
+  getState: () => TState;
+  /**
+   * Apply a local state change with NO host round trip and NO wire event — the seam for an
+   * optimistic update an action can fully decide by itself (e.g. dropping the rows a
+   * `CLEAR_FINISHED`-style action just told the host to drop). The host stays authoritative for
+   * everything a `snapshot`/`on` reducer already covers; this exists for the narrow case where the
+   * action already knows the answer and a host round trip would only be a delivery delay, not new
+   * information.
+   */
+  setState: (reduce: (state: TState) => TState) => void;
 }
 
 /** How a store loads the state that already exists before anyone was watching. */
@@ -41,7 +52,7 @@ export interface ShenoraStoreOptions<TState, TActions> {
   on?: Record<string, (state: TState, payload: never, event: EventMessage) => TState>;
 
   /** Fire-and-forget senders / requests, exposed on the returned hook. */
-  actions?: (io: ShenoraStoreIo) => TActions;
+  actions?: (io: ShenoraStoreIo<TState>) => TActions;
 
   /** Optional app-defined routing scope, applied to both the subscriptions and the sends. */
   scope?: string;
@@ -191,9 +202,11 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
 
   const getState = (): TState => state;
 
-  const io: ShenoraStoreIo = {
+  const io: ShenoraStoreIo<TState> = {
     post: (type, postOptions) => bridge().post(module, type, { scope, ...postOptions }),
     invoke: (type, invokeOptions) => bridge().invoke(module, type, { scope, ...invokeOptions }),
+    getState,
+    setState: (reduce) => setState(reduce(getState())),
   };
 
   function useStore<TSelected>(selector?: (value: TState) => TSelected): TState | TSelected {

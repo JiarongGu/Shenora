@@ -22,6 +22,36 @@ export const OperationStatuses = {
 export type OperationStatus = (typeof OperationStatuses)[keyof typeof OperationStatuses];
 
 /**
+ * Mirrors `Shenora.Ipc.OperationEvents` — pinned against the host by
+ * `WireMirrorTests.Operation_event_names_match_the_host` (ALSO IN THIS BATCH, whole-branch review):
+ * these were bare string literals with nothing comparing them to the host's own constants, so a host
+ * rename left the suite green and the client permanently deaf to the renamed event.
+ */
+export const OperationEventTypes = {
+  Updated: 'OPERATION_UPDATED',
+  ResumeRequested: 'OPERATION_RESUME_REQUESTED',
+} as const;
+
+/**
+ * Mirrors the route names `Shenora.Ipc.OperationsFacade` switches on (its own
+ * `ListType`/`CancelType`/`ClearFinishedType`/`ResumeType` constants) — pinned by
+ * `WireMirrorTests.Operation_route_names_match_the_hosts_facade`, same rationale as
+ * {@link OperationEventTypes}.
+ */
+export const OperationRoutes = {
+  List: 'LIST',
+  Cancel: 'CANCEL',
+  ClearFinished: 'CLEAR_FINISHED',
+  Resume: 'RESUME',
+} as const;
+
+/**
+ * Default `Shenora.Ipc.OperationRegistryOptions.ModuleName` — pinned by
+ * `WireMirrorTests.The_default_operations_module_name_matches_the_host`.
+ */
+export const OperationModuleName = 'OPERATIONS';
+
+/**
  * Mirrors `Shenora.Ipc.OperationLabel` — human-facing text the HOST never renders itself: an
  * untranslated fallback plus an app i18n key and interpolation parameters (headless, D13).
  */
@@ -81,9 +111,21 @@ export interface OperationsState {
 export interface OperationsActions {
   /** `CANCEL { operationId }` — the app-level cancel route `ipc-contracts` prescribes. */
   cancel: (operationId: string) => string;
-  /** `CLEAR_FINISHED` — drop retained finished history host-side. */
+  /**
+   * `CLEAR_FINISHED` — drop retained finished history. Also prunes the TERMINAL entries from this
+   * store's local state immediately (optimistic, no wire change — whole-branch review): the host
+   * removes entries but never emits a removal delta (`OPERATION_UPDATED` only ever adds/updates an
+   * id), so without this a mounted panel kept rendering the cleared rows until every subscriber
+   * unmounted and the store was rebuilt from a fresh `LIST`. The host's `MaxHistory` pruning is NOT
+   * mirrored this way — a long-lived store still keeps everything IT has seen until this is called.
+   */
   clearFinished: () => string;
-  /** `RESUME { operationId }` — continue an interrupted, resumable operation. */
+  /**
+   * `RESUME { operationId }` — continue an interrupted, resumable operation. Also drops the id from
+   * this store's local state immediately (optimistic, same rationale as {@link clearFinished}): the
+   * host removes the offer but emits no delta for it, so the offer stayed clickable in a mounted
+   * store until unmount — a second click silently did nothing.
+   */
   resume: (operationId: string) => string;
 }
 
@@ -142,7 +184,7 @@ export interface OperationsStoreOptions {
 export function createOperationsStore(
   options: OperationsStoreOptions = {},
 ): ShenoraStore<OperationsState, OperationsActions> {
-  const module = options.module ?? 'OPERATIONS';
+  const module = options.module ?? OperationModuleName;
   return createShenoraStore<OperationsState, OperationsActions>(module, {
     initial: makeState({}),
     // LIST is the snapshot source (design §4.6): a store cannot replay a stream, so a component
@@ -151,20 +193,40 @@ export function createOperationsStore(
     // (below, and via createShenoraStore's own `scope` option) — both halves must agree, or a
     // scoped store loads every scope once and then never sheds the out-of-scope rows.
     snapshot: {
-      type: 'LIST',
+      type: OperationRoutes.List,
       payload: options.scope !== undefined ? { scope: options.scope } : undefined,
       apply: (_state, data) => makeState(index(data as OperationInfo[])),
     },
     on: {
       // ONE event type for every transition (design §4.3) — last-write-wins by id, so folding needs
       // no ordering logic and no cross-type races.
-      OPERATION_UPDATED: (state, payload: OperationInfo) =>
+      [OperationEventTypes.Updated]: (state, payload: OperationInfo) =>
         makeState({ ...state.byId, [payload.id]: payload }),
     },
-    actions: ({ post }) => ({
-      cancel: (operationId: string) => post('CANCEL', { payload: { operationId } }),
-      clearFinished: () => post('CLEAR_FINISHED'),
-      resume: (operationId: string) => post('RESUME', { payload: { operationId } }),
+    actions: ({ post, setState }) => ({
+      cancel: (operationId: string) => post(OperationRoutes.Cancel, { payload: { operationId } }),
+      clearFinished: () => {
+        // Optimistic local prune — see OperationsActions.clearFinished's doc for why this is needed
+        // at all: the host never emits a removal delta for what it drops.
+        setState((state) => {
+          const byId: Record<string, OperationInfo> = {};
+          for (const [id, operation] of Object.entries(state.byId)) {
+            if (!TERMINAL_STATUSES.has(operation.status)) byId[id] = operation;
+          }
+          return makeState(byId);
+        });
+        return post(OperationRoutes.ClearFinished);
+      },
+      resume: (operationId: string) => {
+        // Optimistic local drop — see OperationsActions.resume's doc.
+        setState((state) => {
+          if (!(operationId in state.byId)) return state; // Object.is no-op — setState skips the render
+          const byId = { ...state.byId };
+          delete byId[operationId];
+          return makeState(byId);
+        });
+        return post(OperationRoutes.Resume, { payload: { operationId } });
+      },
     }),
     scope: options.scope,
     bridge: options.bridge,

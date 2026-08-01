@@ -30,9 +30,27 @@ namespace Shenora.Ipc;
 /// mechanism (design §4.2) — a state, an opaque token, an event; the app owns the checkpoint and
 /// what "resume" actually does with it.
 /// </para>
+/// <para>
+/// The four route types are also public constants (<see cref="ListType"/>/<see cref="CancelType"/>/
+/// <see cref="ClearFinishedType"/>/<see cref="ResumeType"/>), matching <see cref="OperationEvents"/>'s
+/// own const shape — an app or test matches by symbol, and <c>WireMirrorTests</c> pins them against
+/// the client's route literals so a host rename cannot silently leave the client deaf.
+/// </para>
 /// </summary>
 public sealed class OperationsFacade : BaseFacade
 {
+    /// <summary>Route: snapshot of currently-known operations — see the class doc's table.</summary>
+    public const string ListType = "LIST";
+
+    /// <summary>Route: cancel a running operation by id.</summary>
+    public const string CancelType = "CANCEL";
+
+    /// <summary>Route: drop retained finished history.</summary>
+    public const string ClearFinishedType = "CLEAR_FINISHED";
+
+    /// <summary>Route: continue an interrupted, resumable operation.</summary>
+    public const string ResumeType = "RESUME";
+
     private readonly IOperationRegistry _registry;
     private readonly string _moduleName;
 
@@ -59,12 +77,12 @@ public sealed class OperationsFacade : BaseFacade
     {
         switch (request.Type.ToUpperInvariant())
         {
-            case "LIST":
+            case ListType:
                 var module = PayloadHelper.GetOptionalValue<string>(request.Payload, "module");
                 var scope = PayloadHelper.GetOptionalValue<string>(request.Payload, "scope");
                 return Task.FromResult<object?>(_registry.GetAll(module, scope));
 
-            case "CANCEL":
+            case CancelType:
                 var operationId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
                 // Always a response, honestly: Cancel() itself now refuses (see OperationRegistry.Cancel)
                 // when the operation never opted into cancellation, an unknown id, or one already
@@ -72,11 +90,11 @@ public sealed class OperationsFacade : BaseFacade
                 var cancelled = _registry.Cancel(operationId);
                 return Task.FromResult<object?>(new { cancelled });
 
-            case "CLEAR_FINISHED":
+            case ClearFinishedType:
                 _registry.ClearFinished();
                 return Done();
 
-            case "RESUME":
+            case ResumeType:
                 var resumeId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
                 var requested = _registry.RequestResume(resumeId);
                 return Task.FromResult<object?>(new { requested });

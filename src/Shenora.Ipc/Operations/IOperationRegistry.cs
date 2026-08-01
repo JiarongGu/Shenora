@@ -37,6 +37,12 @@ public interface IOperationRegistry
     /// Snapshot of currently-known operations (running plus retained finished history, capped by
     /// <see cref="OperationRegistryOptions.MaxHistory"/>), optionally filtered by owning module
     /// and/or scope. Running operations sort first.
+    /// <para>
+    /// <paramref name="scope"/> follows the SAME rule as <see cref="Shenora.Core.IEventBus"/>'s scope
+    /// matching, not strict equality: <c>null</c> (the default) returns every scope, and an operation
+    /// started with no <see cref="OperationOptions.Scope"/> of its own matches ANY requested scope —
+    /// a scope-less operation is global, the same way a scope-less event reaches scoped subscribers.
+    /// </para>
     /// </summary>
     IReadOnlyList<OperationInfo> GetAll(string? module = null, string? scope = null);
 

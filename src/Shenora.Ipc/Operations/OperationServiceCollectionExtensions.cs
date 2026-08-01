@@ -14,14 +14,23 @@ public static class OperationServiceCollectionExtensions
     /// <summary>
     /// Register the operation registry + its facade. OPT-IN: an app with no long-running work should
     /// pay nothing for it, and D21 says the kit ships the primitive, never the product.
+    /// <para>
+    /// Takes the OPTIONS RECORD directly, not a configure callback (Finding 2, whole-branch review):
+    /// every <see cref="OperationRegistryOptions"/> property is <c>{ get; init; }</c>, so a callback
+    /// shape (<c>Action&lt;OperationRegistryOptions&gt;? configure</c>) made <c>o => o.ModuleName =
+    /// "MY_OPS"</c> a compile error (CS8852) — the callback could only ever read a freshly-defaulted
+    /// instance, never configure one. This matches how every other options type in the kit is
+    /// consumed (<c>WebViewIpcBridgeOptions</c>, <c>NotificationPumpOptions</c>) and keeps
+    /// <c>init</c>-only as the kit's one immutability convention, rather than making this the one
+    /// mutable options record.
+    /// </para>
     /// </summary>
     public static IServiceCollection AddShenoraOperations(
-        this IServiceCollection services, Action<OperationRegistryOptions>? configure = null)
+        this IServiceCollection services, OperationRegistryOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        var options = new OperationRegistryOptions();
-        configure?.Invoke(options);
+        options ??= new OperationRegistryOptions();
         services.AddSingleton(options);
 
         // A single GetRequiredService<IEventBus>() call, not an enumeration of the provider — this is

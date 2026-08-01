@@ -45,6 +45,19 @@ public interface IOperation
     /// Cancel this operation: cancels <see cref="CancellationToken"/> first, then transitions to
     /// <see cref="OperationStatus.Cancelled"/> — a body observing the token sees the cancellation
     /// rather than racing a completed-then-cancelled flip. Idempotent.
+    /// <para>
+    /// Deliberately UNCONDITIONAL — unlike <see cref="IOperationRegistry.Cancel(string)"/>, the
+    /// registry's public BY-ID route (what an external client's "cancel this operation" request goes
+    /// through), which refuses when <see cref="OperationOptions.Cancellable"/> is false. That refusal
+    /// exists because an arbitrary caller holding only an id has no standing to stop work it never
+    /// started; this method is called through the handle <see cref="IOperationRegistry.Start"/>
+    /// returned to the operation's OWN owner, so there is no such permission question to ask — "the
+    /// work is over" is a fact to record, not a request to grant. <see cref="OperationRegistry.Run"/>'s
+    /// own guarded body relies on exactly this: its catch calls this method (via the same handle) when
+    /// the work throws <see cref="OperationCanceledException"/>, and a non-<c>Cancellable</c> operation
+    /// must still be able to end as <see cref="OperationStatus.Cancelled"/> rather than being stranded
+    /// <see cref="OperationStatus.Running"/> forever.
+    /// </para>
     /// </summary>
     void Cancel();
 }

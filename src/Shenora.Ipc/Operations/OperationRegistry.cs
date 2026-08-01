@@ -93,7 +93,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 await work(operation, operation.CancellationToken).ConfigureAwait(false);
                 operation.Complete();
             }
-            catch (OperationCanceledException) { operation.Cancel(); }
+            // NOT operation.Cancel() routed through the CLIENT-permission-checked Cancel(id) (see
+            // that method's own doc) — the body itself just ended in cancellation, which is data
+            // loss to refuse, not a permission question. CancelTerminal is the same path
+            // OperationHandle.Cancel() uses for exactly this reason (Finding 1, whole-branch review):
+            // a non-Cancellable operation whose body threw OperationCanceledException (an HttpClient
+            // timeout, a linked shutdown token, TaskCanceledException derives from this) used to be
+            // refused here and left stranded Running forever — no terminal transition, no
+            // OPERATION_UPDATED, and never evictable by ClearFinished since it never reached
+            // _finishedOrder.
+            catch (OperationCanceledException) { CancelTerminal(operation.Id, "Run"); }
             catch (OperationException expected) { operation.Fail(expected); }
             catch (Exception ex)
             {
@@ -116,8 +125,16 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         lock (_lock)
         {
             return _entries.Values
+                // Scope follows the SAME rule as IEventBus (Finding 4, whole-branch review), not
+                // strict equality: no requested scope = every scope, AND an unscoped (global) entry
+                // matches any requested scope too. Both event buses (Shenora.Core.EventBus, the TS
+                // ShenoraEventBus) already apply this — a scope-less event still reaches scoped
+                // subscribers — so a scoped GetAll snapshot that excluded unscoped entries disagreed
+                // with the deltas a scoped store folds afterward: it never SAW an unscoped operation
+                // in LIST but DID receive its OPERATION_UPDATED deltas, so its contents depended on
+                // mount order relative to when the work started.
                 .Where(e => (module is null || string.Equals(e.Module, module, StringComparison.Ordinal))
-                         && (scope is null || string.Equals(e.Scope, scope, StringComparison.Ordinal)))
+                         && (scope is null || e.Scope is null || string.Equals(e.Scope, scope, StringComparison.Ordinal)))
                 .OrderBy(e => e.Status == OperationStatus.Running ? 0 : 1)
                 .ThenBy(e => e.Sequence)
                 .Select(ToInfo)
@@ -157,21 +174,64 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             return false;
         }
 
-        // Cancel the token BEFORE the status flip: a body observing the token sees the
-        // cancellation rather than racing a completed-then-cancelled transition. Deliberately
-        // OUTSIDE the lock: CancellationTokenSource.Cancel() runs registered callbacks
-        // synchronously, and a callback that re-enters the registry (e.g. observes the token and
-        // calls Report/Complete on the SAME thread) would deadlock re-acquiring _lock if it were
-        // still held here. Do NOT move this inside the lock.
-        //
-        // Because it runs outside the lock, `cts` can legitimately already be disposed by a
-        // CONCURRENT Finish() (another caller completed/failed/cancelled the same operation
-        // first) or by Dispose() (the registry is being torn down) between the read above and
-        // this call — CancellationTokenSource.Cancel() on an already-disposed instance throws
-        // ObjectDisposedException. That is not a bug to propagate: it means the operation is
-        // already finished (or the registry is gone), so THIS call's own Finish() below will
-        // correctly no-op and log the miss. Swallow it — proven the same way in the harvested
-        // source app.
+        CancelTokenThenFinish(cts, id, "Cancel");
+        return true;
+    }
+
+    /// <summary>
+    /// The BODY ended in cancellation — used by <see cref="OperationHandle.Cancel"/> (the operation's
+    /// OWN owner, holding the handle directly — never an arbitrary by-id caller) and by
+    /// <see cref="Run"/>'s catch when the background work itself throws
+    /// <see cref="OperationCanceledException"/>. Deliberately UNCONDITIONAL, unlike the public by-id
+    /// <see cref="Cancel(string)"/>: that method answers "may an external CLIENT request stop this
+    /// operation", and rightly refuses when <see cref="OperationOptions.Cancellable"/> opted out. This
+    /// method answers a different question — "the work is over, record that" — which is not a
+    /// permission decision at all. Refusing it is data loss, not honesty: the entry would stay
+    /// <see cref="OperationStatus.Running"/> forever, never evictable by <see cref="ClearFinished"/>
+    /// (it never reaches <see cref="_finishedOrder"/>) and its CTS never disposed (Finding 1,
+    /// whole-branch review — reachable on the DEFAULT <c>Cancellable = false</c>, since
+    /// <see cref="TaskCanceledException"/> derives from <see cref="OperationCanceledException"/>: an
+    /// <c>HttpClient</c> timeout or a plain <c>ct.ThrowIfCancellationRequested()</c> in the body both
+    /// land here). Still idempotent through <see cref="Finish"/>: a no-op for an unknown or
+    /// already-terminal id — no separate "already terminal" branch is needed here for that reason.
+    /// </summary>
+    private void CancelTerminal(string id, string caller)
+    {
+        CancellationTokenSource? cts;
+        lock (_lock)
+        {
+            _entries.TryGetValue(id, out var entry);
+            cts = entry is { Status: OperationStatus.Running } ? entry.Cts : null;
+        }
+
+        CancelTokenThenFinish(cts, id, caller);
+    }
+
+    /// <summary>
+    /// Shared tail of <see cref="Cancel(string)"/> and <see cref="CancelTerminal"/>: signal the token,
+    /// then transition to <see cref="OperationStatus.Cancelled"/> through the one terminal path
+    /// (<see cref="Finish"/>).
+    /// <para>
+    /// Cancel the token BEFORE the status flip: a body observing the token sees the cancellation
+    /// rather than racing a completed-then-cancelled transition. Deliberately OUTSIDE the lock:
+    /// <see cref="CancellationTokenSource.Cancel()"/> runs registered callbacks synchronously, and a
+    /// callback that re-enters the registry (e.g. observes the token and calls Report/Complete on the
+    /// SAME thread) would deadlock re-acquiring <see cref="_lock"/> if it were still held here. Do NOT
+    /// move this inside the lock.
+    /// </para>
+    /// <para>
+    /// Because it runs outside the lock, <paramref name="cts"/> can legitimately already be disposed
+    /// by a CONCURRENT <see cref="Finish"/> (another caller completed/failed/cancelled the same
+    /// operation first) or by <see cref="Dispose"/> (the registry is being torn down) between the read
+    /// that produced it and this call — <see cref="CancellationTokenSource.Cancel()"/> on an
+    /// already-disposed instance throws <see cref="ObjectDisposedException"/>. That is not a bug to
+    /// propagate: it means the operation is already finished (or the registry is gone), so THIS
+    /// call's own <see cref="Finish"/> below will correctly no-op and log the miss. Swallow it —
+    /// proven the same way in the harvested source app.
+    /// </para>
+    /// </summary>
+    private void CancelTokenThenFinish(CancellationTokenSource? cts, string id, string caller)
+    {
         try
         {
             cts?.Cancel();
@@ -181,8 +241,7 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             // Already disposed by a concurrent Finish()/Dispose() — see the comment above.
         }
 
-        Finish(id, OperationStatus.Cancelled, null, "Cancel");
-        return true;
+        Finish(id, OperationStatus.Cancelled, null, caller);
     }
 
     /// <inheritdoc />
@@ -602,6 +661,9 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             registry.Finish(Id, OperationStatus.Failed, error.ToError(), "Fail");
         }
 
-        public void Cancel() => registry.Cancel(Id);
+        // CancelTerminal, NOT registry.Cancel(Id) (Finding 1, whole-branch review): this handle is
+        // held by the operation's own owner, not an arbitrary by-id client, so ending it is never a
+        // permission question the way the public by-id Cancel(id) is — see CancelTerminal's own doc.
+        public void Cancel() => registry.CancelTerminal(Id, "Cancel");
     }
 }

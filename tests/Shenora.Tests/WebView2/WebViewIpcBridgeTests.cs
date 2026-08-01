@@ -204,6 +204,12 @@ public class WebViewIpcBridgeTests
             MaxQueuedNotifications = cap,
         }));
         Assert.Contains("silently discard", error.Message, StringComparison.Ordinal);
+        // ALSO IN THIS BATCH (whole-branch review): this bound used to surface only from
+        // NotificationPump's own constructor, naming NotificationPumpOptions.MaxQueued — a type the
+        // adopter setting WebViewIpcBridgeOptions.MaxQueuedNotifications never touched. The bridge
+        // must validate (and name) its OWN option, the same way it already does for the upper bound
+        // below.
+        Assert.Contains(nameof(WebViewIpcBridgeOptions.MaxQueuedNotifications), error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -211,11 +217,14 @@ public class WebViewIpcBridgeTests
     {
         // It used to truncate to 0 and throw out of Attach() — an opaque WinForms Timer exception at a
         // call site that has nothing to do with the option.
-        Assert.Throws<ArgumentOutOfRangeException>(() => CreateBridge(new WebViewIpcBridgeOptions
+        var zero = Assert.Throws<ArgumentOutOfRangeException>(() => CreateBridge(new WebViewIpcBridgeOptions
         {
             Dispatcher = new MessageDispatcher(),
             NotificationInterval = TimeSpan.Zero,
         }));
+        // Same naming defect as the cap above: this used to blame NotificationPumpOptions.FlushInterval.
+        Assert.Contains(nameof(WebViewIpcBridgeOptions.NotificationInterval), zero.Message, StringComparison.Ordinal);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => CreateBridge(new WebViewIpcBridgeOptions
         {
             Dispatcher = new MessageDispatcher(),

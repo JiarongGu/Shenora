@@ -117,13 +117,27 @@ public sealed class WebViewIpcBridge : IDisposable
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
+        // Lower bounds, validated HERE and named against the BRIDGE's own options (ALSO IN THIS
+        // BATCH, whole-branch review). Before this, both surfaced ONLY from NotificationPump's own
+        // constructor below, naming NotificationPumpOptions.MaxQueued/FlushInterval — a type the
+        // adopter setting WebViewIpcBridgeOptions.MaxQueuedNotifications/NotificationInterval never
+        // touched, the same self-naming defect the upper-bound check right below already avoids.
+        // The pump's own checks still run too (constructing it with these values), so this is
+        // defense-in-depth with a better message, not a replacement for the pump's validation.
+        if (options.MaxQueuedNotifications < 1)
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(WebViewIpcBridgeOptions.MaxQueuedNotifications)} must be at least 1 — 0 would silently discard every notification.");
+        if (options.NotificationInterval < TimeSpan.FromMilliseconds(1))
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must be at least 1 ms.");
+
         // Bridge-specific, NOT carried by NotificationPump (P5.5 H3, re-added here): a
         // System.Windows.Forms.Timer's Interval is an int32 millisecond count, a fact that belongs to
         // whichever base actually constructs that timer — this one. NotificationInterval below 1 ms
-        // (the pump's own lower-bound check, still enforced at construction below) truncates to 0 and
-        // used to throw out of Attach() instead, as an opaque ArgumentOutOfRangeException from the
-        // WinForms Timer's own setter, at a call site that has nothing to do with the option that
-        // caused it. Checked HERE, before the timer is ever constructed, for the same reason.
+        // (checked just above) truncates to 0 and used to throw out of Attach() instead, as an opaque
+        // ArgumentOutOfRangeException from the WinForms Timer's own setter, at a call site that has
+        // nothing to do with the option that caused it. Checked HERE, before the timer is ever
+        // constructed, for the same reason.
         if (options.NotificationInterval.TotalMilliseconds > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must fit in an int32 millisecond count (the WinForms timer's limit).");

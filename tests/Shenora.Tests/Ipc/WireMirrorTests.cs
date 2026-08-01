@@ -131,4 +131,43 @@ public class WireMirrorTests
         Assert.NotEmpty(client);
         Assert.Equal(host, client);
     }
+
+    /// <summary>
+    /// ALSO IN THIS BATCH (whole-branch review): the client hardcodes <c>'OPERATION_UPDATED'</c>,
+    /// <c>'LIST'</c>, <c>'CANCEL'</c>, <c>'CLEAR_FINISHED'</c>, <c>'RESUME'</c> and the
+    /// <c>'OPERATIONS'</c> module name with nothing comparing them against
+    /// <see cref="OperationEvents"/>/<see cref="OperationsFacade"/>/
+    /// <see cref="OperationRegistryOptions.ModuleName"/> — a host rename left the suite green and the
+    /// client deaf, the exact disease <see cref="Every_host_error_code_exists_on_the_client_and_vice_versa"/>
+    /// already exists to catch for error codes.
+    /// </summary>
+    [Fact]
+    public void Operation_event_names_match_the_host()
+    {
+        var client = ParseConstObject(ClientSource("operations.ts"), "OperationEventTypes");
+
+        Assert.NotEmpty(client);   // parser self-check: a regex that matched nothing must not pass
+        Assert.Equal(OperationEvents.Updated, client["Updated"]);
+        Assert.Equal(OperationEvents.ResumeRequested, client["ResumeRequested"]);
+    }
+
+    [Fact]
+    public void Operation_route_names_match_the_hosts_facade()
+    {
+        var client = ParseConstObject(ClientSource("operations.ts"), "OperationRoutes");
+
+        Assert.NotEmpty(client);   // parser self-check
+        Assert.Equal(OperationsFacade.ListType, client["List"]);
+        Assert.Equal(OperationsFacade.CancelType, client["Cancel"]);
+        Assert.Equal(OperationsFacade.ClearFinishedType, client["ClearFinished"]);
+        Assert.Equal(OperationsFacade.ResumeType, client["Resume"]);
+    }
+
+    [Fact]
+    public void The_default_operations_module_name_matches_the_host()
+    {
+        var source = ClientSource("operations.ts");
+
+        Assert.Equal(new OperationRegistryOptions().ModuleName, ParseExportedString(source, "OperationModuleName"));
+    }
 }

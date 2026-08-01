@@ -264,7 +264,8 @@ changes, noting them in `CHANGELOG.md`).
   in-memory state; `Start`/`Run` — `Run` is `Start` + a guarded background body mapping
   `OperationCanceledException`→`Cancel`, `OperationException`→`Fail(code, parameters, message)`, else
   →`Fail(UnknownError, {exceptionType})`, identical to the dispatch boundary's no-raw-text rule —
-  `GetAll(module?, scope?)`, `Cancel` (refuses an operation that never opted into `Cancellable`, so
+  `GetAll(module?, scope?)` (scope follows the same rule as `IEventBus` — an unscoped operation
+  matches any requested scope, not strict equality), `Cancel` (refuses an operation that never opted into `Cancellable`, so
   the status can't lie about a body still running underneath it), `ClearFinished`, and
   `RegisterInterrupted`/`RequestResume` for a crash-resumable checkpoint the app owns, deduped on
   `(module, kind, resumePayload)`; progress emission is throttled to `ProgressInterval` — default

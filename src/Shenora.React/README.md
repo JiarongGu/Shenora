@@ -85,8 +85,12 @@ useShenoraOperations.actions.clearFinished();
 It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
 folds `OPERATION_UPDATED` by id — one subscription however many components read it. `running`/
 `finished` are derived from `byId` on every read, never a second copy to keep in sync; filtering by
-your own `module`/`kind` is a plain `Array.filter` over either. Use `createOperationsStore({ module,
-scope })` instead of the default export if your host renamed `OperationRegistryOptions.ModuleName` or
+your own `module`/`kind` is a plain `Array.filter` over either. `clearFinished`/`resume` also prune
+their own rows from local state immediately — the host removes them too but emits no removal event,
+so this is what makes them visibly work in a mounted panel rather than a no-op until unmount; the
+host's own history cap (`MaxHistory`) is separate and NOT mirrored this way. Use
+`createOperationsStore({ module, scope })` instead of the default export if your host renamed
+`OperationRegistryOptions.ModuleName` or
 you need a scope-filtered instance (a secondary window, an auxiliary session).
 
 ### Observing the whole stream

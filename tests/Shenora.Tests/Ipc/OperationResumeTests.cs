@@ -69,6 +69,29 @@ public class OperationResumeTests
     }
 
     /// <summary>
+    /// ALSO IN THIS BATCH (whole-branch review): a regression guard distinct from
+    /// <see cref="An_interrupted_entry_is_not_prunable_history"/> above — that one covers the
+    /// AUTOMATIC <see cref="OperationRegistryOptions.MaxHistory"/> eviction path, this one covers the
+    /// explicit <see cref="IOperationRegistry.ClearFinished"/> call a client-triggered
+    /// <c>CLEAR_FINISHED</c> route drives. It is correct TODAY only structurally —
+    /// <c>ClearFinished</c> walks <c>_finishedOrder</c>, and only <c>Finish</c> (never
+    /// <c>RegisterInterrupted</c>) ever writes to it — so nothing previously proved it, and a future
+    /// rewrite that instead filtered <c>_entries</c> by terminal STATUS would silently destroy a
+    /// pending offer with this suite still green.
+    /// </summary>
+    [Fact]
+    public void ClearFinished_does_not_evict_a_pending_interrupted_resume_offer()
+    {
+        var (registry, _) = Build();
+        var offerId = registry.RegisterInterrupted("SCAN", Checkpoint("session-7"));
+        registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" }).Complete(); // ordinary finished history
+
+        registry.ClearFinished();
+
+        Assert.Contains(registry.GetAll(), o => o.Id == offerId);
+    }
+
+    /// <summary>
     /// A silently-accepted unusable entry would be worse than a loud rejection: without a resume
     /// payload nobody — kit or app — could ever act on the offer.
     /// </summary>

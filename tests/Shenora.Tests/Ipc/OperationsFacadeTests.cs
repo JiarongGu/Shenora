@@ -128,4 +128,38 @@ public class OperationsFacadeTests
                     provider.GetRequiredService<IOperationRegistry>());          // singleton
         Assert.Contains(provider.GetServices<IModuleFacade>(), f => f is OperationsFacade);
     }
+
+    /// <summary>
+    /// FINDING 2 (Important, whole-branch review): every <see cref="OperationRegistryOptions"/>
+    /// property is <c>{ get; init; }</c>, so the OLD <c>AddShenoraOperations(Action&lt;
+    /// OperationRegistryOptions&gt;? configure)</c> signature made <c>configure</c> a compile error
+    /// (CS8852) for the one thing it existed for — <c>o => o.ModuleName = "MY_OPS"</c> cannot assign
+    /// to an <c>init</c> property from outside an object initializer. The fix takes the options
+    /// RECORD directly (matching every other options type in the kit — <c>WebViewIpcBridgeOptions</c>,
+    /// <c>NotificationPumpOptions</c>), so <c>init</c> stays the kit's one immutability convention
+    /// instead of this being the one mutable options record. Proves the rename reaches BOTH halves:
+    /// the facade answers on it, and the registry publishes under it.
+    /// </summary>
+    [Fact]
+    public async Task AddShenoraOperations_with_options_configures_a_renamed_module_end_to_end()
+    {
+        var services = new ServiceCollection();
+        var bus = new EventBus();
+        services.AddSingleton<IEventBus>(bus);
+        services.AddShenoraOperations(new OperationRegistryOptions { ModuleName = "MY_OPS", ProgressInterval = TimeSpan.Zero });
+        using var provider = services.BuildServiceProvider();
+
+        var facade = provider.GetServices<IModuleFacade>().OfType<OperationsFacade>().Single();
+        Assert.Equal("MY_OPS", facade.ModuleName);
+
+        var events = new List<EventMessage>();
+        bus.SubscribeToAll(m => { events.Add(m); return Task.CompletedTask; });
+        provider.GetRequiredService<IOperationRegistry>().Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
+
+        Assert.Equal("MY_OPS", Assert.Single(events).Module);
+
+        // The renamed module is reachable through the facade too, under its own name.
+        var response = await facade.HandleMessageAsync(IpcRequests.Create("MY_OPS", "LIST"));
+        Assert.True(response.Success);
+    }
 }

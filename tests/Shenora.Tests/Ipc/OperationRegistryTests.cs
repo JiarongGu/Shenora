@@ -149,6 +149,33 @@ public class OperationRegistryTests
         Assert.Single(registry.GetAll(module: "SCAN"));
     }
 
+    /// <summary>
+    /// FINDING 4 (Important, whole-branch review): <c>GetAll</c> used to filter scope by STRICT
+    /// equality, so an UNSCOPED operation was excluded from a scoped <c>LIST</c> — but both event
+    /// buses (<c>Shenora.Core.EventBus</c>, the TS <c>ShenoraEventBus</c>) apply the family rule that a
+    /// scope-less (global) event still reaches scoped subscribers. A scoped operations store therefore
+    /// never SAW an unscoped operation in its snapshot but DID fold its deltas, so its contents
+    /// silently depended on whether it mounted before or after the work started. <c>GetAll</c> must
+    /// follow the SAME rule the bus already established, not diverge from it. Asserts the resulting
+    /// SET (not just that a filter argument reached the host): a "dev"-scoped entry must still be
+    /// excluded, so this is not just "return everything".
+    /// </summary>
+    [Fact]
+    public void GetAll_scope_filter_follows_the_bus_rule_an_unscoped_operation_matches_any_requested_scope()
+    {
+        var (registry, _) = Build();
+        var scoped = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "prod" });
+        var global = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });          // no scope at all
+        var otherScope = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "dev" });
+
+        var prod = registry.GetAll(module: "DEPLOY", scope: "prod");
+
+        Assert.Equal(2, prod.Count);
+        Assert.Contains(prod, o => o.Id == scoped.Id);
+        Assert.Contains(prod, o => o.Id == global.Id);
+        Assert.DoesNotContain(prod, o => o.Id == otherScope.Id);
+    }
+
     [Fact]
     public void ClearFinished_removes_history_and_keeps_running_work()
     {
@@ -232,12 +259,14 @@ public class OperationRegistryTests
 
         gate.Set(); // release all Pairs*2 threads at once — maximize contention
 
-        // Bounded: a hang here would stall the whole (serial) suite instead of failing it.
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        // Bounded PER-JOIN (ALSO IN THIS BATCH, whole-branch review), not one 5s budget shared across
+        // all 1000 joins: a single shared deadline means an EARLIER thread's ordinary scheduling delay
+        // on a loaded machine eats into the time budget left for every later one, so this used to fail
+        // for contention rather than for the race it exists to catch. Each Join() still returns the
+        // instant its thread finishes — this only changes what happens when one is genuinely stuck.
         foreach (var thread in threads)
         {
-            var remaining = deadline - DateTime.UtcNow;
-            Assert.True(thread.Join(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero),
+            Assert.True(thread.Join(TimeSpan.FromSeconds(5)),
                 "a Cancel/Complete thread did not finish within the bound");
         }
 
