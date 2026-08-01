@@ -52,4 +52,38 @@ public interface IOperationRegistry
 
     /// <summary>Drop all finished (terminal) history, keeping running work untouched.</summary>
     void ClearFinished();
+
+    /// <summary>
+    /// Announce a crash-interrupted, resumable operation from the APP's own checkpoint — the kit
+    /// holds the offer; the app owns what to resume and how. Requires
+    /// <see cref="OperationOptions.Resumable"/> true and a non-empty
+    /// <see cref="OperationOptions.ResumePayload"/> (the opaque checkpoint token), throwing
+    /// <see cref="ArgumentException"/> naming whichever is missing — a silently-accepted unusable
+    /// entry would be worse than a loud rejection.
+    /// <para>
+    /// Deduped on <c>(module, kind, resumePayload)</c> among already-<see cref="OperationStatus.Interrupted"/>
+    /// entries: re-announcing the SAME checkpoint (a profile/session switch, say) returns the
+    /// existing id rather than stacking a second offer for what is still the same interrupted
+    /// checkpoint.
+    /// </para>
+    /// <para>
+    /// The returned entry is a pending OFFER, not finished history: the registry's automatic history
+    /// pruning (capped by <see cref="OperationRegistryOptions.MaxHistory"/>) never evicts it — only
+    /// <see cref="RequestResume"/> removes it.
+    /// </para>
+    /// </summary>
+    string RegisterInterrupted(string module, OperationOptions options);
+
+    /// <summary>
+    /// The user asked to resume operation <paramref name="id"/>. Returns false — and changes
+    /// nothing — unless the entry is BOTH <see cref="OperationStatus.Interrupted"/> and
+    /// <see cref="OperationOptions.Resumable"/> (the same honest-refusal shape as <see cref="Cancel"/>
+    /// for an unknown or wrong-state id). On success, removes the entry and emits
+    /// <see cref="OperationEvents.ResumeRequested"/> with
+    /// <c>{ operationId, module, kind, resumePayload, scope }</c> for the OWNING module to act on.
+    /// The entry is gone afterward because the resumed operation registers a FRESH one (via
+    /// <see cref="Start"/>/<see cref="Run"/>) when it actually restarts — this call only carries the
+    /// app's opaque token across; it never resumes anything itself.
+    /// </summary>
+    bool RequestResume(string id);
 }

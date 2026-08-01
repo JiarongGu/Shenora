@@ -23,11 +23,12 @@ namespace Shenora.Ipc;
 /// Registered opt-in via <see cref="OperationServiceCollectionExtensions.AddShenoraOperations"/>.
 /// </para>
 /// <para>
-/// <c>RESUME</c> is deliberately NOT routed here: the resume pair
-/// (<c>IOperationRegistry.RegisterInterrupted</c>/<c>RequestResume</c>) lands in a later task, and
-/// wiring a route with no registry member behind it would mean inventing one early. Until then a
-/// <c>RESUME</c> request falls through to <see cref="BaseFacade.UnknownType"/> like any other
-/// unimplemented type.
+/// <c>RESUME</c> forwards <c>{ operationId }</c> straight to
+/// <see cref="IOperationRegistry.RequestResume"/> and answers <c>{ requested: bool }</c> — the same
+/// honest-bool shape as <c>CANCEL</c>: the request always succeeds, and the bool says whether the
+/// operation actually was a pending, resumable, interrupted offer. This is single-app-provenance
+/// mechanism (design §4.2) — a state, an opaque token, an event; the app owns the checkpoint and
+/// what "resume" actually does with it.
 /// </para>
 /// </summary>
 public sealed class OperationsFacade : BaseFacade
@@ -75,8 +76,13 @@ public sealed class OperationsFacade : BaseFacade
                 _registry.ClearFinished();
                 return Done();
 
+            case "RESUME":
+                var resumeId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
+                var requested = _registry.RequestResume(resumeId);
+                return Task.FromResult<object?>(new { requested });
+
             default:
-                throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5); RESUME lands here too until its own task
+                throw UnknownType(request);   // BaseFacade owns the shape (P5.5 H4.5)
         }
     }
 }

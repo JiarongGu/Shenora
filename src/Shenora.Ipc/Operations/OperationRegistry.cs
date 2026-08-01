@@ -137,12 +137,15 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
             miss = Validate(id, out var entry);
             if (miss is null && !entry!.Cancellable)
             {
-                // The honest CANCEL contract (Task 5, carried from the Task 2 review): Cancellable is
-                // documented as "exposes a WORKING cancel" — an operation that opted OUT has no CTS,
-                // so flipping it to Cancelled here would lie to the UI while the body keeps running to
-                // its own Complete()/Fail() (which then no-ops, since the entry would already be
-                // terminal). Same "ignored" path as an unknown/already-terminal id, just a different
-                // reason: this operation was simply never cancellable.
+                // The honest CANCEL contract (Task 5, carried from the Task 2 review): Start()
+                // allocates a CTS for EVERY operation, cancellable or not, so a CTS is not what a
+                // non-cancellable operation lacks. What Cancellable actually gates is THIS call —
+                // Cancel() is the only path that ever signals that token, so an operation that opted
+                // OUT simply never has it signalled. Flipping the status to Cancelled here anyway
+                // would lie to the UI while the body keeps running to its own Complete()/Fail() (which
+                // then no-ops, since the entry would already be terminal). Same "ignored" path as an
+                // unknown/already-terminal id, just a different reason: this operation was simply
+                // never cancellable.
                 miss = "is not cancellable (OperationOptions.Cancellable was false)";
             }
             cts = miss is null ? entry!.Cts : null; // read under the lock — Finish()/Dispose() may dispose it concurrently otherwise
@@ -191,6 +194,128 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
                 _entries.Remove(id);
             _finishedOrder.Clear();
         }
+    }
+
+    /// <inheritdoc />
+    public string RegisterInterrupted(string module, OperationOptions options)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(module);
+        ArgumentNullException.ThrowIfNull(options);
+        // A silently-accepted unusable entry is worse than a loud rejection: nobody could ever
+        // resume this, so it would sit as a dead offer with no way for the app to act on it.
+        if (!options.Resumable)
+            throw new ArgumentException(
+                $"Registering an interrupted operation requires {nameof(OperationOptions.Resumable)} " +
+                "to be true — the kit only offers a resume the app itself marked resumable.",
+                nameof(options));
+        if (string.IsNullOrEmpty(options.ResumePayload))
+            throw new ArgumentException(
+                $"Registering an interrupted operation requires a non-empty " +
+                $"{nameof(OperationOptions.ResumePayload)} — it is the opaque checkpoint token the " +
+                "app resumes from.",
+                nameof(options));
+
+        Entry entry;
+        var isNew = false;
+        lock (_lock)
+        {
+            // Dedupe on (module, kind, resumePayload) among already-Interrupted entries: a
+            // profile/session switch re-announces the SAME checkpoint, and that must return the
+            // existing offer rather than stack a second one for what is still the same interrupted
+            // operation.
+            var existing = _entries.Values.FirstOrDefault(e =>
+                e.Status == OperationStatus.Interrupted
+                && string.Equals(e.Module, module, StringComparison.Ordinal)
+                && string.Equals(e.Kind, options.Kind, StringComparison.Ordinal)
+                && string.Equals(e.ResumePayload, options.ResumePayload, StringComparison.Ordinal));
+
+            if (existing is not null)
+            {
+                entry = existing;
+            }
+            else
+            {
+                entry = new Entry
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Module = module,
+                    Kind = options.Kind,
+                    Scope = options.Scope,
+                    Status = OperationStatus.Interrupted,
+                    Progress = ClampProgress(options.Progress),
+                    Title = options.Title,
+                    Cancellable = options.Cancellable,
+                    Resumable = options.Resumable,
+                    ResumePayload = options.ResumePayload,
+                    StartedAt = _options.TimeProvider.GetUtcNow(),
+                    // No CTS: an interrupted entry is not running work, just a pending offer —
+                    // there is nothing to cancel until the app's own resume restarts it as a fresh
+                    // Start()/Run(), which allocates its own.
+                    Cts = null,
+                };
+                entry.Sequence = _nextSequence++;
+                _entries[entry.Id] = entry;
+                // Deliberately NEVER added to _finishedOrder. That list is PruneHistory's eviction
+                // queue for TERMINAL history, and Interrupted is not terminal (see OperationStatus) —
+                // it is a pending offer that only RequestResume removes. Adding it here would let an
+                // unrelated flood of finished operations silently evict a crash offer the app has not
+                // yet had a chance to show the user; this is the structural half of that guard (see
+                // also PruneHistory's own note).
+                isNew = true;
+            }
+        }
+
+        if (isNew) Publish(entry, immediate: true);
+        return entry.Id;
+    }
+
+    /// <inheritdoc />
+    public bool RequestResume(string id)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        Entry? entry;
+        string? miss;
+        lock (_lock)
+        {
+            miss = ValidateResumable(id, out entry);
+            if (miss is null) _entries.Remove(id);
+        }
+
+        if (miss is not null)
+        {
+            LogIgnored("RequestResume", id, miss);
+            return false;
+        }
+
+        // Outside the lock, same discipline as every other bus emission here: nothing calls out to
+        // app code while holding _lock.
+        _bus.Emit(_options.ModuleName, OperationEvents.ResumeRequested, new
+        {
+            operationId = entry!.Id,
+            module = entry.Module,
+            kind = entry.Kind,
+            resumePayload = entry.ResumePayload,
+            scope = entry.Scope,
+        }, entry.Scope);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Look up <paramref name="id"/> for <see cref="RequestResume"/>: null = found, Interrupted, and
+    /// Resumable (proceed), <paramref name="entry"/> is set; otherwise the diagnostic reason to log.
+    /// MUST be called while holding <see cref="_lock"/> — it reads <see cref="_entries"/> directly.
+    /// </summary>
+    private string? ValidateResumable(string id, out Entry? entry)
+    {
+        if (!_entries.TryGetValue(id, out entry))
+            return "is not known to this registry (a stale id usually means the caller kept a handle past the operation's life)";
+        if (entry.Status != OperationStatus.Interrupted)
+            return $"is not a pending interrupted offer (status is {entry.Status})";
+        return entry.Resumable
+            ? null
+            : "is not resumable (OperationOptions.Resumable was false)";
     }
 
     /// <summary>Called by an <see cref="OperationHandle"/>. Ignored once the operation is terminal.</summary>
@@ -289,7 +414,13 @@ public sealed class OperationRegistry : IOperationRegistry, IDisposable
         AppCallback.Run(() => _options.Log(message()));
     }
 
-    /// <summary>Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>. Caller holds <see cref="_lock"/>.</summary>
+    /// <summary>
+    /// Drop the oldest finished entries over <see cref="OperationRegistryOptions.MaxHistory"/>.
+    /// Caller holds <see cref="_lock"/>. Only ever touches <see cref="_finishedOrder"/> — an
+    /// <see cref="OperationStatus.Interrupted"/> entry from <see cref="RegisterInterrupted"/> is
+    /// never added to that list (it is a pending offer, not finished history), so it structurally
+    /// cannot be evicted here regardless of how many operations finish afterward.
+    /// </summary>
     private void PruneHistory()
     {
         while (_finishedOrder.Count > _options.MaxHistory)

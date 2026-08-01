@@ -109,12 +109,13 @@ public class OperationRegistryTests
     }
 
     /// <summary>
-    /// Carried finding (routed from the Task 2 review, fixed in Task 5): a non-cancellable operation
-    /// has no CTS, so cancelling it used to flip the status to Cancelled while the body kept running
-    /// to completion underneath it — the UI showed "cancelled" for work that was still going, and the
-    /// body's own later <c>Complete()</c> silently no-op'd because the entry was already terminal.
-    /// <c>Cancellable</c> is documented as "exposes a WORKING cancel", so the honest contract is:
-    /// refuse and change nothing.
+    /// Carried finding (routed from the Task 2 review, fixed in Task 5): <c>Start</c> allocates a CTS
+    /// for every operation regardless of <c>Cancellable</c> — that flag instead gates whether
+    /// <c>Cancel()</c> is allowed to signal it. Cancelling a non-cancellable operation used to flip
+    /// the status to Cancelled while the body kept running to completion underneath it — the UI
+    /// showed "cancelled" for work that was still going, and the body's own later <c>Complete()</c>
+    /// silently no-op'd because the entry was already terminal. <c>Cancellable</c> is documented as
+    /// "exposes a WORKING cancel", so the honest contract is: refuse and change nothing.
     /// </summary>
     [Fact]
     public void Cancel_returns_false_and_changes_nothing_for_a_non_cancellable_operation()

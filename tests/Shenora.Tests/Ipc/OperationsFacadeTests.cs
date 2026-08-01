@@ -43,11 +43,13 @@ public class OperationsFacadeTests
     }
 
     /// <summary>
-    /// Carried finding (routed from the Task 2 review): a non-cancellable operation has no CTS, so
-    /// cancelling it used to flip the status to Cancelled while the body kept running to completion —
-    /// the UI showed "cancelled" for work that was still going, and the body's own later Complete()
-    /// no-op'd because the entry was already terminal. The honest CANCEL route answers
-    /// <c>{ cancelled: false }</c> and leaves the operation exactly as it was.
+    /// Carried finding (routed from the Task 2 review): every operation gets a CTS regardless of
+    /// <c>Cancellable</c> — what that flag actually gates is whether <c>Cancel()</c> is allowed to
+    /// signal it. Cancelling a non-cancellable operation used to flip the status to Cancelled while
+    /// the body kept running to completion — the UI showed "cancelled" for work that was still
+    /// going, and the body's own later Complete() no-op'd because the entry was already terminal.
+    /// The honest CANCEL route answers <c>{ cancelled: false }</c> and leaves the operation exactly
+    /// as it was.
     /// </summary>
     [Fact]
     public async Task CANCEL_answers_false_and_leaves_a_non_cancellable_operation_running()
@@ -77,22 +79,31 @@ public class OperationsFacadeTests
         Assert.Equal(running.Id, registry.GetAll().Single().Id);
     }
 
-    /// <summary>
-    /// RESUME is deliberately not wired yet — <c>IOperationRegistry.RegisterInterrupted</c>/
-    /// <c>RequestResume</c> land in the next task, and a route with nothing behind it would mean
-    /// inventing that registry member early. Until then it is exactly like any other unimplemented
-    /// type. This test documents that as intentional, not a gap — the next task should replace it
-    /// with real RESUME coverage rather than leaving it in place unexamined.
-    /// </summary>
     [Fact]
-    public async Task RESUME_is_not_wired_yet_and_gets_the_frameworks_NO_HANDLER_shape()
+    public async Task RESUME_forwards_to_the_registry_and_answers_requested_true()
+    {
+        var (facade, registry) = Build();
+        var id = registry.RegisterInterrupted("SCAN",
+            new OperationOptions { Kind = "ANALYSIS", Resumable = true, ResumePayload = "session-7" });
+
+        var response = await facade.HandleMessageAsync(
+            IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = id }));
+
+        Assert.True(response.Success);
+        Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
+        Assert.Empty(registry.GetAll());   // the offer is gone; the resumed op registers a fresh one
+    }
+
+    [Fact]
+    public async Task RESUME_answers_requested_false_for_an_unknown_operation_id()
     {
         var (facade, _) = Build();
 
         var response = await facade.HandleMessageAsync(
             IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = "whatever" }));
 
-        Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
+        Assert.True(response.Success);   // the REQUEST still succeeds — only the resume itself is honestly false
+        Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
     }
 
     [Fact]

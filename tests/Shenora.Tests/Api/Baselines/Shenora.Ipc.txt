@@ -37,6 +37,8 @@ interface Shenora.Ipc.IOperationRegistry
   public abstract Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public abstract bool Cancel(string id)
+  public abstract bool RequestResume(string id)
+  public abstract string RegisterInterrupted(string module, Shenora.Ipc.OperationOptions options)
   public abstract string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public abstract void ClearFinished()
 static class Shenora.Ipc.IpcCategories
@@ -184,6 +186,8 @@ sealed class Shenora.Ipc.OperationRegistry : Shenora.Ipc.IOperationRegistry, Sys
   public Shenora.Ipc.IOperation Start(string module, Shenora.Ipc.OperationOptions options)
   public System.Collections.Generic.IReadOnlyList<Shenora.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public bool Cancel(string id)
+  public bool RequestResume(string id)
+  public string RegisterInterrupted(string module, Shenora.Ipc.OperationOptions options)
   public string Run(string module, Shenora.Ipc.OperationOptions options, System.Func<Shenora.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public void ClearFinished()
   public void Dispose()
