@@ -486,6 +486,8 @@ sealed class Shenora.Core.RetryPolicy
   public System.TimeSpan Delay { get; init; }
   public int Attempts { get; init; }
   public static Shenora.Core.RetryPolicy None { get; }
+static class Shenora.Core.ShellCapability
+  public static System.NotSupportedException NotSupported(string capability, string shell, string? alternative = null)
 sealed class Shenora.Core.ShenoraApplication : System.IAsyncDisposable, System.IDisposable
   public Shenora.Core.ShenoraEnvironment Environment { get; }
   public Shenora.Core.ShenoraPaths Paths { get; }

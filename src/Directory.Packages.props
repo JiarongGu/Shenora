@@ -11,6 +11,11 @@
     <!-- WebView2 (version proven across the sibling apps) -->
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3800.47" />
 
+    <!-- MAUI. $(MauiVersion) is set by the installed workload, so this tracks the SDK rather than
+         pinning a number that would drift out of step with it — the one place in this list where a
+         literal version would be wrong. -->
+    <PackageVersion Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+
     <!-- Tests -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

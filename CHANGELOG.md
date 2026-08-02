@@ -85,6 +85,20 @@ at the first list and missed five more breaking changes.
   platform that signals "stopped" before it ever signalled "started" cannot disarm the real shutdown
   that follows.
 
+- **`ShellCapability.NotSupported` in `Shenora.Core`** — how a shell reports a contract it cannot
+  honour, now that there is more than one shell. An absent capability **throws**, naming the platform
+  and (where there is one) the alternative; it does not silently no-op, because a quiet nothing is the
+  "mistyped resource prefix degrading to an all-404 provider" bug class this repo keeps paying for.
+
+  It draws a line worth knowing: **absent is not the same as differently-satisfied.** Clipboard
+  images have no expression in MAUI Essentials, so that refuses; `IUiInteraction`'s block/unblock is
+  satisfied BY the platform (mobile pickers are modal), so on that shell it is an honest documented
+  no-op. Refusing the second kind would break portable logic that is behaving correctly.
+
+  Deliberately not a `DispatchProxy` — a reflection proxy is exactly what iOS trimming strips, which
+  is what `IpcJson.AddTypeInfoResolver` exists to avoid depending on. Shells write small explicit
+  stubs sharing this one message.
+
 ## 0.4.0 — 2026-08-02
 
 _Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the

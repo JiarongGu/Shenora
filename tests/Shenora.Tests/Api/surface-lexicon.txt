@@ -105,6 +105,10 @@ Scheme
 Base
 Bootstrap
 Builder
+# `Capability` (2026-08-02) names what a SHELL can or cannot honour — hosting vocabulary, and the
+# word the cross-shell rule is actually about (ShellCapability.NotSupported). Note it is NOT a
+# feature flag: absent means "no expression of this exists on this platform".
+Capability
 Headless
 Callback
 Collection

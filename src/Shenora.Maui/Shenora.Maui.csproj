@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Android-first, deliberately: the maui-android workload builds here, while net10.0-ios needs the
+    ios workload AND a Mac build host. iOS is added when that path is wired up (the family already
+    drives a Mac over SSH for exactly this), not before — a TFM nothing can compile is the same
+    objection this repo raises against any ungated artifact.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Maui</PackageId>
+    <Description>Shenora MAUI shell: the HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a MAUI UI-thread dispatcher, and the MAUI implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\Shenora.Ipc\Shenora.Ipc.csproj" />
+  </ItemGroup>
+
+</Project>
