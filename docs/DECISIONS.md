@@ -826,3 +826,47 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     bundle. A server-backed profile puts its pages on a real loopback origin, both sample demos work in
     dev mode, and the e2e runs in dev. A gap whose reproduction requires the packaged build is exactly
     what the "prove it against the sample" gate exists for.
+
+- **D39 — the auxiliary-SESSION stack stays a DESKTOP capability. Both mobile shells host a webview;
+  that is not the same thing.** (Owner asked directly, 2026-08-03: *"since on both mobile env we also
+  have fake browser right? is that safe to do the same session logic?"*) `StreamingSession`,
+  `RenderSessionPool` and `InteractiveSession` do NOT port, and the reason is CAPABILITY — which
+  matters because it means the answer does not rest on a store-policy reading that could change.
+  - **The stack rests on CDP, not on "a webview".** `Page.startScreencast`,
+    `Emulation.setDeviceMetricsOverride`, `Input.dispatchMouseEvent`/`insertText`/`dispatchKeyEvent`.
+    Neither mobile shell has an in-process CDP client. Android is Chromium underneath, so a DevTools
+    endpoint exists — but only for an EXTERNAL client to attach after
+    `setWebContentsDebuggingEnabled(true)`, which is a security red flag to ship in release and is not
+    an in-process API regardless. iOS is WebKit: no CDP at all, and no public synthetic-input path
+    (OS-level touch synthesis is private API, which is a rejection independent of any policy).
+  - **THE TRAP, and the real reason this needs writing down.** A port IS buildable behind the same
+    interface — frame-polling (`View.draw(Canvas)` / `takeSnapshot`) plus `evaluateJavaScript`
+    dispatching synthetic DOM events. It would compile, demo, and be materially WEAKER: polled instead
+    of change-driven, and the events are `isTrusted: false`. Untrusted events are precisely what fails
+    on the pages `InteractiveSession` exists for (verification challenges, auth flows). Same method
+    name, different guarantee — D35's shape exactly, and `mobile-shells.md`'s warning is why it is
+    tempting: *the C# ports for free, so every real cost lands somewhere else*.
+  - **`HybridWebView` also has no request interception at all**, so the bundle seam D38 just added has
+    no mobile analogue either. There is no seam to plug one into (recorded when the mobile shell was
+    built, and still true).
+  - **Store policy is a SECOND reason and is NOT verified here — do not cite this entry as if it were.**
+    The shapes to expect friction on are `InteractiveSession` (a hidden webview over a per-provider
+    profile capturing cookies reads as credential interception even when the user does the typing) and
+    streaming third-party pages out of the device. Guidelines change; check the current text before
+    relying on any of that. It is listed second deliberately, because the capability argument alone
+    settles the decision.
+  - **What the mobile answer IS, decomposed the way D35 decomposes "open a folder".** *Show the user a
+    web page* → `IUrlLauncher`, already shipped (in-app browser tab / system browser). *Log the user
+    into a third-party provider* → the platform auth session (`WebAuthenticator` →
+    `ASWebAuthenticationSession` / Custom Tabs), which is BETTER than the kit's version, not a
+    downgrade: the cookies stay in the system and the app never sees them. *Render my own UI
+    off-screen* → does not arise; on mobile the app's UI already IS the webview.
+  - **No stub and no refusal is needed, and that is the LAYERING paying off rather than an omission.**
+    The whole stack lives in `Shenora.Windows`, which the mobile source does not reference, so portable
+    app logic cannot NAME `StreamingSession` in the first place — there is nothing for a mobile shell to
+    refuse. This is the same finding that closed A2: the hole a capability-stub proposal describes does
+    not exist, because D19/D20 already prevents it. Contrast `IFileDialogs`, which IS a Core contract
+    and therefore DOES need a loud refusal per D33.
+  - So the honest statement is not "mobile loses this" but "the platform already ships the sanctioned
+    version of each intent". Revisit only if a platform gains a real in-process automation surface —
+    not because a webview exists.

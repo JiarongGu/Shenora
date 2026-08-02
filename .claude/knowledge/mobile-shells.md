@@ -21,6 +21,13 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   what it is (`dev.mjs mac` reads the Mac's `uname -m` over ssh); never assume the dev machine matches.
 - **Prove it on the device, and say which half you proved.** A shell that compiles is not a shell that
   runs; `dev.mjs android` and `dev.mjs mac` exist so a claim about either can carry a screenshot.
+- **A webview on both shells does NOT mean the auxiliary-SESSION stack ports (D39).** `StreamingSession`
+  and friends rest on CDP (screencast, device metrics, OS-level input replay), which neither shell
+  exposes in-process — iOS has no CDP at all. The trap is that a port IS buildable behind the same
+  interface (frame-polling + `evaluateJavaScript` synthetic DOM events) and is materially weaker:
+  polled, and `isTrusted: false`, which is exactly what the pages that stack exists for reject. Nothing
+  needs stubbing, because the stack is in `Shenora.Windows` and portable logic cannot name it. Read D39
+  before writing any of it — the sanctioned mobile answer per intent is there.
 
 ## Gotchas / traps
 
