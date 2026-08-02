@@ -66,7 +66,13 @@ public sealed class MainPage : ContentPage
 			// is no window chrome to draw and no OS drag-and-drop to receive.
 			Shell = new ShellInfo
 			{
-				Name = "maui",
+				// The real platform, not the framework — "android" / "ios", the peer of the desktop
+				// sample's "winforms". Reporting "maui" named the build system, which is the same
+				// mistake the packages themselves stopped making when they split by platform; the two
+				// faces do not even share a web engine (Chromium's WebView vs WKWebView).
+				//
+				// DeviceInfo rather than an #if: MAUI already knows, and this file is shared source.
+				Name = DeviceInfo.Current.Platform.ToString().ToLowerInvariant(),
 				Capabilities = [ShellCapability.FilePicker],
 			},
 			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
