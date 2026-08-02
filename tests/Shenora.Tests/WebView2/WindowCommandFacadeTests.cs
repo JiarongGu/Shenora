@@ -1,6 +1,5 @@
 using Shenora.Ipc;
-using Shenora.WebView2;
-using Shenora.WinForms;
+using Shenora.Windows;
 using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.WebView2;

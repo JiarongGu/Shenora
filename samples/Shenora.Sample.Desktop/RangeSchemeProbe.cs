@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using Shenora.WebView2;
+using Shenora.Windows;
 
 namespace Shenora.Sample.Desktop;
 

@@ -1,6 +1,6 @@
 using System.Reflection;
 using Shenora.Tests.TestSupport;
-using Shenora.WebView2;
+using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2;
 

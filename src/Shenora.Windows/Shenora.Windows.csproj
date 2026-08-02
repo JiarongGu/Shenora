@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Windows shell, whole. Merged from Shenora.WinForms + Shenora.WebView2 +
+    Shenora.WebView2.Sessions (owner, 2026-08-02) because the split protected a consumer that cannot
+    exist: this kit's premise is React in a webview, so there is no Windows path that takes the
+    WinForms primitives and not WebView2. The seam it preserved — WinForms with no IPC dependency —
+    described an adoption STAGE, not a shipping configuration.
+
+    The measurement that settled the last objection: Sessions adds NO dependency of its own (it
+    already shared Microsoft.Web.WebView2), so folding it in costs ~28 KB of IL and no graph change.
+    The "52.6 MB" figure raised against merging was dev-time RESTORE size, not shipped bytes — the
+    WebView2 runtime is an Evergreen system component and what lands in an app's output is a small
+    loader.
+
+    Folders keep the three areas legible, which is the part of the old split worth keeping:
+      Shell/      Windows primitives — bootstrap, frameless chrome, tray, secondary windows,
+                  window state, STA dialogs/clipboard/shell, the UI-thread dispatcher
+      WebView/    WebView2 hosting, serving, the IPC bridge, drop zones, window commands
+      Sessions/   auxiliary browser sessions — render pool, interactive, streaming
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Windows</PackageId>
+    <!-- The WebView2 package always references its WPF assembly, whose WindowsBase differs from a
+         WinForms-only project's — MSB3277 fires but the WPF dll is never loaded here. Demote it. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+    <!--
+      MECHANISM vocabulary only (D22). The Sessions half of this description used to read "login
+      windows with per-provider persistent profiles" and "co-browse streaming primitives" — the exact
+      scenario names P5.5 H9.7/H9.8 removed from the TYPES (LoginWindow -> InteractiveSession,
+      CoBrowseSession -> StreamingSession). It survived because D22's audit method is "sweep the API
+      baselines for domain words", and a csproj Description is not in any baseline — while being the
+      single most public place that vocabulary appears (the nuget.org listing). Name what the types
+      do, not one product they enable.
+    -->
+    <Description>Shenora's Windows shell: application bootstrapper with global exception handling, DPI-correct window-state persistence, single-instance guard with activate broadcast, secondary windows on their own STA threads, tray icon, frameless-chrome form, and the Windows implementations of the Shenora.Core shell contracts (STA file dialogs, clipboard, shell launching, UI-thread dispatcher). Hosts WebView2: environment prewarm, dev-server vs packaged-frontend loading, navigation/new-window/download/permission/process-failure handling, drag-drop zones, and the postMessage IPC bridge with batched event push. Includes auxiliary browser sessions — off-screen driveable sessions with a bounded pool, interactive sessions over an isolated persistent profile, and streaming sessions (CDP screencast out, synthetic input in). Mechanisms only: the kit ships no workflow.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\Shenora.Ipc\Shenora.Ipc.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+
+</Project>

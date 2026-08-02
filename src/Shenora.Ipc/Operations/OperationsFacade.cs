@@ -20,7 +20,7 @@ namespace Shenora.Ipc;
 /// app's own module at composition.
 /// </para>
 /// <para>
-/// Precedent: <c>WindowCommandFacade</c>/<c>DropZoneFacade</c> (Shenora.WebView2, not referenceable
+/// Precedent: <c>WindowCommandFacade</c>/<c>DropZoneFacade</c> (Shenora.Windows, not referenceable
 /// from here — downward-only dependencies) — an ordinary <see cref="BaseFacade"/>, no special wiring.
 /// Registered opt-in via <see cref="OperationServiceCollectionExtensions.AddShenoraOperations"/>.
 /// </para>

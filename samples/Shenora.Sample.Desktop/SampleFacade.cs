@@ -1,6 +1,6 @@
 using Shenora.Core;   // the portable contracts (IFileDialogs, IUrlLauncher…) live here since D20
 using Shenora.Ipc;
-using Shenora.WinForms;
+using Shenora.Windows;
 
 namespace Shenora.Sample.Desktop;
 

@@ -13,9 +13,7 @@
          type-checks the other's content; what is NOT covered is its API baseline, which is gated in
          the macOS job instead. Said plainly rather than left as a gap someone discovers. -->
     <Project Path="src/Shenora.Android/Shenora.Android.csproj" />
-    <Project Path="src/Shenora.WebView2/Shenora.WebView2.csproj" />
-    <Project Path="src/Shenora.WebView2.Sessions/Shenora.WebView2.Sessions.csproj" />
-    <Project Path="src/Shenora.WinForms/Shenora.WinForms.csproj" />
+    <Project Path="src/Shenora.Windows/Shenora.Windows.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Shenora.Tests/Shenora.Tests.csproj" />

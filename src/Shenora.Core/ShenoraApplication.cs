@@ -34,8 +34,8 @@ public sealed class ShenoraApplicationOptions
 /// run loop. Create through <see cref="CreateBuilder(string[])"/>:
 /// <code>
 /// var builder = ShenoraApplication.CreateBuilder(args);
-/// builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) }); // Shenora.WinForms
-/// builder.PrewarmWebView2(app => new WebViewEnvironmentOptions {                      // Shenora.WebView2
+/// builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) }); // Shenora.Windows
+/// builder.PrewarmWebView2(app => new WebViewEnvironmentOptions {                      // Shenora.Windows
 ///     UserDataFolder = app.Paths.DataArea("webview2"),
 ///     IsDevelopment = app.Environment.IsDevelopment,
 /// });
@@ -178,7 +178,7 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
         var runner = Services.GetService<IShenoraRunner>()
             ?? throw new InvalidOperationException(
                 "No IShenoraRunner is registered. Reference a host package and call its builder " +
-                "extension (e.g. UseWinForms from Shenora.WinForms) before Build(), or register " +
+                "extension (e.g. UseWinForms from Shenora.Windows) before Build(), or register " +
                 "an IShenoraRunner yourself.");
         runner.Run(this);
     }

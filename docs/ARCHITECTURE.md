@@ -46,7 +46,7 @@ delivered the full IPC stack (wire contract, dispatcher + facades, event bus, po
 transport, `@shenora/react` client, live round-trip). P4 delivered the native desktop surface:
 the scoped-container router + standard IPC composition, frameless chrome + frontend window
 commands, STA dialogs/shell/clipboard/interaction services, drag-drop zones + `useDropZone`
-(+ per-monitor DPI handling), secondary windows + tray. P5 added the `Shenora.WebView2.Sessions`
+(+ per-monitor DPI handling), secondary windows + tray. P5 added the `Shenora.Windows`
 package: the one browser-configuration path, a bounded LIFO render-session pool, the login-window
 stack (persistent per-account profiles, silent refresh, clear-on-logout), and co-browse streaming
 — all proven live in the sample.
@@ -56,9 +56,17 @@ Shenora.slnx
 ├── src/
 │   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
 │   ├── Shenora.Ipc         net10.0          — deps: Shenora.Core
-│   ├── Shenora.WebView2    net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
-│   ├── Shenora.WebView2.Sessions net10.0-windows — deps: Shenora.WebView2, Microsoft.Web.WebView2
-│   ├── Shenora.WinForms    net10.0-windows  — deps: Shenora.Core
+│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
+│   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
+│   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders
+│   │                                          keep the areas legible: Shell/ (primitives — bootstrap,
+│   │                                          frameless chrome, tray, secondary windows, window state,
+│   │                                          STA dialogs/clipboard, the UI-thread dispatcher),
+│   │                                          WebView/ (hosting, serving, IPC bridge, drop zones,
+│   │                                          window commands), Sessions/ (render pool, interactive,
+│   │                                          streaming). The old split protected a WinForms-without-
+│   │                                          WebView2 consumer that cannot exist in a React-in-a-
+│   │                                          webview kit; D19's package edge is now internal.
 │   ├── Shenora.Mobile/     (SOURCE, no csproj) — the mobile shell's shared code; NOT a package, and
 │   │                                          there is deliberately no Shenora.Mobile on nuget.org.
 │   │                                          Ipc/ Threading/ Services/ Hosting/, compiled INTO both
@@ -294,7 +302,7 @@ changes, noting them in `CHANGELOG.md`).
   adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
   cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
   work observes the one handed to `SubmitAsync`.
-- `Shenora.WinForms` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
+- `Shenora.Windows` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
   internal-element helpers); `WindowState`/`WindowStateOptions`/`IWindowStateStore`/
   `JsonFileWindowStateStore`/`WindowStateManager` (logical-px persistence, physical restore,
   off-screen recovery — pure `ToPhysical`/`ToLogical`/`IsVisible` cores); `SingleInstanceGuard`
@@ -337,7 +345,7 @@ changes, noting them in `CHANGELOG.md`).
   `IFileLockInspector`, answering "who is holding this file?" through the Restart Manager API (the one
   an installer uses to say "close these applications"). Here rather than in `Core` because it is
   Win32; returns empty for a remote holder over a share, because that answer only exists on the server.
-- `Shenora.WebView2` — `BrowserArguments` (the measured Chromium display-optimization preset;
+- `Shenora.Windows` — `BrowserArguments` (the measured Chromium display-optimization preset;
   single-occurrence feature lists; dev CDP-args append); `WebViewEnvironment(+Options)`
   (runtime presence probe, idempotent prewarm, thread-affine shared environment +
   per-STA-thread creation for secondary windows); `PrewarmWebView2` on `WebView2BuilderExtensions`
@@ -371,9 +379,9 @@ changes, noting them in `CHANGELOG.md`).
   REGISTER/UPDATE/UNREGISTER/SHOW).
 - `Shenora.Core` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
   where an escaping exception is fatal rather than catchable (a UI-thread event handler, a timer tick, a
-  posted body, a dispose path). Public because `Shenora.WebView2`, `Shenora.WebView2.Sessions` and
-  `Shenora.WinForms` all consume it and a `ProjectReference` grants no `internal` access (D19/D20).
-- `Shenora.WebView2.Sessions` — auxiliary browser sessions (D14: browser work outside the
+  posted body, a dispose path). Public because `Shenora.Windows`, `Shenora.Windows` and
+  `Shenora.Windows` all consume it and a `ProjectReference` grants no `internal` access (D19/D20).
+- `Shenora.Windows` — auxiliary browser sessions (D14: browser work outside the
   app's own UI, kept out of the core hosting package): `SessionBrowser(+Options)` (the ONE
   auxiliary-WebView2 configuration path — per-profile environment, quiet-start +
   background-throttling-off arguments, settings hardening, `RequestFilter` block seam,
@@ -646,15 +654,17 @@ changes, noting them in `CHANGELOG.md`).
   that way is `IMissionObserver`. `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20),
   which is also why the scheduler ships no storage dependency: `IMissionQueueStore` is a seam, not an
   implementation.
-- **The two Windows packages are ONE layer (D19):** `Shenora.WebView2` → `Shenora.WinForms`, i.e.
-  Windows **primitives** and **web hosting on top of them** — not two peers. This replaced the old
-  "never sideways" rule on evidence (the UI-thread marshal pattern had been hand-rolled 14 times with
-  five incompatible pre-handle policies, two of them buggy), and it adds no new *technology*
-  dependency: `Shenora.WebView2` already sets `UseWindowsForms` and hosts the WebView2 WinForms
-  control. Still forbidden: `WinForms` → `WebView2` (that direction would be a cycle), and
-  `Shenora.WinForms` still carries **no `Shenora.Ipc` dependency** — which is what keeps a
-  WinForms-only consumer (a tray/single-instance utility with no web frontend) viable, and why the
-  window-command and drop-zone facades live in `Shenora.WebView2`.
+- **Windows is ONE package, and D19's edge is now internal (2026-08-02).** D19 established that the
+  Windows primitives and the web hosting on top of them are one layer rather than two peers — decided
+  on evidence, after the UI-thread marshal pattern had been hand-rolled 14 times with five
+  incompatible pre-handle policies, two of them buggy. Three packages then expressed that one layer,
+  and the split's remaining justification was a WinForms-without-WebView2 consumer: a tray or
+  single-instance utility with no web frontend. **That consumer cannot exist in this kit** — the
+  premise is React in a webview — so the boundary described an adoption STAGE, not a shipping
+  configuration, and the three merged. `Sessions` folded in for free: it added no dependency of its
+  own, already sharing `Microsoft.Web.WebView2`.
+  The internal direction still matters and the folders carry it: `Shell/` must never depend on
+  `WebView/`, which would be the cycle D19 forbade.
 - **Portable contracts live in `Shenora.Core` (D20):** `IUiDispatcher`/`UiTargetState`,
   `IFileDialogs`/`IFileDialogPathStore` + `FileDialogOptions`/`Filter`/`Result`, `IClipboardService`,
   and the portable bases `IUrlLauncher`/`IUiInteraction`, plus `ShellCapability` — the shared
@@ -662,11 +672,11 @@ changes, noting them in `CHANGELOG.md`).
   `secondaryWindows`, `tray`) and the `NotSupported` factory a shell throws from when it lacks one
   (D33). The names are what a host advertises through `ShellInfo` and what a page branches on.
   Their Windows implementations stay in
-  `Shenora.WinForms`, which registers BOTH faces of each split service so app logic can depend on the
+  `Shenora.Windows`, which registers BOTH faces of each split service so app logic can depend on the
   neutral contract and compile with no Windows reference. The bar for moving a contract to `Core` is
   "app logic must compile off Windows", NOT "the signature happens to be platform-neutral" — which is
-  why the window-state stack deliberately stays in `Shenora.WinForms`. `Shenora.WebView2.Sessions` layers
-  on `Shenora.WebView2` (the one deliberate package-on-package edge above `Core` — D14 keeps
+  why the window-state stack deliberately stays in `Shenora.Windows`. `Shenora.Windows` layers
+  on `Shenora.Windows` (the one deliberate package-on-package edge above `Core` — D14 keeps
   the session stack out of the core hosting package).
 - `src/*` never references `tests/`, `samples/`, or anything app-specific.
 - No Lyntai reference, ever (docs/DECISIONS.md D1).

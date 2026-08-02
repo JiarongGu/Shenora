@@ -1,6 +1,6 @@
 # WebView2 hosting invariants — the measured rules the host encodes
 
-The family's WebView2 lessons, earned live and now enforced by `src/Shenora.WebView2/`
+The family's WebView2 lessons, earned live and now enforced by `src/Shenora.Windows/`
 (`WebViewEnvironment`, `WebViewHost`, `EmbeddedResourceProvider`). Read before touching hosting,
 serving, or session code (incl. the P5 sessions package) so a refactor doesn't undo a fix.
 
@@ -91,8 +91,8 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   goes to the host log. Same rule as the IPC error boundary (`ipc-contracts`).
 - **Everything on `CoreWebView2` is UI-affine — marshal through the ONE owner, never hand-roll a
   `BeginInvoke`.** Post-D19/D20 the seam is `IUiDispatcher` (`Shenora.Core`) implemented once as
-  `WinFormsUiDispatcher(Control)` (`Shenora.WinForms`); `Shenora.WebView2` and
-  `Shenora.WebView2.Sessions` consume it through the sanctioned downward edge. This rule exists
+  `WinFormsUiDispatcher(Control)` (`Shenora.Windows`); `Shenora.Windows` and
+  `Shenora.Windows` consume it through the sanctioned downward edge. This rule exists
   because hand-rolling produced **14 copies with 5 incompatible pre-handle policies** and real
   defects. Why the owner is shaped as it is — all four are invariants, not preferences:
   - **`IsHandleCreated` BEFORE `InvokeRequired`.** Pre-handle, `InvokeRequired` lies (false on a

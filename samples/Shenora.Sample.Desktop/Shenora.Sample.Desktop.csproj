@@ -12,14 +12,12 @@
     <CodePage>65001</CodePage>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <IsPackable>false</IsPackable>
-    <!-- Same harmless WebView2-WPF WindowsBase conflict as Shenora.WebView2 — demote it. -->
+    <!-- Same harmless WebView2-WPF WindowsBase conflict as Shenora.Windows — demote it. -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Shenora.WebView2\Shenora.WebView2.csproj" />
-    <ProjectReference Include="..\..\src\Shenora.WebView2.Sessions\Shenora.WebView2.Sessions.csproj" />
-    <ProjectReference Include="..\..\src\Shenora.WinForms\Shenora.WinForms.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />
     <!-- The app's own portable logic (net10.0, no Windows reference) — see that project's header. -->
     <ProjectReference Include="..\Shenora.Sample.Logic\Shenora.Sample.Logic.csproj" />
   </ItemGroup>

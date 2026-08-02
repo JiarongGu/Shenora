@@ -1,4 +1,4 @@
-# WinForms shell traps — the ones that cost real debugging in `src/Shenora.WinForms/`
+# WinForms shell traps — the ones that cost real debugging in `src/Shenora.Windows/`
 
 The desktop primitives (`WinFormsBootstrap`, `OptimizedForm`, `TrayIcon`, `SecondaryWindows`,
 `SingleInstanceGuard`, `WindowStateManager`, `ClipboardService`) sit under everything else, so their

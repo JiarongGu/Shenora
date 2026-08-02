@@ -26,7 +26,7 @@ namespace Shenora.Core;
 /// </para>
 /// <para>
 /// Public rather than internal because its consumers are in OTHER packages
-/// (<c>Shenora.WebView2</c>, <c>Shenora.WebView2.Sessions</c>) and a <c>ProjectReference</c> does not
+/// (<c>Shenora.Windows</c>, <c>Shenora.Windows</c>) and a <c>ProjectReference</c> does not
 /// grant <c>internal</c> access — the D19/D20 placement law: the policy is portable, so it belongs in
 /// <c>Shenora.Core</c> with ONE owner, not copied per package. Apps may use it for the same reason
 /// against their own extension points.

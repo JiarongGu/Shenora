@@ -1,5 +1,5 @@
 using Shenora.Core;
-using Shenora.WinForms;
+using Shenora.Windows;
 using Shenora.Tests.TestSupport;
 
 namespace Shenora.Tests.WinForms;

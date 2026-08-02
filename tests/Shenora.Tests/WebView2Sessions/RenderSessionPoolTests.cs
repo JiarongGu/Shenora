@@ -1,4 +1,4 @@
-using Shenora.WebView2.Sessions;
+using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.Tests.WebView2Sessions;

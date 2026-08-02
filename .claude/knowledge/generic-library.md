@@ -93,13 +93,17 @@ keeps the library reusable (adopted from the family's other library, where it's 
   (`IWindowStateStore`, injected scripts, custom schemes, transports), not boolean options
   that switch between two consumers' behaviors.
 - **Placement is a design decision, not an accident (D19/D20).** A **portable contract** belongs in
-  `Shenora.Core` (`net10.0`); its **Windows implementation** belongs in `Shenora.WinForms`; web
-  hosting layers on top (`Shenora.WebView2` → `Shenora.WinForms` is a SANCTIONED downward edge —
-  the old "never sideways" rule was retired on evidence, see D19). The bar for moving a contract to
-  Core is **"app logic must be able to compile off Windows"**, NOT "the signature happens to be
-  platform-neutral" — which is exactly why the whole window-state stack stays in `Shenora.WinForms`
-  (window geometry is a desktop concept). No new package for a seam (D2); a sixth
-  `*.Abstractions` package was considered and rejected.
+  `Shenora.Core` (`net10.0`); its **platform implementation** belongs in that platform's shell package
+  — `Shenora.Windows`, or `src/Shenora.Mobile/` for the shared source behind `Shenora.Android` and
+  `Shenora.iOS`. The bar for moving a contract to Core is **"app logic must be able to compile off
+  Windows"**, NOT "the signature happens to be platform-neutral" — which is exactly why the whole
+  window-state stack stays in `Shenora.Windows` (window geometry is a desktop concept). No new package
+  for a seam (D2); a sixth `*.Abstractions` package was considered and rejected.
+- **One shell package per PLATFORM, named for the platform (2026-08-02).** Not per framework, and not
+  per sub-area. Windows merged three packages into one because the seam they preserved protected a
+  consumer this kit cannot have; mobile SPLIT into two because Android and iOS ship, build and get
+  consumed separately. The test both times was the same: does the boundary correspond to something a
+  CONSUMER experiences? "WinForms without WebView2" did not. "I am building an Android app" does.
 - **Options records over magic values.** Every number/color/URL a source app hardcoded (dev port,
   background color, timeouts, batch intervals) becomes a documented option with the family-proven
   default.

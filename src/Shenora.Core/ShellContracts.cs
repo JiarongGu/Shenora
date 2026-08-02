@@ -9,7 +9,7 @@ namespace Shenora.Core;
 /// <summary>
 /// Open a URL in the user's browser. The portable slice of shell launching — a mobile or web host
 /// implements this even though it has no file manager and no process launcher. Depend on this from
-/// app logic; depend on <c>Shenora.WinForms.IShellLauncher</c> only for the desktop-only operations.
+/// app logic; depend on <c>Shenora.Windows.IShellLauncher</c> only for the desktop-only operations.
 /// </summary>
 public interface IUrlLauncher
 {
@@ -20,7 +20,7 @@ public interface IUrlLauncher
 /// <summary>
 /// Block and unblock interaction with the app's main UI while something modal is in progress
 /// (a native dialog, a long native operation). The portable slice of
-/// <c>Shenora.WinForms.IFormInteraction</c>: nested, so overlapping blocks don't re-enable early.
+/// <c>Shenora.Windows.IFormInteraction</c>: nested, so overlapping blocks don't re-enable early.
 /// </summary>
 public interface IUiInteraction
 {

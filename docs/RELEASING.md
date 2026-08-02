@@ -98,10 +98,10 @@ Until the first public release, siblings consume the local pack output. The reci
 - NuGet: `node devtools/dev.mjs pack`, then in the consumer's `nuget.config` add
   `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the
   WebView2 package come from there) and pin EXACT versions with the range syntax:
-  `<PackageReference Include="Shenora.WinForms" Version="[0.1.0]" />`. Reference the leaf package you
-  actually need and the rest arrive transitively: `Shenora.WebView2` pulls `WinForms` + `Ipc` + `Core`
-  (D19 — the two Windows packages are one layer), and `Shenora.WebView2.Sessions` pulls `WebView2`.
-  Reference `Shenora.WinForms` directly only for a shell with no web frontend.
+  `<PackageReference Include="Shenora.Windows" Version="[0.1.0]" />`. Reference the leaf package you
+  actually need and the rest arrive transitively: `Shenora.Windows` pulls `WinForms` + `Ipc` + `Core`
+  (D19 — the two Windows packages are one layer), and `Shenora.Windows` pulls `WebView2`.
+  Reference `Shenora.Windows` directly only for a shell with no web frontend.
   A consumer inside this repo's tree must set `ManagePackageVersionsCentrally=false`.
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
@@ -113,7 +113,7 @@ Until the first public release, siblings consume the local pack output. The reci
 > repo's `publish/packages`. Re-packing `0.1.0` therefore leaves consumers restoring whatever
 > `0.1.0` they cached first, silently: no warning, no restore error, and `--no-cache` does not help
 > (that flag is HTTP caching). Found in P6.1, and it is not a theoretical risk — a consumer resolved
-> a `Shenora.WebView2` packed BEFORE the D19 re-layer, so `Shenora.WinForms` was absent from its
+> a `Shenora.Windows` packed BEFORE the D19 re-layer, so `Shenora.Windows` was absent from its
 > dependency graph and the build failed with "the namespace does not exist" while the freshly packed
 > nupkg on disk was perfectly correct. The diagnosis is `obj/project.assets.json`: compare the
 > dependencies it recorded against the `.nuspec` inside the nupkg you just built.

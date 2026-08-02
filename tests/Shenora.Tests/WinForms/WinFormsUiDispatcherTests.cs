@@ -1,6 +1,6 @@
 using Shenora.Core;
 using Shenora.Tests.TestSupport;
-using Shenora.WinForms;
+using Shenora.Windows;
 
 namespace Shenora.Tests.WinForms;
 

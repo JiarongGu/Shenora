@@ -96,11 +96,11 @@ are deliberately not named after logging in or co-browsing). D19 + D20 changed t
 
 | Commit | Phase | Adds |
 |---|---|---|
-| `34add37` | P0–P2 bootstrap | Repo/docs/devtools skeleton; `Shenora.Core` host + builder + paths + env; `Shenora.WinForms` bootstrap/window-state/single-instance; `Shenora.WebView2` hosting + serving; the sample app |
-| `eeb23f7` | P3 | The full typed IPC stack: `Shenora.Ipc` contracts + dispatcher + facades, `Shenora.Core` event bus, `Shenora.WebView2` postMessage bridge, the `@shenora/react` client, live round-trip |
+| `34add37` | P0–P2 bootstrap | Repo/docs/devtools skeleton; `Shenora.Core` host + builder + paths + env; `Shenora.Windows` bootstrap/window-state/single-instance; `Shenora.Windows` hosting + serving; the sample app |
+| `eeb23f7` | P3 | The full typed IPC stack: `Shenora.Ipc` contracts + dispatcher + facades, `Shenora.Core` event bus, `Shenora.Windows` postMessage bridge, the `@shenora/react` client, live round-trip |
 | `43f18ad` | P4 | Scoped-container router + IPC composition; frameless chrome + window commands; STA dialogs/shell/clipboard/interaction; drag-drop zones + `useDropZone`; secondary windows + tray |
 | `0776f37` | P1.1 | Local-feed consumption smoke — caught + fixed a real npm ESM packaging bug (extensionless imports) |
-| `4ebb8e0` | P5 | `Shenora.WebView2.Sessions`: session browser, render-session pool, login windows, co-browse streaming |
+| `4ebb8e0` | P5 | `Shenora.Windows`: session browser, render-session pool, login windows, co-browse streaming |
 
 Layout: `src/` (5 packable projects + `Shenora.React/`), `tests/Shenora.Tests` (one project, folders
 mirror src), `samples/` (desktop + web; the e2e subject), `devtools/` (one-entry dev loop). Detail
@@ -114,7 +114,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 | Area (files) | Invariant source | What to check |
 |---|---|---|
 | IPC stack (`src/Shenora.Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.claude/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `OperationException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
-| WebView2 hosting/serving (`src/Shenora.WebView2/`) | `.claude/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
+| WebView2 hosting/serving (`src/Shenora.Windows/`) | `.claude/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
 | Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
 | Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
 | Missions (`src/Shenora.Core/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
@@ -124,7 +124,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 
 ## 4. Highest-risk areas — where to spend the review budget
 
-1. **UI-thread marshalling (the whole stack, acute in `Shenora.WebView2.Sessions`).** Every
+1. **UI-thread marshalling (the whole stack, acute in `Shenora.Windows`).** Every
    WebView2 touch marshals to a WinForms UI thread via `BeginInvoke` + `TaskCompletionSource`.
    Look for: blocking `Invoke` off the UI thread (a measured AppHang in the family);
    `InvokeRequired` checked without `IsHandleCreated` first (pre-handle it lies); `async void` /
@@ -155,18 +155,18 @@ a finding that contradicts one of these is either a real regression or a rule th
 **Accepted design deviations (with rationale in `docs/DECISIONS.md` / port comments):**
 - `Shenora.Core` depends on the Microsoft DI *implementation* package, not just abstractions (D17 —
   the builder needs `BuildServiceProvider`).
-- `WindowCommandFacade` / the drop-zone stack live in `Shenora.WebView2` (not `WinForms`) because
+- `WindowCommandFacade` / the drop-zone stack live in `Shenora.Windows` (not `WinForms`) because
   they need `Shenora.Ipc`, which `WinForms` deliberately does not reference.
-- `Shenora.WebView2.Sessions` depends on `Shenora.WebView2` (D14 keeps the session stack out of the
-  core hosting package), and `Shenora.WebView2` depends on `Shenora.WinForms` (**D19** — the two
+- `Shenora.Windows` depends on `Shenora.Windows` (D14 keeps the session stack out of the
+  core hosting package), and `Shenora.Windows` depends on `Shenora.Windows` (**D19** — the two
   Windows packages are one layer: primitives, then web hosting on top). Both edges are deliberate, so
   neither is a violation; the old "never sideways" rule was retired on evidence. `WinForms` →
   `WebView2` is still forbidden, and `WinForms` still carries no `Ipc` dependency. Note the Sessions
-  edge is currently **declared but unused**: nothing in the package imports a `Shenora.WebView2`
+  edge is currently **declared but unused**: nothing in the package imports a `Shenora.Windows`
   type, which is `TASKS.md` H4.4.
 - The portable contracts (`IUiDispatcher`, `IFileDialogs` + models, `IClipboardService`,
   `IUrlLauncher`, `IUiInteraction`) live in `Shenora.Core` with their implementations in
-  `Shenora.WinForms` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
+  `Shenora.Windows` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
   `ProjectReference` does not grant `internal` access, so the alternative was `InternalsVisibleTo` for
   two packages.
 - `StreamingSession` reuses `SessionController` as a **background** controller (the source's own

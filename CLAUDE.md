@@ -6,7 +6,7 @@ Auto-loaded every session. Keep short — details live in `docs/` and `.claude/r
 
 Shenora (神阙) is a **reusable library**, not an app: the desktop "body" (WinForms + WebView2 +
 React hosting, typed IPC, modules, window management, native services) for the family's Windows
-applications, shipped as NuGet packages (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|WinForms`) + npm
+applications, shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37) + npm
 (`@shenora/react`), all versioned in lockstep. Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
@@ -46,13 +46,14 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 - **Library discipline:** generalize the consumer's request, never ship its shape
   (`.claude/knowledge/generic-library.md`). No app/domain vocabulary in `src/`. **Headless
   (D13):** no UI component library dependency anywhere — apps bring their own design system.
-- **Layering (D19/D20 — IMPLEMENTED in P5.5, shipped in v0.1.0):** `Shenora.WebView2` →
-  `Shenora.WinForms` is a **sanctioned downward edge** (the two are one Windows presentation layer;
-  the old "never sideways" rule was retired on evidence). Portable contracts + the `IUiDispatcher`
+- **Layering (D19/D20/D37):** ONE shell package per PLATFORM. Windows primitives and web hosting
+  are one layer — since 2026-08-02 literally one package, `Shenora.Windows`, with the direction kept
+  internally (`Shell/` must never depend on `WebView/`). Portable contracts + the `IUiDispatcher`
   marshalling seam live in `Shenora.Core` so app logic compiles with no Windows reference —
   enforced, not asserted: `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED if a
-  Windows type creeps into app logic. `docs/ARCHITECTURE.md` now describes this as-built; don't
-  "fix" the layering back toward the pre-P5.5 shape.
+  Windows type creeps into app logic. `docs/ARCHITECTURE.md` describes this as-built; don't
+  "fix" the layering back toward the pre-P5.5 shape or re-split the packages (D37 has the reasoning
+  and the measurements that killed the counter-arguments).
 - **Extraction-first:** prefer lifting proven sibling code — including its post-mortem comments —
   over new abstractions (`.claude/knowledge/extraction-sources.md` + `local/EXTRACTION-MAP.md`).
 - **NEVER touch the version — the release workflow owns it.** One `<VersionPrefix>`

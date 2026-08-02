@@ -14,6 +14,37 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **The package set is now one shell per PLATFORM.** Three published ids are superseded by one, and
+  the mobile shell arrives as two:
+
+  | Was (published at 0.4.0) | Is now |
+  |---|---|
+  | `Shenora.WinForms` | `Shenora.Windows` |
+  | `Shenora.WebView2` | `Shenora.Windows` |
+  | `Shenora.WebView2.Sessions` | `Shenora.Windows` |
+  | — | `Shenora.Android`, `Shenora.iOS` |
+
+  **Migration is a rename, not a rewrite.** Every type keeps its name and every member keeps its
+  signature — the merged API surface was diffed against the three old baselines and is identical
+  once namespaces are rewritten. Replace the three `PackageReference`s with one, and the three
+  namespaces with `using Shenora.Windows;`.
+
+  **Why Windows merged:** the split's only remaining justification was a consumer that took
+  `Shenora.WinForms` without WebView2 — a tray or single-instance utility with no web frontend. This
+  kit is React-in-a-webview by construction, so that consumer cannot exist; the boundary described an
+  adoption STAGE, not a shipping configuration. `Sessions` folded in for free, adding no dependency of
+  its own. D19's layer rule survives INSIDE the package: `Shell/` must not depend on `WebView/`.
+
+  **Why mobile split:** Android and iOS ship separately, build on different hosts, and a consumer
+  builds for one at a time. They share every line of source (`src/Shenora.Mobile/`, which is source
+  and not a package), so the two can't drift.
+
+  Naming is by platform rather than by framework throughout — the two mobile faces don't even share a
+  web engine (Chromium's WebView vs WKWebView), so a framework name described the build system rather
+  than the thing.
+
 ### Added
 
 - **iOS — the third shell runs**, and the mobile shell now ships as **two platform packages**:

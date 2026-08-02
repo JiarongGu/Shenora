@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-using Shenora.WebView2.Sessions;
+using Shenora.Windows;
 
 namespace Shenora.Sample.Desktop;
 
@@ -51,7 +51,7 @@ public sealed class CookieLoginDriverOptions
 }
 
 /// <summary>
-/// A RECIPE, not a library feature. This used to ship inside <c>Shenora.WebView2.Sessions</c> as
+/// A RECIPE, not a library feature. This used to ship inside <c>Shenora.Windows</c> as
 /// <c>CookieLoginFlow</c>, and it should never have: <c>LoginUrl</c>, <c>CookieReadUrl</c>,
 /// <c>AuthCookiePatterns</c>, <c>RevealDelay</c> and <c>CaptureAllCookies</c> are one product's
 /// workflow, and the library rule is to ship the mechanism an app builds its product on and leave the

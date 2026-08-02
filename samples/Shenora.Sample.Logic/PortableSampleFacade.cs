@@ -12,7 +12,7 @@ namespace Shenora.Sample.Logic;
 /// <c>Shenora.Core</c>: <see cref="IFileDialogs"/>, <see cref="IClipboardService"/>,
 /// <see cref="IUrlLauncher"/>, <see cref="IUiDispatcher"/>. The desktop app supplies the WinForms
 /// implementations (<c>UseWinForms</c> registers both the Windows and the portable face of each), so
-/// this class never names a Windows type and never references <c>Shenora.WinForms</c>.
+/// this class never names a Windows type and never references <c>Shenora.Windows</c>.
 /// </para>
 /// <para>
 /// Contrast with the desktop sample's own <c>SampleFacade</c>, which keeps the genuinely

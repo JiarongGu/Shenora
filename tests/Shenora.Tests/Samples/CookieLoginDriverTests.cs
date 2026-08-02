@@ -1,5 +1,5 @@
 using Shenora.Sample.Desktop;
-using Shenora.WebView2.Sessions;
+using Shenora.Windows;
 
 namespace Shenora.Tests.Samples;
 

@@ -1,7 +1,7 @@
 # IPC contract invariants — the wire rules the P3 stack encodes
 
 The envelope contract is FIXED (design §5, D11/D16) and both sides ship from this repo:
-`src/Shenora.Ipc` + `src/Shenora.WebView2/WebViewIpcBridge.cs` (host) ⇄
+`src/Shenora.Ipc` + `src/Shenora.Windows/WebViewIpcBridge.cs` (host) ⇄
 `src/Shenora.React/src/types.ts|bridge.ts` (client). Read before touching any of them, adding a
 transport, or building the P6 adoption shims.
 

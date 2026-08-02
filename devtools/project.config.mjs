@@ -26,9 +26,7 @@ export default {
   packableProjects: [
     'src/Shenora.Core',
     'src/Shenora.Ipc',
-    'src/Shenora.WebView2',
-    'src/Shenora.WebView2.Sessions',
-    'src/Shenora.WinForms',
+    'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
     // as the definition of "shipped", so a project claiming it while the tooling skips it is the two
     // halves disagreeing. WHERE each can be packed is the separate question below.

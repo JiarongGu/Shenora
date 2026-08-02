@@ -1,5 +1,5 @@
 using Microsoft.Web.WebView2.Core;
-using Shenora.WebView2.Sessions;
+using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2Sessions;
 
@@ -51,7 +51,7 @@ public class SessionEnvironmentCacheTests
         var retry = NeverCompletes();
 
         Assert.Same(faulted.Task, cache.GetOrCreate(() => faulted.Task));
-        // One transient failure must not be terminal for the process — the trap Shenora.WebView2's own
+        // One transient failure must not be terminal for the process — the trap Shenora.Windows's own
         // WebViewEnvironment still has (TASKS.md H3), deliberately not copied here.
         Assert.Same(retry, cache.GetOrCreate(() => retry));
     }

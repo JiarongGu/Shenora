@@ -19,9 +19,14 @@ bus, postMessage transport, `@shenora/react` client), the native desktop surface
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
 the auxiliary browser sessions (off-screen render pool, interactive sessions, streaming sessions) are
 extracted from proven in-house applications and verified end-to-end against the sample app. Every
-public and protected member is documented and gated by API-surface baselines. **All six packages are
-published** — see `docs/RELEASING.md` for how a version is cut and `CHANGELOG.md` for what each one
-carries.
+public and protected member is documented and gated by API-surface baselines. The kit also runs on
+**Android and iOS**, proven on a device and a simulator.
+
+⚠ **The package set was reorganised by platform after v0.4.0 and the new names are NOT published
+yet.** `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` are on nuget.org at
+0.4.0 and are superseded by a single `Shenora.Windows`; `Shenora.Android` and `Shenora.iOS` are new.
+Until the next release cuts, install the 0.4.0 names. `CHANGELOG.md` under `### Breaking` has the
+mapping, and `docs/RELEASING.md` covers how a version is cut.
 
 ## Packages
 
@@ -31,40 +36,37 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 |---|---|---|---|
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.WinForms` | NuGet | `net10.0-windows` | The native Windows shell: bootstrap, windows, tray, dialogs, single-instance. |
-| `Shenora.WebView2` | NuGet | `net10.0-windows` | Hosting a WebView2: serving, policies, and the postMessage bridge. |
-| `Shenora.WebView2.Sessions` | NuGet | `net10.0-windows` | Extra browser sessions: a render pool, interactive windows, frame streaming. |
+| `Shenora.Windows` | NuGet | `net10.0-windows` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. |
+| `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
+| `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
 | `@shenora/react` | npm | ES2022 / ESM | The client half — bridge, event bus, store, hooks. |
 
-The Windows packages ship as `net10.0-windows7.0` in `lib/` — the TFM column is here so an adopter
-can tell whether a package fits without downloading the nupkg to inspect it.
+The TFM column is here so an adopter can tell whether a package fits without downloading the nupkg to
+inspect it. **One shell package per platform** — you reference the one you are building for, and the
+two mobile ones are built from a single shared source tree so they cannot drift.
 
 Dependencies — the graph is a **diamond, not a chain**:
 
 ```
                     Shenora.Core          net10.0        portable: no Windows reference
                       ↑          ↑
-        Shenora.Ipc ──┘          └── Shenora.WinForms    net10.0-windows
-          net10.0                          ↑
-              ↑                            │
-              └──── Shenora.WebView2 ──────┘             net10.0-windows
-                            ↑
-              Shenora.WebView2.Sessions                  net10.0-windows
+        Shenora.Ipc ──┘          │
+          net10.0                │
+              ↑                  │
+              ├──── Shenora.Windows ──────┘             net10.0-windows
+              ├──── Shenora.Android                     net10.0-android
+              └──── Shenora.iOS                         net10.0-ios
 ```
 
 **`Shenora.Ipc` is platform-neutral and stays that way.** It targets `net10.0`, references only
 `Shenora.Core`, and binds to no UI framework at all — the whole transport story (D16) rests on that:
-the same envelopes ride WebView2 postMessage today and a WebSocket or a mobile shell's channel
-tomorrow, and a server-side or headless host can dispatch them with no WinForms anywhere in the
-graph. Anything that genuinely needs a window lives one layer up: the UI-thread seam is the portable
-`IUiDispatcher` in `Shenora.Core`, implemented once in `Shenora.WinForms`, and the two IPC-facing
-desktop facades (`WindowCommandFacade`, `DropZoneFacade`) live in `Shenora.WebView2` — which is the
-first package that may see both halves — rather than in either base.
+the same envelopes ride WebView2 postMessage on Windows, `HybridWebView` on mobile, and a WebSocket
+tomorrow, and a server-side or headless host can dispatch them with no shell anywhere in the graph.
+Anything that genuinely needs a window lives one layer up: the UI-thread seam is the portable
+`IUiDispatcher` in `Shenora.Core`, implemented once per shell.
 
-The corollary for adopters: `Shenora.WinForms` does **not** bring `Shenora.Ipc` with it. They are
-siblings over `Shenora.Core`, so a WinForms-only shell that wants typed messaging adds
-`Shenora.Ipc` as a second, explicit reference. App logic that must stay portable references only
-`Shenora.Core`.
+App logic that must stay portable references only `Shenora.Core` — `samples/Shenora.Sample.Logic` is
+a plain `net10.0` project that proves it, and the same facade runs on all three shells.
 
 Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and **server-backed**
 (the app runs its own in-process HTTP server shared with mobile/LAN clients; Shenora provides the
@@ -141,7 +143,13 @@ cancel-by-id), and returns the operation id immediately — pair it with `servic
 store with no per-feature event wiring. Both are opt-in: a facade that never publishes and never
 starts tracked work pays nothing.
 
-### `Shenora.WinForms` — the native shell
+### `Shenora.Windows` — the shell, the page host, and extra browsers
+
+One package, three areas — `Shell/`, `WebView/` and `Sessions/` in the source. They merged because
+this kit is React-in-a-webview by construction: there is no Windows composition that wants the
+WinForms primitives and not WebView2.
+
+#### The native shell
 
 Bootstrap with global exception handling, window-state persistence (DPI-correct, via `GetMonitorInfo`
 rather than the mis-scaled `Screen.WorkingArea`), single-instance guard, secondary windows on their
@@ -155,7 +163,7 @@ builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) 
 **`CloseReason.UserClosing` also means a programmatic `Close()`.** With close-to-tray on, a
 startup-abort path that calls `Close()` leaves a resident process — exit via `ExitApplication()`.
 
-### `Shenora.WebView2` — hosting the page
+#### Hosting the page
 
 One place a WebView2 is configured: environment prewarm, dev-server vs packaged-bundle loading,
 serving (embedded resources, virtual hosts, app schemes), safe defaults for new windows, downloads,
@@ -175,7 +183,7 @@ audio) needs a deferred scheme rather than a folder mapping: a folder mapping ca
 The handler receives request headers and returns a status, headers and a stream, so nothing is
 buffered whole.
 
-### `Shenora.WebView2.Sessions` — extra browsers
+#### Extra browsers
 
 Off-screen and auxiliary browser sessions over the same runtime: a bounded LIFO `RenderSessionPool`,
 `InteractiveSession` (a human-in-the-loop window over an isolated persistent profile, driven by

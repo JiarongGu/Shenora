@@ -34,7 +34,7 @@ public static class HeadlessHostExtensions
     /// lifecycle hooks and then blocks until a stop signal, with ordered shutdown after it.
     /// <para>
     /// Why the kit ships this at all. <see cref="ShenoraApplication.Run"/> throws without an
-    /// <see cref="IShenoraRunner"/>, and the only implementation lived in <c>Shenora.WinForms</c> —
+    /// <see cref="IShenoraRunner"/>, and the only implementation lived in <c>Shenora.Windows</c> —
     /// so Core's application-host half was Windows-only IN PRACTICE even though every type in it is
     /// portable, and the D3 transport spike had to bypass the builder entirely and wire DI by hand.
     /// An app could always write the one-method interface itself; this removes the reason to.

@@ -7,7 +7,7 @@ namespace Shenora.Mobile;
 
 /// <summary>
 /// The MAUI implementations of <c>Shenora.Core</c>'s shell contracts — the peers of
-/// <c>Shenora.WinForms</c>'s. Each one is either a real implementation, an honest no-op the platform
+/// <c>Shenora.Windows</c>'s. Each one is either a real implementation, an honest no-op the platform
 /// already satisfies, or a loud refusal; never a quiet nothing (see <see cref="ShellCapability"/>).
 /// </summary>
 internal static class MauiShellNames

@@ -27,7 +27,7 @@ public enum UiTargetState
 /// <para>
 /// Portable on purpose: an app service that needs "run this on the UI thread" depends on this
 /// interface, not on WinForms, so the same logic runs on another shell. The Windows implementation is
-/// <c>Shenora.WinForms.WinFormsUiDispatcher</c>, constructed PER CONTROL — auxiliary browser sessions
+/// <c>Shenora.Windows.WinFormsUiDispatcher</c>, constructed PER CONTROL — auxiliary browser sessions
 /// marshal to their anchor form and secondary windows run their own message pumps, so one
 /// application-wide dispatcher would be wrong for both. <c>Shenora.Core</c> deliberately registers NO
 /// default: it has no UI thread to dispatch to, and a silent no-op default would swallow UI work in a

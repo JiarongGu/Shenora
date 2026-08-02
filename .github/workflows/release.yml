@@ -290,7 +290,7 @@ jobs:
           if (-not ($feat -or $fix -or $other)) { $lines += 'See CHANGELOG.md for details.'; $lines += '' }
           $lines += '---'
           $lines += ''
-          $lines += 'Install: `dotnet add package Shenora.WebView2.Sessions` (or the leaf package you need — the rest arrive transitively) and `npm i @shenora/react`. Full detail in CHANGELOG.md.'
+          $lines += 'Install: `dotnet add package Shenora.Windows` (or the leaf package you need — the rest arrive transitively) and `npm i @shenora/react`. Full detail in CHANGELOG.md.'
           Set-Content release-notes.md ($lines -join "`n") -Encoding utf8
 
       # NOTE (P5.5 H5): this action CREATES tag_name when the tag doesn't exist, so gating only the

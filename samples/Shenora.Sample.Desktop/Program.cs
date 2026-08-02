@@ -1,7 +1,6 @@
 using Shenora.Core;
 using Shenora.Ipc;
-using Shenora.WebView2;
-using Shenora.WinForms;
+using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Shenora.Sample.Desktop;
@@ -83,7 +82,7 @@ internal static class Program
         // The IPC pipeline — facades live in DI; AddMessageDispatcher composes the family order
         // (error handler → app middleware → registered facades). The window-facing facades
         // (WINDOW commands, DROP_ZONE) map later, in MainForm, once the form exists.
-        builder.Services.AddSingleton<Shenora.WinForms.SecondaryWindows>();
+        builder.Services.AddSingleton<Shenora.Windows.SecondaryWindows>();
         // Opt-in (D21): SampleFacade's SLOW route uses ctx.Run, so the sample pays for the registry
         // it demonstrates rather than getting it for free — the same bar every consumer faces.
         builder.Services.AddShenoraOperations();

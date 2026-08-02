@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Shenora.Core;
 using Shenora.Ipc;
-using Shenora.WebView2;
+using Shenora.Windows;
 
 namespace Shenora.Tests.Ipc;
 

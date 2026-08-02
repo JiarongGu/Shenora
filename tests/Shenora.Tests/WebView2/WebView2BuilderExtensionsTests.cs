@@ -1,5 +1,5 @@
 using Shenora.Core;
-using Shenora.WebView2;
+using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Shenora.Tests.WebView2;

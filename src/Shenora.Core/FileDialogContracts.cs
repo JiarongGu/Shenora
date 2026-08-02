@@ -2,7 +2,7 @@ namespace Shenora.Core;
 
 // The file-dialog CONTRACT lives here, in the platform-neutral package, while the WinForms
 // implementation (dedicated-STA dialogs, owner-handle z-order, directory memory) stays in
-// Shenora.WinForms — D20. The point is that an app's own facades and business logic can compile
+// Shenora.Windows — D20. The point is that an app's own facades and business logic can compile
 // with NO Windows reference, so the same logic runs on a non-Windows shell that implements these
 // contracts (D16: mobile shells are a target).
 //
@@ -111,7 +111,7 @@ public interface IFileDialogPathStore
 }
 
 /// <summary>
-/// Native file/folder/save dialogs. The desktop implementation is <c>Shenora.WinForms.FileDialogs</c>;
+/// Native file/folder/save dialogs. The desktop implementation is <c>Shenora.Windows.FileDialogs</c>;
 /// depend on this interface so app logic that picks files needs no Windows reference.
 /// </summary>
 public interface IFileDialogs

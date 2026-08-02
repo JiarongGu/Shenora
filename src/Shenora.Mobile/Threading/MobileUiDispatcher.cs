@@ -5,7 +5,7 @@ namespace Shenora.Mobile;
 
 /// <summary>
 /// The MAUI <see cref="IUiDispatcher"/> — the ONE place UI-thread marshalling semantics live on this
-/// shell, mirroring <c>Shenora.WinForms.WinFormsUiDispatcher</c> member for member. The invariants
+/// shell, mirroring <c>Shenora.Windows.WinFormsUiDispatcher</c> member for member. The invariants
 /// are the CONTRACT, not the platform, so they are kept identically here: never a blocking marshal
 /// off the UI thread, the body guarded on both the inline and the posted path, a false return only
 /// when there is nowhere to post, and the awaitable overloads observing their token.

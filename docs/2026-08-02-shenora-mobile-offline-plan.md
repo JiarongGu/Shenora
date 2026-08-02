@@ -60,14 +60,14 @@ seam exists because a donor app's event bridge and its WebSocket already shared 
 envelope, which is where the kit learned that the envelope and the pipe are separable.
 
 What a mobile shell must then supply is small: host a WebView, serve the bundle, carry the envelope.
-.NET 9's `HybridWebView` does structurally what `Shenora.WebView2` does for the desktop, so a future
+.NET 9's `HybridWebView` does structurally what `Shenora.Windows` does for the desktop, so a future
 `Shenora.Mobile` would be an existing package's mobile sibling rather than a new architecture.
 
 ## §4 Kit gaps this profile would hit
 
 | Gap | Status |
 |---|---|
-| `Shenora.Core` ships no headless `IShenoraRunner` — `Build()`/`Run()` throws, and the only implementation is in `Shenora.WinForms` | In `TASKS.md`, held at the two-consumer bar. **An on-device host is consumer #2.** |
+| `Shenora.Core` ships no headless `IShenoraRunner` — `Build()`/`Run()` throws, and the only implementation is in `Shenora.Windows` | In `TASKS.md`, held at the two-consumer bar. **An on-device host is consumer #2.** |
 | No host-side transport helper — the ~40 lines every non-WinForms host writes identically (read loop → deserialize → dispatch → serialize → write, plus the pump tick) | In `TASKS.md`, same bar, **same consumer #2.** |
 | `IFileDialogs`/`FileDialogOptions` carry Win32 vocabulary; the file concedes a mobile picker would ignore half and return a content URI | The known pre-1.0 break, explicitly waiting for a real mobile consumer. |
 | `IpcJson.Options` is frozen with `MakeReadOnly(populateMissingResolver: true)` — a **reflection** resolver, with no way for an app to contribute a `JsonSerializerContext` | **Found while writing this.** Fine on desktop and Android; on iOS (Mono AOT + trimming) reflection-based `System.Text.Json` is the pattern whose metadata gets stripped, failing at runtime rather than build time. Fix is additive: accept an `IJsonTypeInfoResolver` to chain. Now in `TASKS.md`. |

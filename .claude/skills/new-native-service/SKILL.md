@@ -1,6 +1,6 @@
 ---
 name: new-native-service
-description: Walk the chain for adding a native desktop service — where the contract goes, the Windows implementation, DI registration, the registration tripwire. Use before adding a clipboard/dialog/shell/interaction capability, or whenever a new contract has to be placed between Shenora.Core and Shenora.WinForms.
+description: Walk the chain for adding a native desktop service — where the contract goes, the Windows implementation, DI registration, the registration tripwire. Use before adding a clipboard/dialog/shell/interaction capability, or whenever a new contract has to be placed between Shenora.Core and Shenora.Windows.
 ---
 
 # new-native-service
@@ -12,15 +12,15 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
 
 1. **Place the CONTRACT before writing anything.** The bar is *"app logic must be able to compile
    off Windows"*, NOT "the signature happens to be platform-neutral" — which is why the whole
-   window-state stack correctly stays in `Shenora.WinForms`. Portable → `Shenora.Core`. Partly
+   window-state stack correctly stays in `Shenora.Windows`. Portable → `Shenora.Core`. Partly
    portable → SPLIT it: the portable slice in Core, the desktop-only operations on an interface
    deriving from it (`IShellLauncher : IUrlLauncher`, `IFormInteraction : IUiInteraction`).
-   Windows-only concept → `Shenora.WinForms` alone. Never a new package (D2).
+   Windows-only concept → `Shenora.Windows` alone. Never a new package (D2).
 2. **Write the contract into an existing grouped file** — `ShellContracts.cs`,
    `FileDialogContracts.cs` — rather than one file per interface, and name it for the MECHANISM
    (D22): the surface lexicon gate rejects a domain word, and a scenario name is usually a
    placement smell rather than a naming problem.
-3. **Implement in `Shenora.WinForms`**, `sealed`, mirroring `ClipboardService.cs`. Any OLE feature
+3. **Implement in `Shenora.Windows`**, `sealed`, mirroring `ClipboardService.cs`. Any OLE feature
    — clipboard, file dialogs, drag-drop — runs through `StaThread.RunAsync`. Guard arguments with
    `ArgumentNullException.ThrowIfNull` / `ArgumentException.ThrowIfNullOrWhiteSpace`, and decide
    the empty-versus-null policy explicitly: empty is usually app DATA and null is a caller bug

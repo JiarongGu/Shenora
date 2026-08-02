@@ -739,3 +739,35 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     the first `{@link …}`. Disabling the stripper showed it fails a CORRECT mirror rather than
     passing a wrong one; the danger is the repair it tempts you into, since loosening the assertion
     to a subset check is what would actually make the tripwire stop checking. Fix the parser.
+
+- **D37 — ONE shell package per PLATFORM, named for the platform. Supersedes D2's package set.**
+  (Owner, 2026-08-02.) `Shenora.WinForms` + `Shenora.WebView2` + `Shenora.WebView2.Sessions` merge
+  into **`Shenora.Windows`**; the mobile shell ships as **`Shenora.Android`** + **`Shenora.iOS`**.
+  D2 stands as the record of the original set and why it was drawn that way; this replaces it.
+  - **The test, applied in both directions: does the boundary correspond to something a CONSUMER
+    experiences?** "I am building an Android app" does — so mobile SPLIT even though the two share
+    every line of source. "WinForms without WebView2" does not — this kit's premise is React in a
+    webview, so that consumer cannot exist, and Windows MERGED. The same question produced opposite
+    answers, which is how you know it is the right question.
+  - **What the old Windows split was actually protecting was an adoption STAGE, not a configuration.**
+    The evidence for it was a first adopter saying "Stage 1 carries no IPC dependency, so it deletes
+    the most duplicated code for the least risk" — a statement about the ORDER of adoption. They
+    take WebView2 at Stage 3 regardless.
+  - **Two arguments I made against merging, and the measurements that killed them.** "Sessions is
+    269 lines of SemVer surface" — it adds no dependency of its own, and the same types are
+    maintained either way; the owner's counter that we swallow `Microsoft.Maui.Controls`' entire
+    surface without blinking was correct. "WinForms-only consumers avoid 52.6 MB" — that is dev-time
+    RESTORE size, not shipped bytes; the WebView2 runtime is an Evergreen system component. Measuring
+    the easy thing instead of the relevant thing is the mistake to remember here.
+  - **D19's layer rule survives, one level down.** Windows primitives and web hosting are still one
+    layer with a direction: `Shell/` must never depend on `WebView/`. The edge became internal, not
+    absent.
+  - **The mobile packages share SOURCE, not an assembly** (`src/Shenora.Mobile/`, deliberately with no
+    csproj). A third assembly would either be published — a package nobody asks for, carrying its own
+    surface — or need embedding tricks to hide it. Divergence goes in each project's `Platforms/`
+    folder, which the MAUI SDK includes per TFM, so it needs no `#if`.
+  - **Naming is by platform, not by framework**, because the two mobile faces do not even share a web
+    engine (Chromium's WebView on Android, WKWebView on iOS) and `Shenora.iOS` never touches WebView2.
+    A framework name would have described the build system rather than the thing.
+  - **Cost, stated plainly:** three published ids retire. Migration is a rename — the merged API
+    surface was diffed against the three old baselines and is identical once namespaces are rewritten.

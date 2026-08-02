@@ -37,7 +37,7 @@ interface WindowRequests {
 }
 
 /**
- * Typed client for the host's `WINDOW` module (`WindowCommandFacade` in Shenora.WebView2) —
+ * Typed client for the host's `WINDOW` module (`WindowCommandFacade` in Shenora.Windows) —
  * drive the frameless window's chrome from the page: chrome buttons call
  * `minimize`/`toggleMaximize`/`close`, the header's `onMouseDown` calls `startDrag` (the window
  * then drags natively — snap and multi-monitor included), and a thin strip at the very top

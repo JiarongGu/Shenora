@@ -43,7 +43,7 @@ public sealed class MobileIpcBridgeOptions
 
 /// <summary>
 /// The MAUI <c>HybridWebView</c> IPC transport — the peer of
-/// <c>Shenora.WebView2.WebViewIpcBridge</c>, and deliberately much thinner than it, because
+/// <c>Shenora.Windows.WebViewIpcBridge</c>, and deliberately much thinner than it, because
 /// everything that is not transport already moved into <c>Shenora.Ipc</c>:
 /// <see cref="IpcHostBridge"/> owns parse → handshake-or-dispatch → response and the error boundary,
 /// <see cref="NotificationPump"/> owns the queue, the ready gate and batch building. What is left

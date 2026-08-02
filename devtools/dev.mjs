@@ -104,8 +104,8 @@ function androidBuildEnv() {
 //
 // NuGet keys the global folder (~/.nuget/packages) on id+VERSION and it wins over every source, so
 // re-packing the same pre-release version leaves consumers restoring the OLD copy — silently, with
-// no warning and no restore error. Found in P6.1: a consumer resolved a Shenora.WebView2 packed
-// before the D19 re-layer, so `Shenora.WinForms` was simply absent from its dependency graph and the
+// no warning and no restore error. Found in P6.1: a consumer resolved a Shenora.Windows packed
+// before the D19 re-layer, so `Shenora.Windows` was simply absent from its dependency graph and the
 // build failed with "namespace does not exist" while the freshly packed nupkg on disk was correct.
 // `--no-cache` does NOT help (that is HTTP caching). Since a fresh pack makes any cached copy of
 // these exact ids stale by definition, evicting them here removes the trap instead of documenting

@@ -9,7 +9,7 @@
     makes, checked by the compiler on every build instead of asserted in a document.
 
     If someone later drags a Windows type into one of those contracts, or moves a contract back into
-    Shenora.WinForms, THIS PROJECT GOES RED. That is the entire point — it is a guard, not a demo.
+    Shenora.Windows, THIS PROJECT GOES RED. That is the entire point — it is a guard, not a demo.
     It is in Shenora.slnx so `dev.mjs build|verify` compiles it (P5.5 H5 put the samples in the
     solution; without that this guard would never run).
 
@@ -26,7 +26,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Deliberately NOT Shenora.WinForms or Shenora.WebView2. Adding either would defeat the guard. -->
+    <!-- Deliberately NOT Shenora.Windows or Shenora.Windows. Adding either would defeat the guard. -->
     <ProjectReference Include="..\..\src\Shenora.Core\Shenora.Core.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
   </ItemGroup>

@@ -10,7 +10,7 @@
 // positives and get switched off. Two precise checks that cannot cry wolf beat one that can.
 //
 //   1. DEPENDENCY GRAPH. The worst finding of that review: README.md and docs/ADOPTION.md both drew
-//      `Shenora.WinForms -> Shenora.Ipc`, an edge that has never existed, while four code comments
+//      `Shenora.Windows -> Shenora.Ipc`, an edge that has never existed, while four code comments
 //      state the opposite invariant. An adopter following it writes a BaseFacade and gets an
 //      unresolved-namespace error the docs said could not happen. The csproj files are the truth;
 //      this compares the documented arrows against them.

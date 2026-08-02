@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
-using Shenora.WebView2.Sessions;
+using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2Sessions;
 

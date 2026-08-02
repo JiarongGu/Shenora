@@ -33,22 +33,22 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
 ```
                     Shenora.Core          net10.0        portable: no Windows reference
                       ↑          ↑
-        Shenora.Ipc ──┘          └── Shenora.WinForms    net10.0-windows
+        Shenora.Ipc ──┘          └── Shenora.Windows    net10.0-windows
           net10.0                          ↑
               ↑                            │
-              └──── Shenora.WebView2 ──────┘             net10.0-windows
+              └──── Shenora.Windows ──────┘             net10.0-windows
                             ↑
-              Shenora.WebView2.Sessions                  net10.0-windows
+              Shenora.Windows                  net10.0-windows
 ```
 
-Reference `Shenora.WinForms` directly only for a shell with no web frontend. Pin exact versions —
+Reference `Shenora.Windows` directly only for a shell with no web frontend. Pin exact versions —
 see `docs/RELEASING.md` for the pre-release feed recipe.
 
-> ⚠ **`Shenora.WinForms` does NOT bring `Shenora.Ipc` with it** — they are SIBLINGS over
+> ⚠ **`Shenora.Windows` does NOT bring `Shenora.Ipc` with it** — they are SIBLINGS over
 > `Shenora.Core`, not a chain. The edge is absent on purpose, in both directions: `Shenora.Ipc` binds
 > to no UI framework (it targets `net10.0`, which is what lets the same envelopes ride a WebSocket or
-> a mobile channel, D16), and `Shenora.WinForms` carries no IPC dependency — which is why the two
-> IPC-facing desktop facades, `WindowCommandFacade` and `DropZoneFacade`, live in `Shenora.WebView2`,
+> a mobile channel, D16), and `Shenora.Windows` carries no IPC dependency — which is why the two
+> IPC-facing desktop facades, `WindowCommandFacade` and `DropZoneFacade`, live in `Shenora.Windows`,
 > the first package that may see both halves. So a WinForms-only shell that wants typed messaging
 > adds `Shenora.Ipc` as a second, explicit `PackageReference`. Without it `BaseFacade`/`IpcRequest`
 > simply do not resolve, and the error names a missing namespace rather than a missing package.
@@ -67,7 +67,7 @@ Build and ship. Nothing has changed yet — this stage only proves the feed.
 
 ## Stage 1 — shell primitives (no IPC dependency, land one at a time)
 
-These live in `Shenora.WinForms` and know nothing about IPC, so they can land one at a time. Payoff
+These live in `Shenora.Windows` and know nothing about IPC, so they can land one at a time. Payoff
 is **proportional to what you actually hand-rolled** — an app that owns a splash launcher, wraps
 `Process.Start` for tests and never bothered with a single-instance mutex will only see the window
 and secondary-window rows apply. Table row = a specific handrolled piece it replaces, not a claim
@@ -84,7 +84,7 @@ that every app needs every row.
 | Extra windows on their own threads | `SecondaryWindows` | `FormClosed` is **not** the end of a window; cleanup happens after `Application.Run` returns, or a WebView2 child leaves a locked profile folder. |
 | App root / data / resources paths, env overrides | `ShenoraPaths(+Options)` | Resolves and absolutizes; file dialogs move the process CWD, so a relative root must not be re-resolved later. |
 | Startup splash | `SplashPanel(+Options)` | Colours are yours. |
-| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.WebView2`) + **`useDropZone`** | **Not optional sugar — the only workable file-drop path for a desktop shell, and the page's own drop event is what it replaces.** A page-side `onDrop` yields a `File` whose only accessor is its CONTENT, so with the page as UI and the host doing the file work, the bytes must be read into the renderer and pushed across IPC: a full copy of every dropped file, EAGERLY, at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the host could have opened off the same disk. `DropZoneManager` puts transparent native overlays over the page's zone elements, reads the OS drag data directly, and hands you `string[]` paths — open lazily, stream, hash incrementally, move or link without copying — including drags from Explorer or another app while your window is **backgrounded**. Wiring: **Stage-1-adoptable STANDALONE despite living in the WebView2 package** — it depends only on `Shenora.Core` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneFacade` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneFacade` + `useDropZone` — formally belongs to Stage 3 because it rides the typed bridge, but treat it as the DESTINATION for this row rather than an optional extra: a React page should call `useDropZone` and never register a DOM drop handler for files. |
+| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.Windows`) + **`useDropZone`** | **Not optional sugar — the only workable file-drop path for a desktop shell, and the page's own drop event is what it replaces.** A page-side `onDrop` yields a `File` whose only accessor is its CONTENT, so with the page as UI and the host doing the file work, the bytes must be read into the renderer and pushed across IPC: a full copy of every dropped file, EAGERLY, at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the host could have opened off the same disk. `DropZoneManager` puts transparent native overlays over the page's zone elements, reads the OS drag data directly, and hands you `string[]` paths — open lazily, stream, hash incrementally, move or link without copying — including drags from Explorer or another app while your window is **backgrounded**. Wiring: **Stage-1-adoptable STANDALONE despite living in the WebView2 package** — it depends only on `Shenora.Core` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneFacade` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneFacade` + `useDropZone` — formally belongs to Stage 3 because it rides the typed bridge, but treat it as the DESTINATION for this row rather than an optional extra: a React page should call `useDropZone` and never register a DOM drop handler for files. |
 
 > **If you only take one thing from Stage 1, take the drop zones.** They are the clearest case in the
 > kit for adopting anything at all. Native drag-drop over a web view is genuinely fiddly — transparent
@@ -287,8 +287,8 @@ logic usable from a non-WinForms shell later, which is what D20 is for.
 adapter, which needed no Windows reference either):
 
 1. **New project, plain `net10.0`** — no `-windows` suffix, no `UseWindowsForms`. Reference
-   `Shenora.Core` and, if it holds facades, `Shenora.Ipc`. **Do not reference `Shenora.WinForms` or
-   `Shenora.WebView2`**; adding either defeats the guard entirely, which is the one way this goes
+   `Shenora.Core` and, if it holds facades, `Shenora.Ipc`. **Do not reference `Shenora.Windows` or
+   `Shenora.Windows`**; adding either defeats the guard entirely, which is the one way this goes
    wrong quietly.
 2. **Add it to your solution.** A guard project that nothing builds is not a guard. (This repo learned
    that the hard way: the samples were missing from the solution file, so the "am I done?" gate never
@@ -313,7 +313,7 @@ adapter, which needed no Windows reference either):
    against one implementation, so injecting the portable face just works.
 
 **What is deliberately NOT portable, so you do not go looking:** the window-state stack
-(`WindowStateManager`, `IWindowStateStore`) stays in `Shenora.WinForms`. Its signatures happen to look
+(`WindowStateManager`, `IWindowStateStore`) stays in `Shenora.Windows`. Its signatures happen to look
 platform-neutral, and that is not the bar — window geometry is a desktop concept, and the bar is "app
 logic must be able to compile off Windows". Same for `OptimizedForm`, `TrayIcon`, `SplashPanel`,
 `SecondaryWindows` and `SingleInstanceGuard`.
@@ -327,7 +327,7 @@ finding, not a misuse.
 ## Stage 5 — a MAUI shell, if Stage 4's logic should also run on a phone
 
 **This is Stage 4's payoff, and it only works if Stage 4 happened.** The MAUI shell hosts the same
-portable assembly the desktop shell does; if your facades still reference `Shenora.WinForms` there is
+portable assembly the desktop shell does; if your facades still reference `Shenora.Windows` there is
 nothing to reuse. `samples/Shenora.Sample.Maui` is the worked example, and it references the very
 same `Shenora.Sample.Logic` the desktop sample does — that shared reference is the whole demonstration.
 
@@ -786,7 +786,7 @@ remaining cases need different tools. Reaching for the wrong one is the mistake 
 new FileUpdateQueue(new FileUpdateQueueOptions
 {
     Locker        = new FilePathLocker(new FilePathLockerOptions { LockDirectory = paths.DataArea("locks") }),
-    LockInspector = new RestartManagerLockInspector(),   // Shenora.WinForms
+    LockInspector = new RestartManagerLockInspector(),   // Shenora.Windows
 });
 
 // Or hold one yourself around a tool that knows nothing about any of this:
