@@ -1,6 +1,6 @@
 // Knowledge-base doctor — keeps the two-tier rule system consistent and the always-loaded base lean
 // as it grows (core `.claude/rules/` auto-loads; `.claude/knowledge/` is read on demand via the index).
-//   knowledge check               - RULES_INDEX <-> files consistency (CI/pre-commit gate)
+//   knowledge check               - RULES_INDEX <-> rules, and skill-loader <-> skills (dev gate)
 //   knowledge footprint           - always-loaded byte budget (core rules + index vs a cap)
 //   knowledge new <name> [--core] - scaffold a rule from TEMPLATE.md + append an index row
 import fs from 'node:fs';
@@ -10,8 +10,11 @@ import { fileURLToPath } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const rulesDir = path.join(repo, '.claude', 'rules');
 const knowledgeDir = path.join(repo, '.claude', 'knowledge');
+const skillsDir = path.join(repo, '.claude', 'skills');
 const indexPath = path.join(rulesDir, 'RULES_INDEX.md');
 const templatePath = path.join(rulesDir, 'TEMPLATE.md');
+// skill-loader's own table is the skills index, exactly as RULES_INDEX is the rules index.
+const skillIndexPath = path.join(skillsDir, 'skill-loader', 'SKILL.md');
 const claudeMd = path.join(repo, 'CLAUDE.md');
 
 // Core rules + index + template; keeps the auto-loaded base small. Raised 16 -> 17 KB on 2026-08-02,
@@ -45,6 +48,21 @@ const kb = (n) => (n / 1024).toFixed(1) + ' KB';
 const indexLinks = () =>
   [...fs.readFileSync(indexPath, 'utf8').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map((m) => ({ name: m[1], target: m[2] }));
 
+// A skill is a directory holding a SKILL.md.
+const skillDirs = () =>
+  fs.existsSync(skillsDir)
+    ? fs.readdirSync(skillsDir).filter((d) => fs.existsSync(path.join(skillsDir, d, 'SKILL.md')))
+    : [];
+// TABLE rows only (`| \`/name\` | … |`), never the whole file: skill-loader's Steps section names
+// skills in prose too, and a skill mentioned only in passing is exactly the one that is NOT listed
+// where the table is read. Matching prose would let it pass.
+const listedSkills = () =>
+  fs.readFileSync(skillIndexPath, 'utf8').split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => line.match(/`\/([a-z0-9-]+)`/))
+    .filter(Boolean)
+    .map((m) => m[1]);
+
 const [sub, ...rest] = process.argv.slice(2);
 
 if (sub === 'check') {
@@ -60,6 +78,20 @@ if (sub === 'check') {
     for (const f of mdFiles(dir))
       if (!indexed.has(path.join(dir, f))) fail(`${rel(path.join(dir, f))} has no RULES_INDEX row`);
   if (problems === 0) console.log(`  ok  RULES_INDEX: rows resolve + every rule indexed`);
+
+  // The same consistency, for skills. `skill-loader`'s table is the one place a session looks to
+  // pick a skill, so a SKILL.md missing from it never triggers — the failure is silent and looks
+  // like the skill simply not existing. That was guarded only by a sentence in skill-loader asking
+  // the next session to remember, which is the gap RULES_INDEX already had a check for.
+  const beforeSkills = problems;
+  const listed = new Set(listedSkills());
+  for (const name of skillDirs())
+    if (!listed.has(name)) fail(`.claude/skills/${name}/ has no row in ${rel(skillIndexPath)} — it will never be picked`);
+  for (const name of listed)
+    if (!fs.existsSync(path.join(skillsDir, name, 'SKILL.md')))
+      fail(`${rel(skillIndexPath)} lists /${name}, but .claude/skills/${name}/SKILL.md does not exist`);
+  if (problems === beforeSkills) console.log(`  ok  skill-loader: rows resolve + every skill listed`);
+
   process.exit(problems ? 1 : 0);
 }
 

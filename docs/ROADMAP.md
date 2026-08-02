@@ -5,6 +5,36 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-02 (last) — two scaffolding skills, and a skills index that enforces itself
+
+`### Later / candidates` had carried "scaffolding skills once patterns exist" since v0.1.0, and
+`skill-loader` reserved the two names. The patterns exist — five packages, a full IPC stack, four
+native services — so `/new-ipc-module` and `/new-native-service` landed, with the check that keeps
+them findable.
+
+**They map the CHAIN and carry no code templates.** Copying an exemplar is one line of instruction,
+and boilerplate was never what made a module expensive: the chain runs to eight files across two
+languages while every check that catches a half-finished one — the API baseline, the surface
+lexicon, the wire mirror — fails at the END of `verify`, after the facade compiles and looks done.
+Each skill names the exemplar to mirror, the fork in the middle (DI-registered vs mapped LATE from
+where the window exists; `Shenora.Core` vs `Shenora.WinForms`, decided on "app logic must compile
+off Windows" rather than "the signature looks neutral"), and the gates it will meet — then routes
+to the knowledge rule that OWNS each invariant instead of restating it. A fourth copy of
+`ipc-contracts`' rules is precisely what `doc-claims` exists to prevent.
+
+**Step 1 of `/new-ipc-module` is "does this belong in the kit at all?"** — the two-consumer bar,
+and `samples/` versus `src/`. A scaffolding skill whose first move is boilerplate would work against
+the discipline the rest of the repo is built on.
+
+**The index enforces itself now.** `skill-loader`'s table is the one place a session looks to pick a
+skill, so a `SKILL.md` missing from it never triggers — a silent failure indistinguishable from the
+skill not existing, and guarded until now by a sentence asking the next session to remember.
+`dev.mjs knowledge check` gained the both-directions consistency check it already ran for
+`RULES_INDEX` (a skill with no row; a row with no skill), reading TABLE rows only — the Steps prose
+names skills too, and matching prose would let the unlisted one pass. Sabotage-verified in both
+directions, each failing by name, then restored green. Dev gate only: `verify --release` skips it
+under the rule `cd74eda` set, since repo hygiene ships nothing and cannot reach a consumer.
+
 ### 2026-08-02 (later) — the mission layer: renamed, restructured, and given a queue, chains and a file writer
 
 Five owner-directed changes to the layer that shipped hours earlier, all pre-1.0 and all landing before
@@ -420,5 +450,5 @@ until adoption time, now decided.
 - Harvest-promotions from ongoing app development (D15) — any proven-nice feature gets
   generalized and lands here as a task before shipping in a minor.
 - C++ launcher template (runtime check/install, staged self-update) as a repo template, not a package.
-- Scaffolding skills once patterns exist (`new-ipc-module`, `new-native-service`).
 - Contract codegen (C# ⇄ TS) — explicitly out of initial scope; revisit after adoption feedback.
+  (Scaffolding skills graduated out of this list on 2026-08-02 — see `## Done`.)

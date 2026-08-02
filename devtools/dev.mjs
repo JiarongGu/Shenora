@@ -13,7 +13,7 @@
 //   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | move | drag)
 //   node devtools/dev.mjs responsiveness <fx> <fy> [--label name] [--duration|--interval|--timeout ms]
 //                                           - click + SendMessageTimeout(WM_NULL) UI-thread stall probe
-//   node devtools/dev.mjs knowledge <…>    - two-tier rule-base doctor (check | footprint | new <name> [--core])
+//   node devtools/dev.mjs knowledge <…>    - rule-base + skills doctor (check | footprint | new <name> [--core])
 //   node devtools/dev.mjs clean [--all]     - drop devtools/_* build output (--all: sources + publish/ too)
 //   node devtools/dev.mjs check-sensitive [--tree|--history] - leak scan (--history = one-off audit)
 //   node devtools/dev.mjs install-hooks    - point core.hooksPath at devtools/hooks (once per clone)
