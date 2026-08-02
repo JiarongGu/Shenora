@@ -15,6 +15,10 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   nothing to put in it yet.
   *(Amended 2026-07-30: the set is now FIVE NuGet packages + npm — `Shenora.WebView2.Sessions` was
   added per D14. A sixth, `Shenora.Shell.Abstractions`, was considered and rejected per D20.)*
+  **⚠ SUPERSEDED 2026-08-02 by D37** — the set is now ONE shell package per PLATFORM:
+  `Shenora.Core` / `Shenora.Ipc` / `Shenora.Windows` / `Shenora.Android` / `Shenora.iOS` + npm. The
+  three Windows ids named above merged into one. This entry stands as the record of why the original
+  split was drawn, which is still worth reading before anyone proposes another one.
 
 - **D3 — Single TFM `net10.0` / `net10.0-windows`, not the brief's ".NET 8".** The brief predates
   the survey: every family app and Lyntai target .NET 10, the dev machine has no .NET 8 SDK, and
@@ -145,7 +149,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   permanently (same discipline as the private sibling names, `sensitive-info`).
 
 - **D19 — The two Windows shell packages are ONE layer: `Shenora.WebView2` depends on
-  `Shenora.WinForms`.** (User direction, 2026-07-30, after the first full code review.) The design
+  `Shenora.WinForms`.** (User direction, 2026-07-30, after the first full code review.)
+  **⚠ The PACKAGES merged in D37 (2026-08-02), so this edge is now INTERNAL** — `Shell/` and
+  `WebView/` inside `Shenora.Windows`. The rule survives exactly as stated, one level down: the
+  direction still holds and the reverse is still a cycle. The evidence below is why it was decided,
+  and none of it changed.
+  The design
   contract §4 forbade the sideways edge *"revisit only if extraction proves it impossible"* —
   extraction proved it: the UI-thread marshal pattern ended up hand-rolled **14 times across 3
   packages with 5 incompatible pre-handle policies**, and the divergence produced real defects (7

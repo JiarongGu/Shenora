@@ -33,25 +33,27 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
 ```
                     Shenora.Core          net10.0        portable: no Windows reference
                       ↑          ↑
-        Shenora.Ipc ──┘          └── Shenora.Windows    net10.0-windows
-          net10.0                          ↑
-              ↑                            │
-              └──── Shenora.Windows ──────┘             net10.0-windows
-                            ↑
-              Shenora.Windows                  net10.0-windows
+        Shenora.Ipc ──┘          │
+          net10.0                │
+              ↑                  │
+              ├──── Shenora.Windows ──────┘             net10.0-windows
+              ├──── Shenora.Android                     net10.0-android
+              └──── Shenora.iOS                         net10.0-ios
 ```
 
-Reference `Shenora.Windows` directly only for a shell with no web frontend. Pin exact versions —
-see `docs/RELEASING.md` for the pre-release feed recipe.
+**One shell package per platform.** Reference the one you are building for. Pin exact versions — see
+`docs/RELEASING.md` for the pre-release feed recipe.
 
-> ⚠ **`Shenora.Windows` does NOT bring `Shenora.Ipc` with it** — they are SIBLINGS over
-> `Shenora.Core`, not a chain. The edge is absent on purpose, in both directions: `Shenora.Ipc` binds
-> to no UI framework (it targets `net10.0`, which is what lets the same envelopes ride a WebSocket or
-> a mobile channel, D16), and `Shenora.Windows` carries no IPC dependency — which is why the two
-> IPC-facing desktop facades, `WindowCommandFacade` and `DropZoneFacade`, live in `Shenora.Windows`,
-> the first package that may see both halves. So a WinForms-only shell that wants typed messaging
-> adds `Shenora.Ipc` as a second, explicit `PackageReference`. Without it `BaseFacade`/`IpcRequest`
-> simply do not resolve, and the error names a missing namespace rather than a missing package.
+> ⚠ **Coming from 0.4.0? Three package ids were renamed** (D37). `Shenora.WinForms`,
+> `Shenora.WebView2` and `Shenora.WebView2.Sessions` are now the single `Shenora.Windows`.
+> **Migration is a rename, not a rewrite** — every type keeps its name and every member its
+> signature, verified by diffing the merged API surface against the three old baselines. Replace the
+> package references with one, and the three namespaces with `using Shenora.Windows;`. The old ids
+> stay restorable by exact version, and carry a deprecation notice pointing here.
+>
+> The old split existed so a shell with no web frontend could take the WinForms primitives without
+> WebView2. That case does not arise in practice — this kit is React-in-a-webview — so the seam was
+> removed rather than maintained.
 
 > ⚠ **Pre-release trap that costs an afternoon.** NuGet's global folder (`~/.nuget/packages`) is
 > keyed on id+**version** and beats every source, so re-consuming the same pre-release version can

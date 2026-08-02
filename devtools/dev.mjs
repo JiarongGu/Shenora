@@ -674,6 +674,12 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'mac.mjs'), ...args]);
     break;
 
+  // Unlist every version of a package id renamed away (D37). Dry-run by default, and it REFUSES
+  // until the replacement is published. Deprecation is web-UI only; the command prints the text.
+  case 'nuget-retire':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'nuget-retire.mjs'), ...args]);
+    break;
+
   // Where the JDK is, for anything that shells out to the Android build. Prints the path or exits
   // non-zero with the fix. Deliberately ONE owner: android.mjs asks rather than re-probing, the same
   // reason the kit has one owner for UI marshalling.
@@ -750,6 +756,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|nuget-retire|knowledge|clean|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }

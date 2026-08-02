@@ -9,8 +9,14 @@
   the incremental build silently keeps running it (dangerous direction: a stale PASS); and
   `git checkout -- <path>` reverts to HEAD, discarding uncommitted edits the file already carried.
   A sabotage is only verified once both directions are — `dotnet build -t:Rebuild` if unsure.
+- **NEVER kill a SHARED runtime by name** — `Stop-Process -Name msedgewebview2` also kills Teams',
+  Outlook's and Widgets'. Killed 38 live 2026-08-02 to clear one sample. Kill the app by its own name
+  and let it take its children.
 - **Node 24 `fs.cpSync` crashes on this box** (fail-fast 0xC0000409, silent). Use manual
   recursive copy loops in .mjs scripts.
+- **`process.exit()` with a `fetch` in flight aborts Node** (libuv `UV_HANDLE_CLOSING` assertion) and
+  the abort REPLACES the exit code, so a script that meant to fail reports SUCCESS. Set
+  `process.exitCode` instead.
 - PS 5.1 quirks in scripts: no `&&`/`||` chains; `-Encoding utf8` writes a BOM (fine for
   PowerShell, poison for JSONL/BOM-sensitive consumers). BOM-less UTF-8 C# sources on this
   CJK-locale machine need `<CodePage>65001</CodePage>` or csc reads them as ANSI (set in

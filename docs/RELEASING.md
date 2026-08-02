@@ -90,6 +90,26 @@ burns no version:
    `tag_name` when it does not exist: gating only the tag step left `create_tag: false` still
    producing a tag, at the default-branch head rather than the published commit (fixed in P5.5 H5).
 
+## After a release that RENAMES a package
+
+The workflow publishes the new id; it does nothing about the old one, which stays listed and
+discoverable forever unless someone acts. Two steps, in this order, **after the release is live**:
+
+1. **Deprecate** — nuget.org → the package → Manage → Deprecation → select all versions, tick
+   "Other", set the alternate package, write the message. **This is the half consumers actually see**
+   (a build warning naming the replacement), and it is web-UI only: there is no public API for it.
+2. **Unlist** — `node devtools/dev.mjs nuget-retire` (dry run), then `--apply`. Needs an
+   Unlist-scoped `NUGET_API_KEY`. It prints the exact deprecation text for step 1, and **refuses to
+   run until the replacement is published** — retiring the old ids first would leave a window where
+   neither the old package (hidden) nor the new one (absent) can be found.
+
+Neither step breaks an existing build: unlisting hides a package from search but restore-by-exact-
+version keeps working, and both are reversible from the Manage page. Versions are immutable
+regardless — an unlisted version number can never be re-published.
+
+Pending as of 2026-08-02: `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions`
+merged into `Shenora.Windows` (D37), so all three need this once the next release ships.
+
 ## Consuming pre-release (in-house siblings)
 
 Until the first public release, siblings consume the local pack output. The recipe, smoke-proven
