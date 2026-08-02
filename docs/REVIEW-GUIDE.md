@@ -117,6 +117,8 @@ a finding that contradicts one of these is either a real regression or a rule th
 | WebView2 hosting/serving (`src/Shenora.WebView2/`) | `.claude/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
 | Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
 | Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
+| Missions (`src/Shenora.Core/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
+| File updates + locking (`src/Shenora.Core/Io/`) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
 | Windows/build/shell | `.claude/rules/windows-dev-gotchas.md` | PS5 UTF-8/BOM traps; `fs.cpSync` avoided; WinForms `AllowDrop`/OLE handle-creation must be on an STA thread (xunit workers are MTA) |
 | Any tracked file / commit message | `.claude/rules/sensitive-info.md` | NO absolute local paths, NO private sibling names, NO personal/network data (this repo goes public) |
 
@@ -211,6 +213,19 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   seams, React bridge/hooks/services/transport, Sessions pool accounting (via factory/reset seams),
   login gate mechanics, cookie-flow freshness logic, the co-browse protocol builders, and the
   session request-filter decision (`SessionBrowser.ShouldBlockRequest`).
+- **The missions + `Io` layer is unusually well pinned, and three of its tests exist because a
+  sabotage exposed a worthless one** (2026-08-02). The concurrency suite proves exclusion AND
+  parallelism in the SAME run, because either alone passes a broken implementation. The chain
+  claim-union test is a `Theory` over BOTH step orders — as a single case it passed a deliberate
+  "last wins" bug. The journal's `A_change_that_LANDED_before_the_crash_is_still_undone` is the only
+  test that distinguishes a write-ahead journal from a write-after one; the other seven pass either
+  way. **If any of those is ever "simplified", it stops testing the thing it names.** Crash recovery
+  is tested by freezing the filesystem + journal at the moment of death and recovering with a fresh
+  queue — not by catching an exception, which is the opposite of a crash.
+- **Not covered by tests, by nature:** the Restart Manager inspector's answer for a REMOTE holder
+  (needs a second machine), lease behaviour over SMB after a hard power loss (needs the hardware),
+  and whether `DeleteOnClose` semantics hold on POSIX (the implementation targets Windows and says
+  so). Each is stated as a limit in the XML rather than assumed.
 - **The sessions live-browser boundary — read this before filing "untested public member".**
   `SessionController`'s constructor subscribes to `_web.CoreWebView2.WebMessageReceived`, so the type
   cannot be INSTANTIATED without a real browser core. Everything reachable only through an instance is
