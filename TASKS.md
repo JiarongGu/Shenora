@@ -63,17 +63,12 @@ scratch; at that point the shape is already known.
 > factoring it behind a transport-neutral seam comes first.
 >
 > **UNBLOCKED 2026-08-02 by owner direction** (*"there should be a MAUI adaptation in the roadmap you
-> can take too"*): the on-device host is being built, so it IS consumer #2 and these stop being
-> speculative. The plan's §4 names three prerequisites — **the `IpcJson` resolver seam is DONE**
-> (`docs/archive/tasks.md`); the two below are next, in that order. The bar still applies to
-> everything NOT on that list.
+> can take too"*): the on-device host is being built, so it IS consumer #2 and these stopped being
+> speculative. **All three of the plan's §4 prerequisites are now DONE** — the `IpcJson` resolver
+> seam, `IpcHostBridge`, and the headless `IShenoraRunner` (`docs/archive/tasks.md` for each). What
+> remains below is the ONE item that direction did not unblock, because no spike can: it needs a real
+> mobile consumer, not a plan. The bar still applies to everything not on that list.
 
-- [ ] **`Shenora.Core` ships no headless `IShenoraRunner`.** Also from the D3 spike: `CreateBuilder`
-  → `Build()` → `Run()` throws without a runner, and the only implementation lives in
-  `Shenora.WinForms`. So Core's "application host" half is WinForms-only in practice even though every
-  type in it is portable, and the spike had to bypass the builder entirely and wire DI by hand. An app
-  CAN implement `IShenoraRunner` itself (it is a one-method interface), so this is a missing
-  convenience rather than a missing capability — recorded, not guessed at.
 - [ ] **D3's other half is still unvalidated: the desktop-FLAVOURED service contracts.** The spike
   proves the IPC/transport story and nothing else, because a transport needs no file dialogs.
   `FileDialogContracts.cs` still CONCEDES in writing that `FileDialogOptions` carries Win32 vocabulary

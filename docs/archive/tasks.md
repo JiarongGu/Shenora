@@ -41,6 +41,34 @@ envelope types, so `IpcRequest` and friends still resolve through reflection. Fu
 reflection at all needs that too — additive, and a separate change. Said so in the XML and the
 CHANGELOG rather than leaving the hole implied.
 
+### The headless `IShenoraRunner` (2026-08-02) — DONE
+
+The third and last of the mobile plan's §4 prerequisites. `ShenoraApplication.Run` threw without a
+runner and the only implementation was in `Shenora.WinForms`, so Core's application-host half was
+Windows-only IN PRACTICE despite every type in it being portable — the D3 spike bypassed the builder
+entirely and wired DI by hand rather than fight it.
+
+`UseHeadless` + `HeadlessRunnerOptions` (`HeadlessRunner` itself stays `internal`, like
+`WinFormsRunner`). Judgement calls:
+
+1. **The hook asymmetry is copied deliberately, not reinvented.** `OnStarting` unguarded (a hook that
+   cannot start is a startup failure the app must see), `OnStopping` reverse-order and guarded,
+   running even when startup failed partway. Sabotage-verified: forward-order shutdown fails
+   `Run_starts_hooks_in_order_and_stops_them_in_REVERSE_order` — with two hooks, the right and wrong
+   implementations give different answers, which is the property that test needed.
+2. **`Cancel = true` in the signal handler is the load-bearing line.** Without it the runtime
+   terminates the process on SIGINT/SIGTERM and the ordered shutdown never runs at all — which would
+   have made the runner look correct in every test while skipping the whole reason hooks exist.
+3. **It is NOT the mobile answer, and the XML says so where someone would look.** A platform that
+   owns its own loop (a MAUI activity) cannot honour "blocks until shutdown" and needs its own
+   runner. "Headless" reads like it covers that case; it does not, and that is the kind of claim
+   `doc-claims` exists to stop shipping.
+4. **The lexicon gained `Headless`** with the reason written next to it — the gate's own instruction
+   is that adding a word IS the review.
+
+**Every test in the file is bounded.** The wait is real, so an unobserved token would HANG the suite
+rather than fail it.
+
 ### The host-side transport helper — `IpcHostBridge` (2026-08-02) — DONE
 
 The second of the mobile plan's §4 prerequisites, and the one the D3 spike actually measured: the

@@ -119,7 +119,10 @@ changes, noting them in `CHANGELOG.md`).
   `Run()` executes the registered runner; `Dispose` owns the provider),
   `ShenoraApplicationBuilder` (`Services`, `AddModule`, `OnStarting`/`OnStopping`, build-once),
   `IShenoraModule` (per-feature service registration), `IShenoraRunner` (the host-loop seam),
-  `IShenoraLifecycleHook` (DI-registered start/stop participation; runners invoke post-gate);
+  `UseHeadless`/`HeadlessRunnerOptions` (the no-UI runner: hooks → block on a stop token or
+  SIGINT/SIGTERM → ordered shutdown, so `Run()` no longer needs a Windows package. NOT for a host
+  whose platform owns the loop — a MAUI activity cannot honour "blocks until shutdown" and brings
+  its own runner), `IShenoraLifecycleHook` (DI-registered start/stop participation; runners invoke post-gate);
   the in-process event bus — `EventMessage` (`{id, module, type, scope?, payload?, timestamp}`,
   host-side; the wire form is `Shenora.Ipc`'s notification envelope), `IEventBus`/`EventBus`
   (`"*"` wildcards + per-subscription match cache; unscoped subscriptions see every scope and

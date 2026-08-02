@@ -54,6 +54,23 @@ at the first list and missed five more breaking changes.
   byte-identical (`HandshakeModule`/`HandshakeType` are `const` forwards to the new home, so the
   literals every consumer compiled against are unchanged), and its API baseline did not move.
 
+- **`UseHeadless` (+ `HeadlessRunnerOptions`) in `Shenora.Core`** — an `IShenoraRunner` for a host
+  with no UI loop: lifecycle hooks, block until a stop signal, ordered shutdown. `Run()` used to
+  throw unless a Windows package was referenced, so Core's application-host half was Windows-only in
+  practice even though every type in it is portable — the D3 spike had to bypass the builder entirely
+  and wire DI by hand.
+
+  Stops on `HeadlessRunnerOptions.StopToken` and, by default, on SIGINT/SIGTERM. The signal handler
+  sets `Cancel = true` deliberately: without it the runtime terminates the process and
+  `IShenoraLifecycleHook.OnStopping` never runs, silently skipping everything the family relies on
+  shutdown for. Hook ordering matches `WinFormsRunner` exactly — `OnStarting` in registration order
+  and unguarded (a hook that cannot start is a startup failure the app must see), `OnStopping` in
+  REVERSE order and guarded, running even when startup failed partway.
+
+  **It is not the mobile answer**, and says so in its own XML: a host whose PLATFORM owns the loop
+  (a mobile activity, a MAUI app) cannot honour `IShenoraRunner.Run`'s "blocks until shutdown"
+  contract and needs its own runner.
+
 ## 0.4.0 — 2026-08-02
 
 _Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the

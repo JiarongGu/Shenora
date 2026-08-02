@@ -99,9 +99,13 @@ Router
 Scheme
 
 # ── Hosting, composition and lifecycle ────────────────────────────────────────────────────────────
+# `Headless` (2026-08-02) is hosting vocabulary, not a scenario: it names a host with no UI loop,
+# which is what Core needed so `Run()` stops being Windows-only in practice. Note it does NOT mean
+# "mobile" — a platform that owns its own loop needs its own runner (see HeadlessHostExtensions).
 Base
 Bootstrap
 Builder
+Headless
 Callback
 Collection
 Container

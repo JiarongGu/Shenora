@@ -218,6 +218,13 @@ sealed class Shenora.Core.FlatClaimScope : Shenora.Core.IClaimScope
   public bool Conflicts(string normalizedA, string normalizedB)
   public string Name { get; }
   public string Normalize(string key)
+static class Shenora.Core.HeadlessHostExtensions
+  public static Shenora.Core.ShenoraApplicationBuilder UseHeadless(Shenora.Core.ShenoraApplicationBuilder builder, Shenora.Core.HeadlessRunnerOptions? options = null)
+sealed class Shenora.Core.HeadlessRunnerOptions
+  public .ctor()
+  public System.Action<string>? Log { get; init; }
+  public System.Threading.CancellationToken StopToken { get; init; }
+  public bool StopOnProcessSignals { get; init; }
 interface Shenora.Core.IClaimScope
   public abstract bool Conflicts(string normalizedA, string normalizedB)
   public abstract string Name { get; }
