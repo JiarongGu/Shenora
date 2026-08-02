@@ -6,8 +6,9 @@ body out of context until it is needed is the point.
 
 Add one with `node devtools/dev.mjs knowledge new <kebab-name> [--core]`; check with `… knowledge
 check|footprint`. **This INDEX is always loaded, so every rule costs core bytes for its row** — one
-clause per row, and trim here rather than raising the cap. The budget WARNS, never fails: a style
-budget must not block a release.
+clause per row, and trim here before raising the cap — raise it only when the growth is earned, with
+the reason written next to the constant (once so far, 16→17 KB). The budget WARNS, never fails: a
+style budget must not block a release.
 
 ## Core (always loaded)
 

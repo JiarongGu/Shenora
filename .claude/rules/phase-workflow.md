@@ -22,5 +22,15 @@ repo: it readies the LIBRARY and writes `docs/ADOPTION.md`; the adopting app's o
 **Tripwires are sabotage-verified in BOTH directions.** A green tripwire that cannot fail is worth
 nothing: break what it watches, confirm the message names it, restore, confirm green again.
 
+**Also test where it must stay QUIET, in the environment it really runs in.** Three gates broke the
+0.4.0 release this way in one day — each proven on the path it should catch, never on the path it
+should ignore (a version guard that had never run DURING a release; a size budget that had never run
+on a CRLF checkout; a `warning CS` filter that had never met a non-CS analyser warning). Ask: **when
+should this stay silent, and where does it execute?** Then try those. Incident:
+`docs/archive/fix-log.md` 2026-08-02.
+
+**Keep a gate proportionate.** Correctness stops a release; style warns. That budget was made fatal
+and then blocked shipping over 0.2 KB.
+
 **Extraction ports** keep the source's post-mortem comments and fix the known gaps
 (`.claude/knowledge/extraction-sources.md`).

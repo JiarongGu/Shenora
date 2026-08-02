@@ -14,7 +14,19 @@ const indexPath = path.join(rulesDir, 'RULES_INDEX.md');
 const templatePath = path.join(rulesDir, 'TEMPLATE.md');
 const claudeMd = path.join(repo, 'CLAUDE.md');
 
-const CORE_BUDGET = 16 * 1024; // core rules + index + template; keep the auto-loaded base small
+// Core rules + index + template; keeps the auto-loaded base small. Raised 16 -> 17 KB on 2026-08-02,
+// deliberately and with the reasoning recorded, because the alternative was leaving the warning
+// permanently lit — and a warning that is always on is one nobody reads.
+//
+// What the extra kilobyte bought: the `doc-claims` rule's index row, and two clauses in
+// `phase-workflow.md` earned by gates that broke a release (test where a check must stay QUIET;
+// keep a gate proportionate). Both are things a session needs BEFORE it builds, which is what
+// "always loaded" is for.
+//
+// TRIM FIRST, RAISE SECOND. This is the first raise since the budget was set; it should stay rare
+// enough that each one carries a note like this. If the number climbs without the always-loaded
+// files getting more useful, that is the drift the budget exists to surface.
+const CORE_BUDGET = 17 * 1024;
 
 const rel = (p) => path.relative(repo, p).replace(/\\/g, '/');
 const NON_RULES = new Set(['RULES_INDEX.md', 'TEMPLATE.md']);

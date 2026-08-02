@@ -14,6 +14,39 @@ entry template:
 
 ## 2026-08-02
 
+### release: three gates failed the 0.4.0 run, each never tested on the path it should ignore
+
+- **Symptom.** The 0.4.0 release failed twice from the Actions tab. First in step 1 inside
+  `doctor --fix`: *"`<VersionPrefix>` is 0.4.0 but the newest release tag is v0.3.0"*. After that was
+  fixed, again at `knowledge footprint`: *"16.2 KB / 16.0 KB — ⚠ OVER"*. Both runs died before the
+  verify gate finished, so nothing was published, committed or tagged — but nothing could ship either.
+- **Root cause — one pattern, three instances.** Every check had been proven on the path where it
+  should FIRE and never on the path where it should stay quiet:
+  1. **Version-authorship guard.** It asserts `VersionPrefix == newest release tag`, true BETWEEN
+     releases and deliberately false DURING one (the workflow bumps props in step 1, tags in step 6).
+     It was sabotage-verified against the hand-bump it exists to stop, but no release had run since it
+     was added, so the window where its invariant is meant to be false was never exercised.
+  2. **Rule-size budget.** `fs.statSync().size` counts CRLF as two bytes. The dev box has an LF
+     working tree, the CI runner an autocrlf checkout — identical files, 16.0 KB local vs 16.2 KB in
+     CI. It had never run on a CRLF checkout. It was also FATAL, which it should never have been.
+  3. **A build-output filter.** Local runs were filtered for `warning CS`, which silently excludes
+     analyser warnings with other prefixes — so an `xUnit2031` warning was reported as "0 warnings"
+     all session until CI printed it.
+- **Fix.** `SHENORA_RELEASE=1` (the signal the pre-commit version guard already honoured) is now read
+  by `doctor` and set job-wide in `release.yml`, so the guard stays quiet for the pipeline's own bump
+  and loud for everything else. Sizes are measured after normalising line endings. The budget exits 0
+  and prints ⚠ instead of failing — a style budget must not outrank shipping. The analyser warning is
+  fixed; the build is genuinely at 0 warnings.
+- **Verify.** Both guard directions were re-proven against a real 0.4.0-shaped tree (props bumped,
+  derived files synced, tag still v0.3.0): with the env var, skipped and passing; without it, the full
+  hand-bump failure. Note the first attempt at that check never reached the guard — bumping props
+  alone trips the CONSISTENCY checks first, and the tag check only runs once those pass.
+- **The rule this earned** is in `.claude/rules/phase-workflow.md`: verify the paths where a gate must
+  stay QUIET, in the environment it will really run in — and keep gates proportionate, because
+  correctness stops a release and style does not.
+- **Commits:** `da68bf1` (release guard), `099af66` (budget + warning), `7c6f4eb` (the ARCHITECTURE
+  sync that the same release path had also been missing).
+
 ### core: two XML comments on the mission scheduler described a kit that does not exist
 
 - **Symptom.** Nothing failed. `IMissionScheduler.SubmitAsync` and `MissionResult` both listed "unknown
