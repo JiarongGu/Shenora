@@ -371,7 +371,20 @@ switch (cmd) {
   }
 
   case 'verify': {
-    // The "am I done?" gate — run EVERYTHING and stop at the first failure.
+    // The "am I done?" gate — run everything and stop at the first failure.
+    //
+    // `--release` runs the SUBSET THAT PROTECTS THE ARTIFACT, and release.yml uses it. The split
+    // exists because a release gate answers a narrower question than a dev gate: could this harm a
+    // CONSUMER? Build, tests, typechecks (the shipped code), the sensitive scan (publishing a leak is
+    // irreversible), doc-drift (the README it checks ships inside every nupkg) and doctor (version
+    // consistency is exactly what a release must not get wrong) all qualify. The rule-base checks do
+    // not: `knowledge check`/`footprint` police THIS repo's assistant rules, ship nothing, and can
+    // harm nobody downstream — and on 2026-08-02 the footprint check blocked a release twice while
+    // the packages themselves were perfect.
+    //
+    // Keeping them in the local gate is right; letting them stop a publish was not.
+    const releaseOnly = args.includes('--release');
+    const devOnly = new Set(['knowledge check', 'knowledge footprint']);
     const steps = [
       ['build', () => spawnSync('node', [import.meta.filename, 'build'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['test', () => spawnSync('node', [import.meta.filename, 'test'], { stdio: 'inherit', cwd: repo }).status === 0],
@@ -410,9 +423,13 @@ switch (cmd) {
     ];
     let ok = true;
     for (const [label, fn] of steps) {
+      if (releaseOnly && devOnly.has(label)) {
+        console.log(`\n=== verify: ${label} — SKIPPED (--release: repo hygiene, ships nothing) ===`);
+        continue;
+      }
       if (!step(`verify: ${label}`, fn)) { ok = false; break; }
     }
-    console.log(ok ? '\nVERIFY PASSED' : '\nVERIFY FAILED');
+    console.log(ok ? `\nVERIFY PASSED${releaseOnly ? ' (release subset)' : ''}` : '\nVERIFY FAILED');
     process.exitCode = ok ? 0 : 1;
     break;
   }

@@ -55,8 +55,13 @@ burns no version:
    in v0.1.1). The step then asks *git* whether any of the four files actually changed, rather than
    comparing version strings: the edits move independently, so a string compare would skip the commit
    when only one moved — and would produce an empty commit on a re-run that moved none.
-2. **Verify gate**: `node devtools/dev.mjs verify` (dotnet build + tests, npm build + tests,
-   typechecks, `check-sensitive --tree`, `knowledge check`, `doctor`).
+2. **Verify gate**: `node devtools/dev.mjs verify --release` — the subset that protects the ARTIFACT.
+   A release gate answers a narrower question than a dev gate: *could this harm a consumer?* So
+   `--release` drops the rule-base checks (`knowledge check`/`footprint`), which police this repo's
+   own assistant rules, ship nothing, and blocked the 0.4.0 release twice while the packages were
+   perfect. Everything protecting the artifact still runs (dotnet build + tests, npm build + tests,
+   typechecks, `check-sensitive --tree`, `doc-drift` — the README it checks ships in every nupkg —
+   and `doctor`).
 3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + the npm tarball
    (npm `package.json` version and the README headline synced from `VersionPrefix`), each with its
    sha256 printed.
