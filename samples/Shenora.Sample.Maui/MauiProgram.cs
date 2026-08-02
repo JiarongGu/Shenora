@@ -31,12 +31,11 @@ public static class MauiProgram
 	{
 #if ANDROID
 		global::Android.Util.Log.Info(LogTag, message);
-#elif IOS
-		// NSLog, not Console.WriteLine: only NSLog reaches the unified log that `dev.mjs mac log`
-		// reads back with `simctl spawn booted log show`. stdout is visible when the app is launched
-		// in the foreground of a terminal and invisible the rest of the time, which is the wrong half.
-		global::Foundation.NSLog($"[{LogTag}] {message}");
 #else
+		// iOS lands here deliberately. The obvious choice was `Foundation.NSLog`, and it does not
+		// exist: .NET 10's `Microsoft.iOS.dll` exposes no NSLog at all (checked by searching the ref
+		// assembly after the compiler rejected it — CS0234). The runtime routes Console to the system
+		// log on iOS, so this is both the available answer and the one `dev.mjs mac log` reads back.
 		Console.WriteLine($"[{LogTag}] {message}");
 #endif
 	}

@@ -51,6 +51,30 @@ const DEFAULTS = {
   project: 'samples/Shenora.Sample.Maui/Shenora.Sample.Maui.csproj',
   tfm: 'net10.0-ios',
   bundleId: 'com.shenora.sample.maui',
+  // Set true when this Mac's Xcode is OLDER than the iOS workload wants. It costs two flags, and
+  // both are needed — finding that out took four builds, so the order is recorded here:
+  //
+  //   1. `-p:ValidateXcodeVersion=false` clears the up-front gate (`_ValidateXcodeVersion` in
+  //      Xamarin.Shared.Sdk.targets — an EQUALITY check on major.minor, so a newer Xcode is refused
+  //      too). On its own it only gets you as far as the linker.
+  //   2. `-p:MtouchLink=SdkOnly` clears MT0180, raised by the ILLink Setup step, which independently
+  //      checks that Xcode ships the iOS SDK headers this Microsoft.iOS was built against. This is
+  //      the mode MT0180's own message recommends ("Link Framework SDKs Only ... to try to avoid the
+  //      new APIs"), and it is the reason this works: the app's own assemblies stop being trimmed
+  //      against headers the machine does not have.
+  //
+  // What does NOT work, so nobody retries it: `-p:PublishTrimmed=false` is rejected outright ("iOS
+  // projects must build with PublishTrimmed=true"), and `MtouchLink=None` still fails MT0180 because
+  // the Setup step runs before the mode is honoured.
+  //
+  // This lives in local/mac.json rather than the csproj on purpose: which Xcode a machine happens to
+  // have is a fact about THAT MACHINE, and burying the override in tracked build files would silence
+  // it for everyone, permanently — including the case where the mismatch is the real problem.
+  //
+  // ⚠ Verified for SIMULATOR DEBUG only. The honest fix is to match the pair (upgrade Xcode, or
+  // install a workload band built against the Xcode you have); this is a dev-loop unblock, not a
+  // shipping configuration.
+  skipXcodeVersionCheck: false,
 };
 
 function config() {
@@ -271,13 +295,21 @@ function build(cfg, { skipPush = false } = {}) {
   if (!skipPush) push(cfg);
   fs.mkdirSync(OUT, { recursive: true });
   const rid = simulatorRid(cfg);
+  const skipXcode = cfg.skipXcodeVersionCheck
+    ? ' -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly'
+    : '';
+  if (skipXcode) {
+    console.log('mac: ⚠ skipXcodeVersionCheck (local/mac.json) — this Mac\'s Xcode is older than the iOS\n'
+      + '     workload wants, so the version gate and full trimming are both off.\n'
+      + '     Verified for SIMULATOR DEBUG builds only; not a shipping configuration.');
+  }
   console.log(`\nmac: dotnet build ${cfg.tfm} (${rid})…`);
   // -o pipefail because the build is piped through `tail`: without it the pipeline reports TAIL's exit
   // status, which is always 0, so a failed build sails through and the next step tries to install a
   // binary that was never produced — reporting a confusing second error instead of the real one.
   const r = ssh(cfg, `set -e -o pipefail
     cd ~/${cfg.work}
-    dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)} 2>&1 | tail -60`);
+    dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode} 2>&1 | tail -60`);
   fs.writeFileSync(path.join(OUT, 'build.log'), (r.stdout ?? '') + (r.stderr ?? ''));
   console.log((r.stdout ?? '').split('\n').slice(-30).join('\n'));
   if (r.status !== 0) {
