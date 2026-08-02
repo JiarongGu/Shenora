@@ -14,10 +14,12 @@ public enum FileAtomicity
     /// half-applied set is a broken product — a bundle plus its index, files plus their manifest.
     ///
     /// <para>
-    /// <b>This covers a FAILURE, not a power cut.</b> Rollback is compensating and in-process: nothing
-    /// is written down, so a process killed mid-apply leaves whatever it had reached. Crash-atomicity
-    /// needs a durable intent journal, which the kit does not have — see
-    /// <c>docs/2026-08-02-shenora-file-updates-design.md</c> §6.
+    /// <b>How far this goes depends on whether you configured a journal.</b> Without
+    /// <see cref="FileUpdateQueueOptions.Journal"/>, rollback is compensating and in-process: it
+    /// covers a change that FAILS, and a process killed mid-apply leaves whatever it had reached,
+    /// because the plan to undo died with it. WITH a journal, the undo plan is on disk before each
+    /// change is made and <see cref="FileUpdateQueue.RecoverAsync"/> finishes the job at startup — so
+    /// a power cut is covered too, provided something calls it.
     /// </para>
     /// </summary>
     AllOrNothing = 1,

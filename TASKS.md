@@ -38,18 +38,11 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
-### Designed, awaiting an answer
+### Nothing designed is waiting
 
-The mission queue, chains and the file-update queue were built on 2026-08-02 and are recorded in
-`docs/ROADMAP.md` `## Done` + `docs/task-archive.md`. What is left of that group is one item, and it
-is waiting on a question rather than on effort:
-
-- [x] ~~**Cross-process path leases**~~ — DONE 2026-08-02. The open question was answered by the
-  owner with a real consumer: a filesystem-heavy sibling that does not own its working folder, spawns
-  its own fixing tools, and competes with a mod loader and other applications — including over a NAS.
-  That evidence also SPLIT the feature: leases for participants, `IFileLockInspector` for the foreign
-  processes a lease cannot touch. The plan's "network shares are not a target" was corrected rather
-  than kept (§4.1).
+The mission queue, chains, the file-update queue, cross-process locking and crash-atomicity all
+landed on 2026-08-02 — `docs/ROADMAP.md` `## Done` + `docs/task-archive.md`. The group below is
+finished; what remains in this file is the older set held at the two-consumer bar.
 
 ### The rest — held at the two-consumer bar
 

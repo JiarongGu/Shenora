@@ -86,6 +86,28 @@ _Do not stamp this heading by hand — the release workflow does it (`docs/RELEA
 
 ### Added
 
+- **Crash-atomicity for `AllOrNothing` updates** — `IFileUpdateJournal`, the shipped
+  `FileUpdateJournal`, `FileUpdateQueue.RecoverAsync()`, and the `FileUndoStep`/`FileUndoKind`/
+  `FileUpdateStage` vocabulary the plan is written in. Supply a journal and an update survives the
+  process DYING, not merely a change failing; without one, behaviour is exactly as before.
+
+  The undo plan is written to disk BEFORE each change, which is the whole property: a plan written
+  afterwards is missing precisely the change that got interrupted. That forced the one structural
+  change — undo became DATA rather than closures, so every change is now planned (including the
+  sidecar names it will use) and then applied.
+
+  Recovery distinguishes two states, because they need opposite treatment: an update interrupted
+  while APPLYING is rolled back, one interrupted while COMMITTING — every change landed, only staged
+  deletions left — is FINISHED. Rolling that one back would undo a success. Recovery is safe to run
+  twice; every undo step checks the world first, since after a crash it cannot assume the change it
+  undoes ever happened.
+
+  **The kit ships a journal implementation** despite shipping no other storage: a journal that is not
+  crash-safe is pointless, and asking every adopter to write a crash-safe store for a mechanism whose
+  purpose is surviving a crash is not reasonable. One `WriteThrough` JSON file per in-flight update,
+  temp-then-replace, one file rather than an append log so a torn entry is skippable instead of a
+  parsing failure at the worst moment.
+
 - **Cross-process file locking, in two halves that answer different questions.** `IPathLocker`/
   `IPathLease` + `FilePathLocker` (`Shenora.Core`) give advisory leases; `IFileLockInspector` +
   `RestartManagerLockInspector` (`Shenora.WinForms`) name who is holding a file. Built on an

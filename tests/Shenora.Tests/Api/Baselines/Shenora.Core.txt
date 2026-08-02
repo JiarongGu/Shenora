@@ -143,17 +143,61 @@ sealed class Shenora.Core.FilePathLockerOptions
   public System.Action<string>? Log { get; init; }
   public System.TimeSpan PollInterval { get; init; }
   public required string LockDirectory { get; init; }
+enum Shenora.Core.FileUndoKind (int)
+  public const Shenora.Core.FileUndoKind DeleteCreatedFile = 0
+  public const Shenora.Core.FileUndoKind MoveBack = 2
+  public const Shenora.Core.FileUndoKind RemoveCreatedDirectory = 3
+  public const Shenora.Core.FileUndoKind RestoreBackup = 1
+  public int value__
+sealed class Shenora.Core.FileUndoStep : System.IEquatable<Shenora.Core.FileUndoStep>
+  public .ctor(Shenora.Core.FileUndoKind Kind, string Target, string? Source = null)
+  public Shenora.Core.FileUndoKind Kind { get; init; }
+  public Shenora.Core.FileUndoStep <Clone>$()
+  public bool Equals(Shenora.Core.FileUndoStep? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileUndoStep? left, Shenora.Core.FileUndoStep? right)
+  public static bool op_Inequality(Shenora.Core.FileUndoStep? left, Shenora.Core.FileUndoStep? right)
+  public string Target { get; init; }
+  public string? Source { get; init; }
+  public void Deconstruct(out Shenora.Core.FileUndoKind Kind, out string Target, out string? Source)
 sealed class Shenora.Core.FileUpdate
   public Shenora.Core.FileAtomicity Atomicity { get; init; }
   public Shenora.Core.RetryPolicy? Retry { get; init; }
   public required System.Collections.Generic.IReadOnlyList<Shenora.Core.FileChange> Changes { get; init; }
   public string? Partition { get; init; }
+sealed class Shenora.Core.FileUpdateJournal : Shenora.Core.IFileUpdateJournal
+  public .ctor(Shenora.Core.FileUpdateJournalOptions options)
+  public System.Threading.Tasks.Task RemoveAsync(string updateId, System.Threading.CancellationToken cancellationToken)
+  public System.Threading.Tasks.Task WriteAsync(Shenora.Core.FileUpdateJournalEntry entry, System.Threading.CancellationToken cancellationToken)
+  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUpdateJournalEntry>> LoadAsync(System.Threading.CancellationToken cancellationToken)
+sealed class Shenora.Core.FileUpdateJournalEntry : System.IEquatable<Shenora.Core.FileUpdateJournalEntry>
+  public .ctor(string UpdateId, Shenora.Core.FileUpdateStage Stage, System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Undo, System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Staged, System.DateTimeOffset StartedUtc)
+  public Shenora.Core.FileUpdateJournalEntry <Clone>$()
+  public Shenora.Core.FileUpdateStage Stage { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Staged { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Undo { get; init; }
+  public System.DateTimeOffset StartedUtc { get; init; }
+  public bool Equals(Shenora.Core.FileUpdateJournalEntry? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.FileUpdateJournalEntry? left, Shenora.Core.FileUpdateJournalEntry? right)
+  public static bool op_Inequality(Shenora.Core.FileUpdateJournalEntry? left, Shenora.Core.FileUpdateJournalEntry? right)
+  public string UpdateId { get; init; }
+  public void Deconstruct(out string UpdateId, out Shenora.Core.FileUpdateStage Stage, out System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Undo, out System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Staged, out System.DateTimeOffset StartedUtc)
+sealed class Shenora.Core.FileUpdateJournalOptions
+  public System.Action<string>? Log { get; init; }
+  public required string Directory { get; init; }
 sealed class Shenora.Core.FileUpdateQueue : Shenora.Core.IFileUpdateQueue
   public .ctor(Shenora.Core.FileUpdateQueueOptions? options = null)
   public System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<int> RecoverAsync(System.Threading.CancellationToken cancellationToken = default)
 sealed class Shenora.Core.FileUpdateQueueOptions
   public .ctor()
   public Shenora.Core.IFileLockInspector? LockInspector { get; init; }
+  public Shenora.Core.IFileUpdateJournal? Journal { get; init; }
   public Shenora.Core.IPathLocker? Locker { get; init; }
   public System.Action<string>? Log { get; init; }
   public System.TimeSpan LeaseTimeout { get; init; }
@@ -165,6 +209,10 @@ sealed class Shenora.Core.FileUpdateResult
   public int Applied { get; }
   public int? FailedIndex { get; }
   public void ThrowIfFailed()
+enum Shenora.Core.FileUpdateStage (int)
+  public const Shenora.Core.FileUpdateStage Applying = 0
+  public const Shenora.Core.FileUpdateStage Committing = 1
+  public int value__
 sealed class Shenora.Core.FlatClaimScope : Shenora.Core.IClaimScope
   public .ctor(string name, bool ignoreCase = false)
   public bool Conflicts(string normalizedA, string normalizedB)
@@ -199,6 +247,10 @@ interface Shenora.Core.IFileDialogs
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
 interface Shenora.Core.IFileLockInspector
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
+interface Shenora.Core.IFileUpdateJournal
+  public abstract System.Threading.Tasks.Task RemoveAsync(string updateId, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task WriteAsync(Shenora.Core.FileUpdateJournalEntry entry, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUpdateJournalEntry>> LoadAsync(System.Threading.CancellationToken cancellationToken)
 interface Shenora.Core.IFileUpdateQueue
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.ILane

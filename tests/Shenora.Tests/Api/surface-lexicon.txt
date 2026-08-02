@@ -181,8 +181,13 @@ Change
 Create
 Delete
 Directory
+Entry
 Holder
 Inspector
+Journal
+Stage
+Step
+Undo
 Lease
 Lock
 Locker

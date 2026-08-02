@@ -30,6 +30,24 @@ public sealed class FileUpdateQueueOptions
     public IFileLockInspector? LockInspector { get; init; }
 
     /// <summary>
+    /// Write-ahead journal, which is what makes <see cref="FileAtomicity.AllOrNothing"/> survive the
+    /// process DYING rather than merely failing. Null (the default) means rollback is in-memory only:
+    /// correct for a failed change, absent after a power cut.
+    ///
+    /// <para>
+    /// Only <see cref="FileAtomicity.AllOrNothing"/> updates are journalled. A
+    /// <see cref="FileAtomicity.PerChange"/> update promises nothing about a crash, so writing a file
+    /// per update to guarantee something nobody asked for would be pure cost.
+    /// </para>
+    ///
+    /// <para>
+    /// Supplying one means calling <see cref="FileUpdateQueue.RecoverAsync"/> at startup. A journal
+    /// nobody replays is a directory that fills up.
+    /// </para>
+    /// </summary>
+    public IFileUpdateJournal? Journal { get; init; }
+
+    /// <summary>
     /// Diagnostics sink, guarded through <see cref="AppCallback.Log"/> — a throwing sink cannot take
     /// the queue down.
     /// </summary>
@@ -187,15 +205,22 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     private async Task<FileUpdateResult> ApplyLockedAsync(FileUpdate update)
     {
         var atomic = update.Atomicity == FileAtomicity.AllOrNothing;
-        var undo = new List<Func<ValueTask>>();
-        var staged = new List<Func<ValueTask>>();   // deletes to finish once the whole set lands
+        var undo = new List<FileUndoStep>();
+        var staged = new List<FileUndoStep>();   // deletes to finish once the whole set lands
+        // Journalled only for AllOrNothing: PerChange promises nothing about a crash, so recording an
+        // undo plan for it would be writing a file per update to guarantee something nobody asked for.
+        var journal = atomic ? _options.Journal : null;
+        var updateId = $"u{Guid.NewGuid():N}";
+        var startedUtc = DateTimeOffset.UtcNow;
 
         for (var index = 0; index < update.Changes.Count; index++)
         {
             var change = update.Changes[index];
             try
             {
-                await ApplyWithRetryAsync(change, atomic, undo, staged, update.Retry).ConfigureAwait(false);
+                await ApplyWithRetryAsync(
+                    change, atomic, undo, staged, update.Retry,
+                    journal, updateId, startedUtc).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -205,14 +230,71 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 if (!atomic) return new FileUpdateResult(index, index, ex, rolledBack: false, holders);
 
                 await RollbackAsync(undo).ConfigureAwait(false);
+                if (journal is not null)
+                    await Guarded(() => new ValueTask(journal.RemoveAsync(updateId, CancellationToken.None)))
+                        .ConfigureAwait(false);
                 return new FileUpdateResult(0, index, ex, rolledBack: true, holders);
             }
         }
 
-        // Only now are staged deletions real: until the last change landed, the update could still
-        // have needed them back.
-        foreach (var commit in staged) await Guarded(commit).ConfigureAwait(false);
+        // Past this line the update has LANDED. If the process dies now, recovery must finish the
+        // staged deletions rather than roll back a success — which is what the stage marker is for.
+        if (journal is not null)
+            await journal.WriteAsync(
+                new FileUpdateJournalEntry(updateId, FileUpdateStage.Committing, undo, staged, startedUtc),
+                CancellationToken.None).ConfigureAwait(false);
+
+        foreach (var commit in staged) await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false);
+
+        if (journal is not null)
+            await Guarded(() => new ValueTask(journal.RemoveAsync(updateId, CancellationToken.None)))
+                .ConfigureAwait(false);
         return new FileUpdateResult(update.Changes.Count, null, null, rolledBack: false, []);
+    }
+
+    /// <summary>
+    /// Finish what a previous run left half-done. Call it at startup, before submitting anything —
+    /// an interrupted update's paths are exactly the ones a new update is likely to touch.
+    ///
+    /// <para>
+    /// Entries left <see cref="FileUpdateStage.Applying"/> are ROLLED BACK: the update never reached
+    /// the point where it could claim to have landed, so the only state it is entitled to is the one
+    /// before it started. Entries left <see cref="FileUpdateStage.Committing"/> are FINISHED —
+    /// rolling those back would undo an update that had already succeeded.
+    /// </para>
+    ///
+    /// <para>
+    /// Safe to run twice: every undo step checks the world before acting, because after a crash it
+    /// cannot assume the change it undoes ever happened.
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Abandons recovery; entries not yet handled stay in the journal.</param>
+    /// <returns>How many interrupted updates were resolved.</returns>
+    public async Task<int> RecoverAsync(CancellationToken cancellationToken = default)
+    {
+        if (_options.Journal is not { } journal) return 0;
+
+        var entries = await journal.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var resolved = 0;
+        foreach (var entry in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (entry.Stage == FileUpdateStage.Applying)
+            {
+                Log(() => $"recovering interrupted update {entry.UpdateId} (started {entry.StartedUtc:u}): rolling back {entry.Undo.Count} step(s)");
+                await RollbackAsync(entry.Undo).ConfigureAwait(false);
+            }
+            else
+            {
+                Log(() => $"recovering interrupted update {entry.UpdateId}: finishing {entry.Staged.Count} staged deletion(s)");
+                foreach (var commit in entry.Staged) await Guarded(() => RunUndoAsync(commit)).ConfigureAwait(false);
+            }
+
+            await journal.RemoveAsync(entry.UpdateId, cancellationToken).ConfigureAwait(false);
+            resolved++;
+        }
+        if (resolved > 0) Log(() => $"recovered {resolved} interrupted file update(s)");
+        return resolved;
     }
 
     /// <summary>The path a failure is most likely ABOUT, for the "who holds it" question.</summary>
@@ -226,16 +308,32 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     };
 
     private async ValueTask ApplyWithRetryAsync(
-        FileChange change, bool atomic, List<Func<ValueTask>> undo, List<Func<ValueTask>> staged, RetryPolicy? retry)
+        FileChange change, bool atomic, List<FileUndoStep> undo, List<FileUndoStep> staged, RetryPolicy? retry,
+        IFileUpdateJournal? journal, string updateId, DateTimeOffset startedUtc)
     {
         var policy = retry ?? RetryPolicy.None;
         var attempt = 0;
         while (true)
         {
             attempt++;
+            // Re-planned on every attempt: a retry happens because the world refused, and the world
+            // may look different now (the target that existed a moment ago may be gone).
+            var planned = await PlanChangeAsync(change, atomic).ConfigureAwait(false);
             try
             {
-                await ApplyChangeAsync(change, atomic, undo, staged).ConfigureAwait(false);
+                // WRITE-AHEAD. The plan for undoing this change is durable BEFORE the change happens.
+                // An entry written afterwards is missing exactly the change that got interrupted,
+                // which is the only one recovery needs.
+                if (journal is not null && (planned.Undo.Count > 0 || planned.Staged.Count > 0))
+                    await journal.WriteAsync(
+                        new FileUpdateJournalEntry(
+                            updateId, FileUpdateStage.Applying,
+                            [.. undo, .. planned.Undo], [.. staged, .. planned.Staged], startedUtc),
+                        CancellationToken.None).ConfigureAwait(false);
+
+                await planned.Apply().ConfigureAwait(false);
+                undo.AddRange(planned.Undo);
+                staged.AddRange(planned.Staged);
                 return;
             }
             catch (Exception ex) when (attempt < policy.Attempts && policy.IsTransient(ex))
@@ -245,46 +343,57 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         }
     }
 
-    private async ValueTask ApplyChangeAsync(
-        FileChange change, bool atomic, List<Func<ValueTask>> undo, List<Func<ValueTask>> staged)
+    /// <summary>
+    /// What a change WILL do and how to undo it, decided before anything is touched.
+    ///
+    /// <para>
+    /// The split exists for the journal: an undo plan is only useful if it is durable BEFORE the
+    /// mutation, and it can only be computed from the current state (does the target exist? what
+    /// sidecar name will the backup get?). Deciding and doing in one step, as this used to, makes a
+    /// write-ahead record impossible — the plan would only exist after the change it protects.
+    /// </para>
+    /// </summary>
+    private readonly record struct PlannedChange(
+        IReadOnlyList<FileUndoStep> Undo, IReadOnlyList<FileUndoStep> Staged, Func<ValueTask> Apply)
+    {
+        public static PlannedChange Nothing { get; } = new([], [], () => ValueTask.CompletedTask);
+    }
+
+    private async ValueTask<PlannedChange> PlanChangeAsync(FileChange change, bool atomic)
     {
         switch (change)
         {
             case FileChange.CreateDirectory create:
             {
-                if (await _operations.DirectoryExistsAsync(create.Path).ConfigureAwait(false)) return;
-                await _operations.CreateDirectoryAsync(create.Path).ConfigureAwait(false);
-                // Only remove what we created, and only if still empty — another change may have
-                // filled it, and undoing that is not this change's business.
-                if (atomic) undo.Add(() => _operations.DeleteDirectoryAsync(create.Path, recursive: false));
-                return;
+                if (await _operations.DirectoryExistsAsync(create.Path).ConfigureAwait(false))
+                    return PlannedChange.Nothing;
+                return new PlannedChange(
+                    // Only remove what we created, and only if still empty — another change may have
+                    // filled it, and undoing that is not this change's business.
+                    atomic ? [new FileUndoStep(FileUndoKind.RemoveCreatedDirectory, create.Path)] : [],
+                    [],
+                    () => _operations.CreateDirectoryAsync(create.Path));
             }
 
             case FileChange.Replace replace:
             {
                 var existed = await _operations.FileExistsAsync(replace.TargetPath).ConfigureAwait(false);
                 if (!existed)
-                {
-                    await _operations.MoveFileAsync(replace.TempPath, replace.TargetPath, overwrite: false)
-                        .ConfigureAwait(false);
-                    if (atomic) undo.Add(() => _operations.DeleteFileAsync(replace.TargetPath));
-                    return;
-                }
+                    return new PlannedChange(
+                        atomic ? [new FileUndoStep(FileUndoKind.DeleteCreatedFile, replace.TargetPath)] : [],
+                        [],
+                        () => _operations.MoveFileAsync(replace.TempPath, replace.TargetPath, overwrite: false));
 
                 if (!atomic)
-                {
-                    await _operations.MoveFileAsync(replace.TempPath, replace.TargetPath, overwrite: true)
-                        .ConfigureAwait(false);
-                    return;
-                }
+                    return new PlannedChange([], [],
+                        () => _operations.MoveFileAsync(replace.TempPath, replace.TargetPath, overwrite: true));
 
                 // Keep the displaced original: that is what makes the rollback possible at all.
                 var backup = SidecarPath(replace.TargetPath, "bak");
-                await _operations.ReplaceFileAsync(replace.TempPath, replace.TargetPath, backup)
-                    .ConfigureAwait(false);
-                undo.Add(() => _operations.MoveFileAsync(backup, replace.TargetPath, overwrite: true));
-                staged.Add(() => _operations.DeleteFileAsync(backup));
-                return;
+                return new PlannedChange(
+                    [new FileUndoStep(FileUndoKind.RestoreBackup, replace.TargetPath, backup)],
+                    [new FileUndoStep(FileUndoKind.DeleteCreatedFile, backup)],
+                    () => _operations.ReplaceFileAsync(replace.TempPath, replace.TargetPath, backup));
             }
 
             case FileChange.Move move:
@@ -294,19 +403,20 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 if (existed && atomic)
                 {
                     var backup = SidecarPath(move.To, "bak");
-                    await _operations.ReplaceFileAsync(move.From, move.To, backup).ConfigureAwait(false);
-                    undo.Add(async () =>
-                    {
-                        await _operations.MoveFileAsync(move.To, move.From, overwrite: true).ConfigureAwait(false);
-                        await _operations.MoveFileAsync(backup, move.To, overwrite: true).ConfigureAwait(false);
-                    });
-                    staged.Add(() => _operations.DeleteFileAsync(backup));
-                    return;
+                    return new PlannedChange(
+                        // Two steps, in apply order, so the reverse walk restores correctly.
+                        [
+                            new FileUndoStep(FileUndoKind.RestoreBackup, move.To, backup),
+                            new FileUndoStep(FileUndoKind.MoveBack, move.From, move.To),
+                        ],
+                        [new FileUndoStep(FileUndoKind.DeleteCreatedFile, backup)],
+                        () => _operations.ReplaceFileAsync(move.From, move.To, backup));
                 }
 
-                await _operations.MoveFileAsync(move.From, move.To, move.Overwrite).ConfigureAwait(false);
-                if (atomic) undo.Add(() => _operations.MoveFileAsync(move.To, move.From, overwrite: true));
-                return;
+                return new PlannedChange(
+                    atomic ? [new FileUndoStep(FileUndoKind.MoveBack, move.From, move.To)] : [],
+                    [],
+                    () => _operations.MoveFileAsync(move.From, move.To, move.Overwrite));
             }
 
             case FileChange.Delete delete:
@@ -314,24 +424,23 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 var isFile = await _operations.FileExistsAsync(delete.Path).ConfigureAwait(false);
                 var isDirectory = !isFile
                     && await _operations.DirectoryExistsAsync(delete.Path).ConfigureAwait(false);
-                if (!isFile && !isDirectory) return;   // already gone is the outcome the caller wanted
+                if (!isFile && !isDirectory)
+                    return PlannedChange.Nothing;   // already gone is the outcome the caller wanted
 
                 if (!atomic)
-                {
-                    if (isFile) await _operations.DeleteFileAsync(delete.Path).ConfigureAwait(false);
-                    else await _operations.DeleteDirectoryAsync(delete.Path, delete.Recursive).ConfigureAwait(false);
-                    return;
-                }
+                    return new PlannedChange([], [], () => isFile
+                        ? _operations.DeleteFileAsync(delete.Path)
+                        : _operations.DeleteDirectoryAsync(delete.Path, delete.Recursive));
 
                 // STAGED: a delete is the one change that cannot be undone from nothing, so under
                 // AllOrNothing it is a move aside now and a real delete only once everything lands.
                 var aside = SidecarPath(delete.Path, "del");
-                await _operations.MoveFileAsync(delete.Path, aside, overwrite: false).ConfigureAwait(false);
-                undo.Add(() => _operations.MoveFileAsync(aside, delete.Path, overwrite: true));
-                staged.Add(() => isFile
-                    ? _operations.DeleteFileAsync(aside)
-                    : _operations.DeleteDirectoryAsync(aside, recursive: true));
-                return;
+                return new PlannedChange(
+                    [new FileUndoStep(FileUndoKind.MoveBack, delete.Path, aside)],
+                    [isFile
+                        ? new FileUndoStep(FileUndoKind.DeleteCreatedFile, aside)
+                        : new FileUndoStep(FileUndoKind.RemoveCreatedDirectory, aside)],
+                    () => _operations.MoveFileAsync(delete.Path, aside, overwrite: false));
             }
 
             default:
@@ -346,10 +455,43 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     /// the same path. Each step is guarded: a rollback that throws half way would strand the update in
     /// a state nobody can reason about, so failures are logged and the rest still runs.
     /// </summary>
-    private async ValueTask RollbackAsync(List<Func<ValueTask>> undo)
+    private async ValueTask RollbackAsync(IReadOnlyList<FileUndoStep> undo)
     {
         for (var index = undo.Count - 1; index >= 0; index--)
-            await Guarded(undo[index]).ConfigureAwait(false);
+            await Guarded(() => RunUndoAsync(undo[index])).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Perform one undo step, TOLERATING a world that does not match the plan. After a crash the step
+    /// may already have been done, or never have happened at all: the change it undoes may have been
+    /// interrupted half way. So every step checks first and does nothing when there is nothing to do —
+    /// which also makes recovery safe to run twice.
+    /// </summary>
+    private async ValueTask RunUndoAsync(FileUndoStep step)
+    {
+        switch (step.Kind)
+        {
+            case FileUndoKind.DeleteCreatedFile:
+                if (await _operations.FileExistsAsync(step.Target).ConfigureAwait(false))
+                    await _operations.DeleteFileAsync(step.Target).ConfigureAwait(false);
+                return;
+
+            case FileUndoKind.RestoreBackup:
+            case FileUndoKind.MoveBack:
+                if (step.Source is { } source
+                    && (await _operations.FileExistsAsync(source).ConfigureAwait(false)
+                        || await _operations.DirectoryExistsAsync(source).ConfigureAwait(false)))
+                    await _operations.MoveFileAsync(source, step.Target, overwrite: true).ConfigureAwait(false);
+                return;
+
+            case FileUndoKind.RemoveCreatedDirectory:
+                if (await _operations.DirectoryExistsAsync(step.Target).ConfigureAwait(false))
+                    await _operations.DeleteDirectoryAsync(step.Target, recursive: false).ConfigureAwait(false);
+                return;
+
+            default:
+                throw new NotSupportedException($"Unhandled undo kind '{step.Kind}'.");
+        }
     }
 
     private async ValueTask Guarded(Func<ValueTask> step)

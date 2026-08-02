@@ -114,12 +114,16 @@ public enum FileAtomicity
 them. `Delete` is the one that cannot be undone from nothing, so under `AllOrNothing` a delete is
 staged — moved to a temp location and only really removed once the whole set has landed.
 
-**The limit, stated up front rather than discovered:** this covers a change that FAILS. It does not
-cover the process DYING mid-apply, because nothing is written down. Crash-atomicity needs a durable
-intent journal replayed at startup — additive later (it is a store behind the same API, and the
-rollback bookkeeping is already the journal's content), so it is not built now, but the API must not
-promise what it does not do. `FileAtomicity.AllOrNothing` means "no partial result from a failure",
-not "no partial result from a power cut", and the XML will say exactly that.
+**The limit, and how it was removed (2026-08-02, owner: "yes please fix that too").** As first built,
+this covered a change that FAILED but not the process DYING mid-apply, because nothing was written
+down. That is now optional rather than inherent: supply a `IFileUpdateJournal` and the undo plan is
+durable BEFORE each change, with `FileUpdateQueue.RecoverAsync()` finishing the job at startup.
+
+The prediction in this document held exactly — *"additive later, since the rollback bookkeeping is
+already the journal's content"*. What it did NOT predict was the structural consequence: undo had to
+stop being closures and become DATA (`FileUndoStep`), which meant splitting every change into a plan
+and an apply, because an undo plan is only useful if it is durable before the mutation it undoes, and
+it can only be computed from the state at that moment. See §6.1.
 
 ### §3.2 What the build changed from this plan
 
@@ -219,16 +223,33 @@ writes last.
 Recorded so the next session does not re-argue them, each with the trigger that would change the
 answer:
 
-- **A durable intent JOURNAL (crash-atomicity).** In-process rollback is in scope (§3.1); surviving a
-  power cut mid-apply is not. Trigger: an app that cannot tolerate a torn set after a hard kill.
-  Additive when it comes — the rollback bookkeeping §3.1 already builds IS the journal's content, so
-  it becomes a store behind the same API rather than a reshape.
+- ~~**A durable intent JOURNAL (crash-atomicity).**~~ **BUILT 2026-08-02** — see §6.1.
 - **Transactions across volumes.** No OS gives us this; simulating it is the journal, twice.
 - **A general `IFileSystem` abstraction.** The apps have their own and should keep them
   (`docs/ADOPTION.md` says so). The kit needs a *writer*, not a filesystem.
 - **Archive, download, cleanup helpers.** Business logic. Unchanged from the mission design's §6.
 - **Watching for external changes.** A different component again (`FileSystemWatcher` semantics,
   debouncing, rename storms). Not this.
+
+### §6.1 The journal, as built
+
+`IFileUpdateJournal` + the shipped `FileUpdateJournal` (one small JSON file per in-flight update,
+`WriteThrough`, temp-then-replace so an entry is never half-written). `FileUpdateQueue.RecoverAsync()`
+resolves what a previous run left behind. Three decisions worth keeping:
+
+- **The kit SHIPS an implementation**, unlike every other storage seam here. A journal that is not
+  crash-safe is pointless, and "write your own crash-safe store" is not a reasonable thing to ask of
+  every adopter for a mechanism whose entire purpose is surviving a crash.
+- **A stage marker, not just an undo list.** An update interrupted while APPLYING is rolled back; one
+  interrupted while COMMITTING — every change landed, only staged deletions left — is FINISHED.
+  Rolling that back would undo a success, and the window is real however narrow.
+- **Undo became DATA, and that forced the plan/apply split.** Closures cannot outlive a process, so
+  every change now computes its undo steps (including the sidecar names it will use) BEFORE mutating.
+  This was the only structural change; everything else was additive as predicted.
+
+**One entry per update, not an append log.** A torn append is a parsing problem at the worst possible
+moment; a torn single file is one unreadable entry that recovery reports and skips, leaving every
+other interrupted update recoverable.
 
 ## §7 Verification — what would make it believable
 

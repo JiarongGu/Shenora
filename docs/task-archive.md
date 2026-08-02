@@ -52,9 +52,30 @@ And the chain claim-union test **passed its sabotage** — it had ordered its st
 so a "last wins" bug produced the same answer. It is now a `Theory` over both orders; if someone
 simplifies it back to one case, that test stops testing anything.
 
-**Still open from this group, and only this:** cross-process path leases (§4 of the file-updates
-design). Additive, not breaking, and waiting on a question rather than on effort — does anything need
-them today, or is single-instance the practical guarantee?
+4. **Cross-process locking** (`25f32ad`) — the open question ("does anything need leases today?") was
+   answered with a real consumer: a filesystem-heavy sibling that does not own its working folder,
+   spawns its own fixing tools, and competes with a mod loader and other applications, over a NAS as
+   well as locally. That evidence SPLIT the feature rather than just unblocking it: `IPathLocker` for
+   participants, `IFileLockInspector` for the foreign processes a lease can never touch. It also
+   corrected the plan's own "network shares are not a target" (§4.1) — caution written as guidance.
+
+5. **Crash-atomicity** (`a2b1c9f`-ish, the journal commit) — `IFileUpdateJournal` +
+   `FileUpdateQueue.RecoverAsync`. The design predicted this would be additive "because the rollback
+   bookkeeping is already the journal's content", and that held — but it missed the structural
+   consequence: undo had to become DATA rather than closures, which forced every change to be planned
+   before it is applied. **Read that before adding a change kind**: the plan/apply split is not
+   stylistic, it is what makes a write-ahead record possible at all.
+
+**Sabotage-verification earned its keep three times in this group**, twice by exposing tests that
+could not fail:
+- The chain claim-union test ordered its steps shared-then-exclusive, so a "last wins" bug gave the
+  same answer. Now a `Theory` over both orders.
+- The first crash tests could not distinguish a write-ahead journal from a write-after one, because
+  the crash always fired BEFORE the mutation. `A_change_that_LANDED_before_the_crash_is_still_undone`
+  is the one that fails when journalling moves after the apply — the others do not.
+- The file queue's serialization test does fail when the partition gate is removed, as intended.
+
+**Nothing from this group is open.**
 
 ### Drop zones: state the gain, not just the wiring (2026-08-02)
 

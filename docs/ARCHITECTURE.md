@@ -187,9 +187,14 @@ changes, noting them in `CHANGELOG.md`).
   in REVERSE — which is why a delete under it is STAGED (moved aside, really removed only once the
   whole set lands), a delete being the one change that cannot be undone from nothing. Backups and
   aside-copies are siblings of the target, so every move is same-volume. `FileUpdateResult` reports
-  rather than throws, like `MissionResult`. **The honest limit, stated in the enum's own XML:** this
-  survives a FAILURE, not a power cut — crash-atomicity needs a durable intent journal, which is
-  recorded as not-built. The internal `IFileOperations` seam exists so serialization and rollback
+  rather than throws, like `MissionResult`. **Crash-atomicity is opt-in:** supply
+  `FileUpdateQueueOptions.Journal` (`IFileUpdateJournal`, with the shipped `FileUpdateJournal` — one
+  `WriteThrough` JSON file per in-flight update) and the undo plan is durable BEFORE each change, with
+  `RecoverAsync()` resolving what a previous run left. `FileUpdateStage` decides which way: an update
+  interrupted while `Applying` is rolled back, one interrupted while `Committing` is FINISHED, since
+  rolling that back would undo a success. Undo is DATA (`FileUndoStep`/`FileUndoKind`) rather than
+  closures — that is what a journal requires, and it is why each change is planned before it is
+  applied. Without a journal the same `AllOrNothing` covers a failed change only. The internal `IFileOperations` seam exists so serialization and rollback
   ORDER are provable with a probe instead of with sleeps; the kit still ships no public filesystem
   abstraction.
   **`Io/` — cross-process locking, the two halves of a problem claims cannot reach.** A

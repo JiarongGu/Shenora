@@ -598,10 +598,28 @@ Commit = (mission, ct) => updates.ApplyAsync(new FileUpdate
 | "Apply these five files together or not at all", hand-rolled with a backup folder | `FileAtomicity.AllOrNothing` | Undoes applied changes in reverse. A delete becomes STAGED — moved aside, really removed only once everything lands — because a delete cannot be undone from nothing. |
 | Reporting which file broke a batch | `FileUpdateResult.FailedIndex` + `Applied` | The result reports rather than throws, like `MissionResult`; `ThrowIfFailed()` if you prefer exceptions. |
 
-> ⚠ **`AllOrNothing` survives a FAILURE, not a power cut.** Rollback is compensating and in-process:
-> nothing is written down, so a process killed mid-apply leaves whatever it had reached. If a torn set
-> after a hard kill is unacceptable for your product, say so — that needs a durable intent journal,
-> which is designed but deliberately not built.
+**Surviving a power cut is opt-in, and it is one line.** Without a journal, `AllOrNothing` rollback is
+in-process: it covers a change that fails, not a process that dies. With one, the undo plan is on disk
+before each change and recovery finishes the job at startup:
+
+```csharp
+var queue = new FileUpdateQueue(new FileUpdateQueueOptions
+{
+    Journal = new FileUpdateJournal(new FileUpdateJournalOptions { Directory = paths.DataArea("journal") }),
+});
+await queue.RecoverAsync();   // at startup, BEFORE submitting anything
+```
+
+An update interrupted while applying is rolled back; one interrupted after every change landed (only
+staged deletions left) is finished instead — rolling that back would undo a success. Recovery is safe
+to run twice, because every undo step checks the world before acting.
+
+> ⚠ **A journal nobody replays is a directory that fills up.** Configuring one means calling
+> `RecoverAsync()` at startup, before the first submit — an interrupted update's paths are exactly the
+> ones your next update is likely to touch.
+
+> ⚠ **Only `AllOrNothing` updates are journalled.** `PerChange` promises nothing about a crash, so
+> paying a file write per update to guarantee something nobody asked for would be pure cost.
 
 ### Other processes touching your files — two different problems
 
