@@ -76,6 +76,20 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # The mobile TFMs need their workloads, and the runner image cannot be assumed to carry the
+      # .NET 10 ones — its published list is the 9.0 `maui.*` set plus Visual Studio component groups.
+      # 0.5.0 proved net10.0-android resolved there and proved nothing about iOS, which is not a gap
+      # worth discovering during a release.
+      #
+      # Explicit ids rather than `dotnet workload restore`: restore infers them from the projects,
+      # which is self-maintaining but depends on the solution parsing cleanly, and a failure here
+      # stops a release for a reason that has nothing to do with the release. KEEP THIS LIST IN STEP
+      # with the mobile TFMs in src/Shenora.Android and src/Shenora.iOS.
+      #
+      # Idempotent and quick when the workloads are already present.
+      - name: Install the mobile workloads
+        run: dotnet workload install maui-android maui-ios
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22

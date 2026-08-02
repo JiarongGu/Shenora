@@ -85,10 +85,11 @@ Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
   - **What is left is only to publish it.** The next release cuts 0.5.1+ and carries iOS
     automatically; alternatively `Shenora.iOS.0.5.0.nupkg` can be pushed on its own to complete the
     version, since `src/` is unchanged since the `v0.5.0` tag and the package is byte-equivalent.
-  - ⚠ **New machine prerequisite: the `maui-ios` workload**, alongside `maui-android`. CI has not been
-    checked for it — 0.5.0 proved the runner has maui-android, nothing more. If a release fails on the
-    iOS TFM, add `dotnet workload restore` to `release.yml`; that is the one-line fix and the reason
-    to look there first.
+  - **CI now installs both mobile workloads explicitly** (`release.yml`), because the runner image
+    publishes a 9.0 `maui.*` list and cannot be assumed to carry the .NET 10 ones. 0.5.0 proved
+    net10.0-android resolved there and proved nothing about iOS. The failure mode was safe either way —
+    the Verify gate runs before Pack, Push, Commit and Tag, so a missing workload burns no version —
+    but a release is the wrong place to find out.
   - Separately, RUNNING the sample on a simulator still rides two override flags
     (`ValidateXcodeVersion=false` + `MtouchLink=SdkOnly`) because that Mac's Xcode 26.3 is older than
     the workload's 26.6. That is an APP concern only, gitignored machine config, simulator-debug only
