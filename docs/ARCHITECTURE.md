@@ -11,7 +11,9 @@ records only what EXISTS.)
      file dates its claims instead of versioning them, for the same reason. -->
 ## Current state — **v0.5.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
-Five NuGet packages + `@shenora/react` on npm. Since the summary below was written, P5.5 landed the
+Five NuGet packages + `@shenora/react` on npm — since 0.5.0 organised BY PLATFORM (D37): `Core`,
+`Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. Since the summary below was
+written, P5.5 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
 a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 added native caption
 buttons, P6 readied adoption (`docs/ADOPTION.md`, and six capability gaps found and closed), and P7

@@ -22,11 +22,11 @@ extracted from proven in-house applications and verified end-to-end against the 
 public and protected member is documented and gated by API-surface baselines. The kit also runs on
 **Android and iOS**, proven on a device and a simulator.
 
-⚠ **The package set was reorganised by platform after v0.4.0 and the new names are NOT published
-yet.** `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` are on nuget.org at
-0.4.0 and are superseded by a single `Shenora.Windows`; `Shenora.Android` and `Shenora.iOS` are new.
-Until the next release cuts, install the 0.4.0 names. `CHANGELOG.md` under `### Breaking` has the
-mapping, and `docs/RELEASING.md` covers how a version is cut.
+⚠ **The package set was reorganised by platform in 0.5.0.** `Shenora.WinForms`, `Shenora.WebView2`
+and `Shenora.WebView2.Sessions` are superseded by a single `Shenora.Windows`, and `Shenora.Android` /
+`Shenora.iOS` are new. The old ids remain restorable at their last version (0.4.0) and carry a
+deprecation notice; **migration is a rename, not a rewrite** — every type keeps its name and
+signature. `CHANGELOG.md` under `### Breaking` has the mapping.
 
 ## Packages
 

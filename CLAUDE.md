@@ -18,11 +18,13 @@ relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design d
 `docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the
 code cites its `§` numbers.
 
-**Status: v0.1.0 SHIPPED (2026-07-31)** — five NuGet packages + `@shenora/react` on npm, repo public.
-P1–P7 are complete and **nothing is queued**: `TASKS.md` holds two standing habits, the finished work
-lives in `docs/archive/tasks.md`. Growth from here is harvest-driven (D15) and adoption-driven — real
-work arrives when a sibling app adopts the kit and hits something. **Every public change is now SemVer
-surface**; 1.0 is a separate deliberate freeze, not yet cut.
+**Status: v0.5.0 published (2026-08-02)** — five NuGet packages + `@shenora/react` on npm, repo public.
+0.5.0 reorganised the set BY PLATFORM (D37): `Core` · `Ipc` · `Windows` · `Android` · `iOS`. The kit
+runs on all three shells, proven on a device and a simulator. P1–P7 are complete; `TASKS.md` has the
+open work — **D (a media library, wanted by three sibling apps — the first item to clear the
+two-consumer bar outright)** plus A8 (iOS is proven, not yet pack-automated) and E1 (off-screen
+sessions cannot see the app's own bundle). Growth is harvest-driven (D15) and adoption-driven.
+**Every public change is SemVer surface**; 1.0 is a separate deliberate freeze, not yet cut.
 
 **Read first:** `docs/README.md` — the memory map that routes any task to the right doc or rule.
 **Private companion:** also read `local/CLAUDE.local.md` + `local/PROJECT_NOTES.md` at session
