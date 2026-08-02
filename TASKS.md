@@ -139,7 +139,7 @@ the wheel", which is why these are filed rather than quietly worked around.)
 > So the kit owes an ATOMIC FILE-TRANSFORM primitive, not just an atomic write. The write is the
 > degenerate case where producing the output takes no time.
 
-_The atomic write and the general TRANSFORM are DONE — `AtomicFile` + `FileTransform` in
+_The atomic write and the general TRANSFORM are DONE — `Files` + `FileReplacement` in
 `Shenora.Core`, ported from the adopter with its six tests plus seven more for the transform half.
 Sabotage-verified both ways; the flush-to-disk gap is stated in the source because no test can cover
 it. See `docs/archive/tasks.md`._

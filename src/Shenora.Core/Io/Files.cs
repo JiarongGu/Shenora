@@ -2,9 +2,43 @@ using System.Text;
 
 namespace Shenora.Core;
 
+/// <summary>How a write reaches the target file. Names the PROCESS, not a kind of file.</summary>
+public enum FileWriteMode
+{
+    /// <summary>
+    /// Produce the contents beside the target, flush them to disk, then rename over it — the DEFAULT,
+    /// because it is the only way a reader can never observe a half-written file and an interruption
+    /// can never destroy the previous one. Costs one extra copy on disk until the rename.
+    /// </summary>
+    Atomic = 0,
+
+    /// <summary>
+    /// Truncate the target and write into it — what <see cref="File.WriteAllText(string,string)"/>
+    /// does, still flushed to disk. **An interruption leaves the target torn**, so choose it
+    /// deliberately, for the two cases where <see cref="Atomic"/> genuinely cannot pay:
+    /// a very large file, where the temp doubles peak disk use; and a filesystem that will not honour
+    /// the rename (some network shares and FUSE mounts). Anywhere else this is the old bug with a
+    /// nicer spelling.
+    /// </summary>
+    Direct = 1,
+}
+
 /// <summary>
-/// Replace a file's contents so that an interruption can never leave it half-written — synchronously,
-/// one file at a time, with no queue.
+/// Write a file. The kit's counterpart to <see cref="File"/>, one file at a time, synchronously.
+///
+/// <para><b>Every write here is atomic, and that is not a feature — it is the only correct way to
+/// replace a file's contents.</b> An earlier draft called this <c>AtomicFile</c>, which framed
+/// atomicity as a mode you opt into; the trouble with an opt-in is that the call sites which forget
+/// are exactly the ones that break, and "atomic" describes the OPERATION anyway, never the file.
+/// So there is no non-atomic option here. If you want a torn write you already have
+/// <see cref="File"/>.
+/// </para>
+///
+/// <para><b>Named <c>Files</c>, one letter from <see cref="File"/>, deliberately.</b> The mental
+/// substitution is meant to be that cheap. It cannot be called <c>File</c>: a consumer with both
+/// <c>using System.IO;</c> and <c>using Shenora.Core;</c> would get an ambiguity error on every
+/// existing <c>File.</c> call in the file, which is a hostile thing to do to an adopter.
+/// </para>
 ///
 /// <para><b>Why this exists separately from <see cref="IFileUpdateQueue"/>.</b> The queue is for
 /// MULTI-change, cross-process, rollback-able work: N files that must land together, partitioned so two
@@ -25,7 +59,7 @@ namespace Shenora.Core;
 /// it. Extraction-first (D8), not a redesign.
 /// </para>
 /// </summary>
-public static class AtomicFile
+public static class Files
 {
     /// <summary>
     /// The suffix appended to the target path to form the temp file.
@@ -34,7 +68,7 @@ public static class AtomicFile
     /// that the next successful write overwrites, instead of accumulating debris nobody sweeps. The
     /// trade is that two concurrent writers of the same path share it — fine for a config store, where
     /// last-writer-wins is the intended semantics, and NOT fine for a long
-    /// <see cref="BeginTransform(string,string)"/>, which is why that overload lets you pass your own.
+    /// <see cref="BeginReplace(string,string)"/>, which is why that overload lets you pass your own.
     /// </para>
     /// </summary>
     public const string DefaultTempSuffix = ".tmp";
@@ -57,7 +91,9 @@ public static class AtomicFile
     /// <param name="path">The file to replace.</param>
     /// <param name="contents">The new contents.</param>
     /// <param name="encoding">Defaults to <see cref="DefaultEncoding"/> (UTF-8, no BOM).</param>
-    public static void WriteAllText(string path, string contents, Encoding? encoding = null)
+    /// <param name="mode">Defaults to <see cref="FileWriteMode.Atomic"/>.</param>
+    public static void WriteAllText(string path, string contents, Encoding? encoding = null,
+                                    FileWriteMode mode = FileWriteMode.Atomic)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(contents);
@@ -65,15 +101,16 @@ public static class AtomicFile
         {
             using var writer = new StreamWriter(stream, encoding ?? DefaultEncoding, leaveOpen: true);
             writer.Write(contents);
-        });
+        }, mode);
     }
 
     /// <summary>Write raw bytes. The binary twin of <see cref="WriteAllText"/>.</summary>
-    public static void WriteAllBytes(string path, byte[] contents)
+    public static void WriteAllBytes(string path, byte[] contents,
+                                     FileWriteMode mode = FileWriteMode.Atomic)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(contents);
-        Write(path, stream => stream.Write(contents, 0, contents.Length));
+        Write(path, stream => stream.Write(contents, 0, contents.Length), mode);
     }
 
     /// <summary>
@@ -87,29 +124,42 @@ public static class AtomicFile
     /// one level up. A best-effort caller writes the policy it wants:
     /// </para>
     /// <code>
-    /// try { AtomicFile.WriteAllText(path, json); }
+    /// try { Files.WriteAllText(path, json); }
     /// catch (Exception ex) { _log.Warn(ex, "settings save failed; previous file kept"); }
     /// </code>
     /// </summary>
-    public static void Write(string path, Action<Stream> write)
+    public static void Write(string path, Action<Stream> write, FileWriteMode mode = FileWriteMode.Atomic)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(write);
 
-        using var transform = BeginTransform(path);
-        using (var stream = new FileStream(transform.TempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        if (mode == FileWriteMode.Direct)
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            using var target = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+            write(target);
+            // Still flushed to disk: Direct gives up ATOMICITY, not durability. The only difference
+            // from Atomic is that an interruption can leave this target torn — which is the trade the
+            // caller opted into, not an excuse to also lose the write that did finish.
+            target.Flush(flushToDisk: true);
+            return;
+        }
+
+        using var replacement = BeginReplace(path);
+        using (var stream = new FileStream(replacement.TempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
             write(stream);
         }
-        transform.Commit();
+        replacement.Commit();
         // Anything thrown above escapes deliberately, and Dispose still discards the temp on the way
         // out — so the guarantee holds whether the caller catches or not: the PREVIOUS file survives.
     }
 
     /// <summary>
-    /// Begin a transform: get a temp path beside <paramref name="targetPath"/>, produce whatever you
+    /// Begin a replacement: get a temp path beside <paramref name="targetPath"/>, produce whatever you
     /// like into it — an encode, a compile, an extraction, a render — and
-    /// <see cref="FileTransform.Commit"/> when it is good. Disposing without committing discards it.
+    /// <see cref="FileReplacement.Commit"/> when it is good. Disposing without committing discards it.
     ///
     /// <para><b>The input is never touched.</b> That is the whole point, and it is what makes this
     /// different from writing over the target as you go: an interruption costs the WORK, never the
@@ -128,27 +178,27 @@ public static class AtomicFile
     /// which is what <see cref="IMissionScheduler"/> is for, and a long transform belongs there anyway.
     /// </para>
     /// </summary>
-    /// <param name="targetPath">The file to replace when the transform commits.</param>
+    /// <param name="targetPath">The file to replace when the replacement commits.</param>
     /// <param name="tempSuffix">Appended to the target path; see <see cref="DefaultTempSuffix"/>.</param>
-    public static FileTransform BeginTransform(string targetPath, string tempSuffix = DefaultTempSuffix)
+    public static FileReplacement BeginReplace(string targetPath, string tempSuffix = DefaultTempSuffix)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(tempSuffix);
-        return new FileTransform(targetPath, tempSuffix);
+        return new FileReplacement(targetPath, tempSuffix);
     }
 }
 
 /// <summary>
-/// One in-flight atomic replacement — see <see cref="AtomicFile.BeginTransform(string,string)"/>.
+/// One in-flight atomic replacement — see <see cref="Files.BeginReplace(string,string)"/>.
 /// Produce into <see cref="TempPath"/>, then <see cref="Commit"/>. Disposing without committing
 /// discards the temp, so a <c>using</c> that throws cleans up on its way out.
 /// </summary>
-public sealed class FileTransform : IDisposable
+public sealed class FileReplacement : IDisposable
 {
     private bool _committed;
     private bool _disposed;
 
-    internal FileTransform(string targetPath, string tempSuffix)
+    internal FileReplacement(string targetPath, string tempSuffix)
     {
         TargetPath = targetPath;
         TempPath = targetPath + tempSuffix;
@@ -208,7 +258,7 @@ public sealed class FileTransform : IDisposable
     /// </para>
     /// <para>
     /// ⚠ <b>NOT COVERED BY A TEST, and measured rather than assumed:</b> deleting this call leaves all
-    /// of <c>AtomicFileTests</c> green. Durability against power loss cannot be asserted from a process
+    /// of <c>FilesTests</c> green. Durability against power loss cannot be asserted from a process
     /// that is still running — you would need to actually cut power between the write and the rename.
     /// Every other guarantee here is sabotage-verified; this one rests on the reasoning above, so treat
     /// it as load-bearing and do not "simplify" it away because nothing went red.

@@ -44,6 +44,11 @@ Clipboard
 Cookie
 Dpi
 File
+# `Files` (2026-08-03) is the kit's file-writing entry point — one letter from System.IO.File on
+# purpose. Every write it does is atomic, which is why there is no `Atomic` word here any more: that
+# framed correctness as an opt-in mode, and the call sites that forget an opt-in are the ones that
+# break.
+Files
 Folder
 Form
 Forms
@@ -186,6 +191,9 @@ Session
 Streaming
 Text
 Wheel
+# `Write` (2026-08-03) is in FileWriteMode — the enum names the PROCESS (how a write reaches the
+# target) rather than a kind of file. Atomic is the default; Direct is the opt-out.
+Write
 Zone
 
 # ── Filesystem updates (2026-08-02) ─────────────────────────────────────────────────────────────
@@ -193,12 +201,6 @@ Zone
 # mechanism nouns — what the queue applies — and Atomicity is the property an app chooses per
 # update. Note what is still NOT here: no archive, download, install or sync noun.
 #
-# `Atomic` and `Transform` (2026-08-03) are the single-file primitive beside the queue: AtomicFile
-# and FileTransform. Both name the MECHANISM and neither names a scenario — a transform is any
-# produce-then-swap (encode, compile, extract, render), which is exactly why the type cannot be
-# called after any one of them. Atomic is already the vocabulary of Atomicity above; this is the
-# same property applied to one file instead of a batch.
-Atomic
 Atomicity
 Change
 Create
@@ -223,8 +225,13 @@ Locker
 Manager
 Move
 Replace
+# `Replacement` (2026-08-03) is the noun form of Replace, already here as the queue's FileChange.
+# It names the in-flight swap that Files.BeginReplace hands back — what the object IS, rather
+# than what the caller is using it for. It replaced `FileTransform`, which described the caller's
+# activity (encoding, compiling) instead of the thing, and would have drifted the moment someone
+# used it for something that is not a transform.
+Replacement
 Restart
-Transform
 Update
 
 # ── Data shapes ───────────────────────────────────────────────────────────────────────────────────

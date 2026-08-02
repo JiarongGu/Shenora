@@ -1969,10 +1969,10 @@ Baselines re-promoted (additions only — one property on `WindowStateOptions`, 
 overload, one `Apply` overload, one `AttachTo` overload — the last added during phase review to
 close a symmetry gap the reviewer caught).
 
-## Atomic file write + transform — DONE 2026-08-03 (`AtomicFile`, `FileTransform`)
+## Atomic file write + transform — DONE 2026-08-03 (`Files`, `FileReplacement`)
 
 Filed by the first adopter's `Shenora.Core/Io` adoption attempt and built the same day.
-Shipped as `AtomicFile.WriteAllText/WriteAllBytes/Write/BeginTransform` + `FileTransform` in
+Shipped as `Files.WriteAllText/WriteAllBytes/Write/BeginReplace` + `FileReplacement` in
 `Shenora.Core`, ported from the adopter's stopgap with its six tests plus seven for the transform
 half (13 total). Baseline additive, 0 removals. Sabotage-verified: swapping `File.Move` for
 `File.Replace` fails four tests including the fresh-install case, and removing the temp discard

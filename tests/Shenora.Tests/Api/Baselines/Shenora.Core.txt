@@ -5,13 +5,6 @@ static class Shenora.Core.AppCallback
 static class Shenora.Core.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)
-static class Shenora.Core.AtomicFile
-  public const string DefaultTempSuffix = ".tmp"
-  public static Shenora.Core.FileTransform BeginTransform(string targetPath, string tempSuffix = ".tmp")
-  public static readonly System.Text.Encoding DefaultEncoding
-  public static void Write(string path, System.Action<System.IO.Stream> write)
-  public static void WriteAllBytes(string path, byte[] contents)
-  public static void WriteAllText(string path, string contents, System.Text.Encoding? encoding = null)
 enum Shenora.Core.ClaimMode (int)
   public const Shenora.Core.ClaimMode Exclusive = 0
   public const Shenora.Core.ClaimMode Shared = 1
@@ -150,7 +143,7 @@ sealed class Shenora.Core.FilePathLockerOptions
   public System.Action<string>? Log { get; init; }
   public System.TimeSpan PollInterval { get; init; }
   public required string LockDirectory { get; init; }
-sealed class Shenora.Core.FileTransform : System.IDisposable
+sealed class Shenora.Core.FileReplacement : System.IDisposable
   public string TargetPath { get; }
   public string TempPath { get; }
   public void Commit()
@@ -225,6 +218,17 @@ enum Shenora.Core.FileUpdateStage (int)
   public const Shenora.Core.FileUpdateStage Applying = 0
   public const Shenora.Core.FileUpdateStage Committing = 1
   public int value__
+enum Shenora.Core.FileWriteMode (int)
+  public const Shenora.Core.FileWriteMode Atomic = 0
+  public const Shenora.Core.FileWriteMode Direct = 1
+  public int value__
+static class Shenora.Core.Files
+  public const string DefaultTempSuffix = ".tmp"
+  public static Shenora.Core.FileReplacement BeginReplace(string targetPath, string tempSuffix = ".tmp")
+  public static readonly System.Text.Encoding DefaultEncoding
+  public static void Write(string path, System.Action<System.IO.Stream> write, Shenora.Core.FileWriteMode mode = 0)
+  public static void WriteAllBytes(string path, byte[] contents, Shenora.Core.FileWriteMode mode = 0)
+  public static void WriteAllText(string path, string contents, System.Text.Encoding? encoding = null, Shenora.Core.FileWriteMode mode = 0)
 sealed class Shenora.Core.FlatClaimScope : Shenora.Core.IClaimScope
   public .ctor(string name, bool ignoreCase = false)
   public bool Conflicts(string normalizedA, string normalizedB)

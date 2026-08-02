@@ -16,17 +16,28 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
-- **`AtomicFile` + `FileTransform` in `Shenora.Core`** — replace a file's contents so an interruption
-  can never leave it half-written, synchronously, one file at a time, with no queue.
+- **`Files` + `FileReplacement` + `FileWriteMode` in `Shenora.Core`** — the kit's counterpart to
+  `System.IO.File`, one letter away on purpose. **Every write is atomic by default**, so an
+  interruption can never leave a file half-written or destroy the previous contents.
 
   ```csharp
-  AtomicFile.WriteAllText(path, json);            // the common case
-  AtomicFile.Write(path, stream => Serialize(stream));
+  Files.WriteAllText(path, json);                              // atomic — the default
+  Files.WriteAllText(path, json, mode: FileWriteMode.Direct);  // opt out, deliberately
 
-  using var t = AtomicFile.BeginTransform(videoPath);
-  await Encode(source, t.TempPath);               // the ORIGINAL is never touched
-  if (await Probe(t.TempPath)) t.Commit();        // else dispose discards it
+  using var r = Files.BeginReplace(videoPath);
+  await Encode(source, r.TempPath);                // the ORIGINAL is never touched
+  if (await Probe(r.TempPath)) r.Commit();         // else dispose discards it
   ```
+
+  **Atomicity is the default rather than an opt-in type, and that was the design's last correction.**
+  An earlier draft called this `AtomicFile`, which framed correctness as a mode you remember to
+  choose — and the call sites that forget an opt-in are precisely the ones that break. `Direct` exists
+  for the two cases where atomic genuinely cannot pay (a very large file, where the temp doubles peak
+  disk; a share that will not honour the rename) and is pinned by a test asserting it does NOT protect
+  the previous file, so the trade is stated rather than implied.
+
+  It cannot be called `File`: a consumer with both `using System.IO;` and `using Shenora.Core;` would
+  get an ambiguity error on every existing `File.` call.
 
   **The failure it prevents is a silent one.** `File.WriteAllText` truncates the target and then writes
   into it, and config stores typically load best-effort — so an interrupted write does not error, it
