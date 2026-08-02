@@ -14,7 +14,18 @@
 <script src="_framework/hybridwebview.js"></script>
 <style>
   :root { color-scheme: dark; }
-  body { margin: 0; padding: 12px; background: #14161a; color: #e6e6e6;
+  /*
+    The safe-area insets are NOT optional once a page ships to more than one mobile shell, and this
+    is what proves it: the identical markup looked correct on an Android emulator for a whole session
+    and put its heading underneath the status bar and the Dynamic Island the first time it ran on an
+    iPhone simulator. `viewport-fit=cover` (in the meta above) is what makes env() report real values
+    rather than 0, so the two go together — and on a shell with no insets every calc() below collapses
+    back to the plain 12px.
+  */
+  body { margin: 0;
+         padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+                  calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+         background: #14161a; color: #e6e6e6;
          font: 13px/1.45 ui-monospace, "Cascadia Mono", Menlo, monospace; }
   h1 { font-size: 15px; margin: 0 0 2px; color: #7fd1ff; }
   .sub { color: #8b93a1; margin-bottom: 10px; font-size: 11px; }

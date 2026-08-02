@@ -302,9 +302,31 @@ function simulatorRid(cfg) {
   return arch === 'arm64' ? 'iossimulator-arm64' : 'iossimulator-x64';
 }
 
+// The npm package is a BUILD ARTIFACT and `dist/` is gitignored, so pushing the branch does not
+// carry it. Without this the sample silently falls back to its inline transport and logs
+// "INLINE fallback" — which is the sample behaving as designed, and a WEAKER proof than the Android
+// run, where `dev.mjs verify` had already built dist/ on the same machine. Seen on the first iOS run.
+// Skipped, with a reason, when the Mac has no node rather than failing the whole build over it.
+function buildClientPackage(cfg) {
+  const hasNode = ssh(cfg, 'command -v npm >/dev/null 2>&1 && echo YES || echo NO');
+  if (!(hasNode.stdout ?? '').trim().startsWith('YES')) {
+    console.log('mac: no npm on the Mac — skipping the client build; the page will use its inline transport.');
+    return;
+  }
+  console.log('mac: building @shenora/react so the sample uses the SHIPPED transport…');
+  const r = ssh(cfg, `set -e -o pipefail
+    cd ~/${cfg.work}/src/Shenora.React
+    npm install --no-audit --no-fund --silent
+    npm run build 2>&1 | tail -5`);
+  if (r.status !== 0) {
+    console.log(`mac: client build failed — continuing with the inline fallback.\n${(r.stderr ?? r.stdout ?? '').trim().split('\n').slice(-5).join('\n')}`);
+  }
+}
+
 function build(cfg, { skipPush = false } = {}) {
   if (!skipPush) push(cfg);
   fs.mkdirSync(OUT, { recursive: true });
+  buildClientPackage(cfg);
   const rid = simulatorRid(cfg);
   const skipXcode = cfg.skipXcodeVersionCheck
     ? ' -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly'
