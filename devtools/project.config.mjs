@@ -34,21 +34,20 @@ export default {
     'src/Shenora.iOS',
   ],
   /**
-   * Packable only on macOS, and therefore skipped by a default `pack` elsewhere. `pack --mac` selects
-   * exactly this set.
+   * Projects that need a macOS host to pack. **EMPTY, and that is the finding** (owner, 2026-08-03).
    *
-   * Note what is NOT here: `Shenora.Android` packs perfectly well on Windows. Splitting the old
-   * multi-targeted `Shenora.Maui` into two single-TFM packages removed the hazard this list was
-   * originally written for — there is no longer any package whose Windows build is a HALF-COMPLETE
-   * artifact carrying the same id and version as the real one. Each package now either builds
-   * completely on this host or cannot build at all, which is a much easier thing to be correct about.
+   * A `net10.0-ios` LIBRARY builds anywhere the `maui-ios` workload is installed — Windows included.
+   * Only an iOS APP needs a Mac, because Xcode is what produces the `.app` bundle and runs it; the
+   * MSBuild target that blocked the sample (`_ValidateXcodeVersion`) is conditioned on
+   * `_CanOutputAppBundle` and never fires for a library. Verified by packing `Shenora.iOS` on Windows
+   * with no Mac, no Xcode and none of the override flags: byte-for-byte the same `lib/` layout and
+   * nuspec as the Mac-built one.
    *
-   * The consequence for the release pipeline is that the macOS job is tiny: one project, and it needs
-   * only the `maui-ios` workload. See `docs/2026-08-02-ios-release-design.md`.
+   * The list stays (rather than the concept being deleted) because it is the honest place to put the
+   * next project that genuinely does need a Mac, and because an empty list with this note is a
+   * better answer to "why does the release only run on Windows?" than silence.
    */
-  macOnlyPackableProjects: [
-    'src/Shenora.iOS',
-  ],
+  macOnlyPackableProjects: [],
   /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
   npmDir: 'src/Shenora.React',
   /** Pack output (gitignored). */

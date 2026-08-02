@@ -4,10 +4,9 @@ namespace Shenora.Tests.Api;
 /// The SemVer + genericity gate for shipped assemblies this test project cannot REFERENCE.
 /// <para>
 /// Today that is <c>Shenora.Android</c> and <c>Shenora.iOS</c>. <see cref="ApiSurfaceTests"/> covers
-/// the five it can load; without this file those packages would be compiled by the gate and checked by
-/// nothing — the same shape as the empty <c>/samples/</c> folder that once let the sample be red
-/// while <c>verify</c> reported green. See <see cref="MetadataAssemblies"/> for why iOS is checked on
-/// macOS only.
+/// the three it can load; without this file those packages would be compiled by the gate and checked
+/// by nothing — the same shape as the empty <c>/samples/</c> folder that once let the sample be red
+/// while <c>verify</c> reported green. Both are gated on every run, from a real built assembly.
 /// </para>
 /// </summary>
 public class MetadataSurfaceTests
@@ -42,62 +41,18 @@ public class MetadataSurfaceTests
     }
 
     /// <summary>
-    /// The assemblies rendered from metadata. <c>Shenora.Android</c> only — and the omission of
-    /// <c>Shenora.iOS</c> is a deliberate, load-bearing choice rather than an oversight.
+    /// The assemblies rendered from metadata — BOTH mobile faces, gated directly on every run.
     /// <para>
-    /// This test project is <c>net10.0-windows</c>, so it cannot RUN on macOS, and <c>Shenora.iOS</c>
-    /// cannot BUILD anywhere else. There is no host where both exist. A first attempt at this added
-    /// iOS behind <c>OperatingSystem.IsMacOS()</c>, which is DEAD CODE — the branch can never execute,
-    /// so it would have read as iOS coverage while providing none. Confirmed by building the test
-    /// project on the Mac: 5 errors.
-    /// </para>
-    /// <para>
-    /// <see cref="Mobile_baselines_are_identical_while_all_source_is_shared"/> is the honest
-    /// substitute: it turns the Android baseline — which IS checked against a real assembly on every
-    /// run — into the iOS one's guarantee, for exactly as long as the two projects share every line.
+    /// iOS is here because a <c>net10.0-ios</c> LIBRARY builds on Windows with the <c>maui-ios</c>
+    /// workload; only an iOS APP needs a Mac. That correction (owner, 2026-08-03) deleted two
+    /// workarounds this file used to carry: an <c>OperatingSystem.IsMacOS()</c> branch that was DEAD
+    /// CODE (the test project is <c>net10.0-windows</c> and cannot run there, so it read as coverage
+    /// while providing none), and a surrogate test that inferred the iOS surface from the Android one
+    /// because the two share source. Neither is needed when the real assembly is right here.
     /// </para>
     /// </summary>
     public static TheoryData<string, string> MetadataAssemblies() =>
-        new() { { "Shenora.Android", "net10.0-android" } };
-
-    /// <summary>
-    /// <c>Shenora.Android</c> and <c>Shenora.iOS</c> are built from one shared source tree
-    /// (<c>src/Shenora.Mobile/</c>) and own no source of their own, so their public surfaces MUST be
-    /// identical — which makes the Android baseline, verified against a real assembly above, a
-    /// verification of the iOS baseline too. That is the only way iOS is gated from Windows at all.
-    /// <para>
-    /// The moment either project gains its own source (a <c>Platforms/</c> implementation — the save
-    /// picker is the expected first one), the surfaces may legitimately diverge and this reasoning
-    /// stops holding. So the check FAILS then, on purpose, saying so: the alternative is a gate that
-    /// silently degrades into checking nothing at the exact moment it starts to matter.
-    /// </para>
-    /// </summary>
-    [Fact]
-    public void Mobile_baselines_are_identical_while_all_source_is_shared()
-    {
-        var root = RepoRoot();
-        string[] projects = ["Shenora.Android", "Shenora.iOS"];
-
-        var withOwnSource = projects
-            .Where(p => Directory.Exists(Path.Combine(root, "src", p)) &&
-                        Directory.EnumerateFiles(Path.Combine(root, "src", p), "*.cs", SearchOption.AllDirectories)
-                            .Any(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
-                                      !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")))
-            .ToArray();
-
-        Assert.True(withOwnSource.Length == 0,
-            $"{string.Join(" and ", withOwnSource)} now own source outside src/Shenora.Mobile/, so the two mobile " +
-            "surfaces can legitimately differ and this test can no longer stand in for gating Shenora.iOS. " +
-            "Regenerate its baseline ON A MAC and add that check to the release pipeline's macOS job " +
-            "(TASKS.md A8), then relax this test to whatever is still true.");
-
-        var android = File.ReadAllText(Path.Combine(BaselinesDir(), "Shenora.Android.txt")).ReplaceLineEndings();
-        var ios = File.ReadAllText(Path.Combine(BaselinesDir(), "Shenora.iOS.txt")).ReplaceLineEndings();
-
-        Assert.True(android == ios,
-            "Shenora.Android and Shenora.iOS compile from identical source but their baselines differ. " +
-            "One of them was edited by hand, or the iOS baseline is stale — copy the Android one over it.");
-    }
+        new() { { "Shenora.Android", "net10.0-android" }, { "Shenora.iOS", "net10.0-ios" } };
 
     /// <summary>
     /// Every word used by a metadata-gated assembly's type names. Consumed by

@@ -70,29 +70,29 @@ handshake with `maui · [filePicker]`, plus `ECHO` and `UI_STATE` (`onUiThread: 
 `Shenora.Mobile` needed **no platform directive at all**; the sample needed one, for the log sink.
 Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
 
-- [ ] **A8 — iOS is PROVEN but not SHIPPABLE, and the two gaps are unrelated to each other.**
-  Neither blocks an adopter who builds from source; both block a published iOS package.
-  - **`Shenora.iOS` is never packed by the Windows release job**, so a release today would ship every
-    package except that one. The library half is done and measured; what remains is the pipeline:
-    - `dev.mjs pack` selects by host — the default pass produces the five desktop packages,
-      `Shenora.Android` and the npm tarball; `pack --mac` produces exactly `Shenora.iOS` and refuses
-      to run elsewhere. **The two-package split deleted the dangerous case**: no package has a
-      half-built form wearing the real id and version any more.
-    - Packing iOS on the Mac was PROVEN, not assumed — a complete nupkg with `lib/net10.0-ios26.0/`,
-      the XML docs, and a correct nuspec. ⚠ That folder carries the workload's TargetPlatformVersion,
-      not `SupportedOSPlatformVersion` (15.0), and it is what a consuming project must be compatible
-      with. Worth stating in `ADOPTION.md` when iOS is actually published.
-    - **The workflow change is DRAFTED, not applied** — `docs/2026-08-02-ios-release-design.md`,
-      awaiting review. Three jobs (`version` → `ios-pack` on macOS → `publish` on Windows, which just
-      DOWNLOADS the artifact; nothing is overwritten). The macOS job needs only `maui-ios` — no JDK,
-      no Android SDK — because Windows packs the Android face itself. One known gap is called out in
-      the doc: `pack --mac` reads its version from `VersionPrefix`, so it needs a `-p:Version`
-      passthrough before that job is drop-in. Retire the doc when it lands.
-  - **The build currently rides two override flags** (`ValidateXcodeVersion=false` +
-    `MtouchLink=SdkOnly`), because that Mac's Xcode 26.3 is older than the workload's required 26.6.
-    They are gitignored machine config, not repo config, and are verified for SIMULATOR DEBUG only.
-    The honest fix is to match the pair — upgrade Xcode (needs ~20 GB the Mac does not have) or
-    install a workload band built against 26.3. Until then, treat device and Release iOS as UNPROVEN.
+- [ ] **A8 — `Shenora.iOS` 0.5.0 is BUILT but not PUBLISHED; the pipeline problem turned out not to
+  exist.** 0.5.0 shipped four packages — Core, Ipc, Windows, Android — and silently omitted iOS,
+  because `pack` skipped it and the release runs on Windows.
+  - **The whole "iOS needs a macOS pack job" premise was WRONG** (owner, 2026-08-03: *"I dont think
+    the ios package has any dependency to build on mac"*). A `net10.0-ios` LIBRARY builds anywhere the
+    `maui-ios` workload is installed; only an APP needs Xcode, and the target that blocked the sample
+    (`_ValidateXcodeVersion`) is conditioned on `_CanOutputAppBundle`. Verified by packing on Windows
+    with no Mac and no override flags: identical `lib/` layout and nuspec to the Mac-built package.
+    **The three-job release design was retired unbuilt** — it solved a problem that was not there.
+  - Done as a result: `Shenora.iOS` is in the solution and gated on every run (its own metadata
+    baseline, no surrogate), `macOnlyPackableProjects` is empty, and one `dev.mjs pack` on Windows
+    produces all five packages plus the npm tarball. **No release-workflow change is needed.**
+  - **What is left is only to publish it.** The next release cuts 0.5.1+ and carries iOS
+    automatically; alternatively `Shenora.iOS.0.5.0.nupkg` can be pushed on its own to complete the
+    version, since `src/` is unchanged since the `v0.5.0` tag and the package is byte-equivalent.
+  - ⚠ **New machine prerequisite: the `maui-ios` workload**, alongside `maui-android`. CI has not been
+    checked for it — 0.5.0 proved the runner has maui-android, nothing more. If a release fails on the
+    iOS TFM, add `dotnet workload restore` to `release.yml`; that is the one-line fix and the reason
+    to look there first.
+  - Separately, RUNNING the sample on a simulator still rides two override flags
+    (`ValidateXcodeVersion=false` + `MtouchLink=SdkOnly`) because that Mac's Xcode 26.3 is older than
+    the workload's 26.6. That is an APP concern only, gitignored machine config, simulator-debug only
+    — it never touches the packages. Device and Release iOS remain UNPROVEN.
 
 ### B. Staged application updates — DESIGNED 2026-08-02, nothing built
 

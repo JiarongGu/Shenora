@@ -7,12 +7,15 @@
          real and documented in devtools/README.md — building this repo now needs the maui-android
          workload and a JDK (dev.mjs finds Android Studio's if JAVA_HOME is unset).
 
-         Its peer `src/Shenora.iOS` is deliberately ABSENT from this solution: it can only be built on
-         macOS, so listing it here would make `dev.mjs build` fail on the machine this repo is
-         developed on. The two share every line of source (src/Shenora.Mobile/), so compiling one
-         type-checks the other's content; what is NOT covered is its API baseline, which is gated in
-         the macOS job instead. Said plainly rather than left as a gap someone discovers. -->
+         Shenora.iOS is here too, and that surprised us: a net10.0-ios LIBRARY builds fine on Windows
+         with the maui-ios workload. Only an iOS APP needs a Mac — Xcode is required to produce the
+         .app bundle and to run it, not to compile C# against Microsoft.iOS reference assemblies.
+         (Owner's call, 2026-08-03: "I dont think the ios package has any dependency to build on mac".
+         Correct — the `_ValidateXcodeVersion` target that blocked the sample is conditioned on
+         `_CanOutputAppBundle`.) So both mobile faces are gated here, and the macOS harness is for
+         RUNNING the sample, not for building the packages. -->
     <Project Path="src/Shenora.Android/Shenora.Android.csproj" />
+    <Project Path="src/Shenora.iOS/Shenora.iOS.csproj" />
     <Project Path="src/Shenora.Windows/Shenora.Windows.csproj" />
   </Folder>
   <Folder Name="/tests/">

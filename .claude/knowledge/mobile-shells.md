@@ -41,10 +41,15 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   independently wants the SDK headers Xcode ships. `PublishTrimmed=false` is rejected outright and
   `MtouchLink=None` still fails MT0180 — do not retry either. Simulator-debug only; matching the pair
   is the real fix. Machine-specific, so it belongs in gitignored config, never a tracked csproj.
-- **The TFM follows the BUILD HOST, so `pack` sees only one face.** Only a Mac can build iOS, and
-  listing both TFMs everywhere turns the gate red on the machine that cannot build one — so a Windows
-  `dotnet pack` produces an android-only package. Proving a target and SHIPPING it are separate pieces
-  of work; say which one you have done (`TASKS.md` A8).
+- **"iOS needs a Mac" is TRUE OF AN APP AND FALSE OF A LIBRARY, and the difference cost a whole
+  release design.** A `net10.0-ios` library builds anywhere the `maui-ios` workload is installed —
+  Windows included — because compiling C# against `Microsoft.iOS` reference assemblies needs no Xcode.
+  Only producing an `.app` bundle and running it does; the MSBuild target that enforces the Xcode
+  pairing (`_ValidateXcodeVersion`) is conditioned on `_CanOutputAppBundle`. Believing otherwise
+  produced a three-job macOS release pipeline, drafted in full, for a problem that did not exist —
+  deleted unbuilt when someone asked "does it actually need that?". **Both mobile packages build and
+  are gated on Windows.** Check which artifact a platform constraint applies to before designing
+  around it.
 - **Signing does not work over ssh** — an ssh login is a different AUDIT SESSION, so a login-keychain
   key fails `errSecInternalComponent`. Simulator builds sign ad-hoc and are unaffected; a device build
   needs the Terminal.app hand-off.

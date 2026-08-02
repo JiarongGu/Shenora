@@ -497,14 +497,17 @@ switch (cmd) {
     fs.rmSync(out, { recursive: true, force: true });
     fs.mkdirSync(out, { recursive: true });
 
-    // No host can build every package, so `pack` SELECTS rather than pretending. Default = everything
-    // this host can build (which includes Shenora.Android on Windows); `--mac` = exactly the set that
-    // needs Xcode. The release pipeline runs the two on two runners and pushes the union.
+    // ONE host packs everything, including both mobile faces — a net10.0-ios LIBRARY needs no Mac,
+    // only the maui-ios workload (2026-08-03). `macOnlyPackableProjects` is empty and `--mac` selects
+    // it, so the flag is a no-op today and exists for the next project that genuinely needs Xcode.
     //
-    // Each package is now all-or-nothing on a given host — since the mobile shell became two
-    // single-TFM packages there is no longer one whose local build is a half-complete artifact
-    // wearing the real package's id and version. Skipping is a statement about the HOST, not a
-    // partially-built package.
+    // THE THIRD PLACE that needs the JDK env, after `build` and `test`. Packing Shenora.Android runs
+    // the Android tooling, which fails XA5300 without JAVA_HOME — and this one was missed when the
+    // other two were fixed, because pack used to SKIP the mobile package entirely. The rule earned
+    // twice now: anything that compiles the Android TFM needs androidBuildEnv().
+    const packEnv = androidBuildEnv();
+    if (packEnv === null) { process.exitCode = 1; break; }
+
     const macOnly = new Set(config.macOnlyPackableProjects ?? []);
     const macPass = args.includes('--mac');
     const selected = config.packableProjects.filter((p) => macOnly.has(p) === macPass);
@@ -523,7 +526,7 @@ switch (cmd) {
     let ok = true;
     for (const proj of selected) {
       ok = step(`pack ${proj}`, () => run('dotnet', ['pack', proj, '-c', 'Release', '-o', out,
-        `-p:Version=${config.version}`, '-v', 'minimal', '-clp:ErrorsOnly'])) && ok;
+        `-p:Version=${config.version}`, '-v', 'minimal', '-clp:ErrorsOnly'], { env: packEnv })) && ok;
     }
     // The npm package belongs to the default pass — `--mac` produces NuGet only, so the two passes
     // cannot both emit a tarball and leave the publish step guessing which is current.

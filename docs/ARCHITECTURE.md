@@ -12,8 +12,9 @@ records only what EXISTS.)
 ## Current state — **v0.5.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
 Five NuGet packages + `@shenora/react` on npm — since 0.5.0 organised BY PLATFORM (D37): `Core`,
-`Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. Since the summary below was
-written, P5.5 landed the
+`Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. ⚠ 0.5.0 published only the
+first four: `pack` skipped iOS on the mistaken belief that it needed a Mac, so `Shenora.iOS` awaits
+its first publish (`TASKS.md` A8). Since the summary below was written, P5.5 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
 a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 added native caption
 buttons, P6 readied adoption (`docs/ADOPTION.md`, and six capability gaps found and closed), and P7
@@ -74,7 +75,9 @@ Shenora.slnx
 │   │                                          Ipc/ Threading/ Services/ Hosting/, compiled INTO both
 │   │                                          platform packages by Shenora.Mobile.props.
 │   ├── Shenora.Android     net10.0-android  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Maui.Controls
-│   ├── Shenora.iOS         net10.0-ios      — same deps, same source, macOS build host required
+│   ├── Shenora.iOS         net10.0-ios      — same deps, same source, and it builds on WINDOWS: a
+│   │                                          net10.0-ios LIBRARY needs only the maui-ios workload,
+│   │                                          never Xcode. Only an iOS APP needs a Mac.
 │   │                                          The SECOND shell, one package per platform. Peers of
 │   │                                          WinForms+WebView2, not layers on them: neither
 │   │                                          references either. Thin by construction — the IPC
@@ -84,9 +87,8 @@ Shenora.slnx
 │   │                                          Both PROVEN on device/simulator, and neither needed a
 │   │                                          single #if. Divergence goes in each project's
 │   │                                          Platforms/ folder (MAUI SDK includes per TFM); there
-│   │                                          is none yet. Shenora.iOS is NOT in the solution —
-│   │                                          Windows cannot build it — so its API baseline is
-│   │                                          gated on macOS only (TASKS A8).
+│   │                                          is none yet. BOTH are in the solution and gated on
+│   │                                          every run — LIBRARY, not app, so no Mac is involved.
 │   └── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
 ├── tests/
 │   └── Shenora.Tests       net10.0-windows  — xunit; references the four leaf src projects (Core transitively)
