@@ -47,15 +47,16 @@
 </div>
 <div id="log"></div>
 
-<script>
-// A hand-written client, and a REAL APP SHOULD NOT COPY IT.
+<script type="module">
+// This page speaks the envelope by hand — a real app uses `@shenora/react`'s bridge, which does
+// correlation, timeouts and category routing. What it does NOT hand-write is the TRANSPORT: it
+// imports the shipped `createHostTransport()` from the published package, so the code carrying
+// bytes on this device is the code an adopter gets, not a copy of it.
 //
-// `@shenora/react` now ships `createHybridWebViewTransport()`, and `ShenoraBridge` selects it
-// automatically — an app calls `invoke`/`post` and never learns which shell it is in. This page
-// stays hand-written for one reason: it is plain HTML served straight out of Resources/Raw, with no
-// bundler, so it cannot import an npm package. What it demonstrates is the WIRE — the envelope
-// field for field, and that the host answers it — which is exactly what you want visible when the
-// question is "does the protocol work on this platform".
+// dist/transport.js is dependency-free ESM, which is why a plain file drop works here with no
+// bundler. If it is absent (a fresh clone that has not built the npm package), the inline fallback
+// below keeps the sample runnable — and the log says which one is in use, because "it works" means
+// different things for the two.
 const logEl = document.getElementById('log');
 let seq = 0;
 const pending = new Map();
@@ -66,6 +67,29 @@ function log(cls, text) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+/** The last-resort channel, used only when the shipped package has not been built. */
+const inlineTransport = {
+  post: (message) => window.HybridWebView.SendRawMessage(message),
+  subscribe: (listener) => {
+    const handler = (e) => { if (typeof e.detail?.message === 'string') listener(e.detail.message); };
+    window.addEventListener('HybridWebViewMessageReceived', handler);
+    return () => window.removeEventListener('HybridWebViewMessageReceived', handler);
+  },
+};
+
+let channel = inlineTransport;
+let channelSource = 'INLINE fallback (dist/transport.js was not bundled)';
+try {
+  const shipped = await import('./shenora/transport.js');
+  const detected = shipped.createHostTransport();
+  if (detected) {
+    channel = detected;
+    channelSource = `SHIPPED @shenora/react transport (isShenoraAvailable=${shipped.isShenoraAvailable()})`;
+  }
+} catch {
+  // Absent or unparseable — the fallback above stands, and the log below says so.
+}
+
 function post(module, type, payload) {
   const id = `c${++seq}`;
   // ISO string, NOT Date.now(). The envelope's `timestamp` is a DateTimeOffset host-side and the
@@ -74,12 +98,11 @@ function post(module, type, payload) {
   // System.DateTimeOffset" — correctly logged host-side and, correctly, invisible to the page.
   const request = { id, module, type, payload, timestamp: new Date().toISOString() };
   log('out', `-> ${module}/${type} ${payload ? JSON.stringify(payload) : ''}`);
-  window.HybridWebView.SendRawMessage(JSON.stringify(request));
+  channel.post(JSON.stringify(request));
   return id;
 }
 
-window.addEventListener('HybridWebViewMessageReceived', (e) => {
-  const raw = e.detail.message;
+channel.subscribe((raw) => {
   let msg;
   try { msg = JSON.parse(raw); }
   catch { log('err', `<- unparseable: ${raw}`); return; }
@@ -112,6 +135,7 @@ document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_R
 
 // The handshake. Until this lands the host BUFFERS notifications rather than dropping them, which
 // is why the tick events that fired before this point still arrive.
+log('t', `channel: ${channelSource}`);
 log('t', 'page loaded — sending handshake');
 post('SHENORA', 'READY', { client: 'maui-sample' });
 </script>

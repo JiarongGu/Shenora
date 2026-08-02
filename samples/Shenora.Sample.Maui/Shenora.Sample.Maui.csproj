@@ -58,6 +58,18 @@
     <!-- The web bundle. HybridWebView serves Resources/Raw/wwwroot as its HybridRoot — the platform
          does the serving, which is why the kit's resource-provider layer has no role on this shell. -->
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+    <!--
+      The REAL shipped client transport, served beside the page so the sample exercises
+      `@shenora/react`'s own code rather than a hand-written copy of it. dist/transport.js compiles
+      to dependency-free ESM (it imports nothing), which is the only reason this can be a plain file
+      drop instead of a bundler.
+      Conditional, and the page falls back if it is absent: a fresh clone has no dist/ until the npm
+      package is built, and a sample that cannot build until you have run something else is a worse
+      sample. `dev.mjs verify` builds it, so the proof path is the normal path.
+    -->
+    <MauiAsset Include="..\..\src\Shenora.React\dist\transport.js"
+               LogicalName="wwwroot/shenora/transport.js"
+               Condition="Exists('..\..\src\Shenora.React\dist\transport.js')" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
