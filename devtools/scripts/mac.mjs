@@ -276,7 +276,18 @@ would NOT be in the build, and its result would not be about your current code:\
   if (p.status !== 0) { console.error('mac: push failed'); process.exit(p.status ?? 1); }
   // Reset, not merge, so a half-finished local state cannot be silently combined with whatever the Mac
   // had last time.
-  ssh(cfg, `set -e; cd ~/${cfg.work}; git fetch origin ${q(branch)}; git checkout -B ${q(branch)} FETCH_HEAD; git log --oneline -1`,
+  //
+  // `-f`, and it is load-bearing rather than defensive — the version WITHOUT it (which is what the
+  // sibling has) aborts with "Your local changes would be overwritten by checkout" the moment
+  // anything has touched the Mac's tree, and then the push has already landed while the checkout has
+  // not, leaving the clone silently behind the branch it reports. Hit immediately: a file was scp'd
+  // there to trial a fix before committing it.
+  //
+  // Discarding is correct here in a way it would never be locally: this clone is a BUILD SCRATCH
+  // AREA created by `mac setup`, nobody edits in it, and the whole contract of this command is that
+  // the Mac's tree equals what was just pushed. Deliberately NOT `git clean` — that would delete
+  // bin/obj and turn every build into a cold one.
+  ssh(cfg, `set -e; cd ~/${cfg.work}; git fetch origin ${q(branch)}; git checkout -f -B ${q(branch)} FETCH_HEAD; git log --oneline -1`,
     { inherit: true, check: true });
 }
 
