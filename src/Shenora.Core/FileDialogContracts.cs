@@ -119,7 +119,23 @@ public interface IFileDialogs
     /// <summary>Pick an existing file.</summary>
     Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null);
 
-    /// <summary>Pick a folder (or a file too, with <see cref="FileDialogOptions.AllowFileSelection"/>).</summary>
+    /// <summary>
+    /// Pick a folder (or a file too, with <see cref="FileDialogOptions.AllowFileSelection"/>).
+    /// <para>
+    /// <b>DESKTOP CAPABILITY — do not expect this on every shell (D35).</b> A desktop folder browser
+    /// returns ambient, permanent access to an arbitrary path; a mobile system returns a revocable,
+    /// scoped grant, or nothing at all. Same word, different guarantee, and pretending otherwise
+    /// makes a portable-looking call fail exactly when an app depends on it.
+    /// </para>
+    /// <para>
+    /// Before reaching for this, check which of these you actually meant — all three ARE portable:
+    /// somewhere the app owns to read and write is <see cref="ShenoraPaths"/> and needs no picker;
+    /// letting the user hand over media is a media picker on mobile and a multi-select
+    /// <see cref="OpenFileAsync"/> on the desktop; and a single document is
+    /// <see cref="OpenFileAsync"/> plus <see cref="OpenReadAsync"/>. Only "grant me an arbitrary
+    /// working directory" genuinely needs this, and that is the desktop-shaped one.
+    /// </para>
+    /// </summary>
     Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null);
 
     /// <summary>Pick a save destination.</summary>

@@ -690,3 +690,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     cannot reference is exactly the one it cannot notice is missing — a seventh package would have
     slipped through the same gap. `IsPackable` is the definition of "shipped", which is why the pack
     list must agree with it.
+
+- **D35 — "open a folder" is a DESKTOP concept, and the portable answer is to decompose it into the
+  intents behind it.** (Owner, 2026-08-02: *"open folder in mobile will be different cases than open
+  folder in desktop — it usually means something like camera roll, or folder space for the
+  application, usually authorized by the mobile system; for desktop it's more free."*)
+  The kit will NOT make `OpenFolderAsync` mean something on mobile. A desktop folder browser hands
+  back ambient, permanent access to an arbitrary path; Android hands back a revocable, scoped grant
+  to a tree URI. Same word, different guarantee — and papering over that is how a portable-looking
+  API becomes a lie at the one moment an app relies on it.
+  **Ask what the app actually wanted; all three are expressible on both shells:**
+  1. **"Somewhere I own to read and write."** Already solved and needs no picker at all:
+     `ShenoraPaths` on the desktop, `FileSystem.AppDataDirectory` on MAUI (the sample wires exactly
+     that). An app asking the USER for this is the bug.
+  2. **"Let the user hand me some media."** `MediaPicker.PickPhotosAsync` on MAUI (verified present
+     in Essentials), a multi-select file dialog with image filters on the desktop. Genuinely
+     portable, and the mobile-native answer to what a camera-roll folder was standing in for.
+  3. **"Let the user grant me a working directory."** The only one that stays desktop-flavoured,
+     because the permission MODEL differs, not just the API. Name it as desktop-only rather than
+     pretending.
+  **Consequence:** `IFileDialogs.OpenFolderAsync` is documented as a desktop capability, the MAUI
+  implementation refuses it by pointing at (1) and (2), and a media contract is NOT pre-built —
+  no consumer has asked, and `generic-library.md` calls that speculation. The shape is recorded so
+  the first one that does gets it in a day.

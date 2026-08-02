@@ -141,8 +141,16 @@ scratch; at that point the shape is already known.
     all. The universal shape is `SaveAsync(options, write)` — pick and write in one call, host-side —
     mirroring `OpenReadAsync`. That is the design; it is unbuilt because the SAF plumbing is real
     work and no consumer has needed it yet.
-  - Folder picking is the same story with a tree URI, and additionally needs a directory abstraction
-    (list/read within a granted tree) before it means anything portable.
+  - **Folder picking is CLOSED as a portable capability — see D35.** Owner's framing: on mobile
+    "open folder" means the camera roll, or the app's own space, or a system-authorized grant; on
+    desktop it is free access to any path. Same word, different guarantee. So it is documented as a
+    DESKTOP capability and the mobile refusal points at the three intents that ARE portable —
+    `ShenoraPaths` (app-owned space, no picker), a media picker (camera roll), and
+    `OpenFileAsync` + `OpenReadAsync` (one document).
+  - [ ] **A media contract, when a consumer asks.** `MediaPicker.PickPhotosAsync` exists in
+    Essentials (verified by compiling) and the desktop equivalent is a multi-select image dialog, so
+    it is genuinely portable — but nothing needs it yet, and pre-building it is the speculation
+    `generic-library.md` warns about. Recorded so the first consumer gets it quickly.
 
 ### Standing (habits, not a queue)
 

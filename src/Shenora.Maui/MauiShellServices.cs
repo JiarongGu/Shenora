@@ -142,7 +142,10 @@ public sealed class MauiFileDialogs : IFileDialogs
     /// <inheritdoc />
     public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
         throw ShellCapability.NotSupported("Picking a folder", MauiShellNames.Shell,
-            "Android exposes a directory through the Storage Access Framework, which returns a tree URI rather than a path — model it as your own app contract.");
+            "This is a desktop concept (D35) — a folder browser grants ambient access to an arbitrary path, " +
+            "which no mobile system does. Ask for what you meant instead: ShenoraPaths for space the app owns " +
+            "(no picker needed), a media picker for the camera roll, or OpenFileAsync + OpenReadAsync for one " +
+            "document.");
 
     /// <inheritdoc />
     public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null) =>
