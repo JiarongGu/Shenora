@@ -5,6 +5,55 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-02 (evening) — a SECOND SHELL: Shenora.Maui, proven on a device
+
+Owner direction, twice: *"there should be a MAUI adaptation in the roadmap you can take too"*, then
+*"abstract the logic out as much as possible (or make interface) so it supports both MAUI and
+WinForm (some capability can implement differently like dropzone and frameless)."* That supplied the
+consumer #2 three parked items had been waiting for, and it set the architectural direction.
+
+**The order was the design.** Rather than start the package, the three prerequisites the mobile plan
+already named were built first — `IpcJson.AddTypeInfoResolver` (`3374391`), `IpcHostBridge`
+(`9bd86c1`), the headless runner (`7567e3d`) — plus one the third exposed: the lifecycle-hook
+sequence had been copied into two runners, so it moved to `ShenoraApplication.Start`/`Stop`
+(`8c1ca5d`). Only then the shell (`a85280e`), its gate (`31b9aaa`) and the sample (`b87cf9c`).
+**The payoff is measurable in the result: `Shenora.Maui` is ~200 lines of adapter**, because
+everything that was not transport had already moved somewhere portable. It references neither
+`Shenora.WinForms` nor `Shenora.WebView2` — a peer, not a layer.
+
+**The lift list shrank when checked against the platform, and that check mattered.** An earlier plan
+proposed lifting the resource-serving layer for reuse. `HybridWebView` has **no request
+interception** — no `WebResourceRequested`, no custom schemes; it serves `Resources/Raw/wwwroot`
+itself — so there is no seam to lift into and the proposal was dropped before any code was written.
+What actually transfers is the IPC substrate, the Core contracts and the mission layer.
+
+**Proven on an x86_64 Android 12 device, not by construction:** the `ECHO` round trip through the
+same `Shenora.Sample.Logic` the desktop sample hosts; batched host→page notifications; the structured
+`NO_HANDLER` boundary with no exception text; the **native Android document picker** opened through
+the portable `IFileDialogs`; and the mission scheduler, where the CONTENDED mission finished ~1.5 s
+after the DISJOINT one — the serialization the engine exists for, observed on a phone.
+
+**Running it found three defects a green build could not**, all in the sample: `Application.Current`
+is null inside `CreateMauiApp`; the page must load `_framework/hybridwebview.js` or
+`window.HybridWebView` silently does not exist (the page renders, the host waits forever); and the
+envelope's `timestamp` is a `DateTimeOffset`, so `Date.now()` is dropped at the boundary.
+
+**And it retracted a claim, which is the part worth keeping.** `8c1ca5d` justified `Start`/`Stop`
+idempotency with "Android recreates the activity on a configuration change, so `Window.Created` fires
+again". It does not: MAUI's Window is process-scoped and the template's `MainActivity` declares
+`ConfigurationChanges`, and an instrumented `MainActivity.OnCreate` logged **#1 only** across a
+dark-mode switch and a home-and-return under `always_finish_activities=1`. The guard is still right
+for hosts that wire `Start` somewhere activity-scoped, but the mechanism named in shipped XML was
+wrong and is corrected. `doc-claims` catching its author.
+
+**One gate hole opened and was closed.** A `net10.0-windows` test project cannot reference an Android
+assembly, so the new package was outside both the SemVer baseline and the vocabulary sweep — and
+`ApiSurfaceTests`' own coverage check could not even notice, because it walks the test assembly's
+references. `MetadataSurfaceTests` reads the built DLL's IL tables instead (name-level: catches
+add/remove/rename, **not** signature-only changes, which is stated wherever it is used), and
+`Every_packable_project_has_a_baseline_of_one_kind_or_the_other` makes a seventh package unable to
+slip through the same gap.
+
 ### 2026-08-02 (last) — two scaffolding skills, and a skills index that enforces itself
 
 `### Later / candidates` had carried "scaffolding skills once patterns exist" since v0.1.0, and

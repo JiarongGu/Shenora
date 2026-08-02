@@ -645,3 +645,48 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   settle. Two convenience gaps the spike also surfaced are in `TASKS.md` and deliberately unbuilt: the
   host-side mirror of `ShenoraBridge` (~40 lines every non-WinForms base rewrites) and a headless
   `IShenoraRunner`, both held to the two-consumer bar rather than built for the spike that found them.
+
+- **D32 — a second shell is a PEER, and the kit's job is the substrate under both.** (Owner,
+  2026-08-02: *"abstract the logic out as much as possible (or make interface) so it supports both
+  MAUI and WinForm (some capability can implement differently like dropzone and frameless)."*)
+  `Shenora.Maui` references neither `Shenora.WinForms` nor `Shenora.WebView2`. The evidence that the
+  split is in the right place is its SIZE: ~200 lines, because the substrate moved first (the IPC
+  host half, the headless runner, `ShenoraApplication.Start`/`Stop`). A fat shell package would have
+  meant something portable was still trapped in the Windows one.
+  - **The bar stays D20's, not "it looks platform-neutral".** *Can app logic compile off Windows?*
+    Window geometry, tray, secondary windows and native drop zones stay in `Shenora.WinForms`
+    because they are desktop CONCEPTS — on mobile they are absent, not different.
+  - **Checked against the platform before designing, and it cancelled a proposal.** A plan to lift
+    the resource-serving layer for reuse died on the fact that `HybridWebView` has NO request
+    interception; it serves `Resources/Raw/wwwroot` itself. There was no seam to lift into. Do not
+    re-propose it.
+  - **The platform-owned loop is why `Start`/`Stop` exist.** `IShenoraRunner.Run` is contractually
+    "blocks until shutdown", which a MAUI activity cannot honour, so `UseMaui` registers no runner
+    and the app drives the pair from its own lifecycle.
+
+- **D33 — an ABSENT capability throws and names the platform; a SATISFIED one is an honest no-op.**
+  (Owner, 2026-08-02.) `ShellCapability.NotSupported` is the one message. A silent no-op is the
+  "mistyped resource prefix degrading to an all-404 provider" class this repo keeps paying for, and
+  `ModuleContext.Publish` already fails loud for the same reason.
+  - **The distinction is load-bearing and was found by implementing it.** Clipboard IMAGES have no
+    expression in MAUI Essentials → refuse. `IUiInteraction`'s block/unblock is satisfied BY the
+    platform (mobile pickers are modal) → an honest documented no-op. Refusing the second kind would
+    break portable logic that is behaving correctly. "Absent" means no expression exists here, not
+    "we did it differently".
+  - **NOT a `DispatchProxy`.** One reflection proxy throwing for any interface is the obvious
+    implementation and would undo the iOS/AOT work in `IpcJson.AddTypeInfoResolver` — reflection is
+    exactly what trimming strips. Each shell writes small explicit stubs sharing the one message.
+
+- **D34 — a shipped assembly the test project cannot REFERENCE is gated from its IL metadata.**
+  (2026-08-02.) `tests/Shenora.Tests` is `net10.0-windows`; `Shenora.Maui` is `net10.0-android`. The
+  full `ApiSurfaceDump` cannot run over it — `NullabilityInfoContext` needs runtime types, so a
+  `MetadataLoadContext` cannot drive it, and a plain `LoadFrom` would have to resolve
+  `Microsoft.Maui.Controls`. `MetadataSurfaceTests` reads the tables with a `MetadataReader` instead.
+  - **The gate is deliberately weaker and says so everywhere it appears:** NAME-level, so it catches
+    an add, a removal and a rename but NOT a signature-only change (`string?` → `string`, a dropped
+    default, `set` → `init`). **That is the standing argument for keeping such a package thin.**
+  - **`Every_packable_project_has_a_baseline_of_one_kind_or_the_other` is the real fix.**
+    `ApiSurfaceTests`' own coverage check walks the TEST assembly's references, so the package it
+    cannot reference is exactly the one it cannot notice is missing — a seventh package would have
+    slipped through the same gap. `IsPackable` is the definition of "shipped", which is why the pack
+    list must agree with it.

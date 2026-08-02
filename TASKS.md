@@ -38,13 +38,73 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
-### Nothing designed is waiting
+### A. The second shell — MAUI. The round trip is PROVEN; the surface around it is not.
 
-The mission queue, chains, the file-update queue, cross-process locking and crash-atomicity all
-landed on 2026-08-02 — `docs/ROADMAP.md` `## Done` + `docs/archive/tasks.md`. The group below is
-finished; what remains in this file is the older set held at the two-consumer bar.
+**Where it stands (2026-08-02):** `Shenora.Maui` ships, is in the solution and the gate, and was run
+on a real Android device — request/response, batched notifications, the structured error boundary,
+the native file picker through the portable `IFileDialogs`, and the mission scheduler serializing a
+contended mission. `samples/Shenora.Sample.Maui` hosts the SAME `Shenora.Sample.Logic` as the desktop
+sample. Commits `a85280e` · `31b9aaa` · `b87cf9c`; evidence in `docs/ROADMAP.md` `## Done`.
 
-### The rest — held at the two-consumer bar
+**What that does NOT mean.** An adopter cannot use this yet: the sample speaks the envelope by hand
+because the client half does not exist, and the capability rule is a decision with no code behind it.
+The items below are ordered by what unblocks an adopter, not by size.
+
+- [ ] **A1 — `@shenora/react` needs a HybridWebView transport.** The kit's client speaks
+  `window.chrome.webview` (WebView2). The MAUI sample hand-writes the envelope over
+  `window.HybridWebView.SendRawMessage` + the `HybridWebViewMessageReceived` event, which was right
+  for a first proof and is exactly what an adopter must NOT copy. The seam already exists (D16,
+  `ShenoraTransport`), so this is a transport implementation plus `configureBridge` wiring — then the
+  sample page switches to it and stops being bespoke. **Blocks every other item here**; until it
+  lands "adopt Shenora on mobile" means "write your own client".
+- [ ] **A2 — the capability rule is DECIDED but unimplemented.** Owner chose: an absent capability
+  THROWS naming the platform (`ShellCapability.NotSupported`, shipped). But `UseMaui` currently just
+  omits what it lacks, so portable logic asking for drop zones gets a null, not the named refusal the
+  decision promises. Needs the small explicit stubs — and **NOT a `DispatchProxy`**, which is the
+  reflection shape iOS trimming strips (the thing `IpcJson.AddTypeInfoResolver` exists to avoid).
+- [ ] **A3 — `docs/ADOPTION.md` has no MAUI section.** It should say what actually transfers (the
+  whole IPC substrate, the Core contracts, the mission layer), what does not (resource serving —
+  `HybridWebView` has no request interception, so the platform serves `Resources/Raw/wwwroot`), and
+  what is absent rather than different (drop zones, tray, secondary windows, window state).
+- [ ] **A4 — record the session's load-bearing decisions in `docs/DECISIONS.md`.** Currently they
+  live only in commit messages and XML: MAUI is a PEER of the Windows shell and references neither
+  package; absent-vs-satisfied (a refusal for clipboard images, an honest no-op for `IUiInteraction`);
+  the name-level metadata baseline and why the full one is impossible; `Start`/`Stop` as the
+  platform-owned-loop seam. `DECISIONS.md` is where a future session looks before relitigating.
+
+- [ ] **A5 — `dev.mjs android <deploy|log|shot>`.** The loop is documented in `devtools/README.md`
+  but is still raw `adb`, which `phase-workflow.md` explicitly says not to leave as ad-hoc shell.
+  Fold in the three traps already paid for: the `android-x64` ABI flag, screenshot-via-`pull` (a
+  PowerShell pipe corrupts the PNG), and the emulator's adb port coming from its manager rather than
+  a guess.
+
+- [ ] **A6 — iOS, and it is genuinely blocked, not deferred.** Needs the `ios` workload AND a Mac
+  build host. The Mac EXISTS and is already driven over SSH by a public sibling
+  (`devtools/scripts/mac.mjs`: push → xcodebuild → simulator → screenshot back → tap/type). Porting
+  that harness is the prerequisite; do it when iOS is actually wanted, and keep its post-mortems
+  (codesign fails over ssh because an ssh login is a different AUDIT SESSION; Windows OpenSSH has no
+  ControlMaster; `-o pipefail` or `xcodebuild | tail` reports success on a failed build).
+
+### B. Staged application updates — DESIGNED 2026-08-02, nothing built
+
+Design + evidence: `docs/2026-08-02-shenora-app-update-design.md` (two independent sibling
+implementations, same two-phase model, same `{path, size, sha256}` manifest). The claim to build
+against: **only the apply step is native.**
+
+- [ ] **B1 — `UpdateManifest`/`ManifestFile` + `ManifestDiff.Compute` in `Shenora.Core`.** Pure data
+  and a pure function; the most testable piece and the one both siblings hand-rolled twice (once in
+  C#, once in C++).
+- [ ] **B2 — the staging area:** verify every staged file's sha256, then write `ready.json` LAST. The
+  ordering is the property — the marker is the promise that the stage is complete, so the applier
+  never re-verifies.
+- [ ] **B3 — the release-source SEAM, not an implementation.** Both siblings use GitHub releases;
+  baking that in would ship a consumer's shape.
+- [ ] **B4 — the launcher template (native, ~150 lines).** Take Sonora's topology (app in
+  `{root}/app/`, overlay only that) because it makes four guard-classes unreachable rather than
+  fixed. Ships as a repo TEMPLATE, not a package, and must say plainly that this repo's gate cannot
+  compile it.
+
+### C. Held at the two-consumer bar
 
 **Nothing below is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are
 finished — record, rationale and verification in `docs/archive/tasks.md`. What survives below is what
@@ -69,12 +129,20 @@ scratch; at that point the shape is already known.
 > remains below is the ONE item that direction did not unblock, because no spike can: it needs a real
 > mobile consumer, not a plan. The bar still applies to everything not on that list.
 
-- [ ] **D3's other half is still unvalidated: the desktop-FLAVOURED service contracts.** The spike
-  proves the IPC/transport story and nothing else, because a transport needs no file dialogs.
-  `FileDialogContracts.cs` still CONCEDES in writing that `FileDialogOptions` carries Win32 vocabulary
-  and that a mobile picker would ignore half of it and return a content URI. That break is still
-  waiting at the first real mobile adoption, and it is still a 1.0 break the kit says it will not
-  take. Narrowing it needs a real mobile consumer, not another spike.
+- [ ] **The desktop-FLAVOURED service contracts — EVIDENCE HAS NOW ARRIVED, and it is better than
+  expected.** `FileDialogContracts.cs` concedes in writing that `FileDialogOptions` carries Win32
+  vocabulary and that "a mobile picker would ignore the validation hints and return a content URI",
+  and this was held for a real mobile consumer rather than another spike. `MauiFileDialogs` is that
+  consumer, and the finding is: **`OpenFileAsync` needs NO break.** `FileDialogResult.FilePath` is
+  already specified as "a path or URI the HOST can resolve", which is exactly what Android returns;
+  the desktop-only options are simply ignored, and which ones is now written in the implementation's
+  XML rather than left to be discovered.
+  **What is still open, narrowed to the real question:** `OpenFolderAsync` and `SaveFileAsync` have
+  no MAUI Essentials equivalent and currently refuse. Android exposes both through the Storage Access
+  Framework as tree/create-document intents returning URIs, which is a genuinely different shape from
+  "pick a path". So the 1.0 question is no longer "does this contract survive mobile" (it does) but
+  "should the folder/save halves be narrowed, split, or left as capabilities a shell may lack". Decide
+  with an app that actually needs one, not from the sample.
 
 ### Standing (habits, not a queue)
 
