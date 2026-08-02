@@ -62,8 +62,10 @@ export function StreamViewer({ hosted }: { hosted: boolean }) {
     setError(undefined);
     setEnded(undefined);
     try {
-      // Loopback only — the host's NavigationGuard refuses anything else, which is the SSRF seam
-      // demonstrated rather than described.
+      // This app's OWN origin — loopback while the dev server serves, the virtual host once
+      // packaged. The host's NavigationGuard refuses anything else, which is the SSRF seam
+      // demonstrated rather than described; the host also hands the session its bundle, so the
+      // packaged origin actually renders (E1).
       await getBridge().invoke('STREAM', 'START', { payload: { url: window.location.origin + '/' } });
       setRunning(true);
       // Mirror this pane's box 1:1 into the page. Sent once here; a real viewer would also send it

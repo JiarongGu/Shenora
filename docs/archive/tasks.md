@@ -2110,3 +2110,58 @@ The original entry, for the reasoning:
     the workload's 26.6. That is an APP concern only, gitignored machine config, simulator-debug only
     — it never touches the packages. Device and Release iOS remain UNPROVEN.
 
+
+## E1 — off-screen sessions could not reach the app's OWN bundle — CLOSED 2026-08-03
+
+**The gap.** `SessionBrowserOptions` had no resource seam, so an off-screen session reached only
+NETWORK-reachable URLs. Found 2026-08-02 while chasing the sample's broken stream: with the navigation
+guard fixed, `StreamingSession` navigated happily to the packaged app's virtual host and rendered
+**WebView2's "can't reach this page"** — a session browser builds its own `CoreWebView2Environment`
+with none of the shell's serving on it. `SessionController` exposes no `CoreWebView2`, so an app could
+not bolt it on from outside either.
+
+**What shipped.** `SessionBrowserOptions.VirtualHost` + `ResourceProvider` + `FolderMappings` — the
+SAME option names `WebViewHostOptions` already uses, so the adopter recipe is to pass the host's own
+values through. Rationale and the deliberate omissions are **D38**; surface in `ARCHITECTURE.md`,
+adopter recipe in `ADOPTION.md` Stage 2.
+
+- **`WebViewBundleServing` (internal) is now the ONE serving implementation**, shared by `WebViewHost`
+  and `SessionBrowser`. Refactor, not a copy — that logic is where this path gets subtly wrong, and it
+  had never been under test because it lived inline in a `WebResourceRequested` lambda over a live
+  `CoreWebView2`.
+- **Both-or-neither, refused at initialization** (`AssertBundleConfigured`). Either half alone serves
+  nothing, and its symptom is indistinguishable from the bug being closed.
+- **The app's `RequestFilter` runs BEFORE the bundle**, from ONE handler (`DecideRequest`). A blocked
+  request is a stated policy; and two `WebResourceRequested` subscriptions both assigning
+  `args.Response` is last-writer-wins by subscription order.
+- **`FolderMappings` came along** so a disk-backed app is not left with exactly the gap this closes for
+  an embedded one.
+
+**Deliberately NOT built, and this is the part to read before re-proposing it:** a custom/deferred
+SCHEME inside a session. WebView2 accepts scheme registrations only at ENVIRONMENT creation, so it is a
+materially bigger surface (env options, `AllowedOrigins`, CORS) than the bundle pair, and no consumer
+has needed it — `generic-library.md`'s bar as written. Likewise `SessionController` still exposes no
+`CoreWebView2`: the finding named that absence as evidence the gap was unworkaroundable, not as the fix.
+
+**Evidence — proven on the PACKAGED sample in both directions, which is the only build that shows it**
+(a server-backed app never saw the bug; both sample demos work in dev mode and the e2e runs there):
+
+| | Streamed pane | Pooled `RENDER/PROBE` |
+|---|---|---|
+| With the seam | the sample's real React frontend, `frontend: packaged` (`devtools/screenshots/e1-stream-own-bundle.png`) | `offscreen "Shenora Sample" rendered — 5749 chars of live DOM` |
+| Options removed again | WebView2's error page — cloud glyph + Refresh button (`devtools/screenshots/e1-BEFORE-no-seam.png`) | — |
+
+Three tripwires sabotage-verified in BOTH directions, each failing by name and restored with Edit:
+`AssertBundleConfigured` (each direction of the both-or-neither check, separately — the mirror sabotage
+fails a DIFFERENT test), the filter-before-bundle order, and the strip-query-before-unescape order. That
+last one is why the asymmetric `%3F` case exists: every symmetric path test passes with the order
+reversed.
+
+**Incidental finding worth keeping:** the streamed page reports `host: no injected metadata` /
+`shell: nothing advertised — assume nothing`. That is D36's "absent = assume nothing" default working
+in a real second context — a session browser has no injected globals and no host handshake — rather
+than the page mistakenly assuming desktop. Corroboration for D36 that no test could give.
+
+**A doc claim that was FALSE and is now moot:** the old TASKS entry said "`docs/ADOPTION.md` says
+plainly that off-screen sessions reach network URLs only". It did not — ADOPTION.md had no session
+content at all. The `doc-claims` rule, catching a claim about a doc rather than about code.

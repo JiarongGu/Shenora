@@ -38,8 +38,9 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
-> **WORK ORDER (owner, 2026-08-03): E1 → C → D1–D5.** Smallest real gap first, then the one blocked
-> on platform plumbing, then the big harvest.
+> **WORK ORDER (owner, 2026-08-03): ~~E1~~ → C → D1–D5.** Smallest real gap first, then the one blocked
+> on platform plumbing, then the big harvest. **E1 is DONE** (2026-08-03 — the session bundle seam,
+> D38; entry in `docs/archive/tasks.md`), so **C is next**: the save picker.
 >
 > **The archive-backed `IUpdateSource` is DEFERRED, deliberately and not for lack of value** — the
 > first adopter is building their own first. That is the better sequence and the one this kit is
@@ -294,22 +295,6 @@ implements it differently, none of them leaks into app logic.
   what "valid" means — does it decode, is the duration within tolerance, are the expected streams
   present. Note this cannot reuse `UpdateStage`'s answer: that verifies a SHA-256, and a re-encode is
   not byte-predictable, so the media check is semantic rather than exact.
-
-### E. Off-screen sessions cannot see the app's OWN content
-
-- [ ] **E1 — `SessionBrowserOptions` has no resource seam, so an off-screen session can only reach
-  network-reachable URLs.** Found 2026-08-02 while chasing the sample's broken stream: with the
-  navigation guard fixed, `StreamingSession` navigates happily to the packaged app's virtual host
-  (`https://sample.local`) and renders **WebView2's "can't reach this page"**, because the session
-  browser has its own environment with none of the main host's serving set up.
-  `SessionController` exposes no `CoreWebView2`, so an app cannot even bolt it on from outside.
-  - The main host solves this with `IWebViewResourceProvider` + `VirtualHost`; sessions have neither.
-    The likely shape is to let `SessionBrowserOptions` take the same provider the host already uses,
-    which would make "co-browse / render MY OWN UI off-screen" work in packaged mode.
-  - **Who this bites:** a desktop-only app serving an embedded bundle. NOT a server-backed one —
-    Sonora's pages are on a real loopback origin, so it is unaffected. That asymmetry is why this
-    survived unnoticed: both sample demos work in dev mode, and the e2e runs there.
-  - Until then, `docs/ADOPTION.md` says plainly that off-screen sessions reach network URLs only.
 
 ### Standing (habits, not a queue)
 

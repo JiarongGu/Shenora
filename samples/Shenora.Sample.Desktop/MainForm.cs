@@ -104,6 +104,12 @@ public sealed class MainForm : OptimizedForm
             {
                 ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "render"),
                 KeepAliveInBackground = true, // off-screen pages must keep their JS running
+                // E1: hand the session the SAME bundle the shell serves, so a PACKAGED build can
+                // render its own frontend off-screen. Without it the session browser has its own
+                // environment with no serving at all, and `https://sample.local/...` came up as
+                // WebView2's "can't reach this page" — see the STREAM session below for the same pair.
+                VirtualHost = hostOptions.VirtualHost,
+                ResourceProvider = hostOptions.ResourceProvider,
             },
             Capacity = 2,
             // Same fix as the STREAM guard below, same bug: `IsLoopback` alone refuses this app's own
@@ -189,6 +195,24 @@ public sealed class MainForm : OptimizedForm
                         {
                             ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "stream"),
                             KeepAliveInBackground = true, // off-screen, but it must keep painting
+                            // E1, and this is the demo that FOUND it: with the navigation guard fixed
+                            // the session navigated happily to the packaged app's own virtual host and
+                            // then rendered WebView2's "can't reach this page", because a session
+                            // browser's environment carries none of the shell's serving. Passing the
+                            // shell's own pair through is the whole adopter recipe — note it is the
+                            // SAME provider instance, so the session's requests hit a warm cache.
+                            VirtualHost = hostOptions.VirtualHost,
+                            ResourceProvider = hostOptions.ResourceProvider,
+                            // A blocking policy AND the app's own bundle on one session — the
+                            // combination, because it takes a DIFFERENT code path: with a filter the
+                            // host intercepts every request ("*") rather than just the bundle prefix,
+                            // and the filter is consulted FIRST. So this doubles as the test that a
+                            // sane policy stays QUIET on the app's own origin: block cross-host
+                            // subresources, which is the shape an adopter actually writes. If the
+                            // order or the wide registration were wrong, the pane would go blank.
+                            RequestFilter = (request, page) =>
+                                page is not null
+                                && !string.Equals(request.Host, page.Host, StringComparison.OrdinalIgnoreCase),
                         },
                         // Allow the app's OWN origin, whichever it is — loopback while the dev server
                         // is serving, the virtual host once packaged. `IsLoopback` alone was the bug:

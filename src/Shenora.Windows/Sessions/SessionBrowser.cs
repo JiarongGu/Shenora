@@ -44,6 +44,50 @@ public sealed class SessionBrowserOptions
     public Func<Uri, Uri?, bool>? RequestFilter { get; init; }
 
     /// <summary>
+    /// Virtual host the app's OWN packaged bundle is served on inside this session, via
+    /// <see cref="ResourceProvider"/> — the same pair, with the same names, as
+    /// <c>WebViewHostOptions.VirtualHost</c>/<c>ResourceProvider</c>, so an app that wires both reads
+    /// the same words twice. Both halves or neither: either alone throws at initialization.
+    /// <para>
+    /// Without this a session could only reach NETWORK-reachable URLs (E1, 2026-08-03). A session
+    /// browser gets its own environment with none of the shell's serving set up, so a packaged
+    /// desktop app that pointed an off-screen session at its own <c>https://app.local/…</c> got
+    /// WebView2's "can't reach this page" — "co-browse or off-screen-render MY OWN UI" did not work
+    /// at all, and could not be bolted on from outside either. A SERVER-BACKED app never saw it: its
+    /// pages sit on a real loopback origin.
+    /// </para>
+    /// </summary>
+    public string? VirtualHost { get; init; }
+
+    /// <summary>
+    /// The packaged-bundle provider behind <see cref="VirtualHost"/>. Pass the SAME instance the
+    /// shell's <c>WebViewHost</c> uses — <see cref="EmbeddedResourceProvider"/> caches what it has
+    /// read, so sharing it means the session's requests hit a warm cache rather than re-reading the
+    /// manifest into a second copy of the whole bundle.
+    /// <para>
+    /// ⚠ <b>Configure this only on a session that renders YOUR pages — not one that renders
+    /// third-party ones.</b> Bundle responses are served <c>Access-Control-Allow-Origin: *</c>, which
+    /// is nearly moot in the app shell (the bundle IS the document's own origin) and materially
+    /// different here: whatever page this session is on can be ANY origin, and script in it could
+    /// <c>fetch</c> your whole bundle. Your shipped frontend is not a secret, so this is an unintended
+    /// read channel rather than a breach — but it is a real one, and the mitigation is free because
+    /// these options are per-session: give a co-browse session over other people's pages its own
+    /// <see cref="SessionBrowserOptions"/> without them, exactly as it already gets its own
+    /// <see cref="ProfileDirectory"/>.
+    /// </para>
+    /// </summary>
+    public IWebViewResourceProvider? ResourceProvider { get; init; }
+
+    /// <summary>
+    /// Disk-folder virtual hosts for this session (<c>SetVirtualHostNameToFolderMapping</c>) — the
+    /// OTHER family-proven way to serve content, for an app whose bundle or media lives on disk
+    /// rather than embedded. Shipped alongside <see cref="ResourceProvider"/> for the same reason
+    /// <c>WebViewHostOptions</c> carries both: serving half the mechanisms would leave a disk-backed
+    /// app with exactly the gap this closes for an embedded one.
+    /// </summary>
+    public IReadOnlyList<WebViewFolderMapping> FolderMappings { get; init; } = [];
+
+    /// <summary>
     /// Budget for environment creation + core attach. The family guard: a profile folder still
     /// LOCKED by an orphaned WebView2 process (a prior crash, a subprocess that hasn't exited)
     /// otherwise hangs init FOREVER, wedging the whole request behind it. Normal init is a few
@@ -129,6 +173,8 @@ public static class SessionBrowser
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(SessionBrowserOptions.InitTimeout)} must be positive.");
 
+        AssertBundleConfigured(options);
+
         Directory.CreateDirectory(options.ProfileDirectory);
 
         // Compose through Shenora.Windows's owner (P5.5 H4.4 — the edge D14 declared but nothing
@@ -192,9 +238,121 @@ public static class SessionBrowser
             core.IsMuted = true; // belt-and-suspenders with --mute-audio
 
         WireSessionPolicies(core, options, onProcessFailed);
+        AttachResourceHandling(core, env, options);
+    }
 
-        if (options.RequestFilter is { } filter)
-            AttachRequestFilter(core, env, filter);
+    /// <summary>
+    /// <see cref="SessionBrowserOptions.VirtualHost"/> and
+    /// <see cref="SessionBrowserOptions.ResourceProvider"/> are both-or-neither. Either alone is a
+    /// composition mistake that would otherwise do NOTHING — a host with no provider has nothing
+    /// behind it, a provider with no host has no address — and the symptom would be the session
+    /// showing "can't reach this page" exactly as it did before the seam existed. Fail at composition
+    /// (the P5.5 H3 convention, and the same call <c>WebViewHost</c>'s constructor makes about an
+    /// unregistered deferred scheme).
+    /// <para>Internal + static so the rule is testable without a live browser process.</para>
+    /// </summary>
+    internal static void AssertBundleConfigured(SessionBrowserOptions options)
+    {
+        var hasHost = options.VirtualHost is { Length: > 0 };
+        var hasProvider = options.ResourceProvider is not null;
+        if (hasHost == hasProvider) return;
+
+        var missing = hasHost
+            ? nameof(SessionBrowserOptions.ResourceProvider)
+            : nameof(SessionBrowserOptions.VirtualHost);
+        var present = hasHost
+            ? nameof(SessionBrowserOptions.VirtualHost)
+            : nameof(SessionBrowserOptions.ResourceProvider);
+        throw new InvalidOperationException(
+            $"{nameof(SessionBrowserOptions)}.{present} is set but {missing} is not, so this session "
+            + "would serve no bundle at all and a navigation to the app's own origin would come up as "
+            + "WebView2's 'can't reach this page'. Set both (pass the same provider instance the "
+            + "shell's WebViewHost uses), or neither.");
+    }
+
+    /// <summary>What a session browser does with one intercepted request.</summary>
+    internal enum SessionRequestAction
+    {
+        /// <summary>Not ours — let WebView2 fetch it.</summary>
+        Pass,
+
+        /// <summary>The app's <see cref="SessionBrowserOptions.RequestFilter"/> refused it: empty 403.</summary>
+        Block,
+
+        /// <summary>It addresses the app's own bundle: serve it from the resource provider.</summary>
+        ServeBundle,
+    }
+
+    /// <summary>
+    /// The request-layer DECISION for a session browser, split out of the event handler so the real
+    /// rule is unit-testable (P5.5 H7 — a rule reachable only through a live <c>CoreWebView2</c> is a
+    /// rule nothing tests, and this one carries the app's blocking boundary).
+    /// <para>
+    /// THE ORDER IS THE INVARIANT: the filter is consulted BEFORE the bundle. An app that blocks a
+    /// request has stated a policy, and serving it from our own provider anyway would override that
+    /// policy with a code path the app cannot see. It also matters that this is ONE decision rather
+    /// than two handlers: two <c>WebResourceRequested</c> subscriptions both assigning
+    /// <c>args.Response</c> is last-writer-wins by subscription order, which is not a contract
+    /// anything should rest on.
+    /// </para>
+    /// </summary>
+    /// <param name="requestUri">The raw <c>e.Request.Uri</c>.</param>
+    /// <param name="pageSource">The raw <c>core.Source</c> — may be empty or <c>about:blank</c>.</param>
+    /// <param name="filter">The app's blocking policy, or null.</param>
+    /// <param name="bundlePrefix">The virtual-host prefix from <c>WebViewBundleServing.Prefix</c>, or null.</param>
+    internal static SessionRequestAction DecideRequest(string? requestUri, string? pageSource,
+                                                       Func<Uri, Uri?, bool>? filter, string? bundlePrefix)
+    {
+        if (filter is not null && ShouldBlockRequest(requestUri, pageSource, filter))
+            return SessionRequestAction.Block;
+
+        if (bundlePrefix is not null && requestUri is not null
+            && requestUri.StartsWith(bundlePrefix, StringComparison.OrdinalIgnoreCase))
+            return SessionRequestAction.ServeBundle;
+
+        return SessionRequestAction.Pass;
+    }
+
+    /// <summary>
+    /// Wire the ONE <c>WebResourceRequested</c> handler this session needs: the app's blocking filter
+    /// and/or its own packaged bundle, plus any disk-folder mappings. UI-thread hot path.
+    /// </summary>
+    private static void AttachResourceHandling(CoreWebView2 core, CoreWebView2Environment env,
+                                               SessionBrowserOptions options)
+    {
+        // Folder mappings are handled by WebView2 itself — no interception, so they compose with
+        // everything below without ordering questions.
+        foreach (var mapping in options.FolderMappings)
+            core.SetVirtualHostNameToFolderMapping(mapping.HostName, mapping.FolderPath, mapping.AccessKind);
+
+        var filter = options.RequestFilter;
+        var bundlePrefix = WebViewBundleServing.Prefix(options.VirtualHost, options.ResourceProvider);
+        if (filter is null && bundlePrefix is null) return;
+
+        // ONE filter registration, widened only as far as needed. A blocking policy must see every
+        // request; a bundle alone only needs its own prefix — and registering both patterns would
+        // raise a question about double-firing that not registering them simply does not have.
+        core.AddWebResourceRequestedFilter(
+            filter is not null ? "*" : bundlePrefix + "*", CoreWebView2WebResourceContext.All);
+
+        core.WebResourceRequested += (_, e) =>
+        {
+            var uri = e.Request.Uri;
+            switch (DecideRequest(uri, core.Source, filter, bundlePrefix))
+            {
+                case SessionRequestAction.Block:
+                    // Blocked requests are answered with an empty 403 so they never load.
+                    e.Response = env.CreateWebResourceResponse(null, 403, "Blocked", "");
+                    break;
+                case SessionRequestAction.ServeBundle:
+                    // The SAME implementation the app shell serves its frontend with — see
+                    // WebViewBundleServing for why this is not a second copy. The log sink is the
+                    // session's own, guarded, because this body runs inside a WebView2 event.
+                    WebViewBundleServing.Serve(e, env, options.ResourceProvider!, uri, bundlePrefix!,
+                        message => SessionLog.Try(options.Log, l => l.LogDebug("{Message}", message())));
+                    break;
+            }
+        };
     }
 
     /// <summary>
@@ -238,20 +396,6 @@ public static class SessionBrowser
                 // goes through SessionLog: an app logger that throws in this handler has no caller.
                 SessionLog.Try(options.Log, l => l.LogError(ex, "OnProcessFailed callback threw."));
             }
-        };
-    }
-
-    /// <summary>
-    /// Block filtered requests with an empty 403 so they never load — the request-layer
-    /// mechanism the app's blocking policy plugs into (UI-thread hot path).
-    /// </summary>
-    private static void AttachRequestFilter(CoreWebView2 core, CoreWebView2Environment env, Func<Uri, Uri?, bool> filter)
-    {
-        core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
-        core.WebResourceRequested += (_, e) =>
-        {
-            if (ShouldBlockRequest(e.Request.Uri, core.Source, filter))
-                e.Response = env.CreateWebResourceResponse(null, 403, "Blocked", "");
         };
     }
 

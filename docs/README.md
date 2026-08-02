@@ -29,7 +29,7 @@ update the relevant entry HERE — this file is the durable index.
 | Sending IPC without awaiting / long-running work / correlating streamed results | `docs/DECISIONS.md` D23 (why the event pipe is the default, not request/response) |
 | Changing the module contract / tracking a long operation / hosting on a non-WinForms base | `docs/2026-08-01-shenora-communication-core-design.md` (0.2.0 rationale: `IModuleContext`, the operation registry, `NotificationPump`, the lifecycle bands) |
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
-| Picking the next piece of work | `TASKS.md` (root — OPEN only; v0.1.0 shipped, nothing queued) |
+| Picking the next piece of work | `TASKS.md` (root — OPEN only, in the owner's work order) |
 | Why a FINISHED decision was made that way | `docs/archive/tasks.md` (the closed backlog: plans, file:line anchors, judgement calls) |
 | What shipped already / verifying history | `docs/ROADMAP.md` `## Done`, `CHANGELOG.md` |
 | Reviewing the codebase (full/whole-tree review) | `docs/REVIEW-GUIDE.md` (orientation: invariants by area, risk hotspots, settled decisions, coverage map) |
@@ -49,8 +49,10 @@ update the relevant entry HERE — this file is the durable index.
 
 ## Where things live (fast map)
 
-- `src/` — the packable projects (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|WinForms`) + `Shenora.React/`
-  (the `@shenora/react` npm package) + `Directory.Build.props` (the ONLY version source).
+- `src/` — the packable projects, ONE shell per platform since 0.5.0 (D37):
+  `Shenora.Core|Ipc|Windows|Android|iOS`, with `Shenora.Mobile/` as the SOURCE (no csproj) compiled into
+  both mobile packages — plus `Shenora.React/` (the `@shenora/react` npm package) and
+  `Directory.Build.props` (the ONLY version source).
 - `tests/Shenora.Tests` — the single test project (folders mirror src).
 - `samples/` — the sample desktop + web app (Phase 2+; doubles as the e2e subject).
 - `devtools/` — one-entry dev loop (`node devtools/dev.mjs <cmd>`); config in `project.config.mjs`.

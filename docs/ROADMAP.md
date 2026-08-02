@@ -5,6 +5,25 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-03 — an off-screen session can render the app's OWN frontend (E1 / D38)
+
+`SessionBrowserOptions` gained `VirtualHost` + `ResourceProvider` + `FolderMappings`, so
+"co-browse my own UI" and "render my own page off-screen" work in a **packaged** build. Before it a
+session reached network-reachable URLs only: it builds its own `CoreWebView2Environment` with none of
+the shell's serving on it, so a navigation to the app's own origin came up as WebView2's "can't reach
+this page". The recipe is to pass the host's own two values through — same option names on purpose.
+
+The virtual-host serving path became ONE implementation (`WebViewBundleServing`) shared with
+`WebViewHost` rather than a second copy, which also brought it under test for the first time. Two
+contracts are enforced rather than documented: the pair is both-or-neither (refused at initialization),
+and the app's `RequestFilter` is consulted BEFORE the bundle from a single handler. What is deliberately
+still absent — a custom/deferred scheme inside a session — is recorded as a known limit with its reason
+in D38, not left as an oversight.
+
+Proven on the packaged sample in both directions (the streamed pane renders the sample's real React
+frontend; removing the two options reproduces the error page), and three tripwires sabotage-verified
+each way. Full record: `docs/archive/tasks.md`.
+
 ### 2026-08-02 (evening) — a SECOND SHELL: Shenora.Mobile, proven on a device
 
 Owner direction, twice: *"there should be a MAUI adaptation in the roadmap you can take too"*, then

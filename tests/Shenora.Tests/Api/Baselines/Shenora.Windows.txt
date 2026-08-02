@@ -229,6 +229,8 @@ sealed class Shenora.Windows.SessionApiCall : System.IEquatable<Shenora.Windows.
 static class Shenora.Windows.SessionBrowser
 sealed class Shenora.Windows.SessionBrowserOptions
   public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
+  public Shenora.Windows.IWebViewResourceProvider? ResourceProvider { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Windows.WebViewFolderMapping> FolderMappings { get; init; }
   public System.Func<System.Uri, System.Uri, bool>? RequestFilter { get; init; }
   public System.TimeSpan InitTimeout { get; init; }
   public bool IsDevelopment { get; init; }
@@ -236,6 +238,7 @@ sealed class Shenora.Windows.SessionBrowserOptions
   public bool MuteAudio { get; init; }
   public required string ProfileDirectory { get; init; }
   public string? AdditionalBrowserArguments { get; init; }
+  public string? VirtualHost { get; init; }
 sealed class Shenora.Windows.SessionController
   public System.Threading.CancellationToken WindowClosed { get; }
   public System.Threading.Tasks.Task NavigateAsync(string url, System.Threading.CancellationToken cancellationToken = default)

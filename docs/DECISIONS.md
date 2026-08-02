@@ -780,3 +780,49 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     A framework name would have described the build system rather than the thing.
   - **Cost, stated plainly:** three published ids retire. Migration is a rename — the merged API
     surface was diffed against the three old baselines and is identical once namespaces are rewritten.
+
+- **D38 — an off-screen session gets the app's own BUNDLE, and deliberately not its custom SCHEMES.**
+  (2026-08-03, closing E1.) `SessionBrowserOptions` takes `VirtualHost` + `ResourceProvider` +
+  `FolderMappings`, so a packaged desktop app can co-browse or off-screen-render its own frontend. Until
+  then a session reached NETWORK-reachable URLs only: a session browser builds its own
+  `CoreWebView2Environment` with none of the shell's serving on it, so a navigation to
+  `https://app.local/…` came up as WebView2's "can't reach this page".
+  - **It is the SAME two option names the host already uses**, and the recipe is to pass the host's own
+    values through. Mirroring rather than inventing is the point: an app wiring both reads the same
+    words twice, and passing the same provider INSTANCE means the session's requests hit a cache the
+    shell already warmed.
+  - **Both halves or neither, refused at initialization.** Either alone serves nothing, and the symptom
+    of that is identical to the bug being fixed — so a silent no-op here would be indistinguishable
+    from a regression. Same convention as `WebViewHost`'s constructor refusing an unregistered deferred
+    scheme.
+  - **The app's `RequestFilter` is consulted BEFORE the bundle**, and both live in ONE
+    `WebResourceRequested` handler. Two reasons, and the second is the load-bearing one: a blocked
+    request is a stated policy the kit must not override from a path the app cannot see; and two
+    handlers each assigning `args.Response` is last-writer-wins by subscription order, which is not a
+    contract to rest a security boundary on.
+  - **NOT shipped, and this is the deliberate half: a custom/deferred SCHEME inside a session**
+    (`app://`, `media://`). WebView2 accepts scheme registrations only at ENVIRONMENT creation, so this
+    is a materially bigger surface than the bundle pair — env options, `AllowedOrigins`, CORS — and no
+    consumer has needed it. `generic-library.md`'s rule applies as written: a capability someone needs
+    and cannot express is a gap; one nobody has needed is speculation. Recorded as a known limit.
+  - **`SessionController` still exposes no `CoreWebView2`.** The E1 finding named that absence as
+    evidence the gap could not be worked around, not as the fix. Handing out the raw browser object
+    would make every future session capability an escape hatch instead of a seam.
+  - **The shared serving code means one header now means two different things, and that is DOCUMENTED
+    rather than special-cased.** Bundle responses carry `Access-Control-Allow-Origin: *`. In the app
+    shell the bundle IS the document's own origin, so it barely matters; in a session the page can be
+    ANY origin, so script in a third-party page being co-browsed could `fetch` the whole bundle. Two
+    fixes were considered and rejected in favour of saying so plainly on the option, in `ADOPTION.md`
+    and here. Dropping the header would change `WebViewHost`'s behaviour to fix a session concern, and
+    it is load-bearing for a dev-mode page on a different origin. Gating serving on `core.Source` being
+    the bundle host walks straight into the bug `ShouldBlockRequest`'s `pageUri` normalization exists to
+    prevent — at the moment the FIRST document is requested the source is still the previous page, so
+    the rule would have to special-case empty/`about:blank`, and a source-dependent serving rule is
+    exactly the subtlety that produced that bug. The exposure is the app's own shipped frontend, the
+    options are per-SESSION, and an app co-browsing other people's pages already gives that session its
+    own options object for profile isolation — so the mitigation is free and the hazard just has to be
+    visible. Revisit if a consumer ever needs the bundle served to a session on a foreign origin.
+  - **Why this was invisible for so long:** it only bites a desktop-only app serving an EMBEDDED
+    bundle. A server-backed profile puts its pages on a real loopback origin, both sample demos work in
+    dev mode, and the e2e runs in dev. A gap whose reproduction requires the packaged build is exactly
+    what the "prove it against the sample" gate exists for.

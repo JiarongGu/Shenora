@@ -390,7 +390,13 @@ changes, noting them in `CHANGELOG.md`).
   app's own UI, kept out of the core hosting package): `SessionBrowser(+Options)` (the ONE
   auxiliary-WebView2 configuration path — per-profile environment, quiet-start +
   background-throttling-off arguments, settings hardening, `RequestFilter` block seam,
-  init-timeout guard, `GetHtmlAsync`); `RenderSessionPool(+Options)`/`RenderSession`/
+  init-timeout guard, `GetHtmlAsync`, and — since 2026-08-03 — `VirtualHost` + `ResourceProvider` +
+  `FolderMappings`, so a session can serve the app's OWN packaged bundle and "co-browse / off-screen
+  render MY UI" works in a packaged build (E1/D38; before it, a session reached network-reachable URLs
+  only). The two halves are both-or-neither, refused at initialization; the app's `RequestFilter` is
+  consulted BEFORE the bundle, from ONE `WebResourceRequested` handler; the serving itself is
+  `WebViewBundleServing`, the same internal implementation `WebViewHost` uses);
+  `RenderSessionPool(+Options)`/`RenderSession`/
   `SessionApiCall` (bounded LIFO-pooled off-screen sessions: lease → navigate (http/https-only
   + `NavigationGuard` SSRF seam + `NavigationTimeout`)/execute/read/DevTools/network+message taps →
   dispose returns to the pool; capacity waits queue, a creation failure or a cancelled-during-init

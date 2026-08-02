@@ -12,6 +12,66 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **An off-screen session can serve the app's OWN packaged bundle** —
+  `SessionBrowserOptions.VirtualHost` + `ResourceProvider` + `FolderMappings`. Until now a session
+  browser could only reach NETWORK-reachable URLs, so "co-browse my own UI" or "render my own page
+  off-screen" simply did not work in a packaged desktop app: the session gets its own
+  `CoreWebView2Environment` with none of the shell's serving set up, so navigating to
+  `https://app.local/…` rendered WebView2's *"can't reach this page"* — and `SessionController`
+  exposes no `CoreWebView2`, so it could not be bolted on from outside either.
+
+  Pass the shell's own pair straight through; that is the whole recipe:
+
+  ```csharp
+  Browser = new SessionBrowserOptions
+  {
+      ProfileDirectory = …,
+      KeepAliveInBackground = true,
+      VirtualHost = hostOptions.VirtualHost,          // the SAME two values
+      ResourceProvider = hostOptions.ResourceProvider, // the SAME provider instance (warm cache)
+  }
+  ```
+
+  **Who this bit, and who never saw it:** a desktop-only app serving an embedded bundle. NOT a
+  server-backed one — its pages sit on a real loopback origin, which is why the gap survived
+  unnoticed: both sample demos work in dev mode and the e2e runs there.
+
+  Three details are contracts rather than implementation:
+  - **`VirtualHost` and `ResourceProvider` are both-or-neither**, refused at initialization naming the
+    missing half. Either alone serves nothing, and its symptom is indistinguishable from the bug this
+    closes.
+  - **The app's `RequestFilter` is consulted BEFORE the bundle.** An app that blocks a request has
+    stated a policy; serving it from the kit's own provider anyway would override that policy through a
+    path the app cannot see. Both live in ONE `WebResourceRequested` handler for the same reason — two
+    subscriptions each assigning `args.Response` is last-writer-wins by subscription order.
+  - **`FolderMappings` ships alongside**, because the kit supports both bundle mechanisms
+    (interception for embedded content, `SetVirtualHostNameToFolderMapping` for disk-backed) and
+    shipping half would leave a disk-backed app with exactly this gap.
+
+  Recorded as **D38**, which also states what is deliberately still NOT reachable in a session: a
+  custom/deferred SCHEME (`app://`, `media://`). Those must be registered when the ENVIRONMENT is
+  created, so it is a bigger surface than the bundle pair and no consumer has needed it — a known
+  limit rather than a guess.
+
+  Proven on the packaged sample in BOTH directions: with the seam the co-browse pane renders the
+  sample's real React frontend (`frontend: packaged`) and the pooled `RENDER/PROBE` route reports
+  `offscreen "Shenora Sample" rendered — 5749 chars of live DOM`; with the two options removed again,
+  the same click reproduces the error page.
+
+### Changed
+
+- **The virtual-host serving path is now ONE implementation** (`WebViewBundleServing`, internal),
+  shared by `WebViewHost` and `SessionBrowser` instead of copied. No behaviour change for the host.
+  It also brought that logic under test for the first time — it used to live inline in a
+  `WebResourceRequested` lambda over a live `CoreWebView2`, so nothing could reach it, and every part
+  of it fails ONLY in a packaged build (dev serves the frontend from Vite and never comes through
+  here). The pinned case worth naming: the query is stripped BEFORE the path is unescaped, so a
+  filename containing `%3F` does not get truncated at the decoded `?`.
+
 ## 0.5.1 — 2026-08-02
 
 ### Added
