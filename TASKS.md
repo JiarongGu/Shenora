@@ -72,22 +72,22 @@ Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
 
 - [ ] **A8 — iOS is PROVEN but not SHIPPABLE, and the two gaps are unrelated to each other.**
   Neither blocks an adopter who builds from source; both block a published iOS package.
-  - **`dotnet pack` on Windows produces an ANDROID-ONLY `Shenora.Mobile`.** The library half is now
-    DONE and measured, so what remains is purely a pipeline decision:
-    - The TFM list is overridable — `-p:ShenoraMobileTargets="net10.0-android;net10.0-ios"` — so one
-      host carrying BOTH workloads packs both faces. A macOS CI runner has both available.
-    - Packing iOS on the Mac was PROVEN, not assumed: `Shenora.Mobile.0.4.0.nupkg` containing
-      `lib/net10.0-ios26.0/Shenora.Mobile.dll` + the XML docs. ⚠ Note the PLATFORM VERSION in that
-      folder — it comes from the workload's TargetPlatformVersion, not from `SupportedOSPlatformVersion`
-      (15.0), and it is what a consuming project must be compatible with. Worth stating in ADOPTION
-      when iOS is actually published.
+  - **`Shenora.iOS` is never packed by the Windows release job**, so a release today would ship every
+    package except that one. The library half is done and measured; what remains is the pipeline:
+    - `dev.mjs pack` selects by host — the default pass produces the five desktop packages,
+      `Shenora.Android` and the npm tarball; `pack --mac` produces exactly `Shenora.iOS` and refuses
+      to run elsewhere. **The two-package split deleted the dangerous case**: no package has a
+      half-built form wearing the real id and version any more.
+    - Packing iOS on the Mac was PROVEN, not assumed — a complete nupkg with `lib/net10.0-ios26.0/`,
+      the XML docs, and a correct nuspec. ⚠ That folder carries the workload's TargetPlatformVersion,
+      not `SupportedOSPlatformVersion` (15.0), and it is what a consuming project must be compatible
+      with. Worth stating in `ADOPTION.md` when iOS is actually published.
     - **The workflow change is DRAFTED, not applied** — `docs/2026-08-02-ios-release-design.md`,
-      awaiting review. Three jobs (`version` → `mobile-pack` on macOS → `publish` on Windows, which
-      swaps the android-only nupkg for the macOS-built one). Small because `dev.mjs pack` already
-      passes `-p:Version=` explicitly, so the mobile job needs the version STRING and nothing else —
-      no file stamping, no `doctor --fix`. One unverified assumption is called out in the doc: whether
-      the macOS runner image can build `maui-android` (mitigated with `setup-java`/`setup-android`;
-      the first `dry_run` proves it). Retire the doc when it lands.
+      awaiting review. Three jobs (`version` → `ios-pack` on macOS → `publish` on Windows, which just
+      DOWNLOADS the artifact; nothing is overwritten). The macOS job needs only `maui-ios` — no JDK,
+      no Android SDK — because Windows packs the Android face itself. One known gap is called out in
+      the doc: `pack --mac` reads its version from `VersionPrefix`, so it needs a `-p:Version`
+      passthrough before that job is drop-in. Retire the doc when it lands.
   - **The build currently rides two override flags** (`ValidateXcodeVersion=false` +
     `MtouchLink=SdkOnly`), because that Mac's Xcode 26.3 is older than the workload's required 26.6.
     They are gitignored machine config, not repo config, and are verified for SIMULATOR DEBUG only.
