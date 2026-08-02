@@ -333,6 +333,23 @@ implements it differently, none of them leaks into app logic.
   present. Note this cannot reuse `UpdateStage`'s answer: that verifies a SHA-256, and a re-encode is
   not byte-predictable, so the media check is semantic rather than exact.
 
+### Release hygiene — two items earned by the 0.6.0 incident (2026-08-02)
+
+- [ ] **Gate a release on `## Unreleased` having CONTENT.** v0.6.0 published 0.5.1's code because the
+  work was committed locally and never pushed: the workflow released the remote's tree, bumped the
+  version correctly, and had no `## Unreleased` to stamp — so it shipped with no changelog entry at all.
+  **The empty section is the signal, and it was there and unused.** Cost of a false stop is one changelog
+  line; cost of a miss is a burned version number, which this repo has now done twice (0.2.0 consumed,
+  0.6.0 released stale). Make it FAIL rather than warn — releasing the wrong code is correctness, not
+  style — and sabotage-verify that it stays QUIET on a legitimate release, which is the direction the
+  0.4.0 gates all got wrong. Full account in `CHANGELOG.md` under `## 0.6.0`.
+- [ ] **Remove the stray tracked file `\357\200\252\357\200\252This`** — 0 bytes, name is two
+  Private-Use-Area characters then "This", almost certainly a mangled shell redirect. Added in
+  `11e3469`, so it is in the public repo and in the 0.6.0 tree. Harmless (no csproj references it, so it
+  reaches no package) but it is junk in a public repo. Worth asking the related question while there:
+  **nothing looks for stray files** — neither `doctor` nor the sensitive scan — so a `git ls-files`
+  sweep for names outside a sane charset may be worth adding rather than just deleting this one.
+
 ### Standing (habits, not a queue)
 
 - [ ] Keep `docs/ARCHITECTURE.md` + `docs/README.md` inventory in sync as pieces land.

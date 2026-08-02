@@ -169,6 +169,31 @@ at the first list and missed five more breaking changes.
   here). The pinned case worth naming: the query is stripped BEFORE the path is unescaped, so a
   filename containing `%3F` does not get truncated at the decoded `?`.
 
+## 0.6.0 — 2026-08-02 — published, but it carries 0.5.1's code
+
+**Nothing new shipped under this number.** `git diff v0.5.1 v0.6.0` touches no `src/` file except
+`<VersionPrefix>` itself: the packages are 0.5.1's assemblies with a higher version on them. If you took
+0.6.0 expecting anything below, you have 0.5.1 — upgrade to 0.7.0.
+
+**What went wrong, and it was neither the workflow nor the version resolver.** A session's eight commits
+were finished, verified and committed LOCALLY but never pushed, so the release ran against what the
+remote actually had — the commit before that work started. The workflow bumped `0.5.1 → 0.6.0` exactly as
+it was asked to. There was no bad input and no failed gate; the branch simply did not contain the work.
+
+**The visible damage is that this section did not exist.** The workflow stamps `## Unreleased` with the
+resolved version, and on the released commit there was no `## Unreleased` at all — that section was part
+of the unpushed work. So 0.6.0 published with no changelog entry whatsoever, which is why this one is
+written after the fact rather than stamped.
+
+**The lesson is about release STATE, not release inputs**, and that makes it a different failure from
+`## 0.2.0 — never released` above: that one was a hand-edit corrupting the version baseline, this one was
+a correct release of a stale tree. Both were invisible at the moment of cutting. The signal that WAS
+available and unused: a release whose changelog has nothing under `## Unreleased` is almost certainly
+releasing nothing — worth a gate, tracked in `TASKS.md`.
+
+Left published rather than unlisted, deliberately: it is a valid, working build of 0.5.1's code, and
+0.7.0 landing immediately after means nothing resolves to it as "latest".
+
 ## 0.5.1 — 2026-08-02
 
 ### Added
