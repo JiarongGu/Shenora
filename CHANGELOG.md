@@ -78,12 +78,17 @@ at the first list and missed five more breaking changes.
   when startup failed partway) — `WinFormsRunner` and the new headless runner both route through it,
   so a third shell cannot drift.
 
-  **Both are idempotent, and that is a mobile requirement rather than tidiness:** Android recreates
-  an activity on a configuration change, so the natural "start when the window is created" wiring
-  fires again while the process — and everything the hooks initialized — is still alive. Hooks are
-  app-scoped, not window-scoped. A `Stop()` before any `Start()` deliberately does NOT latch, so a
-  platform that signals "stopped" before it ever signalled "started" cannot disarm the real shutdown
-  that follows.
+  **Both are idempotent.** A platform-owned loop offers several plausible places to start from and
+  some of them re-enter (an activity's `OnCreate`/`OnResume` fire per activity instance), and
+  re-running lifecycle hooks is the double-init bug class `WinFormsBootstrap.Initialize` already
+  guards. A `Stop()` before any `Start()` deliberately does NOT latch, so a platform that signals
+  "stopped" before it ever signalled "started" cannot disarm the real shutdown that follows.
+
+  _Corrected after measuring on a device: an earlier revision justified this with "Android recreates
+  the activity on a configuration change, so `Window.Created` fires again". That is not what happens
+  in MAUI — its Window is process-scoped and the template's MainActivity declares
+  `ConfigurationChanges`, so `Window.Created` fired exactly once across a home-and-return. The guard
+  is cheap insurance for the wirings that do re-enter; it is not a fix for that one._
 
 - **A sixth package: `Shenora.Maui`** (`net10.0-android`) — the second shell. `MauiIpcBridge` over
   `HybridWebView`'s `RawMessageReceived`/`SendRawMessage`, `MauiUiDispatcher`, and the
@@ -103,6 +108,17 @@ at the first list and missed five more breaking changes.
   cannot reference an Android assembly: `MetadataSurfaceTests` reads the built DLL's IL metadata, so
   adds, removals and renames are caught but signature-only changes are not. Building the repo now
   needs the `maui-android` workload and a JDK — see `devtools/README.md`.
+
+- **`samples/Shenora.Sample.Maui`** — an Android head hosting the SAME `Shenora.Sample.Logic` the
+  desktop sample hosts. That shared reference is the point: D20's portability stops being a
+  compile-time claim about a `net10.0` project and becomes two shells running one facade.
+
+  **Proven on a device, not by construction.** Request/response (`ECHO` → `{"echoed":"HELLO FROM
+  ANDROID","length":18}`), batched host→page notifications, the structured error boundary
+  (`NO_HANDLER` with `{module,type}` and no exception text), the native file picker through the
+  portable `IFileDialogs`, and the mission scheduler with its operations registry — the contended
+  mission finished ~1.5 s after the disjoint one, which is the serialization the scheduler exists
+  for, observed on a phone.
 
 - **`ShellCapability.NotSupported` in `Shenora.Core`** — how a shell reports a contract it cannot
   honour, now that there is more than one shell. An absent capability **throws**, naming the platform

@@ -1,0 +1,94 @@
+using Microsoft.Extensions.DependencyInjection;
+using Shenora.Core;
+using Shenora.Ipc;
+using Shenora.Maui;
+using Shenora.Sample.Logic;
+
+namespace Shenora.Sample.Maui;
+
+public static class MauiProgram
+{
+	/// <summary>
+	/// Everything Shenora, for the whole process. Held statically because MAUI owns the loop: there
+	/// is no <c>Run()</c> to scope it to, and Android recreates the ACTIVITY on a configuration
+	/// change while the process — and this — survives.
+	/// </summary>
+	public static ShenoraApplication? Shenora { get; private set; }
+
+	/// <summary>
+	/// One tag for everything this sample logs, so a whole run reads with
+	/// <c>adb logcat -s SHENORA:V</c> instead of being lost in the platform's noise.
+	/// </summary>
+	public const string LogTag = "SHENORA";
+
+	public static void Log(string message) => global::Android.Util.Log.Info(LogTag, message);
+
+	public static MauiApp CreateMauiApp()
+	{
+		var builder = MauiApp.CreateBuilder();
+		builder.UseMauiApp<App>();
+
+		var app = builder.Build();
+		BuildShenora();
+		return app;
+	}
+
+	private static void BuildShenora()
+	{
+		if (Shenora is not null) return;   // idempotent, for the same reason Start/Stop are
+
+		Log("building the Shenora application…");
+
+		// No --app-root: the launcher contract is a desktop packaging concern. Android hands the app
+		// a private data directory and that is the only writable root, so it IS the app root.
+		var shenora = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+		{
+			ApplicationName = "Shenora.Sample.Maui",
+			Paths = new ShenoraPathsOptions { ExplicitRoot = FileSystem.AppDataDirectory },
+		});
+
+		// The MAUI shell: the Core contracts this platform can honour. It registers NO runner —
+		// MAUI owns the loop, so Start/Stop are driven from App.
+		//
+		// Dispatcher.GetForCurrentThread(), NOT Application.Current.Dispatcher. Found by running it:
+		// Application.Current is still NULL inside CreateMauiApp — builder.Build() constructs the
+		// MauiApp but the Application instance does not exist yet — so the obvious line crashed the
+		// process on startup with "No MAUI dispatcher". This method runs on the Android main thread,
+		// which IS the UI thread, so asking the thread directly is both correct and earlier-safe.
+		var dispatcher = Dispatcher.GetForCurrentThread()
+			?? throw new InvalidOperationException("CreateMauiApp is not running on a dispatcher thread.");
+		shenora.UseMaui(dispatcher, ex => Log($"UI work failed: {ex}"));
+
+		// Opt-in, exactly as the desktop sample does.
+		shenora.Services.AddShenoraOperations();
+
+		shenora.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
+		{
+			DefaultLaneCapacity = 4,
+			Scopes = [PathClaims.Scope],
+			Observers = [new MissionOperationObserver(
+				sp.GetRequiredService<IOperationRegistry>(), PortableSampleFacade.Module)],
+			Log = Log,
+		}));
+		shenora.Services.AddSingleton<IFileUpdateQueue>(_ =>
+			new FileUpdateQueue(new FileUpdateQueueOptions { Log = Log }));
+
+		// THE POINT OF THIS SAMPLE: the same facade the desktop sample hosts, from the same net10.0
+		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,
+		// this line would not compile.
+		shenora.Services.AddModuleFacade<PortableSampleFacade>();
+		shenora.Services.AddMessageDispatcher();
+
+		// The on-device probe for Start's idempotency. It must appear exactly ONCE per process.
+		// What that measurement actually found, kept because it corrects a claim rather than
+		// confirming one: neither a dark-mode switch (MainActivity declares ConfigurationChanges for
+		// UiMode) nor a home-and-return with always_finish_activities=1 recreated the activity at
+		// all — MainActivity.OnCreate logged #1 only. MAUI's Window is process-scoped, so
+		// Window.Created is once-per-process and this hook never had the chance to re-run.
+		shenora.OnStarting(_ => Log("lifecycle hook: OnStarting — must appear ONCE per process"));
+		shenora.OnStopping(_ => Log("lifecycle hook: OnStopping"));
+
+		Shenora = shenora.Build();
+		Log("Shenora application built");
+	}
+}

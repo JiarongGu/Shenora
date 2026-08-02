@@ -22,5 +22,10 @@
     <!-- The D20 portability guard: plain net10.0, Core + Ipc only. It must be in the solution or the
          guard never runs (P5.5 H4.3). -->
     <Project Path="samples/Shenora.Sample.Logic/Shenora.Sample.Logic.csproj" />
+    <!-- The MAUI head, hosting the SAME Shenora.Sample.Logic as the desktop sample. In the gate for
+         the reason this folder exists at all: a sample outside it can be red while verify is green.
+         It also turns D20's portability from a compile-time claim into two shells running one
+         facade — and it is what proved the HybridWebView round trip on a device. -->
+    <Project Path="samples/Shenora.Sample.Maui/Shenora.Sample.Maui.csproj" />
   </Folder>
 </Solution>

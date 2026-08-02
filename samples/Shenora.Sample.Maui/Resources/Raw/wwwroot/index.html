@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shenora MAUI sample</title>
+<!--
+  MAUI's own bridge library. WITHOUT THIS `window.HybridWebView` simply does not exist, and the
+  failure is quiet in the worst way: the page renders, the log prints "-> SHENORA/READY" (because
+  that line runs BEFORE the send), the TypeError goes nowhere visible, and the host sits there
+  reporting "waiting for the page handshake". Found exactly that way on the first run.
+  .NET 10 serves it from _framework/; on .NET 9 you shipped a copy under scripts/ yourself.
+-->
+<script src="_framework/hybridwebview.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 12px; background: #14161a; color: #e6e6e6;
+         font: 13px/1.45 ui-monospace, "Cascadia Mono", Menlo, monospace; }
+  h1 { font-size: 15px; margin: 0 0 2px; color: #7fd1ff; }
+  .sub { color: #8b93a1; margin-bottom: 10px; font-size: 11px; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  button { flex: 1 1 auto; min-width: 90px; padding: 10px 8px; border-radius: 8px;
+           border: 1px solid #333a45; background: #1e232b; color: #e6e6e6; font: inherit; }
+  button:active { background: #2b323d; }
+  #log { border: 1px solid #262c35; border-radius: 8px; padding: 8px; height: 62vh;
+         overflow: auto; background: #0f1114; white-space: pre-wrap; word-break: break-word; }
+  .t { color: #5c6672; }
+  .out { color: #ffd479; }
+  .in  { color: #9cdc8f; }
+  .evt { color: #cba6f7; }
+  .err { color: #ff6b6b; }
+</style>
+</head>
+<body>
+<h1>Shenora · MAUI shell</h1>
+<div class="sub">the same IPC envelope the desktop shell speaks, over HybridWebView</div>
+<div class="row">
+  <button id="echo">ECHO</button>
+  <button id="copy">COPY_TEXT</button>
+  <button id="read">READ_CLIPBOARD</button>
+  <button id="ui">UI_STATE</button>
+</div>
+<div class="row">
+  <button id="sched">SCHEDULE_DEMO</button>
+  <button id="pick">PICK_FILE</button>
+  <button id="bad">unknown route</button>
+</div>
+<div id="log"></div>
+
+<script>
+// A deliberately hand-written client. @shenora/react's transport speaks
+// window.chrome.webview (WebView2); the HybridWebView transport is a separate piece of work, and
+// proving the HOST half first means the round trip is not blocked on it. The envelope below is the
+// kit's own, field for field.
+const logEl = document.getElementById('log');
+let seq = 0;
+const pending = new Map();
+
+function log(cls, text) {
+  const time = new Date().toISOString().substr(11, 8);
+  logEl.insertAdjacentHTML('beforeend', `<div><span class="t">${time}</span> <span class="${cls}">${text}</span></div>`);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function post(module, type, payload) {
+  const id = `c${++seq}`;
+  // ISO string, NOT Date.now(). The envelope's `timestamp` is a DateTimeOffset host-side and the
+  // kit's own client sends `new Date().toISOString()` (bridge.ts). Epoch milliseconds got the whole
+  // request dropped at the boundary with "The JSON value could not be converted to
+  // System.DateTimeOffset" — correctly logged host-side and, correctly, invisible to the page.
+  const request = { id, module, type, payload, timestamp: new Date().toISOString() };
+  log('out', `-> ${module}/${type} ${payload ? JSON.stringify(payload) : ''}`);
+  window.HybridWebView.SendRawMessage(JSON.stringify(request));
+  return id;
+}
+
+window.addEventListener('HybridWebViewMessageReceived', (e) => {
+  const raw = e.detail.message;
+  let msg;
+  try { msg = JSON.parse(raw); }
+  catch { log('err', `<- unparseable: ${raw}`); return; }
+
+  // The host answers a request with a response envelope and pushes events as a NOTIFICATION BATCH
+  // (always a batch, even of one — the kit's rule). `category` is what discriminates them.
+  if (msg.category === 'notification') {
+    for (const n of (msg.payload ?? [])) {
+      log('evt', `<= EVENT ${n.module}/${n.type} ${n.payload ? JSON.stringify(n.payload) : ''}`);
+    }
+    return;
+  }
+  if (msg.success === false) {
+    log('err', `<- FAIL ${msg.id} ${msg.error?.code}${msg.error?.parameters ? ' ' + JSON.stringify(msg.error.parameters) : ''}`);
+  } else {
+    log('in', `<- OK ${msg.id} ${msg.data !== undefined && msg.data !== null ? JSON.stringify(msg.data) : '(no data)'}`);
+  }
+});
+
+// Every route below is a REAL one on PortableSampleFacade — the same net10.0 assembly the desktop
+// sample hosts. The first version of this page invented a PATHS button and got a textbook
+// NO_HANDLER back, which was the error boundary working correctly and the page being wrong.
+document.getElementById('echo').onclick  = () => post('SAMPLE_LOGIC', 'ECHO', { text: 'hello from android' });
+document.getElementById('copy').onclick  = () => post('SAMPLE_LOGIC', 'COPY_TEXT', { text: 'copied on android' });
+document.getElementById('read').onclick  = () => post('SAMPLE_LOGIC', 'READ_CLIPBOARD');
+document.getElementById('ui').onclick    = () => post('SAMPLE_LOGIC', 'UI_STATE');
+document.getElementById('sched').onclick = () => post('SAMPLE_LOGIC', 'SCHEDULE_DEMO');
+document.getElementById('pick').onclick  = () => post('SAMPLE_LOGIC', 'PICK_FILE');
+document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_ROUTE');
+
+// The handshake. Until this lands the host BUFFERS notifications rather than dropping them, which
+// is why the tick events that fired before this point still arrive.
+log('t', 'page loaded — sending handshake');
+post('SHENORA', 'READY', { client: 'maui-sample' });
+</script>
+</body>
+</html>

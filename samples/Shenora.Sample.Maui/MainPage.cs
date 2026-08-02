@@ -1,0 +1,81 @@
+using Microsoft.Extensions.DependencyInjection;
+using Shenora.Core;
+using Shenora.Ipc;
+using Shenora.Maui;
+
+namespace Shenora.Sample.Maui;
+
+/// <summary>
+/// The whole MAUI host, in one page: a <see cref="HybridWebView"/> serving the bundle from
+/// <c>Resources/Raw/wwwroot</c>, and a <see cref="MauiIpcBridge"/> carrying the same envelope the
+/// desktop shell speaks.
+/// <para>
+/// Code, not XAML, deliberately — the interesting part is the four lines of wiring, and a XAML file
+/// would bury them in markup that has nothing to do with what is being proven.
+/// </para>
+/// </summary>
+public sealed class MainPage : ContentPage
+{
+	private readonly HybridWebView _webView;
+	private MauiIpcBridge? _bridge;
+
+	public MainPage()
+	{
+		Title = "Shenora MAUI sample";
+
+		_webView = new HybridWebView
+		{
+			// Both are the defaults; set explicitly because they ARE the content contract on this
+			// shell — the platform serves these, and no request-interception seam exists to change it.
+			HybridRoot = "wwwroot",
+			DefaultFile = "index.html",
+		};
+		Content = _webView;
+
+		Loaded += OnLoaded;
+		Unloaded += OnUnloaded;
+	}
+
+	private void OnLoaded(object? sender, EventArgs e)
+	{
+		if (_bridge is not null) return;
+
+		var services = MauiProgram.Shenora?.Services;
+		if (services is null)
+		{
+			MauiProgram.Log("ERROR: no Shenora application — the page loaded before MauiProgram built it");
+			return;
+		}
+
+		// Construct then Attach, the same order the desktop bridge documents: buffering starts at
+		// construction so anything emitted while the page is still loading survives.
+		_bridge = new MauiIpcBridge(_webView, new MauiIpcBridgeOptions
+		{
+			Dispatcher = services.GetRequiredService<IMessageDispatcher>(),
+			EventBus = services.GetRequiredService<IEventBus>(),
+			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
+			Log = MauiProgram.Log,
+		});
+		_bridge.Attach();
+		MauiProgram.Log("bridge attached — waiting for the page handshake");
+
+		// A heartbeat on the bus, so the NOTIFICATION direction is visible on screen rather than
+		// merely wired: the desktop sample proves the same path with its 1 Hz tick source.
+		_ = Task.Run(async () =>
+		{
+			var bus = services.GetRequiredService<IEventBus>();
+			for (var tick = 1; ; tick++)
+			{
+				await Task.Delay(TimeSpan.FromSeconds(2));
+				bus.Emit("SAMPLE_LOGIC", "TICK", new { tick, at = DateTime.UtcNow.ToString("HH:mm:ss") });
+			}
+		});
+	}
+
+	private void OnUnloaded(object? sender, EventArgs e)
+	{
+		MauiProgram.Log("page unloaded — disposing the bridge");
+		_bridge?.Dispose();
+		_bridge = null;
+	}
+}

@@ -48,6 +48,32 @@ The probe order is `JAVA_HOME` → Android Studio's `jbr`/`jre` under Program Fi
 every candidate derived from an environment variable, never a literal path, so nothing
 machine-specific reaches a tracked file.
 
+### Running the MAUI sample on a device
+
+Not yet a `dev.mjs` command — recorded here so the loop is repeatable rather than living in a chat
+log. `$ADB` is the SDK's `platform-tools\adb.exe`, `$D` the device id (an emulator bridge is usually
+`127.0.0.1:<port>`; ask your emulator's manager for the port rather than guessing).
+
+```
+$ADB devices -l                                    # confirm a target; connect first if it is a bridge
+dotnet build samples/Shenora.Sample.Maui/Shenora.Sample.Maui.csproj -f net10.0-android ^
+  -t:Install -p:AdbTarget="-s $D" -p:RuntimeIdentifier=android-x64
+$ADB -s $D shell monkey -p com.shenora.sample.maui -c android.intent.category.LAUNCHER 1
+$ADB -s $D logcat -s SHENORA:V                     # the host side; one tag for the whole sample
+```
+
+Three traps, each hit on the first run:
+
+- **Match the ABI.** `RuntimeIdentifier=android-x64` because the emulator is x86_64; a default build
+  can produce arm64 only and the install fails `INSTALL_FAILED_NO_MATCHING_ABIS`, which reads like a
+  packaging fault rather than the wrong architecture.
+- **Screenshot via the device, not a pipe.** `adb exec-out screencap -p > file.png` is CORRUPTED by
+  PowerShell redirection (BOM + re-encoding). Use
+  `$ADB -s $D shell screencap -p /sdcard/x.png` then `$ADB -s $D pull /sdcard/x.png <local>`.
+- **The page must load MAUI's bridge script** (`_framework/hybridwebview.js` on .NET 10). Without it
+  `window.HybridWebView` does not exist, the page renders fine, and the host just sits reporting
+  "waiting for the page handshake".
+
 **Its public surface is gated differently, and more weakly.** `tests/Shenora.Tests` is
 `net10.0-windows` and cannot reference an Android assembly, so `MetadataSurfaceTests` reads the built
 DLL's IL metadata instead (`Api/MetadataBaselines/`). That catches an add, a removal or a rename, and

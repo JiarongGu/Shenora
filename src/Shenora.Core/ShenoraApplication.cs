@@ -118,13 +118,20 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
     /// registration order. <b>IDEMPOTENT — the second call does nothing.</b>
     /// <para>
     /// A runner calls this for you; call it DIRECTLY only from a host whose PLATFORM owns the loop
-    /// and therefore cannot use <see cref="Run"/> (a mobile activity). That is also why it is
-    /// idempotent rather than throwing on a second call: Android recreates an activity on a
-    /// configuration change, so the natural "start the app when the window is created" wiring fires
-    /// again while the PROCESS — and everything these hooks initialized — is still alive. Hooks are
-    /// app-scoped, not window-scoped, and re-running them is the class of bug
-    /// <c>WinFormsBootstrap.Initialize</c> already exists to prevent (a second init re-registered
-    /// all three exception channels and every later exception raised two dialogs).
+    /// and therefore cannot use <see cref="Run"/> (a mobile activity).
+    /// <para>
+    /// WHY IDEMPOTENT, stated accurately after trying to reproduce the case on a device. A
+    /// platform-owned loop offers several plausible places to start from, and some of them re-enter:
+    /// an activity's <c>OnCreate</c>/<c>OnResume</c> fire per activity instance, and a host may be
+    /// re-shown without the process ever dying. Re-running hooks there is the class of bug
+    /// <c>WinFormsBootstrap.Initialize</c> already exists to prevent — a second init re-registered
+    /// all three exception channels and every later exception raised two dialogs.
+    /// **What is NOT the justification:** MAUI's own <c>Window.Created</c>. Measured on Android
+    /// (<c>samples/Shenora.Sample.Maui</c>): MAUI's Window is process-scoped and its MainActivity
+    /// declares <c>ConfigurationChanges</c> for orientation/UI-mode, so a config change recreates
+    /// nothing and <c>Window.Created</c> fired exactly once across a home-and-return. The guard is
+    /// cheap insurance for the wirings that DO re-enter, not a fix for that one.
+    /// </para>
     /// </para>
     /// <para>
     /// NOT guarded: a hook that cannot start is a startup failure and the app must see it. Pair it
