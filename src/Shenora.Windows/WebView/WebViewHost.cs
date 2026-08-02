@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Web.WebView2.Core;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
@@ -257,9 +256,7 @@ public sealed class WebViewHost
             core.SetVirtualHostNameToFolderMapping(mapping.HostName, mapping.FolderPath, mapping.AccessKind);
         }
 
-        var virtualHostPrefix = _options.VirtualHost is { Length: > 0 } host && _options.ResourceProvider is not null
-            ? $"https://{host}/"
-            : null;
+        var virtualHostPrefix = WebViewBundleServing.Prefix(_options.VirtualHost, _options.ResourceProvider);
         if (virtualHostPrefix is not null)
         {
             core.AddWebResourceRequestedFilter(virtualHostPrefix + "*", CoreWebView2WebResourceContext.All);
@@ -288,7 +285,10 @@ public sealed class WebViewHost
 
             if (virtualHostPrefix is not null && uri.StartsWith(virtualHostPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                ServeVirtualHost(args, uri, virtualHostPrefix);
+                // The shared implementation, also used by an off-screen SessionBrowser (E1) so a
+                // session can render the app's OWN packaged frontend. One copy on purpose.
+                WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
+                    _options.ResourceProvider!, uri, virtualHostPrefix, Log);
                 return;
             }
 
@@ -302,54 +302,6 @@ public sealed class WebViewHost
             }
             // Not ours (e.g. a folder-mapping host) — let WebView2 handle it.
         };
-    }
-
-    private void ServeVirtualHost(CoreWebView2WebResourceRequestedEventArgs args, string uri, string prefix)
-    {
-        try
-        {
-            var path = uri[prefix.Length..];
-            var queryIndex = path.IndexOf('?');
-            if (queryIndex >= 0) path = path[..queryIndex];
-            // The request path arrives percent-encoded; bundle filenames with spaces or
-            // non-ASCII (CJK asset names are normal in this family) would otherwise miss the
-            // manifest and 404 — production-only, since dev serves from Vite.
-            path = Uri.UnescapeDataString(path);
-            if (path.Length == 0) path = "index.html";
-
-            var stream = _options.ResourceProvider!.GetResourceStream(path);
-            if (stream is not null)
-            {
-                var headers = $"Content-Type: {WebViewContentTypes.FromPath(path)}\n" +
-                              $"Cache-Control: {WebViewContentTypes.CacheControlFromPath(path)}\n" +
-                              "Access-Control-Allow-Origin: *";
-                args.Response = _webView.CoreWebView2.Environment.CreateWebResourceResponse(stream, 200, "OK", headers);
-            }
-            else
-            {
-                // The path is the page's own request, so echoing it leaks nothing — but keep the shape
-                // uniform with the catch below and let the log carry the detail.
-                Log(() => $"[Shenora.Windows] 404 for bundle resource '{path}'");
-                args.Response = NotFound();
-            }
-        }
-        catch (Exception ex)
-        {
-            try
-            {
-                // The BODY says nothing about the exception (P5.5 H3). These responses carry
-                // `Access-Control-Allow-Origin: *`, so page script can fetch any of them and read the
-                // text — `ex.Message` there routinely means a full local filesystem path, or an inner
-                // provider's message. Same rule as the IPC error boundary: the diagnosis goes to the
-                // host log, the wire gets a code.
-                Log(() => $"[Shenora.Windows] Serving '{uri}' failed: {ex}");
-                args.Response = NotFound();
-            }
-            catch
-            {
-                // the webview may be tearing down
-            }
-        }
     }
 
     /// <summary>
@@ -473,19 +425,6 @@ public sealed class WebViewHost
             }
         });
     }
-
-    /// <summary>
-    /// The one 404 body served to the page — deliberately CONSTANT. Every response here carries
-    /// <c>Access-Control-Allow-Origin: *</c>, so page script can read whatever is in it; the reason a
-    /// request failed belongs in the host log, not in a body a compromised or third-party script can
-    /// fetch (P5.5 H3 — this used to be <c>$"Error: {ex.Message}"</c>).
-    /// </summary>
-    private static readonly byte[] NotFoundBody = Encoding.UTF8.GetBytes("Not Found");
-
-    private CoreWebView2WebResourceResponse NotFound() =>
-        _webView.CoreWebView2.Environment.CreateWebResourceResponse(
-            new MemoryStream(NotFoundBody, writable: false),
-            404, "Not Found", "Content-Type: text/plain");
 
     private async Task InjectScriptsAsync()
     {
