@@ -38,6 +38,15 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
+> **WORK ORDER (owner, 2026-08-03): E1 → C → D1–D5.** Smallest real gap first, then the one blocked
+> on platform plumbing, then the big harvest.
+>
+> **The archive-backed `IUpdateSource` is DEFERRED, deliberately and not for lack of value** — the
+> first adopter is building their own first. That is the better sequence and the one this kit is
+> built around (D8/D15): the kit then ports a proven implementation instead of a guess at one, which
+> is exactly how `Files`/`FileReplacement` arrived. Pick it up when theirs works, and read it before
+> designing anything.
+
 ### A. The second shell — MAUI. The round trip is PROVEN; the surface around it is not.
 
 **Where it stands (2026-08-02):** `Shenora.Mobile` ships, is in the solution and the gate, and was run
@@ -97,6 +106,42 @@ implementation of the seam, and the differential-vs-full manifest distinction is
   Still the one artifact this repo's gate cannot compile, so it ships as a TEMPLATE with that said
   plainly, and the sibling's Node harness (drive a PREBUILT exe over sandbox dirs) is the model for
   testing it on demand rather than in `verify`.
+
+### From the first adopter, `UpdateStage` second attempt (2026-08-03)
+
+`Files` (0.5.1) is **adopted and the adopter's stopgap is deleted** — that loop closed cleanly. Went back
+for `UpdateStage` intending to write the archive bridge locally rather than wait, and hit a second,
+sharper constraint than the per-file source. Filing it because it is about a CLASS of target, not one app.
+
+- [ ] **`ApplyAsync` writes its baseline `manifest.json` INTO the install root, which rules out any
+  target whose bytes are themselves hashed or shipped.** `FetchAsync` stages the release manifest and
+  `ApplyAsync` overlays it, so after an apply the tree contains a kit bookkeeping file. For an app
+  install tree that is exactly right — the baseline belongs with the thing it describes, and both donor
+  implementations put it there.
+  But this adopter's targets are **deploy inputs**, not an install tree: two directories whose aggregate
+  content hash decides what gets re-uploaded to a cloud account. Its hash walks every file with no
+  exclusions — deliberately, because it mirrors the build's own manifest aggregate so the two agree. A
+  per-release `manifest.json` inside that tree changes the hash on every release even when the payload is
+  byte-identical, so "did the backend actually change?" answers YES always, and a frontend-only change
+  stops taking the seconds-long path and takes a full cloud reconcile instead. That breaks a documented
+  invariant there ("a part's content must be a pure function of SOURCE, never of build HISTORY"), so the
+  adoption cannot proceed on those terms.
+  Worth separating what is NOT the problem: staging, per-file SHA verification, the diff, the
+  marker-written-LAST ordering and resume are all exactly what was wanted, and better than the
+  hand-rolled version. The blocker is purely WHERE the baseline lives.
+  Suggested: make the baseline location a parameter — `UpdateStageOptions.BaselinePath`, defaulting to
+  `{installRoot}/manifest.json` so nothing changes for the install-tree case, with `ApplyAsync` skipping
+  it during the overlay when it points outside the root. That also serves any target the app does not
+  want the kit writing into at all.
+  Same theme, still open from the earlier round: `IUpdateSource.OpenAsync` assumes loose files. An
+  archive-backed source PLUS a relocatable baseline together turn this from "adoptable if you fork the
+  apply" into a straight adoption.
+
+**Meanwhile that adopter keeps its own** (owner's call: *"do our own first … in the meantime you should
+have your own"*). Its version already does download → extract → verify every file against the release
+manifest → swap, is verified against a real published release, and self-heals an interrupted run because
+the installed-version stamp is written only after a successful swap. So this is a deferral with a working
+alternative, not a hole.
 
 ### From the first adopter, `Shenora.Core/Io` adoption attempt (2026-08-03)
 
