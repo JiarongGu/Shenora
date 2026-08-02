@@ -25,6 +25,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `drag <fx1> <fy1> <fx2> <fy2>` | background press-move-release between two client-rect fractions |
 | `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `responsiveness <fx> <fy> [--label n] [--duration\|--interval\|--timeout ms]` | click a control, then sample `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` sub-100ms to measure whether the UI thread keeps pumping — the probe behind the one-way-IPC UI-thread claim (see below) |
+| `android <devices\|connect\|deploy\|run\|log\|shot>` | the MAUI sample's device loop — see the section below |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule. `check` covers SKILLS the same way — a `.claude/skills/*/SKILL.md` missing from `skill-loader`'s table is never picked, and that was guarded only by a sentence asking the next session to remember |
 | `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
 | `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
@@ -48,28 +49,32 @@ The probe order is `JAVA_HOME` → Android Studio's `jbr`/`jre` under Program Fi
 every candidate derived from an environment variable, never a literal path, so nothing
 machine-specific reaches a tracked file.
 
-### Running the MAUI sample on a device
+### Running the MAUI sample on a device — `dev.mjs android`
 
-Not yet a `dev.mjs` command — recorded here so the loop is repeatable rather than living in a chat
-log. `$ADB` is the SDK's `platform-tools\adb.exe`, `$D` the device id (an emulator bridge is usually
-`127.0.0.1:<port>`; ask your emulator's manager for the port rather than guessing).
+| Command | What |
+|---|---|
+| `android devices` | list attached devices (starts the adb server) |
+| `android connect <host:port>` | attach an emulator's adb bridge — **its own manager reports the port**; no vendor default is hardcoded here |
+| `android deploy` / `android run` | build + install the sample APK; `run` also launches it |
+| `android log [-n N] [--all]` | the app's log. Default is the sample's one tag so a run reads as a story; `--all` for the platform's side too; `-n` for a snapshot instead of following |
+| `android shot [name]` | screenshot → `devtools/_android/` (gitignored) |
 
-```
-$ADB devices -l                                    # confirm a target; connect first if it is a bridge
-dotnet build samples/Shenora.Sample.Maui/Shenora.Sample.Maui.csproj -f net10.0-android ^
-  -t:Install -p:AdbTarget="-s $D" -p:RuntimeIdentifier=android-x64
-$ADB -s $D shell monkey -p com.shenora.sample.maui -c android.intent.category.LAUNCHER 1
-$ADB -s $D logcat -s SHENORA:V                     # the host side; one tag for the whole sample
-```
+`--device <id>` picks a target when several are attached; with exactly one it is inferred, and with
+several it REFUSES rather than guessing — installing to whichever adb listed first is a mistake you
+only notice by looking at the wrong screen.
 
-Three traps, each hit on the first run:
+Four traps, each paid for on the first run and now handled by the commands above:
 
-- **Match the ABI.** `RuntimeIdentifier=android-x64` because the emulator is x86_64; a default build
-  can produce arm64 only and the install fails `INSTALL_FAILED_NO_MATCHING_ABIS`, which reads like a
-  packaging fault rather than the wrong architecture.
-- **Screenshot via the device, not a pipe.** `adb exec-out screencap -p > file.png` is CORRUPTED by
-  PowerShell redirection (BOM + re-encoding). Use
-  `$ADB -s $D shell screencap -p /sdcard/x.png` then `$ADB -s $D pull /sdcard/x.png <local>`.
+- **The ABI must match.** `androidRuntimeIdentifier` (`project.config.mjs`) is `android-x64` because
+  emulators are x86_64; a default build can produce arm64 only and the install fails
+  `INSTALL_FAILED_NO_MATCHING_ABIS`, which reads like a packaging fault rather than the wrong
+  architecture. Change it for an arm64 phone.
+- **A screenshot must not be piped.** `adb exec-out screencap -p > file.png` is CORRUPTED by shell
+  redirection on Windows (BOM + re-encoding) and produces a PNG nothing can open. `shot` captures on
+  the device and pulls the bytes.
+- **`logcat -t N` does not compose with a filterspec.** `-t` prints the last N lines of the RAW
+  buffer and the filter is applied afterwards, so `-t 60 -s SHENORA:V` reliably prints nothing once
+  60 lines of platform chatter have gone by. `log -n` tails after filtering instead.
 - **The page must load MAUI's bridge script** (`_framework/hybridwebview.js` on .NET 10). Without it
   `window.HybridWebView` does not exist, the page renders fine, and the host just sits reporting
   "waiting for the page handshake".

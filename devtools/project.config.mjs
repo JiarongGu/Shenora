@@ -54,6 +54,20 @@ export default {
    * PNG. Raise it if you are mid-investigation and want a longer trail; `--keep N` overrides once.
    */
   shotRetention: 24,
+  // ---- The MAUI sample's device loop (`dev.mjs android …`) ----
+  /** The MAUI sample project — `android deploy|run` builds and installs it. */
+  androidSampleProject: 'samples/Shenora.Sample.Maui',
+  androidTfm: 'net10.0-android',
+  /**
+   * NOT optional for an emulator: most are x86_64 while a default build can produce arm64 only, and
+   * the install then fails INSTALL_FAILED_NO_MATCHING_ABIS — which reads like a packaging fault
+   * rather than the wrong architecture. Change it for an arm64 phone.
+   */
+  androidRuntimeIdentifier: 'android-x64',
+  androidPackageId: 'com.shenora.sample.maui',
+  /** The sample logs everything under one tag, so `android log` reads as a story. */
+  androidLogTag: 'SHENORA',
+
   /** Sample web (vite) dev server dir + port. */
   sampleWebDir: 'samples/Shenora.Sample.Web',
   vitePort: 3900,

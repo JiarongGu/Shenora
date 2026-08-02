@@ -627,6 +627,24 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), ...args]);
     break;
 
+  case 'android': // devices | connect <host:port> | deploy | run | log | shot — the MAUI device loop
+    run('node', [path.join(repo, 'devtools', 'scripts', 'android.mjs'), ...args]);
+    break;
+
+  // Where the JDK is, for anything that shells out to the Android build. Prints the path or exits
+  // non-zero with the fix. Deliberately ONE owner: android.mjs asks rather than re-probing, the same
+  // reason the kit has one owner for UI marshalling.
+  case 'android-jdk': {
+    const jdk = resolveJdk();
+    if (!jdk) {
+      console.error('No JDK found. Set JAVA_HOME to a JDK 17+ — Android Studio ships one in its `jbr` folder.');
+      process.exitCode = 1;
+      break;
+    }
+    console.log(jdk);
+    break;
+  }
+
   case 'clean': {
     // Reclaim the BUILD OUTPUT under devtools/_* (and publish/), never the sources. Those scratch
     // folders are gitignored probes — the P6 consumers, the adoption adapters, the P7 profile
@@ -689,6 +707,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|knowledge|clean|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }

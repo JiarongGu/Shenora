@@ -57,11 +57,8 @@ already prevents it. Read that entry before re-proposing stubs._
 _A3 (the adopter guide) and A4 (the decisions) are CLOSED — `ADOPTION.md` Stage 5 and
 `DECISIONS.md` D32–D34._
 
-- [ ] **A5 — `dev.mjs android <deploy|log|shot>`.** The loop is documented in `devtools/README.md`
-  but is still raw `adb`, which `phase-workflow.md` explicitly says not to leave as ad-hoc shell.
-  Fold in the three traps already paid for: the `android-x64` ABI flag, screenshot-via-`pull` (a
-  PowerShell pipe corrupts the PNG), and the emulator's adb port coming from its manager rather than
-  a guess.
+_A5 (`dev.mjs android`) is CLOSED — `devices|connect|deploy|run|log|shot`, with the four traps folded
+in. See `devtools/README.md`._
 
 - [ ] **A6 — iOS, and it is genuinely blocked, not deferred.** Needs the `ios` workload AND a Mac
   build host. The Mac EXISTS and is already driven over SSH by a public sibling
