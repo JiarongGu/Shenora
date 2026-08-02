@@ -449,6 +449,11 @@ until adoption time, now decided.
   implementation until there is a consumer.
 - Harvest-promotions from ongoing app development (D15) — any proven-nice feature gets
   generalized and lands here as a task before shipping in a minor.
-- C++ launcher template (runtime check/install, staged self-update) as a repo template, not a package.
+- **Staged application updates + the C++ launcher template — now DESIGNED, not a candidate:**
+  `docs/2026-08-02-shenora-app-update-design.md`. A survey found **two** independent sibling
+  implementations with the same two-phase model, the same `{path, size, sha256}` manifest and the
+  same `.update`/`ready.json` protocol, so the two-consumer bar is met on evidence. The design's
+  claim: only the *apply* step is native — the manifest, the diff, the staging and the sha256
+  verification are portable `Shenora.Core` material this repo's gate already covers.
 - Contract codegen (C# ⇄ TS) — explicitly out of initial scope; revisit after adoption feedback.
   (Scaffolding skills graduated out of this list on 2026-08-02 — see `## Done`.)
