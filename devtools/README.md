@@ -26,6 +26,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `responsiveness <fx> <fy> [--label n] [--duration\|--interval\|--timeout ms]` | click a control, then sample `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` sub-100ms to measure whether the UI thread keeps pumping — the probe behind the one-way-IPC UI-thread claim (see below) |
 | `android <devices\|connect\|deploy\|run\|log\|shot>` | the MAUI sample's device loop — see the section below |
+| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|log\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule. `check` covers SKILLS the same way — a `.claude/skills/*/SKILL.md` missing from `skill-loader`'s table is never picked, and that was guarded only by a sentence asking the next session to remember |
 | `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
 | `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
@@ -78,6 +79,48 @@ Four traps, each paid for on the first run and now handled by the commands above
 - **The page must load MAUI's bridge script** (`_framework/hybridwebview.js` on .NET 10). Without it
   `window.HybridWebView` does not exist, the page renders fine, and the host just sits reporting
   "waiting for the page handshake".
+
+### Running it on iOS — `dev.mjs mac`
+
+iOS cannot be built on this machine at all: it needs Xcode, and Xcode needs macOS. So the loop is
+driven over SSH on a Mac. **Ported from the public sibling Sonora's `mac.mjs`**, keeping its
+post-mortems — only the build step differs (that project builds an Xcode project; this one runs
+`dotnet build -f net10.0-ios`).
+
+| Command | What |
+|---|---|
+| `mac doctor` | is the Mac reachable, and does it have Xcode, a .NET 10 SDK, the `ios` workload and the configured simulator? Reports every gap, not just the first |
+| `mac setup` | one-time: a bare repo + working clone on the Mac, and a local `mac` git remote |
+| `mac push` | push the branch and reset the Mac's clone to it |
+| `mac build` / `mac run` | build for the simulator; `run` also boots it, installs and launches |
+| `mac shot [name]` | screenshot the simulator → `devtools/_mac/` (gitignored) |
+| `mac tap <x> <y>` / `mac type <text>` | input, in the coordinates you read off that screenshot |
+| `mac log [-n N]` | the sample's lines from the simulator's unified log |
+| `mac awake [on\|off]` | stop the Mac sleeping while it is a build machine |
+| `mac ssh <cmd>` | escape hatch |
+
+**The Mac's address, user and key live in `local/mac.json`** — gitignored, because the harness is
+tracked and this repo is public. `mac doctor` prints the file to create if it is missing.
+
+Carried-over traps worth not re-earning:
+
+- **It REFUSES to push a dirty tree.** The Mac builds HEAD, so an uncommitted fix is not in the build
+  and "the fix did not work" is the wrong conclusion. On the sibling this was a warning, it scrolled
+  past twice in one session, and cost two rounds of reasoning about code the Mac had never seen.
+  `--allow-dirty` to override knowingly.
+- **The simulator RID follows the MAC's architecture** (`iossimulator-x64` on Intel, `-arm64` on
+  Apple Silicon) — asked over ssh, never assumed. This is the iOS twin of the ABI trap above: the
+  build succeeds and the INSTALL is what fails, so the error names the wrong step.
+- **`-o pipefail` when piping the build through `tail`.** Without it the pipeline reports tail's
+  status, which is always 0, so a failed build sails through and the next step tries to install a
+  binary that was never produced.
+- **Tap coordinates need two conversions.** A screenshot is device PIXELS, the window is desktop
+  POINTS, and the Simulator scales the device to fit. The harness reads the window geometry and the
+  screenshot size together and derives the mapping, so nothing about the device model is hardcoded.
+  Needs Accessibility permission on the Mac or every click silently does nothing.
+- **Signing does not work over ssh.** An ssh login is a different AUDIT SESSION, so a login-keychain
+  key fails with `errSecInternalComponent`. Only DEVICE builds need it; simulator builds sign ad-hoc.
+  The sibling hands signing to Terminal.app via `osascript`; port that when a real iPhone is wanted.
 
 **Its public surface is gated differently, and more weakly.** `tests/Shenora.Tests` is
 `net10.0-windows` and cannot reference an Android assembly, so `MetadataSurfaceTests` reads the built

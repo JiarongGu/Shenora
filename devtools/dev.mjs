@@ -631,6 +631,12 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'android.mjs'), ...args]);
     break;
 
+  // doctor | setup | push | build | run | shot | tap | type | log | awake | ssh — the iOS half of the
+  // MAUI loop, which has to run on a Mac. Needs local/mac.json (gitignored: the machine is private).
+  case 'mac':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'mac.mjs'), ...args]);
+    break;
+
   // Where the JDK is, for anything that shells out to the Android build. Prints the path or exits
   // non-zero with the fix. Deliberately ONE owner: android.mjs asks rather than re-probing, the same
   // reason the kit has one owner for UI marshalling.
@@ -707,6 +713,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|knowledge|clean|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }

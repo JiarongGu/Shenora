@@ -64,12 +64,18 @@ _A3 (the adopter guide) and A4 (the decisions) are CLOSED — `ADOPTION.md` Stag
 _A5 (`dev.mjs android`) is CLOSED — `devices|connect|deploy|run|log|shot`, with the four traps folded
 in. See `devtools/README.md`._
 
-- [ ] **A6 — iOS, and it is genuinely blocked, not deferred.** Needs the `ios` workload AND a Mac
-  build host. The Mac EXISTS and is already driven over SSH by a public sibling
-  (`devtools/scripts/mac.mjs`: push → xcodebuild → simulator → screenshot back → tap/type). Porting
-  that harness is the prerequisite; do it when iOS is actually wanted, and keep its post-mortems
-  (codesign fails over ssh because an ssh login is a different AUDIT SESSION; Windows OpenSSH has no
-  ControlMaster; `-o pipefail` or `xcodebuild | tail` reports success on a failed build).
+- [ ] **A6 — iOS. The HARNESS is done; the build host is not provisioned.** `dev.mjs mac`
+  (doctor/setup/push/build/run/shot/tap/type/log/awake/ssh) is ported from the public sibling with its
+  post-mortems kept, and runs against the real Mac today. What it reports is the remaining work, and
+  it is not ours: that Mac has **no .NET 6+ SDK at all** (newest 5.0.402, so `dotnet workload` is not
+  even a command) and **6.2 GB free**, so installing the .NET 10 SDK plus the `ios` workload is a
+  judgement call about the owner's disk, not a step to take unasked. Xcode 26.3, the simulator and
+  the ssh path are all fine.
+  Then, and only then: multi-target `Shenora.Maui` + the sample to `net10.0-ios` (both are single-TFM
+  `net10.0-android` today, and `-f net10.0-ios` cannot compile on Windows), and re-prove the
+  handshake, the picker and the capability set on the simulator the way Android was proven.
+  Signing is a separate, later problem — it fails over ssh (different AUDIT SESSION) and only DEVICE
+  builds need it; the sibling's Terminal.app hand-off is the fix to port when a real iPhone is wanted.
 
 ### B. Staged application updates — DESIGNED 2026-08-02, nothing built
 
