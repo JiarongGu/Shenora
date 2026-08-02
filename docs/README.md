@@ -11,6 +11,13 @@ update the relevant entry HERE — this file is the durable index.
 > "what is true now" and loses. **`DECISIONS.md` is the permanent home for a WHY** — cite a `D<n>`
 > from code, not a dated doc's `§`, or the doc can never be retired (that coupling is what kept these
 > three alive).
+>
+> **Retired 2026-08-02, same rule, same day they were built:**
+> `2026-08-02-shenora-mission-queue-and-chains-design.md` (→ **D28**, **D29**) and
+> `2026-08-02-shenora-file-updates-design.md` (→ **D30**, **D31**). Both were plans, both were built
+> within hours, and code/tests now cite the `D<n>` rather than the path — which is what made retiring
+> them free. The mission-scheduling design was KEPT, deliberately: it carries the harvest evidence
+> (§0) and the amendment history (A1–A3) that no other file holds.
 
 ## Read this when…
 
@@ -31,7 +38,8 @@ update the relevant entry HERE — this file is the durable index.
 | When did this break? | `docs/FIX-LOG.md` (use `/fix-log` to append) |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/2026-08-02-shenora-mission-scheduling-design.md` (the one-scheduler-two-key-kinds claim + what is deliberately not built) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
-| Serializing filesystem MUTATIONS, atomic replace, cross-process file locks | `docs/2026-08-02-shenora-file-updates-design.md` — a PLAN, nothing built yet; read it before assuming the kit has any of this |
+| Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + `docs/ARCHITECTURE.md` for the surface + the file-queue section of `docs/ADOPTION.md` |
+| Multi-step missions, or where the pending queue lives | `docs/DECISIONS.md` **D28**+**D29** (a chain is ONE queue entry; the queue's store, and the pluggable async queue that was rejected) |
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
@@ -52,10 +60,8 @@ update the relevant entry HERE — this file is the durable index.
 |---|---|---|
 | `2026-07-30-shenora-design.md` | The design contract: profiles, packages, IPC contract, phasing. Code cites its `§5` (the threading model) | Keep in sync with reality (dated amendments) |
 | `2026-08-01-shenora-communication-core-design.md` | The 0.2.0 communication core RATIONALE: `IModuleContext`, tracked operations, `NotificationPump`, the lifecycle bands. Code cites its `§4.2/§4.3/§4.6/§5/§5A.*` | Rewritten to the current shape in the 0.2.0 cleanup; as-built surface is `ARCHITECTURE.md` |
-| `2026-08-02-shenora-mission-scheduling-design.md` | The mission-scheduling + filesystem-claims design: the evidence (five hand-rolled implementations), one engine with pluggable key spaces, the durability and policy seams, and `## Amendments` A1/A2 | Keep in sync with reality (dated amendments) |
+| `2026-08-02-shenora-mission-scheduling-design.md` | **Kept for what only it holds:** §0's harvest evidence (the same two problems solved five times across the donor apps) and `## Amendments` A1–A3 (policy as the app's; designed-for-future; the rename + definition/execution split). Surface → `ARCHITECTURE.md`; WHYs → `DECISIONS.md` D27–D31 | Historical record + amendments; not the surface |
 | `2026-08-02-shenora-mobile-offline-plan.md` | Assessment of an on-device/offline mobile host: the blocker is transport coupling in the ADOPTING app, not the kit | Assessment, not a queue — see `TASKS.md` |
-| `2026-08-02-shenora-file-updates-design.md` | The file-update queue: parallel compute, serialized apply, per-update atomicity. **Queue IMPLEMENTED; §4's cross-process leases are not** | Keep the status note honest; retire once the leases question is settled |
-| `2026-08-02-shenora-mission-queue-and-chains-design.md` | **IMPLEMENTED.** `IMissionQueueStore` (where the queue lives across restarts) and chained multi-step missions — one queue entry, shared context. Records the two rejected alternatives: a pluggable async queue, and chains as N entries with dependency edges | Retire into `DECISIONS.md` at the next cleanup |
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |

@@ -145,7 +145,7 @@ public sealed class FileUpdateResult
 ///
 /// <para>
 /// This is deliberately not part of the mission scheduler
-/// (<c>docs/2026-08-02-shenora-file-updates-design.md</c>). A scheduler decides which missions may
+/// (D30). A scheduler decides which missions may
 /// run; this decides how their mutations land, and the failure modes do not overlap — a scheduler's
 /// are starvation and deadlock, an applier's are partial writes and locked targets.
 /// </para>

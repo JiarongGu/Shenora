@@ -1,10 +1,25 @@
 # Shenora mission scheduling + filesystem layer — design
 
-**Status: IMPLEMENTED 2026-08-02** — `src/Shenora.Core/Missions/` + `src/Shenora.Core/Io/PathClaims.cs`,
-33 tests. Two amendments were made DURING the build, both from the owner's "think bigger — a new
-application with a new requirement should also fit" and both recorded in `## Amendments` at the foot
-of this document. Target 0.2.0 (deliberately unpublished so this can land in the
-release the first adopter takes). Owner direction: *"a common usecase is filesystem operations +
+**Status: IMPLEMENTED 2026-08-02, and RENAMED the same day** (`Work*` → `Mission*`, plus the
+definition/execution split — A3 below, and `DECISIONS.md` D27). Surface: `src/Shenora.Core/Missions/`
++ `src/Shenora.Core/Io/`.
+
+**This document dates its claims and does not name release versions** (owner, 2026-08-02). Versions
+are assigned by the release workflow, so a version written into a design doc is a guess that goes
+stale the moment a release cuts — and this file previously said "Target 0.2.0", a release that turned
+out never to exist. `CHANGELOG.md` is where work meets version numbers; the one place a doc carries a
+current version is `ARCHITECTURE.md`'s status line, which `doctor --fix` syncs.
+
+**Why this document survived the cleanup when its two younger siblings did not.** The plans for the
+queue/chains (D28/D29) and file updates (D30/D31) were retired the moment they were built —
+`docs/README.md`'s rule: a pre-implementation doc competes with `ARCHITECTURE.md` for "what is true
+now" and loses. This one is kept for what only it holds: **§0's evidence** (the same two problems
+solved five times across the donor apps, which is what justifies the component existing at all) and
+the **amendment history** A1–A3, which records decisions taken DURING the build. The as-built surface
+is `ARCHITECTURE.md`; the load-bearing WHYs are `DECISIONS.md` D27–D31. Where this document and those
+disagree, they win.
+
+Owner direction: *"a common usecase is filesystem operations +
 parallel tasks process… it's not implementing the business features but we need to implement a
 library to support, since those 2 major features are complex themselves"*, and — the bar this
 document is written against — *"our goal is allow sibling projects to use the library instead of
@@ -120,10 +135,13 @@ A lane with capacity 1 is the video sibling's GPU gate, expressed without a stat
 ## §4 The scheduler
 
 ```csharp
+// As SKETCHED here. What shipped differs in two places, and ARCHITECTURE.md has the real surface:
+// TryFind(key, out status) became the simpler IsActive(key) — no consumer wanted the status — and
+// the parameter is a MissionDefinition, since a definition and an execution are now distinct (D27).
 public interface IMissionScheduler : IAsyncDisposable
 {
-    Task<MissionResult> SubmitAsync(MissionDefinition request, CancellationToken ct = default);
-    bool TryFind(MissionKey key, out MissionStatus status);   // the video sibling's HasPendingOperation
+    Task<MissionResult> SubmitAsync(MissionDefinition definition, CancellationToken ct = default);
+    bool IsActive(MissionKey key);              // sketched as TryFind, the video sibling's HasPendingOperation
     int PendingCount { get; }
     ILane Lane(string name);
 }
@@ -166,7 +184,7 @@ persists to — we don't handle persistence for now)."*
 ```csharp
 // Sketched here as IMissionStore with SaveAsync/LoadPendingAsync; shipped, and later renamed to say
 // what it actually is — the queue's storage rather than a durability service beside it (A3, Part 1 of
-// docs/2026-08-02-shenora-mission-queue-and-chains-design.md).
+// DECISIONS.md D28/D29).
 public interface IMissionQueueStore
 {
     Task AppendAsync(MissionRecord record, CancellationToken ct);

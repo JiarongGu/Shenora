@@ -4,7 +4,12 @@ Keep in sync with reality: when a project, public type family, or dependency edg
 this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
 records only what EXISTS.)
 
-## Current state — **0.3.0 PUBLISHED (2026-08-01)**; v0.1.0 shipped 2026-07-31, P1–P7 complete
+<!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
+     <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`, the same way README.md's
+     headline is. Don't hand-edit it — and don't date this line either: the release workflow owns
+     the version, so a hand-written one is stale the moment a release cuts. Everything ELSE in this
+     file dates its claims instead of versioning them, for the same reason. -->
+## Current state — **v0.3.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
 Five NuGet packages + `@shenora/react` on npm. Since the summary below was written, P5.5 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
@@ -14,7 +19,8 @@ stabilised: every public and protected member documented with CS1591 as an error
 moved out of the library to the sample (D21/D22 amended), and the release pipeline hardened. The
 narrative is `docs/ROADMAP.md` `## Done`; the task-level record is `docs/task-archive.md`.
 
-**0.2.0 (D23, `docs/2026-08-01-shenora-communication-core-design.md`, implemented):** the module
+**2026-08-01 — the communication core** (D23, `docs/2026-08-01-shenora-communication-core-design.md`,
+implemented; drafted under the name "0.2.0" and released later that day as part of v0.3.0): the module
 contract now carries the EVENT path — `IModuleContext` (`Publish`/`Start`/`Run`/`Logger`) is the
 second parameter of `BaseFacade.RouteMessageAsync`, the one breaking change this release makes. A new
 operations cluster in `Shenora.Ipc` tracks long-running work (id, status, progress, cancel-by-id,
@@ -23,10 +29,12 @@ transport-neutral half of the outbound notification pipeline moved out of `WebVi
 `Shenora.Ipc`'s `NotificationPump`, so `WebViewIpcBridge` is now a thin WinForms/WebView2 adapter over
 it (D16's "the seam, not the package" applied to the host half). `@shenora/react` gained
 `useShenoraOperations`/`createOperationsStore`, a host-backed store mirroring the pattern
-`createShenoraStore` already established. (That work was drafted under the name "0.2.0" and shipped as
-**0.3.0** — no 0.2.0 release exists; `CHANGELOG.md` `## 0.2.0 — never released` has the account.)
+`createShenoraStore` already established. (No 0.2.0 release exists — `CHANGELOG.md`
+`## 0.2.0 — never released` has the account. **Dates, not version numbers, are how this file marks
+time**, precisely because that story exists: a version is assigned by the release workflow, so any
+version written into prose is a guess about the future.)
 
-**0.3.0 also carries `Shenora.Core`'s mission-scheduling + filesystem-claims layer**
+**2026-08-02 — `Shenora.Core`'s mission-scheduling + filesystem-claims layer**
 (`docs/2026-08-02-shenora-mission-scheduling-design.md`): one scheduler whose key spaces are pluggable, so
 a filesystem operation planner (paths conflict by containment) and a job queue (lanes admit N) are the
 same engine — the EXECUTION half of long-running work, composing with `Shenora.Ipc`'s operations

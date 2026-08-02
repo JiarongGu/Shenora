@@ -4,7 +4,7 @@ namespace Shenora.Tests.Missions;
 
 /// <summary>
 /// Chained missions: steps in order, sharing one context, as ONE queue entry
-/// (`docs/2026-08-02-shenora-mission-queue-and-chains-design.md` Part 2).
+/// (D29).
 ///
 /// <para>
 /// The properties worth pinning are the ones the design ARGUED for, not the ones that are obvious

@@ -542,6 +542,91 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     a real UI framework rather than a WebView wrapper, so it is the one worth measuring against the
     bar. Do not re-propose Photino, and do not re-propose MAUI for Linux.
 
+- **D27 — the scheduler's unit is a MISSION, and a definition is not an execution.** (Owner,
+  2026-08-02; shipped as `Work*` hours earlier and renamed before any release took it.)
+  - **`Mission` was chosen against two rejected alternatives, and the reasons generalise.** `Work` is
+    too common a word to own or grep — every hit in a codebase is ambiguous. `Task` collides with
+    `System.Threading.Tasks`: `TaskScheduler` would be ambiguous against the BCL type in every
+    consumer importing both namespaces, a papercut in the one type an adopter constructs. `Quest` was
+    rejected for reading as DOMAIN vocabulary in a games family — the thing `SurfaceVocabularyTests`
+    exists to keep out of `src/` — and `Expedition` for putting ten characters in front of fifteen
+    types. Naming is not cosmetic here: the lexicon gate makes every new word a review.
+  - **`MissionDefinition` (what should run) is separate from `MissionExecution` (one specific run),**
+    replacing four types with two (`MissionRequest`, `MissionContext`, `MissionView`,
+    `MissionSnapshot`). An execution carries `Attempt` and `IsRunning` and NO `CancellationToken` —
+    the body takes its token as a second parameter, so an execution stays a pure value safe to hold in
+    a diagnostics view.
+  - **Why now rather than when a consumer asked — the rule that was being misapplied.** The
+    two-consumer bar governs adding CAPABILITY. The `A2` principle governs SHAPE: pay now only where
+    the later change would be BREAKING rather than additive. This one alters `SubmitAsync`, every
+    body's parameter, all three observer callbacks and both policy methods at once. Owner: *"bigger
+    change does not mean a bad thing, we need to think forward for future, change is allowed, this is
+    still pre-1.0."* Deferring a breaking-later change behind a capability bar is the error to avoid
+    repeating.
+  - Declined from the same proposal, and still declined: a handler registry by type (app composition,
+    and it would make the kit own serialization of app types — the iOS AOT problem in `TASKS.md` is
+    already waiting there), a separate queue and runner (rebuilds the two-component shape the one-
+    engine claim collapses), an `IMission` interface (pushes toward class-per-mission),
+    `MissionStatus` beside `MissionState`, and `MissionOptions` beside `MissionSchedulerOptions`.
+
+- **D28 — the queue's storage is named for what it is, and the queue itself stays internal.**
+  (2026-08-02.) `IMissionStore` became **`IMissionQueueStore`**: not a "durable missions" service
+  beside the queue, but where the queue's own entries live across a restart. Durability stops being a
+  parallel concept.
+  - **A pluggable async QUEUE was designed and rejected — do not re-propose it without new
+    evidence.** It puts an `await` in the dispatch path, which cannot run under the scheduler's lock,
+    so admission would read candidates, take the lock, then RE-VALIDATE against a collection that may
+    have changed underneath. That is a race in the one place where a race corrupts rather than
+    delays, bought for a distributed-queue capability no consumer has asked for — while the part apps
+    actually vary, ordering, is already theirs through `IMissionPolicy`.
+
+- **D29 — a chain is ONE queue entry, not N with dependency edges.** (Owner, 2026-08-02.)
+  `MissionChain.Sequence` returns an ordinary `MissionDefinition`, so the scheduler gains no
+  dependency concept, no blocked-on-predecessor state, and no edges — the alternative was a DAG
+  engine by another name, which stays declined on the evidence that no sibling has ever needed one.
+  - **The accepted cost, so nobody rediscovers it as a bug:** a chain holds the UNION of its steps'
+    claims for its whole life, taking the STRONGER mode where steps disagree. A five-step chain over
+    five paths blocks all five throughout. Claims are still acquired as one set, so deadlock-freedom
+    is unchanged. Per-step claims are the escalation, and they are design (a) — a different pass.
+  - A step's retry repeats THAT step; there is no chain-level retry. `IMissionChainContext` is
+    IN-MEMORY only — a durable chain carries state in `Payload`, because the kit cannot serialize an
+    app's object graph and a resume that silently lost the context is worse than one that never had it.
+
+- **D30 — filesystem MUTATIONS are a separate component from mission scheduling.** (Owner,
+  2026-08-02: *"it's more a different design rather than put them all into mission management"*.)
+  `IFileUpdateQueue` decides how changes LAND; the scheduler decides which missions RUN.
+  - **The argument is a measurement, not tidiness.** A path claim excludes two missions for their
+    whole duration, but the expensive phase usually touches only a temp file — so under claims alone
+    a seven-second compress waits on another mission's three-millisecond rename. Compute in parallel,
+    serialize only the landing. The failure modes do not overlap either: a scheduler's are starvation
+    and deadlock, an applier's are partial writes and locked targets.
+  - **Atomicity is the app's choice per update** (owner: *"it depends what the application need"*):
+    `PerChange`, or `AllOrNothing` via compensating rollback — which forces STAGED deletes, a delete
+    being the one change that cannot be undone from nothing.
+  - **Crash-atomicity is opt-in via a write-ahead journal**, and the ordering is the property: the
+    undo plan is durable BEFORE the mutation, because a plan written afterwards is missing exactly
+    the change that got interrupted. That is why undo is DATA rather than closures and why every
+    change is planned before it is applied — **do not "simplify" that split away**. Recovery rolls
+    back an update interrupted while APPLYING and FINISHES one interrupted while COMMITTING; rolling
+    the latter back would undo a success.
+
+- **D31 — cross-process file access is TWO problems, and one mechanism cannot serve both.** (Owner,
+  2026-08-02, from a filesystem-heavy adopter that does not own its working folder.)
+  - **`IPathLocker`/`IPathLease` excludes PARTICIPANTS** — a second instance, or a child process the
+    app spawns while the parent holds the lease, which is how an external command-line tool
+    participates without knowing anything about the kit.
+  - **`IFileLockInspector` answers for everyone else.** A game holding its assets, a mod loader,
+    antivirus, another application editing the same tree: none will ever take a lease, so exclusion is
+    impossible and the only useful thing is a NAME. `WhoHolds` returning empty means "cannot tell",
+    never "nobody" — the distinction matters at a call site. The Windows implementation is Restart
+    Manager, and it lives in `Shenora.WinForms` because it is Win32.
+  - **Lock files live in the app's own directory, never the managed tree.** An app frequently does
+    not own the folder it manages; sidecar locks there get synced, committed, and outlive the process.
+  - **Network shares are supported, correcting an earlier "not a target".** Leases work over SMB2+
+    provided the lock directory is ON the share — a lock in one machine's local storage is invisible
+    to the other, and that is the setting that fails silently. A lease released by a crash returns
+    when the SMB session times out, not instantly.
+
 - **D16 AMENDMENT (2026-08-01, 0.2.0 design pass D3) — transport neutrality is now EXECUTED, and the
   claim's exact boundary is recorded with it.** D16 said the same envelopes ride WebView2 postMessage
   today and a WebSocket or mobile channel tomorrow; `NotificationPump` was extracted so "a second,

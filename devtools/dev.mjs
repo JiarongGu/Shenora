@@ -196,6 +196,22 @@ function doctor({ fix = false } = {}) {
     } else fail(`README.md status headline v${headline[1]} != VersionPrefix ${config.version}`);
   }
 
+  // ARCHITECTURE.md's status line, synced the same way and for the same reason (owner, 2026-08-02):
+  // the release workflow owns the version, so ANY hand-written one goes stale the moment a release
+  // cuts — and this file had "0.3.0 PUBLISHED (2026-08-01)" hand-typed into a heading. Docs date
+  // their claims; the ONE line that needs a version gets it from the same source as everything else.
+  const architecturePath = path.join(repo, 'docs', 'ARCHITECTURE.md');
+  const architecture = fs.readFileSync(architecturePath, 'utf8');
+  const state = architecture.match(/## Current state — \*\*v(\d+\.\d+\.\d+[^ *]*) published\*\*/);
+  if (!state) fail('docs/ARCHITECTURE.md: no "## Current state — **vX.Y.Z published**" line found');
+  else if (state[1] !== config.version) {
+    if (fix) {
+      fs.writeFileSync(architecturePath, architecture.replace(
+        /(## Current state — \*\*v)\d+\.\d+\.\d+[^ *]*( published\*\*)/, `$1${config.version}$2`));
+      console.log(`  fixed docs/ARCHITECTURE.md status line -> v${config.version}`);
+    } else fail(`docs/ARCHITECTURE.md status line v${state[1]} != VersionPrefix ${config.version}`);
+  }
+
   // The npm tarball must SHIP the license text, not just declare MIT in the manifest (P5.5 H6). The
   // package needs its own copy because npm packs only files under the package directory — so the root
   // LICENSE is the source and this is checked against it, rather than trusting two files to stay equal.

@@ -126,3 +126,23 @@ Lockstep across all packages from `src/Directory.Build.props` `<VersionPrefix>` 
 npm version or README headline by hand (`dev.mjs doctor --fix` syncs; `doctor` fails on drift).
 SemVer from 1.0; while every consumer is in-house, a documented break may ship in a minor, always
 under a `### Breaking` heading in `CHANGELOG.md` and gated by the API-surface baseline tests.
+
+### Docs date their claims; they do not version them
+
+**A version number written into prose is a guess about the future** — the release workflow assigns the
+version, and a hand-written one is stale the moment a release cuts. This is not hypothetical here:
+design docs carried "Target 0.2.0" for a release that turned out never to exist, and `ARCHITECTURE.md`
+had "0.3.0 PUBLISHED (2026-08-01)" typed into a heading by hand.
+
+So (owner, 2026-08-02):
+
+- **Design docs, `DECISIONS.md`, `ARCHITECTURE.md`'s body and `ROADMAP.md` mark time with DATES.**
+  "2026-08-02 — the mission layer", not "0.3.0 — the mission layer".
+- **`CHANGELOG.md` is where work meets a version number**, because that is the release-facing log and
+  the workflow stamps its heading.
+- **Exactly two lines in the docs carry a current version, and both are AUTO-SYNCED** from
+  `<VersionPrefix>` by `doctor --fix` / `pack`, each marked with a `version-indicator` comment:
+  `README.md`'s `## Status` headline and `docs/ARCHITECTURE.md`'s `## Current state` line. `doctor`
+  fails on drift in either, so a stale one cannot survive the gate.
+- Naming a version in HISTORY is fine and often necessary — "shipped in v0.1.0", "0.2.0 never
+  released". The rule is about claims describing the PRESENT.

@@ -3,7 +3,7 @@ using Shenora.Core;
 namespace Shenora.Tests.Io;
 
 /// <summary>
-/// The file-update queue (`docs/2026-08-02-shenora-file-updates-design.md`).
+/// The file-update queue (D30).
 ///
 /// <para>
 /// Same standard as the mission concurrency suite: prove BOTH halves in one run. A queue that
