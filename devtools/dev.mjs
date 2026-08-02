@@ -410,8 +410,17 @@ switch (cmd) {
       break;
     }
     let ok = true;
-    if (which === 'all' || which === 'dotnet')
-      ok = step('dotnet test', () => run('dotnet', ['test', config.solution, '-v', 'minimal', '--nologo'])) && ok;
+    if (which === 'all' || which === 'dotnet') {
+      // The SAME env `build` needs, for the same reason: `dotnet test <solution>` BUILDS the solution,
+      // and that includes the Android TFM of Shenora.Maui, which cannot compile without a JDK. This
+      // was missing and latent — it only surfaced when Shenora.Maui started multi-targeting and the
+      // outer build stopped being a no-op, so `dev.mjs test` on a clean tree failed XA5300 while
+      // `dev.mjs build` right before it had succeeded. Anything that builds the solution needs this.
+      const testEnv = androidBuildEnv();
+      ok = testEnv !== null
+        && step('dotnet test', () => run('dotnet', ['test', config.solution, '-v', 'minimal', '--nologo'], { env: testEnv }))
+        && ok;
+    }
     if (which === 'all' || which === 'npm')
       ok = (ensureNpmDeps(npmDirAbs) && step('vitest (react package)', () => runNpm('test', { cwd: npmDirAbs }))) && ok;
     process.exitCode = ok ? 0 : 1;

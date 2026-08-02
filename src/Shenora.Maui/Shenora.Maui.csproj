@@ -8,12 +8,30 @@
     artifact, pointed the other way.
 
     Consequence worth knowing before a release: `dotnet pack` on Windows produces an ANDROID-ONLY
-    package. Shipping both faces needs a macOS pack job; until there is one, the iOS TFM is proven
-    but not published.
+    package. Shipping both faces needs ONE host carrying BOTH workloads, which is what the override
+    below is for — a macOS CI runner has both available:
+
+        dotnet pack -p:ShenoraMobileTargets="net10.0-android;net10.0-ios"
+
+    Measured, so the shape of the artifact is not a guess: an iOS pack on a Mac produces
+    `lib/net10.0-ios26.0/` with the XML docs alongside. Note the PLATFORM VERSION in that folder name
+    — it comes from the workload's TargetPlatformVersion, not from SupportedOSPlatformVersion (15.0),
+    and it is what a consuming project has to be compatible with.
   -->
+  <PropertyGroup Condition="'$(ShenoraMobileTargets)' == ''">
+    <ShenoraMobileTargets>net10.0-android</ShenoraMobileTargets>
+    <ShenoraMobileTargets Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-ios</ShenoraMobileTargets>
+  </PropertyGroup>
   <PropertyGroup>
-    <TargetFramework>net10.0-android</TargetFramework>
-    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-ios</TargetFramework>
+    <TargetFrameworks>$(ShenoraMobileTargets)</TargetFrameworks>
+    <!--
+      Clearing the SINGULAR is mandatory, not tidiness. `src/Directory.Build.props` defaults
+      TargetFramework to net10.0 for the portable packages, and when BOTH are set MSBuild honours the
+      singular and ignores TargetFrameworks entirely — so the build asked for a bare net10.0 and died
+      on `Assets file doesn't have a target for 'net10.0'`, which names the assets file rather than
+      the property that caused it. This project read singular until it needed to multi-target.
+    -->
+    <TargetFramework></TargetFramework>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">21.0</SupportedOSPlatformVersion>
     <!-- 15.0 is what the .NET 10 iOS workload supports as its floor; MAUI's own template uses the same. -->
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('ios'))">15.0</SupportedOSPlatformVersion>

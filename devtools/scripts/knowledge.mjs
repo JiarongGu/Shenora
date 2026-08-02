@@ -26,10 +26,21 @@ const claudeMd = path.join(repo, 'CLAUDE.md');
 // keep a gate proportionate). Both are things a session needs BEFORE it builds, which is what
 // "always loaded" is for.
 //
-// TRIM FIRST, RAISE SECOND. This is the first raise since the budget was set; it should stay rare
-// enough that each one carries a note like this. If the number climbs without the always-loaded
-// files getting more useful, that is the drift the budget exists to surface.
-const CORE_BUDGET = 17 * 1024;
+// TRIM FIRST, RAISE SECOND. Each raise should stay rare enough to carry a note like this. If the
+// number climbs without the always-loaded files getting more useful, that is the drift the budget
+// exists to surface.
+//
+// Raised 17 -> 18 KB on 2026-08-02 (second raise, same day as the first — noted, because two in one
+// day is exactly the pattern this comment is meant to make visible; both came from a single unusually
+// large session rather than from steady creep).
+//
+// What it bought: the `mobile-shells` index row. TRIM WAS TRIED FIRST and rejected on inspection —
+// at 343 bytes that row is mid-pack against the other six (312–395), every row is already the
+// mandated single clause, and shrinking a rule someone earned to make room for a new one is a shell
+// game rather than a saving. The row routes a whole new platform line (two mobile shells, both proven
+// on device), which is the kind of growth the cap is supposed to permit rather than the kind it is
+// supposed to catch.
+const CORE_BUDGET = 18 * 1024;
 
 const rel = (p) => path.relative(repo, p).replace(/\\/g, '/');
 const NON_RULES = new Set(['RULES_INDEX.md', 'TEMPLATE.md']);

@@ -72,10 +72,19 @@ Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
 
 - [ ] **A8 — iOS is PROVEN but not SHIPPABLE, and the two gaps are unrelated to each other.**
   Neither blocks an adopter who builds from source; both block a published iOS package.
-  - **`dotnet pack` on Windows produces an ANDROID-ONLY `Shenora.Maui`.** The TFM is conditioned on
-    the host because only a Mac can build iOS, so the package built by the release workflow simply
-    has no `net10.0-ios` face. Fixing it needs a macOS pack job (or a Mac-built artifact fed into the
-    existing one) — a release-pipeline change, and worth doing before anyone is told iOS is supported.
+  - **`dotnet pack` on Windows produces an ANDROID-ONLY `Shenora.Maui`.** The library half is now
+    DONE and measured, so what remains is purely a pipeline decision:
+    - The TFM list is overridable — `-p:ShenoraMobileTargets="net10.0-android;net10.0-ios"` — so one
+      host carrying BOTH workloads packs both faces. A macOS CI runner has both available.
+    - Packing iOS on the Mac was PROVEN, not assumed: `Shenora.Maui.0.4.0.nupkg` containing
+      `lib/net10.0-ios26.0/Shenora.Maui.dll` + the XML docs. ⚠ Note the PLATFORM VERSION in that
+      folder — it comes from the workload's TargetPlatformVersion, not from `SupportedOSPlatformVersion`
+      (15.0), and it is what a consuming project must be compatible with. Worth stating in ADOPTION
+      when iOS is actually published.
+    - **What is left is the release-workflow change itself**, deliberately not made unilaterally:
+      this repo lost 0.2.0 to a release mistake and cuts releases by hand from the Actions tab.
+      Shape: a macOS job that runs `dotnet workload install maui-android maui-ios` and packs with the
+      override, feeding its nupkg to the existing publish step.
   - **The build currently rides two override flags** (`ValidateXcodeVersion=false` +
     `MtouchLink=SdkOnly`), because that Mac's Xcode 26.3 is older than the workload's required 26.6.
     They are gitignored machine config, not repo config, and are verified for SIMULATOR DEBUG only.
