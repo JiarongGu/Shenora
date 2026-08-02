@@ -10,6 +10,16 @@
   <PropertyGroup>
     <TargetFrameworks>net10.0-android</TargetFrameworks>
     <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
+    <!--
+      No generated `Resource` designer class. This library ships no Android resources, but the SDK
+      emits `public partial class Resource` regardless — accidental PUBLIC API that nobody designed,
+      that appeared in the API baseline, and that has no iOS counterpart. Found by rendering the real
+      iOS assembly against the Android baseline: the two differed by exactly `Shenora.Mobile.Resource`.
+      Turning it off deletes a public type we never meant to ship AND makes the two mobile surfaces
+      genuinely identical, which is what lets the Android baseline gate iOS from a Windows host.
+      Re-enable the moment this project gains a Resources/ folder.
+    -->
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
     <!-- Inline on purpose — the baseline coverage gate text-matches it here. See Shenora.Mobile.props. -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Android</PackageId>

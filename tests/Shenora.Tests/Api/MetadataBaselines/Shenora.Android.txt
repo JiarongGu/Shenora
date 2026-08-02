@@ -44,5 +44,3 @@ Shenora.Mobile.MobileUiInteraction
 Shenora.Mobile.MobileUrlLauncher
   method .ctor
   method OpenUrl
-Shenora.Mobile.Resource
-  method .ctor
