@@ -252,6 +252,7 @@ interface Shenora.Core.IFileDialogs
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.FileDialogOptions? options = null)
   public abstract System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
+  public virtual System.Threading.Tasks.Task<System.IO.Stream> OpenReadAsync(string handle, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IFileLockInspector
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
 interface Shenora.Core.IFileUpdateJournal

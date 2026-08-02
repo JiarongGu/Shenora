@@ -124,12 +124,25 @@ scratch; at that point the shape is already known.
   already specified as "a path or URI the HOST can resolve", which is exactly what Android returns;
   the desktop-only options are simply ignored, and which ones is now written in the implementation's
   XML rather than left to be discovered.
-  **What is still open, narrowed to the real question:** `OpenFolderAsync` and `SaveFileAsync` have
-  no MAUI Essentials equivalent and currently refuse. Android exposes both through the Storage Access
-  Framework as tree/create-document intents returning URIs, which is a genuinely different shape from
-  "pick a path". So the 1.0 question is no longer "does this contract survive mobile" (it does) but
-  "should the folder/save halves be narrowed, split, or left as capabilities a shell may lack". Decide
-  with an app that actually needs one, not from the sample.
+  **OPEN is now universal end to end** (owner direction, 2026-08-02: *"make the frontend and
+  interface as universal as we can"* — the C# layer is device-dependent, the JS is not).
+  `IFileDialogs.OpenReadAsync` is the missing half: portable logic reads a picked handle through the
+  contract instead of calling `File.OpenRead` on it. Measured on a device: MAUI's picker COPIES the
+  document into app cache and returns a real path, so the default works on both shells — but the
+  method exists so a shell returning a genuine content URI can override it invisibly.
+
+  **What is still open, and it is narrower than before:** `OpenFolderAsync` and `SaveFileAsync`.
+  Neither has a MAUI Essentials equivalent — checked by compiling: `FolderPicker` and `FileSaver`
+  live in **CommunityToolkit.Maui**, a UI-component package D13 forbids the kit from taking. So
+  Android needs raw Storage Access Framework (`ACTION_OPEN_DOCUMENT_TREE` /
+  `ACTION_CREATE_DOCUMENT`), which returns URIs and needs Activity-result plumbing.
+  - **Save is the harder one and the more interesting**: a picked cache path cannot be written back
+    to the user's document, so "give me a path to save to" is not expressible on this platform at
+    all. The universal shape is `SaveAsync(options, write)` — pick and write in one call, host-side —
+    mirroring `OpenReadAsync`. That is the design; it is unbuilt because the SAF plumbing is real
+    work and no consumer has needed it yet.
+  - Folder picking is the same story with a tree URI, and additionally needs a directory abstraction
+    (list/read within a granted tree) before it means anything portable.
 
 ### Standing (habits, not a queue)
 

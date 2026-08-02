@@ -124,4 +124,29 @@ public interface IFileDialogs
 
     /// <summary>Pick a save destination.</summary>
     Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null);
+
+    /// <summary>
+    /// Read the content behind a <see cref="FileDialogResult.FilePath"/>. This is how PORTABLE app
+    /// logic consumes a picked file, and the reason it exists is the design goal that the frontend
+    /// and the interface stay universal while the implementation is device-dependent.
+    /// <para>
+    /// <b>Do not call <c>File.OpenRead</c> on a picked handle yourself.</b> The contract says
+    /// FilePath is "a path or URI the HOST can resolve", and only the host knows which. It happens
+    /// to be a real path on both shells today — Windows returns the file, and MAUI's picker COPIES
+    /// the chosen document into app cache and returns that path — so the default implementation
+    /// below is correct on both. That is a fact about today's two shells, not a property of the
+    /// contract: a shell handing back a genuine content URI (raw Storage Access Framework, iOS
+    /// security-scoped URLs) overrides this and app logic never notices.
+    /// </para>
+    /// <para>
+    /// A default implementation, so adding this breaks no existing implementor. Null when the
+    /// handle no longer resolves — a cache copy can be evicted, and a picked file can be deleted
+    /// between choosing it and reading it.
+    /// </para>
+    /// </summary>
+    Task<Stream?> OpenReadAsync(string handle, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(handle);
+        return Task.FromResult<Stream?>(File.Exists(handle) ? File.OpenRead(handle) : null);
+    }
 }

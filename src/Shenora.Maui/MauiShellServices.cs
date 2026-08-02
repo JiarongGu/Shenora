@@ -103,6 +103,16 @@ public sealed class MauiUiInteraction : IUiInteraction
 /// the HOST can resolve", which is exactly what Android hands back.
 /// </para>
 /// <para>
+/// <b>It does NOT override <c>OpenReadAsync</c>, and that was measured rather than assumed.</b>
+/// MAUI's picker COPIES the chosen document into app cache and returns a real filesystem path
+/// (<c>/data/data/&lt;pkg&gt;/cache/…/name.ext</c>) rather than a content URI, so the interface's
+/// default path-based read is already correct on this shell. Verified on a device — the sample's
+/// PICK_FILE route returned exactly such a path.
+/// The semantic difference that copy introduces matters more than the API shape: the handle is a
+/// SNAPSHOT, not the live document. Writing to it does not write back to the user's file, and the
+/// cache can be evicted. Read it promptly; do not treat it as durable storage.
+/// </para>
+/// <para>
 /// What is IGNORED here, stated rather than discovered: <c>CheckFileExists</c>,
 /// <c>CheckPathExists</c>, <c>ValidateNames</c> and <c>OverwritePrompt</c> (the picker owns
 /// validation), <c>DefaultPath</c> and <c>RememberPathKey</c> (no addressable start directory), and

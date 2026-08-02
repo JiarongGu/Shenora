@@ -200,6 +200,20 @@ at the first list and missed five more breaking changes.
   mission finished ~1.5 s after the disjoint one, which is the serialization the scheduler exists
   for, observed on a phone.
 
+- **`IFileDialogs.OpenReadAsync`** — read the content behind a picked handle, so portable app logic
+  never calls `File.OpenRead` on one itself. The contract has always said `FileDialogResult.FilePath`
+  is "a path or URI the HOST can resolve"; this is how a caller *uses* it without knowing which.
+  A **default interface member**, so it breaks no existing implementor.
+
+  Measured on a device rather than assumed: MAUI's picker **copies** the chosen document into app
+  cache and returns a real filesystem path, not a content URI — so the default path-based read is
+  already correct on both shells today. That is a fact about today's two shells, not a property of
+  the contract, which is exactly why it belongs on the interface: a shell whose picker returns a
+  genuine content URI (raw SAF, iOS security-scoped URLs) overrides it and app logic never notices.
+
+  ⚠ The copy has a semantic the desktop does not: the handle is a **snapshot**, not the live
+  document. Writing to it does not write back to the user's file, and the cache can be evicted.
+
 - **`ShellCapability.NotSupported` in `Shenora.Core`** — how a shell reports a contract it cannot
   honour, now that there is more than one shell. An absent capability **throws**, naming the platform
   and (where there is one) the alternative; it does not silently no-op, because a quiet nothing is the
