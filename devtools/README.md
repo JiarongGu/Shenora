@@ -32,6 +32,27 @@ reuse this toolkit on another repo). The library version is parsed there from
 
 Releases are cut by the manual **Release** GitHub workflow — see `docs/RELEASING.md`.
 
+## Machine prerequisites (since `Shenora.Maui` joined the solution)
+
+`Shenora.Maui` targets `net10.0-android`, so **building this repo at all** now needs two things
+beyond the .NET SDK. That cost was accepted deliberately (owner, 2026-08-02): a package no gate
+compiles is the objection this repo raises against any ungated artifact.
+
+| Need | How to get it | If it is missing |
+|---|---|---|
+| `maui-android` workload | `dotnet workload install maui-android` | the restore fails naming the missing workload |
+| A JDK 17+ | **Android Studio already ships one** in its `jbr` folder | `dev.mjs build` probes for it and sets `JAVA_HOME` for the child process; with none it stops and says so, rather than letting MSBuild emit a bare `error XA5300` pointing at an install page on a machine that already has a JDK |
+
+The Android SDK resolves from its default location; set `ANDROID_HOME` only if yours is elsewhere.
+The probe order is `JAVA_HOME` → Android Studio's `jbr`/`jre` under Program Files or LOCALAPPDATA —
+every candidate derived from an environment variable, never a literal path, so nothing
+machine-specific reaches a tracked file.
+
+**Its public surface is gated differently, and more weakly.** `tests/Shenora.Tests` is
+`net10.0-windows` and cannot reference an Android assembly, so `MetadataSurfaceTests` reads the built
+DLL's IL metadata instead (`Api/MetadataBaselines/`). That catches an add, a removal or a rename, and
+**cannot** catch a signature-only change the five full baselines would. Keep the package thin.
+
 ## Screenshots are auto-pruned
 
 `shot`/`wgc` keep the newest `shotRetention` captures (24, in `project.config.mjs`) and delete the

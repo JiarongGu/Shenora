@@ -54,6 +54,52 @@ const step = (label, fn) => {
 const npmDirAbs = path.join(repo, ...config.npmDir.split('/'));
 const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'package.json'), 'utf8'));
 
+// ---- The Android TFM needs a JDK, and the failure without one is unhelpful.
+//
+// Shenora.Maui targets net10.0-android, so `dotnet build` of the solution shells out to the Android
+// SDK, which needs JAVA_HOME. Unset, MSBuild fails with a bare `error XA5300: The Java SDK directory
+// could not be found` pointing at an install page — on a machine that already HAS a JDK, because
+// Android Studio ships one and nothing exported the variable.
+//
+// So probe for it (the same candidate list the server-backed sibling's APK build uses, proven on this
+// machine) and export it for the child process only. Every candidate is derived from an environment
+// variable, never a literal path — a real install root must not appear in a tracked file
+// (.claude/rules/sensitive-info.md). Returns null when there is genuinely none, and the caller says
+// so with the fix rather than letting XA5300 speak for it.
+function resolveJdk() {
+  const usable = (dir) => Boolean(dir) && fs.existsSync(path.join(dir, 'bin', 'java.exe'));
+  if (usable(process.env.JAVA_HOME)) return process.env.JAVA_HOME;
+  const candidates = [
+    [process.env.ProgramFiles, 'Android', 'Android Studio', 'jbr'],
+    [process.env['ProgramFiles(x86)'], 'Android', 'Android Studio', 'jbr'],
+    [process.env.LOCALAPPDATA, 'Programs', 'Android Studio', 'jbr'],
+    [process.env.ProgramFiles, 'Android', 'Android Studio', 'jre'],
+  ];
+  for (const [root, ...rest] of candidates) {
+    if (!root) continue;
+    const dir = path.join(root, ...rest);
+    if (usable(dir)) return dir;
+  }
+  return null;
+}
+
+/** Environment for a build that includes the Android TFM: JAVA_HOME resolved, or an actionable stop. */
+function androidBuildEnv() {
+  if (process.env.JAVA_HOME && fs.existsSync(path.join(process.env.JAVA_HOME, 'bin', 'java.exe'))) {
+    return process.env;
+  }
+  const jdk = resolveJdk();
+  if (!jdk) {
+    console.error(
+      '\n  No JDK found, and Shenora.Maui (net10.0-android) cannot build without one.\n' +
+      '  Set JAVA_HOME to a JDK 17+ — Android Studio ships one in its `jbr` folder — or install one.\n' +
+      '  This is a machine prerequisite, not a repo setting; see devtools/README.md.');
+    return null;
+  }
+  console.log(`  (JAVA_HOME not set — using the JDK found beside Android Studio)`);
+  return { ...process.env, JAVA_HOME: jdk };
+}
+
 // ---- Evict this repo's packages from the NuGet GLOBAL cache after packing.
 //
 // NuGet keys the global folder (~/.nuget/packages) on id+VERSION and it wins over every source, so
@@ -345,7 +391,9 @@ switch (cmd) {
   case 'build': {
     // No -clp:ErrorsOnly: warnings must be VISIBLE (they are errors under TreatWarningsAsErrors,
     // but a suppressed-warning build is how invisible problems accumulated — P5.5 H5).
-    const ok = step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal']))
+    const buildEnv = androidBuildEnv();
+    const ok = buildEnv !== null
+      && step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv }))
       && ensureNpmDeps(npmDirAbs)
       && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
     process.exitCode = ok ? 0 : 1;

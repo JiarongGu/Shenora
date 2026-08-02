@@ -29,6 +29,10 @@ export default {
     'src/Shenora.WebView2',
     'src/Shenora.WebView2.Sessions',
     'src/Shenora.WinForms',
+    // net10.0-android. Listed so `pack` and the csproj's IsPackable agree — the API-baseline
+    // coverage check reads IsPackable as the definition of "shipped", so a project claiming it while
+    // the tooling skips it is the two halves disagreeing about what ships.
+    'src/Shenora.Maui',
   ],
   /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
   npmDir: 'src/Shenora.React',

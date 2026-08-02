@@ -85,6 +85,25 @@ at the first list and missed five more breaking changes.
   platform that signals "stopped" before it ever signalled "started" cannot disarm the real shutdown
   that follows.
 
+- **A sixth package: `Shenora.Maui`** (`net10.0-android`) — the second shell. `MauiIpcBridge` over
+  `HybridWebView`'s `RawMessageReceived`/`SendRawMessage`, `MauiUiDispatcher`, and the
+  Essentials-backed implementations of the `Shenora.Core` contracts, registered by `UseMaui`.
+
+  **It registers no `IShenoraRunner` on purpose:** MAUI owns the loop, so the app drives
+  `ShenoraApplication.Start`/`Stop` from its own lifecycle. It is a PEER of the Windows shell, not a
+  layer on it — it references neither `Shenora.WinForms` nor `Shenora.WebView2`.
+
+  Two limits stated rather than left to be found. `HybridWebView` has no request interception, so
+  the packaged bundle is served by the platform from `Resources/Raw/wwwroot` and the kit's
+  resource-provider layer does not apply on this shell. And it exposes no document-lifecycle event,
+  so the notification ready gate can be opened but never closed — a reloaded page simply
+  re-handshakes.
+
+  **Its surface is gated more weakly than the other five**, because a `net10.0-windows` test project
+  cannot reference an Android assembly: `MetadataSurfaceTests` reads the built DLL's IL metadata, so
+  adds, removals and renames are caught but signature-only changes are not. Building the repo now
+  needs the `maui-android` workload and a JDK — see `devtools/README.md`.
+
 - **`ShellCapability.NotSupported` in `Shenora.Core`** — how a shell reports a contract it cannot
   honour, now that there is more than one shell. An absent capability **throws**, naming the platform
   and (where there is one) the alternative; it does not silently no-op, because a quiet nothing is the

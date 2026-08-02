@@ -73,6 +73,11 @@ public class SurfaceVocabularyTests
             .SelectMany(WordsOf)
             .ToHashSet(StringComparer.Ordinal);
 
+        // The metadata-gated assemblies count as USED too, or a word that only their type names need
+        // (Maui) would look unused and this test would demand its removal — which would then fail the
+        // vocabulary gate that requires it. Two gates over one lexicon must read the same surface.
+        foreach (var word in MetadataSurfaceTests.AllExportedTypeWords()) used.Add(word);
+
         var unused = Lexicon().Except(used).Order(StringComparer.Ordinal).ToArray();
 
         Assert.True(unused.Length == 0,
@@ -84,16 +89,23 @@ public class SurfaceVocabularyTests
     /// Words of a type name, with the <c>I</c>-prefix convention stripped so <c>IClipboardService</c>
     /// costs Clipboard + Service rather than a bogus <c>I</c>. Generic arity (<c>`1</c>) is dropped.
     /// </summary>
-    private static IEnumerable<string> WordsOf(Type type)
+    private static IEnumerable<string> WordsOf(Type type) => WordsOfName(type.Name);
+
+    /// <summary>
+    /// <see cref="WordsOf"/> over a bare NAME — shared with <see cref="MetadataSurfaceTests"/>, which
+    /// gates assemblies this project cannot reference and so has no <see cref="Type"/> to pass.
+    /// One splitter, so the two gates cannot disagree about what a word is.
+    /// </summary>
+    internal static IEnumerable<string> WordsOfName(string typeName)
     {
-        var name = type.Name;
+        var name = typeName;
         var tick = name.IndexOf('`');
         if (tick >= 0) name = name[..tick];
         if (name.Length > 1 && name[0] == 'I' && char.IsUpper(name[1])) name = name[1..];
         return WordPattern.Matches(name).Select(m => m.Value);
     }
 
-    private static HashSet<string> Lexicon()
+    internal static HashSet<string> Lexicon()
     {
         var path = Path.Combine(BaselinesDir(), "..", "surface-lexicon.txt");
         Assert.True(File.Exists(path), $"missing lexicon at {Path.GetFullPath(path)}");

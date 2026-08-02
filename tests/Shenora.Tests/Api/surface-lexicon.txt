@@ -49,6 +49,10 @@ Form
 Forms
 Ipc
 Json
+# `Maui` (2026-08-02) is a platform name, the peer of Forms / View2 / Win already here. Its types are
+# gated by MetadataSurfaceTests rather than SurfaceVocabularyTests — the Windows test project cannot
+# reference a net10.0-android assembly — so both gates read this one lexicon.
+Maui
 Path
 Paths
 Shell

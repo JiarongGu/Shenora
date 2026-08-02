@@ -1,0 +1,47 @@
+Shenora.Maui.MauiClipboardService
+  method .ctor
+  method GetTextAsync
+  method SetImageFromFileAsync
+  method SetTextAsync
+  method TrySaveImageToFileAsync
+Shenora.Maui.MauiFileDialogs
+  method .ctor
+  method OpenFileAsync
+  method OpenFolderAsync
+  method SaveFileAsync
+Shenora.Maui.MauiHostExtensions
+  method UseMaui
+Shenora.Maui.MauiIpcBridge
+  method .ctor
+  method Attach
+  method Dispose
+  method SendNotification
+  property IsClientReady
+Shenora.Maui.MauiIpcBridgeOptions
+  method .ctor
+  property Dispatcher
+  property EventBus
+  property Log
+  property MaxQueuedNotifications
+  property NotificationFilter
+  property NotificationInterval
+  property OnClientReady
+Shenora.Maui.MauiUiDispatcher
+  method .ctor
+  method InvokeAsync
+  method InvokeAsync
+  method InvokeAsync
+  method InvokeOrDefaultAsync
+  method Post
+  method Post
+  property IsOnUiThread
+  property State
+Shenora.Maui.MauiUiInteraction
+  method .ctor
+  method BlockInteraction
+  method UnblockInteraction
+Shenora.Maui.MauiUrlLauncher
+  method .ctor
+  method OpenUrl
+Shenora.Maui.Resource
+  method .ctor
