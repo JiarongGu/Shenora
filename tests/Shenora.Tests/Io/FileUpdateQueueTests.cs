@@ -181,7 +181,8 @@ public class FileUpdateQueueTests
 
         Assert.True(result.Succeeded);
         // Moved aside first…
-        var staged = Assert.Single(probe.Log.Where(e => e.StartsWith("move doomed -> doomed.shenora-del-", StringComparison.Ordinal)));
+        var staged = Assert.Single(
+            probe.Log, e => e.StartsWith("move doomed -> doomed.shenora-del-", StringComparison.Ordinal));
         // …and only really deleted after the LAST change landed.
         var stagedPath = staged["move doomed -> ".Length..];
         Assert.True(probe.Log.IndexOf($"delete {stagedPath}") > probe.Log.IndexOf("move temp -> target"));

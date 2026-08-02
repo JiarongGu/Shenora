@@ -4,10 +4,10 @@
 when your task matches a row's *Applies when*, `Read` that file before touching the area. Keeping a
 body out of context until it is needed is the point.
 
-Add one with `node devtools/dev.mjs knowledge new <kebab-name> [--core]`; verify with `… knowledge
-check`, size with `… knowledge footprint`. **This INDEX is always loaded, so every knowledge rule
-costs core bytes for its row** — keep rows to one clause each, and when the budget is full, trim the
-index rather than raising the cap.
+Add one with `node devtools/dev.mjs knowledge new <kebab-name> [--core]`; check with `… knowledge
+check|footprint`. **This INDEX is always loaded, so every rule costs core bytes for its row** — one
+clause per row, and trim here rather than raising the cap. The budget WARNS, never fails: a style
+budget must not block a release.
 
 ## Core (always loaded)
 

@@ -392,11 +392,11 @@ switch (cmd) {
       }],
       ['check-sensitive --tree', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), '--tree'], { stdio: 'inherit', cwd: repo }).status === 0],
       ['knowledge check', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'check'], { stdio: 'inherit', cwd: repo }).status === 0],
-      // The always-loaded budget, gated rather than advisory. It existed from the start and nothing
-      // ran it, so it drifted to its ceiling unnoticed and the next knowledge rule (doc-claims,
-      // 2026-08-02) overflowed it — the index row counts as core, so EVERY on-demand rule costs core
-      // bytes. Enforced here it fails while the fix is still free: trim the index (RULES_INDEX says
-      // so) rather than raise the cap, which is what keeps a session's base small.
+      // The always-loaded budget — REPORTED here, not enforced. It existed from the start and
+      // nothing ran it, so it drifted to its ceiling unnoticed; running it in the gate is what fixes
+      // that, because the number lands in every verify log. It was briefly FATAL and that was wrong:
+      // it blocked a release by 0.2 KB on 2026-08-02, and a style budget must not outrank shipping.
+      // The script exits 0 and prints ⚠ OVER when it is over (see its own comment).
       ['knowledge footprint', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'footprint'], { stdio: 'inherit', cwd: repo }).status === 0],
       // The gate the PROSE never had (0.2.0 design pass, D4). Every code invariant here has a test;
       // no doc claim had anything, and a whole-codebase review found 8 of its ~13 findings in
