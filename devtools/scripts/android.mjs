@@ -165,7 +165,81 @@ switch (sub) {
     break;
   }
 
+  // ---------------------------------------------------------------- bench
+  //
+  // Cold start, measured twice over because the two numbers answer different questions:
+  //
+  //   TotalTime      the PLATFORM's view — process spawn to the first frame of the activity. It is
+  //                  what `am start -W` reports and what a user calls "the app opened".
+  //   time-to-READY  OUR view — the app's first log line to the client's IPC handshake. This is the
+  //                  one that matters for this kit, because until the handshake lands the page
+  //                  cannot call anything; a shell that paints instantly and answers nothing for a
+  //                  second is not fast.
+  //
+  // The first run after an install is always slower (the runtime is warming caches on disk), so the
+  // first result is DISCARDED rather than averaged in — averaging it in makes every A/B comparison
+  // depend on how recently you deployed.
+  case 'bench': {
+    const device = target(rest);
+    if (!device) { process.exitCode = 1; break; }
+    const runs = rest.includes('--runs') ? Number(rest[rest.indexOf('--runs') + 1]) : 5;
+
+    const activity = capture(['-s', device, 'shell', 'cmd', 'package', 'resolve-activity', '--brief',
+      config.androidPackageId]).trim().split('\n').pop().trim();
+    if (!activity.includes('/')) {
+      console.error(`android: could not resolve a launcher activity for ${config.androidPackageId} — is it installed?`);
+      process.exitCode = 1;
+      break;
+    }
+
+    /** logcat's "MM-DD HH:MM:SS.mmm" as milliseconds. Same day throughout a run. */
+    const stamp = (line) => {
+      const m = line.match(/^\d\d-\d\d (\d\d):(\d\d):(\d\d)\.(\d\d\d)/);
+      if (!m) return null;
+      return ((+m[1] * 60 + +m[2]) * 60 + +m[3]) * 1000 + +m[4];
+    };
+
+    const samples = [];
+    for (let i = 0; i <= runs; i++) {
+      spawnSync(adb, ['-s', device, 'shell', 'am', 'force-stop', config.androidPackageId]);
+      spawnSync(adb, ['-s', device, 'logcat', '-c']);
+      const started = capture(['-s', device, 'shell', 'am', 'start', '-W', '-n', activity]);
+      const total = Number(started.match(/TotalTime:\s*(\d+)/)?.[1] ?? 0);
+
+      // Poll for the handshake rather than sleeping a fixed amount: a fixed wait either wastes time
+      // or truncates a slow run, and truncating one silently drops the very sample that matters.
+      let ready = null;
+      for (let waited = 0; waited < 20000 && ready === null; waited += 250) {
+        spawnSync('node', ['-e', 'setTimeout(()=>{},250)']);   // no sleep binary on this path
+        const log = capture(['-s', device, 'logcat', '-d', '-s', `${config.androidLogTag}:V`]).split('\n');
+        const first = log.find((l) => stamp(l) !== null);
+        const done = log.find((l) => l.includes('client READY'));
+        if (first && done) ready = stamp(done) - stamp(first);
+      }
+
+      if (i === 0) { console.log(`  (discarding the first run after deploy: ${total} ms)`); continue; }
+      samples.push({ total, ready });
+      console.log(`  run ${i}: first frame ${total} ms · app start -> IPC ready ${ready ?? '(timeout)'} ms`);
+    }
+
+    // min/median/max, never a bare median. Session-to-session spread here is ~20%, so a single
+    // number invites a false-precision claim like "46% faster" off two runs that happened to fall at
+    // opposite ends of the noise. Show the range and the comparison stays honest.
+    const spread = (xs) => {
+      const ok = xs.filter((x) => typeof x === 'number').sort((a, b) => a - b);
+      if (!ok.length) return '(no samples)';
+      return `${ok[0]}–${ok[ok.length - 1]} ms (median ${ok[Math.floor(ok.length / 2)]})`;
+    };
+    console.log(`\nandroid bench (${samples.length} runs):`);
+    console.log(`  first frame            ${spread(samples.map((s) => s.total))}`);
+    console.log(`  app start -> IPC ready ${spread(samples.map((s) => s.ready))}`);
+    console.log('\n  ⚠ An EMULATOR on a desktop is not a phone, and the spread above is real —');
+    console.log('    compare MEDIANS across builds, treat anything under ~15% as noise, and do not');
+    console.log('    quote these as what a user sees.');
+    break;
+  }
+
   default:
-    console.error('usage: node devtools/dev.mjs android <devices|connect <host:port>|deploy|run|log|shot [name]> [--device id]');
+    console.error('usage: node devtools/dev.mjs android <devices|connect <host:port>|deploy|run|log|shot [name]|bench [--runs N]> [--device id]');
     process.exitCode = sub ? 1 : 0;
 }

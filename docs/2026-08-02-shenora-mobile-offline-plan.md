@@ -113,9 +113,47 @@ Levers, strongest first, to try when there is something to measure:
   Runtime init behind an already-painted splash is a different experience from the same milliseconds
   on a white screen.
 
-**No performance numbers appear in this document, deliberately.** `phase-workflow.md` requires
-measurements for performance claims; everything above is a lever to try, not a result. Measure on a
-physical device, both sides, same hardware — emulator cold-start figures would be misleading.
+### §6a Measured, 2026-08-02 — the levers are no longer hypothetical
+
+The section above was written with no numbers because there was nothing to measure. There is now:
+`samples/Shenora.Sample.Maui` runs on Android, and `dev.mjs android bench` reports both the
+platform's view (`am start -W` TotalTime) and the one that matters here — app start to the client's
+IPC handshake, because until that lands the page cannot call anything.
+
+| Build | First frame | App start → IPC ready | APK |
+|---|---|---|---|
+| Debug | ~1570 ms | ~1015 ms | (fast-deploy; not size-comparable) |
+| Release, no AOT | ~1240 ms | ~1010 ms | 21.2 MB |
+| Release + profiled AOT | ~850–1030 ms | ~740–880 ms | 27.8 MB |
+
+**Profiled AOT is confirmed as the largest single lever** — roughly 200–400 ms off the first frame
+against Release-without-it, and it is the only change that moved time-to-IPC-ready at all. It costs
+**+6.6 MB**. §6 lists AOT and trimming as separate levers; this is the measurement showing they pull
+in OPPOSITE directions, so "optimize startup" and "optimize size" are a trade here, not a program.
+
+**Three caveats, all load-bearing:**
+
+1. **This is an emulator on a desktop, not a phone.** The numbers compare builds against each other.
+   The original instruction — measure on a physical device, both sides, same hardware — still stands
+   for any claim about what a user sees.
+2. **Session-to-session spread is ~20%.** The same build measured 852 ms and 1032 ms on two runs an
+   hour apart. `bench` therefore prints min–median–max rather than a bare median, and anything under
+   ~15% should be treated as noise. An earlier draft of this table said "46% faster" off two runs
+   that happened to sit at opposite ends of that noise.
+3. **The app's own startup is not the cost.** In the Release log the whole Shenora graph builds in
+   ~7 ms (`building the Shenora application…` → `built`); the rest is runtime and MAUI. So the
+   remaining headroom is in the platform, not in kit code — which is worth knowing before optimizing
+   the wrong half.
+
+**Trimming did NOT break JSON**, which the §4 gap predicted it might. `PublishTrimmed` with Android's
+default trim mode keeps enough metadata for the reflection resolver, and the full round trip —
+handshake, echo, notifications, the mission scheduler — works on the trimmed AOT build. The
+`IpcJson.AddTypeInfoResolver` seam is still the right insurance for iOS and for full/NativeAOT, but
+this configuration does not need it. Recorded so nobody assumes it is already required.
+
+**Perceived startup was the cheapest real win and is applied**: the sample's splash colour now
+matches the page background, so the launch no longer flashes the template's purple into a near-black
+page. That is the kit's no-white-flash contract carried onto this shell.
 
 ## §6a A related question, already settled: desktop Linux
 

@@ -24,6 +24,19 @@
     <!-- XML docs are a PACKAGE concern; a sample would only be noise under CS1591. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
 
+    <!--
+      The cold-start levers from the mobile plan's §6, strongest first. Release only: they cost
+      minutes of build time, and a debug loop that slow stops being a loop.
+
+        RunAOTCompilation + AndroidEnableProfiledAot — AOT-compile the RECORDED startup path rather
+          than everything. §6 calls this the largest single win, and it is the one measured below.
+        AndroidStripILAfterAOT — drop the IL that AOT replaced; size, not speed.
+        PublishTrimmed — the main SIZE lever, and the reason IpcJson.AddTypeInfoResolver exists: a
+          trimmed build strips the metadata a reflection-based JSON resolver needs.
+
+      Measured on an emulator (see `dev.mjs android bench`), which compares builds against each other
+      and is NOT a claim about a phone.
+    -->
     <ApplicationTitle>Shenora Sample</ApplicationTitle>
     <ApplicationId>com.shenora.sample.maui</ApplicationId>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
@@ -32,13 +45,27 @@
 
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+    <!--
+      The splash colour MATCHES the page's background (#14161a), which is the kit's no-white-flash
+      contract applied to this shell. §6 of the mobile plan lists perceived startup as a real lever
+      and it is the cheapest one here: the template's purple splash handed over to a page painted
+      near-black, so every launch flashed. Runtime init behind an already-correct colour is a
+      different experience from the same milliseconds spent watching the colour change.
+    -->
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#14161A" BaseSize="128,128" />
     <MauiImage Include="Resources\Images\*" />
     <MauiFont Include="Resources\Fonts\*" />
     <!-- The web bundle. HybridWebView serves Resources/Raw/wwwroot as its HybridRoot — the platform
          does the serving, which is why the kit's resource-provider layer has no role on this shell. -->
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <AndroidEnableProfiledAot>true</AndroidEnableProfiledAot>
+    <AndroidStripILAfterAOT>true</AndroidStripILAfterAOT>
+    <PublishTrimmed>true</PublishTrimmed>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" />

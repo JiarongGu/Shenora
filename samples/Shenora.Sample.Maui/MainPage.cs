@@ -19,9 +19,16 @@ public sealed class MainPage : ContentPage
 	private readonly HybridWebView _webView;
 	private MauiIpcBridge? _bridge;
 
+	/// <summary>The page's background, matched by the splash colour — see the csproj's comment.</summary>
+	private static readonly Color Shell = Color.FromArgb("#14161A");
+
 	public MainPage()
 	{
 		Title = "Shenora MAUI sample";
+		// The third surface in the no-white-flash chain: splash -> PAGE -> the HTML body. Leave this
+		// unset and the default (white in a light theme) shows through for the moment between the
+		// splash handing over and the web content painting.
+		BackgroundColor = Shell;
 
 		_webView = new HybridWebView
 		{
