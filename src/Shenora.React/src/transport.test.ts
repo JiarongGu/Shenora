@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createWebView2Transport } from './transport.js';
+import {
+  createHostTransport,
+  createHybridWebViewTransport,
+  createWebView2Transport,
+  isShenoraAvailable,
+} from './transport.js';
 
 /**
  * `createWebView2Transport` had ZERO references in the suite before P5.5 H7 while being the ONE
@@ -80,5 +85,97 @@ describe('createWebView2Transport', () => {
     expect(host.listeners.size).toBe(0);
     host.emit('after-unsubscribe');
     expect(received).toEqual([]);
+  });
+});
+
+/**
+ * The MAUI shell. Its two directions are ASYMMETRIC by the platform's design — send through
+ * `window.HybridWebView.SendRawMessage`, receive a `HybridWebViewMessageReceived` CustomEvent on
+ * `window` — so the fake has to model both halves rather than one channel object.
+ */
+function installHybridHost() {
+  const sent: string[] = [];
+  const listeners = new Set<(event: unknown) => void>();
+  (globalThis as { window?: unknown }).window = {
+    HybridWebView: { SendRawMessage: (message: string) => sent.push(message) },
+    addEventListener: (_type: string, listener: (event: unknown) => void) => listeners.add(listener),
+    removeEventListener: (_type: string, listener: (event: unknown) => void) => listeners.delete(listener),
+  };
+  const emit = (detail: unknown) => {
+    for (const listener of [...listeners]) listener({ detail });
+  };
+  return { sent, listeners, emit };
+}
+
+describe('createHybridWebViewTransport', () => {
+  it('is null when there is no MAUI host', () => {
+    expect(createHybridWebViewTransport()).toBeNull();
+    (globalThis as { window?: unknown }).window = {};
+    expect(createHybridWebViewTransport()).toBeNull();
+  });
+
+  it('sends through SendRawMessage verbatim', () => {
+    const host = installHybridHost();
+    createHybridWebViewTransport()!.post('{"id":"1"}');
+    expect(host.sent).toEqual(['{"id":"1"}']);
+  });
+
+  it('delivers a string detail.message and ignores every other shape', () => {
+    const host = installHybridHost();
+    const received: string[] = [];
+    createHybridWebViewTransport()!.subscribe((message) => received.push(message));
+
+    host.emit({ message: '{"category":"ipc"}' });
+    // Any page script can dispatch an event with this name, so a non-string (or absent) message
+    // must be dropped rather than handed up for the bridge to JSON.parse — the same rule the
+    // WebView2 path follows for `event.data`.
+    host.emit({ message: { object: true } });
+    host.emit({ message: 42 });
+    host.emit({});
+    host.emit(undefined);
+
+    expect(received).toEqual(['{"category":"ipc"}']);
+  });
+
+  it('unsubscribe detaches the window listener', () => {
+    const host = installHybridHost();
+    const received: string[] = [];
+    const unsubscribe = createHybridWebViewTransport()!.subscribe((m) => received.push(m));
+    expect(host.listeners.size).toBe(1);
+
+    unsubscribe();
+
+    expect(host.listeners.size).toBe(0);
+    host.emit({ message: 'after-unsubscribe' });
+    expect(received).toEqual([]);
+  });
+});
+
+describe('host detection across both shells', () => {
+  it('createHostTransport picks whichever host is present', () => {
+    expect(createHostTransport()).toBeNull();
+
+    installHost();
+    expect(createHostTransport()).not.toBeNull();
+    createHostTransport()!.post('desktop');
+
+    const hybrid = installHybridHost();
+    createHostTransport()!.post('mobile');
+    expect(hybrid.sent).toEqual(['mobile']);
+  });
+
+  it('isShenoraAvailable answers for the MAUI shell too', () => {
+    // The regression this pins: it used to test chrome.webview ALONE, so on the MAUI shell an app
+    // concluded it was in a plain browser tab while a perfectly good host sat on the other side.
+    expect(isShenoraAvailable()).toBe(false);
+
+    installHybridHost();
+    expect(isShenoraAvailable()).toBe(true);
+
+    (globalThis as { window?: unknown }).window = {};
+    expect(isShenoraAvailable()).toBe(false);
+
+    installHost();
+    expect(isShenoraAvailable()).toBe(true);
   });
 });

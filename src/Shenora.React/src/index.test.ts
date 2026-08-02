@@ -58,6 +58,8 @@ const EXPECTED_EXPORTS = [
   'ShenoraEventBus',
   'WindowCommands',
   'configureBridge',
+  'createHostTransport',
+  'createHybridWebViewTransport',
   'createOperationsStore',
   'createShenoraStore',
   'createWebView2Transport',

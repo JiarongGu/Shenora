@@ -16,7 +16,13 @@ export {
   type EventMessage,
 } from './types.js';
 export { OperationError } from './errors.js';
-export { isShenoraAvailable, createWebView2Transport, type ShenoraTransport } from './transport.js';
+export {
+  isShenoraAvailable,
+  createHostTransport,
+  createWebView2Transport,
+  createHybridWebViewTransport,
+  type ShenoraTransport,
+} from './transport.js';
 export { ShenoraEventBus, eventBus } from './eventBus.js';
 export {
   ShenoraBridge,

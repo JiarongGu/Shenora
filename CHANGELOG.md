@@ -90,6 +90,16 @@ at the first list and missed five more breaking changes.
   `ConfigurationChanges`, so `Window.Created` fired exactly once across a home-and-return. The guard
   is cheap insurance for the wirings that do re-enter; it is not a fix for that one._
 
+- **`@shenora/react` speaks both shells.** New `createHybridWebViewTransport()` (MAUI
+  `HybridWebView`) and `createHostTransport()`, which picks whichever host the page is in.
+  `ShenoraBridge`'s default transport is now the latter, so an app calls `invoke`/`post` and never
+  learns which shell it is running in — the transport seam (D16) doing the job it was built for.
+
+  Also widened: **`isShenoraAvailable()` now answers for the MAUI shell.** It tested `chrome.webview`
+  alone, so on MAUI it returned FALSE — an app would have concluded it was in a plain browser tab
+  while a perfectly good host sat on the other side of the channel. It answers "is there a host",
+  which is the question callers actually ask. Widening only, so a WebView2 consumer sees no change.
+
 - **A sixth package: `Shenora.Maui`** (`net10.0-android`) — the second shell. `MauiIpcBridge` over
   `HybridWebView`'s `RawMessageReceived`/`SendRawMessage`, `MauiUiDispatcher`, and the
   Essentials-backed implementations of the `Shenora.Core` contracts, registered by `UseMaui`.

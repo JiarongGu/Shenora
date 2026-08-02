@@ -1,7 +1,7 @@
 import { OperationError } from './errors.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 import { randomId } from './internal.js';
-import { createWebView2Transport, type ShenoraTransport } from './transport.js';
+import { createHostTransport, type ShenoraTransport } from './transport.js';
 import {
   HANDSHAKE_MODULE,
   HANDSHAKE_TYPE,
@@ -16,9 +16,9 @@ import {
 /** Inputs for {@link ShenoraBridge}. */
 export interface ShenoraBridgeOptions {
   /**
-   * The channel to the host. Default: the WebView2 postMessage transport when running inside a
-   * host, else null (browser). Supply your own for other shells — a WebSocket, a mobile shell's
-   * native channel (D16) — or a scripted fake for tests/preview harnesses.
+   * The channel to the host. Default: whichever Shenora host this page is in — WebView2 postMessage
+   * on the desktop shell, `HybridWebView` on the MAUI shell — else null (plain browser). Supply your
+   * own for another shell (a WebSocket, D16) or a scripted fake for tests/preview harnesses.
    */
   transport?: ShenoraTransport | null;
 
@@ -116,7 +116,7 @@ export class ShenoraBridge {
   private disposed = false;
 
   constructor(options: ShenoraBridgeOptions = {}) {
-    this.transport = options.transport !== undefined ? options.transport : createWebView2Transport();
+    this.transport = options.transport !== undefined ? options.transport : createHostTransport();
     this.eventBus = options.eventBus ?? defaultEventBus;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
     this.fallback = options.fallback;

@@ -48,10 +48,14 @@
 <div id="log"></div>
 
 <script>
-// A deliberately hand-written client. @shenora/react's transport speaks
-// window.chrome.webview (WebView2); the HybridWebView transport is a separate piece of work, and
-// proving the HOST half first means the round trip is not blocked on it. The envelope below is the
-// kit's own, field for field.
+// A hand-written client, and a REAL APP SHOULD NOT COPY IT.
+//
+// `@shenora/react` now ships `createHybridWebViewTransport()`, and `ShenoraBridge` selects it
+// automatically — an app calls `invoke`/`post` and never learns which shell it is in. This page
+// stays hand-written for one reason: it is plain HTML served straight out of Resources/Raw, with no
+// bundler, so it cannot import an npm package. What it demonstrates is the WIRE — the envelope
+// field for field, and that the host answers it — which is exactly what you want visible when the
+// question is "does the protocol work on this platform".
 const logEl = document.getElementById('log');
 let seq = 0;
 const pending = new Map();
