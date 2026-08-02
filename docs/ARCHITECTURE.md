@@ -59,13 +59,17 @@ Shenora.slnx
 │   ├── Shenora.WebView2    net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   ├── Shenora.WebView2.Sessions net10.0-windows — deps: Shenora.WebView2, Microsoft.Web.WebView2
 │   ├── Shenora.WinForms    net10.0-windows  — deps: Shenora.Core
-│   ├── Shenora.Maui        net10.0-android  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Maui.Controls
+│   ├── Shenora.Maui        android | ios    — deps: Shenora.Core, Shenora.Ipc, Microsoft.Maui.Controls
 │   │                                          the SECOND shell. Peer of WinForms+WebView2, not a
 │   │                                          layer on them: it references neither. Thin by
 │   │                                          construction — the IPC substrate is already portable,
 │   │                                          so this is the HybridWebView adapter, a UI dispatcher
-│   │                                          and the Essentials-backed Core contracts. Android
-│   │                                          only; iOS needs that workload and a Mac host.
+│   │                                          and the Essentials-backed Core contracts.
+│   │                                          TFM follows the HOST (net10.0-android on Windows,
+│   │                                          net10.0-ios on macOS) because only a Mac can build
+│   │                                          iOS — so `pack` on Windows is android-only (TASKS A8).
+│   │                                          Both faces PROVEN on device/simulator, and the iOS one
+│   │                                          needed no #if anywhere in this package.
 │   └── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
 ├── tests/
 │   └── Shenora.Tests       net10.0-windows  — xunit; references the four leaf src projects (Core transitively)

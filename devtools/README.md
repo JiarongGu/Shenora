@@ -95,7 +95,7 @@ post-mortems — only the build step differs (that project builds an Xcode proje
 | `mac build` / `mac run` | build for the simulator; `run` also boots it, installs and launches |
 | `mac shot [name]` | screenshot the simulator → `devtools/_mac/` (gitignored) |
 | `mac tap <x> <y>` / `mac type <text>` | input, in the coordinates you read off that screenshot |
-| `mac log [-n N]` | the sample's lines from the simulator's unified log |
+| `mac log [-n N] [--all]` | the sample's own lines from the simulator's unified log; `--all` for the whole process |
 | `mac awake [on\|off]` | stop the Mac sleeping while it is a build machine |
 | `mac ssh <cmd>` | escape hatch |
 
@@ -121,6 +121,26 @@ Carried-over traps worth not re-earning:
 - **Signing does not work over ssh.** An ssh login is a different AUDIT SESSION, so a login-keychain
   key fails with `errSecInternalComponent`. Only DEVICE builds need it; simulator builds sign ad-hoc.
   The sibling hands signing to Terminal.app via `osascript`; port that when a real iPhone is wanted.
+
+And four more, all earned on the first real iOS run rather than inherited:
+
+- **`mac log` filters BEFORE it tails, and that is not a nicety.** A MAUI process is ~99% WebKit
+  lifecycle chatter (a `runJavaScriptInFrame` pair per notification tick), so a process-wide
+  predicate plus `tail -n` shows a screen of noise and NONE of the app's lines — indistinguishable
+  from a broken log sink. This is the same trap as `logcat -t N` above, rebuilt in the other harness
+  despite being written down. The app reaches the unified log through `libSystem.Native`
+  (Console → stdout), so the tag is on the MESSAGE, not a subsystem.
+- **An Xcode older than the workload needs TWO flags** (`skipXcodeVersionCheck` in `local/mac.json`
+  sets both): `ValidateXcodeVersion=false` clears the up-front equality gate, and
+  `MtouchLink=SdkOnly` clears MT0180 from the ILLink Setup step, which separately wants the iOS SDK
+  headers Xcode ships. `PublishTrimmed=false` is rejected outright and `MtouchLink=None` still fails
+  MT0180 — don't retry either. **Simulator debug only**; matching the Xcode/workload pair is the real fix.
+- **The client npm package must be built ON the Mac.** `dist/` is a gitignored build artifact, so
+  pushing the branch does not carry it and the sample silently falls back to its hand-written inline
+  transport — a quietly weaker proof than the Android run. `mac build` now builds it first.
+- **Write the page for the superset of shells, not the one you tested.** The sample's markup was
+  unchanged from Android and still put its heading under the status bar and the Dynamic Island,
+  because an emulator has no insets to violate. `env(safe-area-inset-*)` + `viewport-fit=cover`.
 
 **Its public surface is gated differently, and more weakly.** `tests/Shenora.Tests` is
 `net10.0-windows` and cannot reference an Android assembly, so `MetadataSurfaceTests` reads the built

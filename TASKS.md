@@ -64,18 +64,23 @@ _A3 (the adopter guide) and A4 (the decisions) are CLOSED — `ADOPTION.md` Stag
 _A5 (`dev.mjs android`) is CLOSED — `devices|connect|deploy|run|log|shot`, with the four traps folded
 in. See `devtools/README.md`._
 
-- [ ] **A6 — iOS. The HARNESS is done; the build host is not provisioned.** `dev.mjs mac`
-  (doctor/setup/push/build/run/shot/tap/type/log/awake/ssh) is ported from the public sibling with its
-  post-mortems kept, and runs against the real Mac today. What it reports is the remaining work, and
-  it is not ours: that Mac has **no .NET 6+ SDK at all** (newest 5.0.402, so `dotnet workload` is not
-  even a command) and **6.2 GB free**, so installing the .NET 10 SDK plus the `ios` workload is a
-  judgement call about the owner's disk, not a step to take unasked. Xcode 26.3, the simulator and
-  the ssh path are all fine.
-  Then, and only then: multi-target `Shenora.Maui` + the sample to `net10.0-ios` (both are single-TFM
-  `net10.0-android` today, and `-f net10.0-ios` cannot compile on Windows), and re-prove the
-  handshake, the picker and the capability set on the simulator the way Android was proven.
-  Signing is a separate, later problem — it fails over ssh (different AUDIT SESSION) and only DEVICE
-  builds need it; the sibling's Terminal.app hand-off is the fix to port when a real iPhone is wanted.
+_A6 (iOS) is CLOSED — the THIRD shell runs. `dev.mjs mac` drives a Mac over SSH, `Shenora.Maui` and
+the sample multi-target `net10.0-ios`, and the simulator shows the same page answering the same
+handshake with `maui · [filePicker]`, plus `ECHO` and `UI_STATE` (`onUiThread: true`) round trips.
+`Shenora.Maui` needed **no platform directive at all**; the sample needed one, for the log sink.
+Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
+
+- [ ] **A8 — iOS is PROVEN but not SHIPPABLE, and the two gaps are unrelated to each other.**
+  Neither blocks an adopter who builds from source; both block a published iOS package.
+  - **`dotnet pack` on Windows produces an ANDROID-ONLY `Shenora.Maui`.** The TFM is conditioned on
+    the host because only a Mac can build iOS, so the package built by the release workflow simply
+    has no `net10.0-ios` face. Fixing it needs a macOS pack job (or a Mac-built artifact fed into the
+    existing one) — a release-pipeline change, and worth doing before anyone is told iOS is supported.
+  - **The build currently rides two override flags** (`ValidateXcodeVersion=false` +
+    `MtouchLink=SdkOnly`), because that Mac's Xcode 26.3 is older than the workload's required 26.6.
+    They are gitignored machine config, not repo config, and are verified for SIMULATOR DEBUG only.
+    The honest fix is to match the pair — upgrade Xcode (needs ~20 GB the Mac does not have) or
+    install a workload band built against 26.3. Until then, treat device and Release iOS as UNPROVEN.
 
 ### B. Staged application updates — DESIGNED 2026-08-02, nothing built
 

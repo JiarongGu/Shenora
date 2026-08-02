@@ -435,6 +435,23 @@ can resolve", and Android's content URI is exactly that. The desktop-only option
 (`CheckFileExists`, `OverwritePrompt`, `DefaultPath`, `RememberPathKey`, …) are ignored, and which
 ones is listed on the implementation.
 
+### iOS
+
+Everything above applies unchanged — that is the finding, not a hedge. `Shenora.Maui` compiles for
+`net10.0-ios` with **no platform directive anywhere in the package**, the iOS head is three template
+files (`AppDelegate`, `Program`, `Info.plist`), and the same page got the same `ShellInfo` back.
+Build it with `node devtools/dev.mjs mac` (see `devtools/README.md`); iOS needs a Mac, so the TFM is
+conditioned on the build host and a Windows `pack` is android-only.
+
+Two things that only showed up here, and both are about your PAGE rather than the kit:
+
+- **Write the page for the SUPERSET of shells.** Markup that looked right on an Android emulator for
+  a whole session put its heading under the status bar and the Dynamic Island on the first iPhone
+  run. Use `env(safe-area-inset-*)` with `viewport-fit=cover`; both collapse to nothing where there
+  are no insets.
+- **Strings leak the shell you developed on.** A shared bundle means "hello from android" eventually
+  appears in an iPhone screenshot.
+
 ### Traps this repo already paid for
 
 - **`Application.Current` is null inside `CreateMauiApp`** — `builder.Build()` makes the MauiApp, not

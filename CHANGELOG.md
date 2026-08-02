@@ -16,6 +16,29 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **iOS — the third shell runs.** `Shenora.Maui` and `samples/Shenora.Sample.Maui` now multi-target
+  `net10.0-ios`, and `node devtools/dev.mjs mac` drives a Mac over SSH to build, launch, screenshot
+  and tap it (ported from the public sibling Sonora with its post-mortems kept; `devtools/README.md`
+  has the traps).
+
+  **The result worth reading is how little was needed.** `Shenora.Maui` compiled for iOS with **no
+  platform directive at all** — not one `#if` — and so did every line of `Shenora.Sample.Logic`. The
+  sample needed exactly one, for the log sink, because a device log is the only way to see what a
+  mobile host did and each platform has its own. The same page, the same envelope and the same
+  portable facade produced `shell: maui · capabilities: [filePicker]`, `ECHO`, and `UI_STATE`
+  returning `onUiThread: true` on an iPhone simulator.
+
+  The TFM is conditioned on the HOST rather than listed unconditionally: only a Mac can build iOS,
+  and listing both everywhere would turn `dev.mjs verify` red on the machine that cannot build one of
+  them. **Consequence, stated plainly: `dotnet pack` on Windows still produces an android-only
+  `Shenora.Maui`,** so iOS is proven but not yet published — that needs a macOS pack job (`TASKS.md`
+  A8, along with the two Xcode-mismatch build flags this particular Mac currently needs).
+
+  Two findings that outlive the port, both invisible on Android: a shared page must be written for
+  the SUPERSET of shells (identical markup put the heading under the Dynamic Island, because an
+  emulator has no safe-area insets to violate), and a sample that falls back to a hand-written
+  transport when `dist/` is absent is a quietly weaker proof than one that does not.
+
 - **Capability advertisement in the ready handshake** — `ShellInfo { Name, Capabilities }`
   (`Shenora.Ipc`), an `IpcHostBridgeOptions.Shell` forwarded by `WebViewIpcBridgeOptions` and
   `MauiIpcBridgeOptions`, the well-known names on `ShellCapability` (`Shenora.Core`), and their TS
