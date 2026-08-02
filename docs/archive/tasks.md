@@ -41,6 +41,44 @@ envelope types, so `IpcRequest` and friends still resolve through reflection. Fu
 reflection at all needs that too — additive, and a separate change. Said so in the XML and the
 CHANGELOG rather than leaving the hole implied.
 
+### A1 — the client speaks both shells (2026-08-02) — DONE (`81c5232`)
+
+`createHybridWebViewTransport()` (MAUI) + `createHostTransport()` (picks whichever host is present),
+with the latter now `ShenoraBridge`'s default. An app calls `invoke`/`post` and never learns which
+shell it is in — the transport seam (D16) doing exactly what it was built for.
+
+Worth keeping: **the platform's two directions are asymmetric**, and the code says so rather than
+smoothing it over — send via `window.HybridWebView.SendRawMessage`, receive a
+`HybridWebViewMessageReceived` CustomEvent on `window`. Also a genuine bug fix fell out of it:
+`isShenoraAvailable()` tested `chrome.webview` alone, so on the MAUI shell it answered FALSE and an
+app would have concluded it was in a plain browser tab with a live host on the other side.
+Sabotage-verified by reverting exactly that.
+
+The MAUI sample page stays hand-written on purpose: it is plain HTML out of `Resources/Raw` with no
+bundler, so it cannot import an npm package, and what it demonstrates is the WIRE. Its comment says
+so now, replacing one that had become false.
+
+### A2 — the capability stubs (2026-08-02) — CLOSED BY ANALYSIS, nothing to build
+
+**Read this before proposing shell capability stubs again.** The plan item said `UseMaui` leaves
+capabilities unregistered, so portable logic "gets a null instead of the named refusal D33
+promises". That hole does not exist:
+
+1. Everything genuinely absent — drop zones, tray, secondary windows, window state, frameless
+   chrome — lives in `Shenora.WinForms`/`Shenora.WebView2`, and `Shenora.Maui` references NEITHER.
+   Portable logic cannot name those types at all. **D19/D20's layering already prevents the class of
+   bug the stub rule was invented for**, which is a nice result: the older decision is doing the work.
+2. Every `Shenora.Core` contract an app actually resolves IS registered by `UseMaui`.
+3. The two Core seams with no MAUI implementation — `IPathLocker`, `IFileLockInspector` — are not DI
+   contracts at all. They are nullable options on `FileUpdateQueueOptions` and `UseWinForms` does not
+   register them either. And `IFileLockInspector.WhoHolds` is contractually *"never throws; empty
+   means the platform cannot tell"*, so a throwing stub would VIOLATE the contract it implements.
+
+D33 is not weakened by this — `ShellCapability` is used exactly where a shell implements a contract
+it cannot fully honour: clipboard IMAGES (Essentials is text-only) and the folder/save pickers. Those
+stubs shipped with the package in `a85280e`. The rule's scope is narrower than the plan assumed, and
+that is the finding.
+
 ### The headless `IShenoraRunner` (2026-08-02) — DONE
 
 The third and last of the mobile plan's §4 prerequisites. `ShenoraApplication.Run` threw without a

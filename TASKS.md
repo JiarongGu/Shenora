@@ -50,18 +50,10 @@ sample. Commits `a85280e` · `31b9aaa` · `b87cf9c`; evidence in `docs/ROADMAP.m
 because the client half does not exist, and the capability rule is a decision with no code behind it.
 The items below are ordered by what unblocks an adopter, not by size.
 
-- [ ] **A1 — `@shenora/react` needs a HybridWebView transport.** The kit's client speaks
-  `window.chrome.webview` (WebView2). The MAUI sample hand-writes the envelope over
-  `window.HybridWebView.SendRawMessage` + the `HybridWebViewMessageReceived` event, which was right
-  for a first proof and is exactly what an adopter must NOT copy. The seam already exists (D16,
-  `ShenoraTransport`), so this is a transport implementation plus `configureBridge` wiring — then the
-  sample page switches to it and stops being bespoke. **Blocks every other item here**; until it
-  lands "adopt Shenora on mobile" means "write your own client".
-- [ ] **A2 — the capability rule is DECIDED but unimplemented.** Owner chose: an absent capability
-  THROWS naming the platform (`ShellCapability.NotSupported`, shipped). But `UseMaui` currently just
-  omits what it lacks, so portable logic asking for drop zones gets a null, not the named refusal the
-  decision promises. Needs the small explicit stubs — and **NOT a `DispatchProxy`**, which is the
-  reflection shape iOS trimming strips (the thing `IpcJson.AddTypeInfoResolver` exists to avoid).
+_A1 (the client transport) and A2 (the capability stubs) are CLOSED — `docs/archive/tasks.md`. A2
+closed by ANALYSIS rather than code: the hole it described does not exist, because the layering
+already prevents it. Read that entry before re-proposing stubs._
+
 - [ ] **A3 — `docs/ADOPTION.md` has no MAUI section.** It should say what actually transfers (the
   whole IPC substrate, the Core contracts, the mission layer), what does not (resource serving —
   `HybridWebView` has no request interception, so the platform serves `Resources/Raw/wwwroot`), and
