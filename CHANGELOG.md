@@ -90,6 +90,24 @@ at the first list and missed five more breaking changes.
   `ConfigurationChanges`, so `Window.Created` fired exactly once across a home-and-return. The guard
   is cheap insurance for the wirings that do re-enter; it is not a fix for that one._
 
+- **`UpdateStage` (+ `UpdateStageOptions`, `UpdateStageStatus`) in `Shenora.Core`** — the staging half
+  of a two-phase update. An app downloads the changed files into `StagedDirectory` however it likes,
+  then `CommitAsync(manifest)` verifies **every** file's SHA-256 and only then writes `ready.json`.
+
+  **The ordering is the property, not an implementation detail.** The marker means "complete and
+  verified", so an applier never re-checks; a crash mid-download leaves files but no marker and the
+  next run restages. Sabotage-verified by publishing the marker first, which failed all three
+  no-marker assertions (tampered, missing, cancelled).
+
+  `Begin()` clears any previous attempt before downloading — leftovers from a stage that died after
+  three of ten files would otherwise verify as part of the next one. `GetStatus()` reads only the
+  marker and reports *not pending* for an unreadable one rather than throwing, because UI asks it on
+  every settings screen. And it carries `ManifestDiff`'s deferred guard: **an empty manifest is
+  refused**, since it would tell an applier to delete every tracked path — destroying the install as
+  the successful outcome of an update.
+
+  Still not shipped, deliberately: no downloader, no release source, no applier.
+
 - **`UpdateManifest` / `ManifestFile` / `ManifestDiff` in `Shenora.Core`** — the staged-update
   changeset, and the first piece of `docs/2026-08-02-shenora-app-update-design.md` to ship. A running
   process cannot replace its own executable, so an update is two phases: the app downloads and

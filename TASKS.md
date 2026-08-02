@@ -76,9 +76,8 @@ against: **only the apply step is native.**
 _B1 (the manifest + diff) is DONE — `Shenora.Core`'s `UpdateManifest`/`ManifestFile`/`ManifestDiff`,
 10 tests, the two comparison rules sabotage-verified. `docs/archive/tasks.md`._
 
-- [ ] **B2 — the staging area:** verify every staged file's sha256, then write `ready.json` LAST. The
-  ordering is the property — the marker is the promise that the stage is complete, so the applier
-  never re-verifies.
+_B2 (the staging area) is DONE — `UpdateStage`, 9 tests, the write-the-marker-LAST ordering
+sabotage-verified. It also carries B1's deferred empty-manifest guard._
 - [ ] **B3 — the release-source SEAM, not an implementation.** Both siblings use GitHub releases;
   baking that in would ship a consumer's shape.
 - [ ] **B4 — the launcher template (native, ~150 lines).** Take Sonora's topology (app in

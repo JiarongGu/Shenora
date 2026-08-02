@@ -1,0 +1,176 @@
+using System.Security.Cryptography;
+using Shenora.Core;
+using Shenora.Tests.TestSupport;
+
+namespace Shenora.Tests.Io;
+
+/// <summary>
+/// The staging half of a two-phase update. The property under test throughout is the ORDERING:
+/// <c>ready.json</c> exists only when every file verified, so an applier can trust the marker
+/// without re-hashing anything. Every failure case therefore asserts the marker's ABSENCE, not just
+/// a false return — a stage that reports failure while leaving a usable marker is the bug.
+/// </summary>
+public class UpdateStageTests
+{
+    private static string Sha256Of(string content) =>
+        Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content)));
+
+    private static UpdateManifest Manifest(params (string Path, string Content)[] files) => new()
+    {
+        Version = "2.0",
+        Files = [.. files.Select(f => new ManifestFile
+        {
+            Path = f.Path,
+            Size = System.Text.Encoding.UTF8.GetByteCount(f.Content),
+            Sha256 = Sha256Of(f.Content),
+        })],
+    };
+
+    private static UpdateStage StageIn(TempDir dir) =>
+        new(new UpdateStageOptions { Root = dir.Combine(".update") });
+
+    [Fact]
+    public async Task A_fully_verified_stage_publishes_the_marker()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        Directory.CreateDirectory(Path.Combine(stage.StagedDirectory, "libs"));
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "libs", "x.dll"), "lib");
+
+        var status = await stage.CommitAsync(Manifest(("app.exe", "binary"), ("libs/x.dll", "lib")));
+
+        Assert.True(status.Pending);
+        Assert.Equal("2.0", status.Version);
+        // …and it survives a fresh reader, which is what an applier actually is.
+        var reread = StageIn(dir).GetStatus();
+        Assert.True(reread.Pending);
+        Assert.Equal("2.0", reread.Version);
+    }
+
+    [Fact]
+    public async Task A_tampered_file_leaves_NO_marker()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        // The manifest says "good"; the disk says otherwise — a truncated or swapped download.
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "tampered");
+
+        var status = await stage.CommitAsync(Manifest(("app.exe", "good")));
+
+        Assert.False(status.Pending);
+        // The load-bearing half: an applier only ever looks at the marker, so "returned false" is
+        // not enough — there must be nothing for it to find.
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task A_missing_file_leaves_NO_marker()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        // libs/x.dll never arrived — the shape a download interrupted partway leaves behind.
+
+        var status = await stage.CommitAsync(Manifest(("app.exe", "binary"), ("libs/x.dll", "lib")));
+
+        Assert.False(status.Pending);
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task An_EMPTY_manifest_is_refused_rather_than_staged()
+    {
+        // ManifestDiff's deferred guard arriving. An empty manifest tells an applier to remove every
+        // tracked path, so a manifest that "loaded" to nothing would destroy the install as the
+        // SUCCESSFUL outcome of an update. Refused where a manifest first meets the disk.
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(
+            () => stage.CommitAsync(new UpdateManifest { Version = "2.0", Files = [] }));
+
+        Assert.Contains("lists no files", error.Message, StringComparison.Ordinal);
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task Begin_clears_a_previous_attempt_so_its_leftovers_cannot_be_verified_as_this_one()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+
+        // A first attempt that got one of two files down, then died.
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "v1");
+        Assert.False((await stage.CommitAsync(Manifest(("app.exe", "v1"), ("late.dll", "x")))).Pending);
+
+        // The second attempt must not inherit v1's app.exe: if Begin did not clear, staging ONLY
+        // late.dll would verify against a manifest whose app.exe is stale — a half-old install that
+        // reports success.
+        stage.Begin();
+        Assert.False(File.Exists(Path.Combine(stage.StagedDirectory, "app.exe")));
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "late.dll"), "x");
+
+        var status = await stage.CommitAsync(Manifest(("app.exe", "v2"), ("late.dll", "x")));
+        Assert.False(status.Pending);
+    }
+
+    [Fact]
+    public async Task Clear_removes_a_published_stage()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        Assert.True((await stage.CommitAsync(Manifest(("app.exe", "binary")))).Pending);
+
+        stage.Clear();
+
+        Assert.False(stage.GetStatus().Pending);
+        Assert.False(Directory.Exists(stage.StagedDirectory));
+    }
+
+    [Fact]
+    public void Status_is_not_pending_when_nothing_was_ever_staged()
+    {
+        using var dir = TempDir.Create();
+        var status = StageIn(dir).GetStatus();
+
+        Assert.False(status.Pending);
+        Assert.Null(status.Version);
+    }
+
+    [Fact]
+    public void An_unreadable_marker_reports_NOT_pending_rather_than_throwing()
+    {
+        // A stage nobody can describe is not one an applier should act on — and GetStatus is called
+        // from UI code on a settings screen, where throwing would be its own bug.
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(dir.Combine(".update"), "ready.json"), "{ not json");
+
+        Assert.False(stage.GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task Verification_observes_cancellation()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => stage.CommitAsync(Manifest(("app.exe", "binary")), cancelled.Token));
+
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+}

@@ -248,7 +248,14 @@ changes, noting them in `CHANGELOG.md`).
   EVERY file changed). `Removed` is tracked paths only, never a directory sweep — user data lives in
   the same tree.
   ⚠ An empty RELEASE manifest legitimately removes everything, so a manifest that failed to load must
-  never reach `Compute`; validating it is the caller's job and the XML says so.
+  never reach `Compute`; validating it is the caller's job — and that caller is `UpdateStage`, below.
+  **`Io/UpdateStage` (+`Options`, `+Status`)** — the staging half of the two-phase update. The app
+  writes downloaded files into `StagedDirectory`; `CommitAsync` hashes every file the manifest lists
+  and writes `ready.json` **last**, so the marker's existence IS the promise that the stage is
+  complete and verified and an applier need not re-check. `Begin()` clears a previous attempt (its
+  leftovers would otherwise verify as part of the next one), `GetStatus()` reads only the marker and
+  never throws, and an EMPTY manifest is refused here — the guard `ManifestDiff` defers. No
+  downloader, no release source, no applier: those are the app's and the native step's.
   Naming is `Mission*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary,
   and reusing the word would blur the one distinction the design rests on. It was `Work*` until
   2026-08-02 — too common a word to own or grep, while `Task*` would collide with the BCL.

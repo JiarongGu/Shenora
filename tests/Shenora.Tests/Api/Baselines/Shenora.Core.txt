@@ -566,3 +566,17 @@ sealed class Shenora.Core.UpdateManifest
   public required string Version { get; init; }
   public static Shenora.Core.UpdateManifest Parse(string json)
   public string ToJson()
+sealed class Shenora.Core.UpdateStage
+  public .ctor(Shenora.Core.UpdateStageOptions options)
+  public Shenora.Core.UpdateStageStatus GetStatus()
+  public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> CommitAsync(Shenora.Core.UpdateManifest manifest, System.Threading.CancellationToken cancellationToken = default)
+  public string StagedDirectory { get; }
+  public void Begin()
+  public void Clear()
+sealed class Shenora.Core.UpdateStageOptions
+  public System.Action<string>? Log { get; init; }
+  public required string Root { get; init; }
+sealed class Shenora.Core.UpdateStageStatus
+  public System.DateTimeOffset? StagedAt { get; init; }
+  public required bool Pending { get; init; }
+  public string? Version { get; init; }
