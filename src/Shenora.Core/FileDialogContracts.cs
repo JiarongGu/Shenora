@@ -138,8 +138,86 @@ public interface IFileDialogs
     /// </summary>
     Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null);
 
-    /// <summary>Pick a save destination.</summary>
+    /// <summary>
+    /// Pick a save destination and get the PATH back.
+    /// <para>
+    /// <b>DESKTOP CAPABILITY — prefer <see cref="SaveAsync"/> in portable logic (D35's shape again).</b>
+    /// This promises an addressable destination the app can then write to at its leisure, and that
+    /// promise is not expressible on mobile at all: the platform hands back a document the app may
+    /// write INTO, not a path it may write AT, and a picked cache path cannot be written back to the
+    /// user's file. So a shell without that concept refuses this loudly (D33) rather than returning
+    /// something path-shaped that silently goes nowhere.
+    /// </para>
+    /// </summary>
     Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null);
+
+    /// <summary>
+    /// Pick a destination AND write to it, in ONE call — the PORTABLE save. This is the counterpart to
+    /// <see cref="OpenReadAsync"/>: open became universal by letting the host do the reading, and save
+    /// becomes universal by letting the host do the writing.
+    /// <para>
+    /// <b>Why the shape is a callback and not a returned path.</b> "Give me somewhere to save to" is
+    /// not expressible on mobile — the user grants access to one document, the app writes into it while
+    /// the grant is live, and there is no path it can keep. Handing the host a <paramref name="write"/>
+    /// delegate is the only shape that is honest on every shell, so it is the shape portable logic
+    /// should use even on the desktop, where the weaker one also happens to work.
+    /// </para>
+    /// <para>
+    /// <b>The write is ATOMIC, and that matters more here than anywhere else in the kit.</b> The default
+    /// implementation produces the content into a sibling temp and swaps it in only once
+    /// <paramref name="write"/> has completed, so a save that is cancelled, throws, or is interrupted
+    /// half-way <b>leaves the user's existing file exactly as it was</b> — it costs the work, never the
+    /// original. This is the case that motivated the primitive: a save picker is usually pointed at a
+    /// long operation (an encode, a report, an export), and the longer the operation the wider the
+    /// window a naive write-over-the-target leaves open. See <see cref="Files.BeginReplace"/>.
+    /// </para>
+    /// <para>
+    /// A default implementation over <see cref="SaveFileAsync"/>, so adding this breaks no existing
+    /// implementor and any shell with a real save picker gets it for free. A shell whose platform has
+    /// no addressable destination overrides this and refuses <see cref="SaveFileAsync"/> instead — the
+    /// mirror of how <see cref="OpenReadAsync"/> lets a shell substitute its own read.
+    /// </para>
+    /// </summary>
+    /// <param name="options">Dialog inputs; a host without an equivalent ignores what it cannot honour.</param>
+    /// <param name="write">
+    /// Produces the content. Receives a writable stream — do NOT dispose it; the caller owns its
+    /// lifetime and closing it early would truncate a host that wraps it. Throw to abandon the save;
+    /// the destination is then left untouched.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the write. The user's existing file survives.</param>
+    /// <returns>
+    /// The destination on success. <see cref="FileDialogResult.FilePath"/> is populated only when the
+    /// host HAS an addressable destination to report — a shell that wrote into a one-time grant reports
+    /// <see cref="FileDialogResult.Success"/> with no path, because there is nothing the app could
+    /// legitimately do with one.
+    /// </returns>
+    async Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+                                           Func<Stream, CancellationToken, Task> write,
+                                           CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(write);
+
+        var picked = await SaveFileAsync(options).ConfigureAwait(false);
+        if (!picked.Success || picked.FilePath is not { Length: > 0 } path)
+            return FileDialogResult.Cancelled();
+
+        // Cancellation is checked AFTER the pick, not before: the user has just chosen a destination,
+        // and doing the work anyway would write to a file they may have moved on from. Checking here
+        // means a cancelled save never touches the destination at all.
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var replacement = Files.BeginReplace(path);
+        var stream = new FileStream(replacement.TempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await using (stream.ConfigureAwait(false))
+        {
+            await write(stream, cancellationToken).ConfigureAwait(false);
+        }
+        // Only now does the destination change. Anything thrown above — including the caller's own
+        // "this output is not valid" — escapes with the previous file intact, because Dispose discards
+        // the temp on the way out.
+        replacement.Commit();
+        return FileDialogResult.Selected(path);
+    }
 
     /// <summary>
     /// Read the content behind a <see cref="FileDialogResult.FilePath"/>. This is how PORTABLE app

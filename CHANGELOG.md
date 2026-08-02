@@ -62,6 +62,33 @@ at the first list and missed five more breaking changes.
   `offscreen "Shenora Sample" rendered — 5749 chars of live DOM`; with the two options removed again,
   the same click reproduces the error page.
 
+- **`IFileDialogs.SaveAsync(options, write)` — the PORTABLE save**, and the counterpart to
+  `OpenReadAsync`: open became universal by letting the host do the reading, save becomes universal by
+  letting the host do the writing. A default implementation over `SaveFileAsync`, so it breaks no
+  existing implementor and any shell with a real save picker gets it free.
+
+  ```csharp
+  await dialogs.SaveAsync(options, async (stream, ct) => await Encode(source, stream, ct));
+  ```
+
+  **Why a callback and not a returned path.** "Give me somewhere to save to" is not expressible on
+  mobile — the user grants access to one document, the app writes into it while the grant is live, and
+  there is no path it can keep. The callback is the only shape that is honest on every shell, so
+  portable logic should use it even on the desktop, where the weaker one also happens to work.
+  `SaveFileAsync` is now documented as the DESKTOP-flavoured member, the same way `OpenFolderAsync` is
+  (D35's shape).
+
+  **The write is ATOMIC, and this is the case that motivated `Files.BeginReplace`.** The content is
+  produced into a sibling temp and swapped in only once the callback completes, so a save that throws,
+  is cancelled, or is interrupted half-way **leaves the user's existing file exactly as it was** — it
+  costs the work, never the original. A save picker is usually pointed at a long operation (an encode,
+  an export, a report), and the longer the operation the wider the window a naive write-over-the-target
+  leaves open. Pinned by tests that assert the previous file's contents survive both a throw and a
+  cancel, and sabotage-verified by writing straight at the destination instead.
+
+  Mobile still refuses loudly (D33) pending the platform pickers — `ACTION_CREATE_DOCUMENT` on Android
+  and `UIDocumentPickerViewController(forExporting:)` on iOS.
+
 ### Changed
 
 - **The virtual-host serving path is now ONE implementation** (`WebViewBundleServing`, internal),

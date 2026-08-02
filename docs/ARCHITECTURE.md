@@ -340,7 +340,13 @@ changes, noting them in `CHANGELOG.md`).
   `IFormInteraction`/`FormInteraction` (main-window registry, runner-wired; nested modal
   blocking), `IFileDialogs`/`FileDialogs(+Options)` + `FileDialogOptions`/`Filter`/`Result` +
   `IFileDialogPathStore` seam (dedicated-STA open/folder/save dialogs, owner-handle z-order,
-  per-key directory memory; failures throw), `IShellLauncher`/`ShellLauncher` (reveal/open-dir/
+  per-key directory memory; failures throw). `IFileDialogs` carries two universal members with default
+  implementations the desktop shell inherits unchanged — `OpenReadAsync` (the host resolves a picked
+  handle) and, since 2026-08-03, `SaveAsync(options, write)` (the host picks AND writes, ATOMICALLY via
+  `Files.BeginReplace`, so a failed or cancelled save leaves the previous file untouched). The
+  path-returning `SaveFileAsync`/`OpenFolderAsync` are documented as the DESKTOP-flavoured pair (D35):
+  they promise an addressable location, which mobile has no expression of.
+  `IShellLauncher`/`ShellLauncher` (reveal/open-dir/
   http-https-`OpenUrl`/launch — Win11 handle-leak fixes), `IClipboardService`/`ClipboardService`
   (STA text + image-file ops); `SecondaryWindows(+SecondaryWindowOptions)` (named windows on
   own-STA-thread pumps, per-name `IWindowStateStore` geometry, activate-on-existing,
