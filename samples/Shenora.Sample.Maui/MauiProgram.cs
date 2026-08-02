@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Core;
 using Shenora.Ipc;
-using Shenora.Maui;
+using Shenora.Mobile;
 using Shenora.Sample.Logic;
 
 namespace Shenora.Sample.Maui;
@@ -24,7 +24,7 @@ public static class MauiProgram
 	/// <summary>
 	/// The ONE platform-conditional line in this sample, and it earns the <c>#if</c>: a device log is
 	/// the only way to see what a mobile host did, and each platform has its own sink. Everything else
-	/// here — including all of <c>Shenora.Maui</c> — compiles for both without a single directive,
+	/// here — including all of <c>Shenora.Mobile</c> — compiles for both without a single directive,
 	/// which is the portability claim actually being tested.
 	/// </summary>
 	public static void Log(string message)
@@ -74,7 +74,7 @@ public static class MauiProgram
 		// which IS the UI thread, so asking the thread directly is both correct and earlier-safe.
 		var dispatcher = Dispatcher.GetForCurrentThread()
 			?? throw new InvalidOperationException("CreateMauiApp is not running on a dispatcher thread.");
-		shenora.UseMaui(dispatcher, ex => Log($"UI work failed: {ex}"));
+		shenora.UseMobile(dispatcher, ex => Log($"UI work failed: {ex}"));
 
 		// Opt-in, exactly as the desktop sample does.
 		shenora.Services.AddShenoraOperations();

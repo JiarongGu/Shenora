@@ -40,7 +40,7 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ### A. The second shell — MAUI. The round trip is PROVEN; the surface around it is not.
 
-**Where it stands (2026-08-02):** `Shenora.Maui` ships, is in the solution and the gate, and was run
+**Where it stands (2026-08-02):** `Shenora.Mobile` ships, is in the solution and the gate, and was run
 on a real Android device — request/response, batched notifications, the structured error boundary,
 the native file picker through the portable `IFileDialogs`, and the mission scheduler serializing a
 contended mission. `samples/Shenora.Sample.Maui` hosts the SAME `Shenora.Sample.Logic` as the desktop
@@ -64,20 +64,20 @@ _A3 (the adopter guide) and A4 (the decisions) are CLOSED — `ADOPTION.md` Stag
 _A5 (`dev.mjs android`) is CLOSED — `devices|connect|deploy|run|log|shot`, with the four traps folded
 in. See `devtools/README.md`._
 
-_A6 (iOS) is CLOSED — the THIRD shell runs. `dev.mjs mac` drives a Mac over SSH, `Shenora.Maui` and
+_A6 (iOS) is CLOSED — the THIRD shell runs. `dev.mjs mac` drives a Mac over SSH, `Shenora.Mobile` and
 the sample multi-target `net10.0-ios`, and the simulator shows the same page answering the same
 handshake with `maui · [filePicker]`, plus `ECHO` and `UI_STATE` (`onUiThread: true`) round trips.
-`Shenora.Maui` needed **no platform directive at all**; the sample needed one, for the log sink.
+`Shenora.Mobile` needed **no platform directive at all**; the sample needed one, for the log sink.
 Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
 
 - [ ] **A8 — iOS is PROVEN but not SHIPPABLE, and the two gaps are unrelated to each other.**
   Neither blocks an adopter who builds from source; both block a published iOS package.
-  - **`dotnet pack` on Windows produces an ANDROID-ONLY `Shenora.Maui`.** The library half is now
+  - **`dotnet pack` on Windows produces an ANDROID-ONLY `Shenora.Mobile`.** The library half is now
     DONE and measured, so what remains is purely a pipeline decision:
     - The TFM list is overridable — `-p:ShenoraMobileTargets="net10.0-android;net10.0-ios"` — so one
       host carrying BOTH workloads packs both faces. A macOS CI runner has both available.
-    - Packing iOS on the Mac was PROVEN, not assumed: `Shenora.Maui.0.4.0.nupkg` containing
-      `lib/net10.0-ios26.0/Shenora.Maui.dll` + the XML docs. ⚠ Note the PLATFORM VERSION in that
+    - Packing iOS on the Mac was PROVEN, not assumed: `Shenora.Mobile.0.4.0.nupkg` containing
+      `lib/net10.0-ios26.0/Shenora.Mobile.dll` + the XML docs. ⚠ Note the PLATFORM VERSION in that
       folder — it comes from the workload's TargetPlatformVersion, not from `SupportedOSPlatformVersion`
       (15.0), and it is what a consuming project must be compatible with. Worth stating in ADOPTION
       when iOS is actually published.
@@ -146,7 +146,7 @@ scratch; at that point the shape is already known.
 - [ ] **The desktop-FLAVOURED service contracts — EVIDENCE HAS NOW ARRIVED, and it is better than
   expected.** `FileDialogContracts.cs` concedes in writing that `FileDialogOptions` carries Win32
   vocabulary and that "a mobile picker would ignore the validation hints and return a content URI",
-  and this was held for a real mobile consumer rather than another spike. `MauiFileDialogs` is that
+  and this was held for a real mobile consumer rather than another spike. `MobileFileDialogs` is that
   consumer, and the finding is: **`OpenFileAsync` needs NO break.** `FileDialogResult.FilePath` is
   already specified as "a path or URI the HOST can resolve", which is exactly what Android returns;
   the desktop-only options are simply ignored, and which ones is now written in the implementation's

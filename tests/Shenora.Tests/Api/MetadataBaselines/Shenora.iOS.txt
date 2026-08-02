@@ -1,0 +1,48 @@
+Shenora.Mobile.MobileClipboardService
+  method .ctor
+  method GetTextAsync
+  method SetImageFromFileAsync
+  method SetTextAsync
+  method TrySaveImageToFileAsync
+Shenora.Mobile.MobileFileDialogs
+  method .ctor
+  method OpenFileAsync
+  method OpenFolderAsync
+  method SaveFileAsync
+Shenora.Mobile.MobileHostExtensions
+  method UseMobile
+Shenora.Mobile.MobileIpcBridge
+  method .ctor
+  method Attach
+  method Dispose
+  method SendNotification
+  property IsClientReady
+Shenora.Mobile.MobileIpcBridgeOptions
+  method .ctor
+  property Dispatcher
+  property EventBus
+  property Log
+  property MaxQueuedNotifications
+  property NotificationFilter
+  property NotificationInterval
+  property OnClientReady
+  property Shell
+Shenora.Mobile.MobileUiDispatcher
+  method .ctor
+  method InvokeAsync
+  method InvokeAsync
+  method InvokeAsync
+  method InvokeOrDefaultAsync
+  method Post
+  method Post
+  property IsOnUiThread
+  property State
+Shenora.Mobile.MobileUiInteraction
+  method .ctor
+  method BlockInteraction
+  method UnblockInteraction
+Shenora.Mobile.MobileUrlLauncher
+  method .ctor
+  method OpenUrl
+Shenora.Mobile.Resource
+  method .ctor

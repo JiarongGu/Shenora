@@ -34,9 +34,9 @@ reuse this toolkit on another repo). The library version is parsed there from
 
 Releases are cut by the manual **Release** GitHub workflow — see `docs/RELEASING.md`.
 
-## Machine prerequisites (since `Shenora.Maui` joined the solution)
+## Machine prerequisites (since `Shenora.Android` joined the solution)
 
-`Shenora.Maui` targets `net10.0-android`, so **building this repo at all** now needs two things
+`Shenora.Android` targets `net10.0-android`, so **building this repo at all** now needs two things
 beyond the .NET SDK. That cost was accepted deliberately (owner, 2026-08-02): a package no gate
 compiles is the objection this repo raises against any ungated artifact.
 

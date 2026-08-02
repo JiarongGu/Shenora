@@ -1,6 +1,7 @@
 # Mobile shells — what a second and third target actually cost
 
-`Shenora.Maui` runs on Android and iOS and needed **no `#if` anywhere in the package** to do it. That
+The mobile shell runs on Android and iOS — shipped as `Shenora.Android` + `Shenora.iOS` from one
+shared source tree — and needed **no `#if` anywhere** to do it. That
 is the good news and it is also the trap: because the C# ports for free, every real cost lands
 somewhere else — in the PAGE, on the BUILD HOST, or in the device harness. This rule is those costs.
 Earned across the Android port and the iOS port (both 2026-08-02).

@@ -49,10 +49,14 @@ Form
 Forms
 Ipc
 Json
-# `Maui` (2026-08-02) is a platform name, the peer of Forms / View2 / Win already here. Its types are
-# gated by MetadataSurfaceTests rather than SurfaceVocabularyTests — the Windows test project cannot
+# `Mobile` (2026-08-02) is the platform FAMILY the two mobile packages share, and it replaced `Maui`
+# the same day: the shell ships as Shenora.Android + Shenora.iOS, whose common source is
+# src/Shenora.Mobile/. Naming the types after the vendor framework would have described the
+# implementation rather than the thing — and the two faces run on entirely different engines
+# (Chromium WebView on Android, WKWebView on iOS), so `Maui` was the only word true of neither.
+# Gated by MetadataSurfaceTests rather than SurfaceVocabularyTests — the Windows test project cannot
 # reference a net10.0-android assembly — so both gates read this one lexicon.
-Maui
+Mobile
 Path
 Paths
 Shell

@@ -3,10 +3,11 @@ namespace Shenora.Tests.Api;
 /// <summary>
 /// The SemVer + genericity gate for shipped assemblies this test project cannot REFERENCE.
 /// <para>
-/// Today that is <c>Shenora.Maui</c> (<c>net10.0-android</c>). <see cref="ApiSurfaceTests"/> covers
-/// the five it can load; without this file that package would be compiled by the gate and checked by
+/// Today that is <c>Shenora.Android</c> and <c>Shenora.iOS</c>. <see cref="ApiSurfaceTests"/> covers
+/// the five it can load; without this file those packages would be compiled by the gate and checked by
 /// nothing — the same shape as the empty <c>/samples/</c> folder that once let the sample be red
-/// while <c>verify</c> reported green.
+/// while <c>verify</c> reported green. See <see cref="MetadataAssemblies"/> for why iOS is checked on
+/// macOS only.
 /// </para>
 /// </summary>
 public class MetadataSurfaceTests
@@ -40,7 +41,30 @@ public class MetadataSurfaceTests
         return candidates.Length == 0 ? null : candidates[0];
     }
 
-    public static TheoryData<string, string> MetadataAssemblies() => new() { { "Shenora.Maui", "net10.0-android" } };
+    /// <summary>
+    /// The metadata-gated assemblies, and it is HOST-DEPENDENT — which is a real weakening of the gate
+    /// and is stated here rather than discovered.
+    /// <para>
+    /// <c>Shenora.Android</c> is always included: every dev host can build it. <c>Shenora.iOS</c> can
+    /// only be built on macOS, so on Windows there is no assembly to render and demanding one would
+    /// fail the suite for a structural reason rather than a defect. It is therefore checked on macOS
+    /// only (and in the release pipeline's macOS job).
+    /// </para>
+    /// <para>
+    /// What keeps that acceptable: the two packages compile from the SAME shared source
+    /// (<c>src/Shenora.Mobile/</c>), so any drift in the shared surface shows up in the Android
+    /// baseline on every host. The blind spot is narrow and specific — a public type added under
+    /// <c>Shenora.iOS/Platforms/</c>, which today does not exist. When it does, this is the gate that
+    /// only fires on a Mac, and <see cref="Every_packable_project_has_a_baseline_of_one_kind_or_the_other"/>
+    /// is what still forces the baseline FILE to be present and reviewed everywhere.
+    /// </para>
+    /// </summary>
+    public static TheoryData<string, string> MetadataAssemblies()
+    {
+        var data = new TheoryData<string, string> { { "Shenora.Android", "net10.0-android" } };
+        if (OperatingSystem.IsMacOS()) data.Add("Shenora.iOS", "net10.0-ios");
+        return data;
+    }
 
     /// <summary>
     /// Every word used by a metadata-gated assembly's type names. Consumed by

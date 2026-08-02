@@ -1,50 +1,69 @@
-# Publishing the iOS face of `Shenora.Maui` — release-pipeline proposal
+# Publishing `Shenora.iOS` — release-pipeline proposal
 
-**Status: DRAFT FOR REVIEW. Nothing in `.github/workflows/` has been changed.** This exists because
-the release pipeline is the one part of this repo that has already cost a version (0.2.0), and
-`docs/RELEASING.md` treats cutting a release as a deliberate manual act. Rewiring publish on an
-assistant's judgement is the wrong call; rewiring it on a reviewed diff is fine.
+**Status: DRAFT FOR REVIEW. Nothing in `.github/workflows/` has been changed.** The release pipeline
+is the one part of this repo that has already cost a version (0.2.0), and `docs/RELEASING.md` treats
+cutting a release as a deliberate manual act. Rewiring publish on an assistant's judgement is the
+wrong call; rewiring it on a reviewed diff is fine.
 
 Retire this file once the change lands, the way the 0.2.0 cleanup retired its implemented design docs.
 
-## The problem, in one line
+## What changed since the first draft — the job got much smaller
 
-`Shenora.Maui` multi-targets, but the TFM follows the BUILD HOST — so the Windows release job packs an
-**android-only** package and there is no `net10.0-ios` face on nuget.org.
+The first version of this document assumed one multi-targeted `Shenora.Maui` package, which forced a
+macOS job that could build **both** mobile platforms and a step that swapped out a half-built package
+produced on Windows. Owner's call (2026-08-02) replaced that with **one package per platform**, and
+that decision deleted most of the pipeline problem:
 
-## What is already done (so the diff below is small)
+| | one multi-TFM package | two platform packages |
+|---|---|---|
+| Windows job | packs a HALF-complete `Shenora.Maui`, which must then be discarded | packs `Shenora.Android` completely |
+| macOS job | needs `maui-android` **and** `maui-ios`, plus a JDK and the Android SDK | needs `maui-ios` only |
+| publish | must REPLACE a package with the same id and version | additive — nothing to overwrite |
+| failure mode | shipping a package missing a face, silently | a missing package, which is loud |
 
-- `ShenoraMobileTargets` overrides the host-conditional TFM list. Verified both ways over ssh:
-  `-p:ShenoraMobileTargets=net10.0-android` on a Mac reports `net10.0-android`.
-- Packing iOS on a Mac was measured, not assumed — `Shenora.Maui.0.4.0.nupkg` containing
-  `lib/net10.0-ios26.0/Shenora.Maui.dll` + XML docs, and a **fully correct nuspec**: dependencies on
-  `Shenora.Core`/`Shenora.Ipc` at the matching version, README, licence, repository metadata. A plain
-  `dotnet pack` on macOS needs no help to produce a shippable package.
-- `dev.mjs pack` already passes `-p:Version=<v>` explicitly rather than relying on the rewritten
-  `VersionPrefix`. **This is what keeps the change small:** the mobile job needs the version STRING
-  only — it never has to rewrite `Directory.Build.props`, stamp the CHANGELOG, or run `doctor --fix`.
+The dangerous case — an artifact that looks finished and is not — no longer exists. Every package
+now either builds completely on a given host or cannot build there at all.
 
-## Shape
+## Measured, not assumed
 
-Three jobs instead of one. The only structural change to `publish` is that it receives the version
-instead of computing it, and swaps in one file before pushing.
+| Face | Packed on | `lib/` folder |
+|---|---|---|
+| Android | Windows | `lib/net10.0-android36.0/…` (+ `.xml`) |
+| iOS | macOS | `lib/net10.0-ios26.0/…` (+ `.xml`) |
+
+Both were packed and their layouts read out of a real `.nupkg`. The macOS nuspec is complete on its
+own — dependencies on `Shenora.Core`/`Shenora.Ipc` at the matching version, `Microsoft.Maui.Controls`,
+README, licence, repository metadata. A plain `dotnet pack` on macOS needs no help.
+
+⚠ Those folder names carry the workload's **TargetPlatformVersion** (`android36.0`, `ios26.0`), not
+`SupportedOSPlatformVersion` (21.0 / 15.0). That is what a consuming project must be compatible with,
+and it belongs in `ADOPTION.md` when this ships.
+
+## Already landed, so the pipeline diff is small
+
+`dev.mjs pack` selects by host instead of pretending:
+
+- `project.config.mjs` has `macOnlyPackableProjects: ['src/Shenora.iOS']` — note `Shenora.Android` is
+  **not** in it, because Windows packs it completely.
+- A default `pack` produces the five desktop packages + `Shenora.Android` + the npm tarball, and
+  prints what it skipped and why.
+- `pack --mac` packs exactly the macOS-only set and refuses to run elsewhere. It skips the npm
+  tarball, so two passes cannot both emit one and leave publish guessing which is current.
+
+## Shape — two packs, one publish
 
 ```
 version  (ubuntu)  ── computes the version string. No writes, no side effects.
    │
-   ├─► mobile-pack (macOS) ── both workloads, packs Shenora.Maui with BOTH faces, uploads it
+   ├─► ios-pack (macOS)    ── dev.mjs pack --mac  → uploads Shenora.iOS.*
    │
-   └─► publish  (windows)  ── unchanged except: takes the version as input, and REPLACES the
-                              android-only Shenora.Maui.*.nupkg with the macOS one before pushing
+   └─► publish  (windows)  ── dev.mjs pack        → downloads the iOS artifact into
+                               publish/packages, pushes the union
 ```
-
-Why `publish` stays on Windows: the `net10.0-windows` targets need it, and that is unrelated to this.
 
 ### 1. New job — `version`
 
 Moves the bump arithmetic out of `publish` so two jobs cannot disagree about what is being released.
-`publish`'s "Determine version" then treats it as an explicit input and keeps every file-rewriting
-step it has today.
 
 ```yaml
   version:
@@ -79,131 +98,82 @@ step it has today.
           "tag=v$final" >> $env:GITHUB_OUTPUT
 ```
 
-### 2. New job — `mobile-pack`
+### 2. New job — `ios-pack`
+
+No JDK, no Android SDK, no `maui-android` — the split removed all of it.
 
 ```yaml
-  mobile-pack:
+  ios-pack:
     needs: version
-    runs-on: macos-15        # see "The one unverified assumption" below
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      # Explicit rather than assumed: maui-android needs a JDK and the Android SDK, and whether a
-      # given macOS image ships them has changed between runner versions. Cheap, and it removes the
-      # only thing about this job that depends on the image.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-node@v4
         with:
-          distribution: microsoft
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-
-      - name: Install both mobile workloads
-        run: dotnet workload install maui-android maui-ios
-
-      # %3B, not a literal ';'. The shell eats a semicolon before MSBuild sees it and the symptom
-      # names the wrong thing — MSB1006 reporting the SECOND TFM as an unknown switch. Hit live.
-      #
-      # -p:Version, not a VersionPrefix rewrite: `dev.mjs pack` does the same, so this job needs no
-      # copy of the release's file-stamping logic.
-      - name: Pack Shenora.Maui with BOTH faces
-        run: |
-          dotnet pack src/Shenora.Maui/Shenora.Maui.csproj -c Release \
-            -p:Version=${{ needs.version.outputs.version }} \
-            -p:ShenoraMobileTargets=net10.0-android%3Bnet10.0-ios \
-            -o mobile-packages
-
-      # A job that silently produced one face is the failure this whole change exists to fix, so
-      # assert BOTH lib folders are present rather than trusting the pack.
-      - name: Assert both faces are in the package
-        run: |
-          nupkg=$(ls mobile-packages/Shenora.Maui.*.nupkg)
-          unzip -l "$nupkg" | grep -q 'lib/net10.0-android' || { echo "no android face in $nupkg"; exit 1; }
-          unzip -l "$nupkg" | grep -q 'lib/net10.0-ios'     || { echo "no ios face in $nupkg";     exit 1; }
-          unzip -l "$nupkg" | grep 'lib/'
-
+          node-version: 22          # project.config.mjs / dev.mjs are node
+      - run: dotnet workload install maui-ios
+      - run: node devtools/dev.mjs pack --mac
       - uses: actions/upload-artifact@v4
         with:
-          name: shenora-maui-nupkg
-          path: mobile-packages/Shenora.Maui.*
+          name: shenora-ios-nupkg
+          path: publish/packages/Shenora.iOS.*
 ```
+
+> **Known gap, not hidden:** `pack --mac` takes its version from `project.config.mjs` (i.e.
+> `VersionPrefix`), so this job would pack the CURRENT version rather than the one being released.
+> It needs either a `-p:Version` passthrough in `dev.mjs pack` (a two-line change) or a `VersionPrefix`
+> rewrite in this job before the pack step. Flagging it rather than pretending the job is drop-in.
 
 ### 3. Changes to `publish`
 
 ```yaml
   publish:
-    needs: [version, mobile-pack]
+    needs: [version, ios-pack]
     runs-on: windows-latest
 ```
 
 In **Determine version**, replace the bump arithmetic with the passed value — everything after it
-(the `VersionPrefix` rewrite, the CHANGELOG stamp, `doctor --fix`, the `git status` check) stays
-exactly as it is:
+(the `VersionPrefix` rewrite, the CHANGELOG stamp, `doctor --fix`, the `git status` check) is untouched:
 
 ```pwsh
           $final = '${{ needs.version.outputs.version }}'
           if ($final -notmatch '^\d+\.\d+\.\d+$') { throw "bad version: $final" }
 ```
 
-Then one new step, **after `Pack` and before `Push to NuGet`**:
+Then one new step, **after `Pack` and before `Push to NuGet`**. Purely additive — `pack` never
+produces a `Shenora.iOS` on Windows, so there is nothing to overwrite:
 
 ```yaml
       - uses: actions/download-artifact@v4
         with:
-          name: shenora-maui-nupkg
-          path: mobile-in
+          name: shenora-ios-nupkg
+          path: publish/packages
 
-      - name: Swap in the macOS-built Shenora.Maui
+      - name: Confirm the iOS package arrived
         run: |
-          # The Windows Pack produced an android-only Shenora.Maui because only a Mac can build the
-          # iOS face. Same id, same version — so it must be REPLACED, never added, or the push step
-          # would try to publish the same version twice.
-          $built = Get-ChildItem 'mobile-in' -File | Where-Object { $_.Name -like 'Shenora.Maui.*.nupkg' }
-          if (-not $built) { throw "mobile-pack produced no Shenora.Maui nupkg" }
-          Get-ChildItem 'publish/packages' -File |
-            Where-Object { $_.Name -like 'Shenora.Maui.*' } |
-            ForEach-Object { Write-Host "replacing $($_.Name)"; Remove-Item $_.FullName }
-          Copy-Item 'mobile-in/Shenora.Maui.*' 'publish/packages/'
+          # `pack` SKIPS Shenora.iOS on Windows, so a lost artifact would quietly ship a release with
+          # no iOS package at all — a silent omission, which is worse than a failure.
+          if (-not (Get-ChildItem 'publish/packages' -Filter 'Shenora.iOS.*.nupkg')) {
+            throw "ios-pack produced no Shenora.iOS nupkg - refusing to publish a partial release"
+          }
           Get-ChildItem 'publish/packages' -File | ForEach-Object { Write-Host "  $($_.Name)" }
 ```
 
-## The one unverified assumption
+## Decisions worth stating
 
-**Whether the chosen macOS runner image can build `maui-android`.** GitHub's macOS images have not
-been consistent about shipping a JDK and the Android SDK, particularly on the arm64 images. The
-`setup-java` + `setup-android` steps above exist to make the job independent of that, and they are
-cheap — but this is the part of the proposal that has *not* been run, and the first `dry_run` is what
-would prove it.
-
-Everything else in this document was measured on a real Mac.
+- **The Xcode/workload override flags are NOT in the job.** A CI runner has a matched pair; the two
+  flags this repo's local Mac needs (`ValidateXcodeVersion=false`, `MtouchLink=SdkOnly`) are
+  machine-specific. If CI ever needs them, the pair has drifted and *that* is the thing to fix.
+- **Device and Release iOS remain unproven** — only the simulator debug path has been run.
+- **`Shenora.iOS`'s API baseline is gated on macOS only** (`MetadataSurfaceTests`), since the Windows
+  test host cannot build it. Adding a baseline check to this job would close that gap cheaply.
 
 ## Rehearsal
 
 `dry_run: true` already runs verify + pack + the OIDC login and publishes nothing. With this change it
-would additionally exercise the macOS job and the swap, which is precisely the new risk — so the first
-run should be a dry run, and its summary should list `Shenora.Maui` with both faces.
-
-Worth adding to the **Dry-run summary** step so the rehearsal proves the thing it was extended for:
-
-```pwsh
-          Write-Host "  Shenora.Maui faces:"
-          $m = Get-ChildItem 'publish/packages' -Filter 'Shenora.Maui.*.nupkg' | Select-Object -First 1
-          if ($m) {
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [IO.Compression.ZipFile]::OpenRead($m.FullName).Entries |
-              Where-Object { $_.FullName -like 'lib/*' } |
-              ForEach-Object { Write-Host "    $($_.FullName)" }
-          }
-```
-
-## What this does NOT address
-
-- **The Xcode/workload pairing.** A CI runner has a matched pair, so the two override flags this
-  repo's local Mac needs (`ValidateXcodeVersion=false`, `MtouchLink=SdkOnly`) are deliberately NOT in
-  the job. If CI ever needs them, the pair has drifted and that is the thing to fix.
-- **Device and Release iOS remain unproven locally** — only the simulator debug path has been run.
-- **`ADOPTION.md` should gain the `lib/net10.0-ios26.0` note** when this ships: that folder carries
-  the workload's TargetPlatformVersion, not `SupportedOSPlatformVersion` (15.0), and it is what a
-  consuming project must be compatible with.
+also exercises the macOS job and the artifact hand-off — precisely the new risk. The first run should
+be a dry run, and its summary already lists the packages that would be pushed, so `Shenora.iOS`
+appearing there is the proof.

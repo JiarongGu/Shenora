@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The iOS face of the mobile shell — the peer of Shenora.Android, sharing its source verbatim via
+    the import below. Today the two differ in nothing but their TFM; the first real divergence is
+    expected in the save picker (Android needs SAF, iOS needs UIDocumentPickerViewController), and it
+    will land in `Platforms/` on each side rather than behind an #if.
+
+    ⚠ This project can only be BUILT on macOS (Xcode). `dev.mjs verify` on Windows therefore never
+    compiles it, and its API baseline is gated on macOS only — see MetadataSurfaceTests.
+  -->
+  <Import Project="..\Shenora.Mobile\Shenora.Mobile.props" />
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-ios</TargetFrameworks>
+    <!-- 15.0 is the .NET 10 iOS workload's floor; MAUI's own template uses the same. -->
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <!-- Inline on purpose — the baseline coverage gate text-matches it here. See Shenora.Mobile.props. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.iOS</PackageId>
+    <Description>Shenora's iOS shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a UI-thread dispatcher, and the iOS implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.Android.</Description>
+  </PropertyGroup>
+
+</Project>

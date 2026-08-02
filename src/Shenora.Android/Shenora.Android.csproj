@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Android face of the mobile shell. Everything shared with iOS lives in `src/Shenora.Mobile/`
+    and is compiled in by the import below; this project holds the TFM, the platform floor, the
+    package identity, and anything under `Platforms/` that only Android can do.
+  -->
+  <Import Project="..\Shenora.Mobile\Shenora.Mobile.props" />
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-android</TargetFrameworks>
+    <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
+    <!-- Inline on purpose — the baseline coverage gate text-matches it here. See Shenora.Mobile.props. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Android</PackageId>
+    <Description>Shenora's Android shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a UI-thread dispatcher, and the Android implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.iOS.</Description>
+  </PropertyGroup>
+
+</Project>

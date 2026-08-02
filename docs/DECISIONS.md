@@ -649,7 +649,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 - **D32 — a second shell is a PEER, and the kit's job is the substrate under both.** (Owner,
   2026-08-02: *"abstract the logic out as much as possible (or make interface) so it supports both
   MAUI and WinForm (some capability can implement differently like dropzone and frameless)."*)
-  `Shenora.Maui` references neither `Shenora.WinForms` nor `Shenora.WebView2`. The evidence that the
+  `Shenora.Mobile` references neither `Shenora.WinForms` nor `Shenora.WebView2`. The evidence that the
   split is in the right place is its SIZE: ~200 lines, because the substrate moved first (the IPC
   host half, the headless runner, `ShenoraApplication.Start`/`Stop`). A fat shell package would have
   meant something portable was still trapped in the Windows one.
@@ -661,7 +661,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     interception; it serves `Resources/Raw/wwwroot` itself. There was no seam to lift into. Do not
     re-propose it.
   - **The platform-owned loop is why `Start`/`Stop` exist.** `IShenoraRunner.Run` is contractually
-    "blocks until shutdown", which a MAUI activity cannot honour, so `UseMaui` registers no runner
+    "blocks until shutdown", which a MAUI activity cannot honour, so `UseMobile` registers no runner
     and the app drives the pair from its own lifecycle.
 
 - **D33 — an ABSENT capability throws and names the platform; a SATISFIED one is an honest no-op.**
@@ -678,7 +678,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     exactly what trimming strips. Each shell writes small explicit stubs sharing the one message.
 
 - **D34 — a shipped assembly the test project cannot REFERENCE is gated from its IL metadata.**
-  (2026-08-02.) `tests/Shenora.Tests` is `net10.0-windows`; `Shenora.Maui` is `net10.0-android`. The
+  (2026-08-02.) `tests/Shenora.Tests` is `net10.0-windows`; `Shenora.Mobile` is `net10.0-android`. The
   full `ApiSurfaceDump` cannot run over it — `NullabilityInfoContext` needs runtime types, so a
   `MetadataLoadContext` cannot drive it, and a plain `LoadFrom` would have to resolve
   `Microsoft.Maui.Controls`. `MetadataSurfaceTests` reads the tables with a `MetadataReader` instead.

@@ -5,7 +5,7 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
-### 2026-08-02 (evening) — a SECOND SHELL: Shenora.Maui, proven on a device
+### 2026-08-02 (evening) — a SECOND SHELL: Shenora.Mobile, proven on a device
 
 Owner direction, twice: *"there should be a MAUI adaptation in the roadmap you can take too"*, then
 *"abstract the logic out as much as possible (or make interface) so it supports both MAUI and
@@ -17,7 +17,7 @@ already named were built first — `IpcJson.AddTypeInfoResolver` (`3374391`), `I
 (`9bd86c1`), the headless runner (`7567e3d`) — plus one the third exposed: the lifecycle-hook
 sequence had been copied into two runners, so it moved to `ShenoraApplication.Start`/`Stop`
 (`8c1ca5d`). Only then the shell (`a85280e`), its gate (`31b9aaa`) and the sample (`b87cf9c`).
-**The payoff is measurable in the result: `Shenora.Maui` is ~200 lines of adapter**, because
+**The payoff is measurable in the result: `Shenora.Mobile` is ~200 lines of adapter**, because
 everything that was not transport had already moved somewhere portable. It references neither
 `Shenora.WinForms` nor `Shenora.WebView2` — a peer, not a layer.
 

@@ -345,7 +345,7 @@ var shenora = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
     // Android's private data directory IS the app root; --app-root is desktop packaging vocabulary.
     Paths = new ShenoraPathsOptions { ExplicitRoot = FileSystem.AppDataDirectory },
 });
-shenora.UseMaui(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
+shenora.UseMobile(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
 shenora.Services.AddModuleFacade<YourPortableFacade>();
 shenora.Services.AddMessageDispatcher();
 var app = shenora.Build();
@@ -354,7 +354,7 @@ var app = shenora.Build();
 Then, on the page that owns the `HybridWebView`:
 
 ```csharp
-var bridge = new MauiIpcBridge(webView, new MauiIpcBridgeOptions
+var bridge = new MobileIpcBridge(webView, new MobileIpcBridgeOptions
 {
     Dispatcher = app.Services.GetRequiredService<IMessageDispatcher>(),
     EventBus = app.Services.GetRequiredService<IEventBus>(),
@@ -362,7 +362,7 @@ var bridge = new MauiIpcBridge(webView, new MauiIpcBridgeOptions
 bridge.Attach();          // construct early (buffering starts), attach before the page loads
 ```
 
-**`UseMaui` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
+**`UseMobile` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
 `ShenoraApplication.Run` — contractually "blocks until shutdown" — has no honest implementation.
 Drive the pair from the platform instead: `Start()` from `Window.Created`, `Stop()` from
 `Window.Destroying`. Both are idempotent, so wiring them somewhere that fires more than once
@@ -381,7 +381,7 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 | **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `BaseFacade`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora.Core` contract. The mission scheduler and the file-update queue. |
 | **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
 | **Does NOT transfer** | **Resource serving.** `HybridWebView` has no request-interception seam (no `WebResourceRequested`, no custom schemes), so `IWebViewResourceProvider`, the virtual host and deferred schemes have no role. The platform serves your bundle from `Resources/Raw/wwwroot`; put the built frontend there. |
-| **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and `Shenora.Maui` does not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
+| **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
 
 **Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing:
 clipboard IMAGES (Essentials is text-only) and the folder/save pickers throw
@@ -437,7 +437,7 @@ ones is listed on the implementation.
 
 ### iOS
 
-Everything above applies unchanged — that is the finding, not a hedge. `Shenora.Maui` compiles for
+Everything above applies unchanged — that is the finding, not a hedge. The shell compiles for
 `net10.0-ios` with **no platform directive anywhere in the package**, the iOS head is three template
 files (`AppDelegate`, `Program`, `Info.plist`), and the same page got the same `ShellInfo` back.
 Build it with `node devtools/dev.mjs mac` (see `devtools/README.md`); iOS needs a Mac, so the TFM is

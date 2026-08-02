@@ -29,10 +29,27 @@ export default {
     'src/Shenora.WebView2',
     'src/Shenora.WebView2.Sessions',
     'src/Shenora.WinForms',
-    // net10.0-android. Listed so `pack` and the csproj's IsPackable agree — the API-baseline
-    // coverage check reads IsPackable as the definition of "shipped", so a project claiming it while
-    // the tooling skips it is the two halves disagreeing about what ships.
-    'src/Shenora.Maui',
+    // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
+    // as the definition of "shipped", so a project claiming it while the tooling skips it is the two
+    // halves disagreeing. WHERE each can be packed is the separate question below.
+    'src/Shenora.Android',
+    'src/Shenora.iOS',
+  ],
+  /**
+   * Packable only on macOS, and therefore skipped by a default `pack` elsewhere. `pack --mac` selects
+   * exactly this set.
+   *
+   * Note what is NOT here: `Shenora.Android` packs perfectly well on Windows. Splitting the old
+   * multi-targeted `Shenora.Maui` into two single-TFM packages removed the hazard this list was
+   * originally written for — there is no longer any package whose Windows build is a HALF-COMPLETE
+   * artifact carrying the same id and version as the real one. Each package now either builds
+   * completely on this host or cannot build at all, which is a much easier thing to be correct about.
+   *
+   * The consequence for the release pipeline is that the macOS job is tiny: one project, and it needs
+   * only the `maui-ios` workload. See `docs/2026-08-02-ios-release-design.md`.
+   */
+  macOnlyPackableProjects: [
+    'src/Shenora.iOS',
   ],
   /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
   npmDir: 'src/Shenora.React',

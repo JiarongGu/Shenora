@@ -3,10 +3,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Maui.Dispatching;
 using Shenora.Core;
 
-namespace Shenora.Maui;
+namespace Shenora.Mobile;
 
 /// <summary>Registers the MAUI shell services on a <see cref="ShenoraApplicationBuilder"/>.</summary>
-public static class MauiHostExtensions
+public static class MobileHostExtensions
 {
     /// <summary>
     /// Make this a MAUI-hosted application: registers the shell contracts this platform can honour
@@ -34,17 +34,17 @@ public static class MauiHostExtensions
     /// silently-missing UI dispatcher swallows UI work.
     /// </param>
     /// <param name="onError">Reports a failure from posted UI work or a backgrounded URL open.</param>
-    public static ShenoraApplicationBuilder UseMaui(this ShenoraApplicationBuilder builder,
+    public static ShenoraApplicationBuilder UseMobile(this ShenoraApplicationBuilder builder,
         IDispatcher dispatcher, Action<Exception>? onError = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(dispatcher);
 
-        builder.Services.TryAddSingleton<IUiDispatcher>(_ => new MauiUiDispatcher(dispatcher, onError));
-        builder.Services.TryAddSingleton<IClipboardService, MauiClipboardService>();
-        builder.Services.TryAddSingleton<IUrlLauncher>(_ => new MauiUrlLauncher(onError));
-        builder.Services.TryAddSingleton<IUiInteraction, MauiUiInteraction>();
-        builder.Services.TryAddSingleton<IFileDialogs, MauiFileDialogs>();
+        builder.Services.TryAddSingleton<IUiDispatcher>(_ => new MobileUiDispatcher(dispatcher, onError));
+        builder.Services.TryAddSingleton<IClipboardService, MobileClipboardService>();
+        builder.Services.TryAddSingleton<IUrlLauncher>(_ => new MobileUrlLauncher(onError));
+        builder.Services.TryAddSingleton<IUiInteraction, MobileUiInteraction>();
+        builder.Services.TryAddSingleton<IFileDialogs, MobileFileDialogs>();
 
         return builder;
     }

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- TFM follows the HOST — see the same note in src/Shenora.Maui/Shenora.Maui.csproj. -->
+  <!-- TFM follows the HOST — see the same note in src/Shenora.Mobile/Shenora.Mobile.csproj. -->
   <PropertyGroup>
     <TargetFramework>net10.0-android</TargetFramework>
     <TargetFramework Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-ios</TargetFramework>
@@ -91,7 +91,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Shenora.Maui\Shenora.Maui.csproj" />
+    <!-- The shell for whichever platform this host is building. Conditioned exactly like the TFM
+         above, and for the same reason: Shenora.iOS cannot be built on Windows at all, so an
+         unconditional reference would break the Windows gate. -->
+    <ProjectReference Include="..\..\src\Shenora.Android\Shenora.Android.csproj"
+                      Condition="$(TargetFramework.Contains('android'))" />
+    <ProjectReference Include="..\..\src\Shenora.iOS\Shenora.iOS.csproj"
+                      Condition="$(TargetFramework.Contains('ios'))" />
     <!-- The SAME portable logic the desktop sample hosts. That shared reference is the point of the
          whole exercise: D20's portability stops being a claim about a net10.0 project and becomes two
          shells running one facade. -->

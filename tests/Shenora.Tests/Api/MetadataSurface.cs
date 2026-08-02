@@ -9,10 +9,10 @@ namespace Shenora.Tests.Api;
 /// Reads an assembly's public surface straight out of the IL metadata tables — no loading, no type
 /// resolution, no resolver to maintain.
 /// <para>
-/// It exists for exactly one problem: <c>Shenora.Maui</c> targets <c>net10.0-android</c>, so this
+/// It exists for exactly one problem: <c>Shenora.Mobile</c> targets <c>net10.0-android</c>, so this
 /// <c>net10.0-windows</c> test project cannot reference it, and neither of the normal routes works.
 /// <c>Assembly.LoadFrom</c> would have to resolve <c>Microsoft.Maui.Controls</c> and the Android
-/// facades to render a member like <c>MauiUiDispatcher(IDispatcher)</c>; a <c>MetadataLoadContext</c>
+/// facades to render a member like <c>MobileUiDispatcher(IDispatcher)</c>; a <c>MetadataLoadContext</c>
 /// avoids that but cannot drive <see cref="NullabilityInfoContext"/>, which
 /// <see cref="ApiSurfaceDump"/> uses in four places. A <see cref="MetadataReader"/> needs neither: it
 /// reads the tables as data.

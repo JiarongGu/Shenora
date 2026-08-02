@@ -1,7 +1,7 @@
 using Microsoft.Maui.Dispatching;
 using Shenora.Core;
 
-namespace Shenora.Maui;
+namespace Shenora.Mobile;
 
 /// <summary>
 /// The MAUI <see cref="IUiDispatcher"/> — the ONE place UI-thread marshalling semantics live on this
@@ -17,7 +17,7 @@ namespace Shenora.Maui;
 /// rather than faked, because a caller branching on it should know it will not see it on this shell.
 /// </para>
 /// </summary>
-public sealed class MauiUiDispatcher : IUiDispatcher
+public sealed class MobileUiDispatcher : IUiDispatcher
 {
     private readonly IDispatcher _dispatcher;
     private readonly Action<Exception>? _onPostFailure;
@@ -27,7 +27,7 @@ public sealed class MauiUiDispatcher : IUiDispatcher
     /// Reports an exception thrown by a <see cref="Post(Action)"/> body — there is no caller to
     /// observe it. Null = swallow (still never crashes the UI thread).
     /// </param>
-    public MauiUiDispatcher(IDispatcher dispatcher, Action<Exception>? onPostFailure = null)
+    public MobileUiDispatcher(IDispatcher dispatcher, Action<Exception>? onPostFailure = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         _dispatcher = dispatcher;

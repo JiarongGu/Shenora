@@ -16,23 +16,17 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
-- **iOS — the third shell runs.** `Shenora.Maui` and `samples/Shenora.Sample.Maui` now multi-target
-  `net10.0-ios`, and `node devtools/dev.mjs mac` drives a Mac over SSH to build, launch, screenshot
-  and tap it (ported from the public sibling Sonora with its post-mortems kept; `devtools/README.md`
-  has the traps).
+- **iOS — the third shell runs**, and the mobile shell now ships as **two platform packages**:
+  `Shenora.Android` (`net10.0-android`) and `Shenora.iOS` (`net10.0-ios`). `node devtools/dev.mjs mac`
+  drives a Mac over SSH to build, launch, screenshot and tap it (ported from the public sibling
+  Sonora with its post-mortems kept; `devtools/README.md` has the traps).
 
-  **The result worth reading is how little was needed.** `Shenora.Maui` compiled for iOS with **no
-  platform directive at all** — not one `#if` — and so did every line of `Shenora.Sample.Logic`. The
-  sample needed exactly one, for the log sink, because a device log is the only way to see what a
-  mobile host did and each platform has its own. The same page, the same envelope and the same
-  portable facade produced `shell: maui · capabilities: [filePicker]`, `ECHO`, and `UI_STATE`
-  returning `onUiThread: true` on an iPhone simulator.
-
-  The TFM is conditioned on the HOST rather than listed unconditionally: only a Mac can build iOS,
-  and listing both everywhere would turn `dev.mjs verify` red on the machine that cannot build one of
-  them. **Consequence, stated plainly: `dotnet pack` on Windows still produces an android-only
-  `Shenora.Maui`,** so iOS is proven but not yet published — that needs a macOS pack job (`TASKS.md`
-  A8, along with the two Xcode-mismatch build flags this particular Mac currently needs).
+  **The result worth reading is how little was needed.** The shell compiled for iOS with **no platform
+  directive at all** — not one `#if` — and so did every line of `Shenora.Sample.Logic`. The sample
+  needed exactly one, for the log sink, because a device log is the only way to see what a mobile host
+  did and each platform has its own. The same page, the same envelope and the same portable facade
+  produced `shell: maui · capabilities: [filePicker]`, `ECHO`, and `UI_STATE` returning
+  `onUiThread: true` on an iPhone simulator.
 
   Two findings that outlive the port, both invisible on Android: a shared page must be written for
   the SUPERSET of shells (identical markup put the heading under the Dynamic Island, because an
@@ -41,7 +35,7 @@ at the first list and missed five more breaking changes.
 
 - **Capability advertisement in the ready handshake** — `ShellInfo { Name, Capabilities }`
   (`Shenora.Ipc`), an `IpcHostBridgeOptions.Shell` forwarded by `WebViewIpcBridgeOptions` and
-  `MauiIpcBridgeOptions`, the well-known names on `ShellCapability` (`Shenora.Core`), and their TS
+  `MobileIpcBridgeOptions`, the well-known names on `ShellCapability` (`Shenora.Core`), and their TS
   mirrors — `ShellInfo` / `ShellCapabilities`, with `notifyReady()` now resolving to
   `Promise<ShellInfo | undefined>` and the result cached on `bridge.shell`.
 
@@ -219,9 +213,21 @@ at the first list and missed five more breaking changes.
   while a perfectly good host sat on the other side of the channel. It answers "is there a host",
   which is the question callers actually ask. Widening only, so a WebView2 consumer sees no change.
 
-- **A sixth package: `Shenora.Maui`** (`net10.0-android`) — the second shell. `MauiIpcBridge` over
-  `HybridWebView`'s `RawMessageReceived`/`SendRawMessage`, `MauiUiDispatcher`, and the
-  Essentials-backed implementations of the `Shenora.Core` contracts, registered by `UseMaui`.
+- **Two new packages: `Shenora.Android` and `Shenora.iOS`** — the mobile shell, one package per
+  platform. `MobileIpcBridge` over `HybridWebView`'s `RawMessageReceived`/`SendRawMessage`,
+  `MobileUiDispatcher`, and the Essentials-backed implementations of the `Shenora.Core` contracts,
+  registered by `UseMobile`.
+
+  **Both compile from one shared source tree** (`src/Shenora.Mobile/`, which is source and NOT a
+  published package) so the two faces cannot drift; the platform boundary is the package boundary
+  because that is how they build, ship and get consumed — one platform at a time, on different hosts.
+  Divergence goes in each project's `Platforms/` folder, which the MAUI SDK includes per TFM, so it
+  needs no `#if`. There is none yet; the first is expected in the save picker (Android SAF vs
+  `UIDocumentPickerViewController`).
+
+  Named for the platform rather than the framework deliberately: the two faces run on entirely
+  different engines — Chromium's WebView on Android, WKWebView on iOS — so a vendor name would have
+  described the build system rather than the thing, and `Shenora.iOS` never touches WebView2 at all.
 
   **It registers no `IShenoraRunner` on purpose:** MAUI owns the loop, so the app drives
   `ShenoraApplication.Start`/`Stop` from its own lifecycle. It is a PEER of the Windows shell, not a

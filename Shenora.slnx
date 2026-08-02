@@ -2,11 +2,17 @@
   <Folder Name="/src/">
     <Project Path="src/Shenora.Core/Shenora.Core.csproj" />
     <Project Path="src/Shenora.Ipc/Shenora.Ipc.csproj" />
-    <!-- net10.0-android. In the gate deliberately (owner, 2026-08-02): a package no gate compiles is
-         the objection this repo raises against every ungated artifact. The cost is real and is
-         documented in devtools/README.md — building this repo now needs the maui-android workload
-         and a JDK (dev.mjs finds Android Studio's if JAVA_HOME is unset). -->
-    <Project Path="src/Shenora.Maui/Shenora.Maui.csproj" />
+    <!-- The Android face of the mobile shell. In the gate deliberately (owner, 2026-08-02): a package
+         no gate compiles is the objection this repo raises against every ungated artifact. The cost is
+         real and documented in devtools/README.md — building this repo now needs the maui-android
+         workload and a JDK (dev.mjs finds Android Studio's if JAVA_HOME is unset).
+
+         Its peer `src/Shenora.iOS` is deliberately ABSENT from this solution: it can only be built on
+         macOS, so listing it here would make `dev.mjs build` fail on the machine this repo is
+         developed on. The two share every line of source (src/Shenora.Mobile/), so compiling one
+         type-checks the other's content; what is NOT covered is its API baseline, which is gated in
+         the macOS job instead. Said plainly rather than left as a gap someone discovers. -->
+    <Project Path="src/Shenora.Android/Shenora.Android.csproj" />
     <Project Path="src/Shenora.WebView2/Shenora.WebView2.csproj" />
     <Project Path="src/Shenora.WebView2.Sessions/Shenora.WebView2.Sessions.csproj" />
     <Project Path="src/Shenora.WinForms/Shenora.WinForms.csproj" />

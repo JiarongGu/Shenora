@@ -1,13 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Core;
 using Shenora.Ipc;
-using Shenora.Maui;
+using Shenora.Mobile;
 
 namespace Shenora.Sample.Maui;
 
 /// <summary>
 /// The whole MAUI host, in one page: a <see cref="HybridWebView"/> serving the bundle from
-/// <c>Resources/Raw/wwwroot</c>, and a <see cref="MauiIpcBridge"/> carrying the same envelope the
+/// <c>Resources/Raw/wwwroot</c>, and a <see cref="MobileIpcBridge"/> carrying the same envelope the
 /// desktop shell speaks.
 /// <para>
 /// Code, not XAML, deliberately — the interesting part is the four lines of wiring, and a XAML file
@@ -17,7 +17,7 @@ namespace Shenora.Sample.Maui;
 public sealed class MainPage : ContentPage
 {
 	private readonly HybridWebView _webView;
-	private MauiIpcBridge? _bridge;
+	private MobileIpcBridge? _bridge;
 
 	/// <summary>The page's background, matched by the splash colour — see the csproj's comment.</summary>
 	private static readonly Color Shell = Color.FromArgb("#14161A");
@@ -56,7 +56,7 @@ public sealed class MainPage : ContentPage
 
 		// Construct then Attach, the same order the desktop bridge documents: buffering starts at
 		// construction so anything emitted while the page is still loading survives.
-		_bridge = new MauiIpcBridge(_webView, new MauiIpcBridgeOptions
+		_bridge = new MobileIpcBridge(_webView, new MobileIpcBridgeOptions
 		{
 			Dispatcher = services.GetRequiredService<IMessageDispatcher>(),
 			EventBus = services.GetRequiredService<IEventBus>(),

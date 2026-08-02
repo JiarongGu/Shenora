@@ -56,7 +56,7 @@ const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'pa
 
 // ---- The Android TFM needs a JDK, and the failure without one is unhelpful.
 //
-// Shenora.Maui targets net10.0-android, so `dotnet build` of the solution shells out to the Android
+// Shenora.Mobile targets net10.0-android, so `dotnet build` of the solution shells out to the Android
 // SDK, which needs JAVA_HOME. Unset, MSBuild fails with a bare `error XA5300: The Java SDK directory
 // could not be found` pointing at an install page — on a machine that already HAS a JDK, because
 // Android Studio ships one and nothing exported the variable.
@@ -91,7 +91,7 @@ function androidBuildEnv() {
   const jdk = resolveJdk();
   if (!jdk) {
     console.error(
-      '\n  No JDK found, and Shenora.Maui (net10.0-android) cannot build without one.\n' +
+      '\n  No JDK found, and Shenora.Mobile (net10.0-android) cannot build without one.\n' +
       '  Set JAVA_HOME to a JDK 17+ — Android Studio ships one in its `jbr` folder — or install one.\n' +
       '  This is a machine prerequisite, not a repo setting; see devtools/README.md.');
     return null;
@@ -412,8 +412,8 @@ switch (cmd) {
     let ok = true;
     if (which === 'all' || which === 'dotnet') {
       // The SAME env `build` needs, for the same reason: `dotnet test <solution>` BUILDS the solution,
-      // and that includes the Android TFM of Shenora.Maui, which cannot compile without a JDK. This
-      // was missing and latent — it only surfaced when Shenora.Maui started multi-targeting and the
+      // and that includes the Android TFM of Shenora.Mobile, which cannot compile without a JDK. This
+      // was missing and latent — it only surfaced when Shenora.Mobile started multi-targeting and the
       // outer build stopped being a no-op, so `dev.mjs test` on a clean tree failed XA5300 while
       // `dev.mjs build` right before it had succeeded. Anything that builds the solution needs this.
       const testEnv = androidBuildEnv();
@@ -496,14 +496,42 @@ switch (cmd) {
     const out = path.join(repo, ...config.packagesDir.split('/'));
     fs.rmSync(out, { recursive: true, force: true });
     fs.mkdirSync(out, { recursive: true });
+
+    // No host can build every package, so `pack` SELECTS rather than pretending. Default = everything
+    // this host can build (which includes Shenora.Android on Windows); `--mac` = exactly the set that
+    // needs Xcode. The release pipeline runs the two on two runners and pushes the union.
+    //
+    // Each package is now all-or-nothing on a given host — since the mobile shell became two
+    // single-TFM packages there is no longer one whose local build is a half-complete artifact
+    // wearing the real package's id and version. Skipping is a statement about the HOST, not a
+    // partially-built package.
+    const macOnly = new Set(config.macOnlyPackableProjects ?? []);
+    const macPass = args.includes('--mac');
+    const selected = config.packableProjects.filter((p) => macOnly.has(p) === macPass);
+    const skipped = config.packableProjects.filter((p) => !selected.includes(p));
+
+    if (macPass && process.platform !== 'darwin') {
+      console.error('dev.mjs pack --mac: needs macOS — these packages require Xcode to build.');
+      process.exitCode = 1;
+      break;
+    }
+    if (skipped.length) {
+      console.log(`  skipped (${macPass ? 'not part of --mac' : 'needs macOS — see macOnlyPackableProjects'}):`);
+      for (const p of skipped) console.log(`    ${p}`);
+    }
+
     let ok = true;
-    for (const proj of config.packableProjects) {
+    for (const proj of selected) {
       ok = step(`pack ${proj}`, () => run('dotnet', ['pack', proj, '-c', 'Release', '-o', out,
         `-p:Version=${config.version}`, '-v', 'minimal', '-clp:ErrorsOnly'])) && ok;
     }
-    ok = ok && ensureNpmDeps(npmDirAbs);
-    ok = ok && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
-    ok = ok && step('npm pack (react package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: npmDirAbs }));
+    // The npm package belongs to the default pass — `--mac` produces NuGet only, so the two passes
+    // cannot both emit a tarball and leave the publish step guessing which is current.
+    if (!macPass) {
+      ok = ok && ensureNpmDeps(npmDirAbs);
+      ok = ok && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
+      ok = ok && step('npm pack (react package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: npmDirAbs }));
+    }
     if (ok) ok = step('evict stale Shenora.* from the NuGet global cache', () => evictGlobalCache());
     if (ok) {
       console.log('\npacked:');

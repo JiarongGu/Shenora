@@ -1,23 +1,23 @@
-Shenora.Maui.MauiClipboardService
+Shenora.Mobile.MobileClipboardService
   method .ctor
   method GetTextAsync
   method SetImageFromFileAsync
   method SetTextAsync
   method TrySaveImageToFileAsync
-Shenora.Maui.MauiFileDialogs
+Shenora.Mobile.MobileFileDialogs
   method .ctor
   method OpenFileAsync
   method OpenFolderAsync
   method SaveFileAsync
-Shenora.Maui.MauiHostExtensions
-  method UseMaui
-Shenora.Maui.MauiIpcBridge
+Shenora.Mobile.MobileHostExtensions
+  method UseMobile
+Shenora.Mobile.MobileIpcBridge
   method .ctor
   method Attach
   method Dispose
   method SendNotification
   property IsClientReady
-Shenora.Maui.MauiIpcBridgeOptions
+Shenora.Mobile.MobileIpcBridgeOptions
   method .ctor
   property Dispatcher
   property EventBus
@@ -27,7 +27,7 @@ Shenora.Maui.MauiIpcBridgeOptions
   property NotificationInterval
   property OnClientReady
   property Shell
-Shenora.Maui.MauiUiDispatcher
+Shenora.Mobile.MobileUiDispatcher
   method .ctor
   method InvokeAsync
   method InvokeAsync
@@ -37,12 +37,12 @@ Shenora.Maui.MauiUiDispatcher
   method Post
   property IsOnUiThread
   property State
-Shenora.Maui.MauiUiInteraction
+Shenora.Mobile.MobileUiInteraction
   method .ctor
   method BlockInteraction
   method UnblockInteraction
-Shenora.Maui.MauiUrlLauncher
+Shenora.Mobile.MobileUrlLauncher
   method .ctor
   method OpenUrl
-Shenora.Maui.Resource
+Shenora.Mobile.Resource
   method .ctor

@@ -3,10 +3,10 @@ using Microsoft.Maui.Dispatching;
 using Shenora.Core;
 using Shenora.Ipc;
 
-namespace Shenora.Maui;
+namespace Shenora.Mobile;
 
-/// <summary>Inputs for <see cref="MauiIpcBridge"/>.</summary>
-public sealed class MauiIpcBridgeOptions
+/// <summary>Inputs for <see cref="MobileIpcBridge"/>.</summary>
+public sealed class MobileIpcBridgeOptions
 {
     /// <summary>The pipeline incoming requests are dispatched into.</summary>
     public required IMessageDispatcher Dispatcher { get; init; }
@@ -63,10 +63,10 @@ public sealed class MauiIpcBridgeOptions
 /// rather than papered over.
 /// </para>
 /// </summary>
-public sealed class MauiIpcBridge : IDisposable
+public sealed class MobileIpcBridge : IDisposable
 {
     private readonly HybridWebView _webView;
-    private readonly MauiIpcBridgeOptions _options;
+    private readonly MobileIpcBridgeOptions _options;
     private readonly Action<string>? _log;
     private readonly NotificationPump _pump;
     private readonly IpcHostBridge _host;
@@ -80,7 +80,7 @@ public sealed class MauiIpcBridge : IDisposable
     /// <see cref="Attach"/> once the control is on screen. Options are validated now, so a bad value
     /// names itself at the call site rather than inside a timer.
     /// </summary>
-    public MauiIpcBridge(HybridWebView webView, MauiIpcBridgeOptions options)
+    public MobileIpcBridge(HybridWebView webView, MobileIpcBridgeOptions options)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -90,14 +90,14 @@ public sealed class MauiIpcBridge : IDisposable
         // WebViewIpcBridge follows). The pump re-validates too; that is defence in depth.
         if (options.MaxQueuedNotifications < 1)
             throw new ArgumentOutOfRangeException(nameof(options),
-                $"{nameof(MauiIpcBridgeOptions.MaxQueuedNotifications)} must be at least 1 — 0 would silently discard every notification.");
+                $"{nameof(MobileIpcBridgeOptions.MaxQueuedNotifications)} must be at least 1 — 0 would silently discard every notification.");
         if (options.NotificationInterval < TimeSpan.FromMilliseconds(1))
             throw new ArgumentOutOfRangeException(nameof(options),
-                $"{nameof(MauiIpcBridgeOptions.NotificationInterval)} must be at least 1 ms.");
+                $"{nameof(MobileIpcBridgeOptions.NotificationInterval)} must be at least 1 ms.");
 
         _log = options.Log;
-        _ui = new MauiUiDispatcher(webView.Dispatcher,
-            ex => Log(() => $"[Shenora.Maui] Posted UI work failed: {ex.Message}"));
+        _ui = new MobileUiDispatcher(webView.Dispatcher,
+            ex => Log(() => $"[Shenora.Mobile] Posted UI work failed: {ex.Message}"));
 
         _pump = new NotificationPump(new NotificationPumpOptions
         {
@@ -141,7 +141,7 @@ public sealed class MauiIpcBridge : IDisposable
         _flushTimer.Tick += (_, _) => Flush();
         _flushTimer.Start();
 
-        Log(() => "[Shenora.Maui] IPC bridge attached");
+        Log(() => "[Shenora.Mobile] IPC bridge attached");
     }
 
     /// <summary>
@@ -170,7 +170,7 @@ public sealed class MauiIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Maui] Unhandled error in the IPC message handler: {ex}");
+            Log(() => $"[Shenora.Mobile] Unhandled error in the IPC message handler: {ex}");
         }
     }
 
@@ -185,7 +185,7 @@ public sealed class MauiIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Maui] Notification flush failed: {ex.Message}");
+            Log(() => $"[Shenora.Mobile] Notification flush failed: {ex.Message}");
         }
     }
 
@@ -196,7 +196,7 @@ public sealed class MauiIpcBridge : IDisposable
         _ui.Post(() =>
         {
             try { _webView.SendRawMessage(json); }
-            catch (Exception ex) { Log(() => $"[Shenora.Maui] SendRawMessage failed: {ex.Message}"); }
+            catch (Exception ex) { Log(() => $"[Shenora.Mobile] SendRawMessage failed: {ex.Message}"); }
         });
     }
 
@@ -223,7 +223,7 @@ public sealed class MauiIpcBridge : IDisposable
         if (_attached)
         {
             try { _webView.RawMessageReceived -= OnRawMessageReceived; }
-            catch (Exception ex) { Log(() => $"[Shenora.Maui] Bridge dispose: could not detach the message handler ({ex.Message})"); }
+            catch (Exception ex) { Log(() => $"[Shenora.Mobile] Bridge dispose: could not detach the message handler ({ex.Message})"); }
         }
     }
 }

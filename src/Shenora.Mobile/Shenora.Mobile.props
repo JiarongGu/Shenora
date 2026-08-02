@@ -1,0 +1,57 @@
+<!--
+  Everything the two mobile packages share, so `Shenora.Android.csproj` and `Shenora.iOS.csproj` hold
+  ONLY what genuinely differs (their TFM, their platform floor, their package identity).
+
+  This folder is SOURCE, not a project. It is compiled INTO each platform package rather than shipped
+  as a third one — there is no `Shenora.Mobile` on nuget.org and there should not be. The alternative,
+  a shared assembly referenced by both, would either publish a package nobody asks for or need
+  embedding tricks to hide it.
+
+  The `Platforms/` folder inside each platform project is where the two diverge. That split is a MAUI
+  SDK convention, not something wired here: `Platforms/<Platform>/**` is included only for the
+  matching TFM. Proven the hard way — an iOS build compiled cleanly with `Platforms/Android/MainActivity.cs`
+  (which references `Android.App` and cannot compile for iOS) sitting in the same project.
+-->
+<Project>
+
+  <PropertyGroup>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <RootNamespace>Shenora.Mobile</RootNamespace>
+    <!--
+      IsPackable is deliberately NOT here — it stays inline in each csproj. The API-baseline coverage
+      gate finds shipped projects by TEXT-MATCHING `<IsPackable>true</IsPackable>` in the csproj, so
+      hoisting it into this shared import would make both mobile packages invisible to the gate: they
+      would ship with no baseline and nothing would say so. That is the exact fail-open shape the
+      coverage test was written to close, so the one duplicated line is the cheaper mistake.
+    -->
+    <!--
+      The plural is required even for ONE target framework. `src/Directory.Build.props` defaults the
+      SINGULAR `TargetFramework` to net10.0 for the portable packages, and MSBuild honours the singular
+      whenever both are set — so a project here that used the singular would silently build as net10.0
+      and die on "Assets file doesn't have a target for 'net10.0'", naming the assets file rather than
+      the property responsible. Each platform project sets TargetFrameworks and clears the singular.
+    -->
+    <TargetFramework></TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\Shenora.Ipc\Shenora.Ipc.csproj" />
+  </ItemGroup>
+
+  <!--
+    The shared source. Linked rather than copied, with a Link that preserves the folder layout so the
+    IDE shows `Ipc/`, `Threading/`, `Services/`, `Hosting/` under each platform project exactly as they
+    sit on disk — otherwise every shared file lands flat at the project root and the structure this
+    layout exists to communicate is lost.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Shenora.Mobile\**\*.cs" Link="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

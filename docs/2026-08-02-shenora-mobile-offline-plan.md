@@ -61,7 +61,7 @@ envelope, which is where the kit learned that the envelope and the pipe are sepa
 
 What a mobile shell must then supply is small: host a WebView, serve the bundle, carry the envelope.
 .NET 9's `HybridWebView` does structurally what `Shenora.WebView2` does for the desktop, so a future
-`Shenora.Maui` would be an existing package's mobile sibling rather than a new architecture.
+`Shenora.Mobile` would be an existing package's mobile sibling rather than a new architecture.
 
 ## §4 Kit gaps this profile would hit
 

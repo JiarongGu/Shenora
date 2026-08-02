@@ -3,7 +3,7 @@ using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Storage;
 using Shenora.Core;
 
-namespace Shenora.Maui;
+namespace Shenora.Mobile;
 
 /// <summary>
 /// The MAUI implementations of <c>Shenora.Core</c>'s shell contracts — the peers of
@@ -21,7 +21,7 @@ internal static class MauiShellNames
 /// Essentials' clipboard is text-only — there is no image API to call, so "absent" is literally true
 /// rather than a shortcut.
 /// </summary>
-public sealed class MauiClipboardService : IClipboardService
+public sealed class MobileClipboardService : IClipboardService
 {
     /// <inheritdoc />
     public Task SetTextAsync(string text)
@@ -48,7 +48,7 @@ public sealed class MauiClipboardService : IClipboardService
 }
 
 /// <summary>Opening a URL, over Essentials' <see cref="Browser"/>.</summary>
-public sealed class MauiUrlLauncher : IUrlLauncher
+public sealed class MobileUrlLauncher : IUrlLauncher
 {
     private readonly Action<Exception>? _onError;
 
@@ -56,7 +56,7 @@ public sealed class MauiUrlLauncher : IUrlLauncher
     /// Receives a failure. <see cref="OpenUrl"/> is void by contract while the platform API is async,
     /// so the open is started and not awaited — without this sink a failure is invisible.
     /// </param>
-    public MauiUrlLauncher(Action<Exception>? onError = null) => _onError = onError;
+    public MobileUrlLauncher(Action<Exception>? onError = null) => _onError = onError;
 
     /// <inheritdoc />
     public void OpenUrl(string url)
@@ -84,7 +84,7 @@ public sealed class MauiUrlLauncher : IUrlLauncher
 /// capability is satisfied, just not by us. That distinction is the one <see cref="ShellCapability"/>
 /// draws; refusing here would break portable logic that correctly brackets a picker call.
 /// </summary>
-public sealed class MauiUiInteraction : IUiInteraction
+public sealed class MobileUiInteraction : IUiInteraction
 {
     /// <inheritdoc />
     public void BlockInteraction() { }
@@ -119,7 +119,7 @@ public sealed class MauiUiInteraction : IUiInteraction
 /// <c>DefaultExtension</c>. <c>Title</c> and <c>Filters</c> DO map.
 /// </para>
 /// </summary>
-public sealed class MauiFileDialogs : IFileDialogs
+public sealed class MobileFileDialogs : IFileDialogs
 {
     /// <inheritdoc />
     public async Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null)
