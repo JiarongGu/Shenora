@@ -80,8 +80,8 @@ handshake with `maui · [filePicker]`, plus `ECHO` and `UI_STATE` (`onUiThread: 
 Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
 
 _A8 (iOS published) is CLOSED — 0.5.1 shipped all five packages from one Windows runner,
- included. The macOS pack job was retired unbuilt: only an iOS APP needs a Mac. See
-._
+`Shenora.iOS` included. The macOS pack job was retired unbuilt: only an iOS APP needs a Mac. See
+`docs/archive/tasks.md`._
 
 ### B. Staged application updates — DESIGNED 2026-08-02, nothing built
 
