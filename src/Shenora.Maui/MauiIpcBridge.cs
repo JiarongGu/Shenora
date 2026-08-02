@@ -27,6 +27,13 @@ public sealed class MauiIpcBridgeOptions
     /// <summary>Per-channel delivery policy, applied at enqueue. Default: deliver everything.</summary>
     public Func<IpcNotification, bool>? NotificationFilter { get; init; }
 
+    /// <summary>
+    /// What to tell the client this shell is and can do, answered in the handshake so one page can
+    /// ship to every shell. Declared by the APP — it depends on what this app composed, not only on
+    /// the platform. Null says nothing, which the client reads as "assume nothing".
+    /// </summary>
+    public ShellInfo? Shell { get; init; }
+
     /// <summary>Invoked on each ready handshake — the moment to clear per-page state.</summary>
     public Action<IpcRequest>? OnClientReady { get; init; }
 
@@ -105,6 +112,7 @@ public sealed class MauiIpcBridge : IDisposable
         {
             Dispatcher = options.Dispatcher,
             Pump = _pump,
+            Shell = options.Shell,
             OnClientReady = options.OnClientReady,
             Log = options.Log,
         });

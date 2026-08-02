@@ -118,6 +118,7 @@ sealed class Shenora.WebView2.WebViewIpcBridge : System.IDisposable
   public void SendNotification(string module, string type, object? payload = null, string? scope = null)
 sealed class Shenora.WebView2.WebViewIpcBridgeOptions
   public Shenora.Core.IEventBus? EventBus { get; init; }
+  public Shenora.Ipc.ShellInfo? Shell { get; init; }
   public System.Action<Shenora.Ipc.IpcRequest>? OnClientReady { get; init; }
   public System.Action<string>? Log { get; init; }
   public System.Func<Shenora.Ipc.IpcNotification, bool>? NotificationFilter { get; init; }

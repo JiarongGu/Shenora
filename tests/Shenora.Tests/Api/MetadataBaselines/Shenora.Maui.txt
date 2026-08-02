@@ -26,6 +26,7 @@ Shenora.Maui.MauiIpcBridgeOptions
   property NotificationFilter
   property NotificationInterval
   property OnClientReady
+  property Shell
 Shenora.Maui.MauiUiDispatcher
   method .ctor
   method InvokeAsync

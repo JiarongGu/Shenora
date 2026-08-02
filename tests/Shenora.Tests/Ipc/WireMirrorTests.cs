@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Shenora.Core;
 using Shenora.Ipc;
 using Shenora.WebView2;
 
@@ -25,8 +26,33 @@ public class WireMirrorTests
         Assert.False(dir is null, "repo root (Shenora.slnx) not found above the test output dir");
         var path = Path.Combine(dir!, "src", "Shenora.React", "src", fileName);
         Assert.True(File.Exists(path), $"client source not found: {path}");
-        return File.ReadAllText(path);
+        return StripBlockComments(File.ReadAllText(path));
     }
+
+    /// <summary>
+    /// Remove <c>/* … */</c> before parsing. Found the hard way while adding <c>ShellInfo</c>: the
+    /// body matchers below are non-greedy up to the first <c>}</c>, and a JSDoc <c>{@link Foo}</c>
+    /// inside an interface ENDS THE MATCH EARLY — so every field after it silently vanishes from the
+    /// comparison.
+    /// <para>
+    /// <b>Measured, not assumed</b> (the stripper was made a no-op and the suite re-run):
+    /// <see cref="ShellInfo_fields_match_the_host"/> fails with
+    /// <c>Expected: ["name","capabilities"] / Actual: ["name"]</c>, and
+    /// <see cref="Shell_capability_names_match_the_host"/> still PASSES — <see cref="ParseConstObject"/>
+    /// is anchored on a trailing <c>as const;</c>, so the engine backtracks past the brace of
+    /// <c>{@link}</c> on its own. <see cref="ParseInterfaceFieldNames"/> has no such anchor.
+    /// </para>
+    /// <para>
+    /// So this bug is a FALSE ALARM, not a silent pass: it fails a correct mirror and blames the wrong
+    /// side. That is worth fixing anyway, because of what the alarm invites — the natural response to a
+    /// mirror test failing when you can see the mirror is fine is to loosen the test, and a subset check
+    /// is exactly the tripwire-checking-nothing this file exists to prevent. Fix the parser, never the
+    /// assertion. Line comments are left alone deliberately: stripping <c>//</c> would corrupt any
+    /// <c>https://</c> inside a string literal.
+    /// </para>
+    /// </summary>
+    private static string StripBlockComments(string source) =>
+        Regex.Replace(source, @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
 
     /// <summary>Every `name: 'VALUE',` entry inside a named `export const X = { … } as const;` block.</summary>
     private static Dictionary<string, string> ParseConstObject(string source, string exportName)
@@ -229,6 +255,54 @@ public class WireMirrorTests
     public void OperationInfo_fields_match_the_host()
     {
         AssertMirroredFields(typeof(OperationInfo), "OperationInfo");
+    }
+
+    /// <summary>
+    /// <see cref="ShellInfo"/> is the handshake's response data and the thing a page branches its
+    /// LAYOUT on, so a one-sided rename does not fail loudly — it renders the wrong tree. Pinned like
+    /// every other shape on this wire.
+    /// </summary>
+    [Fact]
+    public void ShellInfo_fields_match_the_host()
+    {
+        var host = typeof(ShellInfo).GetProperties()
+            .Select(p => JsonNamingPolicy.CamelCase.ConvertName(p.Name))
+            .ToHashSet(StringComparer.Ordinal);
+        var client = ParseInterfaceFieldNames(ClientSource("types.ts"), "ShellInfo");
+
+        Assert.NotEmpty(host);      // parser/reflection self-check
+        Assert.NotEmpty(client);
+        Assert.Equal(host, client);
+    }
+
+    /// <summary>
+    /// The well-known capability NAMES. These are compared by VALUE, not by member name: the client
+    /// keys are lowerCamel while the host constants are PascalCase, and it is the string on the wire
+    /// that a page tests against. A host renaming one silently stops matching the client's check and
+    /// the feature just disappears from the UI.
+    /// </summary>
+    [Fact]
+    public void Shell_capability_names_match_the_host()
+    {
+        var client = ParseConstObject(ClientSource("types.ts"), "ShellCapabilities");
+
+        Assert.NotEmpty(client);    // parser self-check
+        Assert.Equal(ShellCapability.WindowChrome, client["windowChrome"]);
+        Assert.Equal(ShellCapability.DropZones, client["dropZones"]);
+        Assert.Equal(ShellCapability.FilePicker, client["filePicker"]);
+        Assert.Equal(ShellCapability.FolderPicker, client["folderPicker"]);
+        Assert.Equal(ShellCapability.SavePicker, client["savePicker"]);
+        Assert.Equal(ShellCapability.SecondaryWindows, client["secondaryWindows"]);
+        Assert.Equal(ShellCapability.Tray, client["tray"]);
+
+        // The host must not grow one the client cannot name — that is the SCOPE_REQUIRED disease
+        // this whole file exists to catch.
+        var hostNames = typeof(ShellCapability).GetFields(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(hostNames, client.Values.ToHashSet(StringComparer.Ordinal));
     }
 
     /// <summary>

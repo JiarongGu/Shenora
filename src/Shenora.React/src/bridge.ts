@@ -11,6 +11,7 @@ import {
   type IpcNotificationBatch,
   type IpcRequest,
   type IpcResponse,
+  type ShellInfo,
 } from './types.js';
 
 /** Inputs for {@link ShenoraBridge}. */
@@ -114,6 +115,7 @@ export class ShenoraBridge {
   private readonly onPostError: (failure: PostFailure) => void;
   private readonly unsubscribe?: () => void;
   private disposed = false;
+  private shellInfo: ShellInfo | undefined;
 
   constructor(options: ShenoraBridgeOptions = {}) {
     this.transport = options.transport !== undefined ? options.transport : createHostTransport();
@@ -305,9 +307,31 @@ export class ShenoraBridge {
    * `void bridge.notifyReady()` turns that into an unhandled rejection, which in a WebView2 page is
    * a silent console error.
    */
-  async notifyReady<TPayload = unknown>(payload?: TPayload): Promise<void> {
-    if (!this.transport) return;
-    await this.invoke(HANDSHAKE_MODULE, HANDSHAKE_TYPE, { payload });
+  async notifyReady<TPayload = unknown>(payload?: TPayload): Promise<ShellInfo | undefined> {
+    if (!this.transport) return undefined;
+    // The host answers with what it IS and what it can do, so a page can render one tree on every
+    // shell instead of sniffing the platform. A host that says nothing (no descriptor configured, or
+    // one predating this) leaves it UNDEFINED — absent means "assume nothing", never "assume
+    // desktop".
+    //
+    // undefined rather than null on purpose: JSON null means absent on this wire and the client
+    // convention is undefined (see .claude/knowledge/ipc-contracts.md). Returning null broke two
+    // existing tests that assert this resolves to undefined, which is the convention catching a
+    // deviation exactly where it should.
+    const shell = await this.invoke<ShellInfo | undefined>(HANDSHAKE_MODULE, HANDSHAKE_TYPE, { payload });
+    this.shellInfo = shell && typeof shell === 'object' && typeof shell.name === 'string'
+      ? { name: shell.name, capabilities: Array.isArray(shell.capabilities) ? shell.capabilities : [] }
+      : undefined;
+    return this.shellInfo;
+  }
+
+  /**
+   * What the host said it was during {@link notifyReady} — undefined before the handshake, or when
+   * the host advertised nothing. Cached so components can read it synchronously while rendering,
+   * which is the whole point: a capability learned after layout is a flash.
+   */
+  get shell(): ShellInfo | undefined {
+    return this.shellInfo;
   }
 
   /** Reject everything in flight and detach from the transport. */

@@ -138,6 +138,21 @@ document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_R
 log('t', `channel: ${channelSource}`);
 log('t', 'page loaded — sending handshake');
 post('SHENORA', 'READY', { client: 'maui-sample' });
+
+// The handshake's reply carries what the shell can do, so a real page renders its title bar and
+// drop zones from DATA rather than from a platform check. This log line stands in for that; the
+// desktop sample does the real version in App.tsx, and the two answers to the SAME handshake are
+// `maui · [filePicker]` here against `winforms · [windowChrome, dropZones, filePicker,
+// folderPicker, savePicker, secondaryWindows, tray]` there.
+window.addEventListener('HybridWebViewMessageReceived', function shellProbe(e) {
+  try {
+    const msg = JSON.parse(e.detail.message);
+    if (msg.category === 'ipc' && msg.id === 'c1' && msg.data) {
+      log('t', `shell: ${msg.data.name} · capabilities: [${(msg.data.capabilities ?? []).join(', ')}]`);
+      window.removeEventListener('HybridWebViewMessageReceived', shellProbe);
+    }
+  } catch { /* not ours */ }
+});
 </script>
 </body>
 </html>

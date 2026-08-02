@@ -713,3 +713,29 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   implementation refuses it by pointing at (1) and (2), and a media contract is NOT pre-built —
   no consumer has asked, and `generic-library.md` calls that speculation. The shape is recorded so
   the first one that does gets it in a day.
+
+- **D36 — the HOST advertises what it can do, in the handshake; the client never sniffs the
+  platform.** (Owner, 2026-08-02: *"the universal I mean is more about the interfaces also about the
+  frontend code itself, as possible"*.) D33 says what happens when a page calls something absent.
+  D36 is how the page avoids calling it: `ShellInfo { Name, Capabilities }` is the ready handshake's
+  response data, and the page renders on it —
+  `shell.capabilities.includes(ShellCapabilities.windowChrome) && <TitleBar/>`.
+  - **Capability, not platform, because the platform is the wrong question.** A user-agent or
+    `Name` check assumes the OS determines the surface. It does not: what a host offers depends on
+    what the APP composed — a desktop shell that never registers `TrayIcon` has no tray, and a
+    desktop frontend running in a plain browser tab during `vite dev` has none of it. `Name` exists
+    for diagnostics and is documented as never-branch-on.
+  - **Declared by the app, not inferred by the kit.** The kit cannot know which services were
+    registered, and inferring from the package set would be confidently wrong in exactly the case
+    above. The cost is honesty: a capability advertised but not composed turns a rendered button
+    into a D33 throw when pressed.
+  - **Absent means "assume nothing", never "assume desktop".** `Shell` is optional, so a
+    capability-less reply covers three cases at once — browser dev, a host that has not opted in,
+    and a host predating this. Defaulting the other way makes the browser the one place the page
+    renders wrongly, which is where it is developed.
+  - **It cost nothing on the wire.** The handshake already round-tripped and already returned an
+    empty success. Additive in both languages, mirrored name-for-name by `WireMirrorTests` — which
+    grew a block-comment stripper in the same change, because its TS interface parser truncated at
+    the first `{@link …}`. Disabling the stripper showed it fails a CORRECT mirror rather than
+    passing a wrong one; the danger is the repair it tempts you into, since loosening the assertion
+    to a subset check is what would actually make the tripwire stop checking. Fix the parser.

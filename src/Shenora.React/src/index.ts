@@ -14,6 +14,8 @@ export {
   type IpcNotification,
   type IpcNotificationBatch,
   type EventMessage,
+  ShellCapabilities,
+  type ShellInfo,
 } from './types.js';
 export { OperationError } from './errors.js';
 export {

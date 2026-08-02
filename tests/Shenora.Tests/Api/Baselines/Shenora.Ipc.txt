@@ -71,6 +71,7 @@ sealed class Shenora.Ipc.IpcHostBridge : System.IDisposable
   public void Dispose()
 sealed class Shenora.Ipc.IpcHostBridgeOptions
   public Shenora.Ipc.NotificationPump? Pump { get; init; }
+  public Shenora.Ipc.ShellInfo? Shell { get; init; }
   public System.Action<Shenora.Ipc.IpcRequest>? OnClientReady { get; init; }
   public System.Action<string>? Log { get; init; }
   public required Shenora.Ipc.IMessageDispatcher Dispatcher { get; init; }
@@ -289,3 +290,6 @@ static class Shenora.Ipc.ScopedContainerRouterExtensions
 sealed class Shenora.Ipc.ScopedContainerRouterOptions
   public System.Action<string, System.IServiceProvider>? OnScopeCreated { get; init; }
   public required System.Action<string, Microsoft.Extensions.DependencyInjection.IServiceCollection> ConfigureScope { get; init; }
+sealed class Shenora.Ipc.ShellInfo
+  public System.Collections.Generic.IReadOnlyList<string> Capabilities { get; init; }
+  public required string Name { get; init; }

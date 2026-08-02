@@ -60,6 +60,15 @@ public sealed class MainPage : ContentPage
 		{
 			Dispatcher = services.GetRequiredService<IMessageDispatcher>(),
 			EventBus = services.GetRequiredService<IEventBus>(),
+			// What this shell can do, answered in the handshake so ONE page can ship to both shells.
+			// Declared by the app rather than guessed by the kit, because it depends on what this
+			// app composed: no WindowCommandFacade and no DropZoneManager here, and on a phone there
+			// is no window chrome to draw and no OS drag-and-drop to receive.
+			Shell = new ShellInfo
+			{
+				Name = "maui",
+				Capabilities = [ShellCapability.FilePicker],
+			},
 			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
 			Log = MauiProgram.Log,
 		});

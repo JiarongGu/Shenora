@@ -46,13 +46,17 @@ the native file picker through the portable `IFileDialogs`, and the mission sche
 contended mission. `samples/Shenora.Sample.Maui` hosts the SAME `Shenora.Sample.Logic` as the desktop
 sample. Commits `a85280e` · `31b9aaa` · `b87cf9c`; evidence in `docs/ROADMAP.md` `## Done`.
 
-**What that does NOT mean.** An adopter cannot use this yet: the sample speaks the envelope by hand
-because the client half does not exist, and the capability rule is a decision with no code behind it.
-The items below are ordered by what unblocks an adopter, not by size.
+**What that does NOT mean.** The items below are ordered by what unblocks an adopter, not by size.
 
 _A1 (the client transport) and A2 (the capability stubs) are CLOSED — `docs/archive/tasks.md`. A2
 closed by ANALYSIS rather than code: the hole it described does not exist, because the layering
 already prevents it. Read that entry before re-proposing stubs._
+
+_A7 (capability advertisement) is CLOSED — `ShellInfo` rides the ready handshake, so ONE web bundle
+renders correctly on both shells by reading `bridge.shell` instead of sniffing the platform. Owner
+direction 2026-08-02: "the universal I mean is more about the interfaces also about the frontend code
+itself". Proven on the device (`shell: maui · capabilities: [filePicker]`); `ADOPTION.md` has the
+adopter recipe._
 
 _A3 (the adopter guide) and A4 (the decisions) are CLOSED — `ADOPTION.md` Stage 5 and
 `DECISIONS.md` D32–D34._

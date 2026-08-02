@@ -29,6 +29,13 @@ public sealed class IpcHostBridgeOptions
     /// </summary>
     public Action<IpcRequest>? OnClientReady { get; init; }
 
+    /// <summary>
+    /// What to tell the client about this host, returned as the handshake's response data. Null
+    /// answers the handshake with no data, exactly as before — so this is additive for every
+    /// existing client, which simply ignores a field it does not read.
+    /// </summary>
+    public ShellInfo? Shell { get; init; }
+
     /// <summary>Diagnostics sink.</summary>
     public Action<string>? Log { get; init; }
 }
@@ -161,7 +168,8 @@ public sealed class IpcHostBridge : IDisposable
             AppCallback.Run(() => onReady(request),
                 ex => Log(() => $"[Shenora.Ipc] OnClientReady callback failed: {ex.Message}"));
         }
-        return IpcResponse.CreateSuccess(request.Id);
+        // The shell descriptor rides the ack. Null keeps the pre-existing "success, no data" shape.
+        return IpcResponse.CreateSuccess(request.Id, _options.Shell);
     }
 
     /// <summary>

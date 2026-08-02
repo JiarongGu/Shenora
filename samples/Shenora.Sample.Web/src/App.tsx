@@ -8,6 +8,7 @@ import {
   useWindowMaximized,
   WindowCommands,
   type OperationProgress,
+  type ShellInfo,
 } from '@shenora/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StreamViewer } from './StreamViewer';
@@ -256,10 +257,17 @@ export function App() {
   // Not `void`: a rejected handshake (no host, disposed bridge, timeout) became an unhandled
   // promise rejection, which in a WebView2 page is a silent console error — and this is the snippet
   // adopters copy.
+  //
+  // The handshake RESOLVES to what the host is and can do, so the page renders its shell-specific
+  // parts from data instead of sniffing the platform — the one thing that lets this bundle also run
+  // on the MAUI shell, which answers the same handshake with a much shorter list. Undefined means
+  // "assume nothing" (plain browser dev, or a host that declares none), never "assume desktop".
+  const [shell, setShell] = useState<ShellInfo>();
   useEffect(() => {
     if (!hosted) return;
     getBridge()
       .notifyReady()
+      .then(setShell)
       .catch((error: unknown) => console.error('[sample] ready handshake failed', error));
   }, [hosted]);
 
@@ -323,6 +331,12 @@ export function App() {
             {meta
               ? <span style={value}>{meta.name} v{meta.version}</span>
               : <span style={missing}>no injected metadata</span>}
+          </p>
+          <p style={row} data-testid="shell-capabilities">
+            shell:{' '}
+            {shell
+              ? <span style={value}>{shell.name} · {shell.capabilities.join(', ')}</span>
+              : <span style={missing}>nothing advertised — assume nothing</span>}
           </p>
           <p style={row} data-testid="ipc-state">
             ipc:{' '}

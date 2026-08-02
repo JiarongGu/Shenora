@@ -26,6 +26,38 @@ namespace Shenora.Core;
 /// </summary>
 public static class ShellCapability
 {
+    // ---- The well-known capability NAMES a host advertises to its client.
+    //
+    // They exist so a frontend can render one tree on every shell — `caps.has(WindowChrome) &&
+    // <TitleBar/>` instead of sniffing the platform — which is the other half of "universal": not
+    // just one interface, one page. Strings rather than an enum because an app declares its OWN
+    // capabilities too, and a closed enum would make the kit the registrar of every consumer's
+    // features.
+    //
+    // Only things a CLIENT branches on belong here. A capability the page cannot observe is the
+    // app's business, not the wire's.
+
+    /// <summary>A frameless window whose chrome the page draws — minimize, maximize, drag, close.</summary>
+    public const string WindowChrome = "windowChrome";
+
+    /// <summary>Native OS file drag-and-drop over page elements (`useDropZone`).</summary>
+    public const string DropZones = "dropZones";
+
+    /// <summary>Picking a single file to read.</summary>
+    public const string FilePicker = "filePicker";
+
+    /// <summary>Picking a FOLDER — a desktop capability; see D35 before assuming it is portable.</summary>
+    public const string FolderPicker = "folderPicker";
+
+    /// <summary>Choosing a save destination.</summary>
+    public const string SavePicker = "savePicker";
+
+    /// <summary>Additional windows the app can open.</summary>
+    public const string SecondaryWindows = "secondaryWindows";
+
+    /// <summary>A tray icon.</summary>
+    public const string Tray = "tray";
+
     /// <summary>
     /// The exception an unsupported capability throws. <paramref name="capability"/> is what the
     /// caller asked for, <paramref name="shell"/> is the host that cannot do it, and

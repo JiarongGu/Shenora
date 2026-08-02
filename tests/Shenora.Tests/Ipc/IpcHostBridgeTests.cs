@@ -73,6 +73,48 @@ public class IpcHostBridgeTests
     }
 
     [Fact]
+    public async Task The_handshake_answers_with_what_the_shell_can_do()
+    {
+        // The other half of "universal": one PAGE on every shell. The client learns the capability
+        // set from the ack it already waits for, so it can render before its first layout instead of
+        // sniffing the platform or discovering a missing module by getting NO_HANDLER back.
+        using var bridge = new IpcHostBridge(new IpcHostBridgeOptions
+        {
+            Dispatcher = new MessageDispatcher(),
+            Shell = new ShellInfo
+            {
+                Name = "test-shell",
+                Capabilities = [ShellCapability.WindowChrome, ShellCapability.DropZones],
+            },
+        });
+
+        var response = await bridge.HandleIncomingAsync(ReadyJson());
+
+        using var doc = JsonDocument.Parse(response!);
+        // Named rather than indexed: dropping the descriptor from the ack otherwise surfaces as a bare
+        // KeyNotFoundException, which says nothing about WHICH contract broke. Verified by removing it.
+        Assert.True(doc.RootElement.TryGetProperty("data", out var data),
+            "the handshake ack carried no `data` — the shell descriptor is not reaching the client, so " +
+            "every page falls back to 'assume nothing' and renders no capability-gated UI.");
+        Assert.Equal("test-shell", data.GetProperty("name").GetString());
+        Assert.Equal(["windowChrome", "dropZones"],
+            data.GetProperty("capabilities").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public async Task A_host_that_declares_nothing_answers_exactly_as_before()
+    {
+        // Additive: an existing client sees the same success-with-no-data ack it always did.
+        using var bridge = new IpcHostBridge(new IpcHostBridgeOptions { Dispatcher = new MessageDispatcher() });
+
+        var response = await bridge.HandleIncomingAsync(ReadyJson());
+
+        using var doc = JsonDocument.Parse(response!);
+        Assert.True(doc.RootElement.GetProperty("success").GetBoolean());
+        Assert.False(doc.RootElement.TryGetProperty("data", out _));
+    }
+
+    [Fact]
     public async Task A_throwing_OnClientReady_still_completes_the_handshake()
     {
         using var bridge = new IpcHostBridge(new IpcHostBridgeOptions

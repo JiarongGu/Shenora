@@ -419,6 +419,10 @@ changes, noting them in `CHANGELOG.md`).
   on the other direction, and the host-side mirror of the client's `ShenoraBridge`. Takes the pump
   optionally so the handshake opens the outbound gate in one place; CLOSING it stays the base's
   call. `HandshakeModule`/`HandshakeType` live here — `WebViewIpcBridge` forwards the consts);
+  `ShellInfo` (`Name` + `Capabilities`, returned as the handshake's response data via
+  `IpcHostBridgeOptions.Shell` — how one web bundle targets every shell: the page renders on the
+  advertised capabilities instead of sniffing the platform, since what a host offers depends on what
+  the app composed. Optional; null says nothing, which the client reads as "assume nothing");
   the dispatch
   pipeline — `IMessageDispatcher`/`MessageDispatcher` (`Use`/`UseModule`/`UseRoute`/`UseLogging`/
   `UseErrorHandler` + `MapRoute`/`MapModule(name, routes)`/`MapModule(facade)`; `DispatchAsync`
@@ -568,7 +572,9 @@ changes, noting them in `CHANGELOG.md`).
   `ShenoraTransport` seam + `createWebView2Transport` (D16 pluggability) +
   `isShenoraAvailable`, `ShenoraBridge` (correlated `invoke` + timeout, one-way `post` +
   `onPostError` — no pending entry, no deadline, and a failed response reported rather than dropped;
-  category routing, batch unbundling, `notifyReady` handshake, `fallback` seam for pure-UI browser
+  category routing, batch unbundling, `notifyReady` handshake — which RESOLVES to the host's
+  `ShellInfo | undefined` and caches it on `bridge.shell`, the client half of "one bundle, every
+  shell"; `ShellInfo`/`ShellCapabilities` mirror the host names — `fallback` seam for pure-UI browser
   dev; lazy default via `getBridge`/`configureBridge`), `ShenoraEventBus`/`eventBus` (three
   subscription breadths mirroring the host's `IEventBus` — exact `(module, type)`,
   `subscribeToModule`, `subscribeToAll` — delivered narrowest-first),
@@ -640,7 +646,11 @@ changes, noting them in `CHANGELOG.md`).
   window-command and drop-zone facades live in `Shenora.WebView2`.
 - **Portable contracts live in `Shenora.Core` (D20):** `IUiDispatcher`/`UiTargetState`,
   `IFileDialogs`/`IFileDialogPathStore` + `FileDialogOptions`/`Filter`/`Result`, `IClipboardService`,
-  and the portable bases `IUrlLauncher`/`IUiInteraction`. Their Windows implementations stay in
+  and the portable bases `IUrlLauncher`/`IUiInteraction`, plus `ShellCapability` — the shared
+  capability vocabulary (`windowChrome`, `dropZones`, `filePicker`, `folderPicker`, `savePicker`,
+  `secondaryWindows`, `tray`) and the `NotSupported` factory a shell throws from when it lacks one
+  (D33). The names are what a host advertises through `ShellInfo` and what a page branches on.
+  Their Windows implementations stay in
   `Shenora.WinForms`, which registers BOTH faces of each split service so app logic can depend on the
   neutral contract and compile with no Windows reference. The bar for moving a contract to `Core` is
   "app logic must compile off Windows", NOT "the signature happens to be platform-neutral" — which is

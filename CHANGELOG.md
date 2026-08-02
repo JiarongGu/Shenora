@@ -16,6 +16,32 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **Capability advertisement in the ready handshake** — `ShellInfo { Name, Capabilities }`
+  (`Shenora.Ipc`), an `IpcHostBridgeOptions.Shell` forwarded by `WebViewIpcBridgeOptions` and
+  `MauiIpcBridgeOptions`, the well-known names on `ShellCapability` (`Shenora.Core`), and their TS
+  mirrors — `ShellInfo` / `ShellCapabilities`, with `notifyReady()` now resolving to
+  `Promise<ShellInfo | undefined>` and the result cached on `bridge.shell`.
+
+  This is what lets ONE web bundle ship to both shells. Before it, a page that wanted a title bar on
+  desktop and none on mobile had to sniff the platform — a check the frontend cannot make correctly,
+  because what a host can do depends on what the APP composed, not on the operating system. Now the
+  host answers the handshake it was already answering with what it is and what it offers, and the
+  page renders on data: `shell.capabilities.includes(ShellCapabilities.windowChrome) && <TitleBar/>`.
+
+  Additive on the wire and in both languages: the reply previously carried no data, `Shell` is
+  optional, and a host that leaves it null says nothing. **Absent means "assume nothing", never
+  "assume desktop"** — a plain browser tab and a host predating this look identical to the client,
+  and both are correctly capability-less. The names are pinned across languages by `WireMirrorTests`,
+  which also grew a block-comment stripper: its TS interface parser truncated at the first
+  `{@link …}` and dropped every field after it. Measured by disabling the stripper — it fails a
+  CORRECT mirror rather than passing a wrong one, so the risk was the fix it invites (loosen the
+  assertion) rather than a silent pass.
+
+  Proven end-to-end on both shells, not just in tests. The same handshake, two honest answers: the
+  desktop sample renders `shell: winforms · windowChrome, dropZones, filePicker, folderPicker,
+  savePicker, secondaryWindows, tray` (every one of them something that composition actually mapped),
+  and the MAUI sample on an Android device logs `shell: maui · capabilities: [filePicker]`.
+
 - **`IpcJson.AddTypeInfoResolver`** — an app may now contribute an `IJsonTypeInfoResolver` (typically
   a source-generated `JsonSerializerContext`) to the one frozen wire-options instance, during startup
   and before anything serializes. Purely additive; the default path is byte-for-byte what

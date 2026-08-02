@@ -46,6 +46,15 @@ public sealed class WebViewIpcBridgeOptions
     public Func<IpcNotification, bool>? NotificationFilter { get; init; }
 
     /// <summary>
+    /// What to tell the client this shell is and can do, answered in the handshake so one page can
+    /// ship to every shell. Declared by the APP because it depends on what this app composed — a
+    /// desktop host that never mapped <c>WindowCommandFacade</c> has no window chrome to advertise,
+    /// whatever platform it is on. A typical frameless composition here declares
+    /// <c>WindowChrome</c>, <c>DropZones</c> and the picker capabilities.
+    /// </summary>
+    public ShellInfo? Shell { get; init; }
+
+    /// <summary>
     /// Invoked on the ready handshake with the handshake request (its payload is app-defined).
     /// Fires PER handshake — a reloaded page (renderer-crash recovery, dev hot reload) reports
     /// ready again, which is the moment to clear per-page state (stale overlays, splash).
@@ -165,6 +174,7 @@ public sealed class WebViewIpcBridge : IDisposable
         {
             Dispatcher = options.Dispatcher,
             Pump = _pump,
+            Shell = options.Shell,
             OnClientReady = options.OnClientReady,
             Log = options.Log,
         });

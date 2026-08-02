@@ -268,6 +268,22 @@ public sealed class MainForm : OptimizedForm
             Dispatcher = dispatcher,
             EventBus = eventBus,
             Log = Console.WriteLine,
+            // The other end of the MAUI sample's declaration — SAME page contract, different answer.
+            // Every name below is something THIS composition actually registered a few lines up
+            // (WindowCommandFacade, DropZoneFacade, SecondaryWindows, TrayIcon, the STA dialogs), which
+            // is the discipline the descriptor demands: advertising one the app never mapped renders a
+            // button that throws when pressed. The mobile shell answers `[filePicker]` to the same
+            // handshake, and one bundle renders correctly against both.
+            Shell = new ShellInfo
+            {
+                Name = "winforms",
+                Capabilities =
+                [
+                    ShellCapability.WindowChrome, ShellCapability.DropZones,
+                    ShellCapability.FilePicker, ShellCapability.FolderPicker, ShellCapability.SavePicker,
+                    ShellCapability.SecondaryWindows, ShellCapability.Tray,
+                ],
+            },
             // The parameter is NAMED rather than discarded: the body below needs  for a real
             // discard, and a  lambda parameter shadows it (CS0029 on assignment).
             OnClientReady = readyRequest =>

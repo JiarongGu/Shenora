@@ -80,6 +80,44 @@ export interface IpcError {
   parameters?: Record<string, string>;
 }
 
+/**
+ * What the host is and what it can do — the handshake's response data (mirror of the host's
+ * `ShellInfo`).
+ *
+ * This is what lets ONE page ship to every shell. Render on the data rather than sniffing the
+ * platform:
+ *
+ * ```tsx
+ * const shell = useShellInfo();
+ * return <>{shell?.capabilities.includes(ShellCapabilities.windowChrome) && <TitleBar />}</>;
+ * ```
+ *
+ * A desktop shell that draws its own chrome advertises `windowChrome` and `dropZones`; a mobile one
+ * has neither, and the same bundle renders correctly on both. Undefined means no host said
+ * anything — a plain browser tab, or a host predating this — so treat absent as "assume nothing",
+ * never as "assume desktop".
+ */
+export interface ShellInfo {
+  /** Short host identifier, for diagnostics (`"winforms"`, `"maui"`). Never branch on this — branch on the capabilities. */
+  name: string;
+  /** The capabilities this host offers; see {@link ShellCapabilities}. */
+  capabilities: string[];
+}
+
+/**
+ * The well-known capability names, mirroring the host's `ShellCapability` constants. Apps may
+ * advertise their own strings too — this is the shared vocabulary, not the whole set.
+ */
+export const ShellCapabilities = {
+  windowChrome: 'windowChrome',
+  dropZones: 'dropZones',
+  filePicker: 'filePicker',
+  folderPicker: 'folderPicker',
+  savePicker: 'savePicker',
+  secondaryWindows: 'secondaryWindows',
+  tray: 'tray',
+} as const;
+
 /** The response envelope the host returns for an {@link IpcRequest}. */
 export interface IpcResponse<TData = unknown> {
   category: typeof IpcCategories.ipc;

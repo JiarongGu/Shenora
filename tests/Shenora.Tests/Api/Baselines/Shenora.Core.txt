@@ -502,6 +502,13 @@ sealed class Shenora.Core.RetryPolicy
   public int Attempts { get; init; }
   public static Shenora.Core.RetryPolicy None { get; }
 static class Shenora.Core.ShellCapability
+  public const string DropZones = "dropZones"
+  public const string FilePicker = "filePicker"
+  public const string FolderPicker = "folderPicker"
+  public const string SavePicker = "savePicker"
+  public const string SecondaryWindows = "secondaryWindows"
+  public const string Tray = "tray"
+  public const string WindowChrome = "windowChrome"
   public static System.NotSupportedException NotSupported(string capability, string shell, string? alternative = null)
 sealed class Shenora.Core.ShenoraApplication : System.IAsyncDisposable, System.IDisposable
   public Shenora.Core.ShenoraEnvironment Environment { get; }

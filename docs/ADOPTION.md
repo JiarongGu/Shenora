@@ -389,6 +389,46 @@ clipboard IMAGES (Essentials is text-only) and the folder/save pickers throw
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
 
+### One web bundle, every shell — advertise capabilities, don't sniff the platform
+
+The table above is the host's view. The page needs the same answer, and **it cannot work it out for
+itself**: what a shell offers depends on what the APP composed, not on the operating system — a
+desktop host that never registers `TrayIcon` has no tray either. So the host states it, in the ready
+handshake it already answers:
+
+```csharp
+// wherever you build the bridge options — WebView2 or MAUI, the option has the same name
+Shell = new ShellInfo
+{
+    Name = "winforms",                              // diagnostics only; never branch on it
+    Capabilities = [ShellCapability.WindowChrome, ShellCapability.DropZones,
+                    ShellCapability.FilePicker, ShellCapability.Tray],
+},
+```
+
+```tsx
+const shell = await bridge.notifyReady();           // also cached on bridge.shell afterwards
+return <>
+  {shell?.capabilities.includes(ShellCapabilities.windowChrome) && <TitleBar />}
+  {shell?.capabilities.includes(ShellCapabilities.dropZones) ? <DropTarget /> : <PickFileButton />}
+</>;
+```
+
+Both sides use the same names (`ShellCapability` in C#, `ShellCapabilities` in TS), pinned to each
+other by a test — and an app may advertise its own strings beyond them.
+
+**Treat absent as "assume nothing", never as "assume desktop".** `Shell` is optional, so a plain
+browser tab during frontend dev, and any host that does not set it, both arrive as `undefined` — and
+both are correctly capability-less. Branching the other way makes the *browser* the one place your
+title bar renders wrongly.
+
+Advertise what you actually composed. A capability you claim but did not register turns a rendered
+button into a `NotSupported` throw at the moment a user presses it.
+
+Both samples do this for real and disagree honestly: `Shenora.Sample.Desktop` answers `winforms` with
+all seven, `Shenora.Sample.Maui` answers `maui` with `[filePicker]`, and `Shenora.Sample.Web`'s
+`App.tsx` reads the reply without knowing which one it is talking to.
+
 **`FileDialogOptions` survived contact with mobile, which was an open question until now.**
 `OpenFileAsync` needs no change: `FileDialogResult.FilePath` is specified as "a path or URI the HOST
 can resolve", and Android's content URI is exactly that. The desktop-only options
