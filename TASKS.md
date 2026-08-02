@@ -174,10 +174,57 @@ scratch; at that point the shape is already known.
     DESKTOP capability and the mobile refusal points at the three intents that ARE portable —
     `ShenoraPaths` (app-owned space, no picker), a media picker (camera roll), and
     `OpenFileAsync` + `OpenReadAsync` (one document).
-  - [ ] **A media contract, when a consumer asks.** `MediaPicker.PickPhotosAsync` exists in
-    Essentials (verified by compiling) and the desktop equivalent is a multi-select image dialog, so
-    it is genuinely portable — but nothing needs it yet, and pre-building it is the speculation
-    `generic-library.md` warns about. Recorded so the first consumer gets it quickly.
+  - _The media PICKER is folded into the media library below — it was held at the two-consumer bar,
+    and that bar is now cleared three times over._
+
+### D. Media — the first thing THREE consumers all need
+
+> DIRECTION (owner, 2026-08-02): *"we also need to add Media library into roadmap (this also why I
+> push for interface library merge, because 3 of my application will need this)"* — the video-library
+> sibling, Sonora, and the business-manager sibling.
+
+**This is the first item to clear the two-consumer bar outright rather than argue its way past it**
+(`generic-library.md`), and the bar exists precisely so that when three real consumers DO show up the
+answer is yes without further debate. It also retroactively justifies the packaging work: a media
+surface that three apps share is exactly what "one shell package per platform" is for — each platform
+implements it differently, none of them leaks into app logic.
+
+- [ ] **D1 — Harvest before designing.** Three consumers means three existing implementations, and
+  the extraction rule (D8/D15) says the design is IN them, not ahead of them. Read all three first
+  and write down what they actually share, the way `docs/2026-08-02-shenora-app-update-design.md` was
+  written from two sibling updaters rather than from first principles. Expect thumbnails, duration
+  and dimension probing, format/codec detection, and a cache keyed on content — but expect the
+  disagreements to be the interesting part.
+- [ ] **D2 — Where it goes, before any code.** Media is a mix of genuinely portable logic (a cache
+  index, a thumbnail request/result contract, a probe result shape) and per-platform decoding. So
+  `Shenora.Core` holds the CONTRACTS and each shell package the implementation — the D19/D20/D37
+  placement law, applied to a case where the platform split is unusually sharp: Windows has Media
+  Foundation / WIC, Android has `MediaMetadataRetriever` and `ThumbnailUtils`, iOS has AVFoundation
+  and `QLThumbnailGenerator`. **Nothing here justifies a new package (D2)**; if it seems to, that is
+  the signal to re-read why.
+- [ ] **D3 — The picker rides along.** `MediaPicker.PickPhotosAsync` exists in MAUI Essentials
+  (verified by compiling) and the desktop equivalent is a multi-select image dialog. D35 already
+  identified "let the user hand me some media" as one of the three portable intents behind the
+  desktop-only "open a folder", so this closes that gap rather than opening a new one.
+- [ ] **D4 — Say what is NOT in scope.** No playback, no transcoding, no editing, no codec bundling —
+  those are products, and D21 keeps products out of the kit. If a consumer needs playback it composes
+  its own over the contracts, the way the sample builds a co-browse pane over `StreamingSession`.
+
+### E. Off-screen sessions cannot see the app's OWN content
+
+- [ ] **E1 — `SessionBrowserOptions` has no resource seam, so an off-screen session can only reach
+  network-reachable URLs.** Found 2026-08-02 while chasing the sample's broken stream: with the
+  navigation guard fixed, `StreamingSession` navigates happily to the packaged app's virtual host
+  (`https://sample.local`) and renders **WebView2's "can't reach this page"**, because the session
+  browser has its own environment with none of the main host's serving set up.
+  `SessionController` exposes no `CoreWebView2`, so an app cannot even bolt it on from outside.
+  - The main host solves this with `IWebViewResourceProvider` + `VirtualHost`; sessions have neither.
+    The likely shape is to let `SessionBrowserOptions` take the same provider the host already uses,
+    which would make "co-browse / render MY OWN UI off-screen" work in packaged mode.
+  - **Who this bites:** a desktop-only app serving an embedded bundle. NOT a server-backed one —
+    Sonora's pages are on a real loopback origin, so it is unaffected. That asymmetry is why this
+    survived unnoticed: both sample demos work in dev mode, and the e2e runs there.
+  - Until then, `docs/ADOPTION.md` says plainly that off-screen sessions reach network URLs only.
 
 ### Standing (habits, not a queue)
 

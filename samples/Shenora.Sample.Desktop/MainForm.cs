@@ -106,7 +106,10 @@ public sealed class MainForm : OptimizedForm
                 KeepAliveInBackground = true, // off-screen pages must keep their JS running
             },
             Capacity = 2,
-            NavigationGuard = (uri, _) => Task.FromResult(uri.IsLoopback),
+            // Same fix as the STREAM guard below, same bug: `IsLoopback` alone refuses this app's own
+            // packaged origin, so the demo was silently dev-only.
+            NavigationGuard = (uri, _) =>
+                Task.FromResult(uri.IsLoopback || uri.Host == "sample.local"),
         });
 
         // The window-facing facades need the live form, so they map HERE — late registration is
@@ -187,7 +190,13 @@ public sealed class MainForm : OptimizedForm
                             ProfileDirectory = Path.Combine(paths.DataArea("sessions"), "stream"),
                             KeepAliveInBackground = true, // off-screen, but it must keep painting
                         },
-                        NavigationGuard = (uri, _) => Task.FromResult(uri.IsLoopback),
+                        // Allow the app's OWN origin, whichever it is — loopback while the dev server
+                        // is serving, the virtual host once packaged. `IsLoopback` alone was the bug:
+                        // it silently made this demo dev-only, and `dev.mjs sample` runs PACKAGED by
+                        // default, so the button answered STREAM_REFUSED with no reason anywhere.
+                        // An adopter copying this guard would inherit exactly that.
+                        NavigationGuard = (uri, _) =>
+                            Task.FromResult(uri.IsLoopback || uri.Host == "sample.local"),
                         // The lifecycle hook the app plugs into: tell the page WHY the stream
                         // stopped, so a crash and a deliberate STOP look different in the UI.
                         // It must also CLEAR our handle — a dead renderer ends the session without
@@ -205,12 +214,18 @@ public sealed class MainForm : OptimizedForm
                     {
                         await session.Controller.NavigateAsync(url);
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // The guard refused the URL (or navigation failed) AFTER a browser was
                         // already live. Without this the session leaks: a real off-screen window and
                         // a browser process holding the profile lock, with no handle left to reach it.
                         await session.DisposeAsync();
+                        // LOG THE CAUSE HOST-SIDE. This catch used to be a bare `catch` that threw
+                        // STREAM_REFUSED and dropped `ex` on the floor, so the page showed a code
+                        // with no reason and the host log said nothing at all — the failure was
+                        // undiagnosable from either end. Raw exception text still must not cross the
+                        // wire (ipc-contracts), so the detail goes here and the page gets the code.
+                        Console.WriteLine($"[sample] STREAM/START failed for '{url}': {ex}");
                         throw new OperationException("STREAM_REFUSED", "url", url);
                     }
 

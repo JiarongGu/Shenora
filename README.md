@@ -185,6 +185,14 @@ buffered whole.
 
 #### Extra browsers
 
+> ⚠ **A session can only reach URLs the network can reach.** Each one runs its own browser
+> environment with its own profile, and none of the main host's serving — the resource provider, the
+> virtual host — is set up in it. So a session can load `http://localhost:…` or the internet, but NOT
+> your app's embedded bundle: navigating an off-screen session to your packaged origin renders
+> WebView2's "can't reach this page". Affects desktop-only apps serving embedded resources; a
+> server-backed app whose pages are already on a loopback origin is unaffected. Tracked as `TASKS.md`
+> E1.
+
 Off-screen and auxiliary browser sessions over the same runtime: a bounded LIFO `RenderSessionPool`,
 `InteractiveSession` (a human-in-the-loop window over an isolated persistent profile, driven by
 **your** driver), and `StreamingSession` (frames out, input in). The kit ships the mechanics and no
