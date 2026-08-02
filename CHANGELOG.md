@@ -12,7 +12,7 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
-## Unreleased
+## 0.4.0 — 2026-08-02
 
 _Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the
 0.2.0 note below for what hand-stamping cost._

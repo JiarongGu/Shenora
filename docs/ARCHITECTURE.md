@@ -9,7 +9,7 @@ records only what EXISTS.)
      headline is. Don't hand-edit it — and don't date this line either: the release workflow owns
      the version, so a hand-written one is stale the moment a release cuts. Everything ELSE in this
      file dates its claims instead of versioning them, for the same reason. -->
-## Current state — **v0.3.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
+## Current state — **v0.4.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
 Five NuGet packages + `@shenora/react` on npm. Since the summary below was written, P5.5 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
