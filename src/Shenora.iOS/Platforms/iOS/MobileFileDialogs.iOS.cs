@@ -54,7 +54,7 @@ public sealed partial class MobileFileDialogs
         {
             // Only after the picker has finished: with asCopy the SYSTEM does the copying, so deleting
             // the source any earlier would race it.
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { /* cache; the OS reclaims it */ }
+            DiscardTemp(temp);
         }
     }
 

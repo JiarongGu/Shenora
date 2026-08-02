@@ -184,16 +184,41 @@ public sealed partial class MobileFileDialogs : IFileDialogs
             "instead — it is implemented here, and it is the portable shape on every shell (D35).");
 
     /// <summary>
-    /// A cache file to produce content into before handing it to the platform. Named per call so two
-    /// concurrent saves cannot share one, and created under the cache directory because that is the
-    /// space both platforms let an app write without a grant.
+    /// A cache file to produce content into before handing it to the platform, under the cache directory
+    /// because that is the space both platforms let an app write without a grant.
+    /// <para>
+    /// ⚠ <b>Uniqueness goes in the DIRECTORY, never in the file NAME.</b> iOS's export picker suggests
+    /// the temp file's own name to the user, so a <c>{guid}-name.txt</c> temp showed up in the "Save as"
+    /// field as <c>89c9bdcc7248436…</c> — found on the simulator, and invisible on Android, where the
+    /// suggested name is passed separately to <c>Launch()</c> and the temp's name never surfaces. A
+    /// per-call directory gives the same collision safety with the filename left alone.
+    /// </para>
     /// </summary>
     private static string NewTempPath(string? suggestedName)
     {
         var name = string.IsNullOrWhiteSpace(suggestedName) ? "save" : Path.GetFileName(suggestedName);
-        var directory = Path.Combine(FileSystem.CacheDirectory, "shenora-save");
+        var directory = Path.Combine(FileSystem.CacheDirectory, "shenora-save", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(directory);
-        return Path.Combine(directory, $"{Guid.NewGuid():n}-{name}");
+        return Path.Combine(directory, name);
+    }
+
+    /// <summary>
+    /// Drop a temp produced by <see cref="NewTempPath"/>, its per-call directory included — otherwise
+    /// every save leaks an empty folder into the cache for the life of the install. Best-effort by
+    /// design: a cache the OS reclaims is not worth masking a real outcome for.
+    /// </summary>
+    private static void DiscardTemp(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+            var directory = Path.GetDirectoryName(tempPath);
+            if (directory is { Length: > 0 } && Directory.Exists(directory)) Directory.Delete(directory);
+        }
+        catch
+        {
+            // cache; the platform reclaims it
+        }
     }
 
     /// <summary>

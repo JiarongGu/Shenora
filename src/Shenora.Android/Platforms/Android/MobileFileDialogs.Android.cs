@@ -63,7 +63,7 @@ public sealed partial class MobileFileDialogs
         {
             // Best-effort: a leftover temp in the cache is harmless and the platform reclaims it, but a
             // failure to delete must never mask the real outcome.
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { /* cache; the OS reclaims it */ }
+            DiscardTemp(temp);
         }
     }
 
