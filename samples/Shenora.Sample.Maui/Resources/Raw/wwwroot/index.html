@@ -136,8 +136,10 @@ channel.subscribe((raw) => {
 // Every route below is a REAL one on PortableSampleFacade — the same net10.0 assembly the desktop
 // sample hosts. The first version of this page invented a PATHS button and got a textbook
 // NO_HANDLER back, which was the error boundary working correctly and the page being wrong.
-document.getElementById('echo').onclick  = () => post('SAMPLE_LOGIC', 'ECHO', { text: 'hello from android' });
-document.getElementById('copy').onclick  = () => post('SAMPLE_LOGIC', 'COPY_TEXT', { text: 'copied on android' });
+// Shell-neutral strings: this page now runs on Android AND iOS, and "hello from android" showing up
+// in an iPhone screenshot is a small lie of exactly the kind a shared bundle invites.
+document.getElementById('echo').onclick  = () => post('SAMPLE_LOGIC', 'ECHO', { text: 'hello from the mobile shell' });
+document.getElementById('copy').onclick  = () => post('SAMPLE_LOGIC', 'COPY_TEXT', { text: 'copied on the mobile shell' });
 document.getElementById('read').onclick  = () => post('SAMPLE_LOGIC', 'READ_CLIPBOARD');
 document.getElementById('ui').onclick    = () => post('SAMPLE_LOGIC', 'UI_STATE');
 document.getElementById('sched').onclick = () => post('SAMPLE_LOGIC', 'SCHEDULE_DEMO');

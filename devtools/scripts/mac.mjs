@@ -452,14 +452,26 @@ function typeText(cfg, text) {
 
 // ---------------------------------------------------------------- log
 //
-// The simulator's unified log, filtered to this app. `log show --last` rather than `log stream`: a
-// stream never returns and would hang an unattended session — the same reason android.mjs tails a
-// bounded slice instead of following.
-function log(cfg, n = 80) {
-  const r = ssh(cfg, `xcrun simctl spawn booted log show --last 5m --style compact `
-    + `--predicate ${q(`processImagePath CONTAINS "Shenora" OR eventMessage CONTAINS "[Shenora"`)} 2>/dev/null | tail -${Number(n) || 80}`);
+// The simulator's unified log. `log show --last` rather than `log stream`: a stream never returns and
+// would hang an unattended session — the same reason android.mjs tails a bounded slice instead of
+// following.
+//
+// Default is the SAMPLE'S OWN tag, not the process, and that distinction is the whole usability of
+// this command. A process-wide predicate is ~99% WebKit lifecycle chatter (a `runJavaScriptInFrame`
+// pair every notification tick), so `tail -n` then shows a screen of noise and NONE of the app's
+// lines — which reads exactly like "the app logged nothing" and sent this session looking for a
+// broken log sink that was working perfectly. Identical in shape to the `logcat -t N` trap already
+// recorded in android.mjs: filter FIRST, tail after. `--all` for the platform's side.
+function log(cfg, n = 80, { all = false } = {}) {
+  // The app reaches the unified log through libSystem.Native (Console -> stdout), so it is the
+  // MESSAGE that carries the tag, not the subsystem — verified by reading back a real run.
+  const predicate = all
+    ? 'process == "Shenora.Sample.Maui"'
+    : `eventMessage CONTAINS "[${'SHENORA'}]"`;
+  const r = ssh(cfg, `xcrun simctl spawn booted log show --last 15m --style compact `
+    + `--predicate ${q(predicate)} 2>/dev/null | tail -${Number(n) || 80}`);
   const out = (r.stdout ?? '').trim();
-  console.log(out || 'mac: no matching log lines in the last 5 minutes (is the app running?)');
+  console.log(out || `mac: no ${all ? 'process' : 'SHENORA'} log lines in the last 15 minutes (is the app running?)`);
 }
 
 // ---------------------------------------------------------------- awake
@@ -521,7 +533,7 @@ switch (cmd) {
   case 'type': typeText(cfg, rest.join(' ')); break;
   case 'log': {
     const i = rest.indexOf('-n');
-    log(cfg, i >= 0 ? rest[i + 1] : 80);
+    log(cfg, i >= 0 ? rest[i + 1] : 80, { all: rest.includes('--all') });
     break;
   }
   case 'awake': awake(cfg, rest[0]); break;
