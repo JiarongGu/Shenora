@@ -11,7 +11,12 @@
     package. Shipping both faces needs ONE host carrying BOTH workloads, which is what the override
     below is for — a macOS CI runner has both available:
 
-        dotnet pack -p:ShenoraMobileTargets="net10.0-android;net10.0-ios"
+        dotnet pack -p:ShenoraMobileTargets=net10.0-android%3Bnet10.0-ios
+
+    `%3B`, not a literal `;` — a semicolon on a command line is eaten by the shell before MSBuild
+    sees it, and the symptom is MSBuild reporting the SECOND TFM as an unknown switch
+    ("MSB1006: Property is not valid. Switch: net10.0-ios") rather than anything about quoting.
+    Verified both ways over ssh.
 
     Measured, so the shape of the artifact is not a guess: an iOS pack on a Mac produces
     `lib/net10.0-ios26.0/` with the XML docs alongside. Note the PLATFORM VERSION in that folder name
