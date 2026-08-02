@@ -125,6 +125,20 @@ kind of reason that should become kit work rather than a workaround. Both gaps a
 is that app's domain leaking in. (Its owner pushed back on the decline with "it's better we not reinvent
 the wheel", which is why these are filed rather than quietly worked around.)
 
+> DIRECTION (owner, 2026-08-03): *"compress is just one single case, think about any processing to
+> file logic, video encoding, code building"* — *"that's why other projects when adopting suggest for
+> atomic design"*.
+>
+> **This is the framing that makes the two items below one requirement rather than two conveniences.**
+> Every long file operation has the same shape: read an input, spend real time producing an output,
+> put the output where the input was. Encoding, thumbnailing, compiling, archive extraction, report
+> generation, log rotation. Done naively — write over the target as you go — an interruption destroys
+> the original AND leaves no usable output, and the longer the operation the wider the window. An app
+> that gets this wrong does not find out in testing; it finds out when a user closes the lid.
+>
+> So the kit owes an ATOMIC FILE-TRANSFORM primitive, not just an atomic write. The write is the
+> degenerate case where producing the output takes no time.
+
 - [ ] **There is no SYNCHRONOUS, single-file atomic write, and it is the most common file operation a
   desktop app has.** `FileChange.Replace(TempPath, TargetPath)` is exactly the primitive — but the only
   way in is `IFileUpdateQueue.ApplyAsync`, an async queued multi-change applier with rollback and
@@ -162,6 +176,28 @@ the wheel", which is why these are filed rather than quietly worked around.)
   - Open design question: `string contents` covers the common case but forces binary callers to
     buffer; a `Stream` or `Action<Stream>` overload avoids that. Pick deliberately rather than
     shipping the string one and bolting the other on later.
+- [ ] **The general primitive: an atomic file TRANSFORM, of which the atomic write is a special
+  case.** Per the direction above, this is the actual requirement — the write is just the transform
+  whose "produce" step is instantaneous. Four steps, and the kit owns three of them:
+  1. **Hand the caller a temp path beside the target** — sibling, so the final rename stays within
+     the volume and stays atomic. The caller never chooses it, so it cannot be got wrong.
+  2. **The caller produces into it** (encode, compile, extract, render). The kit does not care how
+     long that takes or what tool does it, and **the input is never touched** — which is the whole
+     point: an interruption here costs the work, never the original.
+  3. **The caller VERIFIES it** — a predicate the app supplies, because only the app knows what valid
+     means for its format. Seams over flags (`generic-library.md`): the kit must not grow a list of
+     file types it knows how to validate. "Finished writing" is not "valid", and swapping in a
+     truncated output destroys the original just as surely as writing over it would have.
+  4. **The kit commits it** with the rename-over from the item above, or discards the temp.
+  - **Composition, not duplication:** `UpdateStage` is this exact shape at release scale (stage →
+    verify every file's hash → publish the marker last → apply). The primitive is that pattern for
+    ONE file with a caller-supplied check instead of a hash, and the two should visibly share a
+    vocabulary even if they do not share code.
+  - It must also compose with `IMissionScheduler` for the long cases — an encode is precisely the
+    "long-running work with a claim on a path" the scheduler exists for — and with `PathClaims` so
+    two transforms of the same file cannot interleave. Getting that wiring right is most of the
+    design work; the file mechanics are the easy part.
+  - Interrupted transforms must leave no junk: name temps predictably and sweep them at startup.
 - [ ] **`UpdateStage` assumes a PER-FILE source, so an archive-based release cannot use it without
   writing the bridge itself.** `IUpdateSource.OpenAsync(ManifestFile)` fits a release that publishes
   loose files. The adopter's releases publish one ZIP per part with a manifest listing per-file hashes —
@@ -282,23 +318,11 @@ implements it differently, none of them leaks into app logic.
 - [ ] **D4 — Say what is NOT in scope.** No playback, no transcoding, no editing, no codec bundling —
   those are products, and D21 keeps products out of the kit. If a consumer needs playback it composes
   its own over the contracts, the way the sample builds a co-browse pane over `StreamingSession`.
-- [ ] **D5 — Transform-in-place is the trap, and "written" is not "valid".** Owner, 2026-08-03: a
-  compress cannot replace its input in place, *"you might lose on both side"* — a failure partway
-  destroys the original and leaves no usable output. The rule for any long transform is therefore:
-  produce a complete SEPARATE file, then swap. That principle is the important half and it holds for
-  every media operation the three consumers will want.
-  - **The swap should be a rename-over, not delete-then-rename.** Checked before recommending it:
-    `File.Replace`'s backup is a RENAME of the existing target, not a copy
-    (`FileUpdateQueue.cs:552`), so peak footprint is old + new either way and deleting first buys no
-    disk. What deleting first does buy is a window where the target is absent — which is the exact
-    failure the whole exercise exists to avoid.
-  - **What is genuinely missing is VERIFY-then-swap.** A truncated or corrupt output is fully
-    written and still worthless, and swapping it in destroys the original. Media needs a probe
-    between "finished" and "swap" — does it decode, is the duration within tolerance, are the
-    expected streams present. `UpdateStage` already models this shape for releases (verify every
-    staged file's SHA-256 before the stage counts as pending), but the media equivalent cannot be a
-    hash: a re-encode is not byte-predictable, so the check is semantic rather than exact.
-  - Interrupted transforms must leave no junk — name temps predictably and sweep them at startup.
+- [ ] **D5 — Media supplies the VERIFY, the Io layer supplies the mechanism.** The atomic-transform
+  primitive is general and lives in `Io` (see the adopter section above); what is media-specific is
+  what "valid" means — does it decode, is the duration within tolerance, are the expected streams
+  present. Note this cannot reuse `UpdateStage`'s answer: that verifies a SHA-256, and a re-encode is
+  not byte-predictable, so the media check is semantic rather than exact.
 
 ### E. Off-screen sessions cannot see the app's OWN content
 
