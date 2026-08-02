@@ -176,6 +176,32 @@ the wheel", which is why these are filed rather than quietly worked around.)
   - Open design question: `string contents` covers the common case but forces binary callers to
     buffer; a `Stream` or `Action<Stream>` overload avoids that. Pick deliberately rather than
     shipping the string one and bolting the other on later.
+
+  **THE IMPLEMENTATION ALREADY EXISTS IN THE ADOPTER — port it, do not redesign it** (D8: lift the
+  proven code and keep its post-mortem comments). It is ~30 lines plus six tests, written as an
+  explicit STOPGAP with a comment saying to delete it when the kit ships the primitive. Its real path
+  is in `local/EXTRACTION-MAP.md`. What to keep verbatim:
+  - **A FIXED `.tmp` suffix, not a random name.** A crash before the move leaves ONE predictable
+    leftover that the next successful write overwrites, instead of accumulating debris — which is a
+    better answer than sweeping at startup, because there is nothing to sweep.
+  - **`stream.Flush(flushToDisk: true)` before the move**, with the reason recorded: without it the
+    rename lands while the content is still in the OS write cache, so a power loss leaves an intact
+    rename pointing at an EMPTY file — the exact failure the rename was supposed to prevent.
+  - **`File.Move(temp, path, overwrite: true)`, not `File.Replace`.** Simpler, needs no backup path,
+    and a config store does not need the target's ACLs and timestamps preserved. (The queue uses
+    `File.Replace` because it needs the backup for rollback — different job, different primitive.)
+  - **Best-effort: returns `bool`, never throws, deletes the temp on failure.** The guarantee is that
+    the PREVIOUS file survives — losing one edit is recoverable, silently reverting to defaults is
+    not.
+  - UTF-8 **without** a BOM; create missing directories; `FileShare.None` while writing.
+  - **The six tests come too**, and one is worth stealing outright: *a failed write leaves the
+    PREVIOUS file intact*, simulated by creating a DIRECTORY at the temp path so the write fails at
+    exactly the point a crash would. Also pinned: a shorter value must REPLACE rather than leave a
+    tail, no temp survives success, and the BOM check.
+  - **Where the kit's version must differ:** the fixed suffix is safe for config precisely because
+    those writes are short and last-writer-wins. A long TRANSFORM (the item below) cannot share it —
+    two encodes of one file would collide on `x.tmp` — so that path needs a distinct temp or a
+    `PathClaim`. Same primitive, different concurrency story; do not paper over the difference.
 - [ ] **The general primitive: an atomic file TRANSFORM, of which the atomic write is a special
   case.** Per the direction above, this is the actual requirement — the write is just the transform
   whose "produce" step is instantaneous. Four steps, and the kit owns three of them:
