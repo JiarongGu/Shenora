@@ -40,59 +40,70 @@ public static class AtomicFile
     public const string DefaultTempSuffix = ".tmp";
 
     /// <summary>
-    /// Write <paramref name="contents"/> as UTF-8 without a BOM. A BOM is a silent format change for a
-    /// file other tools already parse.
+    /// The default text encoding: UTF-8 with NO byte-order mark.
+    /// <para>
+    /// A default, not a rule — pass your own to <see cref="WriteAllText"/> if you need otherwise. It is
+    /// the right default because a BOM is a silent format change for a file other tools already parse
+    /// (a shell script, a launcher doing a substring read, anything expecting plain JSON), and it is
+    /// PARAMETERISED because that is a consumer's decision: an app talking to a legacy Windows tool may
+    /// genuinely need the BOM, and hard-coding its absence would have made this unusable for them.
+    /// </para>
     /// </summary>
-    /// <returns><c>true</c> when the file was replaced.</returns>
-    public static bool WriteAllText(string path, string contents)
+    public static readonly Encoding DefaultEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    /// <summary>
+    /// Write text, replacing the file atomically. Throws on failure, leaving the previous file intact.
+    /// </summary>
+    /// <param name="path">The file to replace.</param>
+    /// <param name="contents">The new contents.</param>
+    /// <param name="encoding">Defaults to <see cref="DefaultEncoding"/> (UTF-8, no BOM).</param>
+    public static void WriteAllText(string path, string contents, Encoding? encoding = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(contents);
-        return Write(path, stream =>
+        Write(path, stream =>
         {
-            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-                                                leaveOpen: true);
+            using var writer = new StreamWriter(stream, encoding ?? DefaultEncoding, leaveOpen: true);
             writer.Write(contents);
         });
     }
 
     /// <summary>Write raw bytes. The binary twin of <see cref="WriteAllText"/>.</summary>
-    /// <returns><c>true</c> when the file was replaced.</returns>
-    public static bool WriteAllBytes(string path, byte[] contents)
+    public static void WriteAllBytes(string path, byte[] contents)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(contents);
-        return Write(path, stream => stream.Write(contents, 0, contents.Length));
+        Write(path, stream => stream.Write(contents, 0, contents.Length));
     }
 
     /// <summary>
-    /// Produce the new contents into a stream, then swap them in. The general in-process form —
-    /// serialize straight into it rather than buffering a whole file to pass to
-    /// <see cref="WriteAllBytes"/>.
+    /// Produce the new contents into a stream, then swap them in — serialize straight into it rather
+    /// than buffering a whole file to hand to <see cref="WriteAllBytes"/>.
+    ///
+    /// <para><b>Throws on failure, like <see cref="File.WriteAllText(string,string)"/> does, and the
+    /// previous file is left intact.</b> An earlier draft returned <c>bool</c> and never threw, which
+    /// was the first adopter's config-store POLICY rather than a mechanism: a caller that ignores the
+    /// result then carries on with a stale file — the same silent failure this type exists to prevent,
+    /// one level up. A best-effort caller writes the policy it wants:
+    /// </para>
+    /// <code>
+    /// try { AtomicFile.WriteAllText(path, json); }
+    /// catch (Exception ex) { _log.Warn(ex, "settings save failed; previous file kept"); }
+    /// </code>
     /// </summary>
-    /// <returns><c>true</c> when the file was replaced.</returns>
-    public static bool Write(string path, Action<Stream> write)
+    public static void Write(string path, Action<Stream> write)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(write);
 
         using var transform = BeginTransform(path);
-        try
+        using (var stream = new FileStream(transform.TempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            using (var stream = new FileStream(transform.TempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-            {
-                write(stream);
-            }
+            write(stream);
         }
-        catch (Exception)
-        {
-            // BEST-EFFORT, and that is the contract: on any failure the PREVIOUS file is left intact.
-            // Losing one edit is recoverable; silently reverting to defaults is not. Dispose discards
-            // the temp on the way out.
-            return false;
-        }
-
-        return transform.Commit();
+        transform.Commit();
+        // Anything thrown above escapes deliberately, and Dispose still discards the temp on the way
+        // out — so the guarantee holds whether the caller catches or not: the PREVIOUS file survives.
     }
 
     /// <summary>
@@ -157,32 +168,23 @@ public sealed class FileTransform : IDisposable
     public string TempPath { get; }
 
     /// <summary>
-    /// Flush the temp to disk and rename it over the target. Best-effort: returns <c>false</c> and
-    /// leaves the previous file intact if anything fails.
+    /// Flush the temp to disk and rename it over the target. Throws on failure, leaving the previous
+    /// file intact; calling it again after it succeeded is a no-op.
     /// </summary>
-    /// <returns><c>true</c> when the target now holds the new contents.</returns>
-    public bool Commit()
+    public void Commit()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_committed) return true;
+        if (_committed) return;
 
-        try
-        {
-            FlushToDisk(TempPath);
+        FlushToDisk(TempPath);
 
-            // File.Move over the target, NOT File.Replace. Move needs no backup path and does not care
-            // whether the target already exists, so one call covers the first write and every later one.
-            // (The queue uses File.Replace because it needs the displaced original to roll back — a
-            // different job. Here there is nothing to roll back to: the previous file is either
-            // replaced or untouched.)
-            File.Move(TempPath, TargetPath, overwrite: true);
-            _committed = true;
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
+        // File.Move over the target, NOT File.Replace. Move needs no backup path and does not care
+        // whether the target already exists, so one call covers the first write and every later one.
+        // (The queue uses File.Replace because it needs the displaced original to roll back — a
+        // different job. Here there is nothing to roll back to: the previous file is either replaced
+        // or untouched.)
+        File.Move(TempPath, TargetPath, overwrite: true);
+        _committed = true;
     }
 
     /// <summary>Discards the temp file unless <see cref="Commit"/> succeeded.</summary>

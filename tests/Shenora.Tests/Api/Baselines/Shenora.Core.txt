@@ -8,9 +8,10 @@ static class Shenora.Core.AppRootArgument
 static class Shenora.Core.AtomicFile
   public const string DefaultTempSuffix = ".tmp"
   public static Shenora.Core.FileTransform BeginTransform(string targetPath, string tempSuffix = ".tmp")
-  public static bool Write(string path, System.Action<System.IO.Stream> write)
-  public static bool WriteAllBytes(string path, byte[] contents)
-  public static bool WriteAllText(string path, string contents)
+  public static readonly System.Text.Encoding DefaultEncoding
+  public static void Write(string path, System.Action<System.IO.Stream> write)
+  public static void WriteAllBytes(string path, byte[] contents)
+  public static void WriteAllText(string path, string contents, System.Text.Encoding? encoding = null)
 enum Shenora.Core.ClaimMode (int)
   public const Shenora.Core.ClaimMode Exclusive = 0
   public const Shenora.Core.ClaimMode Shared = 1
@@ -150,9 +151,9 @@ sealed class Shenora.Core.FilePathLockerOptions
   public System.TimeSpan PollInterval { get; init; }
   public required string LockDirectory { get; init; }
 sealed class Shenora.Core.FileTransform : System.IDisposable
-  public bool Commit()
   public string TargetPath { get; }
   public string TempPath { get; }
+  public void Commit()
   public void Dispose()
 enum Shenora.Core.FileUndoKind (int)
   public const Shenora.Core.FileUndoKind DeleteCreatedFile = 0

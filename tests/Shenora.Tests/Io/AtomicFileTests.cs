@@ -36,7 +36,7 @@ public sealed class AtomicFileTests : IDisposable
     {
         var path = At("settings.json");
 
-        Assert.True(AtomicFile.WriteAllText(path, """{"Language":"zh"}"""));
+        AtomicFile.WriteAllText(path, """{"Language":"zh"}""");
         Assert.Equal("""{"Language":"zh"}""", File.ReadAllText(path));
     }
 
@@ -72,9 +72,11 @@ public sealed class AtomicFileTests : IDisposable
         AtomicFile.WriteAllText(path, """{"Language":"zh"}""");
         Directory.CreateDirectory(path + AtomicFile.DefaultTempSuffix);
 
-        var ok = AtomicFile.WriteAllText(path, """{"Language":"en"}""");
+        // THROWS rather than returning false: a caller that ignores a failure carries on with a stale
+        // file, which is the same silent failure this type exists to prevent one level up. Best-effort
+        // is a POLICY the caller writes with a catch, not one the kit imposes.
+        Assert.ThrowsAny<Exception>(() => AtomicFile.WriteAllText(path, """{"Language":"en"}"""));
 
-        Assert.False(ok);
         Assert.Equal("""{"Language":"zh"}""", File.ReadAllText(path));
     }
 
@@ -83,7 +85,7 @@ public sealed class AtomicFileTests : IDisposable
     {
         var path = Path.Combine(_dir, "nested", "deeper", "settings.json");
 
-        Assert.True(AtomicFile.WriteAllText(path, "value"));
+        AtomicFile.WriteAllText(path, "value");
         Assert.Equal("value", File.ReadAllText(path));
     }
 
@@ -101,12 +103,26 @@ public sealed class AtomicFileTests : IDisposable
     }
 
     [Fact]
+    public void The_encoding_is_the_CALLER_s_choice_not_a_rule()
+    {
+        // The no-BOM default is right for JSON and for anything a shell script or a native launcher
+        // parses — but it was hard-coded in the first draft, which shipped one adopter's requirement as
+        // the kit's law and would have locked out an app talking to a legacy tool that NEEDS the BOM.
+        var path = At("legacy.txt");
+
+        AtomicFile.WriteAllText(path, "x", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        var bytes = File.ReadAllBytes(path);
+        Assert.True(bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF);
+    }
+
+    [Fact]
     public void Writes_bytes_verbatim()
     {
         var path = At("blob.bin");
         byte[] payload = [0x00, 0xFF, 0x10, 0x00];
 
-        Assert.True(AtomicFile.WriteAllBytes(path, payload));
+        AtomicFile.WriteAllBytes(path, payload);
         Assert.Equal(payload, File.ReadAllBytes(path));
     }
 
@@ -125,7 +141,7 @@ public sealed class AtomicFileTests : IDisposable
 
         Assert.Equal("ORIGINAL", File.ReadAllText(path));   // still, mid-transform
 
-        Assert.True(transform.Commit());
+        transform.Commit();
         Assert.Equal("TRANSCODED", File.ReadAllText(path));
     }
 
@@ -156,7 +172,7 @@ public sealed class AtomicFileTests : IDisposable
         using var transform = AtomicFile.BeginTransform(path);
         File.WriteAllText(transform.TempPath, "FIRST");
 
-        Assert.True(transform.Commit());
+        transform.Commit();
         Assert.Equal("FIRST", File.ReadAllText(path));
     }
 
@@ -193,8 +209,8 @@ public sealed class AtomicFileTests : IDisposable
         using var transform = AtomicFile.BeginTransform(path);
         File.WriteAllText(transform.TempPath, "value");
 
-        Assert.True(transform.Commit());
-        Assert.True(transform.Commit());   // the temp is gone; this must not report failure
+        transform.Commit();
+        transform.Commit();   // the temp is gone; a second call must be a no-op, not a failure
         Assert.Equal("value", File.ReadAllText(path));
     }
 }

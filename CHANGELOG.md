@@ -49,7 +49,18 @@ at the first list and missed five more breaking changes.
   debris nobody sweeps; flush-to-disk before the rename, or the rename lands while the data is still in
   the OS cache and a power loss leaves an intact rename pointing at an empty file;
   `File.Move(overwrite: true)` rather than `File.Replace`, which throws when the target does not exist
-  yet; and best-effort semantics whose only guarantee is that the PREVIOUS file survives.
+  yet; and the guarantee that on any failure the PREVIOUS file survives.
+
+  **Two things from that port were then GENERALISED, because they were the adopter's policy rather
+  than a mechanism** (`generic-library.md`: ship the mechanism, never the consumer's shape):
+  - **The encoding is a parameter**, defaulting to UTF-8 without a BOM. Hard-coding no-BOM was one
+    app's requirement — their native launcher substring-reads a JSON file — and would have locked out
+    any app that needs the BOM for a legacy tool.
+  - **It throws instead of returning `bool`.** Never-throw-and-return-false was a config store's
+    best-effort policy; imposed on everyone it means a caller who ignores the result carries on with a
+    stale file, which is the same silent failure this type exists to prevent, one level up. A
+    best-effort caller writes `try/catch` and picks its own policy — and the previous file is intact
+    either way.
 
   Sabotage-verified both ways, and one gap is stated rather than papered over: **deleting the flush
   leaves every test green.** Durability against power loss cannot be asserted from a process that is
