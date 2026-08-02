@@ -611,6 +611,7 @@ sealed class Shenora.Core.UpdateStage
   public void Clear()
 sealed class Shenora.Core.UpdateStageOptions
   public System.Action<string>? Log { get; init; }
+  public System.Func<string, bool>? IsUnindexed { get; init; }
   public required string Root { get; init; }
 sealed class Shenora.Core.UpdateStageStatus
   public System.DateTimeOffset? StagedAt { get; init; }

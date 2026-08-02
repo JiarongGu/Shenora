@@ -274,9 +274,16 @@ changes, noting them in `CHANGELOG.md`).
   ⚠ An empty RELEASE manifest legitimately removes everything, so a manifest that failed to load must
   never reach `Compute`; validating it is the caller's job — and that caller is `UpdateStage`, below.
   **`Io/UpdateStage` (+`Options`, `+Status`)** — the staging half of the two-phase update. The app
-  writes downloaded files into `StagedDirectory`; `CommitAsync` hashes every file the manifest lists
-  and writes `ready.json` **last**, so the marker's existence IS the promise that the stage is
-  complete and verified and an applier need not re-check. `Begin()` clears a previous attempt (its
+  writes downloaded files into `StagedDirectory`; `CommitAsync` hashes every file the manifest lists,
+  rejects anything staged that the manifest does NOT list, and writes `ready.json` **last**, so the
+  marker's existence IS the promise that the stage is complete and verified and an applier need not
+  re-check. Verification covers all three failure modes since 2026-08-03 — truncation (listed, missing),
+  tamper (present, wrong hash) and **intrusion** (present, unlisted); the third was added because
+  `ApplyAsync` overlays the staged TREE rather than the manifest, so an unlisted file was written into
+  the install root having been verified by nothing. `UpdateStageOptions.IsUnindexed` exempts what a
+  given release legitimately carries unindexed (a predicate, not a list — the answer belongs to whatever
+  generated the manifest), and the kit's own `manifest.json` is always exempt because `FetchAsync` puts
+  it there itself. `Begin()` clears a previous attempt (its
   leftovers would otherwise verify as part of the next one), `GetStatus()` reads only the marker and
   never throws, and an EMPTY manifest is refused here — the guard `ManifestDiff` defers. No
   downloader and no release source — those are the app's. `IUpdateSource` is the seam (two methods,

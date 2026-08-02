@@ -89,6 +89,28 @@ at the first list and missed five more breaking changes.
   Mobile still refuses loudly (D33) pending the platform pickers — `ACTION_CREATE_DOCUMENT` on Android
   and `UIDocumentPickerViewController(forExporting:)` on iOS.
 
+- **`UpdateStageOptions.IsUnindexed` + the INTRUSION check in `UpdateStage.CommitAsync`.** Stage
+  verification had two of the three failure modes a verifier needs: truncation (listed but missing) and
+  tamper (present, wrong hash). It did not reject **intrusion** — a file present in the stage that the
+  manifest does not list — and the gap was end-to-end rather than theoretical, because `ApplyAsync`
+  overlays the staged TREE rather than the manifest. So a file nothing had verified was copied into the
+  install root, while the marker's own documentation promised "complete and verified — an applier never
+  has to re-check".
+
+  Both halves were individually defensible, which is why it survived: enumerating in `ApplyAsync` is
+  correct (a differential stage holds only the changeset, and `manifest.json` is in the tree but not in
+  the manifest), and verifying the manifest is correct. It was the PAIR that left a hole.
+
+  **Strict by default.** `IsUnindexed` is a predicate, not a list, because which paths a clean release
+  legitimately carries unindexed is a property of whatever GENERATED the manifest — a bundled data
+  folder, a seeded checksum stamp, a version file that changes every release. Baking that set in would
+  freeze one app's packaging policy into everyone's verifier.
+
+  ⚠ **Getting the exemption set wrong fails in the inverted direction**: too loose lets an injected file
+  through, too strict rejects every honest download — and the second is worse, because it breaks for
+  every user at once rather than for an attacker. The option says so, and says to validate against a
+  real published release rather than fixtures, which agree by construction.
+
 ### Changed
 
 - **The virtual-host serving path is now ONE implementation** (`WebViewBundleServing`, internal),

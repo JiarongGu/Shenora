@@ -148,8 +148,13 @@ public sealed class ManifestDiff
     /// Forward slashes, lower-cased. Manifests are written by whatever packaged the release and read
     /// by whatever is applying it, so `libs\app.dll` and `libs/app.dll` must be the same entry —
     /// otherwise a file is "added" on every single check and never converges.
+    /// <para>
+    /// <c>internal</c> rather than private because <see cref="UpdateStage"/>'s intrusion check compares
+    /// disk paths against manifest paths and MUST use the same rule. A second copy of it would be a
+    /// rule that can drift, and these comparison rules are sabotage-verified in one place.
+    /// </para>
     /// </summary>
-    private static string Normalize(string path) => path.Replace('\\', '/').ToLowerInvariant();
+    internal static string Normalize(string path) => path.Replace('\\', '/').ToLowerInvariant();
 
     private static Dictionary<string, ManifestFile> Index(UpdateManifest manifest, string name)
     {

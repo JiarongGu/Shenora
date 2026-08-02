@@ -40,6 +40,27 @@ public sealed class UpdateStageOptions
     /// </summary>
     public required string Root { get; init; }
 
+    /// <summary>
+    /// Which staged paths a clean release legitimately carries that the manifest deliberately does NOT
+    /// index — receives a manifest-relative, forward-slashed path and returns true to exempt it from
+    /// the intrusion check. Default: nothing is exempt beyond the kit's own <c>manifest.json</c>.
+    /// <para>
+    /// <b>This is a predicate rather than a list because the answer is a property of whatever GENERATED
+    /// the manifest, not of the kit.</b> Real examples from an adopter: a bundled data folder, a seeded
+    /// checksum stamp (indexing it would be circular), a version file that changes every release. Baking
+    /// that set in would freeze one app's packaging policy into everyone's verifier —
+    /// <c>generic-library.md</c>'s rule, applied to a case where it is tempting to just hardcode it.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Getting this wrong fails in the INVERTED direction, so validate it against a real
+    /// release.</b> Too loose lets an injected file through; too STRICT rejects every honest download —
+    /// and the second is worse, because it breaks for every user at once rather than for an attacker.
+    /// Synthetic fixtures will not catch it: the tester writes both sides and they agree by
+    /// construction. Stage an actual published release and check the counts.
+    /// </para>
+    /// </summary>
+    public Func<string, bool>? IsUnindexed { get; init; }
+
     /// <summary>Diagnostics sink.</summary>
     public Action<string>? Log { get; init; }
 }
@@ -100,6 +121,14 @@ public sealed class UpdateStage
 {
     private const string MarkerName = "ready.json";
     private const string StagedFolder = "staged";
+
+    /// <summary>
+    /// The release manifest that rides along inside the stage for the applier's removals. Named once
+    /// because THREE things depend on it agreeing: <see cref="FetchAsync"/> writes it,
+    /// <see cref="ApplyAsync"/> reads it, and the intrusion check must exempt it. Lower-case, because
+    /// it is compared through <see cref="ManifestDiff.Normalize"/>.
+    /// </summary>
+    private const string StagedManifestName = "manifest.json";
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -211,6 +240,18 @@ public sealed class UpdateStage
             }
         }
 
+        // THE THIRD FAILURE MODE. The loop above covers TRUNCATION (listed but missing) and TAMPER
+        // (present but wrong hash); this covers INTRUSION (present but unlisted), and without it the
+        // marker's promise was bigger than what was actually checked — because ApplyAsync overlays the
+        // staged TREE, not the manifest, so a file nothing verified was copied into the install root.
+        // Both halves were individually defensible, which is exactly why the gap survived: enumerating
+        // in ApplyAsync is right (a differential stage holds only the changeset, and manifest.json is in
+        // the tree but not in the manifest), and verifying the manifest is right; it is the PAIR that
+        // left a hole. An adopter shipped the same asymmetry — its native launcher rejected all three
+        // from the start and its managed verifier only two, one threat model enforced two ways.
+        if (!VerifyNothingUnlisted(manifest, cancellationToken))
+            return new UpdateStageStatus { Pending = false };
+
         // LAST, and only now. Everything above verified, so the marker's existence is the promise
         // that an applier can act without re-checking.
         var status = new UpdateStageStatus
@@ -288,7 +329,7 @@ public sealed class UpdateStage
 
         // The applier's copy of the new baseline. Not part of the staged manifest, so CommitAsync
         // does not verify it — it is not a payload file, it is the record of what the payload means.
-        await File.WriteAllTextAsync(Path.Combine(StagedDirectory, "manifest.json"), release.ToJson(),
+        await File.WriteAllTextAsync(Path.Combine(StagedDirectory, StagedManifestName), release.ToJson(),
             cancellationToken).ConfigureAwait(false);
 
         return await CommitAsync(new UpdateManifest { Version = release.Version, Files = staged },
@@ -320,7 +361,7 @@ public sealed class UpdateStage
 
         // Read BOTH manifests before the overlay — the overlay overwrites the installed one, and the
         // removal set is the difference between them. Both donors read them first for this reason.
-        var stagedManifestPath = Path.Combine(StagedDirectory, "manifest.json");
+        var stagedManifestPath = Path.Combine(StagedDirectory, StagedManifestName);
         UpdateManifest? release = null;
         try
         {
@@ -397,6 +438,52 @@ public sealed class UpdateStage
             Written = written,
             Removed = removed,
         };
+    }
+
+    /// <summary>
+    /// The staged tree must contain NOTHING the manifest does not list — the intrusion half of
+    /// verification. Returns false (and logs the offending path) when it does.
+    /// <para>
+    /// <b>The kit's own <c>manifest.json</c> is always exempt, and that is not a convenience.</b>
+    /// <see cref="FetchAsync"/> writes the release manifest into the stage on purpose — an applier needs
+    /// it to compute removals, and the overlay makes it the newly-installed baseline — while
+    /// deliberately keeping it out of the staged manifest, since it is the record of what the payload
+    /// means rather than a payload file. So a literal "nothing is exempt" rule would reject every stage
+    /// this class itself produces. That is the inverted failure mode
+    /// <see cref="UpdateStageOptions.IsUnindexed"/> warns about, arriving from the kit's own design
+    /// rather than from any consumer's packaging.
+    /// </para>
+    /// <para>
+    /// Comparison uses <see cref="ManifestDiff"/>'s normalization, not a local copy: a disk path and a
+    /// manifest path must agree on separators and case here for exactly the reasons that rule already
+    /// exists, and two copies of it would be one rule that can drift.
+    /// </para>
+    /// </summary>
+    private bool VerifyNothingUnlisted(UpdateManifest manifest, CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(StagedDirectory)) return true;
+
+        var listed = manifest.Files
+            .Select(f => ManifestDiff.Normalize(f.Path))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var file in Directory.EnumerateFiles(StagedDirectory, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relative = ManifestDiff.Normalize(Path.GetRelativePath(StagedDirectory, file));
+            if (listed.Contains(relative)) continue;
+            if (relative == StagedManifestName) continue;         // see the remarks — the kit's own
+            if (_options.IsUnindexed?.Invoke(relative) == true) continue;
+
+            // Named, and phrased as what it IS: a file the release did not describe, about to be
+            // copied into the install root by the overlay. The path is the only useful detail; there
+            // is no hash to report because nothing claimed one.
+            Log($"[Shenora.Core] Stage rejected: '{relative}' is present but the manifest does not " +
+                "list it. If a clean release legitimately carries it, exempt it with " +
+                $"{nameof(UpdateStageOptions)}.{nameof(UpdateStageOptions.IsUnindexed)}.");
+            return false;
+        }
+        return true;
     }
 
     /// <summary>Manifest paths are forward-slashed; the disk wants this platform's separator.</summary>

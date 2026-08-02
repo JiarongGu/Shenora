@@ -2165,3 +2165,55 @@ than the page mistakenly assuming desktop. Corroboration for D36 that no test co
 **A doc claim that was FALSE and is now moot:** the old TASKS entry said "`docs/ADOPTION.md` says
 plainly that off-screen sessions reach network URLs only". It did not — ADOPTION.md had no session
 content at all. The `doc-claims` rule, catching a claim about a doc rather than about code.
+
+## The stage verifier's THIRD failure mode — intrusion — CLOSED 2026-08-03
+
+Owner filed it mid-session as a note for whoever ports the archive-backed `IUpdateSource`: a verifier
+needs tamper, truncation AND intrusion, and `CommitAsync` had only the first two. Closed immediately
+rather than with the port, because the note's own argument is right — the kit is where "everyone gets
+the strong version" is decided.
+
+**Verified before building, and it was worse than the note assumed: the hole was END TO END.**
+- `CommitAsync` walked `manifest.Files` only — presence and hash. Nothing enumerated the staged tree.
+- **`ApplyAsync` overlays `Directory.EnumerateFiles(StagedDirectory, "*", AllDirectories)`** — it copies
+  EVERYTHING staged, not just listed files. So an unlisted staged file was verified by nobody and
+  written into the install root, while the marker's own XML promised "complete and verified — an applier
+  never has to re-check".
+- **Both halves were individually defensible, which is why five reviews missed it.** Enumerating in
+  `ApplyAsync` is RIGHT (a differential stage holds only the changeset, and `manifest.json` is in the
+  tree but not in `manifest.Files`, so a manifest-driven overlay would fail to copy it), and verifying
+  the manifest is RIGHT. It was the PAIR that left the gap — the class of defect worth naming, because
+  neither file looks wrong on its own.
+
+**⚠ THE TRAP, found by reading `FetchAsync` before writing the check: the kit stages an unindexed file
+ITSELF.** `FetchAsync` writes the release `manifest.json` into the stage for the applier's removals and
+deliberately keeps it out of the staged manifest. A literal "nothing is exempt" default would therefore
+**reject every stage the kit's own flow produces** — exactly the inverted failure the owner's note warns
+about (too strict breaks for every user at once, an attacker not required), arriving from the kit's own
+design rather than any consumer's packaging. So `manifest.json` is exempt unconditionally, named once as
+a constant because three things must agree on it (`FetchAsync` writes, `ApplyAsync` reads, the check
+exempts).
+
+**Shipped:** `UpdateStageOptions.IsUnindexed` — a PREDICATE, not a list, because which paths a clean
+release legitimately carries unindexed belongs to whatever generated the manifest (a bundled data
+folder, a seeded checksum stamp that would be circular to index, a per-release version file). A baked-in
+list would freeze one app's packaging policy into everyone's verifier. Strict by default; the predicate
+receives a manifest-relative forward-slashed path, which is pinned by a test because every
+`StartsWith("data/")` exemption an adopter writes depends on it.
+
+Comparison reuses `ManifestDiff.Normalize` (promoted private→internal) rather than a third copy: a disk
+path and a manifest path must agree on separators and case here for the same reasons that rule already
+exists, and those comparison rules are sabotage-verified in one place.
+
+**Sabotage-verified in BOTH directions, and the second direction is the one that mattered:**
+- Check not run → 5 intrusion tests fail by name.
+- `manifest.json` exemption removed → `THE_REAL_FetchAsync_FLOW_STILL_COMMITS` and
+  `The_kit_s_OWN_manifest_json_is_exempt_without_any_predicate` fail **and so does the PRE-EXISTING
+  `UpdateStageTests.FetchAsync_downloads_only_the_CHANGED_files_and_commits`** — independent
+  confirmation from the old suite that the trap is real and not invented. Note what that turns on: the
+  pre-existing test catches it only because it drives the REAL `FetchAsync`. A fixture-built stage would
+  have sailed past, because the test author writes both sides and they agree by construction. That is
+  the owner's "synthetic fixtures will not catch it" warning proving itself inside the kit.
+
+**Still owed by whoever ports the archive source:** validating an exemption set against a REAL published
+release rather than fixtures. Kept in `TASKS.md` for that reason.

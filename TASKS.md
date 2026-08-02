@@ -144,6 +144,41 @@ manifest → swap, is verified against a real published release, and self-heals 
 the installed-version stamp is written only after a successful swap. So this is a deferral with a working
 alternative, not a hole.
 
+#### Notes for whoever ports it (written 2026-08-03, while it is fresh)
+
+_The INTRUSION half is DONE (2026-08-03) — `UpdateStage.CommitAsync` now rejects a staged file the
+manifest does not list, exempted by `UpdateStageOptions.IsUnindexed`. Verified END TO END and it was
+worse than this note assumed; the trap that nearly broke it is recorded in `docs/archive/tasks.md`.
+The two bullets below are kept because the third one (validate against a REAL release) is still owed by
+whoever ports the archive source._
+
+Since the sequence is "port a proven implementation", here is what that implementation learned — the
+parts worth taking and the one that will bite.
+
+- **A verifier needs THREE failure modes, not two: tamper (hash mismatch), intrusion (present but
+  unlisted), truncation (listed but missing).** `UpdateStage.CommitAsync` currently does tamper and
+  truncation — it walks `manifest.Files` and checks each is present and matches — but nothing rejects a
+  file in the staged tree that the manifest does not list. That adopter shipped the same asymmetry: its
+  native launcher rejected all three from the start and its managed verifier only two, so the identical
+  threat model was enforced two ways with one weaker. Worth closing here BEFORE the port, because the
+  kit is where "everyone gets the strong version" is decided.
+- **⚠ The exclusion list is the part that will bite, and it must be CALLER-SUPPLIED.** An intrusion check
+  needs to know which paths a clean archive legitimately carries that the manifest deliberately does not
+  index — for that adopter: a bundled `data/` folder, a seeded `<kind>.sha` stamp (indexing it would be
+  circular), `app-version.txt` (changes every release), and `manifest.json` itself. That set is a
+  property of **whatever generated the manifest**, not of the kit, and `generic-library.md`'s own rule
+  applies: ship the mechanism, never the consumer's shape. A baked-in list would be one app's policy
+  frozen into everyone's verifier. Suggest a predicate on the options —
+  `Func<string, bool>? IsUnindexed` defaulting to "nothing is exempt", so the strict behaviour is the
+  default and exemptions are opted into deliberately.
+- **The failure mode of getting that list wrong is inverted, which is why it needs real-release
+  validation rather than fixtures.** Too LOOSE lets an injected file through; too STRICT rejects every
+  honest download — the second is worse, because it breaks for every user at once rather than for an
+  attacker, and synthetic fixtures pass it happily since the tester writes both sides. That adopter
+  validated against its actual published release and got management 106 files/104 indexed, backend
+  103/102, frontend 21/21 with zero would-be-intrusions; the extras were exactly the exempt ones. Worth
+  making that a documented step for the kit's own verifier, not a habit one adopter happened to have.
+
 ### From the first adopter, `Shenora.Core/Io` adoption attempt (2026-08-03)
 
 Tried to adopt the Io layer and **declined both halves — but on SHAPE, not on quality**, which is the
