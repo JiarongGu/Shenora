@@ -94,7 +94,7 @@ public class HeadlessRunnerTests
     }
 
     [Fact]
-    public void Cancelling_the_stop_token_ends_a_blocked_run()
+    public async Task Cancelling_the_stop_token_ends_a_blocked_run()
     {
         using var stop = new CancellationTokenSource();
         var started = new ManualResetEventSlim();
@@ -110,9 +110,11 @@ public class HeadlessRunnerTests
 
         stop.Cancel();
 
-        // BOUNDED, always: if the wait ever stops observing the token this must fail, not hang the
-        // whole suite (the standing rule for anything awaiting a cancellable operation here).
-        Assert.True(run.Wait(TimeSpan.FromSeconds(10)), "Run did not return after the stop token was cancelled");
+        // BOUNDED, always, and via WaitAsync rather than a blocking Wait: if the runner ever stops
+        // observing the token this FAILS with a TimeoutException instead of hanging the whole suite
+        // (the standing rule for anything awaiting a cancellable operation here — and a blocking
+        // wait in a test is its own deadlock risk, xUnit1031).
+        await run.WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     [Fact]

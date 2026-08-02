@@ -169,10 +169,12 @@ internal sealed class WinFormsRunner : IShenoraRunner
                     ?? new WinFormsBootstrapOptions { ApplicationName = app.ApplicationName });
             }
 
-            var hooks = app.Services.GetServices<IShenoraLifecycleHook>().ToArray();
+            // The hook sequence lives on ShenoraApplication (Start/Stop) so every runner — and a host
+            // whose platform owns the loop and cannot use Run() at all — shares one ordering,
+            // one start/stop asymmetry and one idempotency rule.
             try
             {
-                foreach (var hook in hooks) hook.OnStarting(app);
+                app.Start();
 
                 using var form = options.MainForm(app.Services);
 
@@ -208,14 +210,9 @@ internal sealed class WinFormsRunner : IShenoraRunner
             }
             finally
             {
-                // Reverse registration order, each step guarded so one failing hook can't mask
-                // the others or block close; runs even when startup failed partway (contract:
-                // IShenoraLifecycleHook).
-                for (var i = hooks.Length - 1; i >= 0; i--)
-                {
-                    try { hooks[i].OnStopping(app); }
-                    catch { }
-                }
+                // Reverse order, each step guarded, and it runs even when startup failed partway —
+                // all of that is ShenoraApplication.Stop's contract now.
+                app.Stop();
             }
         }
         finally

@@ -71,6 +71,20 @@ at the first list and missed five more breaking changes.
   (a mobile activity, a MAUI app) cannot honour `IShenoraRunner.Run`'s "blocks until shutdown"
   contract and needs its own runner.
 
+- **`ShenoraApplication.Start()` / `Stop()`** — the lifecycle-hook sequence, now owned in ONE place
+  instead of copied into every runner. `Run()` is `Start` → block → `Stop`; a host whose platform
+  owns the loop calls the pair directly. Ordering and the start/stop asymmetry are unchanged
+  (`OnStarting` in registration order, unguarded; `OnStopping` in reverse, guarded, running even
+  when startup failed partway) — `WinFormsRunner` and the new headless runner both route through it,
+  so a third shell cannot drift.
+
+  **Both are idempotent, and that is a mobile requirement rather than tidiness:** Android recreates
+  an activity on a configuration change, so the natural "start when the window is created" wiring
+  fires again while the process — and everything the hooks initialized — is still alive. Hooks are
+  app-scoped, not window-scoped. A `Stop()` before any `Start()` deliberately does NOT latch, so a
+  platform that signals "stopped" before it ever signalled "started" cannot disarm the real shutdown
+  that follows.
+
 ## 0.4.0 — 2026-08-02
 
 _Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the

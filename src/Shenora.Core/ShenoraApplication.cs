@@ -46,6 +46,9 @@ public sealed class ShenoraApplicationOptions
 public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
 {
     private readonly ServiceProvider _provider;
+    private IShenoraLifecycleHook[]? _hooks;
+    private bool _started;
+    private bool _stopped;
 
     internal ShenoraApplication(string applicationName, IReadOnlyList<string> args,
         ShenoraEnvironment environment, ShenoraPaths paths, ServiceProvider provider)
@@ -108,6 +111,56 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
             ?? "Application";
 
         return new ShenoraApplicationBuilder(name, args, environment, paths);
+    }
+
+    /// <summary>
+    /// Invoke <see cref="IShenoraLifecycleHook.OnStarting"/> on every registered hook, in
+    /// registration order. <b>IDEMPOTENT — the second call does nothing.</b>
+    /// <para>
+    /// A runner calls this for you; call it DIRECTLY only from a host whose PLATFORM owns the loop
+    /// and therefore cannot use <see cref="Run"/> (a mobile activity). That is also why it is
+    /// idempotent rather than throwing on a second call: Android recreates an activity on a
+    /// configuration change, so the natural "start the app when the window is created" wiring fires
+    /// again while the PROCESS — and everything these hooks initialized — is still alive. Hooks are
+    /// app-scoped, not window-scoped, and re-running them is the class of bug
+    /// <c>WinFormsBootstrap.Initialize</c> already exists to prevent (a second init re-registered
+    /// all three exception channels and every later exception raised two dialogs).
+    /// </para>
+    /// <para>
+    /// NOT guarded: a hook that cannot start is a startup failure and the app must see it. Pair it
+    /// with <see cref="Stop"/> in a <c>finally</c> — <see cref="IShenoraLifecycleHook"/>'s contract
+    /// is that stopping runs even when starting failed partway.
+    /// </para>
+    /// </summary>
+    public void Start()
+    {
+        if (_started) return;
+        _started = true;
+        _hooks = Services.GetServices<IShenoraLifecycleHook>().ToArray();
+        foreach (var hook in _hooks) hook.OnStarting(this);
+    }
+
+    /// <summary>
+    /// Invoke <see cref="IShenoraLifecycleHook.OnStopping"/> in REVERSE registration order, each
+    /// step guarded so one failing hook cannot mask the others or block shutdown. <b>IDEMPOTENT</b>,
+    /// and safe to call when <see cref="Start"/> never ran or threw partway.
+    /// </summary>
+    public void Stop()
+    {
+        // A stop BEFORE any start must not latch. Latching on it was the first cut, and the
+        // idempotency test caught it: a platform that signals "stopped" before it ever signalled
+        // "started" (an activity destroyed during a failed launch) would have permanently disarmed
+        // the real shutdown that came later. Nothing has started, so nothing has stopped.
+        if (!_started || _stopped) return;
+        _stopped = true;
+        // Reverse order, each guarded — the family's never-block-close discipline. `_hooks` is null
+        // only if Start threw before assigning it; there is then nothing to stop.
+        var hooks = _hooks ?? [];
+        for (var i = hooks.Length - 1; i >= 0; i--)
+        {
+            try { hooks[i].OnStopping(this); }
+            catch { }
+        }
     }
 
     /// <summary>

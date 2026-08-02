@@ -68,25 +68,17 @@ internal sealed class HeadlessRunner(HeadlessRunnerOptions options) : IShenoraRu
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        var hooks = app.Services.GetServices<IShenoraLifecycleHook>().ToArray();
+        // The hook sequence itself belongs to ShenoraApplication — ordering, the start/stop asymmetry
+        // and idempotency are one contract, and two runners hand-rolling it was already one copy too
+        // many (a third, for a platform that owns its own loop, is what made this obvious).
         try
         {
-            // NOT guarded, matching WinFormsRunner: a hook that cannot start is a startup failure and
-            // the app should see it. The finally below still runs OnStopping, which is the contract
-            // IShenoraLifecycleHook states — implementations tolerate their own start never happening.
-            foreach (var hook in hooks) hook.OnStarting(app);
-
+            app.Start();
             WaitForStop();
         }
         finally
         {
-            // Reverse registration order, each step guarded so one failing hook can't mask the others
-            // or block shutdown; runs even when startup failed partway.
-            for (var i = hooks.Length - 1; i >= 0; i--)
-            {
-                try { hooks[i].OnStopping(app); }
-                catch { }
-            }
+            app.Stop();
         }
     }
 

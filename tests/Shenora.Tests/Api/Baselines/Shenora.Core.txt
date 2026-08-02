@@ -497,6 +497,8 @@ sealed class Shenora.Core.ShenoraApplication : System.IAsyncDisposable, System.I
   public string ApplicationName { get; }
   public void Dispose()
   public void Run()
+  public void Start()
+  public void Stop()
 sealed class Shenora.Core.ShenoraApplicationBuilder
   public Microsoft.Extensions.DependencyInjection.IServiceCollection Services { get; }
   public Shenora.Core.ShenoraApplication Build()

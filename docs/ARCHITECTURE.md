@@ -116,7 +116,9 @@ changes, noting them in `CHANGELOG.md`).
   layout authority: explicit-root → root env var → libs-parent detection → base dir; data env
   var for child-process sharing; ensure-created `DataArea`s); the application builder —
   `ShenoraApplication(+Options)` (`CreateBuilder` resolves `--app-root` → paths → environment;
-  `Run()` executes the registered runner; `Dispose` owns the provider),
+  `Run()` executes the registered runner; `Start()`/`Stop()` are the lifecycle-hook sequence itself —
+  one owner, both idempotent, driven directly by a host whose platform owns the loop and used
+  internally by every runner so a second shell cannot drift; `Dispose` owns the provider),
   `ShenoraApplicationBuilder` (`Services`, `AddModule`, `OnStarting`/`OnStopping`, build-once),
   `IShenoraModule` (per-feature service registration), `IShenoraRunner` (the host-loop seam),
   `UseHeadless`/`HeadlessRunnerOptions` (the no-UI runner: hooks → block on a stop token or

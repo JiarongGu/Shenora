@@ -19,6 +19,65 @@ public class ShenoraApplicationTests
         GetEnvironmentVariable = Env(vars),
     };
 
+    /// <summary>
+    /// The pair a host with a platform-owned loop drives directly. Both runners go through it too,
+    /// so this is the ONE place the ordering and the start/stop asymmetry are defined.
+    /// </summary>
+    [Fact]
+    public void Start_then_Stop_runs_hooks_in_order_then_REVERSE_order()
+    {
+        var log = new List<string>();
+        var builder = ShenoraApplication.CreateBuilder(Options());
+        builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook(log, "a"));
+        builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook(log, "b"));
+        using var app = builder.Build();
+
+        app.Start();
+        app.Stop();
+
+        Assert.Equal(["a.starting", "b.starting", "b.stopping", "a.stopping"], log);
+    }
+
+    /// <summary>
+    /// The mobile case that drove this: Android recreates an activity on a configuration change, so
+    /// the natural "start the app when the window is created" wiring fires AGAIN while the process —
+    /// and everything the hooks initialized — is still alive. Hooks are app-scoped, not
+    /// window-scoped. Re-running them is the same class of bug WinFormsBootstrap.Initialize already
+    /// guards (a second init re-registered all three exception channels and doubled every dialog).
+    /// </summary>
+    [Fact]
+    public void Start_is_idempotent_so_an_activity_recreation_cannot_re_run_hooks()
+    {
+        var log = new List<string>();
+        var builder = ShenoraApplication.CreateBuilder(Options());
+        builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook(log, "once"));
+        using var app = builder.Build();
+
+        app.Start();
+        app.Start();
+        app.Start();
+
+        Assert.Equal(["once.starting"], log);
+    }
+
+    [Fact]
+    public void Stop_is_idempotent_and_safe_before_any_Start()
+    {
+        var log = new List<string>();
+        var builder = ShenoraApplication.CreateBuilder(Options());
+        builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook(log, "once"));
+        using var app = builder.Build();
+
+        app.Stop();          // never started — nothing to stop, and it must not throw
+        Assert.Empty(log);
+
+        app.Start();
+        app.Stop();
+        app.Stop();          // a platform may signal both pause and destroy
+
+        Assert.Equal(["once.starting", "once.stopping"], log);
+    }
+
     [Fact]
     public void CreateBuilder_resolves_paths_environment_and_name()
     {
