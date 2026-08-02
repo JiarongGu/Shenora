@@ -191,6 +191,12 @@ Zone
 Atomicity
 Change
 Create
+# `Manifest` + `Diff` (2026-08-02, staged application updates). A manifest is a list of files with
+# sizes and hashes and a diff is a comparison of two of them — packaging vocabulary, and the exact
+# words BOTH donor apps independently used. Note what is still NOT here and should be argued for on
+# its own: no Release, Download, Install or Patch noun. The kit ships the changeset, not the updater.
+Diff
+Manifest
 Delete
 Directory
 Entry

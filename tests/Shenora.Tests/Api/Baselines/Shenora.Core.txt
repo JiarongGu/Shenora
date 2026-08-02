@@ -317,6 +317,17 @@ interface Shenora.Core.IUiInteraction
   public abstract void UnblockInteraction()
 interface Shenora.Core.IUrlLauncher
   public abstract void OpenUrl(string url)
+sealed class Shenora.Core.ManifestDiff
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Added { get; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Updated { get; }
+  public System.Collections.Generic.IReadOnlyList<string> Removed { get; }
+  public bool IsEmpty { get; }
+  public long DownloadBytes { get; }
+  public static Shenora.Core.ManifestDiff Compute(Shenora.Core.UpdateManifest installed, Shenora.Core.UpdateManifest release)
+sealed class Shenora.Core.ManifestFile
+  public required long Size { get; init; }
+  public required string Path { get; init; }
+  public required string Sha256 { get; init; }
 static class Shenora.Core.MissionChain
   public static Shenora.Core.MissionDefinition Sequence(string kind, params Shenora.Core.MissionStep[] steps)
 struct Shenora.Core.MissionClaim : System.IEquatable<Shenora.Core.MissionClaim>
@@ -549,3 +560,9 @@ enum Shenora.Core.UiTargetState (int)
   public const Shenora.Core.UiTargetState NotReady = 0
   public const Shenora.Core.UiTargetState Ready = 1
   public int value__
+sealed class Shenora.Core.UpdateManifest
+  public System.DateTimeOffset? GeneratedAt { get; init; }
+  public required System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Files { get; init; }
+  public required string Version { get; init; }
+  public static Shenora.Core.UpdateManifest Parse(string json)
+  public string ToJson()

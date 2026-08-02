@@ -236,6 +236,19 @@ changes, noting them in `CHANGELOG.md`).
   `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
   `IsContained(root, candidate)` (the containment guard for anything mapping caller input to a file —
   resolves `..` first, boundary-tested, so `C:\data-old` is not inside `C:\data`).
+  **`Io/UpdateManifest`, `ManifestFile`, `ManifestDiff` (2026-08-02)** — the staged-update
+  changeset, and the FIRST piece of `docs/2026-08-02-shenora-app-update-design.md` to ship.
+  `ManifestFile` is `{Path, Size, Sha256}` (the triple two sibling apps arrived at independently);
+  `UpdateManifest` is `{Version, GeneratedAt?, Files}` with camelCase `Parse`/`ToJson` matching what
+  they already emit; `ManifestDiff.Compute(installed, release)` yields `Added`/`Updated`/`Removed` +
+  `DownloadBytes`. Pure data and a pure function — no downloader, no release source, no applier;
+  those are the app's or the native step's. Two comparison rules are load-bearing and
+  sabotage-verified: paths normalize separators and case (or the same file is "added" on every check
+  and never converges) and hashes compare case-insensitively (or a generator's hex casing reports
+  EVERY file changed). `Removed` is tracked paths only, never a directory sweep — user data lives in
+  the same tree.
+  ⚠ An empty RELEASE manifest legitimately removes everything, so a manifest that failed to load must
+  never reach `Compute`; validating it is the caller's job and the XML says so.
   Naming is `Mission*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary,
   and reusing the word would blur the one distinction the design rests on. It was `Work*` until
   2026-08-02 — too common a word to own or grep, while `Task*` would collide with the BCL.

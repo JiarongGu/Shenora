@@ -90,6 +90,26 @@ at the first list and missed five more breaking changes.
   `ConfigurationChanges`, so `Window.Created` fired exactly once across a home-and-return. The guard
   is cheap insurance for the wirings that do re-enter; it is not a fix for that one._
 
+- **`UpdateManifest` / `ManifestFile` / `ManifestDiff` in `Shenora.Core`** — the staged-update
+  changeset, and the first piece of `docs/2026-08-02-shenora-app-update-design.md` to ship. A running
+  process cannot replace its own executable, so an update is two phases: the app downloads and
+  verifies while alive, and something that runs before it applies the result. This is the contract
+  the two phases share.
+
+  `ManifestFile` is `{Path, Size, Sha256}` — the triple two sibling apps arrived at independently —
+  and `ManifestDiff.Compute(installed, release)` yields `Added`/`Updated`/`Removed` plus
+  `DownloadBytes`, so only changed files are fetched. Pure data and a pure function: **no downloader,
+  no release source, no applier.** Where manifests come from is the app's, and the apply step is
+  native by necessity.
+
+  Two comparison rules are load-bearing rather than incidental, and both are sabotage-verified:
+  paths normalize separators and case (otherwise the same file is "added" on every check and the
+  update never converges) and hashes compare case-insensitively (otherwise a generator that emits
+  upper-case hex reports EVERY file as changed — a full redownload that looks legitimate).
+  `Removed` is **tracked paths only, never a directory sweep**, because user data lives in the same
+  tree. ⚠ An empty release manifest legitimately removes everything, so one that failed to load must
+  never reach `Compute` — validate before calling.
+
 - **`@shenora/react` speaks both shells.** New `createHybridWebViewTransport()` (MAUI
   `HybridWebView`) and `createHostTransport()`, which picks whichever host the page is in.
   `ShenoraBridge`'s default transport is now the latter, so an app calls `invoke`/`post` and never

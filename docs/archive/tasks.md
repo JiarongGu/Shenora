@@ -41,6 +41,34 @@ envelope types, so `IpcRequest` and friends still resolve through reflection. Fu
 reflection at all needs that too — additive, and a separate change. Said so in the XML and the
 CHANGELOG rather than leaving the hole implied.
 
+### B1 — the update manifest and its diff (2026-08-02) — DONE
+
+The first piece of the staged-update design to ship, and deliberately the piece with no I/O in it:
+`UpdateManifest`/`ManifestFile`/`ManifestDiff` in `Shenora.Core`. Both donor apps hand-rolled this
+TWICE — once in C#, once again in their native applier — which is what made it the obvious start.
+
+Judgement calls worth keeping:
+
+1. **Two comparison rules decide whether an updater converges, and both are sabotage-verified.**
+   Paths normalize separators AND case: without it a manifest written with backslashes never matches
+   one written with forward slashes, so the same file is "added" on every check forever. Hashes
+   compare case-insensitively: without it a generator emitting upper-case hex reports every file
+   changed — a full redownload indistinguishable from a legitimate one. Dropping either failed the
+   test named for it and nothing else.
+2. **A duplicate path throws instead of last-wins.** Last-wins makes the changeset depend on list
+   order, which reproduces only on some inputs; the message names the path and which manifest carried
+   it.
+3. **`Removed` is tracked paths only** — never a directory sweep, because user data lives in the same
+   tree and the manifest is the only thing that knows which files the app owns.
+4. **The empty-release case is PINNED rather than defended against.** An empty release legitimately
+   means "everything went away", so `Compute` cannot tell that from a manifest that failed to load —
+   and that mistake deletes the whole install as the *successful* outcome of a copy. Validation
+   belongs to the caller (B2), the XML says so, and a test records the behaviour as a decision rather
+   than a surprise. One donor's applier carries exactly this guard; the other does not.
+5. **`Diff` and `Manifest` entered the surface lexicon** with the reason beside them, and the note of
+   what did NOT: no Release, Download, Install or Patch noun. The kit ships the changeset, not the
+   updater.
+
 ### A1 — the client speaks both shells (2026-08-02) — DONE (`81c5232`)
 
 `createHybridWebViewTransport()` (MAUI) + `createHostTransport()` (picks whichever host is present),

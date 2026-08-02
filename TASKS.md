@@ -73,9 +73,9 @@ Design + evidence: `docs/2026-08-02-shenora-app-update-design.md` (two independe
 implementations, same two-phase model, same `{path, size, sha256}` manifest). The claim to build
 against: **only the apply step is native.**
 
-- [ ] **B1 — `UpdateManifest`/`ManifestFile` + `ManifestDiff.Compute` in `Shenora.Core`.** Pure data
-  and a pure function; the most testable piece and the one both siblings hand-rolled twice (once in
-  C#, once in C++).
+_B1 (the manifest + diff) is DONE — `Shenora.Core`'s `UpdateManifest`/`ManifestFile`/`ManifestDiff`,
+10 tests, the two comparison rules sabotage-verified. `docs/archive/tasks.md`._
+
 - [ ] **B2 — the staging area:** verify every staged file's sha256, then write `ready.json` LAST. The
   ordering is the property — the marker is the promise that the stage is complete, so the applier
   never re-verifies.
