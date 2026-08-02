@@ -106,6 +106,20 @@ at the first list and missed five more breaking changes.
   refused**, since it would tell an applier to delete every tracked path — destroying the install as
   the successful outcome of an update.
 
+- **`IUpdateSource` + `UpdateStage.FetchAsync`** — the release-source SEAM, and the kit ships **no
+  implementation of it**. Both donor apps fetch from GitHub releases; that is one instance of
+  "somewhere to get a manifest and some files from", not the shape, and baking a client in would drag
+  an HTTP dependency into `Shenora.Core` and ship a consumer's decision. Two methods only —
+  release notes, channels, signatures and rollout percentages are product decisions.
+
+  `FetchAsync` is the whole download-and-stage phase: diff, fetch **only the changed files**, commit.
+  A design point worth knowing: because a differential update stages only the changeset,
+  `CommitAsync` takes the manifest of what is IN the stage, not the release manifest — verifying the
+  full release against a partial stage would fail on every unchanged file. The full release manifest
+  rides along as `manifest.json` inside the stage, because an applier needs it to compute REMOVALS
+  and overlaying it makes it the new installed baseline. A fetch that throws is left to escape: a
+  partial download must not be staged as though it were whole.
+
   Still not shipped, deliberately: no downloader, no release source, no applier.
 
 - **`UpdateManifest` / `ManifestFile` / `ManifestDiff` in `Shenora.Core`** — the staged-update

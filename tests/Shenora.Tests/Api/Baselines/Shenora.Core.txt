@@ -315,6 +315,9 @@ interface Shenora.Core.IUiDispatcher
 interface Shenora.Core.IUiInteraction
   public abstract void BlockInteraction()
   public abstract void UnblockInteraction()
+interface Shenora.Core.IUpdateSource
+  public abstract System.Threading.Tasks.Task<Shenora.Core.UpdateManifest> GetManifestAsync(System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.Core.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IUrlLauncher
   public abstract void OpenUrl(string url)
 sealed class Shenora.Core.ManifestDiff
@@ -570,6 +573,7 @@ sealed class Shenora.Core.UpdateStage
   public .ctor(Shenora.Core.UpdateStageOptions options)
   public Shenora.Core.UpdateStageStatus GetStatus()
   public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> CommitAsync(Shenora.Core.UpdateManifest manifest, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> FetchAsync(Shenora.Core.IUpdateSource source, Shenora.Core.UpdateManifest installed, System.Threading.CancellationToken cancellationToken = default)
   public string StagedDirectory { get; }
   public void Begin()
   public void Clear()

@@ -158,6 +158,89 @@ public class UpdateStageTests
         Assert.False(stage.GetStatus().Pending);
     }
 
+    /// <summary>A source over an in-memory release — the seam is the point, so the fake is trivial.</summary>
+    private sealed class FakeSource(UpdateManifest release, Dictionary<string, string> content) : IUpdateSource
+    {
+        public List<string> Opened { get; } = [];
+
+        public Task<UpdateManifest> GetManifestAsync(CancellationToken ct = default) => Task.FromResult(release);
+
+        public Task<Stream> OpenAsync(ManifestFile file, CancellationToken ct = default)
+        {
+            Opened.Add(file.Path);
+            return Task.FromResult<Stream>(
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content[file.Path])));
+        }
+    }
+
+    [Fact]
+    public async Task FetchAsync_downloads_only_the_CHANGED_files_and_commits()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        var installed = Manifest(("app.exe", "v1"), ("libs/keep.dll", "same"));
+        var release = Manifest(("app.exe", "v2"), ("libs/keep.dll", "same"), ("new.dll", "brand new"));
+        var source = new FakeSource(release, new()
+        {
+            ["app.exe"] = "v2", ["libs/keep.dll"] = "same", ["new.dll"] = "brand new",
+        });
+
+        var status = await stage.FetchAsync(source, installed);
+
+        Assert.True(status.Pending);
+        // The whole point of a differential update: keep.dll is unchanged and must NOT be fetched.
+        Assert.Equal(["new.dll", "app.exe"], source.Opened);
+        Assert.False(File.Exists(Path.Combine(stage.StagedDirectory, "libs", "keep.dll")));
+        // …and the full release manifest rides along, because the applier needs it for REMOVALS —
+        // the staged changeset alone cannot say what went away.
+        var carried = UpdateManifest.Parse(File.ReadAllText(Path.Combine(stage.StagedDirectory, "manifest.json")));
+        Assert.Equal(3, carried.Files.Count);
+    }
+
+    [Fact]
+    public async Task FetchAsync_stages_nothing_when_already_up_to_date()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        var same = Manifest(("app.exe", "v1"));
+
+        var status = await stage.FetchAsync(new FakeSource(same, new() { ["app.exe"] = "v1" }), same);
+
+        // Not "an empty stage" — no stage at all. Manufacturing one would trip CommitAsync's own
+        // empty-manifest guard and report a failure that is really a no-op.
+        Assert.False(status.Pending);
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task FetchAsync_refuses_an_empty_release_manifest()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        var empty = new UpdateManifest { Version = "9.0", Files = [] };
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => stage.FetchAsync(new FakeSource(empty, []), Manifest(("app.exe", "v1"))));
+
+        // Earliest possible refusal: an empty release diffs to "remove everything installed".
+        Assert.Contains("removing every installed file", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_source_that_throws_mid_download_leaves_no_usable_stage()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        var release = Manifest(("a.dll", "one"), ("b.dll", "two"));
+        // b.dll is missing from the fake's content, so OpenAsync throws partway through.
+        var source = new FakeSource(release, new() { ["a.dll"] = "one" });
+
+        await Assert.ThrowsAnyAsync<Exception>(() => stage.FetchAsync(source, Manifest()));
+
+        // A partial download must never look like a complete stage.
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
     [Fact]
     public async Task Verification_observes_cancellation()
     {

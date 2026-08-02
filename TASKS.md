@@ -78,8 +78,9 @@ _B1 (the manifest + diff) is DONE — `Shenora.Core`'s `UpdateManifest`/`Manifes
 
 _B2 (the staging area) is DONE — `UpdateStage`, 9 tests, the write-the-marker-LAST ordering
 sabotage-verified. It also carries B1's deferred empty-manifest guard._
-- [ ] **B3 — the release-source SEAM, not an implementation.** Both siblings use GitHub releases;
-  baking that in would ship a consumer's shape.
+_B3 (the release-source seam) is DONE — `IUpdateSource` + `UpdateStage.FetchAsync`. The kit ships no
+implementation of the seam, and the differential-vs-full manifest distinction is documented on
+`FetchAsync`._
 - [ ] **B4 — the launcher template (native, ~150 lines).** Take Sonora's topology (app in
   `{root}/app/`, overlay only that) because it makes four guard-classes unreachable rather than
   fixed. Ships as a repo TEMPLATE, not a package, and must say plainly that this repo's gate cannot
