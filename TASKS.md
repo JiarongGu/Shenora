@@ -118,6 +118,79 @@ implementation of the seam, and the differential-vs-full manifest distinction is
   plainly, and the sibling's Node harness (drive a PREBUILT exe over sandbox dirs) is the model for
   testing it on demand rather than in `verify`.
 
+### From the first adopter, `Shenora.Core/Io` adoption attempt (2026-08-03)
+
+Tried to adopt the Io layer and **declined both halves — but on SHAPE, not on quality**, which is the
+kind of reason that should become kit work rather than a workaround. Both gaps are generalizable; neither
+is that app's domain leaking in. (Its owner pushed back on the decline with "it's better we not reinvent
+the wheel", which is why these are filed rather than quietly worked around.)
+
+- [ ] **There is no SYNCHRONOUS, single-file atomic write, and it is the most common file operation a
+  desktop app has.** `FileChange.Replace(TempPath, TargetPath)` is exactly the primitive — but the only
+  way in is `IFileUpdateQueue.ApplyAsync`, an async queued multi-change applier with rollback and
+  cross-process partitioning. Every config store in a desktop app is single-file, synchronous and
+  best-effort, and at least one of them saves from a window-closing path where awaiting a queue is
+  actively worse. So the adopter wrote ~30 lines (sibling temp → flush through to disk → rename over
+  target) that the kit conceptually already owns.
+  **Why it is worth having:** that app had FOUR stores using `File.WriteAllText`, which truncates before
+  it writes. All four load best-effort (corrupt ⇒ defaults), so an interrupted write does not fail
+  loudly — it silently resets the user's settings, chat history and UI language. That failure is
+  invisible until someone notices their configuration reverted, and every sibling app has the same
+  stores. Suggested: expose the primitive directly — `FileUpdates.WriteAtomic(path, contents)` or a
+  synchronous `Replace(temp, target)` — with the flush-before-rename included, since a rename that lands
+  while the content is still in the OS write cache is the same failure wearing a different hat.
+
+  **VERIFIED against the source 2026-08-03 — the complaint is accurate on both halves.**
+  `FileChange.Replace` is a *record describing* a change (`FileUpdates.cs:39`); the only code that
+  executes one is `FileUpdateQueue` (`:378`), reachable only through `ApplyAsync`. There is no public
+  synchronous path, and `FileUpdates` contributes no methods at all — only record types. Five
+  constraints for whoever builds it, four already solved inside the queue and one NOT:
+  - **Target-absent is a different operation.** `File.Replace` throws when the target does not exist,
+    so a first write must `Move` instead. The queue branches on exactly this (`:380-389`); an API that
+    forgets it passes every test on a machine that already has the file and fails on a fresh install.
+  - **The temp must be a SIBLING of the target.** A rename is atomic only within a volume, so a temp
+    in `%TEMP%` silently degrades to copy-then-delete across volumes. The adopter got this right by
+    hand; the API should pick the temp path itself so a caller cannot get it wrong.
+  - **Flush-to-disk before the rename — and NOTHING in `Io` does this today.** No `Flush`,
+    `FlushToDisk` or `WriteThrough` anywhere in the layer: the queue renames a temp file the CALLER
+    wrote, so durability is currently the caller's problem and quietly unmet. This is the one thing
+    the queue does not already answer, and it is what makes "atomic" a fact rather than a claim.
+  - **It bypasses `PathLocks` and partitioning deliberately — say so ON the API.** The queue exists
+    for multi-change, cross-process, rollback-able work; this is last-writer-wins on one file. Right
+    for a config store, wrong for what the queue was built for, and an undocumented fast path is
+    exactly how someone reaches for it in the wrong place.
+  - Open design question: `string contents` covers the common case but forces binary callers to
+    buffer; a `Stream` or `Action<Stream>` overload avoids that. Pick deliberately rather than
+    shipping the string one and bolting the other on later.
+- [ ] **`UpdateStage` assumes a PER-FILE source, so an archive-based release cannot use it without
+  writing the bridge itself.** `IUpdateSource.OpenAsync(ManifestFile)` fits a release that publishes
+  loose files. The adopter's releases publish one ZIP per part with a manifest listing per-file hashes —
+  a shape at least as common, since it is what GitHub Releases encourages. Everything else fits
+  perfectly: `UpdateStage` verifies every staged file's SHA-256 before the stage counts as pending,
+  which is precisely the load-bearing step that app hand-rolled, with the same anti-truncation reasoning.
+  Two consequences worth separating: the per-file DELTA buys nothing when the whole archive arrives
+  anyway (fine — it just does not help), but the bridge itself is glue several adopters would write
+  identically. Suggested: ship an archive-backed `IUpdateSource` (open a `ZipArchive` once, serve entries
+  by manifest path). Small, and it turns "adoptable if you write an adapter" into "adoptable".
+  Recorded honestly: the adopter declined partly on a BAD metric — adapter lines ≈ deleted lines — which
+  misses that the tricky, worth-inheriting logic (staging, verification, journal, resume) is all on the
+  kit's side and the bridge is boring. With the source shipped, this becomes a straight adoption.
+
+  **VERIFIED 2026-08-03 — and the news is better than the entry assumes: the INTERFACE already fits.**
+  `OpenAsync(ManifestFile) -> Task<Stream>` is exactly what a ZIP-backed source needs; it can hold one
+  `ZipArchive` and return `entry.Open()` per manifest path. **No contract change, purely a shipped
+  implementation** — which makes this cheaper than "ship an archive-backed source" sounds. Four notes
+  for whoever writes it:
+  - `FetchAsync` opens files **sequentially** (`UpdateStage.cs:275`, a plain `foreach` with `await`),
+    so one shared `ZipArchive` is safe today. `ZipArchive` is NOT thread-safe, so that is a coupling
+    to state in the XML rather than leave the next person to parallelise the loop and find out.
+  - The archive stream must be **seekable**. Over a live HTTP response `ZipArchive` is forward-only
+    and random access by entry fails; download to a file (or a `MemoryStream`) first.
+  - The adopter publishes **one ZIP per part**, not one per release, so the source must map
+    manifest path → (archive, entry). A single-archive implementation would only serve half of them.
+  - It belongs where `IUpdateSource` already lives (`Shenora.Core`, no new package per D2) and needs
+    no dependency: `System.IO.Compression` is in the shared framework.
+
 ### C. Held at the two-consumer bar
 
 **Nothing below is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are
