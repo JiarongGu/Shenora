@@ -70,30 +70,9 @@ handshake with `maui · [filePicker]`, plus `ECHO` and `UI_STATE` (`onUiThread: 
 `Shenora.Mobile` needed **no platform directive at all**; the sample needed one, for the log sink.
 Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
 
-- [ ] **A8 — `Shenora.iOS` 0.5.0 is BUILT but not PUBLISHED; the pipeline problem turned out not to
-  exist.** 0.5.0 shipped four packages — Core, Ipc, Windows, Android — and silently omitted iOS,
-  because `pack` skipped it and the release runs on Windows.
-  - **The whole "iOS needs a macOS pack job" premise was WRONG** (owner, 2026-08-03: *"I dont think
-    the ios package has any dependency to build on mac"*). A `net10.0-ios` LIBRARY builds anywhere the
-    `maui-ios` workload is installed; only an APP needs Xcode, and the target that blocked the sample
-    (`_ValidateXcodeVersion`) is conditioned on `_CanOutputAppBundle`. Verified by packing on Windows
-    with no Mac and no override flags: identical `lib/` layout and nuspec to the Mac-built package.
-    **The three-job release design was retired unbuilt** — it solved a problem that was not there.
-  - Done as a result: `Shenora.iOS` is in the solution and gated on every run (its own metadata
-    baseline, no surrogate), `macOnlyPackableProjects` is empty, and one `dev.mjs pack` on Windows
-    produces all five packages plus the npm tarball. **No release-workflow change is needed.**
-  - **What is left is only to publish it.** The next release cuts 0.5.1+ and carries iOS
-    automatically; alternatively `Shenora.iOS.0.5.0.nupkg` can be pushed on its own to complete the
-    version, since `src/` is unchanged since the `v0.5.0` tag and the package is byte-equivalent.
-  - **CI now installs both mobile workloads explicitly** (`release.yml`), because the runner image
-    publishes a 9.0 `maui.*` list and cannot be assumed to carry the .NET 10 ones. 0.5.0 proved
-    net10.0-android resolved there and proved nothing about iOS. The failure mode was safe either way —
-    the Verify gate runs before Pack, Push, Commit and Tag, so a missing workload burns no version —
-    but a release is the wrong place to find out.
-  - Separately, RUNNING the sample on a simulator still rides two override flags
-    (`ValidateXcodeVersion=false` + `MtouchLink=SdkOnly`) because that Mac's Xcode 26.3 is older than
-    the workload's 26.6. That is an APP concern only, gitignored machine config, simulator-debug only
-    — it never touches the packages. Device and Release iOS remain UNPROVEN.
+_A8 (iOS published) is CLOSED — 0.5.1 shipped all five packages from one Windows runner,
+ included. The macOS pack job was retired unbuilt: only an iOS APP needs a Mac. See
+._
 
 ### B. Staged application updates — DESIGNED 2026-08-02, nothing built
 

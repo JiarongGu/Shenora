@@ -2069,3 +2069,44 @@ The original entries, kept for the reasoning rather than the outcome:
     two transforms of the same file cannot interleave. Getting that wiring right is most of the
     design work; the file mechanics are the easy part.
   - Interrupted transforms must leave no junk: name temps predictably and sweep them at startup.
+
+## A8 — iOS published, and the pipeline problem never existed — DONE 2026-08-03
+
+0.5.1 shipped all five packages from ONE Windows runner, `Shenora.iOS` included — its first published
+version, since 0.5.0 has none and never will (versions are immutable, so that package's history
+begins at 0.5.1). Confirmed against nuget.org's flat container after the registration index proved to
+lag: the same package flipped between visible and not across polls, which is edge-cache
+inconsistency, not a missing push.
+
+The three-job macOS release design was retired UNBUILT — a `net10.0-ios` LIBRARY needs only the
+`maui-ios` workload, never Xcode; only an iOS APP needs a Mac. `release.yml` installs both mobile
+workloads explicitly, because the runner image publishes a 9.0 `maui.*` list and cannot be assumed to
+carry the .NET 10 ones.
+
+The original entry, for the reasoning:
+
+- [ ] **A8 — `Shenora.iOS` 0.5.0 is BUILT but not PUBLISHED; the pipeline problem turned out not to
+  exist.** 0.5.0 shipped four packages — Core, Ipc, Windows, Android — and silently omitted iOS,
+  because `pack` skipped it and the release runs on Windows.
+  - **The whole "iOS needs a macOS pack job" premise was WRONG** (owner, 2026-08-03: *"I dont think
+    the ios package has any dependency to build on mac"*). A `net10.0-ios` LIBRARY builds anywhere the
+    `maui-ios` workload is installed; only an APP needs Xcode, and the target that blocked the sample
+    (`_ValidateXcodeVersion`) is conditioned on `_CanOutputAppBundle`. Verified by packing on Windows
+    with no Mac and no override flags: identical `lib/` layout and nuspec to the Mac-built package.
+    **The three-job release design was retired unbuilt** — it solved a problem that was not there.
+  - Done as a result: `Shenora.iOS` is in the solution and gated on every run (its own metadata
+    baseline, no surrogate), `macOnlyPackableProjects` is empty, and one `dev.mjs pack` on Windows
+    produces all five packages plus the npm tarball. **No release-workflow change is needed.**
+  - **What is left is only to publish it.** The next release cuts 0.5.1+ and carries iOS
+    automatically; alternatively `Shenora.iOS.0.5.0.nupkg` can be pushed on its own to complete the
+    version, since `src/` is unchanged since the `v0.5.0` tag and the package is byte-equivalent.
+  - **CI now installs both mobile workloads explicitly** (`release.yml`), because the runner image
+    publishes a 9.0 `maui.*` list and cannot be assumed to carry the .NET 10 ones. 0.5.0 proved
+    net10.0-android resolved there and proved nothing about iOS. The failure mode was safe either way —
+    the Verify gate runs before Pack, Push, Commit and Tag, so a missing workload burns no version —
+    but a release is the wrong place to find out.
+  - Separately, RUNNING the sample on a simulator still rides two override flags
+    (`ValidateXcodeVersion=false` + `MtouchLink=SdkOnly`) because that Mac's Xcode 26.3 is older than
+    the workload's 26.6. That is an APP concern only, gitignored machine config, simulator-debug only
+    — it never touches the packages. Device and Release iOS remain UNPROVEN.
+

@@ -12,9 +12,10 @@ records only what EXISTS.)
 ## Current state — **v0.5.1 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
 Five NuGet packages + `@shenora/react` on npm — since 0.5.0 organised BY PLATFORM (D37): `Core`,
-`Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. ⚠ 0.5.0 published only the
-first four: `pack` skipped iOS on the mistaken belief that it needed a Mac, so `Shenora.iOS` awaits
-its first publish (`TASKS.md` A8). Since the summary below was written, P5.5 landed the
+`Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. All five ship from ONE
+Windows runner — 0.5.0 published only the first four because `pack` skipped iOS on the mistaken
+belief that it needed a Mac, and 0.5.1 corrected that. Since the summary below was written, P5.5
+landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
 a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 added native caption
 buttons, P6 readied adoption (`docs/ADOPTION.md`, and six capability gaps found and closed), and P7
