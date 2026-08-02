@@ -5,6 +5,28 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-03 — SAVING is universal, on all three shells (C)
+
+`IFileDialogs.SaveAsync(options, write)` — the counterpart to `OpenReadAsync`. Open became universal by
+letting the host do the reading; save becomes universal by letting the host do the **writing**, which is
+the only shape that is honest everywhere: "give me somewhere to save to" has no mobile expression, since
+the user grants access to one document rather than a path.
+
+Three implementations behind one call. Windows gets it from a default over `SaveFileDialog` plus
+`Files.BeginReplace`. Android uses `ACTION_CREATE_DOCUMENT` through AndroidX's activity-result
+**registry** — not `RegisterForActivityResult`, which must be called before the activity is STARTED and
+so is unavailable to a DI-resolved service; the registry route also needs no app-side wiring. iOS uses
+`UIDocumentPickerViewController` in its export-a-copy form. All three produce into a temp and only then
+hand over, so **an interrupted save never damages the user's previous file** — the case the atomic
+primitive was built for, since a save picker usually fronts a long operation.
+
+The mobile halves live in each package's `Platforms/` folder as a `partial` method, so a fourth shell
+cannot compile until it decides what save means there (verified: the iOS build failed `CS8795` before its
+half existed). Proven on a device and a simulator with matching bytes — and the runs earned their keep,
+finding a defect no build could: iOS's export picker suggests the temp file's own name, so a
+GUID-prefixed temp leaked into the user's "Save as" field. Android could not have shown it. Full record:
+`docs/archive/tasks.md`.
+
 ### 2026-08-03 — an off-screen session can render the app's OWN frontend (E1 / D38)
 
 `SessionBrowserOptions` gained `VirtualHost` + `ResourceProvider` + `FolderMappings`, so

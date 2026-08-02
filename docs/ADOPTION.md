@@ -410,10 +410,26 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 | **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
 
 **Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing:
-clipboard IMAGES (Essentials is text-only) and the folder/save pickers throw
+clipboard IMAGES (Essentials is text-only) and the folder picker throw
 `ShellCapability.NotSupported` naming the platform and the alternative. `IUiInteraction`'s
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
+
+**SAVING is universal, but only through `SaveAsync(options, write)`** — implemented natively on both
+mobile shells since 2026-08-03 (`ACTION_CREATE_DOCUMENT`, `UIDocumentPickerViewController`). Call that,
+not `SaveFileAsync`, which still refuses here because "give me a PATH to save to" has no mobile
+expression: the user grants access to one document, the app writes into it, and there is nothing to hand
+back. Three consequences an adopter should design around:
+
+- **`FileDialogResult.FilePath` is null on SUCCESS.** Check `Success`, never the path — a page that
+  treats the missing path as failure will report every mobile save as failed.
+- **The write callback may run even if the user cancels.** Android asks first; iOS must produce the
+  content first, because its export picker hands over a file that already exists. Do not put anything
+  irreversible in the callback.
+- **You get atomicity for free on every shell.** Both mobile implementations produce into a cache temp
+  and only then hand it over, so an interrupted save leaves the user's previous document untouched — the
+  same guarantee the desktop gets from `Files.BeginReplace`. That is the whole reason the shape is a
+  callback rather than a path.
 
 ### One web bundle, every shell — advertise capabilities, don't sniff the platform
 

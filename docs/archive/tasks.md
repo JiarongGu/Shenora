@@ -2217,3 +2217,69 @@ exists, and those comparison rules are sabotage-verified in one place.
 
 **Still owed by whoever ports the archive source:** validating an exemption set against a REAL published
 release rather than fixtures. Kept in `TASKS.md` for that reason.
+
+## C — the SAVE picker: universal on all three shells — CLOSED 2026-08-03
+
+Owner's work order put this after E1, and owner chose "do it PROPERLY on both platforms" over a share
+sheet when asked. The share sheet was rejected for a specific reason worth keeping: `Share.RequestAsync`
+completes when the sheet is PRESENTED, not when the user picks, so `Success` would have meant "handed to
+the platform" — the same member promising something weaker on mobile than on the desktop, which is
+exactly what D35 exists to prevent.
+
+**The shape: `IFileDialogs.SaveAsync(options, write)`.** The counterpart to `OpenReadAsync` — open became
+universal by letting the host do the READING, save becomes universal by letting the host do the WRITING.
+A callback rather than a returned path because "give me somewhere to save to" has no mobile expression at
+all: the user grants access to one document, the app writes into it while the grant is live, and there is
+nothing to hand back. `SaveFileAsync` is now documented as the DESKTOP-flavoured member and keeps
+refusing on mobile, which is the correct answer rather than a gap.
+
+| Shell | Mechanism | Evidence |
+|---|---|---|
+| Windows | default over `SaveFileDialog` + `Files.BeginReplace` | 8 tests; atomicity sabotage-verified |
+| Android | `ACTION_CREATE_DOCUMENT` via AndroidX's activity-result registry | emulator; 160 B at the chosen path |
+| iOS | `UIDocumentPickerViewController(asCopy: true)` | simulator; 160 B, byte-identical |
+
+**All three produce into a temp and only then hand over**, so an interrupted save never damages the
+user's previous file. That is the case `Files.BeginReplace` was built for — a save picker usually fronts a
+long operation, and on Android it also dodges a real trap: opening a content URI in write mode truncates
+the target immediately.
+
+**Established by COMPILING rather than guessing** (the technique this repo already uses):
+- **`Microsoft.Maui.ApplicationModel.Platform.OnActivityResult` does not exist in .NET 10.** The route is
+  `((ComponentActivity)Platform.CurrentActivity).ActivityResultRegistry.Register(key, contract, callback)`
+  — the REGISTRY specifically, because `RegisterForActivityResult` must be called before the activity
+  reaches STARTED and a DI-resolved service cannot. It also needs NO app-side wiring, which is what makes
+  it adoptable: no `OnActivityResult` override for an adopter to remember.
+- **`Platforms/<Platform>/**` globbing works for a SINGLE-TFM library project**, which had never been
+  exercised in these projects (`ARCHITECTURE.md` said "there is none yet"). Sabotage-verified in BOTH
+  directions: a deliberate error in `Platforms/iOS/` fails the iOS build, so the file really is compiled;
+  and an Android-only file in `Platforms/Android/` inside the iOS project builds fine, so the exclusion
+  really works. A "Build succeeded" over a file that was never compiled would have proven nothing.
+- ⚠ `= default` on the IMPLEMENTING half of a partial method is **CS1066** — the default belongs only to
+  the defining declaration.
+
+**A `partial` method rather than a virtual with a fallback, and it proved itself:** before the iOS half
+existed, the iOS build failed **CS8795**. A fourth shell joining the shared mobile source cannot compile
+until someone decides what save means there, instead of silently inheriting a stub that refuses at
+runtime. Fail-closed at compile time beats fail-loud at runtime.
+
+**THE DEVICE RUN EARNED ITS KEEP — it found a defect no build could.** iOS's export picker suggests the
+TEMP FILE's own name to the user, so `NewTempPath`'s `{guid}-shenora-sample.txt` appeared in the "Save as"
+field as `89c9bdcc7248436…`. **Android could not have shown it**: there the suggested name is passed
+separately to `Launch()` and the temp's name never surfaces. Fixed by moving uniqueness from the file NAME
+to a per-call DIRECTORY (plus `DiscardTemp`, or every save leaks an empty folder for the life of the
+install), then re-verified on the simulator: "Save as **shenora-sample**", and the file landed as
+`shenora-sample.txt`.
+- **The lesson as a class: two shells sharing one contract can hide each other's bugs**, for reasons that
+  live entirely in the platform's UI rather than in the shared code. Proving one shell is not proving the
+  contract.
+- Both runs also showed TICK notifications flowing throughout, so neither an open picker nor the write
+  blocked either UI thread.
+
+**Process note for the next mobile task: each iOS round trip costs ONE COMMIT**, because `mac push`
+refuses a dirty tree by design. Finding the naming defect and re-verifying took two. That is the guard
+working — it exists because a warning alone once cost two rounds of concluding things about code the Mac
+never saw — not friction to route around.
+
+**Still open under C, and narrower than before:** only `OpenFolderAsync`, which D35 argues should stay
+closed as a portable capability. Kept in `TASKS.md`.

@@ -274,16 +274,18 @@ scratch; at that point the shape is already known.
   document into app cache and returns a real path, so the default works on both shells — but the
   method exists so a shell returning a genuine content URI can override it invisibly.
 
-  **What is still open, and it is narrower than before:** `OpenFolderAsync` and `SaveFileAsync`.
-  Neither has a MAUI Essentials equivalent — checked by compiling: `FolderPicker` and `FileSaver`
-  live in **CommunityToolkit.Maui**, a UI-component package D13 forbids the kit from taking. So
-  Android needs raw Storage Access Framework (`ACTION_OPEN_DOCUMENT_TREE` /
-  `ACTION_CREATE_DOCUMENT`), which returns URIs and needs Activity-result plumbing.
-  - **Save is the harder one and the more interesting**: a picked cache path cannot be written back
-    to the user's document, so "give me a path to save to" is not expressible on this platform at
-    all. The universal shape is `SaveAsync(options, write)` — pick and write in one call, host-side —
-    mirroring `OpenReadAsync`. That is the design; it is unbuilt because the SAF plumbing is real
-    work and no consumer has needed it yet.
+  **SAVE IS DONE (2026-08-03) — `SaveAsync(options, write)` on all three shells**, proven on a device
+  and a simulator with matching bytes. `ACTION_CREATE_DOCUMENT` on Android through AndroidX's
+  activity-result REGISTRY (not `RegisterForActivityResult`, which cannot be reached from a DI-resolved
+  service), `UIDocumentPickerViewController` on iOS, both in `Platforms/` as a `partial` method so a
+  fourth shell cannot compile until it decides what save means. `SaveFileAsync` keeps refusing on
+  mobile, and that is the correct answer, not a gap: "give me a PATH" has no mobile expression. Record
+  in `docs/archive/tasks.md`; adopter guidance in `ADOPTION.md` Stage 5.
+
+  **What is still open is narrower again: only `OpenFolderAsync`** — and see the D35 note below, which
+  argues it should stay closed. `FolderPicker` lives in **CommunityToolkit.Maui** (checked by
+  compiling), a UI-component package D13 forbids, so Android would need raw
+  `ACTION_OPEN_DOCUMENT_TREE`.
   - **Folder picking is CLOSED as a portable capability — see D35.** Owner's framing: on mobile
     "open folder" means the camera roll, or the app's own space, or a system-authorized grant; on
     desktop it is free access to any path. Same word, different guarantee. So it is documented as a

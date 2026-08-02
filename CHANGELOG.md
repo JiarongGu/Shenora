@@ -14,6 +14,24 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **`UpdateStage.CommitAsync` now REFUSES a stage containing files the manifest does not list.** No API
+  changed, but the behaviour did: a stage that previously reported `Pending = true` now reports
+  `Pending = false` if the staged tree holds anything unindexed. An app that fills `StagedDirectory` by
+  extracting an archive whole — carrying entries the manifest never described — worked before and fails
+  now.
+
+  It is filed as breaking rather than as a fix because that is what a consumer experiences, even though
+  the old behaviour was a hole: `ApplyAsync` overlays the staged TREE, so those unverified files were
+  being copied into the install root. Verification now covers all three failure modes (truncation,
+  tamper, intrusion) instead of two.
+
+  **To restore the old outcome deliberately**, exempt what your release legitimately carries:
+  `new UpdateStageOptions { Root = …, IsUnindexed = path => path.StartsWith("data/") }`. Exempting
+  everything (`_ => true`) reproduces the previous behaviour exactly, and states in code that you meant
+  to. The kit's own `manifest.json` is exempt unconditionally and needs no predicate.
+
 ### Added
 
 - **An off-screen session can serve the app's OWN packaged bundle** —
@@ -110,6 +128,14 @@ at the first list and missed five more breaking changes.
 
   `SaveFileAsync` (the path-returning one) still refuses loudly on mobile, and its message now names
   `SaveAsync` as the thing to call instead.
+
+  **Proven on a device and a simulator, with matching bytes**: the same `SAVE_TEXT` route answered
+  `{"success":true}` on both, and the file landed at the chosen destination at 160 bytes on each — the
+  desktop, Android and iOS all running one portable write callback. The run also earned its keep by
+  finding a defect no build could: iOS's export picker suggests the TEMP FILE's own name, so a
+  GUID-prefixed temp surfaced in the user's "Save as" field. Uniqueness moved to a per-call directory.
+  Android could never have shown it, because there the suggested name is passed separately — a reminder
+  that two shells sharing one contract can hide each other's bugs.
 
 - **`UpdateStageOptions.IsUnindexed` + the INTRUSION check in `UpdateStage.CommitAsync`.** Stage
   verification had two of the three failure modes a verifier needs: truncation (listed but missing) and
