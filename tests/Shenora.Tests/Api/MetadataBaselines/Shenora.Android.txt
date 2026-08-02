@@ -8,6 +8,7 @@ Shenora.Mobile.MobileFileDialogs
   method .ctor
   method OpenFileAsync
   method OpenFolderAsync
+  method SaveAsync
   method SaveFileAsync
 Shenora.Mobile.MobileHostExtensions
   method UseMobile

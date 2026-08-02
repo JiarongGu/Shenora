@@ -87,8 +87,14 @@ Shenora.slnx
 │   │                                          Essentials-backed Core contracts.
 │   │                                          Both PROVEN on device/simulator, and neither needed a
 │   │                                          single #if. Divergence goes in each project's
-│   │                                          Platforms/ folder (MAUI SDK includes per TFM); there
-│   │                                          is none yet. BOTH are in the solution and gated on
+│   │                                          Platforms/ folder (MAUI SDK includes per TFM, verified
+│   │                                          in BOTH directions for these single-TFM libraries).
+│   │                                          Since 2026-08-03 there IS some: SaveAsync, because SAF
+│   │                                          and UIDocumentPicker have nothing in common. It is a
+│   │                                          `partial` method, so a THIRD platform cannot compile
+│   │                                          until it decides what save means (CS8795), rather than
+│   │                                          inheriting a stub that refuses at runtime.
+│   │                                          BOTH are in the solution and gated on
 │   │                                          every run — LIBRARY, not app, so no Mac is involved.
 │   └── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
 ├── tests/

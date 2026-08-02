@@ -118,9 +118,38 @@ public sealed class MobileUiInteraction : IUiInteraction
 /// validation), <c>DefaultPath</c> and <c>RememberPathKey</c> (no addressable start directory), and
 /// <c>DefaultExtension</c>. <c>Title</c> and <c>Filters</c> DO map.
 /// </para>
+/// <para>
+/// <b>SAVING is implemented PER PLATFORM</b> (<c>Platforms/Android/</c>, <c>Platforms/iOS/</c>) because
+/// the two systems express it differently and neither resembles a desktop save dialog — see
+/// <see cref="SaveAsync"/>. It is a <c>partial</c> method rather than a virtual with a fallback on
+/// purpose: a THIRD platform joining this shared source cannot compile until someone decides what save
+/// means there, instead of silently inheriting a stub that refuses at runtime.
+/// </para>
 /// </summary>
-public sealed class MobileFileDialogs : IFileDialogs
+public sealed partial class MobileFileDialogs : IFileDialogs
 {
+    /// <summary>
+    /// Pick a destination and write to it — the portable save, implemented natively per platform:
+    /// <c>ACTION_CREATE_DOCUMENT</c> on Android, <c>UIDocumentPickerViewController</c> on iOS.
+    /// <para>
+    /// <b>Both platforms produce the content into a CACHE TEMP first and only then hand it over</b>, so
+    /// the user's existing document is untouched until the content is complete — the same reasoning as
+    /// the desktop's <c>Files.BeginReplace</c>, applied to a destination that is a system grant rather
+    /// than a path. The remaining window is the hand-over copy itself, which is bounded by copy speed
+    /// rather than by however long the caller's operation takes; that difference is the whole point,
+    /// because a long encode is where an in-place write does its damage.
+    /// </para>
+    /// <para>
+    /// <b>⚠ Do not assume the pick happens before the write.</b> Android asks first and then produces
+    /// (so a cancel costs nothing); iOS must produce first, because its export picker hands over a file
+    /// that already exists — so a cancel there wastes the work. Portable logic must therefore treat the
+    /// callback as "may run even if the user ultimately cancels".
+    /// </para>
+    /// </summary>
+    public partial Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+                                                    Func<Stream, CancellationToken, Task> write,
+                                                    CancellationToken cancellationToken = default);
+
     /// <inheritdoc />
     public async Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null)
     {
@@ -149,6 +178,36 @@ public sealed class MobileFileDialogs : IFileDialogs
 
     /// <inheritdoc />
     public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null) =>
-        throw ShellCapability.NotSupported("Choosing a save destination", MauiShellNames.Shell,
-            "MAUI Essentials has no save picker — write to app storage and offer a share sheet, or use a platform-specific SAF create-document intent.");
+        throw ShellCapability.NotSupported("Choosing a save destination as a PATH", MauiShellNames.Shell,
+            "No mobile system has that concept: the user grants access to one document and the app writes " +
+            "INTO it while the grant is live, so there is no path to hand back. Use SaveAsync(options, write) " +
+            "instead — it is implemented here, and it is the portable shape on every shell (D35).");
+
+    /// <summary>
+    /// A cache file to produce content into before handing it to the platform. Named per call so two
+    /// concurrent saves cannot share one, and created under the cache directory because that is the
+    /// space both platforms let an app write without a grant.
+    /// </summary>
+    private static string NewTempPath(string? suggestedName)
+    {
+        var name = string.IsNullOrWhiteSpace(suggestedName) ? "save" : Path.GetFileName(suggestedName);
+        var directory = Path.Combine(FileSystem.CacheDirectory, "shenora-save");
+        Directory.CreateDirectory(directory);
+        return Path.Combine(directory, $"{Guid.NewGuid():n}-{name}");
+    }
+
+    /// <summary>
+    /// The name to suggest in the picker: the caller's <see cref="FileDialogOptions.FileName"/>, with
+    /// <see cref="FileDialogOptions.DefaultExtension"/> appended when it carries no extension of its
+    /// own. Unlike the desktop, the NAME is the only place an extension can be expressed here — the
+    /// MIME type is deliberately generic (see the platform implementations).
+    /// </summary>
+    private static string SuggestedName(FileDialogOptions? options)
+    {
+        var name = options?.FileName;
+        if (string.IsNullOrWhiteSpace(name)) name = "untitled";
+        if (!Path.HasExtension(name) && options?.DefaultExtension is { Length: > 0 } extension)
+            name = $"{name}.{extension.TrimStart('.')}";
+        return name;
+    }
 }

@@ -86,8 +86,30 @@ at the first list and missed five more breaking changes.
   leaves open. Pinned by tests that assert the previous file's contents survive both a throw and a
   cancel, and sabotage-verified by writing straight at the destination instead.
 
-  Mobile still refuses loudly (D33) pending the platform pickers — `ACTION_CREATE_DOCUMENT` on Android
-  and `UIDocumentPickerViewController(forExporting:)` on iOS.
+- **`SaveAsync` is implemented on BOTH mobile shells**, so save is universal end to end rather than
+  desktop-only with a documented gap. `ACTION_CREATE_DOCUMENT` on Android (through AndroidX's
+  `CreateDocument` contract) and `UIDocumentPickerViewController` in its export-a-copy form on iOS —
+  raw platform code in each package's `Platforms/` folder, because MAUI Essentials has no save picker
+  and the obvious third-party one lives in CommunityToolkit.Maui, which D13 forbids.
+
+  **Both produce the content into a cache temp and only then hand it over**, so the user's existing
+  document is untouched until the content is complete — the desktop's `Files.BeginReplace` reasoning
+  applied to a destination that is a system grant rather than a path. On Android that also avoids a real
+  trap: opening a content URI in write mode truncates the target immediately, so a caller that threw
+  half-way would have destroyed a file the user picked to overwrite.
+
+  Three things are contracts, not implementation details:
+  - **It is a `partial` method, not a virtual with a fallback.** A third platform joining the shared
+    mobile source cannot compile until someone decides what save means there. Verified rather than
+    asserted: before the iOS half existed, the iOS build failed with `CS8795`.
+  - **⚠ The pick does not always come first.** Android asks, then produces (so a cancel costs nothing);
+    iOS must produce first, because its export picker hands over a file that already exists — so a cancel
+    there wastes the work. Callers must treat the write callback as "may run even if the user cancels".
+  - **`FilePath` is null on success on mobile**, by contract: the destination is a revocable grant, not
+    something the app could legitimately reopen. A page must not read the missing path as failure.
+
+  `SaveFileAsync` (the path-returning one) still refuses loudly on mobile, and its message now names
+  `SaveAsync` as the thing to call instead.
 
 - **`UpdateStageOptions.IsUnindexed` + the INTRUSION check in `UpdateStage.CommitAsync`.** Stage
   verification had two of the three failure modes a verifier needs: truncation (listed but missing) and

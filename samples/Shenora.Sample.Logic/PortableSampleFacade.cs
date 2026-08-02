@@ -54,6 +54,40 @@ public sealed class PortableSampleFacade(
                 });
                 return new { picked.Success, picked.FilePath };
 
+            // The counterpart, and the more interesting one: SAVE is universal only because the HOST
+            // does the writing. This one route runs unchanged on three shells that express saving in
+            // three completely different ways — a WinForms SaveFileDialog plus an atomic replace,
+            // Android's ACTION_CREATE_DOCUMENT, and an iOS export picker — and this code cannot tell
+            // which. Note what portable logic never does here: name a path, or open a file itself.
+            case "SAVE_TEXT":
+                var body = PayloadHelper.GetRequiredValue<string>(request.Payload, "text");
+                var saved = await dialogs.SaveAsync(
+                    new FileDialogOptions
+                    {
+                        Title = "Save the sample text",
+                        FileName = "shenora-sample",
+                        DefaultExtension = "txt",
+                        RememberPathKey = "portable-sample-save",   // honoured on the desktop, ignored on mobile
+                    },
+                    // Deliberately SLOW, in steps. An instant write would demo nothing: the guarantee
+                    // being shown is that an interrupted save leaves the user's previous file intact, and
+                    // that only means something when the write takes real time. Also proves the stream
+                    // is genuinely streamed rather than buffered by the contract.
+                    async (stream, ct) =>
+                    {
+                        await using var writer = new StreamWriter(stream, leaveOpen: true);
+                        for (var line = 1; line <= 5; line++)
+                        {
+                            await writer.WriteLineAsync($"{line,2}. {body}");
+                            await writer.FlushAsync(ct);
+                            await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
+                        }
+                    },
+                    cancellationToken);
+                // FilePath is null on mobile BY CONTRACT (a grant, not an address), so the page must not
+                // treat its absence as failure — which is exactly what this route reports back.
+                return new { saved.Success, saved.FilePath };
+
             case "COPY_TEXT":
                 await clipboard.SetTextAsync(PayloadHelper.GetRequiredValue<string>(request.Payload, "text"));
                 return null;

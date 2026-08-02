@@ -54,6 +54,7 @@
 <div class="row">
   <button id="sched">SCHEDULE_DEMO</button>
   <button id="pick">PICK_FILE</button>
+  <button id="save">SAVE_TEXT</button>
   <button id="bad">unknown route</button>
 </div>
 <div id="log"></div>
@@ -144,6 +145,10 @@ document.getElementById('read').onclick  = () => post('SAMPLE_LOGIC', 'READ_CLIP
 document.getElementById('ui').onclick    = () => post('SAMPLE_LOGIC', 'UI_STATE');
 document.getElementById('sched').onclick = () => post('SAMPLE_LOGIC', 'SCHEDULE_DEMO');
 document.getElementById('pick').onclick  = () => post('SAMPLE_LOGIC', 'PICK_FILE');
+// SAVE_TEXT is the same route the desktop calls. Success with a NULL filePath is the correct mobile
+// answer — the destination is a system grant, not an address — so the page must not read the missing
+// path as failure.
+document.getElementById('save').onclick  = () => post('SAMPLE_LOGIC', 'SAVE_TEXT', { text: 'saved from the mobile shell' });
 document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_ROUTE');
 
 // The handshake. Until this lands the host BUFFERS notifications rather than dropping them, which
