@@ -31,7 +31,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
 | `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
 | `install-hooks` | point `core.hooksPath` at `devtools/hooks` — ONCE per clone |
-| `nuget-retire [--apply] [--only <id>]` | unlist EVERY version of a package id renamed away (D37). Dry-run by default; **REFUSES until the replacement is published**, so it cannot open a window where neither old nor new is findable. Prints the deprecation text, which is web-UI only |
+| `nuget-retire [--apply] [--api-key <key>] [--only <id>]` | unlist EVERY version of a package id renamed away (D37). Dry-run by default; **REFUSES until the replacement is published**, so it cannot open a window where neither old nor new is findable. Key via `--api-key` or `NUGET_API_KEY`, scoped **Unlist** and revoked afterwards; it is redacted from all output. Prints the deprecation text, which is web-UI only |
 
 Releases are cut by the manual **Release** GitHub workflow — see `docs/RELEASING.md`.
 

@@ -5,8 +5,8 @@
 // hides versions BELOW a line while the package lives on, this one retires whole IDS that no longer
 // exist in the tree. Same underlying call, same reversibility, same auth story.
 //
-//   node devtools/dev.mjs nuget-retire            # DRY RUN — prints exactly what would happen
-//   node devtools/dev.mjs nuget-retire --apply    # actually unlist
+//   node devtools/dev.mjs nuget-retire                        # DRY RUN — prints what would happen
+//   node devtools/dev.mjs nuget-retire --apply --api-key KEY  # actually unlist
 //   node devtools/dev.mjs nuget-retire --only Shenora.WinForms
 //
 // `dotnet nuget delete` is misleadingly named: on nuget.org it UNLISTS (hides from search and the
@@ -20,9 +20,19 @@
 // only, per package, on the Manage page). This tool prints the exact text to paste. Do the
 // deprecation FIRST: it is the part consumers actually see.
 //
-//   Auth: set NUGET_API_KEY in your environment. Mint it at nuget.org -> Account -> API Keys,
-//         scope "Unlist", glob `Shenora.*`. Never pass it on the command line (shell history) and
-//         never commit it.
+//   Auth: `--api-key <key>`, or NUGET_API_KEY in the environment if the flag is absent. Mint it at
+//         nuget.org -> Account -> API Keys, scope "Unlist" (NOT push — this key cannot publish),
+//         glob `Shenora.*`.
+//
+//         ⚠ A key passed as an argument lands in your SHELL HISTORY and in the process list. That is
+//         the accepted trade for the flag being the convenient path (owner's call, 2026-08-02); the
+//         env var stays supported for anyone who would rather it did not. Either way: use a
+//         short-lived Unlist-scoped key and revoke it when the retirement is done — the key's SCOPE
+//         is what actually bounds the damage, not where it was typed.
+//
+//         The key is redacted from this tool's own output. `execFile`'s error MESSAGE embeds the full
+//         command line, and stderr is often empty on failure, so an unredacted failure path would
+//         have printed the key to the console on the very run most likely to be pasted into a chat.
 //
 // Idempotent: queries nuget.org for what is currently LISTED and skips the rest, so a re-run after a
 // partial failure only does the remainder.
@@ -92,10 +102,19 @@ async function replacementIsPublished(id) {
 // this file: the guard printed its message and returned 0.
 const fail = (...lines) => { lines.forEach((l) => console.error(l)); process.exitCode = 1; };
 
-const key = process.env.NUGET_API_KEY;
+// Flag first, environment second — so the convenient path is explicit and the env var keeps working
+// for anyone who prefers it.
+const key = valueOf('--api-key') ?? process.env.NUGET_API_KEY;
+
+/** Never let the key reach the console, whatever went wrong. See the auth note in the header. */
+const redact = (text) => {
+  const s = String(text ?? '');
+  return key ? s.split(key).join('***REDACTED***') : s;
+};
+
 if (apply && !key) {
-  fail('NUGET_API_KEY is not set. Mint an Unlist-scoped key on nuget.org and set it in your',
-       'environment (PowerShell: $env:NUGET_API_KEY = "..."), then re-run with --apply.');
+  fail('No API key. Pass --api-key <key>, or set NUGET_API_KEY in the environment.',
+       'Mint an Unlist-scoped key at nuget.org -> Account -> API Keys, glob `Shenora.*`.');
 }
 
 const targets = process.exitCode ? [] :
@@ -150,7 +169,10 @@ for (const { id, replacement } of (process.exitCode ? [] : targets)) {
       process.stdout.write(`  ✓ ${version}\n`);
     } catch (err) {
       failed++;
-      process.stdout.write(`  ✗ ${version} — ${String(err.stderr || err.message).trim().split('\n')[0]}\n`);
+      // REDACTED, and `err.message` is exactly why: execFile embeds the whole command line in it —
+      // `--api-key <key>` included — and stderr is frequently empty when dotnet fails, so the
+      // fallback is the branch that would have leaked.
+      process.stdout.write(`  ✗ ${version} — ${redact(err.stderr || err.message).trim().split('\n')[0]}\n`);
     }
   }
   console.log('');

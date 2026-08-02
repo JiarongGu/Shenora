@@ -98,10 +98,16 @@ discoverable forever unless someone acts. Two steps, in this order, **after the 
 1. **Deprecate** — nuget.org → the package → Manage → Deprecation → select all versions, tick
    "Other", set the alternate package, write the message. **This is the half consumers actually see**
    (a build warning naming the replacement), and it is web-UI only: there is no public API for it.
-2. **Unlist** — `node devtools/dev.mjs nuget-retire` (dry run), then `--apply`. Needs an
-   Unlist-scoped `NUGET_API_KEY`. It prints the exact deprecation text for step 1, and **refuses to
-   run until the replacement is published** — retiring the old ids first would leave a window where
-   neither the old package (hidden) nor the new one (absent) can be found.
+2. **Unlist** — `node devtools/dev.mjs nuget-retire` (dry run), then
+   `--apply --api-key <key>` (or set `NUGET_API_KEY`). It prints the exact deprecation text for
+   step 1, and **refuses to run until the replacement is published** — retiring the old ids first
+   would leave a window where neither the old package (hidden) nor the new one (absent) can be found.
+
+   Mint the key scoped **Unlist** only, glob `Shenora.*`, and revoke it when the retirement is done.
+   The scope is what bounds the damage: such a key cannot publish, and unlisting is reversible. It is
+   redacted from the tool's output, including the failure path — `execFile` embeds the whole command
+   line in its error message and dotnet's stderr is often empty, so that branch would otherwise print
+   the key on exactly the run most likely to be pasted somewhere.
 
 Neither step breaks an existing build: unlisting hides a package from search but restore-by-exact-
 version keeps working, and both are reversible from the Manage page. Versions are immutable
