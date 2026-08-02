@@ -54,15 +54,8 @@ _A1 (the client transport) and A2 (the capability stubs) are CLOSED — `docs/ar
 closed by ANALYSIS rather than code: the hole it described does not exist, because the layering
 already prevents it. Read that entry before re-proposing stubs._
 
-- [ ] **A3 — `docs/ADOPTION.md` has no MAUI section.** It should say what actually transfers (the
-  whole IPC substrate, the Core contracts, the mission layer), what does not (resource serving —
-  `HybridWebView` has no request interception, so the platform serves `Resources/Raw/wwwroot`), and
-  what is absent rather than different (drop zones, tray, secondary windows, window state).
-- [ ] **A4 — record the session's load-bearing decisions in `docs/DECISIONS.md`.** Currently they
-  live only in commit messages and XML: MAUI is a PEER of the Windows shell and references neither
-  package; absent-vs-satisfied (a refusal for clipboard images, an honest no-op for `IUiInteraction`);
-  the name-level metadata baseline and why the full one is impossible; `Start`/`Stop` as the
-  platform-owned-loop seam. `DECISIONS.md` is where a future session looks before relitigating.
+_A3 (the adopter guide) and A4 (the decisions) are CLOSED — `ADOPTION.md` Stage 5 and
+`DECISIONS.md` D32–D34._
 
 - [ ] **A5 — `dev.mjs android <deploy|log|shot>`.** The loop is documented in `devtools/README.md`
   but is still raw `adb`, which `phase-workflow.md` explicitly says not to leave as ad-hoc shell.

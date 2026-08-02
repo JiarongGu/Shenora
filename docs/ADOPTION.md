@@ -3,6 +3,11 @@
 For an app that already has a WinForms + WebView2 shell and wants to stop maintaining it. It assumes
 nothing about this repo's history: everything needed is here or linked.
 
+**There is a second shell now.** [Stage 5](#stage-5--a-maui-shell-if-stage-4s-logic-should-also-run-on-a-phone)
+runs the same portable app logic on MAUI (Android built and proven on a device; iOS not built). It is
+genuinely optional and genuinely last — it only pays off if Stage 4 happened, because what it reuses
+is the assembly Stage 4 creates.
+
 **The order matters more than the pieces.** Stage 1 carries no IPC dependency, so it deletes the most
 duplicated code for the least risk; the IPC substrate comes last because it is the only stage that
 touches every module. Keep the app runnable and shipped at the end of every stage — none of this
@@ -316,6 +321,93 @@ logic must be able to compile off Windows". Same for `OptimizedForm`, `TrayIcon`
 **If a contract does not fit**, say so — that is the feedback D20 wants. The portable set was derived
 from what the surveyed apps actually needed, so a capability you cannot express through it is a real
 finding, not a misuse.
+
+---
+
+## Stage 5 — a MAUI shell, if Stage 4's logic should also run on a phone
+
+**This is Stage 4's payoff, and it only works if Stage 4 happened.** The MAUI shell hosts the same
+portable assembly the desktop shell does; if your facades still reference `Shenora.WinForms` there is
+nothing to reuse. `samples/Shenora.Sample.Maui` is the worked example, and it references the very
+same `Shenora.Sample.Logic` the desktop sample does — that shared reference is the whole demonstration.
+
+**Status, stated plainly:** Android is built and was run on a device (request/response, batched
+notifications, the error boundary, the native file picker, the mission scheduler). **iOS is not
+built** — it needs the `ios` workload and a Mac build host.
+
+### Setup
+
+```csharp
+// MauiProgram.CreateMauiApp, AFTER builder.Build()
+var shenora = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+{
+    ApplicationName = "YourApp",
+    // Android's private data directory IS the app root; --app-root is desktop packaging vocabulary.
+    Paths = new ShenoraPathsOptions { ExplicitRoot = FileSystem.AppDataDirectory },
+});
+shenora.UseMaui(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
+shenora.Services.AddModuleFacade<YourPortableFacade>();
+shenora.Services.AddMessageDispatcher();
+var app = shenora.Build();
+```
+
+Then, on the page that owns the `HybridWebView`:
+
+```csharp
+var bridge = new MauiIpcBridge(webView, new MauiIpcBridgeOptions
+{
+    Dispatcher = app.Services.GetRequiredService<IMessageDispatcher>(),
+    EventBus = app.Services.GetRequiredService<IEventBus>(),
+});
+bridge.Attach();          // construct early (buffering starts), attach before the page loads
+```
+
+**`UseMaui` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
+`ShenoraApplication.Run` — contractually "blocks until shutdown" — has no honest implementation.
+Drive the pair from the platform instead: `Start()` from `Window.Created`, `Stop()` from
+`Window.Destroying`. Both are idempotent, so wiring them somewhere that fires more than once
+(an activity's `OnCreate`/`OnResume`) is safe.
+
+**The client needs no MAUI-specific code.** `@shenora/react`'s `ShenoraBridge` detects the host, so
+`invoke`/`post` work unchanged from the desktop shell. ⚠ **The page MUST load MAUI's bridge script**
+(`<script src="_framework/hybridwebview.js"></script>` on .NET 10). Without it `window.HybridWebView`
+does not exist, and the failure is silent in the worst way: the page renders, the send throws a
+`TypeError` nobody sees, and the host waits forever for a handshake.
+
+### What transfers, and what does not
+
+| | |
+|---|---|
+| **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `BaseFacade`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora.Core` contract. The mission scheduler and the file-update queue. |
+| **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
+| **Does NOT transfer** | **Resource serving.** `HybridWebView` has no request-interception seam (no `WebResourceRequested`, no custom schemes), so `IWebViewResourceProvider`, the virtual host and deferred schemes have no role. The platform serves your bundle from `Resources/Raw/wwwroot`; put the built frontend there. |
+| **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and `Shenora.Maui` does not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
+
+**Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing:
+clipboard IMAGES (Essentials is text-only) and the folder/save pickers throw
+`ShellCapability.NotSupported` naming the platform and the alternative. `IUiInteraction`'s
+block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
+the capability is satisfied BY the platform rather than absent.
+
+**`FileDialogOptions` survived contact with mobile, which was an open question until now.**
+`OpenFileAsync` needs no change: `FileDialogResult.FilePath` is specified as "a path or URI the HOST
+can resolve", and Android's content URI is exactly that. The desktop-only options
+(`CheckFileExists`, `OverwritePrompt`, `DefaultPath`, `RememberPathKey`, …) are ignored, and which
+ones is listed on the implementation.
+
+### Traps this repo already paid for
+
+- **`Application.Current` is null inside `CreateMauiApp`** — `builder.Build()` makes the MauiApp, not
+  the Application. Use `Dispatcher.GetForCurrentThread()`.
+- **The envelope's `timestamp` is a `DateTimeOffset`.** A JS client sending `Date.now()` has its
+  request dropped at the boundary — correctly logged host-side and correctly invisible to the page.
+  Send `new Date().toISOString()`; `@shenora/react` already does.
+- **Match the ABI when deploying to an emulator.** Most are x86_64 while a default build may produce
+  arm64 only, and the install fails `INSTALL_FAILED_NO_MATCHING_ABIS`, which reads like a packaging
+  fault rather than the wrong architecture.
+- **The ready gate can be opened but never closed on this shell.** `HybridWebView` exposes no
+  document-lifecycle event, so a page reload simply re-handshakes (`Open` is idempotent). Bounded,
+  and worth knowing before you rely on buffering semantics the WebView2 bridge has.
 
 ---
 
