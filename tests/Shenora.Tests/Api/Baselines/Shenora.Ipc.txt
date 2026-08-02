@@ -67,6 +67,7 @@ static class Shenora.Ipc.IpcJson
   public static System.Text.Json.JsonSerializerOptions Options { get; }
   public static T Deserialize<T>(string json)
   public static string Serialize<T>(T value)
+  public static void AddTypeInfoResolver(System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver resolver)
 sealed class Shenora.Ipc.IpcNotification
   [JsonPropertyName("module")] public required string Module { get; init; }
   [JsonPropertyName("payload")] public object? Payload { get; init; }

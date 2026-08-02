@@ -12,6 +12,28 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`IpcJson.AddTypeInfoResolver`** — an app may now contribute an `IJsonTypeInfoResolver` (typically
+  a source-generated `JsonSerializerContext`) to the one frozen wire-options instance, during startup
+  and before anything serializes. Purely additive; the default path is byte-for-byte what
+  `MakeReadOnly(populateMissingResolver: true)` produced before.
+
+  Why it matters beyond convenience: the options were frozen with a **reflection** resolver, which is
+  fine on desktop and Android and is exactly the metadata iOS strips (Mono AOT + trimming) — failing
+  at runtime, on a device, rather than at build time. The same seam is what makes full AOT /
+  NativeAOT reachable on Android, the strongest cold-start lever an on-device host has
+  (`docs/2026-08-02-shenora-mobile-offline-plan.md` §4, §6).
+
+  Contributed resolvers are consulted **before** the reflection fallback, so a generated context wins
+  for the types it knows. Registering after `IpcJson.Options` has been built **throws** and names the
+  fix rather than being silently dropped — a dropped resolver reappears as a stripped-metadata crash
+  on a device, which looks nothing like its cause. What it does not yet buy: the kit ships no
+  generated context for its own envelope types, so those still resolve through reflection unless an
+  app includes them in its own context.
+
 ## 0.4.0 — 2026-08-02
 
 _Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the

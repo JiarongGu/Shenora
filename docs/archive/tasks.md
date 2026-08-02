@@ -15,6 +15,32 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### `IpcJson` takes an app-supplied type-info resolver (2026-08-02) — DONE
+
+Parked at the two-consumer bar since it was found while assessing on-device mobile; **owner direction
+supplied the consumer** ("there should be a MAUI adaptation in the roadmap you can take too"). It is
+the first of the three prerequisites `docs/2026-08-02-shenora-mobile-offline-plan.md` §4 names, and
+the cheapest.
+
+`IpcJson.AddTypeInfoResolver(IJsonTypeInfoResolver)` chains an app's resolver AHEAD of the reflection
+fallback, before `Options` is first read. Three judgement calls worth keeping:
+
+1. **It adds metadata; it does not reopen the options.** The single frozen instance exists because the
+   source app grew three private copies that drifted. There is still exactly one instance, still
+   read-only by the time anything can serialize with it — pinned by
+   `The_options_are_still_one_frozen_instance`.
+2. **Registering late THROWS, naming the fix.** Silently ignoring it would surface as a
+   stripped-metadata crash on an iOS device, which looks nothing like its cause — the same reasoning
+   that makes `ModuleContext` fail loud rather than no-op.
+3. **Order is the whole feature, so the test is orientation-sensitive and was sabotage-verified.**
+   Swapping the chain to default-first failed exactly
+   `A_contributed_resolver_answers_before_the_reflection_fallback` and nothing else; restored green.
+
+**What it deliberately does NOT do:** ship a generated `JsonSerializerContext` for the kit's own
+envelope types, so `IpcRequest` and friends still resolve through reflection. Full NativeAOT with no
+reflection at all needs that too — additive, and a separate change. Said so in the XML and the
+CHANGELOG rather than leaving the hole implied.
+
 ### The mission layer's three owner-directed additions (2026-08-02) — all DONE
 
 Planned in two docs, built in the recommended order the same day, each with its own commit and its own

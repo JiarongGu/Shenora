@@ -366,7 +366,11 @@ changes, noting them in `CHANGELOG.md`).
   `IpcCategories`, `OperationException` (the one exception whose details cross the bridge;
   `ToError()`), `IpcErrorCodes` (framework-reserved codes), `PayloadHelper`
   (`GetRequiredValue`/`GetOptionalValue` with structured errors; JSON null == absent), `IpcJson`
-  (frozen camelCase/camelCase-enum/null-omitting wire serializer defaults); the dispatch
+  (frozen camelCase/camelCase-enum/null-omitting wire serializer defaults, plus
+  `AddTypeInfoResolver` — a startup-only seam for an app's source-generated `JsonSerializerContext`,
+  chained AHEAD of the reflection fallback so an AOT/trimmed host can supply the metadata reflection
+  cannot; it adds metadata rather than reopening the one frozen instance, and registering after
+  `Options` is built throws); the dispatch
   pipeline — `IMessageDispatcher`/`MessageDispatcher` (`Use`/`UseModule`/`UseRoute`/`UseLogging`/
   `UseErrorHandler` + `MapRoute`/`MapModule(name, routes)`/`MapModule(facade)`; `DispatchAsync`
   transport entry: never throws, never null — `NO_HANDLER`/structured/`UNKNOWN_ERROR` mapping

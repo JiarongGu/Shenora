@@ -60,8 +60,13 @@ scratch; at that point the shape is already known.
 > **The anticipated consumer #2 for the first two is an on-device (offline) mobile host** — see
 > `docs/2026-08-02-shenora-mobile-offline-plan.md`. Its finding: the prerequisite sits with the
 > ADOPTING app, not the kit — logic living inside transport handlers cannot move on-device, so
-> factoring it behind a transport-neutral seam comes first. Do NOT build these because a plan exists;
-> build them when the consumer does.
+> factoring it behind a transport-neutral seam comes first.
+>
+> **UNBLOCKED 2026-08-02 by owner direction** (*"there should be a MAUI adaptation in the roadmap you
+> can take too"*): the on-device host is being built, so it IS consumer #2 and these stop being
+> speculative. The plan's §4 names three prerequisites — **the `IpcJson` resolver seam is DONE**
+> (`docs/archive/tasks.md`); the two below are next, in that order. The bar still applies to
+> everything NOT on that list.
 
 - [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
   base (see the design-pass record in `docs/archive/tasks.md`) showed the IPC half needs NOTHING to run
@@ -77,15 +82,6 @@ scratch; at that point the shape is already known.
   type in it is portable, and the spike had to bypass the builder entirely and wire DI by hand. An app
   CAN implement `IShenoraRunner` itself (it is a one-method interface), so this is a missing
   convenience rather than a missing capability — recorded, not guessed at.
-- [ ] **`IpcJson.Options` cannot take an app-supplied `JsonSerializerContext`.** Found 2026-08-02
-  while assessing on-device mobile. The instance is frozen with
-  `MakeReadOnly(populateMissingResolver: true)` — i.e. a REFLECTION resolver — which is fine on
-  desktop and Android but is exactly the pattern iOS (Mono AOT + trimming) strips the metadata for,
-  failing at runtime rather than build time. The fix is additive (let an app contribute an
-  `IJsonTypeInfoResolver` to chain) and must not reintroduce the drifting-copies problem the frozen
-  single instance was created to solve. No consumer yet; do not pre-build. Worth knowing it pays
-  twice: the same change is what unlocks full/NativeAOT on Android, which is the strongest cold-start
-  lever an on-device host has.
 - [ ] **D3's other half is still unvalidated: the desktop-FLAVOURED service contracts.** The spike
   proves the IPC/transport story and nothing else, because a transport needs no file dialogs.
   `FileDialogContracts.cs` still CONCEDES in writing that `FileDialogOptions` carries Win32 vocabulary
