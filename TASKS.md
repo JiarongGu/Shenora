@@ -81,10 +81,13 @@ Five traps folded into `devtools/README.md`. See `docs/archive/tasks.md`._
       folder — it comes from the workload's TargetPlatformVersion, not from `SupportedOSPlatformVersion`
       (15.0), and it is what a consuming project must be compatible with. Worth stating in ADOPTION
       when iOS is actually published.
-    - **What is left is the release-workflow change itself**, deliberately not made unilaterally:
-      this repo lost 0.2.0 to a release mistake and cuts releases by hand from the Actions tab.
-      Shape: a macOS job that runs `dotnet workload install maui-android maui-ios` and packs with the
-      override, feeding its nupkg to the existing publish step.
+    - **The workflow change is DRAFTED, not applied** — `docs/2026-08-02-ios-release-design.md`,
+      awaiting review. Three jobs (`version` → `mobile-pack` on macOS → `publish` on Windows, which
+      swaps the android-only nupkg for the macOS-built one). Small because `dev.mjs pack` already
+      passes `-p:Version=` explicitly, so the mobile job needs the version STRING and nothing else —
+      no file stamping, no `doctor --fix`. One unverified assumption is called out in the doc: whether
+      the macOS runner image can build `maui-android` (mitigated with `setup-java`/`setup-android`;
+      the first `dry_run` proves it). Retire the doc when it lands.
   - **The build currently rides two override flags** (`ValidateXcodeVersion=false` +
     `MtouchLink=SdkOnly`), because that Mac's Xcode 26.3 is older than the workload's required 26.6.
     They are gitignored machine config, not repo config, and are verified for SIMULATOR DEBUG only.
