@@ -274,7 +274,22 @@ function doctor({ fix = false } = {}) {
   //
   // A state check, deliberately, rather than only the pre-commit diff guard: this catches the drift
   // however it arrived — a hand-edit, a bad merge, a rebase that resurrected an old props file.
-  if (problems === 0) {
+  //
+  // EXCEPT DURING A RELEASE, which is the one time the mismatch is CORRECT and expected. The workflow
+  // bumps VersionPrefix in step 1 and creates the tag in step 6, so between those the props are
+  // legitimately ahead of the newest tag — and this guard failed the 0.4.0 run inside `doctor --fix`,
+  // before anything was published (2026-08-02). `SHENORA_RELEASE=1` is the same signal the pre-commit
+  // version guard already honours, set job-wide by release.yml; it says "the bump you are looking at
+  // is the pipeline's own".
+  //
+  // Why this was not caught when the guard was written: it was sabotage-verified for the hand-bump it
+  // exists to stop, but no release had run since, so the one path where the invariant is meant NOT to
+  // hold was never exercised. A guard needs testing on the paths it should stay quiet on, too.
+  const releasing = process.env.SHENORA_RELEASE === '1';
+  if (releasing) {
+    console.log('  ..  version/tag match check skipped (SHENORA_RELEASE=1 — the pipeline owns this bump)');
+  }
+  if (problems === 0 && !releasing) {
     const tags = spawnSync('git', ['tag', '--list', 'v*'], { encoding: 'utf8', cwd: repo });
     const versions = (tags.stdout ?? '')
       .split(/\r?\n/)
@@ -299,7 +314,10 @@ function doctor({ fix = false } = {}) {
   }
 
   if (problems === 0)
-    console.log(`  ok  version ${config.version} consistent (props · npm · README · LICENSE) and matches the newest tag`);
+    // Don't claim the tag matched when the check was skipped — a success line that overstates what
+    // ran is the same defect class as a doc that overstates what the code does.
+    console.log(`  ok  version ${config.version} consistent (props · npm · README · ARCHITECTURE · LICENSE)`
+      + (releasing ? ' — tag check skipped, this is the release' : ' and matches the newest tag'));
   return problems === 0;
 }
 

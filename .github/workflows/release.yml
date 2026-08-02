@@ -56,6 +56,14 @@ permissions:
 jobs:
   publish:
     runs-on: windows-latest   # net10.0-windows targets need Windows to build
+    env:
+      # This job IS the release, so the bump it makes is authorised. `doctor`'s version-authorship
+      # guard asserts VersionPrefix == the newest release tag, which is true BETWEEN releases and
+      # deliberately false DURING one: step 1 bumps the props, step 6 creates the tag. Without this
+      # the guard fails the release inside `doctor --fix` (it did, on the first 0.4.0 attempt, before
+      # anything was published). Job-wide rather than per-step because the Verify gate two steps later
+      # runs the same check.
+      SHENORA_RELEASE: '1'
     defaults:
       run:
         shell: pwsh
