@@ -1,14 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Android-first, deliberately: the maui-android workload builds here, while net10.0-ios needs the
-    ios workload AND a Mac build host. iOS is added when that path is wired up (the family already
-    drives a Mac over SSH for exactly this), not before — a TFM nothing can compile is the same
-    objection this repo raises against any ungated artifact.
+    The TFM follows the HOST, because each one can only be built where its toolchain lives: Windows
+    has the maui-android workload, and net10.0-ios needs the ios workload AND Xcode, so it can only
+    build on a Mac (`dev.mjs mac`). Listing both everywhere would turn `dev.mjs verify` red on the
+    machine that cannot build one of them — the same objection this repo raises against any ungated
+    artifact, pointed the other way.
+
+    Consequence worth knowing before a release: `dotnet pack` on Windows produces an ANDROID-ONLY
+    package. Shipping both faces needs a macOS pack job; until there is one, the iOS TFM is proven
+    but not published.
   -->
   <PropertyGroup>
     <TargetFramework>net10.0-android</TargetFramework>
-    <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-ios</TargetFramework>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">21.0</SupportedOSPlatformVersion>
+    <!-- 15.0 is what the .NET 10 iOS workload supports as its floor; MAUI's own template uses the same. -->
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('ios'))">15.0</SupportedOSPlatformVersion>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
     <IsPackable>true</IsPackable>

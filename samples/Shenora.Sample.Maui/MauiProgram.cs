@@ -21,7 +21,25 @@ public static class MauiProgram
 	/// </summary>
 	public const string LogTag = "SHENORA";
 
-	public static void Log(string message) => global::Android.Util.Log.Info(LogTag, message);
+	/// <summary>
+	/// The ONE platform-conditional line in this sample, and it earns the <c>#if</c>: a device log is
+	/// the only way to see what a mobile host did, and each platform has its own sink. Everything else
+	/// here — including all of <c>Shenora.Maui</c> — compiles for both without a single directive,
+	/// which is the portability claim actually being tested.
+	/// </summary>
+	public static void Log(string message)
+	{
+#if ANDROID
+		global::Android.Util.Log.Info(LogTag, message);
+#elif IOS
+		// NSLog, not Console.WriteLine: only NSLog reaches the unified log that `dev.mjs mac log`
+		// reads back with `simctl spawn booted log show`. stdout is visible when the app is launched
+		// in the foreground of a terminal and invisible the rest of the time, which is the wrong half.
+		global::Foundation.NSLog($"[{LogTag}] {message}");
+#else
+		Console.WriteLine($"[{LogTag}] {message}");
+#endif
+	}
 
 	public static MauiApp CreateMauiApp()
 	{

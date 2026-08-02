@@ -1,15 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- TFM follows the HOST — see the same note in src/Shenora.Maui/Shenora.Maui.csproj. -->
   <PropertyGroup>
     <TargetFramework>net10.0-android</TargetFramework>
-    <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-ios</TargetFramework>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">21.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('ios'))">15.0</SupportedOSPlatformVersion>
     <!--
       x64 FIRST and explicitly. The emulator this is proven on is x86_64, and a default Android build
       can produce arm64 only — the APK then installs with INSTALL_FAILED_NO_MATCHING_ABIS, which reads
       like a packaging fault rather than "you built the wrong architecture". arm64 stays for a real
       phone.
+
+      iOS has exactly the same trap and `dev.mjs mac` handles it the same way: the simulator RID
+      follows the MAC's architecture (iossimulator-x64 on Intel, -arm64 on Apple Silicon), asked over
+      ssh rather than assumed, and passed on the build command line.
     -->
-    <RuntimeIdentifiers>android-x64;android-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="$(TargetFramework.Contains('android'))">android-x64;android-arm64</RuntimeIdentifiers>
 
     <OutputType>Exe</OutputType>
     <RootNamespace>Shenora.Sample.Maui</RootNamespace>
