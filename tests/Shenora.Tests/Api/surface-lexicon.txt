@@ -192,6 +192,13 @@ Zone
 # The file-update queue: serialized mutations, per-update atomicity. Update and Change are
 # mechanism nouns — what the queue applies — and Atomicity is the property an app chooses per
 # update. Note what is still NOT here: no archive, download, install or sync noun.
+#
+# `Atomic` and `Transform` (2026-08-03) are the single-file primitive beside the queue: AtomicFile
+# and FileTransform. Both name the MECHANISM and neither names a scenario — a transform is any
+# produce-then-swap (encode, compile, extract, render), which is exactly why the type cannot be
+# called after any one of them. Atomic is already the vocabulary of Atomicity above; this is the
+# same property applied to one file instead of a batch.
+Atomic
 Atomicity
 Change
 Create
@@ -217,6 +224,7 @@ Manager
 Move
 Replace
 Restart
+Transform
 Update
 
 # ── Data shapes ───────────────────────────────────────────────────────────────────────────────────

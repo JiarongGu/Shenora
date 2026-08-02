@@ -12,6 +12,49 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`AtomicFile` + `FileTransform` in `Shenora.Core`** — replace a file's contents so an interruption
+  can never leave it half-written, synchronously, one file at a time, with no queue.
+
+  ```csharp
+  AtomicFile.WriteAllText(path, json);            // the common case
+  AtomicFile.Write(path, stream => Serialize(stream));
+
+  using var t = AtomicFile.BeginTransform(videoPath);
+  await Encode(source, t.TempPath);               // the ORIGINAL is never touched
+  if (await Probe(t.TempPath)) t.Commit();        // else dispose discards it
+  ```
+
+  **The failure it prevents is a silent one.** `File.WriteAllText` truncates the target and then writes
+  into it, and config stores typically load best-effort — so an interrupted write does not error, it
+  resets the user's settings, and nobody notices until they wonder why their preferences reverted.
+
+  `IFileUpdateQueue` already owned the concept via `FileChange.Replace`, but only through an async,
+  queued, multi-change applier with rollback and cross-process partitioning. Most file writing is not
+  that, and at least one caller saves from a window-closing path where awaiting a queue is actively
+  worse.
+
+  **The transform half is the general case and the write is its degenerate form** — the one where
+  producing the output takes no time. Encoding, compiling, extracting and rendering share a shape:
+  produce beside the target, verify, then swap. Verification is a SEAM rather than a feature, because
+  only the app knows what valid means for its format — and "finished writing" is not "valid": a
+  truncated encode is complete and worthless, and swapping it in destroys the original just as surely
+  as writing over it would have.
+
+  **Ported from the first adopter rather than designed here** (D8), keeping the four details that are
+  easy to get wrong: a FIXED `.tmp` suffix, so a crash leaves one predictable leftover instead of
+  debris nobody sweeps; flush-to-disk before the rename, or the rename lands while the data is still in
+  the OS cache and a power loss leaves an intact rename pointing at an empty file;
+  `File.Move(overwrite: true)` rather than `File.Replace`, which throws when the target does not exist
+  yet; and best-effort semantics whose only guarantee is that the PREVIOUS file survives.
+
+  Sabotage-verified both ways, and one gap is stated rather than papered over: **deleting the flush
+  leaves every test green.** Durability against power loss cannot be asserted from a process that is
+  still running, so that line rests on reasoning and is marked load-bearing in the source.
+
 ## 0.5.0 — 2026-08-02
 
 ### Breaking

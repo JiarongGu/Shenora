@@ -1968,3 +1968,104 @@ window on the largest-overlap monitor, which is the deliberate deferral above.
 Baselines re-promoted (additions only — one property on `WindowStateOptions`, one `ToPhysical`
 overload, one `Apply` overload, one `AttachTo` overload — the last added during phase review to
 close a symmetry gap the reviewer caught).
+
+## Atomic file write + transform — DONE 2026-08-03 (`AtomicFile`, `FileTransform`)
+
+Filed by the first adopter's `Shenora.Core/Io` adoption attempt and built the same day.
+Shipped as `AtomicFile.WriteAllText/WriteAllBytes/Write/BeginTransform` + `FileTransform` in
+`Shenora.Core`, ported from the adopter's stopgap with its six tests plus seven for the transform
+half (13 total). Baseline additive, 0 removals. Sabotage-verified: swapping `File.Move` for
+`File.Replace` fails four tests including the fresh-install case, and removing the temp discard
+fails the abandoned-transform test.
+
+⚠ **One guarantee is NOT test-covered and says so in the source**: deleting the flush-to-disk
+leaves all 13 green, because durability against power loss cannot be asserted from a running
+process. It rests on reasoning and is marked load-bearing.
+
+The original entries, kept for the reasoning rather than the outcome:
+
+- [ ] **There is no SYNCHRONOUS, single-file atomic write, and it is the most common file operation a
+  desktop app has.** `FileChange.Replace(TempPath, TargetPath)` is exactly the primitive — but the only
+  way in is `IFileUpdateQueue.ApplyAsync`, an async queued multi-change applier with rollback and
+  cross-process partitioning. Every config store in a desktop app is single-file, synchronous and
+  best-effort, and at least one of them saves from a window-closing path where awaiting a queue is
+  actively worse. So the adopter wrote ~30 lines (sibling temp → flush through to disk → rename over
+  target) that the kit conceptually already owns.
+  **Why it is worth having:** that app had FOUR stores using `File.WriteAllText`, which truncates before
+  it writes. All four load best-effort (corrupt ⇒ defaults), so an interrupted write does not fail
+  loudly — it silently resets the user's settings, chat history and UI language. That failure is
+  invisible until someone notices their configuration reverted, and every sibling app has the same
+  stores. Suggested: expose the primitive directly — `FileUpdates.WriteAtomic(path, contents)` or a
+  synchronous `Replace(temp, target)` — with the flush-before-rename included, since a rename that lands
+  while the content is still in the OS write cache is the same failure wearing a different hat.
+
+  **VERIFIED against the source 2026-08-03 — the complaint is accurate on both halves.**
+  `FileChange.Replace` is a *record describing* a change (`FileUpdates.cs:39`); the only code that
+  executes one is `FileUpdateQueue` (`:378`), reachable only through `ApplyAsync`. There is no public
+  synchronous path, and `FileUpdates` contributes no methods at all — only record types. Five
+  constraints for whoever builds it, four already solved inside the queue and one NOT:
+  - **Target-absent is a different operation.** `File.Replace` throws when the target does not exist,
+    so a first write must `Move` instead. The queue branches on exactly this (`:380-389`); an API that
+    forgets it passes every test on a machine that already has the file and fails on a fresh install.
+  - **The temp must be a SIBLING of the target.** A rename is atomic only within a volume, so a temp
+    in `%TEMP%` silently degrades to copy-then-delete across volumes. The adopter got this right by
+    hand; the API should pick the temp path itself so a caller cannot get it wrong.
+  - **Flush-to-disk before the rename — and NOTHING in `Io` does this today.** No `Flush`,
+    `FlushToDisk` or `WriteThrough` anywhere in the layer: the queue renames a temp file the CALLER
+    wrote, so durability is currently the caller's problem and quietly unmet. This is the one thing
+    the queue does not already answer, and it is what makes "atomic" a fact rather than a claim.
+  - **It bypasses `PathLocks` and partitioning deliberately — say so ON the API.** The queue exists
+    for multi-change, cross-process, rollback-able work; this is last-writer-wins on one file. Right
+    for a config store, wrong for what the queue was built for, and an undocumented fast path is
+    exactly how someone reaches for it in the wrong place.
+  - Open design question: `string contents` covers the common case but forces binary callers to
+    buffer; a `Stream` or `Action<Stream>` overload avoids that. Pick deliberately rather than
+    shipping the string one and bolting the other on later.
+
+  **THE IMPLEMENTATION ALREADY EXISTS IN THE ADOPTER — port it, do not redesign it** (D8: lift the
+  proven code and keep its post-mortem comments). It is ~30 lines plus six tests, written as an
+  explicit STOPGAP with a comment saying to delete it when the kit ships the primitive. Its real path
+  is in `local/EXTRACTION-MAP.md`. What to keep verbatim:
+  - **A FIXED `.tmp` suffix, not a random name.** A crash before the move leaves ONE predictable
+    leftover that the next successful write overwrites, instead of accumulating debris — which is a
+    better answer than sweeping at startup, because there is nothing to sweep.
+  - **`stream.Flush(flushToDisk: true)` before the move**, with the reason recorded: without it the
+    rename lands while the content is still in the OS write cache, so a power loss leaves an intact
+    rename pointing at an EMPTY file — the exact failure the rename was supposed to prevent.
+  - **`File.Move(temp, path, overwrite: true)`, not `File.Replace`.** Simpler, needs no backup path,
+    and a config store does not need the target's ACLs and timestamps preserved. (The queue uses
+    `File.Replace` because it needs the backup for rollback — different job, different primitive.)
+  - **Best-effort: returns `bool`, never throws, deletes the temp on failure.** The guarantee is that
+    the PREVIOUS file survives — losing one edit is recoverable, silently reverting to defaults is
+    not.
+  - UTF-8 **without** a BOM; create missing directories; `FileShare.None` while writing.
+  - **The six tests come too**, and one is worth stealing outright: *a failed write leaves the
+    PREVIOUS file intact*, simulated by creating a DIRECTORY at the temp path so the write fails at
+    exactly the point a crash would. Also pinned: a shorter value must REPLACE rather than leave a
+    tail, no temp survives success, and the BOM check.
+  - **Where the kit's version must differ:** the fixed suffix is safe for config precisely because
+    those writes are short and last-writer-wins. A long TRANSFORM (the item below) cannot share it —
+    two encodes of one file would collide on `x.tmp` — so that path needs a distinct temp or a
+    `PathClaim`. Same primitive, different concurrency story; do not paper over the difference.
+- [ ] **The general primitive: an atomic file TRANSFORM, of which the atomic write is a special
+  case.** Per the direction above, this is the actual requirement — the write is just the transform
+  whose "produce" step is instantaneous. Four steps, and the kit owns three of them:
+  1. **Hand the caller a temp path beside the target** — sibling, so the final rename stays within
+     the volume and stays atomic. The caller never chooses it, so it cannot be got wrong.
+  2. **The caller produces into it** (encode, compile, extract, render). The kit does not care how
+     long that takes or what tool does it, and **the input is never touched** — which is the whole
+     point: an interruption here costs the work, never the original.
+  3. **The caller VERIFIES it** — a predicate the app supplies, because only the app knows what valid
+     means for its format. Seams over flags (`generic-library.md`): the kit must not grow a list of
+     file types it knows how to validate. "Finished writing" is not "valid", and swapping in a
+     truncated output destroys the original just as surely as writing over it would have.
+  4. **The kit commits it** with the rename-over from the item above, or discards the temp.
+  - **Composition, not duplication:** `UpdateStage` is this exact shape at release scale (stage →
+    verify every file's hash → publish the marker last → apply). The primitive is that pattern for
+    ONE file with a caller-supplied check instead of a hash, and the two should visibly share a
+    vocabulary even if they do not share code.
+  - It must also compose with `IMissionScheduler` for the long cases — an encode is precisely the
+    "long-running work with a claim on a path" the scheduler exists for — and with `PathClaims` so
+    two transforms of the same file cannot interleave. Getting that wiring right is most of the
+    design work; the file mechanics are the easy part.
+  - Interrupted transforms must leave no junk: name temps predictably and sweep them at startup.
