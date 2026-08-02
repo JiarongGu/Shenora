@@ -1,6 +1,6 @@
 ---
 name: fix-log
-description: After landing any non-trivial bug fix or regression fix, record it in docs/FIX-LOG.md (root cause, fix, verification, commit). Also use to review past fixes / trace when a behavior regressed.
+description: After landing any non-trivial bug fix or regression fix, record it in docs/archive/fix-log.md (root cause, fix, verification, commit). Also use to review past fixes / trace when a behavior regressed.
 ---
 
 # fix-log
@@ -16,7 +16,7 @@ regression's origin is traceable and the same bug isn't reintroduced.
 - **Skip:** trivial typos, pure refactors, or still-WIP work.
 
 ## How
-Append to `docs/FIX-LOG.md`, newest entry first, under a `## YYYY-MM-DD` heading. Use this shape:
+Append to `docs/archive/fix-log.md`, newest entry first, under a `## YYYY-MM-DD` heading. Use this shape:
 
 ```
 ### <area>: <one-line symptom>

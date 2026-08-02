@@ -101,7 +101,7 @@ Until the first public release, siblings consume the local pack output. The reci
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
   The tarball works under native Node ESM, not just bundlers (the emitted imports carry explicit
-  `.js` extensions; enforced by the package's NodeNext tsconfig — see `docs/FIX-LOG.md`).
+  `.js` extensions; enforced by the package's NodeNext tsconfig — see `docs/archive/fix-log.md`).
 
 > ⚠ **The NuGet GLOBAL cache beats every source, so re-packing the same version is not enough.**
 > `~/.nuget/packages` is keyed on id+VERSION, and a cached copy wins over any feed — including this

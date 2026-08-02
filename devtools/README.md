@@ -15,7 +15,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `pack` | doctor-fix, then nupkgs + npm tarball → `publish/packages/` (lockstep `-p:Version`, sha256 printed) |
 | `doctor [--fix]` | version drift (npm `package.json` + README `## Status` headline vs `VersionPrefix`) **and doc drift** — `--fix` only applies to the version half; every doc-drift finding is a sentence a human has to rewrite |
 | — `doc-drift` (run by `doctor`/`verify`; `scripts/doc-drift.mjs --list` to inspect) | **the gate the prose never had.** Every code invariant here has a test and no doc claim had anything; a whole-codebase review found 8 of its ~13 findings in comments and docs. Two PRECISE checks, deliberately not a fuzzy symbol sweep (which would drown the signal and get switched off): (1) the dependency graph drawn in `README.md`/`ADOPTION.md` vs the actual `ProjectReference`s — both files documented a `WinForms → Ipc` edge that has never existed; (2) names in `devtools/retired-names.txt` stated as CURRENT fact. Amendment stacks are the norm here, so a retired name is fine in the PAST tense — add `doc-drift:history` to mark a preserved sketch or rename table. **Add a name to `retired-names.txt` the moment you delete or rename one.** |
-| `sample [--dev\|--no-build]` | run the sample desktop app. Builds the packaged frontend first (Production serves the EMBEDDED `wwwroot`, so skipping that ran a stale bundle — see `docs/FIX-LOG.md` 2026-08-02); `--no-build` skips it for a C#-only relaunch. `--dev` = vite URL + CDP port → `.cdp-port`, no bundle build needed |
+| `sample [--dev\|--no-build]` | run the sample desktop app. Builds the packaged frontend first (Production serves the EMBEDDED `wwwroot`, so skipping that ran a stale bundle — see `docs/archive/fix-log.md` 2026-08-02); `--no-build` skips it for a C#-only relaunch. `--dev` = vite URL + CDP port → `.cdp-port`, no bundle build needed |
 | `vite` | the sample web dev server (Phase 2+) |
 | `shot [name]` | PrintWindow capture of the sample window → `screenshots/` (auto-pruned, see below) |
 | `wgc [name]` | occlusion-immune capture (Windows Graphics Capture) — works when the window is hidden/occluded |
@@ -46,7 +46,7 @@ and prose (ROADMAP, FIX-LOG), never as a PNG.
 ## Scratch folders (`devtools/_*`)
 
 Gitignored probes — the P6 consumers, the adoption adapters, the P7 profile proofs. `docs/ROADMAP.md`
-and `docs/task-archive.md` describe them as RE-RUNNABLE, so `clean` removes only their regenerable
+and `docs/archive/tasks.md` describe them as RE-RUNNABLE, so `clean` removes only their regenerable
 build output and leaves the sources; `--all` is the opt-in destructive reading. (Verified: after a
 `clean` that reclaimed ~60 MB, the profile probe still rebuilt from source and passed.)
 

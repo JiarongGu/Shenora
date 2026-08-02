@@ -1,7 +1,7 @@
 # Work loop — build, verify, review, commit
 
 **There are no phases any more.** P1–P7 are done and 0.1.2 shipped; that narrative lives in
-`docs/ROADMAP.md`, the closed backlog in `docs/task-archive.md`. Work now arrives as harvest (D15) or
+`docs/ROADMAP.md`, the closed backlog in `docs/archive/tasks.md`. Work now arrives as harvest (D15) or
 adoption feedback. The loop below applies to any non-trivial change, and **every public change is
 SemVer surface** — note breaks in `CHANGELOG.md` under `### Breaking`. This repo never edits another
 repo: it readies the LIBRARY and writes `docs/ADOPTION.md`; the adopting app's own session adopts.

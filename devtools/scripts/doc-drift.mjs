@@ -95,8 +95,13 @@ const RETIRED_FILE = path.join(repo, 'devtools', 'retired-names.txt');
 // History BY DEFINITION — these files exist to record what the kit USED to be, so a retired name or
 // a since-deleted doc path in them is ACCURATE, not stale. Exempting them is what keeps both checks
 // signal rather than noise.
+//
+// `docs/archive/` is exempt WHOLESALE, by path prefix rather than by filename (2026-08-02). That
+// folder's entry criterion — "this is finished and will not change" — is the same property this list
+// encodes, so a new archive file is exempt the moment it is created instead of tripping the gate
+// until someone remembers to extend a regex.
 const HISTORY_BY_DEFINITION =
-  /^(devtools\/retired-names\.txt|CHANGELOG\.md|docs\/task-archive\.md|docs\/FIX-LOG\.md|docs\/ROADMAP\.md)$/;
+  /^(devtools\/retired-names\.txt|CHANGELOG\.md|docs\/ROADMAP\.md)$|^docs\/archive\//;
 
 /** `Name  # why it went` per line; blank lines and `#` comments ignored. */
 function retiredNames() {

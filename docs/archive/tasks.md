@@ -1,7 +1,7 @@
 # Shenora (神阙) — Completed Task Archive
 
 > **This is the ARCHIVE of finished work — the closed backlog, kept for the record. The ACTIVE
-> backlog lives in [`../TASKS.md`](../TASKS.md) (open tasks only).** An entry moves here once it is
+> backlog lives in [`TASKS.md`](../../TASKS.md) (open tasks only).** An entry moves here once it is
 > fully done (committed + verified), rather than being left checked off in place. `CHANGELOG.md`
 > stays the release-facing log and `docs/ROADMAP.md` the narrative of what shipped and why; this file
 > is the task-level record — the plans, the `file:line` anchors, and the judgement calls made while

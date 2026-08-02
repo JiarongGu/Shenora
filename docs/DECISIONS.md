@@ -51,7 +51,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 - **D9 — Repo organization clones the family system**: Sonora's four-layer memory model (short
   `CLAUDE.md` → `docs/README.md` router → two-tier `.claude/rules|knowledge` with
   `RULES_INDEX.md` → gitignored `local/`), `TASKS.md` ⇄ `docs/ROADMAP.md` conveyor,
-  `docs/FIX-LOG.md`, plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`,
+  `docs/archive/fix-log.md`, plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`,
   design-contract doc). Done work is archived narratively in `docs/ROADMAP.md` `## Done` rather than
   in a separate task-archive file.
 
@@ -509,7 +509,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     rejected one such proposal for the chrome. Reopen either only on a real adopter hitting a real
     limit — the same bar as D24, and the same bar the three `TASKS.md` follow-ups are held to.
   - **Verified live, not asserted** (2026-08-02, `dev.mjs sample`): both exercised by hand on the
-    running desktop sample. That session also exposed the stale-bundle defect in `docs/FIX-LOG.md` —
+    running desktop sample. That session also exposed the stale-bundle defect in `docs/archive/fix-log.md` —
     worth remembering that the hands-on test found something eight green `verify` runs did not.
 
 - **D26 — the kit stays Windows-desktop-scoped. Linux is served by the SERVER-BACKED profile, not by

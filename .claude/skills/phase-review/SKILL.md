@@ -51,12 +51,12 @@ The standing rule: every phase gets an adversarial review before its commit.
    re-verifying afterwards has worked well.
 5. **Re-verify**: `node devtools/dev.mjs verify` — everything green.
 6. **Sync docs**: README status, `docs/ARCHITECTURE.md` (projects/surface), `docs/ROADMAP.md`
-   (done narrative), `CHANGELOG.md` (if surface changed), `docs/FIX-LOG.md` for
+   (done narrative), `CHANGELOG.md` (if surface changed), `docs/archive/fix-log.md` for
    any non-trivial fix the review produced (via `/fix-log`), `docs/REVIEW-GUIDE.md` if an invariant
    or settled-decision changed, and rules — a new
    invariant defaults to on-demand `.claude/knowledge/` via `node devtools/dev.mjs knowledge new
    <name>` (only universal ones go core with `--core`); then `… knowledge check`.
-   **`TASKS.md` is pruned by MOVING finished entries to `docs/task-archive.md`, never by ticking them
+   **`TASKS.md` is pruned by MOVING finished entries to `docs/archive/tasks.md`, never by ticking them
    in place** (standing user rule) — the file's length is the size of the remaining work, so a DONE
    paragraph left under `## Open` defeats the only reason to open it. Leave behind at most a one-line
    pointer, and keep any follow-up the entry spawned.

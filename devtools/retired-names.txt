@@ -12,7 +12,7 @@
 #
 # ADD A NAME HERE THE MOMENT YOU DELETE OR RENAME ONE. The cost of forgetting is a doc that quietly
 # describes a kit that no longer exists — which is not hypothetical, it is what this gate was built
-# after finding. CHANGELOG.md, docs/task-archive.md and docs/FIX-LOG.md are exempt by construction:
+# after finding. CHANGELOG.md, docs/archive/tasks.md and docs/archive/fix-log.md are exempt by construction:
 # they are history by definition.
 #
 # Format: one name per line, `#` starts a comment.

@@ -20,7 +20,7 @@ code cites its `§` numbers.
 
 **Status: v0.1.0 SHIPPED (2026-07-31)** — five NuGet packages + `@shenora/react` on npm, repo public.
 P1–P7 are complete and **nothing is queued**: `TASKS.md` holds two standing habits, the finished work
-lives in `docs/task-archive.md`. Growth from here is harvest-driven (D15) and adoption-driven — real
+lives in `docs/archive/tasks.md`. Growth from here is harvest-driven (D15) and adoption-driven — real
 work arrives when a sibling app adopts the kit and hits something. **Every public change is now SemVer
 surface**; 1.0 is a separate deliberate freeze, not yet cut.
 

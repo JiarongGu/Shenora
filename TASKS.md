@@ -1,7 +1,7 @@
 # TASKS.md — open backlog only
 
 **This file holds OPEN tasks only.** Once a task is fully done (committed + verified) its entry is
-**moved to [`docs/task-archive.md`](docs/task-archive.md)**, not checked off in place — so the length
+**moved to [`docs/archive/tasks.md`](docs/archive/tasks.md)**, not checked off in place — so the length
 of this file is the size of the remaining work, which is the whole point of looking at it.
 `docs/ROADMAP.md` `## Done` is the narrative of what shipped and why; `CHANGELOG.md` is the
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
@@ -41,13 +41,13 @@ and hits something, or when a feature worth generalising emerges while building 
 ### Nothing designed is waiting
 
 The mission queue, chains, the file-update queue, cross-process locking and crash-atomicity all
-landed on 2026-08-02 — `docs/ROADMAP.md` `## Done` + `docs/task-archive.md`. The group below is
+landed on 2026-08-02 — `docs/ROADMAP.md` `## Done` + `docs/archive/tasks.md`. The group below is
 finished; what remains in this file is the older set held at the two-consumer bar.
 
 ### The rest — held at the two-consumer bar
 
 **Nothing below is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are
-finished — record, rationale and verification in `docs/task-archive.md`. What survives below is what
+finished — record, rationale and verification in `docs/archive/tasks.md`. What survives below is what
 those passes deliberately did **not** build, each held back by a named evidence bar rather than by
 effort. That distinction is the point: none of these should be started because the list looks short.
 
@@ -64,7 +64,7 @@ scratch; at that point the shape is already known.
 > build them when the consumer does.
 
 - [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
-  base (see the design-pass record in `docs/task-archive.md`) showed the IPC half needs NOTHING to run
+  base (see the design-pass record in `docs/archive/tasks.md`) showed the IPC half needs NOTHING to run
   headless — but it made me hand-write ~40 lines every non-WinForms base will write identically: the
   transport read loop → deserialize → `DispatchAsync` → serialize → write, plus the pump tick. The
   CLIENT half has had this since P3 (`ShenoraBridge` owns correlation, category demux and the batch

@@ -8,7 +8,7 @@ D23 (+ its amendments); the as-built surface is `docs/ARCHITECTURE.md`; the rele
 > **Rewritten 2026-08-01 (the 0.2.0 cleanup), 647 → this.** It had become ~70% amendment stacks —
 > six rounds of "SUPERSEDED / AMENDED again" narrating a shape that the design pass then cut. That
 > history is not lost: it is in `CHANGELOG.md` 0.2.0, `DECISIONS.md` D23's amendments, and
-> `docs/task-archive.md`. What was left here after removing it is below, and section numbers are
+> `docs/archive/tasks.md`. What was left here after removing it is below, and section numbers are
 > preserved because ~50 code comments point at them.
 
 ---

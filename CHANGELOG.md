@@ -588,7 +588,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   bundle was on disk. Found by hands-on testing: the sample's drop zone showed no hover feedback
   because the bundle predated the `.drop-hover` rule by three days. That makes the verification path
   itself unsound, since `phase-workflow.md` proves desktop behaviour against the sample. Full account
-  in `docs/FIX-LOG.md`.
+  in `docs/archive/fix-log.md`.
 - **D25 — frameless chrome and native drop zones recorded as the kit's flagship pair**, settled after
   live testing; not open to redesign on symmetry or cohesion grounds without adopter evidence. See
   `docs/DECISIONS.md`.
@@ -1576,7 +1576,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   rejected — so the published tarball would have failed for any consumer not behind a bundler. All
   relative specifiers now carry explicit extensions and `module`/`moduleResolution` are `NodeNext`,
   which makes a missing extension a build error rather than a publish-time surprise. Caught by the
-  P1.1 local-feed consumption smoke; root cause in `docs/FIX-LOG.md`.
+  P1.1 local-feed consumption smoke; root cause in `docs/archive/fix-log.md`.
 
 Bootstrap: repo, docs system, design contract, buildable package skeleton
 (`Shenora.Core` / `Shenora.Ipc` / `Shenora.WebView2` / `Shenora.WinForms` / `@shenora/react`),
