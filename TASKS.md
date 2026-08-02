@@ -282,6 +282,23 @@ implements it differently, none of them leaks into app logic.
 - [ ] **D4 — Say what is NOT in scope.** No playback, no transcoding, no editing, no codec bundling —
   those are products, and D21 keeps products out of the kit. If a consumer needs playback it composes
   its own over the contracts, the way the sample builds a co-browse pane over `StreamingSession`.
+- [ ] **D5 — Transform-in-place is the trap, and "written" is not "valid".** Owner, 2026-08-03: a
+  compress cannot replace its input in place, *"you might lose on both side"* — a failure partway
+  destroys the original and leaves no usable output. The rule for any long transform is therefore:
+  produce a complete SEPARATE file, then swap. That principle is the important half and it holds for
+  every media operation the three consumers will want.
+  - **The swap should be a rename-over, not delete-then-rename.** Checked before recommending it:
+    `File.Replace`'s backup is a RENAME of the existing target, not a copy
+    (`FileUpdateQueue.cs:552`), so peak footprint is old + new either way and deleting first buys no
+    disk. What deleting first does buy is a window where the target is absent — which is the exact
+    failure the whole exercise exists to avoid.
+  - **What is genuinely missing is VERIFY-then-swap.** A truncated or corrupt output is fully
+    written and still worthless, and swapping it in destroys the original. Media needs a probe
+    between "finished" and "swap" — does it decode, is the duration within tolerance, are the
+    expected streams present. `UpdateStage` already models this shape for releases (verify every
+    staged file's SHA-256 before the stage counts as pending), but the media equivalent cannot be a
+    hash: a re-encode is not byte-predictable, so the check is semantic rather than exact.
+  - Interrupted transforms must leave no junk — name temps predictably and sweep them at startup.
 
 ### E. Off-screen sessions cannot see the app's OWN content
 
