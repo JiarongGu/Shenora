@@ -569,9 +569,16 @@ sealed class Shenora.Core.UpdateManifest
   public required string Version { get; init; }
   public static Shenora.Core.UpdateManifest Parse(string json)
   public string ToJson()
+sealed class Shenora.Core.UpdateOutcome
+  public System.Collections.Generic.IReadOnlyList<string> Removed { get; init; }
+  public System.Collections.Generic.IReadOnlyList<string> Written { get; init; }
+  public required bool Applied { get; init; }
+  public string? Failure { get; init; }
+  public string? Version { get; init; }
 sealed class Shenora.Core.UpdateStage
   public .ctor(Shenora.Core.UpdateStageOptions options)
   public Shenora.Core.UpdateStageStatus GetStatus()
+  public System.Threading.Tasks.Task<Shenora.Core.UpdateOutcome> ApplyAsync(string installRoot, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> CommitAsync(Shenora.Core.UpdateManifest manifest, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> FetchAsync(Shenora.Core.IUpdateSource source, Shenora.Core.UpdateManifest installed, System.Threading.CancellationToken cancellationToken = default)
   public string StagedDirectory { get; }

@@ -44,6 +44,28 @@ public sealed class UpdateStageOptions
     public Action<string>? Log { get; init; }
 }
 
+/// <summary>What an <see cref="UpdateStage.ApplyAsync"/> pass did, or why it did nothing.</summary>
+public sealed class UpdateOutcome
+{
+    /// <summary>True when the stage was overlaid onto the install and cleared.</summary>
+    public required bool Applied { get; init; }
+
+    /// <summary>The version applied, when <see cref="Applied"/>.</summary>
+    public string? Version { get; init; }
+
+    /// <summary>Manifest-relative paths written (added or replaced).</summary>
+    public IReadOnlyList<string> Written { get; init; } = [];
+
+    /// <summary>Manifest-relative paths deleted because the new manifest dropped them.</summary>
+    public IReadOnlyList<string> Removed { get; init; } = [];
+
+    /// <summary>
+    /// Why nothing was applied, when <see cref="Applied"/> is false. Null on success. A REASON
+    /// rather than an exception because "there was no update" is the common case, not a fault.
+    /// </summary>
+    public string? Failure { get; init; }
+}
+
 /// <summary>Whether a verified update is staged and waiting to be applied.</summary>
 public sealed class UpdateStageStatus
 {
@@ -271,6 +293,110 @@ public sealed class UpdateStage
 
         return await CommitAsync(new UpdateManifest { Version = release.Version, Files = staged },
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Apply a staged update: overlay it onto <paramref name="installRoot"/>, delete what the new
+    /// manifest dropped, and clear the stage. Portable — no native code and nothing platform-specific.
+    /// <para>
+    /// <b>Run this from OUTSIDE <paramref name="installRoot"/>, with the app not running.</b> That is
+    /// the topology the design picked (`docs/2026-08-02-shenora-app-update-design.md` §2): a launcher
+    /// at <c>{root}/</c> overlaying <c>{root}/app/</c> can never overwrite or delete itself, which
+    /// makes four separate self-exclusion guards UNREACHABLE rather than merely handled. Overlay a
+    /// tree that contains the running process and you are signing up for all of them.
+    /// </para>
+    /// <para>
+    /// A self-contained app needs nothing more than this. A framework-dependent one still wants a
+    /// native launcher, because something has to run when the runtime may be absent — but that
+    /// launcher's job shrinks to bootstrapping the runtime and calling this.
+    /// </para>
+    /// </summary>
+    public async Task<UpdateOutcome> ApplyAsync(string installRoot, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(installRoot);
+
+        var status = GetStatus();
+        if (!status.Pending) return new UpdateOutcome { Applied = false, Failure = "nothing is staged" };
+
+        // Read BOTH manifests before the overlay — the overlay overwrites the installed one, and the
+        // removal set is the difference between them. Both donors read them first for this reason.
+        var stagedManifestPath = Path.Combine(StagedDirectory, "manifest.json");
+        UpdateManifest? release = null;
+        try
+        {
+            if (File.Exists(stagedManifestPath)) release = UpdateManifest.Parse(File.ReadAllText(stagedManifestPath));
+        }
+        catch (Exception ex)
+        {
+            Log($"[Shenora.Core] The staged manifest could not be read: {ex.GetType().Name}");
+        }
+
+        // THE GUARD ONE DONOR HAS AND THE OTHER DOES NOT. Removals are driven by "installed minus
+        // release", so an unreadable or empty release manifest would delete every tracked path —
+        // including the files just overlaid — turning a SUCCESSFUL copy into a corrupt install. No
+        // manifest means no removals, and here it means no apply at all.
+        if (release is null || release.Files.Count == 0)
+        {
+            return new UpdateOutcome
+            {
+                Applied = false,
+                Failure = "the staged manifest is missing or empty, so removals cannot be computed safely",
+            };
+        }
+
+        var installedManifestPath = Path.Combine(installRoot, "manifest.json");
+        UpdateManifest installed = new() { Version = "", Files = [] };
+        try
+        {
+            if (File.Exists(installedManifestPath))
+                installed = UpdateManifest.Parse(File.ReadAllText(installedManifestPath));
+        }
+        catch (Exception ex)
+        {
+            // A first install, or a corrupt baseline. Either way: overlay, remove NOTHING. Guessing
+            // at removals without a trustworthy baseline is the destructive direction.
+            Log($"[Shenora.Core] No usable installed manifest ({ex.GetType().Name}) — applying without removals.");
+        }
+
+        var written = new List<string>();
+        foreach (var source in Directory.EnumerateFiles(StagedDirectory, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relative = Path.GetRelativePath(StagedDirectory, source);
+            var destination = Path.Combine(installRoot, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination, overwrite: true);
+            written.Add(relative.Replace('\\', '/'));
+        }
+
+        // Tracked paths only, never a directory sweep: user data lives in this tree and the manifest
+        // is the only thing that knows which files the app owns.
+        var removed = new List<string>();
+        foreach (var path in ManifestDiff.Compute(installed, release).Removed)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var target = Path.Combine(installRoot, Relative(path));
+            try
+            {
+                if (File.Exists(target)) { File.Delete(target); removed.Add(path); }
+            }
+            catch (Exception ex)
+            {
+                // A file that will not delete is not a reason to abandon a completed overlay — the
+                // install is already the new version. Report and continue.
+                Log($"[Shenora.Core] Could not remove '{path}': {ex.GetType().Name}");
+            }
+        }
+
+        Clear();
+        Log($"[Shenora.Core] Applied version {release.Version}: {written.Count} written, {removed.Count} removed.");
+        return new UpdateOutcome
+        {
+            Applied = true,
+            Version = release.Version,
+            Written = written,
+            Removed = removed,
+        };
     }
 
     /// <summary>Manifest paths are forward-slashed; the disk wants this platform's separator.</summary>

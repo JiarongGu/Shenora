@@ -120,7 +120,25 @@ at the first list and missed five more breaking changes.
   and overlaying it makes it the new installed baseline. A fetch that throws is left to escape: a
   partial download must not be staged as though it were whole.
 
-  Still not shipped, deliberately: no downloader, no release source, no applier.
+- **`UpdateStage.ApplyAsync` + `UpdateOutcome`** — the apply pass, and it is **portable .NET, not
+  native**. Overlay the stage onto the install, delete only what the new manifest dropped, clear the
+  stage. A self-contained app needs nothing else; a framework-dependent one still wants a native
+  launcher, but that launcher's job shrinks to bootstrapping the runtime and calling this.
+
+  **Run it from OUTSIDE the tree it overlays.** That is the topology the design chose: a launcher at
+  `{root}/` overlaying `{root}/app/` can never overwrite or delete itself, which makes four
+  self-exclusion guards *unreachable* rather than merely handled — the difference between a bug class
+  fixed and a bug class that cannot occur.
+
+  It carries the guard one donor has and the other does not, and this is the one that matters:
+  removals are "installed minus release", so a staged manifest that fails to load would delete every
+  tracked path — including the files just overlaid — turning a **successful copy into a corrupt
+  install**. An unreadable or empty staged manifest therefore blocks the apply entirely rather than
+  proceeding with no removals. Sabotage-verified. Removals are **tracked paths only**: untracked
+  files (settings, databases, user data) are never swept, and a missing baseline means no removals
+  at all rather than a guess.
+
+  Still not shipped, deliberately: no downloader, no release source, no native launcher.
 
 - **`UpdateManifest` / `ManifestFile` / `ManifestDiff` in `Shenora.Core`** — the staged-update
   changeset, and the first piece of `docs/2026-08-02-shenora-app-update-design.md` to ship. A running

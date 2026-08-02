@@ -255,7 +255,18 @@ changes, noting them in `CHANGELOG.md`).
   complete and verified and an applier need not re-check. `Begin()` clears a previous attempt (its
   leftovers would otherwise verify as part of the next one), `GetStatus()` reads only the marker and
   never throws, and an EMPTY manifest is refused here — the guard `ManifestDiff` defers. No
-  downloader, no release source, no applier: those are the app's and the native step's.
+  downloader and no release source — those are the app's. `IUpdateSource` is the seam (two methods,
+  no implementation shipped) and `FetchAsync` is the download-and-stage phase: diff, fetch only the
+  CHANGED files, commit. Because only the changeset is staged, `CommitAsync` verifies the manifest of
+  what is IN the stage; the full release manifest rides along as `manifest.json` so the applier can
+  compute removals and so overlaying it makes the new installed baseline.
+  **`ApplyAsync` + `UpdateOutcome`** — the apply pass, portable .NET rather than native: overlay,
+  remove what the new manifest dropped, clear. Run it from OUTSIDE the tree it overlays (a launcher
+  at `{root}/` over `{root}/app/`), which is what makes self-exclusion guards unreachable rather than
+  handled. An unreadable or empty staged manifest BLOCKS the apply, because removals are
+  "installed minus release" and a manifest that failed to load would delete everything just written.
+  A self-contained app needs no native code; a framework-dependent one still wants a launcher to
+  bootstrap the runtime and call this.
   Naming is `Mission*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary,
   and reusing the word would blur the one distinction the design rests on. It was `Work*` until
   2026-08-02 — too common a word to own or grep, while `Task*` would collide with the BCL.

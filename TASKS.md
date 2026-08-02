@@ -81,10 +81,15 @@ sabotage-verified. It also carries B1's deferred empty-manifest guard._
 _B3 (the release-source seam) is DONE — `IUpdateSource` + `UpdateStage.FetchAsync`. The kit ships no
 implementation of the seam, and the differential-vs-full manifest distinction is documented on
 `FetchAsync`._
-- [ ] **B4 — the launcher template (native, ~150 lines).** Take Sonora's topology (app in
-  `{root}/app/`, overlay only that) because it makes four guard-classes unreachable rather than
-  fixed. Ships as a repo TEMPLATE, not a package, and must say plainly that this repo's gate cannot
-  compile it.
+- [ ] **B4 — the NATIVE launcher, and it is now much smaller than the design assumed.** Owner's call
+  (2026-08-02): ship the apply logic as portable .NET first. Done — `UpdateStage.ApplyAsync` overlays,
+  removes and clears, gate-covered and sabotage-verified, so **a self-contained app needs no native
+  code at all.** What is left for the launcher is only what genuinely cannot be done in .NET: detect
+  and install the runtime when it may be absent, then invoke the applier. Take Sonora's topology
+  (app in `{root}/app/`, overlay only that) — the applier already documents and tests that layout.
+  Still the one artifact this repo's gate cannot compile, so it ships as a TEMPLATE with that said
+  plainly, and the sibling's Node harness (drive a PREBUILT exe over sandbox dirs) is the model for
+  testing it on demand rather than in `verify`.
 
 ### C. Held at the two-consumer bar
 
