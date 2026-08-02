@@ -34,6 +34,26 @@ at the first list and missed five more breaking changes.
   generated context for its own envelope types, so those still resolve through reflection unless an
   app includes them in its own context.
 
+- **`IpcHostBridge` (+ `IpcHostBridgeOptions`) in `Shenora.Ipc`** — the transport-neutral INBOUND
+  half of a host channel: parse → handshake-or-dispatch → response JSON, plus the dispatch lifetime
+  token and the no-raw-exception-text error boundary. The mirror of the client's `ShenoraBridge`,
+  which has owned correlation and batch unbundling since P3 while the host side had none — so
+  `WebViewIpcBridge` was the only thing that knew this shape and it was welded to WinForms.
+
+  Evidence rather than anticipation: the D3 transport spike needed no change to `Shenora.Ipc` at
+  all, but did mean hand-writing this loop, which every non-WinForms host writes identically.
+
+  Like `NotificationPump` it owns **no transport and no timer** — the base reads a message off its
+  own wire, calls `HandleIncomingAsync`, and writes the result back if there is one. It optionally
+  takes the pump, so "a handshake opens the outbound gate" lives in one place; CLOSING the gate
+  stays the base's job, because only the base knows which of its events mean the client can no
+  longer receive (P5.5 H3).
+
+  `WebViewIpcBridge` is now a thinner adapter over it — the `Forms.Timer`, the WebView2 event
+  wiring and `PostWebMessageAsString`. **Not a breaking change:** its public surface is
+  byte-identical (`HandshakeModule`/`HandshakeType` are `const` forwards to the new home, so the
+  literals every consumer compiled against are unchanged), and its API baseline did not move.
+
 ## 0.4.0 — 2026-08-02
 
 _Do not stamp this heading by hand — the release workflow does it (`docs/RELEASING.md`). See the

@@ -41,6 +41,33 @@ envelope types, so `IpcRequest` and friends still resolve through reflection. Fu
 reflection at all needs that too — additive, and a separate change. Said so in the XML and the
 CHANGELOG rather than leaving the hole implied.
 
+### The host-side transport helper — `IpcHostBridge` (2026-08-02) — DONE
+
+The second of the mobile plan's §4 prerequisites, and the one the D3 spike actually measured: the
+spike needed **no change** to `Shenora.Ipc`, but it had to hand-write the read → deserialize →
+dispatch → serialize → write loop that every non-WinForms host writes identically. That loop's
+middle is now `Shenora.Ipc.IpcHostBridge`, and `WebViewIpcBridge` is a thinner adapter over it.
+
+Judgement calls worth keeping:
+
+1. **The split follows `NotificationPump`'s, deliberately.** No transport, no timer — which thread
+   may touch a base's client is base-specific. What moved is protocol; what stayed is WebView2
+   vocabulary (`ContentLoading`/`ProcessFailed`, the `Forms.Timer`, `PostWebMessageAsString`, the
+   int32 timer-interval bound).
+2. **The handshake→open-the-gate pairing MOVED; closing did not.** Opening is protocol, so every
+   base gets it. Closing needs to know which of a base's own events mean "the client can no longer
+   receive", and choosing that wrongly is P5.5 H3 (`NavigationStarting` closed the gate forever).
+3. **`HandshakeModule`/`HandshakeType` moved to `Shenora.Ipc` with `const` forwards left behind.**
+   A headless host cannot reference `Shenora.WebView2`, and the constants are wire contract pinned
+   by `WireMirrorTests`. Because consts inline, the literals every consumer compiled against are
+   unchanged — proven by `Shenora.WebView2`'s API baseline not moving at all.
+4. **The old suite is the regression proof.** `WebViewIpcBridge.HandleIncomingAsync` was kept as an
+   internal forwarder so `WebViewIpcBridgeTests` still drives the full WebView2 composition rather
+   than the neutral piece in isolation. Sabotage confirmed it is not decorative: deleting
+   `Pump?.Open()` failed **12** tests — the new `The_handshake_opens_the_pumps_gate` plus eleven
+   pre-existing WebView2 notification tests. The error boundary was sabotage-verified separately
+   (leaking `ex.Message` failed the `DoesNotContain` leak test by name).
+
 ### The mission layer's three owner-directed additions (2026-08-02) — all DONE
 
 Planned in two docs, built in the recommended order the same day, each with its own commit and its own

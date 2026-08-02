@@ -68,14 +68,6 @@ scratch; at that point the shape is already known.
 > (`docs/archive/tasks.md`); the two below are next, in that order. The bar still applies to
 > everything NOT on that list.
 
-- [ ] **A host-side transport helper — the D3 spike's one evidence-backed gap.** Standing up a second
-  base (see the design-pass record in `docs/archive/tasks.md`) showed the IPC half needs NOTHING to run
-  headless — but it made me hand-write ~40 lines every non-WinForms base will write identically: the
-  transport read loop → deserialize → `DispatchAsync` → serialize → write, plus the pump tick. The
-  CLIENT half has had this since P3 (`ShenoraBridge` owns correlation, category demux and the batch
-  unbundle); the HOST half has no mirror, so `WebViewIpcBridge` is the only thing that knows the shape
-  and it is welded to WinForms. **Not built yet on purpose:** the spike is ONE consumer, the bar is
-  two. Candidate placement is `Shenora.Ipc` (no new package, D2).
 - [ ] **`Shenora.Core` ships no headless `IShenoraRunner`.** Also from the D3 spike: `CreateBuilder`
   → `Build()` → `Run()` throws without a runner, and the only implementation lives in
   `Shenora.WinForms`. So Core's "application host" half is WinForms-only in practice even though every

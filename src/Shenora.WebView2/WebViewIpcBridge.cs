@@ -74,38 +74,26 @@ public sealed class WebViewIpcBridgeOptions
 /// </summary>
 public sealed class WebViewIpcBridge : IDisposable
 {
-    /// <summary>Reserved wire route: the client's ready handshake module (mirrored by the client bridge).</summary>
-    public const string HandshakeModule = "SHENORA";
+    /// <summary>
+    /// Reserved wire route: the client's ready handshake module (mirrored by the client bridge).
+    /// Forwards to <see cref="IpcHostBridge.HandshakeModule"/>, which is where the wire contract
+    /// lives now that a non-WebView2 base needs it too — a <c>const</c> forward, so the literal
+    /// every consumer compiled against is unchanged.
+    /// </summary>
+    public const string HandshakeModule = IpcHostBridge.HandshakeModule;
 
     /// <summary>Reserved wire route: the client's ready handshake type (mirrored by the client bridge).</summary>
-    public const string HandshakeType = "READY";
+    public const string HandshakeType = IpcHostBridge.HandshakeType;
 
     private readonly WebView2Control _webView;
     private readonly WebViewIpcBridgeOptions _options;
     private readonly Action<string>? _log;
     private readonly Shenora.Core.IUiDispatcher _ui;
     private readonly NotificationPump _pump;
+    private readonly IpcHostBridge _host;
     private System.Windows.Forms.Timer? _flushTimer;
     private bool _attached;
     private bool _disposed;
-
-    /// <summary>
-    /// The lifetime handed to every dispatch, cancelled in <see cref="Dispose"/> (P6.4). Before this
-    /// the whole pipeline was uncancellable: a handler still awaiting when the window closed had no
-    /// way to learn that the page it was answering is gone, because it was never given a token to
-    /// observe. This is the CALLER's lifetime, not per-request client cancellation — a one-way
-    /// <c>post</c> has nobody waiting, so "stop that operation" stays an app-level route.
-    /// </summary>
-    private readonly CancellationTokenSource _lifetime = new();
-
-    /// <summary>
-    /// The token, captured ONCE. Reading <c>_lifetime.Token</c> at dispatch time would throw
-    /// <see cref="ObjectDisposedException"/> for a message that arrives after <see cref="Dispose"/> —
-    /// and messages arriving during teardown is the normal case, not a corner one, since that is
-    /// exactly when the page is going away. A <see cref="CancellationToken"/> is a struct that stays
-    /// readable after its source is disposed, and still reports the cancellation.
-    /// </summary>
-    private readonly CancellationToken _lifetimeToken;
 
     /// <summary>
     /// Construct BEFORE <see cref="WebViewHost.InitializeAsync"/> — event buffering starts here, so
@@ -143,7 +131,6 @@ public sealed class WebViewIpcBridge : IDisposable
                 $"{nameof(WebViewIpcBridgeOptions.NotificationInterval)} must fit in an int32 millisecond count (the WinForms timer's limit).");
 
         _log = options.Log;
-        _lifetimeToken = _lifetime.Token;
         // The one marshalling owner (D19/D20) — reachable because Shenora.WebView2 layers on
         // Shenora.WinForms. A posted body that throws is reported here instead of becoming an
         // unhandled UI-thread exception.
@@ -162,6 +149,23 @@ public sealed class WebViewIpcBridge : IDisposable
             FlushInterval = options.NotificationInterval,
             MaxQueued = options.MaxQueuedNotifications,
             Filter = options.NotificationFilter,
+            Log = options.Log,
+        });
+
+        // The inbound protocol — the dispatch lifetime, deserialize, the handshake, the error
+        // boundary — is transport-neutral and moved to Shenora.Ipc for the same reason the outbound
+        // half did: the D3 spike proved a second base rewrites it identically. What stays HERE is
+        // everything WebView2: the Forms.Timer, the event wiring, PostWebMessageAsString.
+        //
+        // The pump is handed over so the HANDSHAKE opens the gate in one place — that pairing is
+        // protocol. Closing it stays below, because which events mean "the page can no longer
+        // receive" is WebView2 vocabulary (ContentLoading, ProcessFailed) and getting that choice
+        // wrong is P5.5 H3.
+        _host = new IpcHostBridge(new IpcHostBridgeOptions
+        {
+            Dispatcher = options.Dispatcher,
+            Pump = _pump,
+            OnClientReady = options.OnClientReady,
             Log = options.Log,
         });
     }
@@ -292,57 +296,13 @@ public sealed class WebViewIpcBridge : IDisposable
     /// Parse → handshake-or-dispatch → response JSON. Null when the input wasn't a valid request
     /// (nothing to correlate a response to — logged and dropped; the client's own timeout
     /// surfaces it). Internal seam so the protocol is testable without a live WebView2.
+    /// <para>
+    /// The protocol itself lives in <see cref="IpcHostBridge"/> now; this forward is kept so the
+    /// bridge's own suite still exercises the WebView2 composition end to end rather than the
+    /// neutral piece in isolation — which is what makes it a regression test for the move.
+    /// </para>
     /// </summary>
-    internal async Task<string?> HandleIncomingAsync(string json)
-    {
-        IpcRequest? request;
-        try
-        {
-            request = IpcJson.Deserialize<IpcRequest>(json);
-        }
-        catch (Exception ex)
-        {
-            Log(() => $"[Shenora.WebView2] Invalid IPC message dropped: {ex.Message}");
-            return null;
-        }
-        if (request is null) return null;
-
-        try
-        {
-            if (string.Equals(request.Module, HandshakeModule, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(request.Type, HandshakeType, StringComparison.OrdinalIgnoreCase))
-            {
-                return IpcJson.Serialize(HandleHandshake(request));
-            }
-
-            var response = await _options.Dispatcher.DispatchAsync(request, _lifetimeToken).ConfigureAwait(true);
-            return IpcJson.Serialize(response);
-        }
-        catch (Exception ex)
-        {
-            // MessageDispatcher never throws, but IMessageDispatcher is a public seam (an app
-            // implementation carries no such guarantee) — and Serialize itself can throw on an
-            // unserializable handler result (cycles, Type/delegate members). The client must
-            // still get a response, and per design §5 it learns nothing but the code.
-            Log(() => $"[Shenora.WebView2] Error handling {request.Module}/{request.Type}: {ex}");
-            return IpcJson.Serialize(IpcResponse.CreateError(request.Id, IpcErrorCodes.UnknownError,
-                parameters: new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name }));
-        }
-    }
-
-    private IpcResponse HandleHandshake(IpcRequest request)
-    {
-        _pump.Open();
-        Log(() => "[Shenora.WebView2] Client ready");
-        // Per-page glue (splash, overlays) failing must not fail the client's init await. The report
-        // sink goes through the guarded Log for the same reason the callback is guarded at all.
-        if (_options.OnClientReady is { } onReady)
-        {
-            Shenora.Core.AppCallback.Run(() => onReady(request),
-                ex => Log(() => $"[Shenora.WebView2] OnClientReady callback failed: {ex.Message}"));
-        }
-        return IpcResponse.CreateSuccess(request.Id);
-    }
+    internal Task<string?> HandleIncomingAsync(string json) => _host.HandleIncomingAsync(json);
 
     private void Flush()
     {
@@ -402,11 +362,9 @@ public sealed class WebViewIpcBridge : IDisposable
 
         // Signal FIRST, before anything is torn down: an in-flight handler should learn the page is
         // gone while its await can still act on it, not after the timer and the subscriptions have
-        // already been pulled out from under it. Cancel is guarded because it runs app continuations
-        // synchronously — one of them throwing must not stop the rest of this method disposing.
-        try { _lifetime.Cancel(); }
-        catch (Exception ex) { Log(() => $"[Shenora.WebView2] Bridge dispose: cancellation callback threw ({ex.Message})"); }
-        _lifetime.Dispose();
+        // already been pulled out from under it. The cancellation itself (and the guard around it,
+        // since Cancel runs app continuations synchronously) lives in IpcHostBridge.Dispose.
+        _host.Dispose();
 
         _flushTimer?.Stop();
         _flushTimer?.Dispose();

@@ -62,6 +62,18 @@ static class Shenora.Ipc.IpcErrorCodes
 static class Shenora.Ipc.IpcErrorMapping
   public static Shenora.Ipc.IpcError ToError(System.Exception exception, Microsoft.Extensions.Logging.ILogger? logger = null, string context = "handling", string? module = null, string? type = null)
   public static Shenora.Ipc.IpcResponse ToErrorResponse(Shenora.Ipc.IpcRequest request, System.Exception exception, Microsoft.Extensions.Logging.ILogger? logger = null, string context = "handling")
+sealed class Shenora.Ipc.IpcHostBridge : System.IDisposable
+  public .ctor(Shenora.Ipc.IpcHostBridgeOptions options)
+  public System.Threading.Tasks.Task<string> HandleIncomingAsync(string json)
+  public bool IsClientReady { get; }
+  public const string HandshakeModule = "SHENORA"
+  public const string HandshakeType = "READY"
+  public void Dispose()
+sealed class Shenora.Ipc.IpcHostBridgeOptions
+  public Shenora.Ipc.NotificationPump? Pump { get; init; }
+  public System.Action<Shenora.Ipc.IpcRequest>? OnClientReady { get; init; }
+  public System.Action<string>? Log { get; init; }
+  public required Shenora.Ipc.IMessageDispatcher Dispatcher { get; init; }
 static class Shenora.Ipc.IpcJson
   public static System.Text.Json.JsonElement SerializeToElement<T>(T value)
   public static System.Text.Json.JsonSerializerOptions Options { get; }

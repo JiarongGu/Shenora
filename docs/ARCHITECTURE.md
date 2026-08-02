@@ -370,7 +370,13 @@ changes, noting them in `CHANGELOG.md`).
   `AddTypeInfoResolver` — a startup-only seam for an app's source-generated `JsonSerializerContext`,
   chained AHEAD of the reflection fallback so an AOT/trimmed host can supply the metadata reflection
   cannot; it adds metadata rather than reopening the one frozen instance, and registering after
-  `Options` is built throws); the dispatch
+  `Options` is built throws); `IpcHostBridge`/`IpcHostBridgeOptions` (the transport-neutral INBOUND
+  half — parse → handshake-or-dispatch → response JSON, the dispatch lifetime token and the
+  no-raw-exception-text boundary; owns no transport and no timer, the mirror of `NotificationPump`
+  on the other direction, and the host-side mirror of the client's `ShenoraBridge`. Takes the pump
+  optionally so the handshake opens the outbound gate in one place; CLOSING it stays the base's
+  call. `HandshakeModule`/`HandshakeType` live here — `WebViewIpcBridge` forwards the consts);
+  the dispatch
   pipeline — `IMessageDispatcher`/`MessageDispatcher` (`Use`/`UseModule`/`UseRoute`/`UseLogging`/
   `UseErrorHandler` + `MapRoute`/`MapModule(name, routes)`/`MapModule(facade)`; `DispatchAsync`
   transport entry: never throws, never null — `NO_HANDLER`/structured/`UNKNOWN_ERROR` mapping
