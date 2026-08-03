@@ -129,6 +129,7 @@ function log(cls, text) {
 //      line would mirror again, and the host would answer that. The `d`-prefixed id below is what the
 //      response handler uses to drop these silently.
 let diagSeq = 0;
+let diagReported = false;
 function mirrorToHost(text) {
   try {
     channel.post(JSON.stringify({
@@ -186,9 +187,22 @@ channel.subscribe((raw) => {
     }
     return;
   }
-  // Drop the host's replies to our own mirrored log lines, SILENTLY. Logging them would call log(),
-  // which mirrors, which the host would answer — an endless round trip. See mirrorToHost.
-  if (typeof msg.id === 'string' && msg.id.startsWith('d')) return;
+  // Drop the host's replies to our own mirrored log lines. Logging them would call log(), which
+  // mirrors, which the host would answer — an endless round trip. See mirrorToHost.
+  //
+  // ⚠ But report the FIRST one, ONCE. A channel that silently swallows its own failure is worse than
+  // no channel: the mirror looked simply "not wired" for a whole round of debugging because every
+  // reply — including the error explaining why — was being dropped here. One-shot, so it cannot loop.
+  if (typeof msg.id === 'string' && msg.id.startsWith('d')) {
+    if (!diagReported) {
+      diagReported = true;
+      const verdict = msg.success === false
+        ? `FAILED ${msg.error?.code ?? '?'}${msg.error?.parameters ? ' ' + JSON.stringify(msg.error.parameters) : ''}`
+        : 'ok';
+      log('t', `page→host log channel: ${verdict} (reported once)`);
+    }
+    return;
+  }
 
   if (msg.success === false) {
     log('err', `<- FAIL ${msg.id} ${msg.error?.code}${msg.error?.parameters ? ' ' + JSON.stringify(msg.error.parameters) : ''}`);
