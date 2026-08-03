@@ -247,13 +247,13 @@ transport, `module` + `type` routing. It means one scheme registration instead o
 (`thumb`, `audio`) cost nothing, and the payload can carry more than a path — source, container preference,
 cache key — instead of being a bare string. Three notes on top:
 
-- ⚠ **The shape does not resolve the scheme risk; they are orthogonal.** `app://video?…` is still a CUSTOM
-  scheme, so the media-pipeline question above applies unchanged, and on the desktop the sibling deliberately
-  put media on `https://media.<host>/…` rather than its `app://`. **Recommendation: serve media over an
-  https VIRTUAL HOST, routed** — `https://<app-host>/<media-route>?…`. On the page's OWN origin there is no
-  CORS at all and no scheme registration, which removes two of the three things `webview2-hosting.md` records
-  as failing identically (`TypeError: Failed to fetch`) — and response headers, the third, are what the
-  mobile seam cannot send anyway. The host name stays the app's, as `VirtualHost` already is.
+- ⚠ **This recommended an https VIRTUAL HOST over a custom scheme. THE DEVICE SAYS OTHERWISE — see §0i.**
+  On iOS only `app://` is intercepted; an arbitrary https host goes to the real network and never reaches the
+  handler. **Use the APP SCHEME, routed — the owner's original shape.** On the desktop that sibling's
+  preference for `https://media.<host>/…` was about Range, which a scheme serves equally well once the
+  handler answers headers. Kept here as a corrected recommendation rather than deleted, because the CORS and
+  registration reasoning was sound and still lost to a platform fact — which is the argument for testing
+  before recommending.
 - **`?=` is an empty parameter name.** Prefer `?src=<enc>` or a path segment; URLs get parsed by more things
   than our handler, and an unnamed parameter is the kind of detail a proxy or a logger mangles.
 - **An opaque payload costs debuggability**, which is why the sibling used a readable url-encoded absolute
@@ -297,9 +297,39 @@ INTERCEPT app://video/?src=clip              <- <video> over a custom scheme
 - MAUI's `HybridWebView` serves the page from **`https://0.0.0.1/`** (seen as the `Referer`), which is what
   the app's own origin actually is on this shell.
 
-**Still untested: iOS.** `WKURLSchemeHandler` has had the equivalent history, and it needs the Mac. Until
-then the mobile half is proven on ONE of two platforms — say so rather than generalising from Android, which
-is the mistake the save picker's iOS naming defect already punished once.
+### §0i iOS TESTED TOO — and it OVERTURNS the URL-shape recommendation above
+
+Same probe on the simulator (2026-08-03). Media reaches the seam here as well, but the differences are
+load-bearing and would have been invisible from Android alone:
+
+```
+INTERCEPT app://video/?src=clip
+    HDR User-Agent: AppleCoreMedia/1.0.0.23D8133 (iPhone; …)   <- the MEDIA loader, not WebKit
+    HDR Range: bytes=0-1                                        <- a TWO-BYTE size probe
+    HDR X-Playback-Session-Id: FDBF855B-…
+```
+
+1. ⚠ **`https://shenora.probe/*` DOES NOT APPEAR IN THE iOS LOG AT ALL.** Only `app://` is intercepted; an
+   arbitrary https host goes to the real network. **So the "use an https virtual host, not a custom scheme"
+   recommendation earlier in this section is WRONG for iOS, and the owner's original `app://video?=<payload>`
+   instinct was right.** Use the APP SCHEME, routed. The CORS/registration argument for https does not
+   survive contact with the device.
+2. **The page's own origin differs per platform:** `app://0.0.0.1/` on iOS versus `https://0.0.0.1/` on
+   Android. Anything that hardcodes the app origin's SCHEME is wrong on one of them.
+3. ⚠ **iOS probes with `Range: bytes=0-1` — two bytes — which is AVFoundation discovering the total length
+   from the `Content-Range` of the reply.** Android asked for `bytes=0-`. That raises the severity of the
+   header gap: on Android a header-less `200` plausibly degrades to "plays but cannot seek", whereas on iOS
+   the player is asking a question it can only get an answer to from a header the portable seam cannot send.
+   **So on iOS a header-less response may not play at all, not merely fail to seek.**
+   ⚠ Stated as a risk rather than a result: this probe proves the request ARRIVES and what it ASKS for. It
+   does not prove what happens when we answer without headers, because it deliberately answered nothing.
+   **That is the next thing to test, and it needs `PlatformArgs` to be worth testing.**
+4. The `AppleCoreMedia` User-Agent and `X-Playback-Session-Id` confirm this is the platform media loader
+   rather than the web resource loader — the same distinction Android's missing-`Range` `<img>` control drew.
+
+**Net: the design reaches all three shells, and the URL must use the app scheme.** What remains unproven on
+mobile is answering a range correctly, which is a `Shenora.Media.{Platform}` job via `PlatformArgs` on both
+platforms — no longer an Android-only concern.
 
 ## §1 The claim — PLAYABILITY is the centre, and it splits into five parts
 

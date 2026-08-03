@@ -38,16 +38,6 @@ public sealed class MainPage : ContentPage
 			DefaultFile = "index.html",
 		};
 		Content = _webView;
-		// ── PROBE (temporary, reverted after the run): does the MEDIA pipeline reach the seam on iOS? ──
-		// Android answered YES (both URL forms, with Range: bytes=0- on the first request). iOS uses
-		// WKURLSchemeHandler, which has its own history with media, so it is a separate question.
-		_webView.WebResourceRequested += (_, e) =>
-		{
-			MauiProgram.Log($"INTERCEPT {e.Uri}");
-			if (e.Uri.ToString().Contains("shenora.probe") || e.Uri.Scheme == "app")
-				foreach (var h in e.Headers)
-					MauiProgram.Log($"    HDR {h.Key}: {h.Value}");
-		};
 
 		Loaded += OnLoaded;
 		Unloaded += OnUnloaded;
