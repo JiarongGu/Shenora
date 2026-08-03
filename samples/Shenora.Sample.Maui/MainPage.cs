@@ -17,6 +17,7 @@ namespace Shenora.Sample.Maui;
 public sealed class MainPage : ContentPage
 {
 	private readonly HybridWebView _webView;
+	private readonly MediaRangeProbe _media = new(MauiProgram.Log);
 	private MobileIpcBridge? _bridge;
 
 	/// <summary>The page's background, matched by the splash colour — see the csproj's comment.</summary>
@@ -32,11 +33,19 @@ public sealed class MainPage : ContentPage
 
 		_webView = new HybridWebView
 		{
-			// Both are the defaults; set explicitly because they ARE the content contract on this
-			// shell — the platform serves these, and no request-interception seam exists to change it.
+			// Both are the defaults; set explicitly because they ARE the content contract for the
+			// BUNDLE on this shell — the platform serves `wwwroot` itself.
+			//
+			// (An earlier version of this comment added "and no request-interception seam exists to
+			// change it". That was wrong, and it is the reason the media work started a session late:
+			// `WebResourceRequested` below is exactly such a seam, and it is what serves media.)
 			HybridRoot = "wwwroot",
 			DefaultFile = "index.html",
 		};
+		// DM1: the media route. Subscribed here rather than in OnLoaded because a resource request can
+		// arrive as soon as the page has markup, and a handler attached later would silently miss the
+		// first one — which reads as "media does not reach the seam".
+		_webView.WebResourceRequested += _media.OnWebResourceRequested;
 		Content = _webView;
 
 		Loaded += OnLoaded;
@@ -80,6 +89,15 @@ public sealed class MainPage : ContentPage
 		});
 		_bridge.Attach();
 		MauiProgram.Log("bridge attached — waiting for the page handshake");
+
+		// Stage the media clips out of the app package. Fire-and-forget with a GUARD, never a bare
+		// async void: this runs with no caller on the stack, so an unhandled throw here is an
+		// unhandled UI-thread exception rather than a failed copy.
+		_ = Task.Run(async () =>
+		{
+			try { await _media.PrepareAsync(); }
+			catch (Exception ex) { MauiProgram.Log($"media: staging FAILED — {ex}"); }
+		});
 
 		// A heartbeat on the bus, so the NOTIFICATION direction is visible on screen rather than
 		// merely wired: the desktop sample proves the same path with its 1 Hz tick source.

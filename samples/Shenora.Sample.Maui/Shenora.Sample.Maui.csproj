@@ -64,7 +64,8 @@
     <MauiFont Include="Resources\Fonts\*" />
     <!-- The web bundle. HybridWebView serves Resources/Raw/wwwroot as its HybridRoot — the platform
          does the serving, which is why the kit's resource-provider layer has no role on this shell. -->
-    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources\Raw\**" Exclude="Resources\Raw\wwwroot\media\**"
+               LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     <!--
       The REAL shipped client transport, served beside the page so the sample exercises
       `@shenora/react`'s own code rather than a hand-written copy of it. dist/transport.js compiles
@@ -77,6 +78,24 @@
     <MauiAsset Include="..\..\src\Shenora.React\dist\transport.js"
                LogicalName="wwwroot/shenora/transport.js"
                Condition="Exists('..\..\src\Shenora.React\dist\transport.js')" />
+    <!--
+      The DM1 media probe's two clips. Excluded from the glob above and named EXPLICITLY, with forward
+      slashes, because two different consumers open them by that exact string: `MediaRangeProbe` via
+      `OpenAppPackageFileAsync`, and the page directly, as `media/<clip>` relative to its own origin —
+      which is MAUI's OWN static serving and therefore the control that proves the file, the codec and
+      the emulator's media stack independently of our handler. The glob's computed LogicalName cannot
+      be relied on for that: it interpolates `%(RecursiveDir)`, which is backslash-separated on Windows.
+
+      They are a CONTROL PAIR of the same 60 s / 480x270 H.264+AAC content, differing only in where
+      the `moov` atom sits — front vs end. The tail one cannot start playing until the handler has
+      answered a range request for the end of the file, so it is what distinguishes real range support
+      from a whole-file 200. ~464 KB each, generated with ffmpeg's `testsrc`, whose big seconds counter
+      is what makes a seek provable from a screenshot.
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-faststart.mp4"
+               LogicalName="wwwroot/media/clip-faststart.mp4" />
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-tailmoov.mp4"
+               LogicalName="wwwroot/media/clip-tailmoov.mp4" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

@@ -33,7 +33,7 @@
   button { flex: 1 1 auto; min-width: 90px; padding: 10px 8px; border-radius: 8px;
            border: 1px solid #333a45; background: #1e232b; color: #e6e6e6; font: inherit; }
   button:active { background: #2b323d; }
-  #log { border: 1px solid #262c35; border-radius: 8px; padding: 8px; height: 62vh;
+  #log { border: 1px solid #262c35; border-radius: 8px; padding: 8px; height: 30vh;
          overflow: auto; background: #0f1114; white-space: pre-wrap; word-break: break-word; }
   .t { color: #5c6672; }
   .out { color: #ffd479; }
@@ -57,6 +57,40 @@
   <button id="save">SAVE_TEXT</button>
   <button id="bad">unknown route</button>
 </div>
+<!--
+  DM1 — the media probe. `app://media/?src=<clip>` is answered by MediaRangeProbe on the host side.
+  The two clips are the SAME content and differ only in where the mp4 index sits:
+    faststart  — index at the front: plays even from a server that ignores Range. The control.
+    moov-at-end — index at the end: cannot start at all unless the host answers a range request for
+                  the tail. The test. "It played" only means something when these two differ.
+  The picture carries a big seconds counter, so a screenshot after SEEK proves the position.
+-->
+<div class="row">
+  <button id="mfast">▶ faststart</button>
+  <button id="mtail">▶ moov-at-end</button>
+  <button id="mseek">SEEK 48s</button>
+  <button id="mwhere">where?</button>
+</div>
+<!--
+  Two independent axes, because the first device run refused a response that was provably CORRECT
+  (the host read the native object back: mime=video/mp4, status=206, Content-Range present) and the
+  cause could be in either axis.
+
+  mode — how the host hands the answer over: `portable` is MAUI's SetResponse with a header
+    dictionary, `whole` is the same but always 200 with the entire file (separates "206 refused" from
+    "the content type never arrived"), `native` writes the platform response object by hand.
+  url  — what the page ASKS FOR: our handler under the app scheme, our handler under an https virtual
+    host, or `bundle` — MAUI's own static serving of the same file on the page's own origin, which
+    touches none of our code and is therefore the control for the file, the codec and the device's
+    media stack. If `bundle` fails too, nothing above it is the bug.
+-->
+<div class="row">
+  <button id="mmode">mode: noskip</button>
+  <button id="murl">url: origin</button>
+  <button id="mrange">RANGE test</button>
+</div>
+<video id="vid" controls playsinline preload="none"
+       style="width:100%; max-height:34vh; background:#000; border-radius:8px; margin-bottom:10px;"></video>
 <div id="log"></div>
 
 <script type="module">
@@ -150,6 +184,99 @@ document.getElementById('pick').onclick  = () => post('SAMPLE_LOGIC', 'PICK_FILE
 // path as failure.
 document.getElementById('save').onclick  = () => post('SAMPLE_LOGIC', 'SAVE_TEXT', { text: 'saved from the mobile shell' });
 document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_ROUTE');
+
+// ── DM1: media over the resource seam ────────────────────────────────────────────────────────────
+// The URL is written with the trailing slash the platform inserts anyway (`app://media?x` arrives as
+// `app://media/?x`). The host matches a parsed Uri, so either form works; this one just says out loud
+// what actually goes over the wire.
+const vid = document.getElementById('vid');
+const MODES = ['noskip', 'portable', 'whole', 'native'];
+const URLS = ['origin', 'app', 'https', 'bundle'];
+let mode = MODES[0];
+let urlForm = URLS[0];
+const modeBtn = document.getElementById('mmode');
+const urlBtn = document.getElementById('murl');
+modeBtn.onclick = () => {
+  mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+  modeBtn.textContent = `mode: ${mode}`;
+  log('t', `response mode -> ${mode}`);
+};
+urlBtn.onclick = () => {
+  urlForm = URLS[(URLS.indexOf(urlForm) + 1) % URLS.length];
+  urlBtn.textContent = `url: ${urlForm}`;
+  log('t', `url form -> ${urlForm}`);
+};
+
+function clipUrl(name) {
+  // Cache-bust every load, or the webview answers a reload from its own copy and the host never sees
+  // the request — which reads exactly like "the handler stopped being called".
+  const bust = `n=${Date.now()}`;
+  if (urlForm === 'bundle') return `media/${name}?${bust}`;   // MAUI's own static serving, no host code
+  // RELATIVE on purpose: the page must not name the origin's scheme, because it differs per shell
+  // (`https://0.0.0.1/` on Android, `app://0.0.0.1/` on iOS). This is the only form that is both
+  // intercepted AND media-capable on both.
+  if (urlForm === 'origin') return `/shenora-media/?src=${name}&mode=${mode}&${bust}`;
+  const base = urlForm === 'https' ? 'https://shenora.media/' : 'app://media/';
+  return `${base}?src=${name}&mode=${mode}&${bust}`;
+}
+
+function loadClip(name) {
+  const url = clipUrl(name);
+  log('t', `video.src = ${url}`);
+  vid.src = url;
+  vid.load();
+  // A button click IS a user gesture, so autoplay policy does not block this. A rejection here is a
+  // real failure and must be visible — a silent catch is how "it just does not play" becomes a
+  // half-hour of guessing.
+  vid.play().then(() => log('in', 'play() resolved')).catch(err => log('err', `play() REJECTED: ${err}`));
+}
+
+vid.addEventListener('loadedmetadata', () =>
+  log('in', `loadedmetadata — duration=${vid.duration.toFixed(2)}s ${vid.videoWidth}x${vid.videoHeight}`));
+vid.addEventListener('seeked', () => log('in', `seeked -> currentTime=${vid.currentTime.toFixed(2)}s`));
+vid.addEventListener('error', () => {
+  const e = vid.error;
+  log('err', `video ERROR code=${e ? e.code : '?'} ${e && e.message ? e.message : ''}`);
+});
+// `duration` being Infinity/NaN is the tell for "the player never learned the length" — the exact
+// failure mode iOS's two-byte `bytes=0-1` probe walks into when Content-Range does not come back.
+document.getElementById('mfast').onclick  = () => loadClip('clip-faststart.mp4');
+document.getElementById('mtail').onclick  = () => loadClip('clip-tailmoov.mp4');
+document.getElementById('mseek').onclick  = () => {
+  log('out', `seeking to 48s (from ${vid.currentTime.toFixed(2)}s, duration=${vid.duration})`);
+  vid.currentTime = 48;
+};
+// The INSTRUMENT, added after the media pipeline gave two different failures on the same file and
+// inference could not separate them. `fetch` with an explicit Range takes the demuxer out of the
+// picture entirely and asks the one question that matters: does a SUB-RANGE — a 206 starting at a
+// non-zero offset — arrive intact, with its Content-Range, at the requested offset?
+//
+// `bytes=4-11` is the check that a byte OFFSET is honoured rather than merely a length: those eight
+// bytes of any mp4 are the ASCII "ftypisom". A length-only assertion passes just as happily on the
+// wrong slice, which is how a seam that silently serves from 0 looks correct.
+document.getElementById('mrange').onclick = async () => {
+  const url = clipUrl('clip-faststart.mp4');
+  for (const spec of ['bytes=4-11', 'bytes=1000-1099', 'bytes=474000-']) {
+    try {
+      const r = await fetch(url, { headers: { Range: spec } });
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const ascii = Array.from(buf.slice(0, 8)).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+      const cls = r.status === 206 ? 'in' : 'err';
+      log(cls, `RANGE ${spec} -> status=${r.status} CR=${r.headers.get('Content-Range')} ` +
+               `got=${buf.byteLength}B first8="${ascii}"`);
+    } catch (err) {
+      log('err', `RANGE ${spec} -> threw ${err}`);
+    }
+  }
+};
+
+document.getElementById('mwhere').onclick = () => {
+  const b = vid.buffered;
+  const ranges = [];
+  for (let i = 0; i < b.length; i++) ranges.push(`${b.start(i).toFixed(1)}-${b.end(i).toFixed(1)}`);
+  log('t', `currentTime=${vid.currentTime.toFixed(2)}s duration=${vid.duration} ` +
+           `paused=${vid.paused} readyState=${vid.readyState} buffered=[${ranges.join(' ')}]`);
+};
 
 // The handshake. Until this lands the host BUFFERS notifications rather than dropping them, which
 // is why the tick events that fired before this point still arrive.

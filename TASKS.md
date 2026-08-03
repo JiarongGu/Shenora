@@ -336,16 +336,35 @@ contains intermediate positions that were corrected._
 
 _D2a is DONE — the exchange contracts now live in `Shenora.Core` (commit `8d23dd1`, a documented break)._
 
-- [ ] **DM1 — THE CRITICAL PATH, and nothing else should start before it: answer a `Range` with real
-  headers on each mobile platform.** Verified on both devices that media DOES reach the interception seam,
-  and that the player asks for a range immediately — `bytes=0-` on Android, **`bytes=0-1` on iOS**, which
-  is AVFoundation discovering the length from `Content-Range`. But the PORTABLE seam cannot set response
-  headers at all (`SetResponse` takes four arguments; there is no `ResponseHeaders`), so `Content-Range`
-  and `Accept-Ranges` are unsendable through it. **`e.PlatformArgs` is the way out and it is mandatory,
-  not an optimisation** — Android's native `WebResourceResponse` takes headers and iOS's
-  `WKURLSchemeHandler` carries a full response. Deliverable: serve one real media file through the seam on
-  each platform and confirm it **plays AND seeks**. Until that works every contract below is a guess about a
-  capability the kit does not have. Do NOT use the convenient `e.SetResponse`.
+- [ ] **DM1 — THE CRITICAL PATH. ✅ ANDROID IS PROVEN (2026-08-03); the iOS half is what remains.**
+  Deliverable: serve one real media file through the seam on each mobile platform and confirm it **plays AND
+  seeks**. Full account and measurements in `docs/2026-08-03-shenora-media-design.md` **§0j**; the probe is
+  `samples/Shenora.Sample.Maui/MediaRangeProbe.cs` plus the media row in the sample page, with toggles for
+  response `mode` and url form so a platform question costs one deploy rather than one per hypothesis.
+
+  **Android's proven recipe, and TWO of this entry's own premises were wrong:**
+  - ⚠ **`e.PlatformArgs` is NOT required and `e.SetResponse` is the right call after all.** There is a
+    second overload taking a header DICTIONARY, on both mobile TFMs; MAUI forwards status, reason and every
+    header (read back off the native object). The old "headers are unsendable" claim read one overload as
+    the whole set — a one-build check that would have saved a per-platform implementation.
+  - ⚠ **The URL must name NO origin: a reserved PATH on the page's own origin, via a RELATIVE url.**
+    Android intercepts `app://` and then its media pipeline REFUSES it
+    (`MEDIA_ERR_SRC_NOT_SUPPORTED`, even for a plain 200 with a correct `Content-Type`); iOS intercepts
+    only `app://`. No fixed scheme works on both — but the page's own origin is intercepted and
+    media-capable on both by construction.
+  - ⚠ **THE LOAD-BEARING ONE: the Android seam applies the `Range` start ITSELF, so the handler must NOT
+    slice the body.** Slice it and the offset is applied twice (`bytes=4-11` came back as 4 bytes of file
+    bytes 8-11). Return the whole resource; let the platform skip. **The naive implementation looks correct
+    on every faststart file and fails on every other one** — which is why the probe ships a control pair
+    differing only in whether the `moov` atom is at the front or the end.
+  - Evidence: the `moov`-at-end clip (unopenable without a correct tail range) loaded in exactly three
+    requests with no retry loop, resolved its true `1:00` duration, seeked to 48 s and ran to the end.
+
+  **What iOS still owes, and it is a design question not a chore:** `WKURLSchemeHandler` is a different
+  mechanism, so it probably does NOT re-skip — meaning the SLICED body is right there. If so **the two
+  platforms need OPPOSITE bodies for the same portable request**, which is a measured justification for
+  D40's `Shenora.Media.{Platform}` split. The page's `mode` toggle settles it in one deploy: run `noskip`
+  and `portable` against the `moov`-at-end clip.
 - [ ] **DM2 — the playability planner.** Container + codecs → `direct`/`remux`/`transcode`/`unsupported`,
   **per STREAM, not per file** (D42 — the frequent real failure is picture-with-no-sound, from licensed audio
   the platform lacks). A pure function with no I/O, so unit-testable the way `ManifestDiff` is; two siblings

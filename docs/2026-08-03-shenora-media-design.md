@@ -16,11 +16,20 @@ interface library merge, because 3 of my application will need this)"*.
 the codec.** The kit ships no player, no native surface and no chrome: those are the app's, or React's.
 This is the video-library sibling's shipped second-generation design (§0b), not a new invention.
 
-**The URL.** The app's own scheme, routed, with an encoded payload: `app://<route>?src=<encoded>`.
-- It **must** be the app scheme — iOS intercepts only that; an https host goes to the real network (§0i).
+**The URL.** A **reserved PATH on the page's own origin**, reached by a RELATIVE url:
+`/<reserved-route>/?src=<encoded>`.
+- ⚠ **CORRECTED 2026-08-03 by the DM1 device runs (§0j). This previously said the URL "must be the app
+  scheme", and that is wrong** — it was true of iOS interception and false of Android PLAYBACK. Android
+  intercepts `app://` and then its media pipeline refuses it outright (`MEDIA_ERR_SRC_NOT_SUPPORTED`,
+  instantly, even for a 200 with a correct `Content-Type`). iOS intercepts ONLY `app://`. So no fixed
+  scheme works on both.
+- **Name no origin at all.** A relative url resolves to whatever the page is already served from —
+  `https://0.0.0.1/` on Android, `app://0.0.0.1/` on iOS — which is intercepted AND media-capable on both
+  by construction. This is the old "never hardcode the origin's SCHEME" rule taken to its conclusion:
+  do not hardcode the host either.
+- **The path must be RESERVED**, because it shadows the bundle: a real asset under the same prefix
+  becomes unreachable. The prefix is the app's to choose, as `VirtualHost` already is.
 - **Match on a parsed `Uri`, never a string prefix** — the platform inserts `/` before the query (§0h).
-- **Never hardcode the origin's scheme** — the page is `https://0.0.0.1/` on Android, `app://0.0.0.1/` on
-  iOS (§0i). The route and host name are the app's to choose, as `VirtualHost` already is.
 
 **The pipeline, per request.**
 1. **Decode** the payload to a source — a local path, a remote URL, or a cache entry. One URL shape for all
@@ -44,11 +53,16 @@ This is the video-library sibling's shipped second-generation design (§0b), not
 | `Shenora.Media.{Windows,Android,iOS}` | the platform probe, and the **header-capable response** via `PlatformArgs`. No engine dependency, ~26 KB each (D40, §4a) |
 | The app | the engine (referenced upstream, never vendored — D42), the route/host name, the player UI, the codec policy, the authorization policy |
 
-**THE CRITICAL PATH, and it is one thing:** answer a `Range` with real headers through `PlatformArgs` on
-each mobile platform, then confirm a real file **plays and seeks**. Everything else is contracts around a
-capability that is not yet proven — and the portable seam demonstrably cannot do it (§0d), while iOS's
-two-byte size probe means a header-less reply may not play at all (§0i). **Build this before scaffolding
-anything.**
+**THE CRITICAL PATH — ANDROID IS NOW PROVEN (§0j); iOS is the remaining half.** The critical path was to
+answer a `Range` with real headers on each mobile platform and confirm a real file **plays and seeks**. On
+Android it does, and two of the assumptions this doc built that requirement on turned out to be wrong:
+- ⚠ **`PlatformArgs` is NOT required.** The portable seam has a header-carrying
+  `SetResponse(code, reason, headers, stream)` overload on both mobile TFMs — verified by compiling, and
+  the native response read back off the Android object shows status, reason, MIME and every header
+  surviving intact. §0d's "the portable seam cannot send response headers" was an over-read of one
+  overload; it is corrected there.
+- ⚠ **The Android handler must NOT slice the body** — the platform applies the `Range` start itself. See
+  §0j, which is the single most load-bearing measurement in this document.
 
 **Deliberately not in scope:** playback UI, transcode ladders, HLS packaging, editing, AI/upscale, and any
 bundled engine (§2). **Deferred, with the analysis already done:** thumbnails and image resize (D43).
@@ -378,9 +392,77 @@ INTERCEPT app://video/?src=clip
 4. The `AppleCoreMedia` User-Agent and `X-Playback-Session-Id` confirm this is the platform media loader
    rather than the web resource loader — the same distinction Android's missing-`Range` `<img>` control drew.
 
-**Net: the design reaches all three shells, and the URL must use the app scheme.** What remains unproven on
-mobile is answering a range correctly, which is a `Shenora.Media.{Platform}` job via `PlatformArgs` on both
-platforms — no longer an Android-only concern.
+**Net: the design reaches all three shells, and the URL must use the app scheme.**
+⚠ **That last clause is WRONG and §0j corrects it** — it generalised an iOS interception fact into a rule,
+and Android's media pipeline refuses the app scheme. Kept as written because the mistake is instructive:
+this section proved that a request ARRIVES and never asked whether the result PLAYS, and those are
+different questions.
+
+### §0j DM1 RUN — Android PROVEN, and it overturns two rules this document had asserted
+
+Run on the emulator 2026-08-03 with a real 60 s H.264+AAC file, and — the part that made it tractable — a
+deliberate **control pair** of the same content differing only in where the mp4 index sits: `moov` at the
+front (plays even from a server that ignores `Range`) versus `moov` at the end (**cannot open at all**
+unless a tail range is answered correctly). "The video played" means nothing without that pair.
+
+**Correction 1 — the portable seam DOES carry response headers.** §0d concluded that `SetResponse` "takes
+four arguments and there is no `ResponseHeaders`". There is a SECOND four-argument overload whose third
+parameter is a header dictionary, present on `net10.0-android` AND `net10.0-ios`
+(`Microsoft.Maui.Controls` 10.0.20), verified by compiling. Reading the native Android response back after
+the call shows `mime=video/mp4 enc=UTF-8 status=206 reason=Partial Content` with every header intact — MAUI
+even lifts `Content-Type` out of the dictionary into the platform constructor argument. **So `PlatformArgs`
+is a fallback, not a requirement.** (⚠ The deferred overload takes `Task<Stream?>`, not `Task<Stream>`;
+`Task.FromResult(stream)` fails CS8620.)
+
+**Correction 2 — the URL must name NO origin.** Measured, with a bundle control (the same file served by
+MAUI's own static serving, touching none of our code) to establish that the file, the codec and the
+device's media stack were fine — it played:
+
+| URL form | intercepted? | media plays? |
+|---|---|---|
+| `app://media/?src=…` | **yes** | **NO — `MEDIA_ERR_SRC_NOT_SUPPORTED`, instantly, even for a plain 200** |
+| `https://<virtual-host>/?src=…` | yes | yes |
+| `/<reserved-path>/?src=…` — RELATIVE, the page's own origin | yes | yes |
+| the bundle, via MAUI's own serving (the control) | n/a | yes |
+
+**THE FINDING THAT MATTERS MOST — the Android seam applies the `Range` start ITSELF, so a handler must not
+slice.** The body a handler returns is treated as the resource **from offset 0**; the platform skips the
+range start off the front of it and ignores the range end (it streams to EOF). `Content-Range` is not used
+for positioning. Measured with an explicit page-side `fetch` — which is the instrument that mattered,
+because a `<video>` element can only ever say "no supported source" and that made three wrong hypotheses
+look equally likely. On a 474 744-byte file:
+
+| handler returns | asked | delivered | first 8 bytes |
+|---|---|---|---|
+| **sliced** (`file[4..11]`, 8 B, 206 + `Content-Range: bytes 4-11/…`) | `bytes=4-11` | **4 B** | `"isom"` = file **8-11** — the offset applied TWICE, and short by exactly the offset |
+| sliced (100 B) | `bytes=1000-1099` | — | **`TypeError: Failed to fetch`** |
+| **unsliced** whole body | `bytes=4-11` | 474 740 B (= total − 4) | `"ftypisom"` ✅ |
+| unsliced whole body | `bytes=1000-1099` | 473 744 B (= total − 1000) | ✅ correct offset |
+
+Every earlier symptom follows from that one rule, which is why it is worth trusting: the `moov`-at-end clip
+made the player request the tail and then **retry the identical range forever** (it was being handed an
+empty body), while the faststart clip played fine because its only request starts at 0 — where the double
+skip is a no-op. **That is the trap: the naive, obviously-correct implementation looks right on every
+faststart file and fails on every other one.**
+
+**So the proven Android recipe is three things:** a reserved path on the page's own origin · 206 with
+`Content-Range`/`Accept-Ranges` through the PORTABLE seam · an **unsliced** body, with `Content-Range` and
+`Content-Length` describing what is really sent (`{from}`→EOF) rather than what was asked for.
+
+**Proof, on the `moov`-at-end clip:** load produced exactly three requests and no loop, in the textbook
+mdat-first order (`bytes=0-` → the tail → back into the media); duration resolved to the true `1:00`, which
+is knowable only from the `moov` and therefore only from that tail range; a seek to 48 s landed and playback
+ran to `1:00 / 1:00`.
+
+⚠ **A seek is the WEAKER proof here and should not be quoted alone** — these clips are 464 KB, so the whole
+file arrives in the first response and a seek is served from the buffer without touching the wire. The
+tail-range sequence is the real evidence.
+
+**What this predicts for iOS, and why it is a design finding rather than a chore:** `WKURLSchemeHandler` is
+a different mechanism (MAUI sends a real `NSHttpUrlResponse` through `UrlSchemeTask`), so it very likely does
+NOT re-skip — meaning the SLICED body, ordinary correct HTTP, is right there. If that holds, **the two
+platforms need OPPOSITE bodies for the same portable request**, which is a measured justification for D40's
+`Shenora.Media.{Platform}` split and exactly the kind of divergence the portable contract must hide.
 
 ## §1 The claim — PLAYABILITY is the centre, and it splits into five parts
 
@@ -496,8 +578,8 @@ compiling, not read from documentation:
 | `e.Headers` | `IReadOnlyDictionary<string, string>` — **so the `Range` header is readable** |
 | `e.SetResponse(...)` | `(int status, string reason, string contentType, Stream)` — **206 accepted** |
 | `e.Handled` | claim the request |
-| `e.PlatformArgs` | escape hatch to the native args |
-| **response headers** | ✗ **NOT AVAILABLE** — `SetResponse` takes 4 arguments and there is no `ResponseHeaders` |
+| `e.PlatformArgs` | escape hatch to the native args — Android `Sender`/`Request`/settable `Response`, iOS `Sender`/`Request`/`UrlSchemeTask` |
+| **response headers** | ✅ **AVAILABLE after all** — a SECOND overload `(int, string, IReadOnlyDictionary<string,string>?, Stream?)`, both mobile TFMs. **The ✗ below is WRONG — see §0j.** |
 
 `ADOPTION.md` told adopters the opposite ("`HybridWebView` has no request-interception seam… deferred
 schemes have no role"), which would have made an adopter design around a limitation that no longer
@@ -505,6 +587,17 @@ exists. Corrected. And note the shape: `URI + headers in → status + content-ty
 **exactly** `WebViewDeferredScheme`'s existing contract, which the kit already ships with
 `WebViewByteRange.TryParse` and `WebViewResourceResponse.PartialContent`. The abstraction is already
 right; it is only Windows-only by accident of when it was written.
+
+⚠⚠ **EVERYTHING FROM HERE TO THE END OF §0d IS WRONG. Superseded by §0j; kept because how it failed is
+worth as much as the conclusion.** The claim below — "there is no way to set a response header through the
+portable seam" — came from reading ONE `SetResponse` overload and treating it as the whole set. A header
+dictionary overload exists on both mobile TFMs and MAUI forwards every header, the status and the reason
+phrase to the native response. Cost of the mistake: it put `PlatformArgs` on the critical path as
+"mandatory, not an optimisation", which is a per-platform implementation, and it did that BEFORE any
+contract existed. Cost of checking: one build. **The lesson is that "the API cannot do X" is a claim
+needing the same verification as "the API does X".**
+
+The superseded reasoning follows.
 
 ⚠ **BUT THE RESPONSE SIDE IS INCOMPLETE, and an earlier revision of this section over-claimed it as
 "everything a ranged media response needs". It is not.** There is no way to set a response header through
