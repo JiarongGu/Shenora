@@ -55,6 +55,32 @@ and hits something, or when a feature worth generalising emerges while building 
 > is exactly how `Files`/`FileReplacement` arrived. Pick it up when theirs works, and read it before
 > designing anything.
 
+### ⚠ BEFORE THE NEXT ADOPTION STARTS — the published packages do not match the docs
+
+Owner is about to have a server-backed sibling adopt the kit (2026-08-03). Readiness was checked against
+the **published artifacts**, not the tree, and one thing genuinely blocks a clean start.
+
+- [ ] **D2a is UNRELEASED, so every doc points at a namespace the published package does not have.**
+  `WebViewResourceRequest` / `WebViewResourceResponse` / `WebViewByteRange` moved
+  `Shenora.Windows` → `Shenora.Core` after the `v0.7.0` tag. Verified by inspecting the restored
+  packages, which is the only check that counts here:
+  - `Shenora.Core` 0.7.0 — **does not contain them** (0 hits in its XML docs).
+  - `Shenora.Windows` 0.7.0 — contains them as `Shenora.Windows.WebViewResourceRequest`,
+    `Shenora.Windows.WebViewByteRange`.
+  - The tree, `ARCHITECTURE.md`, `ADOPTION.md`, the media design and D40/D44 all say `Shenora.Core`.
+
+  So an adopter who follows the docs gets a compile error, and one who follows the package writes
+  `Shenora.Windows.*` and breaks on the next release — **a documented BREAKING change (`### Breaking`)
+  that has not shipped**. Either cut a release so published == docs (the clean fix, and `## Unreleased`
+  does have content, so the release-hygiene gate below would pass), or state the discrepancy in
+  `ADOPTION.md` Stage 0. **Cutting the release is the owner's call, not a session's** — this repo has
+  burned two version numbers on release mistakes.
+
+_Verified and NOT a problem, so nobody needs to re-check: the adopter targets `net10.0` /
+`net10.0-windows`, exactly what the kit ships, so there is no TFM blocker; and Stage 0 really works —
+`Shenora.Core` + `Shenora.Ipc` restore from nuget.org on a bare `net10.0` project, and
+`Shenora.Windows` on `net10.0-windows`, both clean._
+
 ### A. The second shell — MAUI. The round trip is PROVEN; the surface around it is not.
 
 **Where it stands (2026-08-02):** `Shenora.Mobile` ships, is in the solution and the gate, and was run
