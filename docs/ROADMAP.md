@@ -5,6 +5,55 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-03 — DM1: media plays AND seeks on both mobile shells (D44), and 0.8.0 ships the contracts
+
+**The media backlog's critical path is cleared.** A real 60 s H.264+AAC file plays and seeks through the
+mobile webview's resource seam on an Android emulator and an iOS simulator — including a variant whose mp4
+index sits at the END of the file, which cannot open at all unless a tail range is answered correctly.
+Rationale and rules: **D44**. Probe: `samples/Shenora.Sample.Maui/MediaRangeProbe.cs`.
+
+**Three claims this repo had already written down turned out to be wrong**, which is most of the value:
+- *"The portable seam cannot set response headers."* It can — a second `SetResponse` overload takes a
+  header dictionary on both mobile TFMs, and every header reaches the native response. The old claim read
+  one overload as the whole set, and had made a per-platform `PlatformArgs` implementation look mandatory
+  before any contract existed. One build to check.
+- *"The URL must be the app scheme."* True of iOS interception, false of Android playback — Android
+  intercepts `app://` and its media pipeline then refuses it. The answer names no origin at all: a reserved
+  path on the page's own, reached relatively.
+- *"Media reaches the seam, so the design reaches all three shells."* Interception and playability are
+  different questions, and the earlier probe only ever asked the first.
+
+**The load-bearing finding: the two shells need OPPOSITE BODIES for the same request.** Android applies the
+`Range` start itself, so a handler must NOT slice; iOS passes the body through, so it MUST. Everything else
+— URL, call, headers — is identical. That single asymmetry is the measured case for D40's per-platform media
+packages, and getting it wrong **plays every faststart file perfectly and fails every other one**.
+
+Verified as text, not screenshots: `bytes=4-11` → exactly 8 bytes of `"ftypisom"` on iOS; the tail-index
+clip resolving its true `1:00` duration on Android in three requests with no retry loop; and AVFoundation
+streaming dozens of small precise ranges during playback, each answered with an exact sliced 206.
+
+**0.8.0** exists because the D2a relocation (`WebViewResourceRequest`/`Response`/`ByteRange` →
+`Shenora.Core`) had shipped in the docs and not in the packages — a documented break whose whole migration
+is one `using Shenora.Core;`. Found by checking a *restored package* rather than the tree, before an
+adopter met it as a compile error. Rehearsed locally first, then confirmed live on the feed.
+
+### 2026-08-03 — the iOS drive loop, and three bugs found by porting it
+
+`dev.mjs mac` gained `swipe`, `mirror` (live LAN view, click-to-tap, wheel-to-swipe) and `safari-eval`,
+harvested from the public sibling Sonora, plus a persistent ssh worker — a fresh connection costs ~1.8 s
+against a ~322 ms screenshot, and `ControlMaster` does not exist on the Windows ssh client. The first port
+had taken the BUILD half and left the DRIVE half behind, which is what made the media work slow.
+
+Porting found three defects, two of which the donor still has: a capability probe running in a different
+shell from the command it gated (so `tap` silently took a weaker click path); a mirror port that collided
+with the sibling's, answering `/frame` from the OTHER repo's server so a smoke test passed against the
+wrong process; and a default written twice, describing a port the tool never used.
+
+`safari-eval` is ported but **unproven** — its Homebrew bridge will not install on that Mac, which is a
+broken ~2019 Homebrew rather than a missing package. Page state as text is covered instead by the sample
+sending its log lines over the IPC pipe it already has (`PageDiagFacade`), after measuring that WebKit does
+**not** forward a page's `console.log` to the unified log.
+
 ### 2026-08-03 — SAVING is universal, on all three shells (C)
 
 `IFileDialogs.SaveAsync(options, write)` — the counterpart to `OpenReadAsync`. Open became universal by

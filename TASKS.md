@@ -7,9 +7,17 @@ of this file is the size of the remaining work, which is the whole point of look
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
-**Status: 0.7.0 PUBLISHED (2026-08-02).** Five NuGet packages + `@shenora/react` on npm. It carries the
-off-screen session bundle seam (D38), the portable `SaveAsync` on all three shells, and the stage intrusion
-check. ⚠ **0.6.0 shipped 0.5.1's CODE** — the work was committed locally and never pushed, so the release
+**Status: 0.8.0 PUBLISHED (2026-08-03).** Five NuGet packages + `@shenora/react` on npm, verified live on
+the feed. It carries the **D2a relocation** — `WebViewResourceRequest`/`Response`/`ByteRange` moved
+`Shenora.Windows` → `Shenora.Core`, a documented break whose whole migration is one `using Shenora.Core;`.
+That release exists because the move had shipped in the DOCS and not in the PACKAGES, which would have met
+the first adopter as a compile error.
+
+> **This library is the intended foundation for the author's apps** (owner, 2026-08-03), so the bar on the
+> published surface is an adopter's, not a maintainer's: docs that match the artifact, breaks documented
+> with their migration, and readiness claims verified against a restored package rather than the tree.
+
+⚠ **0.6.0 shipped 0.5.1's CODE** — the work was committed locally and never pushed, so the release
 ran against a stale tree; account under `CHANGELOG.md` `## 0.6.0`, and the gate that would have caught it is
 in `### Release hygiene` below.
 
@@ -55,31 +63,29 @@ and hits something, or when a feature worth generalising emerges while building 
 > is exactly how `Files`/`FileReplacement` arrived. Pick it up when theirs works, and read it before
 > designing anything.
 
-### ⚠ BEFORE THE NEXT ADOPTION STARTS — the published packages do not match the docs
+### Adoption readiness — CLEARED 2026-08-03, recorded so it is not re-checked
 
-Owner is about to have a server-backed sibling adopt the kit (2026-08-03). Readiness was checked against
-the **published artifacts**, not the tree, and one thing genuinely blocks a clean start.
+A server-backed sibling is adopting the kit. Readiness was checked against the **published artifacts**
+rather than the tree, which is the only check that counts, and everything found is now resolved or
+documented. Nothing here is open.
 
-- [ ] **D2a is UNRELEASED, so every doc points at a namespace the published package does not have.**
-  `WebViewResourceRequest` / `WebViewResourceResponse` / `WebViewByteRange` moved
-  `Shenora.Windows` → `Shenora.Core` after the `v0.7.0` tag. Verified by inspecting the restored
-  packages, which is the only check that counts here:
-  - `Shenora.Core` 0.7.0 — **does not contain them** (0 hits in its XML docs).
-  - `Shenora.Windows` 0.7.0 — contains them as `Shenora.Windows.WebViewResourceRequest`,
-    `Shenora.Windows.WebViewByteRange`.
-  - The tree, `ARCHITECTURE.md`, `ADOPTION.md`, the media design and D40/D44 all say `Shenora.Core`.
-
-  So an adopter who follows the docs gets a compile error, and one who follows the package writes
-  `Shenora.Windows.*` and breaks on the next release — **a documented BREAKING change (`### Breaking`)
-  that has not shipped**. Either cut a release so published == docs (the clean fix, and `## Unreleased`
-  does have content, so the release-hygiene gate below would pass), or state the discrepancy in
-  `ADOPTION.md` Stage 0. **Cutting the release is the owner's call, not a session's** — this repo has
-  burned two version numbers on release mistakes.
-
-_Verified and NOT a problem, so nobody needs to re-check: the adopter targets `net10.0` /
-`net10.0-windows`, exactly what the kit ships, so there is no TFM blocker; and Stage 0 really works —
-`Shenora.Core` + `Shenora.Ipc` restore from nuget.org on a bare `net10.0` project, and
-`Shenora.Windows` on `net10.0-windows`, both clean._
+- **The one blocker is FIXED by 0.8.0.** D2a had shipped in the docs and not in the packages, so
+  `using Shenora.Core;` — what every doc says — would not have compiled. Confirmed live: `Shenora.Core`
+  0.8.0 restored *from nuget.org* contains all three types under `Shenora.Core.*`, and `Shenora.Windows`
+  0.8.0 carries none of the old names. ⚠ The cache trap in `ADOPTION.md` Stage 0 is real and applies to
+  verifying a release too — clear any locally-cached copy of that version first, or you validate your own
+  build instead of the feed.
+- **No TFM blocker** — the adopter targets `net10.0` / `net10.0-windows`, exactly what the kit ships.
+- **Stage 0 works from a clean feed**: `Core` + `Ipc` on a bare `net10.0` project, `Windows` on
+  `net10.0-windows`.
+- **Stage 1 spike compiled clean against the PUBLISHED package** (a `PackageReference`, not a project
+  reference — that is what surfaced the next point). An app's real window-state usage maps onto
+  `WindowStateManager` unchanged in shape, and the off-screen guard it would have kept private is here as
+  a pure, unit-testable function.
+- **`MSB3277` on a consumer's first build is documented in `ADOPTION.md` Stage 0.** Harmless, and the kit
+  already demoted it in its own projects while telling adopters nothing — so "the kit builds clean" was
+  never a claim that theirs would. Worth remembering as a pattern: **spike against the published artifact,
+  because a project reference hides packaging.**
 
 ### A. The second shell — MAUI. The round trip is PROVEN; the surface around it is not.
 
