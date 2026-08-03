@@ -80,9 +80,36 @@ those stream as-is (hi-res included, untouched). Everything else (alac, ape, wav
 cannot play. The video sibling's `PlaybackModes` names the video half: HEVC / VC-1 / MPEG-2 can't decode,
 and H.264-in-MKV can't play either **even though the codec is fine**, because the container isn't.
 
-| | Video-library sibling | Sonora |
+⚠ **CORRECTION (2026-08-03, after reading the video sibling's own ADR): they did NOT choose opposite
+strategies — they CONVERGED, and one of them got there by ABANDONING the other approach.** An earlier
+revision of this table said "opposite", which was the most consequential error in this document.
+
+That sibling's ADR-001 states it outright: **"Live remux/transcode (shipped, replaces the mpv plan).
+Instead of an mpv sidecar, codecs/containers WebView2 can't play are converted to a web-friendly faststart
+MP4 on demand and streamed through the same Range handler (so seeking just works)."** The ~5.9k-line native
+player project is the ABANDONED first generation, still in the tree. **So the native-surface route is not
+an untried option the kit should weigh — it is a road one sibling walked and left**, which is exactly the
+kind of thing `extraction-sources.md` exists to stop the kit re-deriving.
+
+What it converged ON, and every piece is directly relevant:
+- `PlaybackPlanner` maps container+codec → **direct** / **remux** (copy video, AAC audio only if needed) /
+  **transcode** (HEVC/VC-1/MPEG-2 → H.264/AAC) / **unsupported** (no encoder → hand to the OS player).
+- ffmpeg with `-movflags +faststart` and `-progress pipe:1` parsed for a percentage.
+- Output cached at `{data}/cache/playback/<hash>.mp4`, **keyed by path+size+mtime** — the same cache rule
+  §0's convergence #3 already found, now also used for converted output rather than only thumbnails.
+- Conversion runs in the BACKGROUND behind a `PREPARE_SOURCE` route with
+  `SOURCE_PROGRESS`/`SOURCE_READY`/`SOURCE_FAILED` events — the D23 event-pipe shape, independently.
+- The player is **Vidstack (React) over the native `<video>` element**. The kit ships no player, and the
+  adopter's UI choice stays theirs.
+- ⚠ **`SetVirtualHostNameToFolderMapping` is documented there as slow for media and as BREAKING SEEKING on
+  large files.** So the kit's media guidance must say *intercepted* serving, never folder mapping — the
+  knowledge rule currently says both mechanisms are supported without saying which one media needs.
+- *Their* pending list converges with Sonora too: segment/HLS transcode so a long conversion starts playing
+  before it finishes — which is what Sonora's `HlsSegmenter` already does.
+
+| | Video-library sibling (2nd gen, shipped) | Sonora |
 |---|---|---|
-| Strategy | **Native player.** LibVLC surface layered into the app window, web UI on top (a dedicated player project, ~5.9k lines); libmpv for a shader path | **Convert to something the web CAN play.** Lossless FLAC transcode cache for audio; HLS segmenter for streaming |
+| Strategy | **Convert to what the webview can play**, streamed through a Range handler. (1st gen was a LibVLC/mpv native surface — abandoned) | **Convert to what the web can play.** Lossless FLAC transcode cache for audio; HLS segmenter for streaming |
 | Decision layer | `PlaybackPlanner` → `PlaybackModes { direct, remux, transcode, unsupported }` + `PlaybackPlan` | `PlaybackPlanner.NeedsTranscode(codec, file)` |
 | Fallback when it cannot be made playable | `unsupported` ⇒ hand off to the OS player | transcode always possible (FLAC target) |
 
@@ -160,6 +187,119 @@ for AI processing, ONNX/NCNN upscale + face-restore engines, encoder selection, 
 16 kHz for a speech model, in-place sharpen, segment cutting, playback planning and transcode
 preparation. That is the strongest possible support for D4 — the scope boundary is not a guess, it is
 where these three stop agreeing.
+
+### §0g THE DELIVERABLE, stated by the owner: a URL a `<video>` element can play
+
+Owner, 2026-08-03: *"in the end our plan is to make a url that can play in video element, just like what I
+did for image serving in [the skin-manager sibling]* `<video src="s-video://" />` *… so we not even making
+a video player yet, thats the react part, or depends on how the adopters will design"*.
+
+**This is the design §0b's correction just showed one sibling already shipped**, and it collapses the scope
+in the best way: there is **no native surface, no player UI, and no player abstraction in the kit**. The
+kit makes a URL resolve to bytes the webview can decode; the `<video>` element is the player; the chrome is
+React's or the adopter's. It also matches the image-serving pattern that sibling has run in production for
+years — the same mechanism, a heavier payload.
+
+So the deliverable is exactly four things, and the kit already owns two:
+
+1. **A Range-capable resource handler** (`WebViewDeferredScheme` + `WebViewByteRange` +
+   `WebViewResourceResponse.PartialContent`) — **already shipped**, and now portable after D2a.
+2. **The playability planner** — per-stream (D42), container+codec → direct/remux/transcode/unsupported.
+   The one genuinely new piece, and a pure function.
+3. **The conversion, composed not built** (§0f) — `IMissionScheduler` + `PathClaims.Exclusive` +
+   `Files.BeginReplace` + a path+size+mtime cache key. All shipped except the key helper.
+4. **Progress as events** — `SOURCE_PROGRESS`/`READY`/`FAILED` over the existing notification pipe. The
+   sibling arrived at the D23 shape independently, so this is a naming exercise, not a design one.
+
+⚠ **AND THE RISK THIS PUTS ON THE CRITICAL PATH.** The whole design rests on Range/206 working, and §0d
+established that the PORTABLE mobile seam **cannot send response headers** — no `Content-Range`, no
+`Accept-Ranges`. So `<video src="s-video://…">` would play from the start and **not seek** on mobile. That
+is no longer a footnote: it is the one thing that decides whether this design reaches mobile at all.
+`e.PlatformArgs` is the way out (Android's native `WebResourceResponse` does take headers; iOS's
+`WKURLSchemeHandler` carries a full response), which is precisely what `Shenora.Media.{Platform}` is for —
+**so the mobile implementations must NOT use the convenient `e.SetResponse`.** Note the kit's
+`WebViewResourceResponse` already carries a `Headers` dictionary, so the portable contract is right and it
+is only MAUI's convenience API that drops them.
+
+**The URL is SOURCE-AGNOSTIC, and that is the point** (owner: *"whether is accessing the local storage, or
+remote link we can always use this interceptor"*). One URL shape whatever the bytes are behind it — a local
+path, a remote link, or a converted cache entry — so **the page never branches on where media lives**, which
+is the same "universal frontend" goal D36 and `SaveAsync` were shaped by. It is also what makes remote media
+playable at all: a page cannot fetch-and-remux a remote HEVC file, and the host can.
+
+⚠ **TWO SECURITY SEAMS FOLLOW DIRECTLY, and this kit has already been bitten by both.**
+1. **A remote source is an SSRF surface.** If the page can hand the host an arbitrary URL to fetch, that is
+   exactly the shape `RenderSessionPool`, `StreamingSession` and `InteractiveSession` already guard with a
+   `NavigationGuard` — documented there as "the SSRF-shaped seam: session URLs are data-driven". The media
+   handler needs the same seam, with the same fail-CLOSED stance the navigation guard has (as opposed to the
+   request filter's deliberate fail-open).
+2. **A local source is a path-containment surface.** The sibling's URL form is literally
+   `https://media.<host>/<url-encoded-abs-path>` — an absolute path supplied BY THE PAGE. That is precisely
+   the vector `EmbeddedResourceProvider.ResolveContained` exists for, added after file-mode serving was found
+   "REACHABLE BY PAGE CONTENT and had no containment at all" (`%2e%2e%2f`, and `Path.Combine` discarding its
+   first argument on a rooted path). So the app must declare which roots are servable and the kit must
+   enforce it — the generic version of that fix, not a second hand-rolled one.
+
+**On the URL shape.** `s-video://` was illustrative (owner: *"or a better url prefix but this is the idea"*),
+then sharpened to **`app://video?=<encoded payload>`** — a ROUTE with an encoded payload rather than a scheme
+per media type. **That shape is right**, and for the reason the kit's own IPC already works that way: one
+transport, `module` + `type` routing. It means one scheme registration instead of one per kind, new kinds
+(`thumb`, `audio`) cost nothing, and the payload can carry more than a path — source, container preference,
+cache key — instead of being a bare string. Three notes on top:
+
+- ⚠ **The shape does not resolve the scheme risk; they are orthogonal.** `app://video?…` is still a CUSTOM
+  scheme, so the media-pipeline question above applies unchanged, and on the desktop the sibling deliberately
+  put media on `https://media.<host>/…` rather than its `app://`. **Recommendation: serve media over an
+  https VIRTUAL HOST, routed** — `https://<app-host>/<media-route>?…`. On the page's OWN origin there is no
+  CORS at all and no scheme registration, which removes two of the three things `webview2-hosting.md` records
+  as failing identically (`TypeError: Failed to fetch`) — and response headers, the third, are what the
+  mobile seam cannot send anyway. The host name stays the app's, as `VirtualHost` already is.
+- **`?=` is an empty parameter name.** Prefer `?src=<enc>` or a path segment; URLs get parsed by more things
+  than our handler, and an unnamed parameter is the kind of detail a proxy or a logger mangles.
+- **An opaque payload costs debuggability**, which is why the sibling used a readable url-encoded absolute
+  path. If the payload is encoded, the host log must record what it DECODED to — the response body cannot
+  say (no exception text on the wire, `ipc-contracts`), so the only diagnosis left is host-side.
+
+### §0h TESTED ON A DEVICE — the design's load-bearing assumption HOLDS, and the header gap is now proven critical
+
+The worry was that Android's WebView media pipeline fetches OUTSIDE the interception path, which would have
+killed `<video src="…">` on mobile regardless of headers. **Tested on the emulator 2026-08-03** with a
+deliberate control: the same host requested by an `<img>` and by two `<video>` elements (one https virtual
+host, one custom scheme), the handler logging every URI it was consulted about and not answering.
+
+**Result — media DOES reach the seam, on both URL forms:**
+```
+INTERCEPT https://shenora.probe/pic.png      <- <img>  (the control)
+INTERCEPT https://shenora.probe/clip.mp4     <- <video> over an https virtual host
+INTERCEPT app://video/?src=clip              <- <video> over a custom scheme
+```
+
+**And the request headers settle the rest of the design:**
+```
+<video>  Range: bytes=0-            Accept-Encoding: identity;q=1, *;q=0     Accept: */*
+<img>    (no Range)                 Accept: image/avif,image/webp,…
+```
+- ⚠ **THE PLAYER SENDS `Range: bytes=0-` ON ITS VERY FIRST REQUEST, for both URL forms.** So the header gap
+  in §0d is not theoretical: the correct answer is `206` plus `Content-Range` plus `Accept-Ranges`, and the
+  PORTABLE mobile seam can send none of them. Replying `200` with the whole body to a `Range` request is
+  legal (a server may ignore Range), so playback will probably work — **but seeking will not**, because
+  without `Accept-Ranges`/`Content-Range` the player has no way to ask for a byte offset.
+  **So `e.PlatformArgs` is MANDATORY for a scrubbable player on Android, not an optimisation.**
+- `Accept-Encoding: identity;q=1, *;q=0` — the media pipeline refuses compression, because it wants
+  byte-exact ranges. A handler that gzips a media response is wrong even where it would be right for text.
+- The `<img>` sending no Range is the contrast that proves the media pipeline is a genuinely different
+  consumer, not just another resource load.
+
+**Two incidental findings worth not re-deriving:**
+- ⚠ **The platform NORMALISES the URL: `app://video?src=clip` arrived as `app://video/?src=clip`** — a `/`
+  inserted before the query. A handler matching the literal prefix `app://video?` would MISS. Match on a
+  parsed `Uri`, never a string prefix.
+- MAUI's `HybridWebView` serves the page from **`https://0.0.0.1/`** (seen as the `Referer`), which is what
+  the app's own origin actually is on this shell.
+
+**Still untested: iOS.** `WKURLSchemeHandler` has had the equivalent history, and it needs the Mac. Until
+then the mobile half is proven on ONE of two platforms — say so rather than generalising from Android, which
+is the mistake the save picker's iOS naming defect already punished once.
 
 ## §1 The claim — PLAYABILITY is the centre, and it splits into five parts
 
