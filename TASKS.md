@@ -396,20 +396,29 @@ one piece DM3 said was missing. See `CHANGELOG.md` `## Unreleased`._
   path-containment surface, because the page supplies the path → the generic version of the
   `ResolveContained` fix, not a second hand-rolled one. Neither is optional, and both are classes the
   review checklist hunts for by name.
-- [ ] **DM5 — the THREE PLATFORM packages. `Shenora.Media` itself is DONE.** The portable package shipped
-  with DM2 and took the whole checklist: `IsPackable` inline, `packableProjects` entry, description,
-  solution entry, API baseline, README row + dependency graph, `ARCHITECTURE.md` entry, and thirteen new
-  words in the surface lexicon (with `Media` flagged to be watched the way `Download` is — a `MediaPlayer`
-  or `Track` would be the kit growing a product). ⚠ **The D41 tripwire is ARMED**: `Sample.Logic` uses the
-  planner from portable logic, and a platform reference there fails `NU1201` by name — sabotage-verified,
-  and it cascades to the MAUI sample because the same logic feeds both mobile shells.
+_**DM5 is DONE for the shipping platforms** — `Shenora.Media` + `Shenora.Media.Android` +
+`Shenora.Media.iOS`, all three packing at 0.8.0, all three with the full checklist (inline `IsPackable`,
+`packableProjects`, description, solution entry, API baseline, README row + graph, `ARCHITECTURE.md`,
+lexicon). The mobile pair is ONE shared source (`src/Shenora.Media.Mobile/`) differing by one compile
+symbol, and a package built with neither fails **`#error` at compile time** — sabotage-verified, so a third
+platform cannot inherit a guess. They reference `Shenora.Media` and the MAUI SDK but **NOT the shell
+packages**: D40 left that edge "to determine when building", and built, it does not exist. The D41 tripwire
+is armed and sabotage-verified (`NU1201`, cascading to the MAUI sample)._
 
-  **`Media.Windows`/`.Android`/`.iOS` are deliberately NOT created yet, and the reason is not effort.**
-  There is nothing for them to implement: their content is the serving side — the per-platform response
-  body (D44's measured asymmetry: Android must NOT slice, iOS MUST) — and that needs the serving contract
-  DM3/DM4 defines, including DM4's two authorization seams. Creating them now would publish three empty
-  package ids, and **nuget.org never deletes a version**. So they follow DM3/DM4, which is the order the
-  design already gives. When they land, each inherits the same checklist above.
+- [ ] **`Shenora.Media.Windows` — deliberately NOT created, and it may never need to be.** The desktop
+  shell already serves ranges correctly through `WebViewDeferredScheme` + `WebViewResourceResponse`, which
+  is where the 206/`Content-Range` logic was proven first. A `Media.Windows` package would hold a WebView2
+  args adapter and the `Sliced` constant — i.e. it would duplicate what `Shenora.Windows` already does. Add
+  it only when a desktop consumer shows something it genuinely cannot express today (a native surface, an
+  engine binding), rather than for symmetry with the mobile pair. **Every public type earns its keep**
+  (`generic-library.md`); three-package symmetry is not a reason.
+
+- [ ] **⚠ A GATE WEAKNESS found while landing the mobile pair, and worth remembering beyond media.**
+  `MetadataSurfaceTests.MetadataAssemblies()` is a HAND-MAINTAINED list, and the coverage test only checked
+  that a baseline FILE existed — so two brand-new platform packages, seeded with EMPTY baselines and missing
+  from that list, passed every gate with zero surface coverage. Closed by making the coverage test require a
+  NON-EMPTY baseline. Left open here as the general question: **which other gates are satisfied by the
+  presence of a file rather than its content?**
 
 _Thumbnails and image resize are DEFERRED with the analysis already done — D43. They cost 0 MB on every
 platform and need no engine, so they are cheap to add later, and the player does not depend on them._

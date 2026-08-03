@@ -36,7 +36,9 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 |---|---|---|---|
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.Media` | NuGet | `net10.0` | The portable half of playing media a webview cannot decode: a per-stream playability planner, a probe-result shape, and the content cache key. Ships no codec list and no engine. |
+| `Shenora.Media` | NuGet | `net10.0` | The portable half of playing media a webview cannot decode: a per-stream playability planner, a range server, path/SSRF authorization, a probe-result shape and the content cache key. Ships no codec list and no engine. |
+| `Shenora.Media.Android` | NuGet | `net10.0-android` | Serves media to a MAUI `HybridWebView`, supplying the body rule Android's webview requires. |
+| `Shenora.Media.iOS` | NuGet | `net10.0-ios` | The same, for `WKWebView` — same source, the opposite body rule. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
@@ -58,15 +60,28 @@ Dependencies — the graph is a **diamond, not a chain**:
               ├──── Shenora.Android                     net10.0-android
               └──── Shenora.iOS                         net10.0-ios
 
+        Shenora.Core
+              ↑
         Shenora.Media                                   net10.0
-          (depends on nothing — pure functions over its own data)
+              ↑
+              ├──── Shenora.Media.Android               net10.0-android
+              └──── Shenora.Media.iOS                   net10.0-ios
 ```
 
-**`Shenora.Media` is a leaf on purpose.** It holds decisions, not plumbing: everything in it is a pure
-function over its own types, so it needs neither the host contracts nor DI. Media splits from `Shenora.Core`
-because a demuxer or an image codec is real shipped bytes and every package references Core — so an app
-that never touches media should not pay for one. It stays `net10.0` so app logic can compile against it on
-any shell.
+**The media family is OPTIONAL, which is the whole reason it is a family.** Media splits from
+`Shenora.Core` because a demuxer or an image codec is real shipped bytes and every package references Core
+— so an app that never touches media should not pay for one. `Shenora.Media` itself stays `net10.0`, so
+app logic compiles against it on any shell.
+
+**Note what the platform packages do NOT reference: the shell packages.** A media route needs a resource
+handler and a range decision, not a window or a UI dispatcher — so that edge would be declared and never
+crossed. **App logic names `Shenora.Media` only**; the platform package is registered once in the platform
+head and invisible everywhere else.
+
+⚠ **And they exist for one measured reason.** Android's webview applies the `Range` start to whatever body
+it is handed; iOS's passes the body through verbatim. So the same request needs an *unsliced* body on one
+and a *sliced* body on the other. The two packages are the same source with one compile symbol apart, and
+a third platform cannot compile without declaring its own answer.
 
 **`Shenora.Ipc` is platform-neutral and stays that way.** It targets `net10.0`, references only
 `Shenora.Core`, and binds to no UI framework at all — the whole transport story (D16) rests on that:

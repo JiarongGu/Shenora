@@ -37,6 +37,26 @@ at the first list and missed five more breaking changes.
     universal list — a browser's differs from an engine's, and Android's differs per DEVICE because codec
     support is vendor-declared. A baked-in list would be one app's guess frozen into everyone's planner.
     The mechanism is the kit's; the policy is the application's.
+- **The serving half, promoted out of the sample now that both devices have proven it.**
+  - **`MediaRangeServer.Serve`** — `200`/`206`/`416` with `Content-Range`, `Accept-Ranges`, and a
+    `Content-Length` describing what is really sent.
+  - **`MediaBodyMode.Sliced`/`Unsliced`** names D44's measured platform asymmetry as an enum instead of a
+    comment. Android's webview applies the `Range` start itself, so the handler must NOT slice; iOS passes
+    the body through, so it MUST. The wrong choice plays every faststart file perfectly and fails every
+    other one — hence a test asserting the two modes genuinely DIFFER.
+  - **`MediaAccess`** — the two authorization seams, both fail-CLOSED. `ResolveLocal` generalises the
+    proven containment fix (including the separator-appended prefix test that stops a sibling directory
+    passing as a child); `IsRemoteAllowed` denies with no policy AND when the policy throws, because the
+    host can reach addresses the page cannot.
+- **Two more packages: `Shenora.Media.Android` and `Shenora.Media.iOS`** (~4 KB each, no engine
+  dependency). One shared source, `MediaWebViewRoute.TryServe`, which is the ~20 lines every mobile app
+  would otherwise write — and the only place that knows the platform's body rule, so an app never has to.
+  - They differ by ONE compile symbol. A package built with neither fails **`#error` at compile time**,
+    so a third platform cannot silently inherit a guess — the same fail-closed choice as the `partial`
+    method that stopped a fourth shell shipping an undefined save.
+  - They reference `Shenora.Media` and the MAUI SDK, **not the shell packages**: a media route needs a
+    resource handler and a range decision, not a window. D40 left that edge "to determine when building" —
+    built, and it does not exist.
 - **The D41 media tripwire is ARMED rather than described.** `samples/Shenora.Sample.Logic` (a `net10.0`
   project) now references `Shenora.Media` and its facade uses the planner, so "app logic names
   `Shenora.Media` and never `Shenora.Media.{Platform}`" is enforced by the build. Sabotage-verified: a

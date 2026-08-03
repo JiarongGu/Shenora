@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The iOS face of mobile media — same source as `Shenora.Media.Android`, one different symbol.
+  -->
+  <Import Project="..\Shenora.Media.Mobile\Shenora.Media.Mobile.props" />
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-ios</TargetFrameworks>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+
+    <!--
+      ⚠ THE ONE LINE THAT DIFFERS FROM THE ANDROID PACKAGE. `WKURLSchemeHandler` passes the response body
+      through VERBATIM, so the handler must slice — ordinary, correct HTTP (D44). Measured on a simulator:
+      in Android's unsliced mode every range returned the whole file from offset 0, while sliced returned
+      exactly eight bytes of "ftypisom" for bytes=4-11.
+    -->
+    <DefineConstants>$(DefineConstants);SHENORA_MEDIA_SLICED</DefineConstants>
+
+    <!-- Inline on purpose — the baseline coverage gate text-matches it here. See the shared props. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Media.iOS</PackageId>
+    <Description>Shenora media for iOS: serves seekable media to a MAUI HybridWebView through Shenora.Media's range server, and supplies the body rule WKWebView requires (the platform passes the body through, so the handler slices). Takes NO media engine dependency. Shares its source with Shenora.Media.Android.</Description>
+  </PropertyGroup>
+
+</Project>

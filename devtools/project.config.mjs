@@ -28,6 +28,9 @@ export default {
     'src/Shenora.Ipc',
     // net10.0 and portable, so it packs and gates exactly like Core/Ipc — no platform host needed.
     'src/Shenora.Media',
+    // The mobile media faces: same shared source, one symbol apart — the body rule D44 measured.
+    'src/Shenora.Media.Android',
+    'src/Shenora.Media.iOS',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
     // as the definition of "shipped", so a project claiming it while the tooling skips it is the two

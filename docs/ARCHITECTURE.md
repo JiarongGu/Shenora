@@ -70,6 +70,23 @@ Shenora.slnx
 │   │                                          one (D40). net10.0, so app logic compiles against it on
 │   │                                          any shell — enforced by the Sample.Logic tripwire (D41).
 │   │                                          Ships no codec list and no engine: policy is the app's.
+│   ├── Shenora.Media.Mobile/ (SOURCE, no csproj) — the mobile media route, compiled into both media
+│   │                                          faces. Same arrangement as Shenora.Mobile/ and for the
+│   │                                          same reason: a shared assembly would publish a package
+│   │                                          nobody asks for.
+│   ├── Shenora.Media.Android  net10.0-android — deps: Shenora.Media, Microsoft.Maui.Controls
+│   ├── Shenora.Media.iOS      net10.0-ios     — deps: same. The two differ by ONE compile symbol
+│   │                                          (SHENORA_MEDIA_UNSLICED / _SLICED), which selects the
+│   │                                          body rule D44 measured: Android's webview applies the
+│   │                                          Range start itself so the handler must not slice, iOS
+│   │                                          passes the body through so it must. A package built with
+│   │                                          neither symbol fails `#error` at COMPILE time — a third
+│   │                                          platform cannot inherit a guess.
+│   │                                          ⚠ They do NOT reference the shell packages: a media route
+│   │                                          needs a resource handler and a range decision, not a
+│   │                                          window or a dispatcher, so that edge would be declared
+│   │                                          and uncrossed. D40 left it "to determine when building";
+│   │                                          built, and the answer is that it does not exist.
 │   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders

@@ -51,8 +51,21 @@ public class MetadataSurfaceTests
     /// because the two share source. Neither is needed when the real assembly is right here.
     /// </para>
     /// </summary>
+    /// <para>
+    /// ⚠ This list is HAND-MAINTAINED, and forgetting a project here is a silent fail-open: the coverage
+    /// test below only checks that a baseline FILE exists, so a new platform package with an empty
+    /// baseline passed both gates while its surface was never rendered. Demonstrated live on 2026-08-04
+    /// by the two media faces. The coverage test now rejects an empty baseline as well as a missing one,
+    /// which is what turns "I forgot this row" back into a failure.
+    /// </para>
     public static TheoryData<string, string> MetadataAssemblies() =>
-        new() { { "Shenora.Android", "net10.0-android" }, { "Shenora.iOS", "net10.0-ios" } };
+        new()
+        {
+            { "Shenora.Android", "net10.0-android" },
+            { "Shenora.iOS", "net10.0-ios" },
+            { "Shenora.Media.Android", "net10.0-android" },
+            { "Shenora.Media.iOS", "net10.0-ios" },
+        };
 
     /// <summary>
     /// Every word used by a metadata-gated assembly's type names. Consumed by
@@ -139,11 +152,17 @@ public class MetadataSurfaceTests
     public void Every_packable_project_has_a_baseline_of_one_kind_or_the_other()
     {
         var root = RepoRoot();
-        var runtime = Directory.EnumerateFiles(Path.Combine(root, "tests", "Shenora.Tests", "Api", "Baselines"), "*.txt")
-            .Select(Path.GetFileNameWithoutExtension);
-        var metadata = Directory.Exists(BaselinesDir())
-            ? Directory.EnumerateFiles(BaselinesDir(), "*.txt").Select(Path.GetFileNameWithoutExtension)
-            : [];
+        // ⚠ NON-EMPTY, not merely present. An empty baseline file satisfied this test while the surface it
+        // was supposed to gate went unrendered — demonstrated live on 2026-08-04, when two new platform
+        // packages were seeded with empty baselines, were missing from `MetadataAssemblies()` above, and
+        // passed every gate with zero coverage. "A file exists" is not the property this test means.
+        static IEnumerable<string?> NonEmpty(string dir) =>
+            Directory.EnumerateFiles(dir, "*.txt")
+                .Where(f => new FileInfo(f).Length > 0)
+                .Select(Path.GetFileNameWithoutExtension);
+
+        var runtime = NonEmpty(Path.Combine(root, "tests", "Shenora.Tests", "Api", "Baselines"));
+        var metadata = Directory.Exists(BaselinesDir()) ? NonEmpty(BaselinesDir()) : [];
         var baselined = runtime.Concat(metadata).ToHashSet(StringComparer.Ordinal)!;
 
         var packable = Directory.EnumerateDirectories(Path.Combine(root, "src"))
