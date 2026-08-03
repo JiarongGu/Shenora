@@ -16,8 +16,42 @@ interface library merge, because 3 of my application will need this)"*.
 the codec.** The kit ships no player, no native surface and no chrome: those are the app's, or React's.
 This is the video-library sibling's shipped second-generation design (§0b), not a new invention.
 
-**The URL.** A **reserved PATH on the page's own origin**, reached by a RELATIVE url:
-`/<reserved-route>/?src=<encoded>`.
+**The URL.** One ROUTE with an ENCODED PAYLOAD — `<route>?<encoded>` — written **RELATIVE**, so the page
+never names a scheme or a host.
+
+### ⚠ Why relative, settled once: every FIXED form fails on exactly one platform
+
+Asked twice, so here is the whole matrix. Every row is measured on a device except the marked reason.
+
+| The page asks for | Android: intercepted? | Android: media plays? | iOS: intercepted? | iOS: media plays? |
+|---|---|---|---|---|
+| `app://<host>/…` (custom scheme) | yes | **NO** — `MEDIA_ERR_SRC_NOT_SUPPORTED`, instantly, even for a correct 200 | yes | yes |
+| `https://<virtual-host>/…` | yes | yes | **NO — goes to the real network** | n/a |
+| **relative, on the page's own origin** | yes → `https://0.0.0.1/…` | **yes** | yes → `app://0.0.0.1/…` | **yes** |
+
+**And registering the scheme does not rescue either fixed form**, which is the part worth knowing because
+it is the obvious next idea:
+- **iOS CAN register a custom scheme** — `WKWebViewConfiguration.SetUrlSchemeHandler` +
+  `IWKUrlSchemeHandler`, verified by compiling. MAUI already does it, which is why the iOS page origin IS
+  `app://0.0.0.1/`. But WebKit refuses a handler for a SPECIAL scheme (`http`, `https`, `file`, `ws`…), so
+  an https virtual host is not registrable there — consistent with the measurement above.
+- **Android CANNOT register a scheme at all.** `Mono.Android` exposes no such API under any name.
+  `shouldInterceptRequest` fires for any scheme — which is why a handler IS called for `app://` — but
+  Chromium's media pipeline still refuses to decode from a non-standard scheme. Corroborating rather than
+  coincidental: Google's own answer, `WebViewAssetLoader`, serves over an **https virtual host**.
+- **The desktop can** (`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations`), which is why this
+  problem never appeared there.
+
+**So the relative form is not a compromise — it is the intersection, and it delivers BOTH ideas at once:**
+the app scheme on iOS (where it is registered and media-capable) and an https origin on Android (where it
+is). The page writes one string; each platform supplies the scheme it can actually decode. A literal
+`app://…` or `https://<host>/…` is right on one shell and silently broken on the other.
+
+The **route + encoded payload** shape is unchanged from the original instinct and is the right one: one
+registration instead of one per media kind, a new kind (`thumb`, `audio`) costs nothing, and the payload can
+carry a source, a container preference or a cache key rather than a bare filename. ⚠ Encoding costs
+debuggability, so the host must LOG what it decoded — the response body cannot say (no exception text on
+the wire), which leaves the host log as the only diagnosis.
 - ⚠ **CORRECTED 2026-08-03 by the DM1 device runs (§0j). This previously said the URL "must be the app
   scheme", and that is wrong** — it was true of iOS interception and false of Android PLAYBACK. Android
   intercepts `app://` and then its media pipeline refuses it outright (`MEDIA_ERR_SRC_NOT_SUPPORTED`,
