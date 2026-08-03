@@ -870,3 +870,54 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - So the honest statement is not "mobile loses this" but "the platform already ships the sanctioned
     version of each intent". Revisit only if a platform gains a real in-process automation surface —
     not because a webview exists.
+
+- **D40 — media is its OWN package, `Shenora.Media`. Amends D2's "no new package" and D37's set.**
+  (Owner, 2026-08-03: *"because I know this package is not going to be small thats why I call this need to
+  be Shenora.Media"*, then sharpened when this entry first got the shape wrong: *"we need a Media and
+  Media.Windows Media.Android Media.iOS packages, so what should be stay in core is generic connection
+  functions and the rest should be stay at Media"*.) The set becomes **`Core` · `Ipc` · `Windows` ·
+  `Android` · `iOS` · `Media` · `Media.Windows` · `Media.Android` · `Media.iOS`** — nine.
+  - **The argument is DEPENDENCIES, not size — and it passes D37's own test where the Windows split
+    failed it.** D37 asks whether a boundary corresponds to something a CONSUMER experiences. It rejected
+    the WinForms/WebView2 split because the measured cost was 52.6 MB of DEV-TIME restore for a runtime
+    that is an Evergreen SYSTEM COMPONENT, and because the consumer it protected (WinForms without a
+    webview) cannot exist in a React-in-a-webview kit. Media inverts every clause: an image codec or a
+    container parser is **real shipped bytes**, it is **not** a system component, and the consumer it
+    protects **does** exist — every app that never touches media. `Shenora.Core` today costs a consumer
+    exactly two abstraction packages (`M.E.DependencyInjection`, `M.E.Logging.Abstractions`), and since
+    EVERYTHING references Core, a media stack behind it would tax the whole kit. Same test, opposite
+    answer, because the facts differ — which is what an amendment should look like rather than a reversal.
+  - **THE SAME ARGUMENT APPLIES TWICE, and this entry first missed the second application.** The draft
+    put the per-platform implementations into the existing SHELL packages, reasoning that the platform
+    types live there anyway. Owner corrected it, and the correction is right: **`Shenora.Windows` is not
+    optional for a desktop app on this kit, so media dependencies placed there tax every consumer** — a
+    tray utility that never plays a file would still restore a media engine binding. `Shenora.Media.Windows`
+    IS optional. The reason Media splits from Core is the reason Media.Windows splits from Windows; the
+    draft applied it once and stopped.
+  - **This does NOT undo D37, and the test still passes.** D37's rule is ONE SHELL package per platform.
+    These are not shells — they are one FEATURE's platform implementations, and D37's question ("does a
+    consumer experience this boundary?") answers yes: a desktop app declines `Shenora.Media.Windows` while
+    still taking `Shenora.Windows`. Nine packages is the honest count of that, not scope creep.
+  - **What goes in `Shenora.Media`:** the playability decision (a pure function), the probe RESULT shape,
+    the content+mtime cache key, the cache inventory/cap seam, and the surface + thumbnail CONTRACTS.
+    See `docs/2026-08-03-shenora-media-design.md` §1.
+  - **What goes in `Shenora.Media.{Windows,Android,iOS}`:** the native surface, the pixel production, and
+    the platform's own playability answer (`MediaCodecList`, `AVAsset.Playable`, a codec table on Windows).
+    Each is the natural home for the engine binding a consumer opts into.
+  - **What stays in `Shenora.Core` — the owner's "generic connection functions":** the resource-serving
+    primitives (`WebViewResourceRequest`/`Response`/`ByteRange`, moved out of `Shenora.Windows`). They are
+    not media-specific — the packaged-bundle seam and app schemes use them — and they carry no
+    dependencies. Media builds on them, which is why the D2a move can go FIRST and independently.
+  - ⚠ **One edge to determine when building, not now:** whether `Shenora.Media.{Platform}` references its
+    shell package or only `Shenora.Core` + the platform SDK. A native surface needs UI-thread marshalling
+    (`IUiDispatcher`, portable) and a parent control (platform). If it needs nothing from the shell, the
+    edge should not exist — an unused dependency edge is the "declared but nothing crosses it" smell the
+    review checklist hunts for.
+  - **Cost, stated plainly** (the checklist a sixth package inherits): a lockstep version entry, an API
+    baseline plus a `packableProjects` entry, a package description, `IsPackable` kept INLINE in the
+    csproj (hoisting it into shared props makes the project invisible to the baseline-coverage gate —
+    the trap the mobile packages already documented), a README package-table row, a `doc-drift`
+    dependency-graph row, and `Media` added to the surface lexicon for type names. Plus a new dependency
+    edge from all three shells, which `ARCHITECTURE.md` must state.
+  - **Still no `*.Abstractions` package.** D2 rejected that and it stays rejected: this is a FEATURE
+    boundary a consumer can decline, not a layering artefact.

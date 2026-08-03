@@ -187,9 +187,36 @@ problem all three consumers actually have.
    `MediaMetadataRetriever` + `ThumbnailUtils` on Android, AVFoundation + `QLThumbnailGenerator` on iOS
    — plus, on the desktop, an external ffmpeg the APP supplies.
 
-Parts 1, 3 and 4 are `Shenora.Core`. Parts 2 and 5 are the shell packages. **No new package (D2).**
-This is also the sharpest justification yet for D37's one-shell-per-platform shape: a native video
-surface is implemented three completely different ways and must not leak into app logic.
+**Placement — superseded by D40 (owner, 2026-08-03): media is its OWN package, `Shenora.Media`.** An
+earlier revision of this section said "no new package (D2)"; the owner's call overrides it and the
+reasoning is stronger than the one it replaces. The argument is **dependencies, not size**: `Shenora.Core`
+costs a consumer exactly two abstraction packages today, EVERYTHING references Core, and an image codec or
+container parser is real shipped bytes rather than an Evergreen system component — so it passes D37's
+"does a consumer experience this boundary?" test that the Windows split failed. Full reasoning in D40.
+
+**The set is NINE packages**, and the split runs the whole way down:
+
+| Package | Holds | A consumer declines it by… |
+|---|---|---|
+| `Shenora.Core` | the **generic connection functions** — `WebViewResourceRequest`/`Response`/`ByteRange`, moved out of `Shenora.Windows`. Not media-specific: the bundle seam and app schemes use them, and they carry no dependencies | — (everyone takes Core) |
+| `Shenora.Media` | parts 1, 3, 4 — the playability decision, the probe result shape, the cache key + inventory seam, the surface/thumbnail contracts | not doing media at all |
+| `Shenora.Media.Windows` `.Android` `.iOS` | parts 2, 5 — the native surface, pixel production, and the platform's own playability answer. The natural home for whichever engine binding a consumer opts into | not doing media **on that platform** |
+
+**Why the implementations are NOT in the shell packages** (this section said the opposite until the owner
+corrected it): `Shenora.Windows` is not optional for a desktop app on this kit, so media dependencies
+placed there would tax every consumer — a tray utility that never plays a file would still restore an
+engine binding. `Shenora.Media.Windows` is optional. **The reason Media splits from Core is the reason
+Media.Windows splits from Windows**, and the first draft applied that argument once and stopped. D37 is
+untouched: its rule is one SHELL per platform, and these are a FEATURE's platform implementations, which
+its own "does a consumer experience this boundary?" test admits.
+
+And this remains the sharpest justification for the per-platform shape generally: a native video surface is
+implemented three completely different ways and must not leak into app logic.
+
+⚠ **One edge to determine when building:** whether `Shenora.Media.{Platform}` references its shell package
+or only `Shenora.Core` + the platform SDK. A surface needs UI-thread marshalling (`IUiDispatcher`,
+portable) and a parent control (platform). If it needs nothing else from the shell, that edge should not
+exist — a declared dependency nothing crosses is one of the five defects the review checklist hunts for.
 
 ## §2 What must NOT leak in (D4) — the line is the ENGINE, not playback
 
