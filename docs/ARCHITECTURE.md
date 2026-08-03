@@ -338,6 +338,15 @@ changes, noting them in `CHANGELOG.md`).
   CHANGED files, commit. Because only the changeset is staged, `CommitAsync` verifies the manifest of
   what is IN the stage; the full release manifest rides along as `manifest.json` so the applier can
   compute removals and so overlaying it makes the new installed baseline.
+  **`UpdateStageOptions.BaselinePath` relocates that baseline** (2026-08-04, filed by the first adopter).
+  Null = `{installRoot}/manifest.json`, unchanged for an install tree, where the baseline belongs with the
+  thing it describes. It exists because that is only true of an install TREE: the adopter's targets are
+  deploy INPUTS whose aggregate content hash decides what gets re-uploaded, so a per-release
+  `manifest.json` inside one changed the hash on every release even when the payload was byte-identical —
+  breaking their invariant that a part's content is a pure function of SOURCE, never of build HISTORY.
+  `ApplyAsync` now writes the baseline EXPLICITLY and always excludes it from the overlay, so the
+  configured and default cases are one code path rather than a containment test; it appears in
+  `UpdateOutcome.Written` only when it really landed inside the tree.
   **`ApplyAsync` + `UpdateOutcome`** — the apply pass, portable .NET rather than native: overlay,
   remove what the new manifest dropped, clear. Run it from OUTSIDE the tree it overlays (a launcher
   at `{root}/` over `{root}/app/`), which is what makes self-exclusion guards unreachable rather than

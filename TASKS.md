@@ -154,7 +154,20 @@ implementation of the seam, and the differential-vs-full manifest distinction is
 for `UpdateStage` intending to write the archive bridge locally rather than wait, and hit a second,
 sharper constraint than the per-file source. Filing it because it is about a CLASS of target, not one app.
 
-- [ ] **`ApplyAsync` writes its baseline `manifest.json` INTO the install root, which rules out any
+- [x] **DONE 2026-08-04 — `UpdateStageOptions.BaselinePath`.** Exactly the suggested fix, with one
+  improvement found while writing it: `ApplyAsync` now writes the baseline EXPLICITLY and **always**
+  excludes it from the overlay, rather than skipping it only when it points outside the root. The
+  conditional version would have left a stray copy at `{installRoot}/manifest.json` whenever the baseline
+  was configured anywhere else — including inside the root under a different name — so the unconditional
+  rule is both simpler and more correct. Default behaviour is pinned by a test that did not exist before
+  (nothing asserted `UpdateOutcome.Written` at all), and the two new rules are sabotage-verified in both
+  directions: un-skip the overlay and the "pure function of the payload" test fails; read the old hardcoded
+  path and the "still READ for removals" test fails. **The archive source below is still owed**, so this
+  unblocks the baseline half only — which was the sharper of the two constraints.
+
+  <details><summary>the original filing, kept for the reasoning</summary>
+
+  **`ApplyAsync` writes its baseline `manifest.json` INTO the install root, which rules out any
   target whose bytes are themselves hashed or shipped.** `FetchAsync` stages the release manifest and
   `ApplyAsync` overlays it, so after an apply the tree contains a kit bookkeeping file. For an app
   install tree that is exactly right — the baseline belongs with the thing it describes, and both donor
@@ -174,9 +187,14 @@ sharper constraint than the per-file source. Filing it because it is about a CLA
   `{installRoot}/manifest.json` so nothing changes for the install-tree case, with `ApplyAsync` skipping
   it during the overlay when it points outside the root. That also serves any target the app does not
   want the kit writing into at all.
-  Same theme, still open from the earlier round: `IUpdateSource.OpenAsync` assumes loose files. An
-  archive-backed source PLUS a relocatable baseline together turn this from "adoptable if you fork the
-  apply" into a straight adoption.
+
+  </details>
+
+- [ ] **Still open from the earlier round: `IUpdateSource.OpenAsync` assumes LOOSE FILES.** An archive-backed
+  source was half of what turned this adoption from "adoptable if you fork the apply" into a straight one;
+  the relocatable baseline (above) is now done, so this is the remaining half. **Deferred by owner direction
+  — the adopter builds theirs first** (see below), which is the sequence this kit is designed around: port a
+  proven implementation rather than guess at one.
 
 **Meanwhile that adopter keeps its own** (owner's call: *"do our own first … in the meantime you should
 have your own"*). Its version already does download → extract → verify every file against the release

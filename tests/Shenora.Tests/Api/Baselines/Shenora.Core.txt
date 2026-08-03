@@ -619,6 +619,7 @@ sealed class Shenora.Core.UpdateStageOptions
   public System.Action<string>? Log { get; init; }
   public System.Func<string, bool>? IsUnindexed { get; init; }
   public required string Root { get; init; }
+  public string? BaselinePath { get; init; }
 sealed class Shenora.Core.UpdateStageStatus
   public System.DateTimeOffset? StagedAt { get; init; }
   public required bool Pending { get; init; }

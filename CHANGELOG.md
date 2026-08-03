@@ -92,6 +92,28 @@ at the first list and missed five more breaking changes.
     caller once serving moved: nothing in the kit fetches a remote resource for a page. It comes back with
     the middleware that does, rather than shipping as a public type with no consumer (D15). Its reasoning
     is worth keeping: the host can reach addresses the page cannot, so a *throwing* policy must deny.
+- **`UpdateStageOptions.BaselinePath` — the baseline manifest no longer has to live inside the tree being
+  updated.** Null (the default) is `{installRoot}/manifest.json`, so nothing changes for an app install,
+  where the baseline genuinely belongs with the thing it describes. A relative path resolves against the
+  install root; a rooted one is used as given.
+
+  **Filed by the first adopter, and it was blocking the adoption outright.** Their targets are deploy
+  INPUTS, not install trees: two directories whose aggregate content hash decides what gets re-uploaded,
+  hashed with no exclusions on purpose so the figure agrees with the build's own manifest. A per-release
+  `manifest.json` inside such a tree changes that hash on every release even when the payload is
+  byte-identical — so *"did the backend actually change?"* answers yes forever, and a frontend-only change
+  stops taking the seconds-long path and triggers a full cloud reconcile. That breaks a documented
+  invariant there (a part's content is a pure function of SOURCE, never of build HISTORY), so nothing else
+  about the kit's staging mattered until this moved.
+
+  `ApplyAsync` now writes the baseline **explicitly** and always excludes it from the overlay, rather than
+  letting it ride along because the stage happens to contain it and the destination happens to match.
+  That keeps the configured and default cases on one code path — the alternative was a containment test
+  that would have left a stray copy at the default location whenever the baseline was configured anywhere
+  else, including *inside* the root under a different name. It appears in `UpdateOutcome.Written` only when
+  it really landed in the tree, and a baseline that cannot be written logs loudly instead of throwing: the
+  payload is already overlaid at that point, and a missing baseline degrades to "compute no removals next
+  time", which is the safe direction.
 - **`@shenora/react` gains `mediaUrl(payload, route?)`** — the page's half of a file route, and the reason
   it is shipped code rather than a documented convention. It returns a **relative** URL on the page's own
   origin (`media?<base64url>`), which D44 measured to be the ONE form intercepted on all three shells:

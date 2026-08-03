@@ -158,4 +158,123 @@ public class UpdateApplyTests
         Assert.True(File.Exists(dir.Combine("app", "settings.json")));
         Assert.True(File.Exists(dir.Combine("app", "data", "profile.db")));
     }
+
+    // ── The baseline's LOCATION (2026-08-04) — filed by the first adopter, whose targets are deploy
+    //    INPUTS rather than install trees: their aggregate content hash decides what gets re-uploaded, and a
+    //    per-release manifest.json inside them changed that hash on every release even when the payload was
+    //    byte-identical. The default must not move; everything else is new. ──────────────────────────────
+
+    [Fact]
+    public async Task By_DEFAULT_the_baseline_still_lands_in_the_install_root_and_is_reported_as_written()
+    {
+        using var dir = TempDir.Create();
+        Install(dir, Manifest("1.0", ("app.exe", "v1")), ("app.exe", "v1"));
+
+        var stage = StageIn(dir);
+        await StageAsync(stage, Manifest("2.0", ("app.exe", "v2")), ("app.exe", "v2"));
+        var outcome = await stage.ApplyAsync(dir.Combine("app"));
+
+        Assert.True(outcome.Applied);
+        // The behaviour every existing install depends on, now pinned rather than assumed — the baseline
+        // used to ride along in the overlay and is now written explicitly, which must be indistinguishable.
+        Assert.Equal("2.0", UpdateManifest.Parse(File.ReadAllText(dir.Combine("app", "manifest.json"))).Version);
+        Assert.Contains("manifest.json", outcome.Written);
+        Assert.Contains("app.exe", outcome.Written);
+    }
+
+    [Fact]
+    public async Task A_baseline_OUTSIDE_the_root_leaves_the_tree_a_pure_function_of_the_payload()
+    {
+        using var dir = TempDir.Create();
+        Install(dir, Manifest("1.0", ("app.exe", "v1")), ("app.exe", "v1"));
+        // Remove the install-tree baseline the helper wrote, so this models the adopter's layout: a target
+        // directory that contains payload and nothing else.
+        File.Delete(dir.Combine("app", "manifest.json"));
+        File.WriteAllText(dir.Combine("baseline.json"), Manifest("1.0", ("app.exe", "v1")).ToJson());
+
+        var stage = new UpdateStage(new UpdateStageOptions
+        {
+            Root = dir.Combine(".update"),
+            BaselinePath = dir.Combine("baseline.json"),
+        });
+        await StageAsync(stage, Manifest("2.0", ("app.exe", "v2")), ("app.exe", "v2"));
+        var outcome = await stage.ApplyAsync(dir.Combine("app"));
+
+        Assert.True(outcome.Applied);
+        Assert.Equal("v2", File.ReadAllText(dir.Combine("app", "app.exe")));
+        // THE POINT: no kit bookkeeping inside the measured tree. This is the assertion the adoption was
+        // blocked on — a stray manifest.json here changes the aggregate hash on every release.
+        Assert.False(File.Exists(dir.Combine("app", "manifest.json")));
+        Assert.DoesNotContain("manifest.json", outcome.Written);
+        Assert.Equal(["app.exe"], outcome.Written);
+        // …and the baseline still moved forward, or the next apply could not compute removals.
+        Assert.Equal("2.0", UpdateManifest.Parse(File.ReadAllText(dir.Combine("baseline.json"))).Version);
+    }
+
+    [Fact]
+    public async Task A_baseline_outside_the_root_is_still_READ_for_removals()
+    {
+        // The half that would fail silently: writing the relocated baseline but reading the old default
+        // leaves removals computed against an empty manifest, so nothing is ever removed and stale files
+        // accumulate for the life of the install.
+        using var dir = TempDir.Create();
+        Install(dir, Manifest("1.0", ("app.exe", "v1"), ("old.dll", "gone soon")),
+            ("app.exe", "v1"), ("old.dll", "gone soon"));
+        File.Delete(dir.Combine("app", "manifest.json"));
+        File.WriteAllText(dir.Combine("baseline.json"),
+            Manifest("1.0", ("app.exe", "v1"), ("old.dll", "gone soon")).ToJson());
+
+        var stage = new UpdateStage(new UpdateStageOptions
+        {
+            Root = dir.Combine(".update"),
+            BaselinePath = dir.Combine("baseline.json"),
+        });
+        await StageAsync(stage, Manifest("2.0", ("app.exe", "v2")), ("app.exe", "v2"));
+        var outcome = await stage.ApplyAsync(dir.Combine("app"));
+
+        Assert.True(outcome.Applied);
+        Assert.Contains("old.dll", outcome.Removed);
+        Assert.False(File.Exists(dir.Combine("app", "old.dll")));
+    }
+
+    [Fact]
+    public async Task A_RELATIVE_baseline_path_resolves_against_the_install_root()
+    {
+        using var dir = TempDir.Create();
+        Install(dir, Manifest("1.0", ("app.exe", "v1")), ("app.exe", "v1"));
+        File.Delete(dir.Combine("app", "manifest.json"));
+
+        var stage = new UpdateStage(new UpdateStageOptions
+        {
+            Root = dir.Combine(".update"),
+            BaselinePath = ".meta/baseline.json",
+        });
+        await StageAsync(stage, Manifest("2.0", ("app.exe", "v2")), ("app.exe", "v2"));
+        var outcome = await stage.ApplyAsync(dir.Combine("app"));
+
+        Assert.True(outcome.Applied);
+        // Relative means relative to the INSTALL ROOT, and the directory is created for you.
+        Assert.Equal("2.0",
+            UpdateManifest.Parse(File.ReadAllText(dir.Combine("app", ".meta", "baseline.json"))).Version);
+        // Inside the root, so it IS reported — and at the configured path, not the default one.
+        Assert.Contains(".meta/baseline.json", outcome.Written);
+        Assert.False(File.Exists(dir.Combine("app", "manifest.json")));
+    }
+
+    [Fact]
+    public void ResolveBaselinePath_states_both_cases_rather_than_relying_on_Path_Combine()
+    {
+        using var dir = TempDir.Create();
+        var root = dir.Combine("app");
+        var rooted = dir.Combine("elsewhere", "baseline.json");
+
+        Assert.Equal(Path.Combine(Path.GetFullPath(root), "manifest.json"),
+            new UpdateStage(new UpdateStageOptions { Root = dir.Combine(".update") }).ResolveBaselinePath(root));
+        Assert.Equal(Path.GetFullPath(rooted),
+            new UpdateStage(new UpdateStageOptions { Root = dir.Combine(".update"), BaselinePath = rooted })
+                .ResolveBaselinePath(root));
+        Assert.Equal(Path.Combine(Path.GetFullPath(root), "sub", "b.json"),
+            new UpdateStage(new UpdateStageOptions { Root = dir.Combine(".update"), BaselinePath = "sub/b.json" })
+                .ResolveBaselinePath(root));
+    }
 }

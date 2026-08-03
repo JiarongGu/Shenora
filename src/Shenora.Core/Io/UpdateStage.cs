@@ -61,6 +61,31 @@ public sealed class UpdateStageOptions
     /// </summary>
     public Func<string, bool>? IsUnindexed { get; init; }
 
+    /// <summary>
+    /// Where <see cref="UpdateStage.ApplyAsync"/> keeps the baseline manifest — the record of what is
+    /// currently installed, which the next apply diffs against to compute REMOVALS. Null (default) means
+    /// <c>{installRoot}/manifest.json</c>, so an ordinary app install needs nothing here. A relative path is
+    /// resolved against the install root; a rooted one is used as given.
+    /// <para>
+    /// <b>It is a parameter because "the baseline belongs with the thing it describes" is only true of an
+    /// INSTALL TREE.</b> Filed by the first adopter, whose targets are deploy INPUTS: two directories whose
+    /// aggregate content hash decides what gets re-uploaded, hashed with no exclusions on purpose so the
+    /// figure agrees with the build's own. A per-release <c>manifest.json</c> inside such a tree changes that
+    /// hash on every release even when the payload is byte-identical — so *"did this actually change?"*
+    /// answers yes forever and an unchanged part takes the slow path every time. Their invariant is that a
+    /// part's content is a pure function of SOURCE, never of build HISTORY, and the kit was writing history
+    /// into it.
+    /// </para>
+    /// <para>
+    /// ⚠ Point it outside the root and the install tree no longer carries its own baseline, so **whatever
+    /// reads it must look here too** — the apply pass is the only thing in the kit that does, and
+    /// <see cref="UpdateStage.FetchAsync"/> is handed the installed manifest by the caller rather than
+    /// reading one. Lose the file and the next apply removes nothing (it cannot know what to remove), which
+    /// is the safe direction but leaves stale files behind.
+    /// </para>
+    /// </summary>
+    public string? BaselinePath { get; init; }
+
     /// <summary>Diagnostics sink.</summary>
     public Action<string>? Log { get; init; }
 }
@@ -385,12 +410,12 @@ public sealed class UpdateStage
             };
         }
 
-        var installedManifestPath = Path.Combine(installRoot, "manifest.json");
+        var baselinePath = ResolveBaselinePath(installRoot);
         UpdateManifest installed = new() { Version = "", Files = [] };
         try
         {
-            if (File.Exists(installedManifestPath))
-                installed = UpdateManifest.Parse(File.ReadAllText(installedManifestPath));
+            if (File.Exists(baselinePath))
+                installed = UpdateManifest.Parse(File.ReadAllText(baselinePath));
         }
         catch (Exception ex)
         {
@@ -404,10 +429,38 @@ public sealed class UpdateStage
         {
             cancellationToken.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(StagedDirectory, source);
+            // The baseline is written EXPLICITLY below, never carried by the overlay. It used to ride along
+            // because the stage happens to contain it and the default destination happens to be the same
+            // place — which is why a configured BaselinePath would otherwise put a copy in BOTH: one where
+            // it was asked for, and a stray one at {installRoot}/manifest.json. Excluding it
+            // unconditionally keeps the two cases one code path instead of a containment test.
+            if (ManifestDiff.Normalize(relative) == StagedManifestName) continue;
             var destination = Path.Combine(installRoot, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(source, destination, overwrite: true);
             written.Add(relative.Replace('\\', '/'));
+        }
+
+        // The new baseline, at whatever location this stage was configured with. This is what makes the next
+        // apply able to compute removals, so it is written even when it lands outside the tree.
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
+            File.Copy(stagedManifestPath, baselinePath, overwrite: true);
+            // Reported as written only when it really landed IN the tree — which is the default, so an
+            // install-tree consumer sees exactly the outcome it always saw. Pointed elsewhere it is
+            // deliberately absent from `Written`, because the whole reason to move it is that the tree's
+            // contents are being measured.
+            if (IsUnder(baselinePath, installRoot))
+                written.Add(Path.GetRelativePath(installRoot, baselinePath).Replace('\\', '/'));
+        }
+        catch (Exception ex)
+        {
+            // The payload is already overlaid, so the install IS the new version — abandoning here would
+            // report a failure that has already half-happened. A missing baseline degrades to "remove
+            // nothing next time", the safe direction, and is worth a loud log rather than a throw.
+            Log($"[Shenora.Core] The payload applied but the baseline could not be written to " +
+                $"'{baselinePath}' ({ex.GetType().Name}) — the next apply will compute no removals.");
         }
 
         // Tracked paths only, never a directory sweep: user data lives in this tree and the manifest
@@ -438,6 +491,38 @@ public sealed class UpdateStage
             Written = written,
             Removed = removed,
         };
+    }
+
+    /// <summary>
+    /// Where the baseline manifest lives for this install root — <see cref="UpdateStageOptions.BaselinePath"/>
+    /// or the <c>{installRoot}/manifest.json</c> default.
+    /// <para>
+    /// <see cref="Path.GetFullPath(string, string)"/> rather than <see cref="Path.Combine(string, string)"/>, and that is the
+    /// point of a named method: Combine SILENTLY DISCARDS its first argument when the second is rooted, which
+    /// happens to produce the right answer here and is the exact behaviour this repo already had to fix a
+    /// security bug over. GetFullPath states both cases — a relative path resolves against the root, a rooted
+    /// one is itself — so nobody has to know the quirk to read this.
+    /// </para>
+    /// </summary>
+    internal string ResolveBaselinePath(string installRoot) =>
+        _options.BaselinePath is { Length: > 0 } configured
+            ? Path.GetFullPath(configured, Path.GetFullPath(installRoot))
+            : Path.Combine(Path.GetFullPath(installRoot), StagedManifestName);
+
+    /// <summary>
+    /// Whether <paramref name="path"/> sits inside <paramref name="root"/>.
+    /// <para>
+    /// The separator is appended before comparing, for the same reason
+    /// <see cref="WebViewFiles.ResolveContained"/> does it: without that, <c>/app-old</c> passes as a child of
+    /// <c>/app</c>. Not a security boundary here — the path is the APP's own configuration, not a page's — so
+    /// it only decides whether the baseline is reported in <see cref="UpdateOutcome.Written"/>.
+    /// </para>
+    /// </summary>
+    private static bool IsUnder(string path, string root)
+    {
+        var full = Path.GetFullPath(root);
+        var prefix = full.EndsWith(Path.DirectorySeparatorChar) ? full : full + Path.DirectorySeparatorChar;
+        return Path.GetFullPath(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
