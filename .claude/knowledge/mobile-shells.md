@@ -77,9 +77,27 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   Let the parameter default be the only one.
 - **`mac tap`/`swipe` take NATIVE screenshot pixels — not the size a tool DISPLAYED the PNG at.** A preview
   may downscale (1206×2622 shown at 920×2000) and label the display size; multiply back or every tap misses.
-- **Prefer `mac safari-eval` over a screenshot for anything with a VALUE.** A screenshot cannot report a
-  number, a header or an array, and a `<video>` element reports only "no supported source" however it
-  failed — three different DM1 causes were indistinguishable until a `fetch` ran in the page (D44).
+- **Get page state as TEXT, not pixels — a screenshot cannot report a number, a header or an array**, and
+  a `<video>` element reports only "no supported source" however it failed (three different DM1 causes
+  were indistinguishable until a `fetch` ran in the page — D44). Three routes, in the order they were
+  tried, because the cheap two are both closed:
+  1. ⚠ **A page's `console.log` does NOT reach the device's unified log** on iOS — measured on the
+     simulator with a tagged line and zero hits, so `mac log` cannot see it. Do not build on this.
+  2. `mac safari-eval` is the general answer and needs a Homebrew package — see the warning below.
+  3. **What works: send page log lines over the IPC pipe the app already has** and let the HOST write
+     them to the device log (`samples/Shenora.Sample.Maui/PageDiagFacade.cs`). Keep it SAMPLE-LOCAL: a
+     kit that logged every inbound page message would be noisy and a privacy hazard.
+     ⚠ Two recursion traps, both instant: the page's own `post()` calls `log()`, so mirroring inside
+     `log()` loops through the transport; and the host ANSWERS every request, so the reply to a mirrored
+     line mirrors again. Send on the raw channel without logging, and drop the replies by id — but
+     **report the first one ONCE**, because a channel that silently swallows its own failure looks
+     exactly like a channel that was never wired, which cost a full round of debugging here.
+- **⚠ A device result is worthless until you confirm the app was RELAUNCHED.** `mac run` printing
+  `build ok` is not the same as printing `running`; the launch step can be skipped or fail while the
+  build succeeds, and then a fresh binary sits on disk while the SIMULATOR keeps executing the previous
+  one. That reads exactly like "my change did nothing" — chased for a round here even though the missing
+  line was right there in the output. The sibling's rule states the commit half of this ("never diagnose
+  a Mac build result without checking what commit it built"); this is the launch half.
 - **⚠ Some Mac operations cannot go over ssh AT ALL, and that is a tooling requirement, not a nuisance.**
   `sudo` needs a TTY and code signing needs a real login AUDIT SESSION, so the human must run those — and
   then has to get pages of output back. Serve the script over the LAN and have it POST its own transcript
