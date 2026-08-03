@@ -3,10 +3,26 @@
 For an app that already has a WinForms + WebView2 shell and wants to stop maintaining it. It assumes
 nothing about this repo's history: everything needed is here or linked.
 
-**There is a second shell now.** [Stage 5](#stage-5--a-maui-shell-if-stage-4s-logic-should-also-run-on-a-phone)
-runs the same portable app logic on MAUI (Android built and proven on a device; iOS not built). It is
-genuinely optional and genuinely last — it only pays off if Stage 4 happened, because what it reuses
-is the assembly Stage 4 creates.
+**There are THREE shells now.** [Stage 5](#stage-5--a-maui-shell-if-stage-4s-logic-should-also-run-on-a-phone)
+runs the same portable app logic on MAUI — **Android on a real device and iOS on a simulator, both
+proven**, including a save picker with byte-identical output and seekable media playback. (An earlier
+version of this line said "iOS not built"; it has been since 2026-08-02.) It is genuinely optional and
+genuinely last — it only pays off if Stage 4 happened, because what it reuses is the assembly Stage 4
+creates.
+
+**⚠ If your app is SERVER-BACKED, Stage 5 is probably not your mobile story.** The kit has two
+consumption profiles: desktop-only (postMessage IPC) and server-backed (an in-process HTTP origin that
+also serves LAN clients). An app already serving its own pages over loopback reaches phones with a web
+client against that origin, and does not need a MAUI shell at all — so for it Stage 5 is inapplicable
+rather than deferred, and **Stage 4 is the last stage that pays**. Two consequences worth knowing before
+you start:
+- **Stage 2's embedded-bundle serving is mostly moot for you** — your pages are already on a real
+  loopback origin, which is also why ranged media "just works" there and is a real design problem on a
+  webview-only shell (D44).
+- **Stage 3 is a partial fit.** The kit's event pipe (`IEventBus` → batched notifications) is the same
+  shape a server-backed app already uses for one-way push, so that half is a straight swap. The
+  request/response half is postMessage-shaped; if your requests are HTTP, the seam to adopt is
+  `IpcHostBridge` (transport-neutral inbound) rather than `WebViewIpcBridge`.
 
 **The order matters more than the pieces.** Stage 1 carries no IPC dependency, so it deletes the most
 duplicated code for the least risk; the IPC substrate comes last because it is the only stage that
@@ -17,6 +33,17 @@ requires a big-bang branch.
 and [the file-update queue](#the-file-update-queue--for-when-claims-are-too-coarse) both live in
 `Shenora.Core` and need no shell, no IPC and no Windows, so either can be taken first, last, or on
 its own by an app that wants nothing else here. They compose but neither requires the other.
+
+**⚠ If your app was one of the SOURCES this was extracted from, read this differently.** You are not
+replacing a shell you would rather not maintain — you are taking your own code back with its gaps closed,
+so judge it on the DIFF, not on the concept. What the extraction deliberately fixed, none of which any
+source had: global unhandled-exception handling, a WebView2 runtime presence check, real policies for
+`NewWindowRequested`/`DownloadStarting`/`PermissionRequested`/`ProcessFailed`, options records instead of
+magic numbers, JSON-escaped script injection, `ILogger` instead of `Console.WriteLine`, and no static
+mutable registration state. Where two sources solved the same problem the kit MERGED them rather than
+picking (window state is the clearest case), so you may be adopting the other app's fix for a bug you
+still have. And your own post-mortem comments came along — if one is missing from the kit's version, that
+is a porting bug worth reporting, not a decision.
 
 **What Shenora is not.** It is a library, not an application framework: it ships the desktop *body*
 and no product decisions. It has no UI components and no design system (D13), no state library, and
@@ -406,7 +433,7 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 |---|---|
 | **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `BaseFacade`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora.Core` contract. The mission scheduler and the file-update queue. |
 | **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
-| **Transfers, and this row USED to say it did not** | **Resource serving.** ⚠ Corrected 2026-08-03: `HybridWebView` **does** have a request-interception seam in .NET 10 — `WebResourceRequested` with `e.Uri`, `e.Headers` (`IReadOnlyDictionary<string,string>`, so the `Range` header is readable), `e.SetResponse(status, reason, contentType, Stream)` including 206, and `e.Handled`. Verified by compiling, not from docs. This row previously stated the opposite and would have had you architect around a limitation that no longer exists. The simple case still needs nothing: put the built frontend in `Resources/Raw/wwwroot` and the platform serves it. What the seam buys you is **dynamic** content — generated images, an exported file, a stream. ⚠ **But NOT seekable content:** there is no way to set a response header through it (no `ResponseHeaders`, and `SetResponse` takes only status/reason/contentType/stream), so `Content-Range` and `Accept-Ranges` cannot be sent and a player will not scrub. For seeking, reach the native args via `e.PlatformArgs`, or serve from a real HTTP origin as the server-backed profile does. |
+| **Transfers, INCLUDING seekable media — this row has been wrong twice** | **Resource serving.** `HybridWebView` has a request-interception seam in .NET 10 (`WebResourceRequested`, `e.Uri`, `e.Headers`, `e.Handled`), and the simple case needs none of it — put the built frontend in `Resources/Raw/wwwroot` and the platform serves it. What the seam buys is DYNAMIC content: a generated image, an exported file, **and seekable media**. ⚠ This row previously said seeking was impossible without `e.PlatformArgs`. **That is false** (corrected 2026-08-03 by device runs — **D44**): `SetResponse` has a SECOND overload taking a header DICTIONARY, on both mobile TFMs, and every header reaches the native response. Neither platform needed `PlatformArgs`. **But the two shells need OPPOSITE BODIES** for the same request — Android applies the `Range` start itself so you must NOT slice; iOS passes the body through so you MUST. Read D44 before writing a media handler; getting it wrong plays every faststart file perfectly and fails every other one. |
 | **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
 
 **Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing:
