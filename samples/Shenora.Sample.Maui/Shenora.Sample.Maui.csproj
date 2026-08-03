@@ -117,6 +117,16 @@
                       Condition="$(TargetFramework.Contains('android'))" />
     <ProjectReference Include="..\..\src\Shenora.iOS\Shenora.iOS.csproj"
                       Condition="$(TargetFramework.Contains('ios'))" />
+    <!--
+      The MEDIA face for this platform, conditioned exactly like the shell above and for the same reason.
+      This is the package an adopter registers in its platform head and then never names again: it is what
+      supplies the body rule Android and iOS disagree about, so the app's own handler does not have to know
+      which shell it is on.
+    -->
+    <ProjectReference Include="..\..\src\Shenora.Media.Android\Shenora.Media.Android.csproj"
+                      Condition="$(TargetFramework.Contains('android'))" />
+    <ProjectReference Include="..\..\src\Shenora.Media.iOS\Shenora.Media.iOS.csproj"
+                      Condition="$(TargetFramework.Contains('ios'))" />
     <!-- The SAME portable logic the desktop sample hosts. That shared reference is the point of the
          whole exercise: D20's portability stops being a claim about a net10.0 project and becomes two
          shells running one facade. -->

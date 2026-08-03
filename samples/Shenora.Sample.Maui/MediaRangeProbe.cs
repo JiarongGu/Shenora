@@ -1,43 +1,31 @@
-using Shenora.Core;
 using Shenora.Media;
 
 namespace Shenora.Sample.Maui;
 
 /// <summary>
-/// Serves media to a <c>&lt;video&gt;</c> element on the mobile shells — **through
-/// <see cref="MediaRangeServer"/>, not through its own code**.
+/// Serves media to a <c>&lt;video&gt;</c> element — **through <see cref="MediaWebViewRoute"/> from this
+/// platform's media package**, which is the whole of the wiring an adopter writes.
 /// <para>
-/// This file used to BE the implementation: it proved on an Android emulator and an iOS simulator that a
-/// real file plays and seeks through the webview's resource seam (D44). That proof stands, but a sample
-/// cannot ship — so the range logic now lives in <c>Shenora.Media</c> and this is what an adopter's own
-/// handler looks like: match a route, authorise the source, call the server, hand the result over. Roughly
-/// twenty lines, and none of them decide anything about ranges.
+/// The history is worth keeping, because it is the shape of the mistake: this file used to BE the
+/// implementation. It proved on an Android emulator and an iOS simulator that a real file plays and seeks
+/// (D44), and that proof was mistaken for the library existing. Then the range logic moved into
+/// <c>Shenora.Media</c> and this called it directly — better, but it still meant every app repeating the
+/// platform's body rule. Now the platform package supplies that, and what is left here is only what
+/// genuinely belongs to an APP.
 /// </para>
 /// <para>
-/// What is left here is exactly what belongs to an APP: which route it answers, where its media lives, and
-/// which <see cref="MediaBodyMode"/> its platform needs. That last one is the one asymmetry the library
-/// cannot hide yet — until <c>Shenora.Media.Android</c>/<c>.iOS</c> exist, the app names it.
+/// ⚠ Note what this class NO LONGER decides: whether to slice the response body. Android and iOS need
+/// opposite answers, and an app has no business knowing which one it is running on — the reference in the
+/// csproj settles it at compile time.
 /// </para>
 /// </summary>
 internal sealed class MediaRangeProbe
 {
-	/// <summary>
-	/// The route: <c>app://media/?src=…</c>, or the same path on the page's own origin.
-	/// <para>
-	/// ⚠ The origin-relative form is the one that works on BOTH shells, and that was measured: Android
-	/// intercepts <c>app://</c> and then its media pipeline REFUSES it, while iOS intercepts only
-	/// <c>app://</c>. A path on the page's own origin is intercepted and media-capable on both by
-	/// construction, because it is what the platform already serves the bundle from.
-	/// </para>
-	/// </summary>
-	private const string RouteScheme = "app";
-
-	private const string RouteHost = "media";
+	/// <summary>The clips this sample will serve, and therefore the ONLY things it will serve.</summary>
+	private static readonly string[] Clips = ["clip-faststart.mp4", "clip-tailmoov.mp4"];
 
 	/// <summary>A RESERVED path on whatever origin the page is on. Reserved because it shadows the bundle.</summary>
 	private const string OriginPath = "/shenora-media/";
-
-	private static readonly string[] Clips = ["clip-faststart.mp4", "clip-tailmoov.mp4"];
 
 	private readonly Action<string> _log;
 	private MediaServingOptions? _serving;
@@ -47,7 +35,7 @@ internal sealed class MediaRangeProbe
 	/// <summary>
 	/// Stage the clips out of the app package, then publish the serving options.
 	/// <para>
-	/// Published LAST so a request arriving mid-copy is refused rather than reading a half-written file —
+	/// Published LAST, so a request arriving mid-copy is refused rather than reading a half-written file —
 	/// the same write-the-marker-last ordering <c>UpdateStage</c> uses.
 	/// </para>
 	/// </summary>
@@ -72,88 +60,49 @@ internal sealed class MediaRangeProbe
 			_log($"media: staged {clip} -> cache ({target.Length} bytes)");
 		}
 
-		// The app declares WHERE media may be served from; the library enforces containment. One root here,
-		// and nothing outside it is reachable however the page spells the path.
+		// The app declares WHERE media may come from; the library enforces containment. No BodyMode here —
+		// the platform package overrides it, and passing one would be a copy-pasted desktop setting quietly
+		// breaking one of the two shells.
 		_serving = new MediaServingOptions { AllowedRoots = [root] };
-		_log("media: ready — the page may now load /shenora-media/?src=<clip>");
-	}
-
-	/// <summary>The seam handler. Matches the route, authorises, delegates, logs.</summary>
-	public void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e)
-	{
-		// Match a PARSED Uri, never a string prefix: the platform normalises `app://media?x` to
-		// `app://media/?x`, so a StartsWith test misses every request while looking correct.
-		var isAppRoute = string.Equals(e.Uri.Scheme, RouteScheme, StringComparison.OrdinalIgnoreCase)
-			&& string.Equals(e.Uri.Host, RouteHost, StringComparison.OrdinalIgnoreCase);
-		var isOriginPath = e.Uri.AbsolutePath.StartsWith(OriginPath, StringComparison.OrdinalIgnoreCase);
-		if (!isAppRoute && !isOriginPath) return;   // not ours — leave it entirely alone, including Handled
-
-		var range = e.Headers.TryGetValue("Range", out var header) ? header : null;
-		_log($"media <- {e.Method} {e.Uri}  Range: {range ?? "(none)"}");
-
-		try
-		{
-			Answer(e, range);
-		}
-		catch (Exception ex)
-		{
-			// The diagnosis goes to the HOST log and never into the response: page script can read a body,
-			// and a media failure is the likeliest of all of them to carry a real filesystem path.
-			_log($"media !! failed: {ex}");
-			Send(e, WebViewResourceResponse.NotFound(), "500 -> fixed 404");
-		}
-	}
-
-	private void Answer(WebViewWebResourceRequestedEventArgs e, string? range)
-	{
-		if (_serving is not { } serving)
-		{
-			Send(e, WebViewResourceResponse.NotFound(), "404 (staging has not finished)");
-			return;
-		}
-
-		var name = e.QueryParameters.TryGetValue("src", out var requested) ? requested : null;
-		if (name is null || !Clips.Contains(name, StringComparer.Ordinal))
-		{
-			// An app-level allow-list ON TOP of the library's containment. Belt and braces: this sample knows
-			// exactly two filenames, so anything else is refused before a path is even formed.
-			Send(e, WebViewResourceResponse.NotFound(), $"404 (unknown src {name ?? "(absent)"})");
-			return;
-		}
-
-		// The APP chooses the body rule for its platform — the one thing the portable library cannot decide
-		// yet (D44). `mode` is a query parameter purely so one build can demonstrate both.
-		var mode = e.QueryParameters.TryGetValue("mode", out var m) && m == "unsliced"
-			? MediaBodyMode.Unsliced
-			: MediaBodyMode.Sliced;
-
-		var path = MediaAccess.ResolveLocal(Path.Combine(serving.AllowedRoots[0], name), serving);
-		if (path is null)
-		{
-			Send(e, WebViewResourceResponse.NotFound(), "404 (refused by containment)");
-			return;
-		}
-
-		// Everything about ranges — 200 / 206 / 416, Content-Range, Accept-Ranges, Content-Length, and the
-		// per-platform body rule — is the library's from here.
-		var request = new WebViewResourceRequest { Uri = e.Uri, Method = e.Method, Headers = e.Headers };
-		var response = MediaRangeServer.Serve(request, path, "video/mp4", serving with { BodyMode = mode });
-
-		Send(e, response, $"{response.StatusCode} [{mode}]");
+		_log($"media: ready ({MediaWebViewRoute.PlatformBodyMode} on this platform) — "
+			+ "the page may load /shenora-media/?src=<clip>");
 	}
 
 	/// <summary>
-	/// Hand the kit's portable response to MAUI's portable seam.
+	/// The seam handler, and this is the entire adopter-facing shape: hand the event to
+	/// <see cref="MediaWebViewRoute.TryServe"/> with a resolver that reads YOUR url form.
+	/// </summary>
+	public void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e)
+	{
+		if (_serving is not { } serving) return;   // staging has not finished — not ours to answer yet
+
+		var served = MediaWebViewRoute.TryServe(e, Resolve, "video/mp4", serving);
+		if (served) _log($"media -> {e.Method} {e.Uri}  [{MediaWebViewRoute.PlatformBodyMode}]");
+	}
+
+	/// <summary>
+	/// The app's URL shape, and the only media code an app really has to write.
 	/// <para>
-	/// ⚠ <c>SetResponse</c> with a HEADER DICTIONARY — the overload an earlier version of this repo believed
-	/// did not exist, which is why <c>e.PlatformArgs</c> looked mandatory. It is not: every header survives
-	/// to the native response on both mobile platforms (D44).
+	/// Returning null means "not a media request", so the handler leaves the event completely alone.
+	/// Whatever this DOES return is still authorised against the allowed roots by the library, so being
+	/// generous here cannot widen what is reachable.
 	/// </para>
 	/// </summary>
-	private void Send(WebViewWebResourceRequestedEventArgs e, WebViewResourceResponse response, string note)
+	private string? Resolve(Uri uri)
 	{
-		e.SetResponse(response.StatusCode, response.ReasonPhrase, response.Headers, response.Content);
-		e.Handled = true;
-		_log($"media -> {note}  {string.Join(", ", response.Headers.Select(h => $"{h.Key}: {h.Value}"))}");
+		// Match on a PARSED Uri, never a string prefix: the platform normalises `app://media?x` to
+		// `app://media/?x`, so a StartsWith test misses every request while looking correct.
+		var isOriginPath = uri.AbsolutePath.StartsWith(OriginPath, StringComparison.OrdinalIgnoreCase);
+		var isAppRoute = string.Equals(uri.Scheme, "app", StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(uri.Host, "media", StringComparison.OrdinalIgnoreCase);
+		if (!isOriginPath && !isAppRoute) return null;
+
+		var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+		var name = query["src"];
+		// An app-level allow-list on top of the library's containment. This sample knows exactly two
+		// filenames, so anything else is refused before a path is even formed.
+		if (name is null || !Clips.Contains(name, StringComparer.Ordinal)) return null;
+
+		return Path.Combine(_serving!.AllowedRoots[0], name);
 	}
 }

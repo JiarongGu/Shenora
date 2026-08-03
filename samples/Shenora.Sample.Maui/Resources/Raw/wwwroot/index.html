@@ -72,20 +72,18 @@
   <button id="mwhere">where?</button>
 </div>
 <!--
-  Two independent axes, because the first device run refused a response that was provably CORRECT
-  (the host read the native object back: mime=video/mp4, status=206, Content-Range present) and the
-  cause could be in either axis.
+  ⚠ There USED to be a `mode` toggle here, choosing whether the host sliced the response body. It is gone
+  on purpose: `Shenora.Media.Android` and `Shenora.Media.iOS` now settle that at compile time, because the
+  two platforms need OPPOSITE answers and an app has no business knowing which one it is on. A page control
+  that appeared to choose would be advertising a decision the app no longer makes.
 
-  mode — how the host hands the answer over: `portable` is MAUI's SetResponse with a header
-    dictionary, `whole` is the same but always 200 with the entire file (separates "206 refused" from
-    "the content type never arrived"), `native` writes the platform response object by hand.
-  url  — what the page ASKS FOR: our handler under the app scheme, our handler under an https virtual
-    host, or `bundle` — MAUI's own static serving of the same file on the page's own origin, which
-    touches none of our code and is therefore the control for the file, the codec and the device's
-    media stack. If `bundle` fails too, nothing above it is the bug.
+  url — what the page ASKS FOR, and this one still earns its place as a control:
+    `origin` — a reserved path on the page's own origin. The form that works on BOTH shells.
+    `app`    — the custom scheme. Intercepted on both; Android's media pipeline REFUSES it.
+    `bundle` — the platform's own static serving of the same file, touching none of our code. If this
+               fails too, the file, the codec or the device's media stack is the problem, not us.
 -->
 <div class="row">
-  <button id="mmode">mode: sliced</button>
   <button id="murl">url: origin</button>
   <button id="mrange">RANGE test</button>
 </div>
@@ -233,17 +231,9 @@ document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_R
 // `app://media/?x`). The host matches a parsed Uri, so either form works; this one just says out loud
 // what actually goes over the wire.
 const vid = document.getElementById('vid');
-const MODES = ['sliced', 'unsliced'];
 const URLS = ['origin', 'app', 'bundle'];
-let mode = MODES[0];
 let urlForm = URLS[0];
-const modeBtn = document.getElementById('mmode');
 const urlBtn = document.getElementById('murl');
-modeBtn.onclick = () => {
-  mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
-  modeBtn.textContent = `mode: ${mode}`;
-  log('t', `response mode -> ${mode}`);
-};
 urlBtn.onclick = () => {
   urlForm = URLS[(URLS.indexOf(urlForm) + 1) % URLS.length];
   urlBtn.textContent = `url: ${urlForm}`;
@@ -258,9 +248,9 @@ function clipUrl(name) {
   // RELATIVE on purpose: the page must not name the origin's scheme, because it differs per shell
   // (`https://0.0.0.1/` on Android, `app://0.0.0.1/` on iOS). This is the only form that is both
   // intercepted AND media-capable on both.
-  if (urlForm === 'origin') return `/shenora-media/?src=${name}&mode=${mode}&${bust}`;
+  if (urlForm === 'origin') return `/shenora-media/?src=${name}&${bust}`;
   const base = urlForm === 'https' ? 'https://shenora.media/' : 'app://media/';
-  return `${base}?src=${name}&mode=${mode}&${bust}`;
+  return `${base}?src=${name}&${bust}`;
 }
 
 function loadClip(name) {
