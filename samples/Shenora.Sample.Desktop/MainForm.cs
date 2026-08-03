@@ -333,7 +333,7 @@ public sealed class MainForm : OptimizedForm
                 // The page measures its own title bar and reports the real rects from here on, so
                 // the host's splash-time estimate must stop competing with it on resize.
                 _pageOwnsCaptionButtons = true;
-                _ = RunRangeSeamProbeAsync();
+                _ = RunResourceSeamProbesAsync();
 
                 // A live stream belongs to the page that STARTED it, and the handshake means a new
                 // page just loaded — so tear it down here, exactly as the overlays above are.
@@ -374,8 +374,18 @@ public sealed class MainForm : OptimizedForm
         });
 
         _host = new WebViewHost(_webView, hostOptions);
+
+        // The D45 interceptor route, registered BEFORE InitializeAsync — which is the point of the
+        // interceptor existing on the host from construction: an app composes its routes where it composes
+        // everything else, not from inside a webview callback.
+        _interceptorRoute = InterceptorProbe.Register(_host.Interceptor,
+            Path.Combine(paths.DataArea("probe"), "files"));
+
         Load += OnLoadAsync;
     }
+
+    /// <summary>The probe's file route. Disposed with the form, as an app's own routes would be.</summary>
+    private readonly IDisposable _interceptorRoute;
 
     /// <summary>
     /// Set once the page has taken over reporting its own caption-button rects. Until then the host
@@ -390,15 +400,24 @@ public sealed class MainForm : OptimizedForm
     /// moments — without it the splash covers the caption and a slow or failing frontend leaves a
     /// window the user cannot minimise or close.
     /// </summary>
-    private async Task RunRangeSeamProbeAsync()
+    private async Task RunResourceSeamProbesAsync()
     {
-        try
+        var core = _webView.CoreWebView2;
+        if (core is null)
         {
-            var core = _webView.CoreWebView2;
-            if (core is null) { Console.WriteLine("RANGE SEAM: SKIPPED"); return; }
-            Console.WriteLine(await RangeSchemeProbe.RunAsync(core).ConfigureAwait(true));
+            Console.WriteLine("RANGE SEAM: SKIPPED");
+            Console.WriteLine("INTERCEPTOR SEAM: SKIPPED");
+            return;
         }
+
+        // Both seams the desktop serves resources through: the app-scheme one (P6.6/P7.1) and the portable
+        // interceptor pipeline (D45). Sequentially, because each polls the page for its own global and
+        // interleaving them would make a timeout ambiguous.
+        try { Console.WriteLine(await RangeSchemeProbe.RunAsync(core).ConfigureAwait(true)); }
         catch (Exception ex) { Console.WriteLine($"RANGE SEAM: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+
+        try { Console.WriteLine(await InterceptorProbe.RunAsync(core).ConfigureAwait(true)); }
+        catch (Exception ex) { Console.WriteLine($"INTERCEPTOR SEAM: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private void ReportSplashCaptionButtons()
@@ -475,6 +494,7 @@ public sealed class MainForm : OptimizedForm
             // Stop the flush timer + detach before the WebView goes down (the source app's
             // transport once kept posting into a torn-down WebView for the process lifetime).
             _tickTimer.Dispose();
+            _interceptorRoute.Dispose();
             _dropZones.Dispose();
             _bridge.Dispose();
             _tray.Dispose();

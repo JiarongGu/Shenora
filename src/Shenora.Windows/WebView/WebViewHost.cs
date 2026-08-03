@@ -28,6 +28,7 @@ public sealed class WebViewHost
     private readonly Shenora.Core.IUiDispatcher _ui;
     // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
     private readonly Shenora.Core.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
+    private readonly WebView2Interceptor _interceptor = new();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
     private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)
     private Task? _initialization;           // InitializeAsync is idempotent — see its remarks
@@ -92,6 +93,28 @@ public sealed class WebViewHost
 
     /// <summary>Dev/prod, from the single source (<see cref="WebViewEnvironmentOptions.IsDevelopment"/>).</summary>
     public bool IsDevelopment => _options.Environment.IsDevelopment;
+
+    /// <summary>
+    /// This host's resource-interception pipeline (D45) — the portable seam a feature adds middleware to, e.g.
+    /// <c>host.Interceptor.UseFiles(new WebViewFileOptions { … })</c> to let the page load local files.
+    /// <para>
+    /// Available immediately, BEFORE <see cref="InitializeAsync"/>, because routes are registered at
+    /// composition time while the webview initializes later. Registering after init works too — the pipeline is
+    /// read per request.
+    /// </para>
+    /// <para>
+    /// Middleware see requests to the PAGE'S OWN ORIGIN (the bundle's virtual host in production, the dev
+    /// server in development) — see <see cref="WebView2Interceptor.ExtraFilters"/> for exactly which, and why
+    /// not everything. A route whose path also exists in the packaged bundle loses to the bundle here, so keep
+    /// interception paths off bundle paths: relying on either winner is relying on a difference between shells.
+    /// </para>
+    /// <para>
+    /// This does not replace <see cref="WebViewHostOptions.DeferredSchemes"/>, which stays for what it is good
+    /// at: a whole custom scheme of the app's own, on its own origin. The interceptor is the portable one —
+    /// the same code compiles against the mobile shells.
+    /// </para>
+    /// </summary>
+    public IWebViewInterceptor Interceptor => _interceptor;
 
     /// <summary>
     /// Obtain the environment (shared/prewarmed, or thread-own), ensure the core, then apply
@@ -266,7 +289,15 @@ public sealed class WebViewHost
         {
             core.AddWebResourceRequestedFilter(scheme.Scheme + "://*", CoreWebView2WebResourceContext.All);
         }
-        if (virtualHostPrefix is null && _options.DeferredSchemes.Count == 0) return;
+        // What the interceptor needs on top: in production its origin IS the bundle's, already filtered above;
+        // in development the page lives on the dev server instead. See WebView2Interceptor.ExtraFilters.
+        var interceptorFilters = WebView2Interceptor.ExtraFilters(IsDevelopment, _options.DevUrl);
+        foreach (var pattern in interceptorFilters)
+        {
+            core.AddWebResourceRequestedFilter(pattern, CoreWebView2WebResourceContext.All);
+        }
+        if (virtualHostPrefix is null && _options.DeferredSchemes.Count == 0 && interceptorFilters.Length == 0)
+            return;
 
         // Two serving strategies, and the split is load-bearing (the source app's measured lesson):
         //
@@ -283,13 +314,33 @@ public sealed class WebViewHost
         core.WebResourceRequested += (_, args) =>
         {
             var uri = args.Request.Uri;
+            // A cheap array-length read, and worth doing before anything else: with no route registered this
+            // handler must cost as close to nothing as possible, because it also serves the app's own bundle.
+            var intercepting = _interceptor.HasRoutes;
 
             if (virtualHostPrefix is not null && uri.StartsWith(virtualHostPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 // The shared implementation, also used by an off-screen SessionBrowser (E1) so a
                 // session can render the app's OWN packaged frontend. One copy on purpose.
-                WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
-                    _options.ResourceProvider!, uri, virtualHostPrefix, Log);
+                if (!intercepting)
+                {
+                    // Exactly the pre-D45 behaviour, one call: serve it or 404.
+                    WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
+                        _options.ResourceProvider!, uri, virtualHostPrefix, Log);
+                    return;
+                }
+
+                // TryServe rather than Serve: since D45 the interceptor shares this origin with the bundle
+                // (a relative media URL is `https://app.local/media?…`), so a path the bundle does NOT contain
+                // has to fall through to the pipeline instead of 404ing. A path it DOES contain is still served
+                // synchronously and inline — the main document never reaches the deferred path.
+                if (WebViewBundleServing.TryServe(args, _webView.CoreWebView2.Environment,
+                        _options.ResourceProvider!, uri, virtualHostPrefix, Log))
+                    return;
+
+                // The pipeline may decline too, and then WebView2 handles it — which is a 404 from a virtual
+                // host with no mapping, i.e. the same outcome by a different route.
+                ServeInterceptor(args, uri);
                 return;
             }
 
@@ -297,12 +348,35 @@ public sealed class WebViewHost
             {
                 if (uri.StartsWith(scheme.Scheme + "://", StringComparison.OrdinalIgnoreCase))
                 {
-                    ServeDeferred(args, uri, scheme);
+                    // The scheme owns its whole origin, so declining can only mean 404 — the behaviour this
+                    // path has always had.
+                    ServeAsync(args, uri, (request, _) => scheme.Handler(request), scheme.CacheControl,
+                        $"deferred scheme '{scheme.Scheme}'", answerNotFoundWhenDeclined: true);
                     return;
                 }
             }
+
+            // Anything else that matched a filter — in practice the dev server's own origin, where the
+            // interceptor is the only reason we are listening at all.
+            if (intercepting)
+            {
+                ServeInterceptor(args, uri);
+                return;
+            }
             // Not ours (e.g. a folder-mapping host) — let WebView2 handle it.
         };
+    }
+
+    /// <summary>
+    /// Hand a request to the D45 middleware pipeline. Composed HERE, once per request, so a route registered
+    /// while this one is in flight cannot half-apply; declining leaves the request to WebView2.
+    /// </summary>
+    private void ServeInterceptor(CoreWebView2WebResourceRequestedEventArgs args, string uri)
+    {
+        // Re-checked rather than assumed: the caller's HasRoutes read and this build are separate moments, and
+        // the last route can be disposed in between.
+        if (_interceptor.Build() is not { } pipeline) return;
+        ServeAsync(args, uri, pipeline, defaultCacheControl: null, "interceptor");
     }
 
     /// <summary>
@@ -339,7 +413,31 @@ public sealed class WebViewHost
         };
     }
 
-    private void ServeDeferred(CoreWebView2WebResourceRequestedEventArgs args, string uri, WebViewDeferredScheme scheme)
+    /// <summary>
+    /// Answer <paramref name="args"/> from <paramref name="handler"/> OFF the UI thread — the deferred path,
+    /// shared by <see cref="WebViewHostOptions.DeferredSchemes"/> and by the D45 interceptor pipeline because
+    /// every hard-won rule in it applies identically: snapshot the COM request before leaving the UI thread,
+    /// never leak handler exception text into a body page script can read, default the cache policy without
+    /// overriding one the handler set, add CORS and EXPOSE the headers, and marshal the response build back to
+    /// the UI thread through the one dispatcher.
+    /// </summary>
+    /// <param name="args">The intercepted request, still on the UI thread.</param>
+    /// <param name="uri">Its raw URI, already read.</param>
+    /// <param name="handler">The handler. Runs on a thread-pool thread.</param>
+    /// <param name="defaultCacheControl">
+    /// Stamped on a 2xx that does not set its own, or null for none. Null for the interceptor deliberately: a
+    /// middleware serving a local file is serving something that can change under it, and "cache for a day"
+    /// would be a policy the kit invented rather than one the app chose.
+    /// </param>
+    /// <param name="what">What to name in the log if it fails.</param>
+    /// <param name="answerNotFoundWhenDeclined">
+    /// True when this origin is EXCLUSIVELY ours (a custom scheme), so nothing declining it can mean anything
+    /// but 404. False for the interceptor, whose origin it shares with the page's own content: declining there
+    /// must complete the deferral WITHOUT a response and let WebView2 handle the request normally.
+    /// </param>
+    private void ServeAsync(CoreWebView2WebResourceRequestedEventArgs args, string uri,
+                            WebViewResourceHandler handler, string? defaultCacheControl, string what,
+                            bool answerNotFoundWhenDeclined = false)
     {
         var deferral = args.GetDeferral();
         // Snapshot the request on THIS thread: the args object belongs to the UI thread and its
@@ -348,27 +446,38 @@ public sealed class WebViewHost
 
         _ = Task.Run(async () =>
         {
-            WebViewResourceResponse response;
+            WebViewResourceResponse? response;
             try
             {
-                response = await scheme.Handler(request).ConfigureAwait(false)
-                           ?? WebViewResourceResponse.NotFound();
+                response = await handler(request, CancellationToken.None).ConfigureAwait(false);
+                if (response is null && answerNotFoundWhenDeclined) response = WebViewResourceResponse.NotFound();
             }
             catch (Exception ex)
             {
-                // No exception text in the body (P5.5 H3) — an app scheme handler's message is the most
-                // likely of all of these to carry a real path or a remote URL, and page script can read
-                // this body. The handler's failure goes to the host log instead.
-                Log(() => $"[Shenora.Windows] Deferred scheme '{scheme.Scheme}' failed for '{uri}': {ex}");
+                // No exception text in the body (P5.5 H3) — an app handler's message is the most likely of all
+                // of these to carry a real path or a remote URL, and page script can read this body. The
+                // handler's failure goes to the host log instead.
+                Log(() => $"[Shenora.Windows] {what} failed for '{uri}': {ex}");
+                // A THROW is a 404 even on a shared origin: falling through would hand a broken route back to
+                // WebView2, and the page would see a network error instead of the fixed refusal every other
+                // failure path here produces.
                 response = WebViewResourceResponse.NotFound();
+            }
+
+            if (response is null)
+            {
+                // Declined. Completing without a response is how WebView2 is told to carry on normally.
+                try { deferral.Complete(); } catch { }
+                return;
             }
 
             var headerLines = new List<string>();
             foreach (var (key, value) in response.Headers) headerLines.Add($"{key}: {value}");
-            // The scheme's Cache-Control is a DEFAULT, not an override: a handler answering 206 or 404
+            // The caller's Cache-Control is a DEFAULT, not an override: a handler answering 206 or 404
             // has its own caching story, and stamping "cache for a day" over it would be wrong.
-            if (!response.Headers.ContainsKey("Cache-Control") && response.StatusCode is >= 200 and < 300)
-                headerLines.Add($"Cache-Control: {scheme.CacheControl}");
+            if (defaultCacheControl is not null && !response.Headers.ContainsKey("Cache-Control")
+                && response.StatusCode is >= 200 and < 300)
+                headerLines.Add($"Cache-Control: {defaultCacheControl}");
 
             // CORS, by default, for the same reason the bundle path already sets it. An app scheme is a
             // DIFFERENT ORIGIN from the page that loads it (page on https://app.local, resource on

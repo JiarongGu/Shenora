@@ -69,25 +69,47 @@ internal static class WebViewBundleServing
                                IWebViewResourceProvider provider, string uri, string prefix,
                                Action<Func<string>> log)
     {
+        if (TryServe(args, environment, provider, uri, prefix, log)) return;
+
+        // The path is the page's own request, so echoing it leaks nothing — but keep the shape uniform with
+        // the failure path and let the log carry the detail.
+        log(() => $"[Shenora.Windows] 404 for bundle resource '{ResolveBundlePath(uri, prefix)}'");
+        try { args.Response = NotFound(environment); }
+        catch { /* the webview may be tearing down */ }
+    }
+
+    /// <summary>
+    /// Serve one bundle request and report whether it was ANSWERED — false meaning the bundle simply does not
+    /// contain that path, with nothing set on <paramref name="args"/>.
+    /// <para>
+    /// The distinction exists because a host may have somewhere else to look: since D45 the app shell's
+    /// interceptor middleware shares the page's own origin with the bundle, so <c>https://app.local/media?…</c>
+    /// arrives here first and must fall THROUGH rather than 404. Nothing else changes — a request the bundle
+    /// does contain is still served synchronously and inline, which is the invariant that keeps the main
+    /// document off the deferred path.
+    /// </para>
+    /// <para>
+    /// A provider that THROWS is answered 404 (true), not declined: something is broken, and quietly handing a
+    /// failing bundle path to an app's file middleware would turn a provider fault into an attempt to read the
+    /// disk for it.
+    /// </para>
+    /// </summary>
+    internal static bool TryServe(CoreWebView2WebResourceRequestedEventArgs args, CoreWebView2Environment environment,
+                                  IWebViewResourceProvider provider, string uri, string prefix,
+                                  Action<Func<string>> log)
+    {
         try
         {
             var path = ResolveBundlePath(uri, prefix);
 
             var stream = provider.GetResourceStream(path);
-            if (stream is not null)
-            {
-                var headers = $"Content-Type: {WebViewContentTypes.FromPath(path)}\n" +
-                              $"Cache-Control: {WebViewContentTypes.CacheControlFromPath(path)}\n" +
-                              "Access-Control-Allow-Origin: *";
-                args.Response = environment.CreateWebResourceResponse(stream, 200, "OK", headers);
-            }
-            else
-            {
-                // The path is the page's own request, so echoing it leaks nothing — but keep the shape
-                // uniform with the catch below and let the log carry the detail.
-                log(() => $"[Shenora.Windows] 404 for bundle resource '{path}'");
-                args.Response = NotFound(environment);
-            }
+            if (stream is null) return false;
+
+            var headers = $"Content-Type: {WebViewContentTypes.FromPath(path)}\n" +
+                          $"Cache-Control: {WebViewContentTypes.CacheControlFromPath(path)}\n" +
+                          "Access-Control-Allow-Origin: *";
+            args.Response = environment.CreateWebResourceResponse(stream, 200, "OK", headers);
+            return true;
         }
         catch (Exception ex)
         {
@@ -105,6 +127,7 @@ internal static class WebViewBundleServing
             {
                 // the webview may be tearing down
             }
+            return true;
         }
     }
 
