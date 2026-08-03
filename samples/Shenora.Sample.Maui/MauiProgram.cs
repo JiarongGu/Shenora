@@ -94,6 +94,10 @@ public static class MauiProgram
 		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,
 		// this line would not compile.
 		shenora.Services.AddModuleFacade<PortableSampleFacade>();
+		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
+		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
+		// state arrives as TEXT rather than as pixels. See PageDiagFacade.
+		shenora.Services.AddModuleFacade<PageDiagFacade>();
 		shenora.Services.AddMessageDispatcher();
 
 		// The on-device probe for Start's idempotency. It must appear exactly ONCE per process.

@@ -111,12 +111,31 @@ function log(cls, text) {
   const time = new Date().toISOString().substr(11, 8);
   logEl.insertAdjacentHTML('beforeend', `<div><span class="t">${time}</span> <span class="${cls}">${text}</span></div>`);
   logEl.scrollTop = logEl.scrollHeight;
-  // Mirrored to the console with a grep-able tag, so PAGE state can be read as TEXT rather than off a
-  // screenshot. A screenshot cannot report a number, a header or an array, and reading them off pixels is
-  // what made the DM1 media work slow. Whether this actually reaches the device's unified log (and so
-  // `dev.mjs mac log --all` / `android log`) is a per-platform question — the tag is here so it can be
-  // answered by grepping for it rather than guessed at.
-  console.log(`[PAGELOG] ${text}`);
+  mirrorToHost(text);
+}
+
+// ── page state as TEXT, not pixels ───────────────────────────────────────────────────────────────
+// Sends every page log line to the host, which writes it to the DEVICE log — so `dev.mjs mac log` and
+// `android log` can be grepped for it. A screenshot cannot report a number, a header or an array, and
+// reading those off pixels is what made the DM1 media work slow.
+//
+// ⚠ `console.log` was tried FIRST and does not work: WebKit does not forward a page's console to the
+// unified log (measured on the simulator — a tagged line, zero hits). Hence the IPC route.
+//
+// ⚠⚠ TWO recursion traps, and both bite instantly if you route this through post()/log():
+//   1. post() CALLS log(), so a mirror inside log() would log→post→log forever. This sends on the raw
+//      channel itself and never calls log().
+//   2. The host ANSWERS every request, and the response handler calls log() — so the reply to a mirrored
+//      line would mirror again, and the host would answer that. The `d`-prefixed id below is what the
+//      response handler uses to drop these silently.
+let diagSeq = 0;
+function mirrorToHost(text) {
+  try {
+    channel.post(JSON.stringify({
+      id: `d${++diagSeq}`, module: 'PAGE_DIAG', type: 'LOG',
+      payload: { text }, timestamp: new Date().toISOString(),
+    }));
+  } catch { /* the channel may not exist yet during boot — a lost diagnostic must never break the page */ }
 }
 
 /** The last-resort channel, used only when the shipped package has not been built. */
@@ -167,6 +186,10 @@ channel.subscribe((raw) => {
     }
     return;
   }
+  // Drop the host's replies to our own mirrored log lines, SILENTLY. Logging them would call log(),
+  // which mirrors, which the host would answer — an endless round trip. See mirrorToHost.
+  if (typeof msg.id === 'string' && msg.id.startsWith('d')) return;
+
   if (msg.success === false) {
     log('err', `<- FAIL ${msg.id} ${msg.error?.code}${msg.error?.parameters ? ' ' + JSON.stringify(msg.error.parameters) : ''}`);
   } else {
