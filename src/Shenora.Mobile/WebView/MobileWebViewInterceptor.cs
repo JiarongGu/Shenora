@@ -20,11 +20,9 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 {
     private readonly HybridWebView _webView;
     private readonly Action<string>? _log;
-    private readonly object _gate = new();
-    // Copy-on-write, read without a lock. The list is read on the platform's event thread while a route can
-    // be added or removed from another — the same reason SessionController's tap arrays are copy-on-write:
-    // List<T>.ToArray() reads _size then copies, so an Add in between throws or copies a torn view.
-    private volatile WebViewResourceMiddleware[] _middleware = [];
+    // The registry and composition are PORTABLE and shared with the desktop shell — see
+    // WebViewResourcePipeline for why this is not hand-rolled per shell. All that is left here is the glue.
+    private readonly WebViewResourcePipeline _pipeline = new();
     private bool _disposed;
 
     /// <param name="webView">The webview to intercept. Its <c>WebResourceRequested</c> is subscribed here.</param>
@@ -60,22 +58,14 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     /// <inheritdoc />
     public IDisposable Use(WebViewResourceMiddleware middleware)
     {
-        ArgumentNullException.ThrowIfNull(middleware);
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        lock (_gate) _middleware = [.. _middleware, middleware];
-        return new Registration(this, middleware);
-    }
-
-    private void Remove(WebViewResourceMiddleware middleware)
-    {
-        lock (_gate) _middleware = [.. _middleware.Where(m => !ReferenceEquals(m, middleware))];
+        return _pipeline.Use(middleware);
     }
 
     private void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e)
     {
-        var pipeline = _middleware;
-        if (pipeline.Length == 0) return;
+        // Null = no routes registered, so this shell costs nothing beyond the event itself.
+        if (_pipeline.Build() is not { } handler) return;
 
         WebViewResourceResponse? response;
         try
@@ -86,7 +76,7 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
                 Method = e.Method,
                 Headers = e.Headers,
             };
-            response = Run(pipeline, request);
+            response = Run(handler, request);
         }
         catch (Exception ex)
         {
@@ -115,29 +105,18 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     }
 
     /// <summary>
-    /// Compose the pipeline and run it.
+    /// Run the composed pipeline.
     /// <para>
-    /// ⚠ Resolved SYNCHRONOUSLY, and that is forced rather than chosen: both platforms need the status line
-    /// and headers at the moment the event returns, so the metadata cannot be awaited. Laziness belongs in
-    /// the BODY — the response carries a <c>Stream</c> the platform reads afterwards — which is why
-    /// middleware must not do slow work before returning. Documented on
-    /// <see cref="IWebViewInterceptor.Use"/>.
+    /// ⚠ Resolved SYNCHRONOUSLY, and that is forced rather than chosen: both mobile platforms need the status
+    /// line and headers at the moment the event returns, so the metadata cannot be awaited. (The desktop shell
+    /// has a deferral and therefore does NOT have to do this — the one real difference between the two
+    /// implementations of this contract.) Laziness belongs in the BODY — the response carries a
+    /// <c>Stream</c> the platform reads afterwards — which is why middleware must not do slow work before
+    /// returning. Documented on <see cref="IWebViewInterceptor.Use"/>.
     /// </para>
     /// </summary>
-    private static WebViewResourceResponse? Run(WebViewResourceMiddleware[] pipeline,
-                                                WebViewResourceRequest request)
-    {
-        // Build the chain back-to-front so index 0 runs first.
-        WebViewResourceHandler next = static (_, _) => Task.FromResult<WebViewResourceResponse?>(null);
-        for (var i = pipeline.Length - 1; i >= 0; i--)
-        {
-            var middleware = pipeline[i];
-            var downstream = next;
-            next = (req, token) => middleware(req, downstream, token);
-        }
-
-        return next(request, CancellationToken.None).GetAwaiter().GetResult();
-    }
+    private static WebViewResourceResponse? Run(WebViewResourceHandler handler, WebViewResourceRequest request)
+        => handler(request, CancellationToken.None).GetAwaiter().GetResult();
 
     private void Log(Func<string> message) => AppCallback.Log(_log, message);
 
@@ -148,20 +127,6 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         _disposed = true;
         try { _webView.WebResourceRequested -= OnWebResourceRequested; }
         catch (Exception ex) { Log(() => $"[Shenora.Mobile] Interceptor dispose: {ex.Message}"); }
-        lock (_gate) _middleware = [];
-    }
-
-    /// <summary>The handle returned by <see cref="Use"/>; disposing it removes just that middleware.</summary>
-    private sealed class Registration(MobileWebViewInterceptor owner, WebViewResourceMiddleware middleware)
-        : IDisposable
-    {
-        private bool _removed;
-
-        public void Dispose()
-        {
-            if (_removed) return;
-            _removed = true;
-            owner.Remove(middleware);
-        }
+        _pipeline.Clear();
     }
 }

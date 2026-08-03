@@ -322,6 +322,9 @@ Interceptor
 Middleware
 Handler
 Delivery
+# `Pipeline` (2026-08-04) is the composition itself, now a public type because all three shells share it
+# rather than hand-rolling the back-to-front chain build three times.
+Pipeline
 # Core resource serving, re-layered 2026-08-04 (D45). `Derived` names WHAT is cached (anything derived
 # from a source file) rather than the feature that caches it — the family shares this helper.
 Content

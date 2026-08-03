@@ -671,6 +671,12 @@ delegate Shenora.Core.WebViewResourceMiddleware
   public virtual System.IAsyncResult BeginInvoke(Shenora.Core.WebViewResourceRequest request, Shenora.Core.WebViewResourceHandler next, System.Threading.CancellationToken cancellationToken, System.AsyncCallback callback, object object)
   public virtual System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse> EndInvoke(System.IAsyncResult result)
   public virtual System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse> Invoke(Shenora.Core.WebViewResourceRequest request, Shenora.Core.WebViewResourceHandler next, System.Threading.CancellationToken cancellationToken)
+sealed class Shenora.Core.WebViewResourcePipeline
+  public .ctor()
+  public Shenora.Core.WebViewResourceHandler? Build()
+  public System.IDisposable Use(Shenora.Core.WebViewResourceMiddleware middleware)
+  public bool IsEmpty { get; }
+  public void Clear()
 sealed class Shenora.Core.WebViewResourceRequest
   public required System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
   public required System.Uri Uri { get; init; }
