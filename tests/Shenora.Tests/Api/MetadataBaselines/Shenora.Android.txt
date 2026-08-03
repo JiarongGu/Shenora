@@ -45,3 +45,8 @@ Shenora.Mobile.MobileUiInteraction
 Shenora.Mobile.MobileUrlLauncher
   method .ctor
   method OpenUrl
+Shenora.Mobile.MobileWebViewInterceptor
+  method .ctor
+  method Dispose
+  method Use
+  property RangeDelivery

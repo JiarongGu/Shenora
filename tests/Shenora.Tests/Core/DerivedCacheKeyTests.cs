@@ -1,21 +1,21 @@
-using Shenora.Media;
+using Shenora.Core;
 
-namespace Shenora.Tests.Media;
+namespace Shenora.Tests.Core;
 
 /// <summary>
 /// The cache key all three surveyed implementations arrived at independently. The tests that matter are
 /// the ones a path-only key would pass — because a path-only key is the bug, and it looks fine until a
 /// user replaces a file.
 /// </summary>
-public class MediaCacheKeyTests
+public class DerivedCacheKeyTests
 {
     private static readonly DateTime Monday = new(2026, 8, 3, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
     public void The_same_source_produces_the_same_key()
     {
-        Assert.Equal(MediaCacheKey.For("C:/media/a.mkv", 100, Monday),
-                     MediaCacheKey.For("C:/media/a.mkv", 100, Monday));
+        Assert.Equal(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
+                     DerivedCacheKey.For("C:/media/a.mkv", 100, Monday));
     }
 
     /// <summary>
@@ -26,8 +26,8 @@ public class MediaCacheKeyTests
     [Fact]
     public void Replacing_the_file_changes_the_key_even_at_the_same_path_and_size()
     {
-        var before = MediaCacheKey.For("C:/media/a.mkv", 100, Monday);
-        var after = MediaCacheKey.For("C:/media/a.mkv", 100, Monday.AddSeconds(1));
+        var before = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday);
+        var after = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday.AddSeconds(1));
 
         Assert.NotEqual(before, after);
     }
@@ -39,8 +39,8 @@ public class MediaCacheKeyTests
     [Fact]
     public void A_changed_length_changes_the_key_even_when_the_mtime_did_not_move()
     {
-        Assert.NotEqual(MediaCacheKey.For("C:/media/a.mkv", 100, Monday),
-                        MediaCacheKey.For("C:/media/a.mkv", 101, Monday));
+        Assert.NotEqual(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
+                        DerivedCacheKey.For("C:/media/a.mkv", 101, Monday));
     }
 
     /// <summary>
@@ -50,9 +50,9 @@ public class MediaCacheKeyTests
     [Fact]
     public void Different_variants_of_one_source_never_collide()
     {
-        var mp4 = MediaCacheKey.For("C:/media/a.mkv", 100, Monday, "mp4");
-        var thumb = MediaCacheKey.For("C:/media/a.mkv", 100, Monday, "thumb-720");
-        var none = MediaCacheKey.For("C:/media/a.mkv", 100, Monday);
+        var mp4 = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday, "mp4");
+        var thumb = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday, "thumb-720");
+        var none = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday);
 
         Assert.NotEqual(mp4, thumb);
         Assert.NotEqual(mp4, none);
@@ -68,16 +68,16 @@ public class MediaCacheKeyTests
     [InlineData(@"c:\Media\a.MKV")]
     public void Separator_and_case_variants_of_one_path_share_a_key(string spelling)
     {
-        Assert.Equal(MediaCacheKey.For("C:/media/a.mkv", 100, Monday),
-                     MediaCacheKey.For(spelling, 100, Monday));
+        Assert.Equal(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
+                     DerivedCacheKey.For(spelling, 100, Monday));
     }
 
     /// <summary>Different files must not share an entry, however similar their names.</summary>
     [Fact]
     public void Different_paths_produce_different_keys()
     {
-        Assert.NotEqual(MediaCacheKey.For("C:/media/a.mkv", 100, Monday),
-                        MediaCacheKey.For("C:/media/b.mkv", 100, Monday));
+        Assert.NotEqual(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
+                        DerivedCacheKey.For("C:/media/b.mkv", 100, Monday));
     }
 
     /// <summary>
@@ -87,8 +87,8 @@ public class MediaCacheKeyTests
     [Fact]
     public void The_same_instant_in_another_kind_gives_the_same_key()
     {
-        var utc = MediaCacheKey.For("C:/media/a.mkv", 100, Monday);
-        var asLocal = MediaCacheKey.For("C:/media/a.mkv", 100, Monday.ToLocalTime());
+        var utc = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday);
+        var asLocal = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday.ToLocalTime());
 
         Assert.Equal(utc, asLocal);
     }
@@ -96,7 +96,7 @@ public class MediaCacheKeyTests
     [Fact]
     public void The_key_is_filesystem_safe_and_a_fixed_length()
     {
-        var key = MediaCacheKey.For(@"C:\media\a file with spaces & 中文.mkv", 100, Monday, "mp4");
+        var key = DerivedCacheKey.For(@"C:\media\a file with spaces & 中文.mkv", 100, Monday, "mp4");
 
         Assert.Equal(16, key.Length);
         Assert.True(key.All(char.IsAsciiHexDigitLower), key);
@@ -105,7 +105,7 @@ public class MediaCacheKeyTests
     [Fact]
     public void An_empty_path_or_negative_length_is_refused_rather_than_hashed()
     {
-        Assert.Throws<ArgumentException>(() => MediaCacheKey.For("  ", 100, Monday));
-        Assert.Throws<ArgumentOutOfRangeException>(() => MediaCacheKey.For("C:/a.mkv", -1, Monday));
+        Assert.Throws<ArgumentException>(() => DerivedCacheKey.For("  ", 100, Monday));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DerivedCacheKey.For("C:/a.mkv", -1, Monday));
     }
 }

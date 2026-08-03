@@ -3,8 +3,6 @@
     <Project Path="src/Shenora.Core/Shenora.Core.csproj" />
     <Project Path="src/Shenora.Ipc/Shenora.Ipc.csproj" />
     <Project Path="src/Shenora.Media/Shenora.Media.csproj" />
-    <Project Path="src/Shenora.Media.Android/Shenora.Media.Android.csproj" />
-    <Project Path="src/Shenora.Media.iOS/Shenora.Media.iOS.csproj" />
     <!-- The Android face of the mobile shell. In the gate deliberately (owner, 2026-08-02): a package
          no gate compiles is the objection this repo raises against every ungated artifact. The cost is
          real and documented in devtools/README.md — building this repo now needs the maui-android

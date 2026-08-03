@@ -9,6 +9,8 @@ enum Shenora.Core.ClaimMode (int)
   public const Shenora.Core.ClaimMode Exclusive = 0
   public const Shenora.Core.ClaimMode Shared = 1
   public int value__
+static class Shenora.Core.DerivedCacheKey
+  public static string For(string path, long length, System.DateTime lastWriteUtc, string variant = "")
 sealed class Shenora.Core.EventBus : Shenora.Core.IEventBus
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.EventBus>? logger = null)
   public System.Threading.Tasks.Task EmitAsync(Shenora.Core.EventMessage message)
@@ -635,6 +637,26 @@ struct Shenora.Core.WebViewByteRange : System.IEquatable<Shenora.Core.WebViewByt
   public static bool op_Equality(Shenora.Core.WebViewByteRange left, Shenora.Core.WebViewByteRange right)
   public static bool op_Inequality(Shenora.Core.WebViewByteRange left, Shenora.Core.WebViewByteRange right)
   public void Deconstruct(out long From, out long To)
+static class Shenora.Core.WebViewContentTypes
+  public static string CacheControlFromPath(string path)
+  public static string FromPath(string path)
+sealed class Shenora.Core.WebViewFileOptions : System.IEquatable<Shenora.Core.WebViewFileOptions>
+  public .ctor()
+  public Shenora.Core.WebViewFileOptions <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, string> Resolve { get; init; }
+  public System.Func<string, string>? ContentType { get; init; }
+  public bool Equals(Shenora.Core.WebViewFileOptions? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.WebViewFileOptions? left, Shenora.Core.WebViewFileOptions? right)
+  public static bool op_Inequality(Shenora.Core.WebViewFileOptions? left, Shenora.Core.WebViewFileOptions? right)
+static class Shenora.Core.WebViewFiles
+  public static Shenora.Core.WebViewResourceResponse Serve(Shenora.Core.WebViewResourceRequest request, string path, string contentType, Shenora.Core.WebViewRangeDelivery delivery)
+  public static string? ResolveContained(string? requestedPath, System.Collections.Generic.IReadOnlyList<string> allowedRoots)
+static class Shenora.Core.WebViewInterceptorExtensions
+  public static System.IDisposable UseFiles(Shenora.Core.IWebViewInterceptor interceptor, Shenora.Core.WebViewFileOptions options)
 enum Shenora.Core.WebViewRangeDelivery (int)
   public const Shenora.Core.WebViewRangeDelivery Sliced = 0
   public const Shenora.Core.WebViewRangeDelivery Unsliced = 1

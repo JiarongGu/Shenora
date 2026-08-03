@@ -63,8 +63,8 @@ public class MetadataSurfaceTests
         {
             { "Shenora.Android", "net10.0-android" },
             { "Shenora.iOS", "net10.0-ios" },
-            { "Shenora.Media.Android", "net10.0-android" },
-            { "Shenora.Media.iOS", "net10.0-ios" },
+            // Shenora.Media.Android/.iOS were here for one commit and are gone (D45): interception moved to
+            // the shells and generic serving to Core, leaving them nothing to hold.
         };
 
     /// <summary>

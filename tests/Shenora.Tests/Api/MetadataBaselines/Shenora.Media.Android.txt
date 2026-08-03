@@ -1,3 +1,0 @@
-Shenora.Media.MediaWebViewRoute
-  method TryServe
-  property PlatformBodyMode

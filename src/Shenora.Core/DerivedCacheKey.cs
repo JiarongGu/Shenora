@@ -2,10 +2,17 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Shenora.Media;
+namespace Shenora.Core;
 
 /// <summary>
-/// The cache key for anything DERIVED from a media file — a converted stream, a probe result, a thumbnail.
+/// The cache key for anything DERIVED from a source file — a converted stream, a probe result, a thumbnail,
+/// a rendered sheet.
+/// <para>
+/// MOVED HERE FROM <c>Shenora.Media</c> on 2026-08-04 (D45) and renamed off "Media". Content middlewares are
+/// a FAMILY — <c>Shenora.Media</c> today, <c>.Image</c> and <c>.Excel</c> foreseen — and a helper they all
+/// share cannot live inside one member: <c>.Image</c> would have to depend on media to cache a thumbnail.
+/// Nothing about identity-plus-mtime is media-specific.
+/// </para>
 /// <para>
 /// <b>Identity plus mtime plus length, never a path alone.</b> All three surveyed implementations arrived
 /// at that independently, with different encodings and the same rule: replaced source bytes must produce a
@@ -24,7 +31,7 @@ namespace Shenora.Media;
 /// integrity is the question the kit already has the tool — <c>UpdateManifest</c>'s per-file SHA-256.
 /// </para>
 /// </summary>
-public static class MediaCacheKey
+public static class DerivedCacheKey
 {
     /// <summary>
     /// A stable, filesystem-safe key for a source file's derived artefact.

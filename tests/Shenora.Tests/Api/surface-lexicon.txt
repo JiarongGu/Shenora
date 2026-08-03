@@ -313,13 +313,6 @@ Result
 Stream
 Info
 Kind
-# Serving added 2026-08-03 with the range server. `Serving`/`Server`/`Access`/`Body` all name mechanisms:
-# `MediaBodyMode` in particular names a measured PLATFORM fact (whether the handler or the platform applies
-# the range offset — D44), not a preference.
-Serving
-Server
-Access
-Body
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher
@@ -329,3 +322,11 @@ Interceptor
 Middleware
 Handler
 Delivery
+# Core resource serving, re-layered 2026-08-04 (D45). `Derived` names WHAT is cached (anything derived
+# from a source file) rather than the feature that caches it — the family shares this helper.
+Content
+Types
+Derived
+Files
+Options
+Extensions

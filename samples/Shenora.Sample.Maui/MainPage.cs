@@ -42,10 +42,6 @@ public sealed class MainPage : ContentPage
 			HybridRoot = "wwwroot",
 			DefaultFile = "index.html",
 		};
-		// DM1: the media route. Subscribed here rather than in OnLoaded because a resource request can
-		// arrive as soon as the page has markup, and a handler attached later would silently miss the
-		// first one — which reads as "media does not reach the seam".
-		_webView.WebResourceRequested += _media.OnWebResourceRequested;
 		Content = _webView;
 
 		Loaded += OnLoaded;
@@ -82,7 +78,7 @@ public sealed class MainPage : ContentPage
 				//
 				// DeviceInfo rather than an #if: MAUI already knows, and this file is shared source.
 				Name = DeviceInfo.Current.Platform.ToString().ToLowerInvariant(),
-				Capabilities = [ShellCapability.FilePicker],
+				Capabilities = [ShellCapability.FilePicker, ShellCapability.LocalFiles],
 			},
 			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
 			Log = MauiProgram.Log,
@@ -95,7 +91,7 @@ public sealed class MainPage : ContentPage
 		// unhandled UI-thread exception rather than a failed copy.
 		_ = Task.Run(async () =>
 		{
-			try { await _media.PrepareAsync(); }
+			try { await _media.PrepareAsync(_webView); }
 			catch (Exception ex) { MauiProgram.Log($"media: staging FAILED — {ex}"); }
 		});
 
@@ -115,6 +111,7 @@ public sealed class MainPage : ContentPage
 	private void OnUnloaded(object? sender, EventArgs e)
 	{
 		MauiProgram.Log("page unloaded — disposing the bridge");
+		_media.Dispose();
 		_bridge?.Dispose();
 		_bridge = null;
 	}

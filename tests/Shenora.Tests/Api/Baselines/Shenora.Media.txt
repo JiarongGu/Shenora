@@ -1,12 +1,3 @@
-static class Shenora.Media.MediaAccess
-  public static bool IsRemoteAllowed(System.Uri? source, Shenora.Media.MediaServingOptions options)
-  public static string? ResolveLocal(string? requestedPath, Shenora.Media.MediaServingOptions options)
-enum Shenora.Media.MediaBodyMode (int)
-  public const Shenora.Media.MediaBodyMode Sliced = 0
-  public const Shenora.Media.MediaBodyMode Unsliced = 1
-  public int value__
-static class Shenora.Media.MediaCacheKey
-  public static string For(string path, long length, System.DateTime lastWriteUtc, string variant = "")
 enum Shenora.Media.MediaPlaybackAction (int)
   public const Shenora.Media.MediaPlaybackAction Direct = 0
   public const Shenora.Media.MediaPlaybackAction Remux = 1
@@ -57,20 +48,6 @@ sealed class Shenora.Media.MediaProbeResult : System.IEquatable<Shenora.Media.Me
   public static bool op_Equality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
   public static bool op_Inequality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
   public string? Container { get; init; }
-static class Shenora.Media.MediaRangeServer
-  public static Shenora.Core.WebViewResourceResponse Serve(Shenora.Core.WebViewResourceRequest request, string path, string contentType, Shenora.Media.MediaServingOptions options)
-sealed class Shenora.Media.MediaServingOptions : System.IEquatable<Shenora.Media.MediaServingOptions>
-  public .ctor()
-  public Shenora.Media.MediaBodyMode BodyMode { get; init; }
-  public Shenora.Media.MediaServingOptions <Clone>$()
-  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
-  public System.Func<System.Uri, bool>? AllowRemote { get; init; }
-  public bool Equals(Shenora.Media.MediaServingOptions? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Media.MediaServingOptions? left, Shenora.Media.MediaServingOptions? right)
-  public static bool op_Inequality(Shenora.Media.MediaServingOptions? left, Shenora.Media.MediaServingOptions? right)
 sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.MediaStreamInfo>
   public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null)
   public Shenora.Media.MediaStreamInfo <Clone>$()
