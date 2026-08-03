@@ -405,7 +405,13 @@ platform cannot inherit a guess. They reference `Shenora.Media` and the MAUI SDK
 packages**: D40 left that edge "to determine when building", and built, it does not exist. The D41 tripwire
 is armed and sabotage-verified (`NU1201`, cascading to the MAUI sample)._
 
-- [ ] **`Shenora.Media.Windows` — deliberately NOT created, and it may never need to be.** The desktop
+_**The mobile media packages are VERIFIED WORKING on both devices** (2026-08-04, owner asked): served
+through `MediaWebViewRoute.TryServe`, `[Unsliced]` on Android and `[Sliced]` on iOS chosen by the PACKAGE —
+there is no `mode=` in either URL, so the app does not choose. Android: 3 requests, no loop,
+`duration=60.00s`, `seeked -> 48.00s`. iOS: many small exact windows, `seeked -> 48.04s`. The gap that check
+found was real — the packages packed while their entry point had never run._
+
+- [ ] **`Shenora.Media.Windows` — NOT created (owner: "no need … for now"), and it may never need to be.** The desktop
   shell already serves ranges correctly through `WebViewDeferredScheme` + `WebViewResourceResponse`, which
   is where the 206/`Content-Range` logic was proven first. A `Media.Windows` package would hold a WebView2
   args adapter and the `Sliced` constant — i.e. it would duplicate what `Shenora.Windows` already does. Add
