@@ -247,7 +247,7 @@ player it use on mobile also has this logic"*. This is Sonora's strategy general
 turned up the single most consequential fact in this document.
 
 **THE SEAM EXISTS ON MOBILE, and this repo's own docs said it did not.** `HybridWebView` in .NET 10 has
-`WebResourceRequested`, and the args carry everything a ranged media response needs — verified by
+`WebResourceRequested`, and the args carry the whole REQUEST side — verified by
 compiling, not read from documentation:
 
 | Member | Type / shape |
@@ -257,6 +257,7 @@ compiling, not read from documentation:
 | `e.SetResponse(...)` | `(int status, string reason, string contentType, Stream)` — **206 accepted** |
 | `e.Handled` | claim the request |
 | `e.PlatformArgs` | escape hatch to the native args |
+| **response headers** | ✗ **NOT AVAILABLE** — `SetResponse` takes 4 arguments and there is no `ResponseHeaders` |
 
 `ADOPTION.md` told adopters the opposite ("`HybridWebView` has no request-interception seam… deferred
 schemes have no role"), which would have made an adopter design around a limitation that no longer
@@ -264,6 +265,28 @@ exists. Corrected. And note the shape: `URI + headers in → status + content-ty
 **exactly** `WebViewDeferredScheme`'s existing contract, which the kit already ships with
 `WebViewByteRange.TryParse` and `WebViewResourceResponse.PartialContent`. The abstraction is already
 right; it is only Windows-only by accident of when it was written.
+
+⚠ **BUT THE RESPONSE SIDE IS INCOMPLETE, and an earlier revision of this section over-claimed it as
+"everything a ranged media response needs". It is not.** There is no way to set a response header through
+the portable seam, and three consequences follow — all verified by compiling, none of them cosmetic:
+
+1. **A 206 is expressible as a STATUS but not as a semantic.** `Content-Range` is mandatory on a partial
+   response; without it the reply is malformed and a media element is entitled to reject it. So
+   `WebViewResourceResponse.PartialContent` cannot be honoured through this seam as it stands.
+2. **No `Accept-Ranges: bytes` on the 200**, which `webview2-hosting.md` already records as the failure
+   that makes a player not even ATTEMPT a seek — "indistinguishable from seeking is broken".
+3. **No CORS headers**, so a handler serving a different origin to the page cannot be read by script.
+
+**What still works, and it is most of the value:** serving a WHOLE resource with a status and a content
+type — the packaged bundle, generated images, an exported file, progressive playback of a stream nobody
+scrubs. **What does not work: SEEKING.** So "transcode and hand it to the webview" (§0d) holds for
+playback that starts at zero and does not hold for a scrubbable player, on mobile, today.
+
+**Three ways out, and the choice belongs to D2 rather than here.** `e.PlatformArgs` reaches the native
+args (Android's `WebResourceResponse` does take headers), which makes it a per-platform implementation
+detail rather than a dead end — the shape `Shenora.Media.{Platform}` exists for. Or the native surface
+(§0c), which sidesteps HTTP semantics entirely and is where the platform decodes for free anyway. Or a
+real HTTP origin, which is what Sonora already has and why it is unaffected by any of this.
 
 **So the proposal works on all three shells, with no HTTP server.** That is a genuinely better answer
 than a native surface for the common case, and it keeps the frontend a `<video>` tag — the owner's
@@ -423,11 +446,45 @@ is how much of it you must ship — and that is where the decision layer pays fo
 | **Desktop, remux-only** | small | Container fixes need demux+mux, no decoders — and an ffmpeg built without encoders avoids the GPL components entirely |
 | **Desktop, broad codec support** | ~25–30 MB/arch | core + avcodec + a pruned plugin set |
 
-⚠ **Not verified here, and each needs checking before it is relied on:** the Android and iOS native
-package sizes (not restored — Android carries 4 ABIs, so expect it to be the largest); and the licence
-position per build. LibVLC is LGPL 2.1+ but some plugins are GPL, and ffmpeg is LGPL only when built
-without its GPL parts (x264/x265 are encoders, so a decode/remux-only build is the easier case). **The
-kit must not make that choice for a consumer** — which is the other reason §2 keeps engines out.
+### §4a PER-ARCH SHIPPED BYTES — all three measured
+
+The number that decides adoption is not the package size, it is what one architecture adds to a shipped
+app. Measured 2026-08-03 by restoring each native package:
+
+| Platform / arch | Shipped per arch | Composition |
+|---|---|---|
+| **Android arm64-v8a** | **42.2 MB** | `libvlc.so` 41.3 + `libc++_shared.so` 0.9 |
+| Android armeabi-v7a | 38.6 MB | 38.1 + 0.5 |
+| Android x86_64 | 50.0 MB | emulator only |
+| **iOS arm64 (device)** | **33.5 MB** | the `DynamicMobileVLCKit` device slice |
+| iOS simulator | 75.9 MB | fat arm64 + x86_64 — **never ships** |
+| **Windows x64** | **~100 MB raw → ~25–30 MB pruned** | plugins 96.3 + core 2.9 + lua/hrtfs 0.9. Excludes ~1.8 MB of `include/` and `.lib` — build-time only |
+
+⚠ **Two figures in an earlier revision of this doc were wrong and are corrected above.** The iOS DEVICE
+slice is 33.5 MB, not 76 — device and simulator were the wrong way round, and the simulator is the larger
+because it is fat. And the Windows 101.8 MB included headers and import libraries that never ship.
+
+**THE INSIGHT IS IN THE COMPARISON: once measured like with like, LibVLC is ~30–42 MB per arch on every
+platform.** The mobile builds are ALREADY linked and pruned, which is why they are 33–42 MB rather than
+100; Windows only looks worse because its package ships the whole plugin set as loose DLLs, and pruned to
+a local-playback set it lands in the same band. So the figure to plan against is **~30–42 MB per arch if
+you ship an engine, against 0 MB on either mobile platform if you use the OS one.**
+
+An arm64-only Android app pays 42 MB; adding armv7 makes a universal APK 81 MB, though an App Bundle
+delivers one ABI per device so the DOWNLOAD stays ~42 MB. A static `MobileVLCKit` on iOS would link only
+what is used and come in under 33.5 MB.
+
+**And for scale, the kit itself is noise:** all five current packages total **459 KB**
+(`Windows` 194, `Core` 123, `Ipc` 89, `Android` 26, `iOS` 26). Four more `Media*` packages add tens of KB.
+The bundle question is entirely the engine, never the kit — which is the strongest argument for D40's
+split: `Shenora.Media.Android`/`.iOS` must ship ~26 KB like their shell counterparts and take **no engine
+dependency at all**, because paying 42 MB to duplicate hardware decoders the OS already exposes — and
+then running them in software, on battery — is the wrong trade twice over.
+
+⚠ **Still not verified, and needed before relying on it:** the licence position per build. LibVLC is
+LGPL 2.1+ but some plugins are GPL, and ffmpeg is LGPL only when built without its GPL parts (x264/x265
+are encoders, so a decode/remux-only build is the easier case). **The kit must not make that choice for a
+consumer** — the other reason §2 keeps engines out.
 
 ## §5 Other open questions this harvest does not answer
 
