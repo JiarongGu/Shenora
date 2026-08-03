@@ -59,6 +59,25 @@ public static class ShellCapability
     public const string Tray = "tray";
 
     /// <summary>
+    /// The host can serve LOCAL FILES to the page through an <see cref="IWebViewInterceptor"/> — media,
+    /// images, documents, generated exports.
+    /// <para>
+    /// A page needs this because it cannot reach a local file itself on any shell: <c>file://</c> is blocked
+    /// from a virtual-host origin, and would be the wrong answer regardless. So a page that wants to render
+    /// local content asks for this and falls back — to an external handler, or to hiding the control —
+    /// rather than showing a player that can never load.
+    /// </para>
+    /// <para>
+    /// ⚠ It says the host CAN serve, not WHAT it will serve: the routes, the payload shape and the allowed
+    /// roots are all the app's. And note what a page must never be told here — the URL SCHEME and the range
+    /// delivery. A relative url already resolves to the right scheme on each shell by itself, and
+    /// <see cref="WebViewRangeDelivery"/> is a host-side fact; advertising either would put the page back to
+    /// branching on platform, which is exactly what this handshake exists to stop (D36).
+    /// </para>
+    /// </summary>
+    public const string LocalFiles = "localFiles";
+
+    /// <summary>
     /// The exception an unsupported capability throws. <paramref name="capability"/> is what the
     /// caller asked for, <paramref name="shell"/> is the host that cannot do it, and
     /// <paramref name="alternative"/> — when there is one — is what to do instead, because an error

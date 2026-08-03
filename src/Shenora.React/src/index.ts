@@ -86,3 +86,6 @@ export {
   type DevIpcEntry,
   type DevEventEntry,
 } from './devInterceptor.js';
+// Addressing local content the page cannot reach itself. A pure function, not a hook — building the URL
+// needs no React, and a `useMediaSource` can follow if an adopter wants load/error state.
+export { mediaUrl, encodeMediaPayload, decodeMediaPayload } from './media.js';

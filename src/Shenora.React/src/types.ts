@@ -116,6 +116,19 @@ export const ShellCapabilities = {
   savePicker: 'savePicker',
   secondaryWindows: 'secondaryWindows',
   tray: 'tray',
+  /**
+   * The host can serve LOCAL FILES to this page — media, images, documents, exports — through its resource
+   * interceptor. Pair it with {@link mediaUrl}.
+   *
+   * A page cannot reach a local file itself on any shell (`file://` is blocked from a virtual-host origin,
+   * and would be the wrong answer anyway), so branch on this and fall back rather than rendering a player
+   * that can never load.
+   *
+   * ⚠ It says the host CAN serve, not what: routes, payload shape and allowed roots are the app's. And it
+   * deliberately tells you nothing about the URL SCHEME — {@link mediaUrl} is relative precisely so each
+   * shell supplies its own, and knowing it would put you back to branching on platform.
+   */
+  localFiles: 'localFiles',
 } as const;
 
 /** The response envelope the host returns for an {@link IpcRequest}. */

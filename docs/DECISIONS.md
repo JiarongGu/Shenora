@@ -1112,3 +1112,51 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     for this needs the control pair the probe ships (same content, `moov` at the front vs at the end), and
     the honest instrument is an explicit `fetch` with a `Range` asserting the returned BYTES, not a
     `<video>` element, which can only ever report "no supported source".
+
+- **D45 — resource interception is a MIDDLEWARE PIPELINE in `Shenora.Core`, implemented by each SHELL, with
+  content handled by a FAMILY of opt-in middleware packages (`Shenora.Media`, later `.Image`, `.Excel`).
+  Re-layers D40 and supersedes its `Media.{Platform}` set.** (Owner, 2026-08-04, reached in five steps —
+  each widened the scope, and the last two settled the shape.)
+  - **The steps, because the order is the argument:** (1) *"the interceptor interface should live in the core,
+    and the implementation should live in mobile.ios/android, and media just taking care of media logic"*;
+    (2) *"desktop will also have issue with access local folder/files so the interceptor is needed"* — not a
+    mobile workaround; (3) *"even file access too"* — media is ONE CASE; (4) *"it's more like a middleware
+    design if you think this way"*; (5) *"lets do media since we can have .Image .Excel later"*.
+  - **Interception is a SHELL capability.** It configures a webview, so `IWebViewInterceptor` is a contract in
+    `Shenora.Core` and each of `Shenora.Windows`/`.Android`/`.iOS` implements it. A feature depends on the
+    contract and stays portable — D19/D20's law, applied to resources.
+  - **Every shell needs it, which is what makes it Core's business rather than mobile's.** A page cannot reach
+    a local file on ANY shell: `file://` is blocked from a virtual-host origin and would be wrong anyway,
+    since it hands over the whole filesystem. So an interceptor is how local content reaches a page at all,
+    and one contract means **path containment is written once instead of three times** — a hand-rolled
+    containment check being the exact defect this kit already had to fix (`%2e%2e%2f`, and `Path.Combine`
+    discarding its first argument on a rooted path).
+  - **MIDDLEWARE, not a list of handlers, because the cross-cutting concerns are the point.** Containment, the
+    SSRF guard, a cache, logging what an opaque payload decoded to, a metric — each WRAPS the next rather than
+    terminating. A "first non-null wins" list cannot express any of them. **And the kit already made this
+    choice once:** `IMessageDispatcher` is a composable middleware pipeline over one transport, so this is
+    that shape applied to RESOURCES instead of messages, and the precedent, vocabulary and review instincts
+    all transfer.
+  - **Content is a FAMILY of opt-in middlewares, one per KIND** — `Shenora.Media` today, `Shenora.Image` and
+    `Shenora.Excel` foreseen. Each is a layer an app adds to the pipeline; none is required. This is what
+    keeps `Shenora.Media` the right name: it covers audio AND video (the frequent real failure is AC-3
+    *audio*), and `Shenora.Video` would be wrong on the first day.
+  - **⚠ It follows that anything the FAMILY shares belongs in Core, not in a member.** `MediaCacheKey` keys any
+    derived artefact — a thumbnail, a probe result, a rendered sheet — so it moves to `Shenora.Core` beside
+    `Files`. A shared helper living in `.Media` would make `.Image` depend on media to cache a thumbnail.
+  - **`Shenora.Media.Android` and `Shenora.Media.iOS` are DELETED** (8 package ids → 6). With interception in
+    the shells and generic serving in Core, they held only the platform's range-delivery constant — which is
+    a property of the INTERCEPTION, so it became `Core.WebViewRangeDelivery` and the packages had nothing
+    left. **Free: all three `shenora.media*` ids were unpublished (verified 404) when this was decided.**
+    They return only if genuinely platform-specific media work lands — the frame-grab pixels D43 deferred.
+  - **What D40 got right and what it did not.** Right: media is optional and must not tax `Shenora.Core`'s
+    consumers. Wrong in one clause — it argued the split on DEPENDENCIES ("an image codec or a container
+    parser is real shipped bytes"), and `Shenora.Media` ships neither; it is pure functions and costs a
+    consumer nothing. The argument that survives is **vocabulary**: an app that never plays media should not
+    carry containers and codecs on its surface. Weaker than claimed, still sound — and D43's deferred
+    thumbnail work would restore the original one.
+  - **The page's half is ONE npm package for every shell** (D36): `mediaUrl(payload)` returns a RELATIVE
+    `<route>?<base64url>`, and `ShellCapability.LocalFiles` says whether the host can serve at all.
+    ⚠ The handshake must advertise NEITHER the url scheme NOR the range delivery — a page told "you are on
+    iOS, use `app://`" is branching on platform again, and it is unnecessary because a relative url already
+    resolves correctly on each shell (D44's matrix).

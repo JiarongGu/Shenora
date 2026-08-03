@@ -437,9 +437,26 @@ nuget.org, verified — so it costs nothing but the edit):
 - [ ] `Shenora.Media` keeps: `MediaPlaybackPlanner`, `MediaProbeResult`/`MediaStreamInfo`,
       `MediaPlaybackPolicy`, `MediaCacheKey`.
 
+**⚠ CORE MUST SERVE MEDIA ON ITS OWN — the media package is an ADDITION, not a prerequisite** (owner,
+2026-08-04: *"the interceptor without media bundle should still allow to load video/image/audio just by
+default; if the platform does not support it just go error"* … *"and media bundle adds a middleware to
+this"*).
+
+So `Shenora.Core` ships a **working file middleware**, not only the contract: route + allowed roots →
+containment → ranges → content type. With that alone, `<video src=…>`, `<audio>` and `<img>` all work for
+anything the platform can already decode, and a file it cannot decode simply errors in the element — which
+is the honest outcome and needs no kit code to produce. `Shenora.Media` then adds a middleware for exactly
+the cases that default cannot serve: deciding playability, and later converting. **That ordering is what
+makes the family opt-in rather than load-bearing** — an app serving a PDF or a JPEG never takes a media
+dependency.
+
+- [ ] Core needs a content-type map for this. ⚠ One already exists as `WebViewContentTypes` in
+  `Shenora.Windows` — check before writing a second (`extraction-sources.md`'s "grep for an owner before
+  porting a helper a second time", which this repo has already been bitten by).
+
 **Order to build, because layer 1 sets the shape of everything under it** (owner: *"the first thing to do
-is setup the react"*): React helper + capability → Core file server → three shell interceptors → trim
-Media → rewire the sample → re-verify on both devices.
+is setup the react"*): ~~React helper + capability~~ **(DONE)** → Core file middleware → three shell
+interceptors → trim Media → rewire the sample → re-verify on both devices.
 
 ⚠ **The handshake must NOT carry the scheme or the range delivery.** A page told "you are on iOS, use
 `app://`" is branching on platform again, and it is unnecessary: a relative url already resolves to

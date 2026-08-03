@@ -525,6 +525,7 @@ static class Shenora.Core.ShellCapability
   public const string DropZones = "dropZones"
   public const string FilePicker = "filePicker"
   public const string FolderPicker = "folderPicker"
+  public const string LocalFiles = "localFiles"
   public const string SavePicker = "savePicker"
   public const string SecondaryWindows = "secondaryWindows"
   public const string Tray = "tray"
