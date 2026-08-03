@@ -421,6 +421,13 @@ the set of things this host can decode" fits Windows and lies on mobile, where t
 device-specific and per-asset. The evidence points at the first shape; D2 should decide it explicitly
 rather than inherit it.
 
+**SETTLED by D42, and it would have been easy to get wrong: the verdict is PER STREAM, not per file.**
+Owner's field data — a platform player failing on ~1/3 of a real collection — decomposes into MKV
+containers, HEVC 10-bit, and above all **AC3/E-AC3/DTS audio, which are licensed and not in Android's
+mandatory set**. The frequent failure is therefore *picture but no sound*, on a file whose H.264 video
+decodes perfectly. A `CanPlay(file) -> bool` would be wrong in exactly the most common case. This is also
+why `remux` earns its place beside `transcode`: copy the good video stream, re-encode only the audio.
+
 **Still open:** whether "play this" and "give me a thumbnail of this" share one host contract or two.
 Mobile answers both from the same object (`MediaMetadataRetriever`, `AVAsset`); Windows answers them from
 different places (an engine versus an external ffmpeg). Do not let the Windows split dictate the surface.
@@ -499,6 +506,19 @@ The bundle question is entirely the engine, never the kit — which is the stron
 split: `Shenora.Media.Android`/`.iOS` must ship ~26 KB like their shell counterparts and take **no engine
 dependency at all**, because paying 42 MB to duplicate hardware decoders the OS already exposes — and
 then running them in software, on battery — is the wrong trade twice over.
+
+**Where the engine comes from, and what it must never touch (D42):** the kit references **no** engine
+package anywhere — upstream is complete and first-party (`LibVLCSharp` 3.10, `LibVLCSharp.WinForms`,
+**`LibVLCSharp.MAUI` 3.10**, plus the three `VideoLAN.LibVLC.*` natives, all published by `videolan`), so
+an app references what it wants and the kit never vendors a binary. The binding constraint is the kit's
+OWN build: referencing those three natives would add **~823 MB of restore** (410 + 257 + 157, measured) to
+every `verify` and every CI run. Hence `Shenora.Media.{Platform}` compiles against the platform SDK and the
+kit's contracts only.
+
+**So the gate proves the CONTRACT, not the engine** — the sample exercises the surface through the platform
+player at 0 MB, and a real engine is an on-demand probe under `devtools/_*`, the same division the C++
+launcher already uses. Say which half is covered wherever this is documented; not saying is how the P0–P5
+latent defects passed five reviews.
 
 ⚠ **Still not verified, and needed before relying on it:** the licence position per build. LibVLC is
 LGPL 2.1+ but some plugins are GPL, and ffmpeg is LGPL only when built without its GPL parts (x264/x265

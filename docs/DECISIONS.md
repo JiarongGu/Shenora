@@ -957,3 +957,81 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     hand-bump; 0.6.0 published from a stale tree), so doubling that surface to save 26 KB per release is
     the wrong trade. **Revisit only if a platform package genuinely grows native binaries** — and note that
     the answer then is probably still not a pipeline, it is §2's rule that the kit does not ship engines.
+
+- **D42 — an ENGINE is the primary playback path on every platform, including mobile. Corrects D40/§0c's
+  "mobile uses the platform".** (Owner, 2026-08-03: *"I prefer to use engine, because mobile library is not
+  stable to support different type of media but if we use engine we have the control"*.)
+  - **The argument is CONSISTENCY, and it beats the byte count.** An engine gives ONE behaviour matrix
+    across three platforms, which is the same instinct that produced D41's unified interface.
+  - **EVIDENCE STATUS, because the owner asked whether the premise was real rather than asserting it
+    (2026-08-03) — and the parts divide cleanly:**
+    - ✅ **VERIFIED on a device** (Android 12 emulator, `adb`): codec support is **vendor-declared per
+      device**. `/system/etc/media_codecs.xml` plus `media_codecs_google_video.xml` and
+      `media_codecs_performance.xml`, and the decoder list mixes Google's software defaults with SoC-vendor
+      hardware decoders — `OMX.qcom.video.decoder.avc`/`.hevc` sitting beside `OMX.google.*`. The set is a
+      function of the CHIPSET, which is why `MediaCodecList` is a runtime query rather than a constant.
+    - ✅ **VERIFIED:** that device's declared video decode set is H.263 / H.264 / HEVC / MPEG-4 / VP8 / VP9
+      — finite, and with real gaps (no AV1).
+    - ✅ **VERIFIED as a distinct and worse axis: CONTAINERS.** `MediaCodec` decodes codecs;
+      `MediaExtractor` handles containers, and its MKV support is thin. So **H.264-in-MKV can fail on
+      Android while H.264 decodes perfectly** — exactly the case the video sibling's `remux` mode exists
+      for, and a failure a codec table alone would never predict.
+    - ✅ **Well-founded but not measured here:** that behaviour varies too — seeking semantics, subtitle
+      handling, track selection, gapless playback across `MediaPlayer` / `ExoPlayer` / `AVPlayer`.
+    - ❌ **NOT verifiable by this repo: how OFTEN the variance bites a real catalogue.** That is the
+      owner's field experience and it is the deciding input, recorded as such rather than dressed up as a
+      measurement. The mechanism is proven; the frequency is judgement, and it is the owner's to make.
+      **Their observed rate: a platform player failing on roughly ONE THIRD of a real collection**
+      (2026-08-03). That is not implausible — it is arguably conservative, and the composition explains it:
+      MKV containers (most video rips, and `MediaExtractor`'s MKV support is partial), **AC3 / E-AC3 / DTS
+      audio, which are LICENSED and not in Android's mandatory set**, HEVC **10-bit** (Main10 is a separate
+      profile from the `hevc` a device may declare), plus AV1, VC-1 and MPEG-2. At a one-in-three failure
+      rate an engine stops being a preference and becomes the only way to ship a media app with a
+      predictable support story.
+  - **THE DESIGN CONSEQUENCE, which this data point is what surfaced: the AUDIO track is often what fails,
+    not the video.** A file shows picture with no sound, or refuses outright, because of AC3 — while its
+    H.264 video decodes perfectly. So **a playability verdict must be PER STREAM, not one boolean for the
+    file.** Both donor planners already hint at this (the video sibling's `MediaInfo` carries `Codec` AND
+    `AudioCodec`; Sonora's is audio-only because that is its whole domain), and a single
+    `CanPlay(file) -> bool` would have been wrong in the most common failure case. It also explains why
+    `remux` earns its place beside `transcode`: copying a fine video stream while re-encoding only the
+    audio is both the cheap fix and the frequent one.
+  - ⚠ **A CLAIM THIS REPO MADE TWICE AND HAD WRONG:** that shipping an engine on mobile "duplicates
+    hardware decoders the OS already exposes and burns battery doing it in software". **False.** LibVLC has
+    MediaCodec (Android) and VideoToolbox (iOS) hardware-acceleration backends — it USES the platform
+    decoders and falls back to software only for what the platform cannot do. So an engine is strictly a
+    superset of the platform player, not a power trade. The measured 0 MB in §4a was real; the reasoning
+    attached to it was not. (Worth confirming the per-format hardware path on a device before relying on it
+    for a specific codec — that is a device-run claim, not a build-time one.)
+  - **What it costs, measured (§4a):** +42.2 MB per Android ABI (arm64), +33.5 MB for the iOS device
+    slice, ~25–30 MB pruned on Windows. An arm64-only Android app therefore grows ~42 MB. For a media
+    application that is an acceptable price for a single support matrix; for an app that plays the odd
+    notification sound it is not, which is exactly why this is the APP's choice and not the kit's.
+  - **The kit still ships no engine (§2 stands).** `Shenora.Media.{Platform}` must not hard-depend on one,
+    because that would force the 42 MB on every consumer and pick their licence. What changes is the
+    EXPECTED path the contracts are designed for: engine-first, with the platform player as an optional
+    implementation rather than the default. A contract shaped around the platform player would have baked
+    in the per-device variance this decision exists to remove.
+  - **HOW the engine is obtained: REFERENCE UPSTREAM, never vendor.** (Owner: *"we dont need a VLC bundle,
+    the correct way is just reference the vlc if that existing… if not then we ship one for backup
+    reference purpose"*.) The upstream story is complete and first-party, all published by `videolan`:
+    `LibVLCSharp` 3.10 · `LibVLCSharp.WinForms` · **`LibVLCSharp.MAUI` 3.10** · and the natives
+    `VideoLAN.LibVLC.Windows` / `.Android` / `.iOS`. **So the backup case does not arise on any platform**
+    — verified by package search, not assumed. Revisit only if upstream drops a target.
+  - **THE KIT'S OWN BUILD MUST STAY LIGHT, and that is a harder constraint than "do not force it on
+    consumers".** (Owner: *"so our build can go together does not rely on heavy resources"*.) Referencing
+    the three natives would add **~823 MB of restore** (Windows 410 + Android 257 + iOS 157, measured
+    2026-08-03) to **every** `dev.mjs verify` and every CI run. So `Shenora.Media.{Platform}` references
+    **no engine package at all** — not `LibVLCSharp`, not a native. It compiles against the platform SDK
+    and the kit's own contracts, and an app supplies whatever engine it wants behind them.
+  - **Consequence for the gate, and there is precedent: the kit's gate proves the CONTRACT, not the
+    engine.** The sample can exercise the surface through the platform player (0 MB) — enough to prove the
+    contract, the marshalling and the lifecycle. Proving a real engine end to end is an on-demand probe
+    (`devtools/_*`, gitignored) rather than part of `verify`, exactly as the C++ launcher is tested by a
+    Node harness against a prebuilt exe rather than compiled by this repo. State plainly in the docs which
+    half the green gate covers — the P0–P5 latent defects passed five reviews precisely because nobody
+    said.
+  - **Licence remains the open item, and it is the consumer's to settle**, not the kit's: LibVLC is
+    LGPL 2.1+ (dynamic linking keeps a closed-source app clear, and `DynamicMobileVLCKit` is the dynamic
+    variant), but some plugins are GPL and ffmpeg is LGPL only when built without its GPL parts. Since the
+    kit references nothing, it never makes that choice for anyone — which is the same reason §2 exists.
