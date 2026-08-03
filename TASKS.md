@@ -7,9 +7,11 @@ of this file is the size of the remaining work, which is the whole point of look
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
-**Status: 0.3.0 PUBLISHED (2026-08-01).** Five NuGet packages + `@shenora/react` on npm. It carries
-everything through the mission scheduler — the design pass (D1–D4), the genericity gate, D25, and
-`Shenora.Core`'s `Missions`/`Io` layer.
+**Status: 0.7.0 PUBLISHED (2026-08-02).** Five NuGet packages + `@shenora/react` on npm. It carries the
+off-screen session bundle seam (D38), the portable `SaveAsync` on all three shells, and the stage intrusion
+check. ⚠ **0.6.0 shipped 0.5.1's CODE** — the work was committed locally and never pushed, so the release
+ran against a stale tree; account under `CHANGELOG.md` `## 0.6.0`, and the gate that would have caught it is
+in `### Release hygiene` below.
 
 **0.2.0 does not exist and never will** — a session hand-bumped `<VersionPrefix>` to it, the release
 workflow bumped from that baseline to 0.3.0, and the number was consumed without shipping. The
@@ -38,9 +40,12 @@ and hits something, or when a feature worth generalising emerges while building 
 
 ## Open
 
-> **WORK ORDER (owner, 2026-08-03): ~~E1~~ → C → D1–D5.** Smallest real gap first, then the one blocked
-> on platform plumbing, then the big harvest. **E1 is DONE** (2026-08-03 — the session bundle seam,
-> D38; entry in `docs/archive/tasks.md`), so **C is next**: the save picker.
+> **WORK ORDER (owner, 2026-08-03): ~~E1~~ → ~~C~~ → D (media).** **E1 and C are both DONE** — the session
+> bundle seam (D38) and a portable `SaveAsync` proven on all three shells, entries in
+> `docs/archive/tasks.md`. **Media is now the live work**, and its D1 harvest is done too: the design is
+> settled in `docs/2026-08-03-shenora-media-design.md` and the open items are `DM1`–`DM5` below.
+> **`DM1` is the critical path** — nothing else should start before a `Range` is answered with real headers
+> on mobile.
 >
 > **The archive-backed `IUpdateSource` is DEFERRED, deliberately and not for lack of value** — the
 > first adopter is building their own first. That is the better sequence and the one this kit is
@@ -316,35 +321,54 @@ indeed the interesting part, and the harvest **changed the scope twice**: playba
 > **OWNER DIRECTION (2026-08-03): the driver is NATIVE video/audio playback** — *"web does not have full
 > support on video/audio types"* — and the mobile gap is the reason the item exists, not a deferrable
 > half: *"mostly no mobile thats an issue, so thats why we here"*.
-- [ ] **D2 — Where it goes, and ONE question decides the shape.** The placement is settled by the
-  harvest: `Shenora.Core` holds the contracts, each shell package the implementation, **no new package**.
-  What is NOT settled, and must be decided explicitly rather than inherited:
-  **does the playability contract return a per-file VERDICT, or advertise a CAPABILITY SET?** Windows
-  must answer from a hand-maintained codec table (there is nothing to ask a webview); Android and iOS can
-  ask the platform per asset (`MediaCodecList`, `AVAsset.Playable`). A per-file verdict is honest on all
-  three; a capability set fits Windows and **lies** on mobile, where the truth is device-specific. The
-  evidence points at the verdict shape — decide it, don't drift into it.
-  Also open: whether "play this" and "thumbnail this" are one host contract or two (mobile answers both
-  from one object, Windows from two different places — do not let the Windows split dictate the surface).
-- [ ] **D2a — The unblocker, and it is smaller than it looks: make the resource-serving contracts
-  PORTABLE.** Every strategy in the design doc delivers bytes through the same seam, and §0d proved the
-  seam now exists on BOTH mobile shells (`HybridWebView.WebResourceRequested` → `e.Headers`,
-  `e.SetResponse(206, …, Stream)`). `WebViewResourceRequest`/`WebViewResourceResponse`/`WebViewByteRange`
-  are already the right abstraction and already tested — they are Windows-only by accident of when they
-  were written. Do this before any media code: it is a real capability on two shells for the price of
-  moving types, and nothing else can be proven without it.
-- [ ] **D3 — The picker rides along.** `MediaPicker.PickPhotosAsync` exists in MAUI Essentials
-  (verified by compiling) and the desktop equivalent is a multi-select image dialog. D35 already
-  identified "let the user hand me some media" as one of the three portable intents behind the
-  desktop-only "open a folder", so this closes that gap rather than opening a new one.
-- [ ] **D4 — Say what is NOT in scope.** No playback, no transcoding, no editing, no codec bundling —
-  those are products, and D21 keeps products out of the kit. If a consumer needs playback it composes
-  its own over the contracts, the way the sample builds a co-browse pane over `StreamingSession`.
-- [ ] **D5 — Media supplies the VERIFY, the Io layer supplies the mechanism.** The atomic-transform
-  primitive is general and lives in `Io` (see the adopter section above); what is media-specific is
-  what "valid" means — does it decode, is the duration within tolerance, are the expected streams
-  present. Note this cannot reuse `UpdateStage`'s answer: that verifies a SHA-256, and a re-encode is
-  not byte-predictable, so the media check is semantic rather than exact.
+>
+> DIRECTION (owner, 2026-08-03, the shape): *"in the end our plan is to make a url that can play in video
+> element … so we not even making a video player yet, thats the react part, or depends on how the adopters
+> will design"* — routed as `app://video?src=…`. And on the engine: *"I prefer to use engine, because mobile
+> library is not stable to support different type of media but if we use engine we have the control"*, with
+> a platform player failing on roughly a third of a real collection.
+
+_D2–D5 as originally written are SUPERSEDED. The harvest settled placement (D40), consumption and
+versioning (D41), engine strategy (D42) and the contract split (D43), and the owner settled the shape:
+**the deliverable is a URL a `<video>` element can play**, not a player. **Read the design doc's
+"THE DESIGN, in one place" section before anything else** — everything below it there is the trail, and it
+contains intermediate positions that were corrected._
+
+_D2a is DONE — the exchange contracts now live in `Shenora.Core` (commit `8d23dd1`, a documented break)._
+
+- [ ] **DM1 — THE CRITICAL PATH, and nothing else should start before it: answer a `Range` with real
+  headers on each mobile platform.** Verified on both devices that media DOES reach the interception seam,
+  and that the player asks for a range immediately — `bytes=0-` on Android, **`bytes=0-1` on iOS**, which
+  is AVFoundation discovering the length from `Content-Range`. But the PORTABLE seam cannot set response
+  headers at all (`SetResponse` takes four arguments; there is no `ResponseHeaders`), so `Content-Range`
+  and `Accept-Ranges` are unsendable through it. **`e.PlatformArgs` is the way out and it is mandatory,
+  not an optimisation** — Android's native `WebResourceResponse` takes headers and iOS's
+  `WKURLSchemeHandler` carries a full response. Deliverable: serve one real media file through the seam on
+  each platform and confirm it **plays AND seeks**. Until that works every contract below is a guess about a
+  capability the kit does not have. Do NOT use the convenient `e.SetResponse`.
+- [ ] **DM2 — the playability planner.** Container + codecs → `direct`/`remux`/`transcode`/`unsupported`,
+  **per STREAM, not per file** (D42 — the frequent real failure is picture-with-no-sound, from licensed audio
+  the platform lacks). A pure function with no I/O, so unit-testable the way `ManifestDiff` is; two siblings
+  have one already and both would delete theirs. The codec SET belongs to the app, the mechanism to the kit.
+- [ ] **DM3 — the conversion, COMPOSED not built.** `IMissionScheduler` (the long run) +
+  `PathClaims.Exclusive` (convert once, never twice) + `Files.BeginReplace` (atomic output) + a
+  path+size+mtime cache key. Everything but the key helper already ships, and `Files.BeginReplace`'s own
+  XML already names this composition. Progress rides the existing notification pipe as
+  `SOURCE_PROGRESS`/`READY`/`FAILED`.
+- [ ] **DM4 — the two authorization seams, because ONE interceptor serves local AND remote sources.** Remote
+  is an SSRF surface → a fail-CLOSED guard, the shape `NavigationGuard` already has. Local is a
+  path-containment surface, because the page supplies the path → the generic version of the
+  `ResolveContained` fix, not a second hand-rolled one. Neither is optional, and both are classes the
+  review checklist hunts for by name.
+- [ ] **DM5 — scaffold the packages LAST** (D40: `Media` + `Media.Windows`/`.Android`/`.iOS`). Mechanical,
+  with the mobile split as the proven template. Each inherits the full checklist: lockstep version, API
+  baseline, `packableProjects` entry, description, **`IsPackable` kept INLINE** (hoisting it into shared
+  props hides a project from the baseline-coverage gate), README row, doc-drift row, and `Media` added to
+  the surface lexicon. ⚠ **Wire the `net10.0` sample-logic tripwire to actually USE media in the same
+  pass** (D41), or it stays a tripwire that cannot fail.
+
+_Thumbnails and image resize are DEFERRED with the analysis already done — D43. They cost 0 MB on every
+platform and need no engine, so they are cheap to add later, and the player does not depend on them._
 
 ### Release hygiene — two items earned by the 0.6.0 incident (2026-08-02)
 

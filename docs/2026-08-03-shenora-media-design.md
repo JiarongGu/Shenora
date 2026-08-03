@@ -1,15 +1,66 @@
-# Media — the harvest, and what it says to build
+# Media — the design, and the evidence it came from
 
-**Status: HARVEST + DESIGN, nothing built.** Written 2026-08-03 for `TASKS.md` D1–D5. D1's instruction
-is the reason this doc exists and leads with evidence: *three consumers means three existing
-implementations, and the design is IN them, not ahead of them.* Retire this doc once the work lands
-(`docs/README.md`'s rule) — the WHYs move to `docs/DECISIONS.md`, the surface to `ARCHITECTURE.md`.
+**Status: DESIGN SETTLED 2026-08-03, nothing built.** Retire this doc once the work lands
+(`docs/README.md`'s rule) — the WHYs move to `docs/DECISIONS.md` (D40–D43), the surface to
+`ARCHITECTURE.md`. Sonora may be named (D12); the other two siblings are the **video-library sibling** and
+the **business-manager sibling**.
 
 Owner direction (2026-08-02): *"we also need to add Media library into roadmap (this also why I push for
-interface library merge, because 3 of my application will need this)"*. Sonora may be named (D12); the
-other two are the **video-library sibling** and the **business-manager sibling**.
+interface library merge, because 3 of my application will need this)"*.
+
+---
+
+## THE DESIGN, in one place
+
+**The deliverable is a URL that a `<video>` or `<audio>` element can play — whatever the source, whatever
+the codec.** The kit ships no player, no native surface and no chrome: those are the app's, or React's.
+This is the video-library sibling's shipped second-generation design (§0b), not a new invention.
+
+**The URL.** The app's own scheme, routed, with an encoded payload: `app://<route>?src=<encoded>`.
+- It **must** be the app scheme — iOS intercepts only that; an https host goes to the real network (§0i).
+- **Match on a parsed `Uri`, never a string prefix** — the platform inserts `/` before the query (§0h).
+- **Never hardcode the origin's scheme** — the page is `https://0.0.0.1/` on Android, `app://0.0.0.1/` on
+  iOS (§0i). The route and host name are the app's to choose, as `VirtualHost` already is.
+
+**The pipeline, per request.**
+1. **Decode** the payload to a source — a local path, a remote URL, or a cache entry. One URL shape for all
+   three, so the page never branches on where media lives.
+2. **Authorize.** Remote → a fail-CLOSED SSRF guard, the shape `NavigationGuard` already has. Local → path
+   containment, because the page supplies the path (the `ResolveContained` lesson, generalised).
+3. **Probe** → per-stream info: container, codecs, duration, dimensions. Best-effort and all-nullable.
+4. **Plan** → `direct` / `remux` / `transcode` / `unsupported`, **per stream** (D42): the frequent real
+   failure is *picture but no sound*, from licensed audio the platform lacks.
+5. **Convert, if needed — composed, not built** (§0f): `IMissionScheduler` for the long run,
+   `PathClaims.Exclusive` so one file converts once, `Files.BeginReplace` for an atomic output, cached by
+   path+size+mtime. Progress as `SOURCE_PROGRESS`/`READY`/`FAILED` events over the existing pipe.
+6. **Serve**, honouring `Range` → 200 / 206 / 416, with `Content-Range` and `Accept-Ranges`.
+
+**Who owns what.**
+
+| | Owns |
+|---|---|
+| `Shenora.Core` | the exchange contracts — `WebViewResourceRequest`/`Response`/`ByteRange` (**done**, D2a) |
+| `Shenora.Media` | the planner (a pure function), the probe-result shape, the cache key, the serving contracts. `net10.0`, so app logic compiles against it anywhere (D41) |
+| `Shenora.Media.{Windows,Android,iOS}` | the platform probe, and the **header-capable response** via `PlatformArgs`. No engine dependency, ~26 KB each (D40, §4a) |
+| The app | the engine (referenced upstream, never vendored — D42), the route/host name, the player UI, the codec policy, the authorization policy |
+
+**THE CRITICAL PATH, and it is one thing:** answer a `Range` with real headers through `PlatformArgs` on
+each mobile platform, then confirm a real file **plays and seeks**. Everything else is contracts around a
+capability that is not yet proven — and the portable seam demonstrably cannot do it (§0d), while iOS's
+two-byte size probe means a header-less reply may not play at all (§0i). **Build this before scaffolding
+anything.**
+
+**Deliberately not in scope:** playback UI, transcode ladders, HLS packaging, editing, AI/upscale, and any
+bundled engine (§2). **Deferred, with the analysis already done:** thumbnails and image resize (D43).
+
+---
 
 ## §0 Evidence — what the three actually do
+
+> **The sections below are the TRAIL, not the specification.** They record what was read, what was measured,
+> and several intermediate positions that later turned out to be wrong — each corrected in place and marked,
+> because how they failed is worth as much as the conclusion. **Where the trail and the design above
+> disagree, the design above wins.**
 
 Read before designing, per `generic-library.md`'s "go and look". Everything below is from the source,
 not from memory.
