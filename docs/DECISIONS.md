@@ -1035,3 +1035,40 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     LGPL 2.1+ (dynamic linking keeps a closed-source app clear, and `DynamicMobileVLCKit` is the dynamic
     variant), but some plugins are GPL and ffmpeg is LGPL only when built without its GPL parts. Since the
     kit references nothing, it never makes that choice for anyone — which is the same reason §2 exists.
+
+- **D43 — the media contracts split by DEPENDENCY, not by feature name. "Thumbnail" is two mechanisms and
+  gets two homes.** (Owner asked for thumbnails alongside playback, 2026-08-03: *"yes we kind need that too
+  if possible"*. It is possible on all three platforms at zero added bytes — see below.)
+  - **The question was whether "play this" and "thumbnail this" are one host contract or two. Neither: the
+    honest axis is what each operation NEEDS.**
+
+    | Capability | Needs | Windows | Android | iOS |
+    |---|---|---|---|---|
+    | **Probe** — duration, dimensions, streams, codecs | a demuxer | ffprobe / engine | `MediaMetadataRetriever` | `AVAsset` |
+    | **Frame grab** — a still at time T | a **decoder** (same as playback) | engine / ffmpeg | `MediaMetadataRetriever.FrameAtTime` | `AVAssetImageGenerator` |
+    | **Playback surface** | a **decoder** + a view | engine + control | `SurfaceView` | `AVPlayerLayer` |
+    | **Image resize** — make this picture smaller | an **image codec**, NOT a media decoder | `System.Drawing`/WIC (already in the WinForms shell) | `BitmapFactory` | `UIImage` |
+
+  - **So probe + frame-grab + surface are ONE family** (they share the media decoder), and **image resize is
+    its own contract** (a different dependency entirely). The playability verdict stays portable logic over
+    a probe result — a pure function in `Shenora.Media`, per stream (D42).
+  - **VERIFIED by compiling: image resize needs no extra package on any platform.** Android
+    `BitmapFactory` with the `InJustDecodeBounds` → `InSampleSize` low-memory path, then
+    `Bitmap.CreateScaledBitmap` and `Compress`; iOS `UIImage.FromFile` +
+    `UIGraphicsImageRenderer.CreateImage` + `AsJPEG`; Windows `System.Drawing`/WIC, which the WinForms
+    shell already brings. **So thumbnails cost 0 MB everywhere** — unlike playback, which the owner has
+    accepted an engine for (D42). Sonora's ImageSharp dependency does not need porting.
+    ⚠ **Android trap found while verifying:** `Bitmap.CompressFormat.Webp` is obsoleted on API 30+ (split
+    into `WebpLossy`/`WebpLossless`) while this kit's floor is API 21, so a WebP encoder here must handle
+    both or use JPEG. `CA1422` is an ERROR in this repo, so it fails the build rather than warning.
+  - **NAMING: do not ship a `Thumbnail` type that spans both mechanisms.** That would be D35's
+    same-word-different-guarantee mistake in miniature — the harvest already found "thumbnail" meaning
+    *extract a frame* in one sibling and *resize an image* in another. Name the mechanism (D22).
+  - **The APP unifies them, not the kit.** "Give me a thumbnail for this library item" needs to know
+    whether the item is a video or a picture, and only the app does. A kit facade that dispatched between
+    the two would be deciding the app's policy — and note Sonora keys its cache per item KIND precisely
+    because it has that knowledge.
+  - **⚠ DEFERRED, not queued (owner, 2026-08-03: *"lets focus on the player itself first"*).** Thumbnails
+    and the transcode/serving path are recorded here so the analysis is not re-done, but **the PLAYER comes
+    first**. Nothing above should be built until the surface contract exists — and note that the player
+    needs none of it.
