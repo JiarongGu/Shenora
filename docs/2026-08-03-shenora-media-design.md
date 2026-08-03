@@ -53,16 +53,20 @@ This is the video-library sibling's shipped second-generation design (§0b), not
 | `Shenora.Media.{Windows,Android,iOS}` | the platform probe, and the **header-capable response** via `PlatformArgs`. No engine dependency, ~26 KB each (D40, §4a) |
 | The app | the engine (referenced upstream, never vendored — D42), the route/host name, the player UI, the codec policy, the authorization policy |
 
-**THE CRITICAL PATH — ANDROID IS NOW PROVEN (§0j); iOS is the remaining half.** The critical path was to
-answer a `Range` with real headers on each mobile platform and confirm a real file **plays and seeks**. On
-Android it does, and two of the assumptions this doc built that requirement on turned out to be wrong:
-- ⚠ **`PlatformArgs` is NOT required.** The portable seam has a header-carrying
+**THE CRITICAL PATH IS CLEARED — proven on BOTH mobile shells 2026-08-03 (§0j Android, §0k iOS).** A real
+60 s H.264+AAC file plays AND seeks through the portable seam on each, including a `moov`-at-end variant
+that cannot open at all unless a tail range is answered correctly. Three assumptions this document built
+the requirement on turned out to be wrong, and all three are corrected in place:
+- ⚠ **`PlatformArgs` is NOT required on either platform.** The portable seam has a header-carrying
   `SetResponse(code, reason, headers, stream)` overload on both mobile TFMs — verified by compiling, and
   the native response read back off the Android object shows status, reason, MIME and every header
   surviving intact. §0d's "the portable seam cannot send response headers" was an over-read of one
   overload; it is corrected there.
-- ⚠ **The Android handler must NOT slice the body** — the platform applies the `Range` start itself. See
-  §0j, which is the single most load-bearing measurement in this document.
+- ⚠ **The URL must name no origin** — a reserved path on the page's own, reached relatively. Android
+  refuses to PLAY the app scheme it happily intercepts; iOS intercepts nothing else (§0j).
+- ⚠ **The two shells need OPPOSITE BODIES**: Android applies the `Range` start itself so the handler must
+  NOT slice; iOS passes the body through so it MUST. Everything else — URL, call, headers — is identical.
+  **This is the measured case for D40's per-platform media packages** (§0k).
 
 **Deliberately not in scope:** playback UI, transcode ladders, HLS packaging, editing, AI/upscale, and any
 bundled engine (§2). **Deferred, with the analysis already done:** thumbnails and image resize (D43).
@@ -458,11 +462,41 @@ ran to `1:00 / 1:00`.
 file arrives in the first response and a seek is served from the buffer without touching the wire. The
 tail-range sequence is the real evidence.
 
-**What this predicts for iOS, and why it is a design finding rather than a chore:** `WKURLSchemeHandler` is
-a different mechanism (MAUI sends a real `NSHttpUrlResponse` through `UrlSchemeTask`), so it very likely does
-NOT re-skip — meaning the SLICED body, ordinary correct HTTP, is right there. If that holds, **the two
-platforms need OPPOSITE bodies for the same portable request**, which is a measured justification for D40's
-`Shenora.Media.{Platform}` split and exactly the kind of divergence the portable contract must hide.
+### §0k iOS RUN — the prediction held. The two shells need OPPOSITE BODIES.
+
+Run on the simulator the same day, same build, using the page's `mode` toggle so one deploy answered it.
+`WKURLSchemeHandler` is a different mechanism (MAUI sends a real `NSHttpUrlResponse` through
+`UrlSchemeTask`) and it does **not** re-skip — it passes the body through verbatim. Same instrument, same
+474 744-byte file:
+
+| mode | asked | iOS delivered |
+|---|---|---|
+| `noskip` (whole body, Android's rule) | `bytes=4-11` | **474 744 B from offset 0** — the whole file, three times over |
+| `noskip` | `bytes=1000-1099` | 474 744 B from offset 0 |
+| **`portable`** (sliced — ordinary correct HTTP) | `bytes=4-11` | **8 B, `"ftypisom"`** ✅ |
+| `portable` | `bytes=1000-1099` | 100 B ✅ |
+| `portable` | `bytes=474000-` | 744 B ✅ |
+
+**Proof on the `moov`-at-end clip:** `loadedmetadata — duration=60.00s 480x270`, `play() resolved`, then
+`seeking to 48s (from 25.00s) → seeked -> currentTime=48.04s`, playing on past it.
+
+**So DM1 is answered on both shells, and the answer has one asymmetry:**
+
+| | Android | iOS |
+|---|---|---|
+| URL | a reserved path on the page's own origin, relative | **same** |
+| Response call | the portable `SetResponse(code, reason, headers, stream)` | **same** |
+| Headers | 206 + `Content-Range` + `Accept-Ranges` | **same** |
+| **Body** | **UNSLICED** — the platform applies the range start | **SLICED** — the platform passes it through |
+
+⚠ **That single row is the whole case for D40's `Shenora.Media.{Platform}` split being load-bearing rather
+than tidy**, and it arrived from measurement rather than from architecture taste. It is also precisely the
+kind of thing a portable contract must hide: an app asking for "serve this file, honour `Range`" must never
+have to know which of the two it is talking to.
+
+⚠ **Neither platform needed `PlatformArgs`.** The escape hatch stays documented (and implemented behind
+`mode=native` in the probe) but the portable seam was sufficient on both — which is the opposite of what
+this document said before the runs.
 
 ## §1 The claim — PLAYABILITY is the centre, and it splits into five parts
 

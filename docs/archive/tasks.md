@@ -2283,3 +2283,57 @@ never saw — not friction to route around.
 
 **Still open under C, and narrower than before:** only `OpenFolderAsync`, which D35 argues should stay
 closed as a portable capability. Kept in `TASKS.md`.
+
+## DM1 — a `Range` answered with real headers on BOTH mobile shells — CLOSED 2026-08-03
+
+The media backlog's critical path, and the item everything else was blocked behind: *serve one real media
+file through the mobile interception seam on each platform and confirm it **plays AND seeks***. Done on an
+Android emulator and an iOS simulator. Rationale and the rules it produced are **D44**; the measurements are
+`docs/2026-08-03-shenora-media-design.md` §0j (Android) and §0k (iOS). The probe ships in the sample:
+`samples/Shenora.Sample.Maui/MediaRangeProbe.cs` + the media row in the sample page.
+
+**The recipe that works, and it is nearly the same on both:** a reserved PATH on the page's own origin
+reached RELATIVELY · the PORTABLE `SetResponse(code, reason, headers, stream)` · 206 with `Content-Range`
+and `Accept-Ranges` · and a body that is **unsliced on Android, sliced on iOS** (D44 — the platforms apply
+the range start differently, and that one row is the measured case for per-platform media packages).
+
+**Evidence.** On the `moov`-at-end clip, which cannot open at all unless a tail range is answered correctly:
+Android loaded it in exactly three requests with no retry loop, in mdat-first order (`bytes=0-` → the tail →
+back into the media), resolved its true `1:00` duration and ran to `1:00 / 1:00`; iOS reported
+`loadedmetadata — duration=60.00s 480x270`, `play() resolved`, then `seeked -> currentTime=48.04s`.
+Screenshots: `devtools/_android/dm1-*.png`, `devtools/_mac/ios-dm1-*.png`.
+
+### Three claims this repo had ALREADY WRITTEN DOWN and that the runs falsified
+
+Worth listing together, because they share one shape — each was an inference presented as a finding.
+
+1. **"The portable seam cannot set response headers."** It can; there is a second `SetResponse` overload
+   taking a header dictionary, on both mobile TFMs. The original read one overload as the whole set, and it
+   had made a per-platform `PlatformArgs` implementation look MANDATORY before any contract existed. One
+   build to check.
+2. **"The URL must be the app scheme."** True of iOS interception, false of Android playback — Android
+   intercepts `app://` and its media pipeline then refuses it outright.
+3. **"Media reaches the seam, so the design reaches all three shells."** Interception and playability are
+   different questions; the session-4 probe deliberately answered nothing, so it could only ever prove the
+   first.
+
+### What actually made it tractable, kept because the next device investigation will want it
+
+- **A CONTROL PAIR, not a test file.** Two clips of identical content differing only in whether the mp4
+  `moov` atom sits at the front or the end. The faststart one plays even from a server that ignores `Range`
+  entirely, so "the video played" proves nothing on its own; the tail one cannot start without a correct
+  range answer. **The whole Android defect is invisible without this pair**, because a faststart file only
+  ever asks for `bytes=0-`, where the double-skip is a no-op.
+- **An explicit `fetch` with a `Range`, asserting the returned BYTES.** A `<video>` element can only ever
+  say `MEDIA_ERR_SRC_NOT_SUPPORTED`, which made three wrong hypotheses look equally likely and cost several
+  deploys. The instrument settled it in one. **Assert on an OFFSET-revealing slice** — `bytes=4-11` is
+  `"ftypisom"` in any mp4 — because a length-only check passes just as happily on the wrong bytes, which is
+  exactly how a seam that silently serves from 0 looks correct.
+- **A bundle control** (the same file served by the platform's own static serving, touching none of our
+  code) to establish that the file, the codec and the device's media stack were fine before blaming them.
+- **Toggles in the page for response mode and URL form**, so a platform question costs one deploy instead of
+  one deploy per hypothesis — which matters most on iOS, where `mac push` refuses a dirty tree and every
+  round trip costs a commit.
+- **Reading the platform response BACK.** After calling the portable `SetResponse`, Android's
+  `PlatformArgs.Response` is the ground truth about what MAUI built (`mime=video/mp4 enc=UTF-8 status=206
+  reason=Partial Content …`). That one log line eliminated the entire "MAUI drops the headers" branch.

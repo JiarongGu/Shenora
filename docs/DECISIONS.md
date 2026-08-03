@@ -1072,3 +1072,43 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     and the transcode/serving path are recorded here so the analysis is not re-done, but **the PLAYER comes
     first**. Nothing above should be built until the surface contract exists — and note that the player
     needs none of it.
+
+- **D44 — the media URL names NO origin, and the two mobile shells get OPPOSITE response BODIES. Measured
+  on devices, and it corrects three things this repo had already written down.** (DM1, 2026-08-03. Full
+  measurements: `docs/2026-08-03-shenora-media-design.md` §0j/§0k; the probe is
+  `samples/Shenora.Sample.Maui/MediaRangeProbe.cs`.)
+  - **The URL is a RESERVED PATH on the page's own origin, reached by a RELATIVE url**
+    (`/<reserved>/?src=…`), not a custom scheme and not a virtual host. Neither of the obvious answers
+    works on both shells: Android intercepts `app://` and then its media pipeline **refuses** it
+    (`MEDIA_ERR_SRC_NOT_SUPPORTED`, instantly, even for a plain 200 with a correct `Content-Type`), while
+    iOS intercepts **only** `app://` and lets an https host reach the real network. The page's own origin
+    is intercepted and media-capable on both **by construction**, because it is what the platform already
+    serves the bundle from — `https://0.0.0.1/` on Android, `app://0.0.0.1/` on iOS. The path must be
+    reserved: it shadows the bundle.
+    - This supersedes the media design's "it MUST be the app scheme", which generalised an iOS
+      INTERCEPTION fact into a rule about PLAYBACK. Those are different questions, and the earlier probe
+      only ever asked the first.
+  - **`e.PlatformArgs` is NOT required on either shell.** The portable
+    `SetResponse(int, string, IReadOnlyDictionary<string,string>?, Stream?)` exists on both mobile TFMs
+    and MAUI forwards status, reason phrase and every header (including lifting `Content-Type` into
+    Android's native constructor argument). The previous "there is no way to set a response header
+    through the portable seam" read ONE overload as the whole set, and it had put a per-platform
+    implementation on the critical path before any contract existed. **Cost of believing it: a whole
+    design constraint. Cost of checking it: one build.**
+  - **⚠ THE ASYMMETRY, and it is the load-bearing one: Android's seam applies the `Range` START ITSELF to
+    whatever body it is handed (and ignores the range END); iOS passes the body through verbatim.** So the
+    SAME portable request needs an UNSLICED body on Android and a SLICED one on iOS. Getting it wrong is
+    not a graceful degradation: a sliced body on Android has the offset applied twice — `bytes=4-11`
+    returned four bytes of file bytes 8-11 — and a player asking for a file's tail receives an empty body
+    and **retries the identical range forever**.
+  - **This is the measured justification for D40's `Shenora.Media.{Platform}` split.** D40 argued the
+    split from dependencies and shipped bytes; this is a case where the platforms need genuinely opposite
+    behaviour behind one portable contract, which is what such a package is FOR. Everything else is
+    identical across the two — the URL, the call, the 206, `Content-Range`, `Accept-Ranges`. One row of the
+    table differs, and an app must never have to know which side it is on.
+  - **⚠ The trap this leaves for whoever implements it: the wrong choice looks CORRECT.** A faststart file
+    only ever requests `bytes=0-`, where the double-skip is a no-op — so the naive implementation plays
+    perfectly on the file everyone tests with and fails on every file whose index is at the end. Any test
+    for this needs the control pair the probe ships (same content, `moov` at the front vs at the end), and
+    the honest instrument is an explicit `fetch` with a `Range` asserting the returned BYTES, not a
+    `<video>` element, which can only ever report "no supported source".

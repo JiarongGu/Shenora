@@ -17,9 +17,29 @@ namespace Shenora.Sample.Maui;
 /// implementation through <c>e.PlatformArgs</c> look mandatory. That read one overload as the whole
 /// set. <c>Microsoft.Maui.Controls</c> 10.0.20 also has
 /// <c>SetResponse(int, string, IReadOnlyDictionary&lt;string,string&gt;?, Stream?)</c> on BOTH mobile
-/// TFMs — verified by compiling. So the portable path is tried FIRST here, and
-/// <c>PlatformArgs</c> (Android's settable native <c>WebResourceResponse</c>, iOS's
-/// <c>UrlSchemeTask</c>) stays the fallback for whatever the platform is shown to swallow.
+/// TFMs — verified by compiling, and every header survives to the native response. <c>PlatformArgs</c>
+/// (Android's settable native <c>WebResourceResponse</c>, iOS's <c>UrlSchemeTask</c>) turned out not to
+/// be needed at all; it stays here behind <c>mode=native</c> as the documented escape hatch.
+/// </para>
+/// <para>
+/// ⚠⚠ <b>THE RESULT, and it is the reason a per-platform media package is load-bearing rather than
+/// tidy: the two shells need OPPOSITE BODIES for the same portable request.</b> Both were measured on a
+/// device with an explicit <c>fetch</c>, not inferred from a player's behaviour.
+/// </para>
+/// <list type="bullet">
+/// <item><b>Android</b> applies the <c>Range</c> START itself to whatever body it is handed, and ignores
+/// the range end. So the handler must NOT slice — return the whole resource
+/// (<c>mode=noskip</c>). Slice it and the offset lands twice: <c>bytes=4-11</c> came back as four bytes
+/// of file bytes 8-11, and a player asking for a file's tail got an empty body and retried forever.</item>
+/// <item><b>iOS</b> passes the body through verbatim — the same <c>noskip</c> response returned all
+/// 474 744 bytes from offset 0 for every range asked. So the handler MUST slice, which is ordinary
+/// correct HTTP (<c>mode=portable</c>): <c>bytes=4-11</c> then returns exactly eight bytes,
+/// <c>"ftypisom"</c>.</item>
+/// </list>
+/// <para>
+/// Everything ELSE is identical on both: the same relative URL, the same portable <c>SetResponse</c>,
+/// the same 206 with <c>Content-Range</c> and <c>Accept-Ranges</c>. Only the body differs — which is
+/// exactly the kind of divergence the portable contract has to hide.
 /// </para>
 /// </summary>
 internal sealed class MediaRangeProbe
@@ -304,8 +324,12 @@ internal sealed class MediaRangeProbe
 		var task = e.PlatformArgs!.UrlSchemeTask;
 		var keys = headers.Keys.Select(k => new global::Foundation.NSString(k)).ToArray();
 		var values = headers.Values.Select(v => (global::Foundation.NSObject)new global::Foundation.NSString(v)).ToArray();
+		// An explicit NSUrl, not the implicit Uri->NSUrl conversion: that operator is nullable and the
+		// constructor's parameter is not, which is a real CS8604 on the iOS build (this repo runs at zero
+		// warnings, and the sample's iOS face only compiles on the Mac — so it is the one place a warning
+		// can hide from the Windows gate).
 		task.DidReceiveResponse(new global::Foundation.NSHttpUrlResponse(
-			e.Uri, response.StatusCode, "HTTP/1.1",
+			new global::Foundation.NSUrl(e.Uri.AbsoluteUri), response.StatusCode, "HTTP/1.1",
 			global::Foundation.NSDictionary.FromObjectsAndKeys(values, keys)));
 		var buffer = new byte[response.Content.Length];
 		response.Content.ReadExactly(buffer);

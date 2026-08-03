@@ -43,9 +43,11 @@ and hits something, or when a feature worth generalising emerges while building 
 > **WORK ORDER (owner, 2026-08-03): ~~E1~~ → ~~C~~ → D (media).** **E1 and C are both DONE** — the session
 > bundle seam (D38) and a portable `SaveAsync` proven on all three shells, entries in
 > `docs/archive/tasks.md`. **Media is now the live work**, and its D1 harvest is done too: the design is
-> settled in `docs/2026-08-03-shenora-media-design.md` and the open items are `DM1`–`DM5` below.
-> **`DM1` is the critical path** — nothing else should start before a `Range` is answered with real headers
-> on mobile.
+> settled in `docs/2026-08-03-shenora-media-design.md` and the open items are `DM2`–`DM5` below.
+> **`DM1` — the critical path — is CLEARED (2026-08-03):** a real file plays AND seeks through the
+> interception seam on both mobile shells. The capability everything else assumed now exists, and the rules
+> it produced are **D44**. **DM2 is next**, and nothing below should be designed without reading D44 first —
+> it contradicts two things the design doc used to assert.
 >
 > **The archive-backed `IUpdateSource` is DEFERRED, deliberately and not for lack of value** — the
 > first adopter is building their own first. That is the better sequence and the one this kit is
@@ -336,35 +338,16 @@ contains intermediate positions that were corrected._
 
 _D2a is DONE — the exchange contracts now live in `Shenora.Core` (commit `8d23dd1`, a documented break)._
 
-- [ ] **DM1 — THE CRITICAL PATH. ✅ ANDROID IS PROVEN (2026-08-03); the iOS half is what remains.**
-  Deliverable: serve one real media file through the seam on each mobile platform and confirm it **plays AND
-  seeks**. Full account and measurements in `docs/2026-08-03-shenora-media-design.md` **§0j**; the probe is
-  `samples/Shenora.Sample.Maui/MediaRangeProbe.cs` plus the media row in the sample page, with toggles for
-  response `mode` and url form so a platform question costs one deploy rather than one per hypothesis.
-
-  **Android's proven recipe, and TWO of this entry's own premises were wrong:**
-  - ⚠ **`e.PlatformArgs` is NOT required and `e.SetResponse` is the right call after all.** There is a
-    second overload taking a header DICTIONARY, on both mobile TFMs; MAUI forwards status, reason and every
-    header (read back off the native object). The old "headers are unsendable" claim read one overload as
-    the whole set — a one-build check that would have saved a per-platform implementation.
-  - ⚠ **The URL must name NO origin: a reserved PATH on the page's own origin, via a RELATIVE url.**
-    Android intercepts `app://` and then its media pipeline REFUSES it
-    (`MEDIA_ERR_SRC_NOT_SUPPORTED`, even for a plain 200 with a correct `Content-Type`); iOS intercepts
-    only `app://`. No fixed scheme works on both — but the page's own origin is intercepted and
-    media-capable on both by construction.
-  - ⚠ **THE LOAD-BEARING ONE: the Android seam applies the `Range` start ITSELF, so the handler must NOT
-    slice the body.** Slice it and the offset is applied twice (`bytes=4-11` came back as 4 bytes of file
-    bytes 8-11). Return the whole resource; let the platform skip. **The naive implementation looks correct
-    on every faststart file and fails on every other one** — which is why the probe ships a control pair
-    differing only in whether the `moov` atom is at the front or the end.
-  - Evidence: the `moov`-at-end clip (unopenable without a correct tail range) loaded in exactly three
-    requests with no retry loop, resolved its true `1:00` duration, seeked to 48 s and ran to the end.
-
-  **What iOS still owes, and it is a design question not a chore:** `WKURLSchemeHandler` is a different
-  mechanism, so it probably does NOT re-skip — meaning the SLICED body is right there. If so **the two
-  platforms need OPPOSITE bodies for the same portable request**, which is a measured justification for
-  D40's `Shenora.Media.{Platform}` split. The page's `mode` toggle settles it in one deploy: run `noskip`
-  and `portable` against the `moov`-at-end clip.
+_DM1 (the critical path — answer a `Range` with real headers on each mobile shell, and prove a real file
+**plays AND seeks**) is **CLOSED 2026-08-03, on both shells** — `docs/archive/tasks.md`. **Read `D44` before
+building DM2–DM5**: it carries the three rules the device runs produced, and two of them contradict what
+this file and the design doc previously asserted. In one line: a reserved PATH on the page's own origin
+(never a custom scheme) · the PORTABLE `SetResponse` with a header dictionary (`PlatformArgs` is not needed)
+· 206 + `Content-Range` + `Accept-Ranges` · and a body that is **UNSLICED on Android but SLICED on iOS**,
+because the two platforms apply the range start differently. That last asymmetry is the measured
+justification for D40's per-platform media packages, and getting it wrong **looks correct on any faststart
+file** — so the probe's control pair in `samples/Shenora.Sample.Maui/MediaRangeProbe.cs` is the regression
+test to keep._
 - [ ] **DM2 — the playability planner.** Container + codecs → `direct`/`remux`/`transcode`/`unsupported`,
   **per STREAM, not per file** (D42 — the frequent real failure is picture-with-no-sound, from licensed audio
   the platform lacks). A pure function with no I/O, so unit-testable the way `ManifestDiff` is; two siblings
