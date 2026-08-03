@@ -338,6 +338,9 @@ interface Shenora.Core.IUpdateSource
   public abstract System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.Core.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IUrlLauncher
   public abstract void OpenUrl(string url)
+interface Shenora.Core.IWebViewInterceptor
+  public abstract Shenora.Core.WebViewRangeDelivery RangeDelivery { get; }
+  public abstract System.IDisposable Use(Shenora.Core.WebViewResourceMiddleware middleware)
 sealed class Shenora.Core.ManifestDiff
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Added { get; }
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Updated { get; }
@@ -631,6 +634,20 @@ struct Shenora.Core.WebViewByteRange : System.IEquatable<Shenora.Core.WebViewByt
   public static bool op_Equality(Shenora.Core.WebViewByteRange left, Shenora.Core.WebViewByteRange right)
   public static bool op_Inequality(Shenora.Core.WebViewByteRange left, Shenora.Core.WebViewByteRange right)
   public void Deconstruct(out long From, out long To)
+enum Shenora.Core.WebViewRangeDelivery (int)
+  public const Shenora.Core.WebViewRangeDelivery Sliced = 0
+  public const Shenora.Core.WebViewRangeDelivery Unsliced = 1
+  public int value__
+delegate Shenora.Core.WebViewResourceHandler
+  public .ctor(object object, System.IntPtr method)
+  public virtual System.IAsyncResult BeginInvoke(Shenora.Core.WebViewResourceRequest request, System.Threading.CancellationToken cancellationToken, System.AsyncCallback callback, object object)
+  public virtual System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse> EndInvoke(System.IAsyncResult result)
+  public virtual System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse> Invoke(Shenora.Core.WebViewResourceRequest request, System.Threading.CancellationToken cancellationToken)
+delegate Shenora.Core.WebViewResourceMiddleware
+  public .ctor(object object, System.IntPtr method)
+  public virtual System.IAsyncResult BeginInvoke(Shenora.Core.WebViewResourceRequest request, Shenora.Core.WebViewResourceHandler next, System.Threading.CancellationToken cancellationToken, System.AsyncCallback callback, object object)
+  public virtual System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse> EndInvoke(System.IAsyncResult result)
+  public virtual System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse> Invoke(Shenora.Core.WebViewResourceRequest request, Shenora.Core.WebViewResourceHandler next, System.Threading.CancellationToken cancellationToken)
 sealed class Shenora.Core.WebViewResourceRequest
   public required System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
   public required System.Uri Uri { get; init; }

@@ -320,3 +320,12 @@ Serving
 Server
 Access
 Body
+
+# ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
+# The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher
+# already is for messages, applied to bytes instead. All mechanism words; `Delivery` in particular names
+# a measured PLATFORM fact (whether the platform or the handler applies a Range offset — D44).
+Interceptor
+Middleware
+Handler
+Delivery
