@@ -90,7 +90,32 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
 > inside the nupkg; fix with `dotnet nuget locals global-packages --clear`, or delete
 > `~/.nuget/packages/<id>/<version>`. Packing from this repo evicts them for you.
 
+> ⚠ **Your first build will emit `MSB3277`, and the kit's own gate does not show it to you.** Referencing
+> `Shenora.Windows` pulls `Microsoft.Web.WebView2`, which ships a WPF flavour alongside the WinForms one,
+> and its `Microsoft.Web.WebView2.Wpf.dll` unifies `WindowsBase` to a different version than the
+> `net10.0` reference pack — so MSBuild reports a conflict for an assembly a WinForms app never loads.
+> It is harmless and the kit demotes it in its own projects:
+>
+> ```xml
+> <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+> ```
+>
+> Recorded here 2026-08-03 after a spike compiled a consumer against the PUBLISHED package and met it.
+> Worth stating plainly rather than leaving you to judge it: this repo runs at zero warnings, and it gets
+> there partly by silencing this one — so "the kit builds clean" was never a claim that your build would.
+> ⚠ Note `TreatWarningsAsErrors` does **not** escalate it (that governs the C# compiler, not MSBuild
+> tasks); a build that fails on it is one using `MSBuildTreatWarningsAsErrors`.
+
 Build and ship. Nothing has changed yet — this stage only proves the feed.
+
+**Verified 2026-08-03, so you can skip re-proving it:** `Shenora.Core` + `Shenora.Ipc` restore from
+nuget.org into a bare `net10.0` project, and `Shenora.Windows` into `net10.0-windows` — from a throwaway
+project with no local feed. And a **Stage 1 spike compiled clean against the published package**: an
+app's two window-state call sites (`Apply` on load, `Save` on close, persisting width/height/x/y/maximized)
+map onto `WindowStateManager` unchanged in shape, `WindowState` is the same five-field record, and the
+off-screen guard an app would have kept private is here as a PURE function — `WindowStateManager.IsVisible`,
+taking the monitor rectangles and options as arguments, so it is unit-testable in a way a private helper
+reading `Screen.AllScreens` was not. `AttachTo(form)` collapses both call sites into one if you want it.
 
 ---
 
