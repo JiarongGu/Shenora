@@ -79,6 +79,15 @@
                LogicalName="wwwroot/shenora/transport.js"
                Condition="Exists('..\..\src\Shenora.React\dist\transport.js')" />
     <!--
+      The SHIPPED mediaUrl(), for the same reason transport.js is here: the sample should exercise the
+      published package's own code rather than a hand-written copy of it. The page hand-rolled this encoding
+      for one commit and immediately drifted from the host route — which is exactly the class of bug a
+      sample using the real thing cannot have.
+    -->
+    <MauiAsset Include="..\..\src\Shenora.React\dist\media.js"
+               LogicalName="wwwroot/shenora/media.js"
+               Condition="Exists('..\..\src\Shenora.React\dist\media.js')" />
+    <!--
       The DM1 media probe's two clips. Excluded from the glob above and named EXPLICITLY, with forward
       slashes, because two different consumers open them by that exact string: `MediaRangeProbe` via
       `OpenAppPackageFileAsync`, and the page directly, as `media/<clip>` relative to its own origin —
