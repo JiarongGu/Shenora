@@ -9,7 +9,7 @@ records only what EXISTS.)
      headline is. Don't hand-edit it — and don't date this line either: the release workflow owns
      the version, so a hand-written one is stale the moment a release cuts. Everything ELSE in this
      file dates its claims instead of versioning them, for the same reason. -->
-## Current state — **v0.7.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
+## Current state — **v0.8.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
 Five NuGet packages + `@shenora/react` on npm — since 0.5.0 organised BY PLATFORM (D37): `Core`,
 `Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. All five ship from ONE
