@@ -60,6 +60,43 @@ Earned across the Android port and the iOS port (both 2026-08-02).
 - **Signing does not work over ssh** — an ssh login is a different AUDIT SESSION, so a login-keychain
   key fails `errSecInternalComponent`. Simulator builds sign ad-hoc and are unaffected; a device build
   needs the Terminal.app hand-off.
+- **A capability probe must run in the SAME SHELL as the command it gates.** `mac.mjs`'s one-shot `ssh()`
+  uses `bash -lc` — a LOGIN shell, so Homebrew is on PATH — while its persistent worker originally used a
+  plain `bash -s`, which is not. So `command -v cliclick` answered NO over the worker and YES over ssh, for
+  the same Mac with cliclick installed. The damage was silent: `tap` read the NO and fell back to System
+  Events, which lands as focus-only on some web controls, so a tap "succeeded" and did nothing. Fixed by
+  making the worker `bash -l -s`, and `tap` now PRINTS which mechanism it used. **The donor still has this
+  bug** — do not port a probe without checking which shell will run it.
+- **Two sibling repos on one machine will collide on a fixed dev PORT, and the collision is silent.**
+  `mac mirror` defaulted to the donor's 7672; the sibling's mirror was already bound and pointed at the SAME
+  simulator, so `/frame` answered with a valid screenshot and the smoke test passed against the other repo's
+  server. Pick a distinct port (Shenora uses 7674) and make `EADDRINUSE` say WHY rather than throwing a raw
+  stack — this is the family's one-dev-port-per-app rule (`webview2-hosting.md`) applied to devtools.
+- **A default written in two places is a default that is not there.** The mirror's port constant said 7674
+  while the dispatch passed `Number(rest[0]) || 7672`, so the constant described a port the tool never used.
+  Let the parameter default be the only one.
+- **`mac tap`/`swipe` take NATIVE screenshot pixels — not the size a tool DISPLAYED the PNG at.** A preview
+  may downscale (1206×2622 shown at 920×2000) and label the display size; multiply back or every tap misses.
+- **Prefer `mac safari-eval` over a screenshot for anything with a VALUE.** A screenshot cannot report a
+  number, a header or an array, and a `<video>` element reports only "no supported source" however it
+  failed — three different DM1 causes were indistinguishable until a `fetch` ran in the page (D44).
+- **⚠ Some Mac operations cannot go over ssh AT ALL, and that is a tooling requirement, not a nuisance.**
+  `sudo` needs a TTY and code signing needs a real login AUDIT SESSION, so the human must run those — and
+  then has to get pages of output back. Serve the script over the LAN and have it POST its own transcript
+  back (this repo's throwaway is `devtools/_relay.mjs`; the machine-specific findings live in
+  `local/MAC-DIAGNOSTICS.md`). Four things that pattern earned: prove reachability with a `ping` route
+  BEFORE handing a human a URL, or a firewall block looks like them doing it wrong; round-trip the whole
+  loop over ssh first, which often produces the diagnosis with nobody touching anything; download-then-run
+  rather than `curl | sh` for anything using sudo; and guard on the ACCOUNT, naming the one required, so a
+  refusal is visible on the driving side instead of silent.
+- **⚠ Before changing ANY permission on a Mac's Homebrew tree, read `local/MAC-DIAGNOSTICS.md`.** That
+  install is in a mixed-ownership state, a package install fails there in three DIFFERENT ways in
+  sequence, and the donor's advice (`sudo chown -R` the tree) is wrong for the first two. The generic
+  lesson, which is the part worth carrying: **each stage produces a different error, and the change in
+  error is the evidence** — so diagnose to the next error rather than escalating the remedy. Also ask
+  whether the tool is needed at all: two rounds went into a 2019-era Homebrew for a CDP bridge when the
+  actual goal (read page state programmatically) can be met by having the PAGE post to the LAN relay.
+
 - **`Application.Current` is null inside `CreateMauiApp`** (`builder.Build()` makes the MauiApp, not
   the Application) — use `Dispatcher.GetForCurrentThread()`. And the page MUST load the platform's own
   bridge script or `window.HybridWebView` never exists, the page renders fine, and the host sits

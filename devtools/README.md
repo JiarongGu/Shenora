@@ -26,7 +26,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `responsiveness <fx> <fy> [--label n] [--duration\|--interval\|--timeout ms]` | click a control, then sample `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` sub-100ms to measure whether the UI thread keeps pumping — the probe behind the one-way-IPC UI-thread claim (see below) |
 | `android <devices\|connect\|deploy\|run\|log\|shot>` | the MAUI sample's device loop — see the section below |
-| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|log\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
+| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|swipe\|safari-eval\|mirror\|log\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule. `check` covers SKILLS the same way — a `.claude/skills/*/SKILL.md` missing from `skill-loader`'s table is never picked, and that was guarded only by a sentence asking the next session to remember |
 | `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
 | `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
@@ -96,7 +96,10 @@ post-mortems — only the build step differs (that project builds an Xcode proje
 | `mac push` | push the branch and reset the Mac's clone to it |
 | `mac build` / `mac run` | build for the simulator; `run` also boots it, installs and launches |
 | `mac shot [name]` | screenshot the simulator → `devtools/_mac/` (gitignored) |
-| `mac tap <x> <y>` / `mac type <text>` | input, in the coordinates you read off that screenshot |
+| `mac tap <x> <y>` / `mac type <text>` | input, in the NATIVE pixels of that screenshot (see the trap below) |
+| `mac swipe <x1> <y1> <x2> <y2>` | drag/scroll, same coordinate space. Needs `cliclick` on the Mac and REFUSES without it rather than half-scrolling |
+| `mac safari-eval <js…>` | run JavaScript in the page and print the VALUE. The difference between reading state and guessing at it |
+| `mac mirror [port]` | live view of the simulator on the LAN (default **7674**); click to tap, scroll to swipe |
 | `mac log [-n N] [--all]` | the sample's own lines from the simulator's unified log; `--all` for the whole process |
 | `mac awake [on\|off]` | stop the Mac sleeping while it is a build machine |
 | `mac ssh <cmd>` | escape hatch |
@@ -143,6 +146,34 @@ And four more, all earned on the first real iOS run rather than inherited:
 - **Write the page for the superset of shells, not the one you tested.** The sample's markup was
   unchanged from Android and still put its heading under the status bar and the Dynamic Island,
   because an emulator has no insets to violate. `env(safe-area-inset-*)` + `viewport-fit=cover`.
+
+### The drive loop, harvested from the sibling 2026-08-03 (`swipe` · `safari-eval` · `mirror`)
+
+The first port took the build half and left the DRIVE half behind, which is what made the DM1 media
+work slow: every question about page state had to be answered by screenshotting and reading pixels.
+
+- **`mac safari-eval` is the one that changes how a session works.** A screenshot cannot report a
+  number, a header or an array, and a `<video>` element can only ever say "no supported source"
+  however it actually failed. Running a `fetch` in the page and reading the bytes back is what turned
+  DM1 from three equally plausible hypotheses into one measurement (D44).
+  ⚠ **It needs `ios-webkit-debug-proxy` on the Mac and that install is not yet done here** — see the
+  command's own error text, which carries the exact diagnosis for this machine.
+- **`mac tap` takes NATIVE screenshot pixels, not the size a tool DISPLAYED the PNG at.** A preview
+  may downscale and label its own size; multiply back first or every tap misses. Hit live during DM1.
+- **`tap` now says which mechanism landed it.** cliclick or the System Events fallback — the fallback
+  can register as focus-only on some web controls, so a silent downgrade is a tap that "succeeded"
+  and did nothing.
+- ⚠ **A capability probe must run in the SAME SHELL as the command it gates.** `ssh()` uses
+  `bash -lc` (login → Homebrew on PATH); the worker used a plain `bash -s` and answered "cliclick is
+  not installed" for a Mac that has it, seconds after a direct check found it. `tap` read that answer
+  and quietly took the weaker path. The worker is `bash -l -s` now. **The sibling still has this.**
+- **The mirror defaults to 7674, NOT the sibling's 7672.** Both repos live on this machine and both
+  mirrors point at the SAME simulator, so a collision answers `/frame` with a valid screenshot and a
+  smoke test passes against the other repo's server. Observed on the first run; the port is now
+  distinct and `EADDRINUSE` says all of this instead of throwing a raw stack.
+- **The persistent ssh worker is why these are usable.** A fresh connection costs ~1.8 s against a
+  ~322 ms screenshot, and `ControlMaster` multiplexing does not exist on the Windows ssh client — so
+  one `bash -l -s` is held open and fed commands to a sentinel.
 
 **Its public surface is gated differently, and more weakly.** `tests/Shenora.Tests` is
 `net10.0-windows` and cannot reference an Android assembly, so `MetadataSurfaceTests` reads the built

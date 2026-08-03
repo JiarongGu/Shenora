@@ -111,6 +111,12 @@ function log(cls, text) {
   const time = new Date().toISOString().substr(11, 8);
   logEl.insertAdjacentHTML('beforeend', `<div><span class="t">${time}</span> <span class="${cls}">${text}</span></div>`);
   logEl.scrollTop = logEl.scrollHeight;
+  // Mirrored to the console with a grep-able tag, so PAGE state can be read as TEXT rather than off a
+  // screenshot. A screenshot cannot report a number, a header or an array, and reading them off pixels is
+  // what made the DM1 media work slow. Whether this actually reaches the device's unified log (and so
+  // `dev.mjs mac log --all` / `android log`) is a per-platform question — the tag is here so it can be
+  // answered by grepping for it rather than guessed at.
+  console.log(`[PAGELOG] ${text}`);
 }
 
 /** The last-resort channel, used only when the shipped package has not been built. */
