@@ -107,6 +107,20 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   loop over ssh first, which often produces the diagnosis with nobody touching anything; download-then-run
   rather than `curl | sh` for anything using sudo; and guard on the ACCOUNT, naming the one required, so a
   refusal is visible on the driving side instead of silent.
+- **⚠ A custom scheme can be REGISTERED on iOS and on the desktop, but NOT on Android — so `app://` can
+  never be media-capable there.** Asked by compiling (2026-08-04), because "register the scheme" is the
+  obvious fix and it only works on two of three platforms:
+  - **iOS**: `WKWebViewConfiguration.SetUrlSchemeHandler(handler, "app")` + `IWKUrlSchemeHandler` both
+    compile. This is already how MAUI serves `app://` there, which is why the iOS page origin IS
+    `app://0.0.0.1/` — nothing needs adding.
+  - **Desktop**: `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` (see `webview2-hosting.md`).
+  - **Android**: `Mono.Android` exposes NO scheme registration under any name. `shouldInterceptRequest`
+    fires for any scheme — which is why a handler IS called for `app://` — but Chromium's media pipeline
+    still refuses to decode from a non-standard scheme. Corroborating rather than coincidental: Google's own
+    answer to the same problem, `WebViewAssetLoader`, serves over an **https virtual host**.
+  **Consequence: write the media URL RELATIVE.** It resolves to `app://0.0.0.1/…` on iOS (the app scheme,
+  registered) and `https://0.0.0.1/…` on Android (media-capable), so one page gets the right scheme on both
+  without naming either. A literal `app://` is right on one shell and silently broken on the other.
 - **⚠ Before changing ANY permission on a Mac's Homebrew tree, read `local/MAC-DIAGNOSTICS.md`.** That
   install is in a mixed-ownership state, a package install fails there in three DIFFERENT ways in
   sequence, and the donor's advice (`sudo chown -R` the tree) is wrong for the first two. The generic

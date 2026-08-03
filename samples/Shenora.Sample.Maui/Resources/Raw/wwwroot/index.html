@@ -240,17 +240,44 @@ urlBtn.onclick = () => {
   log('t', `url form -> ${urlForm}`);
 };
 
+/**
+ * The media URL: ONE route (`video`) with an ENCODED PAYLOAD — `video?<encoded>`.
+ *
+ * A route with a payload rather than a scheme per media kind, for the same reason the kit's IPC is one
+ * transport with `module` + `type`: one registration instead of one per kind, a new kind (`thumb`, `audio`)
+ * costs nothing, and the payload can carry more than a filename — a source, a container preference, a cache
+ * key — instead of being a bare string.
+ *
+ * ⚠ RELATIVE, so the page never writes the scheme. That is not a style choice, it is measured: this
+ * resolves to `app://0.0.0.1/video?…` on iOS — the app scheme, which is the only thing iOS intercepts —
+ * and to `https://0.0.0.1/video?…` on Android, whose media pipeline REFUSES a non-standard scheme outright
+ * (`MEDIA_ERR_SRC_NOT_SUPPORTED`, instantly, even for a correct 200). Writing `app://` literally would give
+ * one shell the right answer and break the other, and the relative form gives BOTH the scheme they need
+ * without the page knowing which it is on.
+ *
+ * The payload is base64url of JSON. Encoded rather than a readable path because it is extensible, and
+ * base64URL specifically so `+`, `/` and `=` cannot survive into a query string and be re-interpreted.
+ * ⚠ The cost of encoding is debuggability, so the HOST logs what it decoded to — the response body cannot
+ * say (no exception text on the wire), which leaves the host log as the only diagnosis.
+ */
+function encodePayload(payload) {
+  const json = JSON.stringify(payload);
+  // TextEncoder → binary string → btoa, so non-ASCII in a payload survives; btoa alone throws on it.
+  const bytes = new TextEncoder().encode(json);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function clipUrl(name) {
   // Cache-bust every load, or the webview answers a reload from its own copy and the host never sees
   // the request — which reads exactly like "the handler stopped being called".
-  const bust = `n=${Date.now()}`;
-  if (urlForm === 'bundle') return `media/${name}?${bust}`;   // MAUI's own static serving, no host code
-  // RELATIVE on purpose: the page must not name the origin's scheme, because it differs per shell
-  // (`https://0.0.0.1/` on Android, `app://0.0.0.1/` on iOS). This is the only form that is both
-  // intercepted AND media-capable on both.
-  if (urlForm === 'origin') return `/shenora-media/?src=${name}&${bust}`;
-  const base = urlForm === 'https' ? 'https://shenora.media/' : 'app://media/';
-  return `${base}?src=${name}&${bust}`;
+  const bust = Date.now();
+  if (urlForm === 'bundle') return `media/${name}?n=${bust}`;   // the platform's own serving, no host code
+  const payload = encodePayload({ src: name, n: bust });
+  // `app` keeps the literal scheme deliberately, as the control that shows why relative is required.
+  if (urlForm === 'app') return `app://video?${payload}`;
+  return `/video?${payload}`;
 }
 
 function loadClip(name) {
