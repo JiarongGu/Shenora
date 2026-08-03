@@ -36,6 +36,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 |---|---|---|---|
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
+| `Shenora.Media` | NuGet | `net10.0` | The portable half of playing media a webview cannot decode: a per-stream playability planner, a probe-result shape, and the content cache key. Ships no codec list and no engine. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
@@ -56,7 +57,16 @@ Dependencies — the graph is a **diamond, not a chain**:
               ├──── Shenora.Windows ──────┘             net10.0-windows
               ├──── Shenora.Android                     net10.0-android
               └──── Shenora.iOS                         net10.0-ios
+
+        Shenora.Media                                   net10.0
+          (depends on nothing — pure functions over its own data)
 ```
+
+**`Shenora.Media` is a leaf on purpose.** It holds decisions, not plumbing: everything in it is a pure
+function over its own types, so it needs neither the host contracts nor DI. Media splits from `Shenora.Core`
+because a demuxer or an image codec is real shipped bytes and every package references Core — so an app
+that never touches media should not pay for one. It stays `net10.0` so app logic can compile against it on
+any shell.
 
 **`Shenora.Ipc` is platform-neutral and stays that way.** It targets `net10.0`, references only
 `Shenora.Core`, and binds to no UI framework at all — the whole transport story (D16) rests on that:

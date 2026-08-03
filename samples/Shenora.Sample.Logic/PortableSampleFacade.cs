@@ -1,5 +1,6 @@
 using Shenora.Core;
 using Shenora.Ipc;
+using Shenora.Media;
 
 namespace Shenora.Sample.Logic;
 
@@ -112,6 +113,17 @@ public sealed class PortableSampleFacade(
             case "SCHEDULE_DEMO":
                 return ScheduleDemo();
 
+            // The media decision, from PORTABLE logic — which is the point of the route existing (D41).
+            // `Shenora.Media` is net10.0, so this compiles here, on the desktop shell and on both mobile
+            // shells with no `#if`; the moment someone reaches for a platform media type instead, THIS
+            // project stops compiling. That is the tripwire, and it is armed rather than described.
+            //
+            // Note what the app supplies and what the kit does not: every codec and container below is the
+            // APP's policy. The kit ships no list, because the right one differs per player and, on
+            // Android, per DEVICE (D42).
+            case "PLAN_PLAYBACK":
+                return PlanPlayback(request);
+
             // The composition an adopter actually builds: expensive work in parallel, the filesystem
             // change landed through the queue. Two chains go in at once and their COMMITS serialize
             // while their staging does not — which is the whole argument for the file queue existing
@@ -122,6 +134,57 @@ public sealed class PortableSampleFacade(
             default:
                 throw UnknownType(request);
         }
+    }
+
+    /// <summary>
+    /// What a browser-ish player can open. <b>The APP's policy, not the kit's</b> — `Shenora.Media` ships
+    /// no codec list on purpose, because the correct one differs per player and, on Android, per DEVICE
+    /// (codec support is vendor-declared, which is why <c>MediaCodecList</c> is a runtime query). A list
+    /// baked into the kit would be one app's guess frozen into everyone's planner.
+    /// </summary>
+    private static readonly MediaPlaybackPolicy BrowserPolicy = new()
+    {
+        Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".mov", ".webm" },
+        VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp8", "vp9", "av1" },
+        AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "mp3", "opus", "vorbis", "flac" },
+        // This sample ships no engine, so it can convert nothing — and saying so honestly is the point:
+        // the planner then answers `Unsupported` instead of promising a transcode nobody can perform.
+        CanEncodeVideo = false,
+        CanEncodeAudio = false,
+    };
+
+    /// <summary>
+    /// Runs the playability decision over a container + codecs the page names. Pure — no file is opened,
+    /// nothing is probed here — so it behaves identically on all three shells.
+    /// </summary>
+    private static object PlanPlayback(IpcRequest request)
+    {
+        var container = PayloadHelper.GetOptionalValue<string>(request.Payload, "container");
+        var video = PayloadHelper.GetOptionalValue<string>(request.Payload, "video");
+        var audio = PayloadHelper.GetOptionalValue<string>(request.Payload, "audio");
+
+        var streams = new List<MediaStreamInfo>();
+        if (video is { Length: > 0 }) streams.Add(new MediaStreamInfo(MediaStreamKind.Video, video));
+        if (audio is { Length: > 0 }) streams.Add(new MediaStreamInfo(MediaStreamKind.Audio, audio));
+
+        var plan = MediaPlaybackPlanner.Plan(
+            new MediaProbeResult { Container = container, Streams = streams }, BrowserPolicy);
+
+        return new
+        {
+            Action = plan.Action.ToString(),
+            plan.ContainerOpens,
+            plan.Reason,
+            // Per-STREAM, which is the whole reason the planner is shaped this way: the page can see that
+            // only the audio is the problem rather than being told the file is unplayable (D42).
+            Streams = plan.Streams.Select(s => new
+            {
+                Kind = s.Stream.Kind.ToString(),
+                s.Stream.Codec,
+                s.DecodesNatively,
+                s.NeedsReEncode,
+            }),
+        };
     }
 
     /// <summary>

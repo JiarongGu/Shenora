@@ -60,6 +60,16 @@ Shenora.slnx
 ├── src/
 │   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
 │   ├── Shenora.Ipc         net10.0          — deps: Shenora.Core
+│   ├── Shenora.Media       net10.0          — deps: NONE, and that is the design. A LEAF: it holds
+│   │                                          decisions, not plumbing, so every type is a pure function
+│   │                                          over its own data — the per-stream playability planner
+│   │                                          (D42), the best-effort probe-result shape, the content
+│   │                                          cache key. Its own package because a demuxer or image
+│   │                                          codec is real shipped bytes and EVERYTHING references
+│   │                                          Core, so an app that never touches media must not pay for
+│   │                                          one (D40). net10.0, so app logic compiles against it on
+│   │                                          any shell — enforced by the Sample.Logic tripwire (D41).
+│   │                                          Ships no codec list and no engine: policy is the app's.
 │   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders

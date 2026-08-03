@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      IsPackable stays INLINE here, never hoisted into shared props. The API-baseline coverage gate finds
+      shipped projects by TEXT-MATCHING this element in the csproj, so hoisting it would make this package
+      invisible to the gate: it would ship with no baseline and nothing would say so. The mobile packages
+      already documented this trap; one duplicated line is the cheaper mistake.
+    -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Media</PackageId>
+    <Description>Shenora media: the portable half of playing media a webview cannot decode — a pure, per-stream playability planner (direct / remux / transcode / unsupported), a best-effort probe-result shape, and the content-keyed cache key. Ships NO codec list and NO engine: the mechanism is the kit's, the codec policy is the application's.</Description>
+  </PropertyGroup>
+
+  <!--
+    net10.0 — deliberately NOT a platform TFM, and it is enforced rather than asserted (D41). App logic
+    names `Shenora.Media` and never `Shenora.Media.{Platform}`, which is what makes one media call site
+    work on three shells; `samples/Shenora.Sample.Logic` is a net10.0 project that turns RED if a platform
+    type reaches app logic, so this package has to compile there. It inherits net10.0 from
+    src/Directory.Build.props — restated nowhere, because a second declaration is a second thing to drift.
+  -->
+  <ItemGroup>
+    <!--
+      Shenora.Core, and the edge is REAL rather than declared: `MediaRangeServer` speaks
+      `WebViewResourceRequest`/`Response`/`ByteRange`, which live in Core precisely because they describe a
+      host↔page resource exchange and nothing about that is platform-specific (D2a). Added when something
+      actually crossed it — the planner needed nothing, the serving does.
+    -->
+    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+  </ItemGroup>
+
+</Project>

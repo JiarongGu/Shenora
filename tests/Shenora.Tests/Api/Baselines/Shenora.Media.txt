@@ -1,0 +1,106 @@
+static class Shenora.Media.MediaAccess
+  public static bool IsRemoteAllowed(System.Uri? source, Shenora.Media.MediaServingOptions options)
+  public static string? ResolveLocal(string? requestedPath, Shenora.Media.MediaServingOptions options)
+enum Shenora.Media.MediaBodyMode (int)
+  public const Shenora.Media.MediaBodyMode Sliced = 0
+  public const Shenora.Media.MediaBodyMode Unsliced = 1
+  public int value__
+static class Shenora.Media.MediaCacheKey
+  public static string For(string path, long length, System.DateTime lastWriteUtc, string variant = "")
+enum Shenora.Media.MediaPlaybackAction (int)
+  public const Shenora.Media.MediaPlaybackAction Direct = 0
+  public const Shenora.Media.MediaPlaybackAction Remux = 1
+  public const Shenora.Media.MediaPlaybackAction Transcode = 2
+  public const Shenora.Media.MediaPlaybackAction Unsupported = 3
+  public int value__
+sealed class Shenora.Media.MediaPlaybackPlan : System.IEquatable<Shenora.Media.MediaPlaybackPlan>
+  public .ctor(Shenora.Media.MediaPlaybackAction Action, System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamPlan> Streams, bool ContainerOpens, string Reason)
+  public Shenora.Media.MediaPlaybackAction Action { get; init; }
+  public Shenora.Media.MediaPlaybackPlan <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamPlan> Streams { get; init; }
+  public bool ContainerOpens { get; init; }
+  public bool Equals(Shenora.Media.MediaPlaybackPlan? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaPlaybackPlan? left, Shenora.Media.MediaPlaybackPlan? right)
+  public static bool op_Inequality(Shenora.Media.MediaPlaybackPlan? left, Shenora.Media.MediaPlaybackPlan? right)
+  public string Reason { get; init; }
+  public void Deconstruct(out Shenora.Media.MediaPlaybackAction Action, out System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamPlan> Streams, out bool ContainerOpens, out string Reason)
+static class Shenora.Media.MediaPlaybackPlanner
+  public static Shenora.Media.MediaPlaybackPlan Plan(Shenora.Media.MediaProbeResult probe, Shenora.Media.MediaPlaybackPolicy policy)
+sealed class Shenora.Media.MediaPlaybackPolicy : System.IEquatable<Shenora.Media.MediaPlaybackPolicy>
+  public .ctor()
+  public Shenora.Media.MediaPlaybackPolicy <Clone>$()
+  public System.Collections.Generic.IReadOnlySet<string> AudioCodecs { get; init; }
+  public System.Collections.Generic.IReadOnlySet<string> Containers { get; init; }
+  public System.Collections.Generic.IReadOnlySet<string> VideoCodecs { get; init; }
+  public bool CanEncodeAudio { get; init; }
+  public bool CanEncodeVideo { get; init; }
+  public bool Equals(Shenora.Media.MediaPlaybackPolicy? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
+  public static bool op_Inequality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
+sealed class Shenora.Media.MediaProbeResult : System.IEquatable<Shenora.Media.MediaProbeResult>
+  public .ctor()
+  public Shenora.Media.MediaProbeResult <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamInfo> Streams { get; init; }
+  public System.TimeSpan? Duration { get; init; }
+  public bool Equals(Shenora.Media.MediaProbeResult? other)
+  public int? Height { get; init; }
+  public int? Width { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
+  public static bool op_Inequality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
+  public string? Container { get; init; }
+static class Shenora.Media.MediaRangeServer
+  public static Shenora.Core.WebViewResourceResponse Serve(Shenora.Core.WebViewResourceRequest request, string path, string contentType, Shenora.Media.MediaServingOptions options)
+sealed class Shenora.Media.MediaServingOptions : System.IEquatable<Shenora.Media.MediaServingOptions>
+  public .ctor()
+  public Shenora.Media.MediaBodyMode BodyMode { get; init; }
+  public Shenora.Media.MediaServingOptions <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, bool>? AllowRemote { get; init; }
+  public bool Equals(Shenora.Media.MediaServingOptions? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaServingOptions? left, Shenora.Media.MediaServingOptions? right)
+  public static bool op_Inequality(Shenora.Media.MediaServingOptions? left, Shenora.Media.MediaServingOptions? right)
+sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.MediaStreamInfo>
+  public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null)
+  public Shenora.Media.MediaStreamInfo <Clone>$()
+  public Shenora.Media.MediaStreamKind Kind { get; init; }
+  public bool Equals(Shenora.Media.MediaStreamInfo? other)
+  public int? Channels { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaStreamInfo? left, Shenora.Media.MediaStreamInfo? right)
+  public static bool op_Inequality(Shenora.Media.MediaStreamInfo? left, Shenora.Media.MediaStreamInfo? right)
+  public string? Codec { get; init; }
+  public string? Profile { get; init; }
+  public void Deconstruct(out Shenora.Media.MediaStreamKind Kind, out string? Codec, out string? Profile, out int? Channels)
+enum Shenora.Media.MediaStreamKind (int)
+  public const Shenora.Media.MediaStreamKind Audio = 2
+  public const Shenora.Media.MediaStreamKind Subtitle = 3
+  public const Shenora.Media.MediaStreamKind Unknown = 0
+  public const Shenora.Media.MediaStreamKind Video = 1
+  public int value__
+sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.MediaStreamPlan>
+  public .ctor(Shenora.Media.MediaStreamInfo Stream, bool DecodesNatively, bool NeedsReEncode)
+  public Shenora.Media.MediaStreamInfo Stream { get; init; }
+  public Shenora.Media.MediaStreamPlan <Clone>$()
+  public bool DecodesNatively { get; init; }
+  public bool Equals(Shenora.Media.MediaStreamPlan? other)
+  public bool NeedsReEncode { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
+  public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
+  public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)

@@ -289,3 +289,34 @@ Step
 # this line already exists.
 Download
 Hit
+
+# ── Media (Shenora.Media, 2026-08-03) ─────────────────────────────────────────────────────────────
+# Each of these names a MECHANISM, which is the only reason they are allowed (D22). The test that
+# earns the section: `MediaPlaybackPlanner` decides what must HAPPEN to a file — the mechanism — while
+# WHICH codecs are playable is `MediaPlaybackPolicy`, supplied by the app. The kit ships no codec list,
+# so no format name ever reaches this surface.
+#
+# ⚠ Watch this one the way `Download` above is watched. "Media" is the closest thing here to a domain
+# word, and it is allowed because the kit genuinely serves a media EXCHANGE (containers and streams it
+# never decodes). A `MediaLibrary`, `MediaPlayer` or `Track` would be the kit growing a product and must
+# be argued on its own merits, not waved past because this line exists.
+Media
+Playback
+Plan
+Planner
+Policy
+Action
+Cache
+Key
+Probe
+Result
+Stream
+Info
+Kind
+# Serving added 2026-08-03 with the range server. `Serving`/`Server`/`Access`/`Body` all name mechanisms:
+# `MediaBodyMode` in particular names a measured PLATFORM fact (whether the handler or the platform applies
+# the range offset — D44), not a preference.
+Serving
+Server
+Access
+Body

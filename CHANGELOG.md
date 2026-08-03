@@ -12,6 +12,37 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **A sixth package: `Shenora.Media`** (`net10.0`) — the portable half of playing media a webview cannot
+  decode. It holds decisions, not plumbing, and depends on nothing: every type in it is a pure function
+  over its own data. Media is its own package because a demuxer or an image codec is real shipped bytes
+  and *everything* references `Shenora.Core`, so an app that never touches media should not pay for one
+  (D40).
+  - **`MediaPlaybackPlanner`** — container + codecs → `Direct` / `Remux` / `Transcode` / `Unsupported`,
+    **per STREAM rather than per file** (D42). The frequent real failure is not "this will not play", it
+    is *picture with no sound*: H.264 video that decodes perfectly beside AC-3 audio that does not,
+    because licensed audio is absent from some platforms' mandatory sets. A `CanPlay(file) -> bool` is
+    wrong in exactly that case, and throws away the cheap fix — copy the picture, re-encode only the
+    sound. Pure and I/O-free, so it is unit-testable the way `ManifestDiff` is.
+  - **`MediaProbeResult` / `MediaStreamInfo`** — the planner's input, best-effort and all-nullable. Both
+    surveyed implementations admit the same thing in their own types; a probe is an external tool that may
+    be absent, and code treating a null here as an error fails on files that play perfectly.
+  - **`MediaCacheKey`** — identity + length + mtime, never a path alone. All three surveyed
+    implementations reached that independently: a path-only key survives an overwrite, and then yesterday's
+    conversion is served for a file the user has replaced.
+  - **`MediaPlaybackPolicy` carries the codec sets, and the kit ships NO default.** There is no correct
+    universal list — a browser's differs from an engine's, and Android's differs per DEVICE because codec
+    support is vendor-declared. A baked-in list would be one app's guess frozen into everyone's planner.
+    The mechanism is the kit's; the policy is the application's.
+- **The D41 media tripwire is ARMED rather than described.** `samples/Shenora.Sample.Logic` (a `net10.0`
+  project) now references `Shenora.Media` and its facade uses the planner, so "app logic names
+  `Shenora.Media` and never `Shenora.Media.{Platform}`" is enforced by the build. Sabotage-verified: a
+  platform reference there fails `NU1201` by name, and cascades to the MAUI sample too, because the same
+  portable logic feeds both mobile shells.
+
 ## 0.8.0 — 2026-08-03
 
 ### Breaking

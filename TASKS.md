@@ -380,10 +380,12 @@ because the two platforms apply the range start differently. That last asymmetry
 justification for D40's per-platform media packages, and getting it wrong **looks correct on any faststart
 file** — so the probe's control pair in `samples/Shenora.Sample.Maui/MediaRangeProbe.cs` is the regression
 test to keep._
-- [ ] **DM2 — the playability planner.** Container + codecs → `direct`/`remux`/`transcode`/`unsupported`,
-  **per STREAM, not per file** (D42 — the frequent real failure is picture-with-no-sound, from licensed audio
-  the platform lacks). A pure function with no I/O, so unit-testable the way `ManifestDiff` is; two siblings
-  have one already and both would delete theirs. The codec SET belongs to the app, the mechanism to the kit.
+_**DM2 is DONE** — `MediaPlaybackPlanner` in the new `Shenora.Media`, per STREAM (D42), pure and I/O-free
+with 14 tests. The codec sets are the app's (`MediaPlaybackPolicy`); the kit ships no list, because the
+right one differs per player and per DEVICE on Android. `MediaProbeResult`/`MediaStreamInfo` (best-effort,
+all-nullable) and `MediaCacheKey` (identity + length + mtime, 12 tests) landed with it — the latter is the
+one piece DM3 said was missing. See `CHANGELOG.md` `## Unreleased`._
+
 - [ ] **DM3 — the conversion, COMPOSED not built.** `IMissionScheduler` (the long run) +
   `PathClaims.Exclusive` (convert once, never twice) + `Files.BeginReplace` (atomic output) + a
   path+size+mtime cache key. Everything but the key helper already ships, and `Files.BeginReplace`'s own
@@ -394,12 +396,20 @@ test to keep._
   path-containment surface, because the page supplies the path → the generic version of the
   `ResolveContained` fix, not a second hand-rolled one. Neither is optional, and both are classes the
   review checklist hunts for by name.
-- [ ] **DM5 — scaffold the packages LAST** (D40: `Media` + `Media.Windows`/`.Android`/`.iOS`). Mechanical,
-  with the mobile split as the proven template. Each inherits the full checklist: lockstep version, API
-  baseline, `packableProjects` entry, description, **`IsPackable` kept INLINE** (hoisting it into shared
-  props hides a project from the baseline-coverage gate), README row, doc-drift row, and `Media` added to
-  the surface lexicon. ⚠ **Wire the `net10.0` sample-logic tripwire to actually USE media in the same
-  pass** (D41), or it stays a tripwire that cannot fail.
+- [ ] **DM5 — the THREE PLATFORM packages. `Shenora.Media` itself is DONE.** The portable package shipped
+  with DM2 and took the whole checklist: `IsPackable` inline, `packableProjects` entry, description,
+  solution entry, API baseline, README row + dependency graph, `ARCHITECTURE.md` entry, and thirteen new
+  words in the surface lexicon (with `Media` flagged to be watched the way `Download` is — a `MediaPlayer`
+  or `Track` would be the kit growing a product). ⚠ **The D41 tripwire is ARMED**: `Sample.Logic` uses the
+  planner from portable logic, and a platform reference there fails `NU1201` by name — sabotage-verified,
+  and it cascades to the MAUI sample because the same logic feeds both mobile shells.
+
+  **`Media.Windows`/`.Android`/`.iOS` are deliberately NOT created yet, and the reason is not effort.**
+  There is nothing for them to implement: their content is the serving side — the per-platform response
+  body (D44's measured asymmetry: Android must NOT slice, iOS MUST) — and that needs the serving contract
+  DM3/DM4 defines, including DM4's two authorization seams. Creating them now would publish three empty
+  package ids, and **nuget.org never deletes a version**. So they follow DM3/DM4, which is the order the
+  design already gives. When they land, each inherits the same checklist above.
 
 _Thumbnails and image resize are DEFERRED with the analysis already done — D43. They cost 0 MB on every
 platform and need no engine, so they are cheap to add later, and the player does not depend on them._

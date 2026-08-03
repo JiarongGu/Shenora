@@ -26,6 +26,8 @@ export default {
   packableProjects: [
     'src/Shenora.Core',
     'src/Shenora.Ipc',
+    // net10.0 and portable, so it packs and gates exactly like Core/Ipc — no platform host needed.
+    'src/Shenora.Media',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
     // as the definition of "shipped", so a project claiming it while the tooling skips it is the two

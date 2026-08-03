@@ -85,7 +85,7 @@
     media stack. If `bundle` fails too, nothing above it is the bug.
 -->
 <div class="row">
-  <button id="mmode">mode: noskip</button>
+  <button id="mmode">mode: sliced</button>
   <button id="murl">url: origin</button>
   <button id="mrange">RANGE test</button>
 </div>
@@ -233,8 +233,8 @@ document.getElementById('bad').onclick   = () => post('SAMPLE_LOGIC', 'NO_SUCH_R
 // `app://media/?x`). The host matches a parsed Uri, so either form works; this one just says out loud
 // what actually goes over the wire.
 const vid = document.getElementById('vid');
-const MODES = ['noskip', 'portable', 'whole', 'native'];
-const URLS = ['origin', 'app', 'https', 'bundle'];
+const MODES = ['sliced', 'unsliced'];
+const URLS = ['origin', 'app', 'bundle'];
 let mode = MODES[0];
 let urlForm = URLS[0];
 const modeBtn = document.getElementById('mmode');
