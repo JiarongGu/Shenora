@@ -307,19 +307,32 @@ answer is yes without further debate. It also retroactively justifies the packag
 surface that three apps share is exactly what "one shell package per platform" is for — each platform
 implements it differently, none of them leaks into app logic.
 
-- [ ] **D1 — Harvest before designing.** Three consumers means three existing implementations, and
-  the extraction rule (D8/D15) says the design is IN them, not ahead of them. Read all three first
-  and write down what they actually share, the way `docs/2026-08-02-shenora-app-update-design.md` was
-  written from two sibling updaters rather than from first principles. Expect thumbnails, duration
-  and dimension probing, format/codec detection, and a cache keyed on content — but expect the
-  disagreements to be the interesting part.
-- [ ] **D2 — Where it goes, before any code.** Media is a mix of genuinely portable logic (a cache
-  index, a thumbnail request/result contract, a probe result shape) and per-platform decoding. So
-  `Shenora.Core` holds the CONTRACTS and each shell package the implementation — the D19/D20/D37
-  placement law, applied to a case where the platform split is unusually sharp: Windows has Media
-  Foundation / WIC, Android has `MediaMetadataRetriever` and `ThumbnailUtils`, iOS has AVFoundation
-  and `QLThumbnailGenerator`. **Nothing here justifies a new package (D2)**; if it seems to, that is
-  the signal to re-read why.
+_D1 (harvest before designing) is DONE — `docs/2026-08-03-shenora-media-design.md`. All three read;
+two of them credit each other in their own XML, so the bar is met on evidence. The disagreements were
+indeed the interesting part, and the harvest **changed the scope twice**: playback is the real driver
+(not thumbnails), and a "transcode layer" turned out to be a composition of `IMissionScheduler` +
+`PathClaims` + `Files.BeginReplace` plus ONE new pure function. Read §0d–§0f before designing anything._
+
+> **OWNER DIRECTION (2026-08-03): the driver is NATIVE video/audio playback** — *"web does not have full
+> support on video/audio types"* — and the mobile gap is the reason the item exists, not a deferrable
+> half: *"mostly no mobile thats an issue, so thats why we here"*.
+- [ ] **D2 — Where it goes, and ONE question decides the shape.** The placement is settled by the
+  harvest: `Shenora.Core` holds the contracts, each shell package the implementation, **no new package**.
+  What is NOT settled, and must be decided explicitly rather than inherited:
+  **does the playability contract return a per-file VERDICT, or advertise a CAPABILITY SET?** Windows
+  must answer from a hand-maintained codec table (there is nothing to ask a webview); Android and iOS can
+  ask the platform per asset (`MediaCodecList`, `AVAsset.Playable`). A per-file verdict is honest on all
+  three; a capability set fits Windows and **lies** on mobile, where the truth is device-specific. The
+  evidence points at the verdict shape — decide it, don't drift into it.
+  Also open: whether "play this" and "thumbnail this" are one host contract or two (mobile answers both
+  from one object, Windows from two different places — do not let the Windows split dictate the surface).
+- [ ] **D2a — The unblocker, and it is smaller than it looks: make the resource-serving contracts
+  PORTABLE.** Every strategy in the design doc delivers bytes through the same seam, and §0d proved the
+  seam now exists on BOTH mobile shells (`HybridWebView.WebResourceRequested` → `e.Headers`,
+  `e.SetResponse(206, …, Stream)`). `WebViewResourceRequest`/`WebViewResourceResponse`/`WebViewByteRange`
+  are already the right abstraction and already tested — they are Windows-only by accident of when they
+  were written. Do this before any media code: it is a real capability on two shells for the price of
+  moving types, and nothing else can be proven without it.
 - [ ] **D3 — The picker rides along.** `MediaPicker.PickPhotosAsync` exists in MAUI Essentials
   (verified by compiling) and the desktop equivalent is a multi-select image dialog. D35 already
   identified "let the user hand me some media" as one of the three portable intents behind the
