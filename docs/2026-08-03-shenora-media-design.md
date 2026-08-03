@@ -218,6 +218,25 @@ or only `Shenora.Core` + the platform SDK. A surface needs UI-thread marshalling
 portable) and a parent control (platform). If it needs nothing else from the shell, that edge should not
 exist — a declared dependency nothing crosses is one of the five defects the review checklist hunts for.
 
+**How it is CONSUMED, and it is a rule rather than a preference (D41).** App logic names `Shenora.Media`
+and never `Shenora.Media.{Platform}`: the platform packages are registered at composition in the app's
+platform head, and invisible everywhere else. That is what makes one media call site work on three shells,
+and it is D19/D20's law restated for a feature family rather than a new one.
+
+**It is enforced by a tripwire the kit already owns**, not by this paragraph:
+`samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED when a platform type reaches app
+logic. So `Shenora.Media` must be `net10.0`. ⚠ **But that tripwire only bites once the sample's portable
+logic actually USES media** — until then it is green for a reason unrelated to media, which is the
+"tripwire that cannot fail" state `phase-workflow.md` warns about. Wiring it is part of landing Media, not
+a follow-up.
+
+**Versioning (D41):** the family PUBLISHES in lockstep — one `VersionPrefix`, one CHANGELOG, one workflow,
+and at 459 KB for all five current packages there is nothing to save by splitting. But
+`Shenora.Media.{Platform}` DEPENDS on `Shenora.Media` by RANGE (`[x.y.z, <next major>)`) rather than an
+exact pin, so a consumer may take a newer main library without being obliged to move a platform package.
+How often we publish and what we oblige a consumer to move are different questions; only the second was
+wrong.
+
 ## §2 What must NOT leak in (D4) — the line is the ENGINE, not playback
 
 The first draft drew this line at "no playback" and that was wrong: the kit owes the SURFACE, the

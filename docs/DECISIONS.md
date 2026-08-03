@@ -921,3 +921,39 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     edge from all three shells, which `ARCHITECTURE.md` must state.
   - **Still no `*.Abstractions` package.** D2 rejected that and it stays rejected: this is a FEATURE
     boundary a consumer can decline, not a layering artefact.
+
+- **D41 — media is CONSUMED from `Shenora.Media` only, and the package family publishes in LOCKSTEP while
+  DEPENDING by range.** (Owner, 2026-08-03: *"when using the media we more focus on using interfaces from
+  media library instead from platform library so we keep the interface unified"*, plus *"we should not
+  update platform dependency package that often (because its big binary files) so we might need a
+  different release pipeline… only the major version catches the main library if needed"*.)
+  - **App logic names `Shenora.Media` and NEVER `Shenora.Media.{Windows,Android,iOS}`.** The platform
+    packages exist to be REGISTERED at composition, in the app's platform head, and to be invisible
+    everywhere else. This is D19/D20's law restated for a feature family rather than a new rule, and it is
+    what makes one media call site work on three shells.
+  - **It is enforced by the tripwire the kit already owns, not by this paragraph.**
+    `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED when a platform type reaches app
+    logic — the same mechanism that proves `Shenora.Core`'s portability. `Shenora.Media` must therefore be
+    `net10.0`.
+    ⚠ **The tripwire only bites once that project actually USES media**, so wiring it is part of landing
+    Media rather than a follow-up. A tripwire that cannot fail is worth nothing (`phase-workflow.md`), and
+    this one is currently in that state for media specifically.
+  - **PUBLISHING stays lockstep — one `VersionPrefix`, one CHANGELOG, one workflow.** The owner's concern
+    was big binaries being republished, and the measurements say that concern does not apply to the kit's
+    own packages: all five current ones total **459 KB**, and `Media.Android`/`.iOS` must ship ~26 KB
+    because they take **no engine dependency** (§4a of the media design doc). The engine binaries belong to
+    the APP, and bumping a Shenora version does not re-download them — NuGet caches by package plus
+    version.
+  - **CONSUMPTION stops being lockstep, which is the half that was actually wrong.**
+    `Shenora.Media.{Platform}` declares a RANGE dependency on `Shenora.Media` (`[x.y.z, <next major>)`)
+    rather than an exact pin, so a consumer MAY take a newer main library without being forced to move the
+    platform package. That is the owner's "only the major version catches it", it costs one attribute per
+    csproj, and it separates two things worth keeping separate: how often we publish versus what we oblige
+    a consumer to move.
+  - **A separate release pipeline was considered and REJECTED, and the cost is why.** `doctor` enforces
+    `VersionPrefix == newest tag`, so independent versions need per-package version state — a new
+    mechanism, a second workflow and a second version stream inside a single CHANGELOG. This repo has
+    burned **two** version numbers on release-process mistakes in three days (0.2.0 consumed by a
+    hand-bump; 0.6.0 published from a stale tree), so doubling that surface to save 26 KB per release is
+    the wrong trade. **Revisit only if a platform package genuinely grows native binaries** — and note that
+    the answer then is probably still not a pipeline, it is §2's rule that the kit does not ship engines.
