@@ -16,11 +16,54 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
-- **A sixth package: `Shenora.Media`** (`net10.0`) — the portable half of playing media a webview cannot
-  decode. It holds decisions, not plumbing, and depends on nothing: every type in it is a pure function
-  over its own data. Media is its own package because a demuxer or an image codec is real shipped bytes
-  and *everything* references `Shenora.Core`, so an app that never touches media should not pay for one
-  (D40).
+- **Resource interception, in `Shenora.Core` and implemented by every shell (D45).** How a page gets bytes
+  the platform will not hand it — and the answer is not media-shaped, which is why it is here. A page cannot
+  reach a local file on ANY of the three shells (`file://` is refused from a virtual-host origin, and it
+  would be the wrong answer anyway — it hands the page the whole filesystem), so serving local content is
+  interception everywhere, and local files, generated images, exports and thumbnails are all the same
+  problem. Building it around media would have meant breaking it to admit the second consumer.
+  - **`IWebViewInterceptor`** — `RangeDelivery` plus `Use(middleware)` returning an `IDisposable` that
+    removes the route. **A MIDDLEWARE pipeline, not a handler list**, because the cross-cutting concerns are
+    the point: containment, a cache, a metric, a log of what a payload decoded to — each WRAPS the next
+    rather than terminating, and expressing them separately is what stops every route re-implementing them.
+    The kit already made this choice once, for messages: `IMessageDispatcher` is this shape over one
+    transport.
+  - **`WebViewResourcePipeline`** holds the registry and the composition, ONCE, for all three shells — the
+    back-to-front chain build (so route 0 runs first), the copy-on-write array read on a platform event
+    thread, and removal by reference identity so two registrations of the same method group are independent.
+    All of it unit-testable with no webview, which is the reason it is not hand-rolled per shell.
+  - **`WebViewRangeDelivery.Sliced`/`Unsliced`** names D44's measured asymmetry as a property of the
+    INTERCEPTION rather than of the content: Android's webview applies the `Range` start to whatever body it
+    receives, WebView2's and iOS's send it verbatim. It is read off the interceptor, never configured — a
+    value copied from another shell would serve correct-looking bytes at the wrong offset, which plays every
+    faststart file perfectly and fails every file whose index sits at the end.
+  - **`interceptor.UseFiles(new WebViewFileOptions { AllowedRoots, Resolve })`** is the whole recipe for
+    letting a page load local files, and the same three lines compile on all three shells. The app owns its
+    route and its roots; the kit owns containment, ranges, content types and the platform's delivery rule.
+    Fail-closed throughout: no roots means nothing is servable, `..` is refused *before* the filesystem is
+    touched, roots are compared with a separator appended (without which `/media-evil` passes as a child of
+    `/media`), and every refusal is the same 404 as a missing file so nothing can probe for existence.
+  - **`WebViewContentTypes` is now public and answers media types.** It had none — an `.mp4` got
+    `application/octet-stream`, which no `<video>` will touch. `.mkv` and `.avi` are named deliberately so
+    the element decides rather than the map pre-refusing.
+  - **`DerivedCacheKey`** (identity + length + mtime, never a path alone) keys anything derived from a
+    source file. All three surveyed implementations reached that independently: a path-only key survives an
+    overwrite, and then yesterday's conversion is served for a file the user has replaced.
+- **`WebViewHost.Interceptor` — the desktop implements the same contract.** Available from construction, so
+  routes are registered where an app composes everything else. Wired into the host's ONE
+  `WebResourceRequested` subscription rather than a second one (two handlers assigning `args.Response` is
+  last-writer-wins by subscription order), and it shares the page's own origin with the packaged bundle: a
+  path the bundle *does* contain is still served synchronously and inline — the main document never reaches
+  the deferred path — while a path it does not falls THROUGH to the pipeline instead of 404ing. In
+  development an extra filter is registered for the dev-server origin, because that is where the page lives
+  then; without it a route would work in a packaged build and 404 through every day of development.
+  `DeferredSchemes` is unchanged and stays for what it is good at: a whole custom scheme of the app's own.
+- **`Shenora.Media` (`net10.0`) is media LOGIC only, and is not needed to play a file.** It holds decisions,
+  not plumbing, and depends on nothing: every type in it is a pure function over its own data. Its own
+  package because a demuxer or an image codec is real shipped bytes and *everything* references
+  `Shenora.Core`, so an app that never touches media should not pay for one (D40). What it adds on top of
+  the interceptor is the DECISION about a file the platform cannot decode — probe it, remux it, transcode
+  it — as a further middleware.
   - **`MediaPlaybackPlanner`** — container + codecs → `Direct` / `Remux` / `Transcode` / `Unsupported`,
     **per STREAM rather than per file** (D42). The frequent real failure is not "this will not play", it
     is *picture with no sound*: H.264 video that decodes perfectly beside AC-3 audio that does not,
@@ -30,33 +73,45 @@ at the first list and missed five more breaking changes.
   - **`MediaProbeResult` / `MediaStreamInfo`** — the planner's input, best-effort and all-nullable. Both
     surveyed implementations admit the same thing in their own types; a probe is an external tool that may
     be absent, and code treating a null here as an error fails on files that play perfectly.
-  - **`MediaCacheKey`** — identity + length + mtime, never a path alone. All three surveyed
-    implementations reached that independently: a path-only key survives an overwrite, and then yesterday's
-    conversion is served for a file the user has replaced.
   - **`MediaPlaybackPolicy` carries the codec sets, and the kit ships NO default.** There is no correct
     universal list — a browser's differs from an engine's, and Android's differs per DEVICE because codec
     support is vendor-declared. A baked-in list would be one app's guess frozen into everyone's planner.
     The mechanism is the kit's; the policy is the application's.
-- **The serving half, promoted out of the sample now that both devices have proven it.**
-  - **`MediaRangeServer.Serve`** — `200`/`206`/`416` with `Content-Range`, `Accept-Ranges`, and a
-    `Content-Length` describing what is really sent.
-  - **`MediaBodyMode.Sliced`/`Unsliced`** names D44's measured platform asymmetry as an enum instead of a
-    comment. Android's webview applies the `Range` start itself, so the handler must NOT slice; iOS passes
-    the body through, so it MUST. The wrong choice plays every faststart file perfectly and fails every
-    other one — hence a test asserting the two modes genuinely DIFFER.
-  - **`MediaAccess`** — the two authorization seams, both fail-CLOSED. `ResolveLocal` generalises the
-    proven containment fix (including the separator-appended prefix test that stops a sibling directory
-    passing as a child); `IsRemoteAllowed` denies with no policy AND when the policy throws, because the
-    host can reach addresses the page cannot.
-- **Two more packages: `Shenora.Media.Android` and `Shenora.Media.iOS`** (~4 KB each, no engine
-  dependency). One shared source, `MediaWebViewRoute.TryServe`, which is the ~20 lines every mobile app
-  would otherwise write — and the only place that knows the platform's body rule, so an app never has to.
-  - They differ by ONE compile symbol. A package built with neither fails **`#error` at compile time**,
-    so a third platform cannot silently inherit a guess — the same fail-closed choice as the `partial`
-    method that stopped a fourth shell shipping an undefined save.
-  - They reference `Shenora.Media` and the MAUI SDK, **not the shell packages**: a media route needs a
-    resource handler and a range decision, not a window. D40 left that edge "to determine when building" —
-    built, and it does not exist.
+- **`MobileWebViewInterceptor`, in `Shenora.Android` and `Shenora.iOS`** — one shared source is both
+  shells' implementation, over MAUI's `HybridWebView.WebResourceRequested`. The only thing that differs is
+  `RangeDelivery`, and it differs because the platforms genuinely do; a platform that declares neither fails
+  **`#error` at compile time**, so a fourth shell cannot silently inherit a guess — the same fail-closed
+  choice as the `partial` method that stopped a fourth shell shipping an undefined save.
+- **Six package ids, not eight: `Shenora.Media.Android` and `Shenora.Media.iOS` were never released and no
+  longer exist.** They were written, ran on a device, and then turned out to be the wrong layer:
+  everything in them was interception rather than media, and the range-delivery rule they existed to carry
+  is a property of the webview. Their content is now the shell interceptors plus `WebViewFiles`, so the
+  capability shipped and the two packages did not.
+  - ⚠ **The remote-source (SSRF) policy seam went with them and is deliberately NOT in this release.** It
+    was a fail-closed guard for "may the host fetch this URL on the page's behalf" — real, and with no
+    caller once serving moved: nothing in the kit fetches a remote resource for a page. It comes back with
+    the middleware that does, rather than shipping as a public type with no consumer (D15). Its reasoning
+    is worth keeping: the host can reach addresses the page cannot, so a *throwing* policy must deny.
+- **`@shenora/react` gains `mediaUrl(payload, route?)`** — the page's half of a file route, and the reason
+  it is shipped code rather than a documented convention. It returns a **relative** URL on the page's own
+  origin (`media?<base64url>`), which D44 measured to be the ONE form intercepted on all three shells:
+  `app://` is intercepted on both mobile shells but media-refused on Android, and an `https://<virtual-host>`
+  URL works on Android and is not intercepted on iOS at all. `encodeMediaPayload`/`decodeMediaPayload` are
+  exported for anything that needs the halves separately.
+  - Sabotage found live: the MAUI sample page hand-rolled this encoding for one commit and immediately
+    drifted from the host's route (`/video?` vs `/media?`), which surfaced only as a
+    `MEDIA_ELEMENT_ERROR: Format error` on a device. The sample now imports the SHIPPED function, so the
+    proof path is the published one.
+- **A `localFiles` shell capability** joins the ready handshake, so ONE web bundle can tell whether the shell
+  it is talking to can serve local files instead of sniffing the platform (A7's rule applied to D45).
+- **The desktop interceptor is proven through a real WebView2, not asserted.**
+  `samples/Shenora.Sample.Desktop`'s `InterceptorProbe` registers a file route and fetches through it from
+  inside the page, asserting `206` + `Content-Range` + the body at a **non-periodic** offset (`bytes=3-7` →
+  `DEFGH`), `Accept-Ranges: bytes`, a whole-file `200`, `416` for an unsatisfiable range, `404` for a
+  traversal attempt at a file that really exists, and that the packaged bundle still wins on the origin it
+  now shares. Sabotage-verified both ways: flipping `RangeDelivery` to `Unsliced` fails the probe naming
+  what it read (1000 bytes starting at `A`), and that failure IS the measurement — WebView2 did not apply
+  the offset itself, so it delivers sliced bodies.
 - **The D41 media tripwire is ARMED rather than described.** `samples/Shenora.Sample.Logic` (a `net10.0`
   project) now references `Shenora.Media` and its facade uses the planner, so "app logic names
   `Shenora.Media` and never `Shenora.Media.{Platform}`" is enforced by the build. Sabotage-verified: a

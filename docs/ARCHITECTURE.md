@@ -63,30 +63,21 @@ Shenora.slnx
 │   ├── Shenora.Media       net10.0          — deps: NONE, and that is the design. A LEAF: it holds
 │   │                                          decisions, not plumbing, so every type is a pure function
 │   │                                          over its own data — the per-stream playability planner
-│   │                                          (D42), the best-effort probe-result shape, the content
-│   │                                          cache key. Its own package because a demuxer or image
-│   │                                          codec is real shipped bytes and EVERYTHING references
-│   │                                          Core, so an app that never touches media must not pay for
-│   │                                          one (D40). net10.0, so app logic compiles against it on
-│   │                                          any shell — enforced by the Sample.Logic tripwire (D41).
+│   │                                          (D42) and the best-effort probe-result shape it reads.
+│   │                                          Its own package because a demuxer or image codec is real
+│   │                                          shipped bytes and EVERYTHING references Core, so an app
+│   │                                          that never touches media must not pay for one (D40).
+│   │                                          net10.0, so app logic compiles against it on any shell —
+│   │                                          enforced by the Sample.Logic tripwire (D41).
 │   │                                          Ships no codec list and no engine: policy is the app's.
-│   ├── Shenora.Media.Mobile/ (SOURCE, no csproj) — the mobile media route, compiled into both media
-│   │                                          faces. Same arrangement as Shenora.Mobile/ and for the
-│   │                                          same reason: a shared assembly would publish a package
-│   │                                          nobody asks for.
-│   ├── Shenora.Media.Android  net10.0-android — deps: Shenora.Media, Microsoft.Maui.Controls
-│   ├── Shenora.Media.iOS      net10.0-ios     — deps: same. The two differ by ONE compile symbol
-│   │                                          (SHENORA_MEDIA_UNSLICED / _SLICED), which selects the
-│   │                                          body rule D44 measured: Android's webview applies the
-│   │                                          Range start itself so the handler must not slice, iOS
-│   │                                          passes the body through so it must. A package built with
-│   │                                          neither symbol fails `#error` at COMPILE time — a third
-│   │                                          platform cannot inherit a guess.
-│   │                                          ⚠ They do NOT reference the shell packages: a media route
-│   │                                          needs a resource handler and a range decision, not a
-│   │                                          window or a dispatcher, so that edge would be declared
-│   │                                          and uncrossed. D40 left it "to determine when building";
-│   │                                          built, and the answer is that it does not exist.
+│   │                                          ⚠ It holds NO serving code, and there are no
+│   │                                          Media.Android/.iOS packages any more (D45). Serving bytes
+│   │                                          to a page is interception, which configures a WEBVIEW and
+│   │                                          is therefore a shell capability — see IWebViewInterceptor
+│   │                                          in Core, implemented once per shell. So <video>/<audio>/
+│   │                                          <img> over local files need no media package at all, and
+│   │                                          this one is what an app adds to DECIDE about a file the
+│   │                                          platform cannot decode.
 │   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders
@@ -195,6 +186,29 @@ changes, noting them in `CHANGELOG.md`).
   global events reach scoped subscribers; handler failures logged + isolated; `EmitAsync` awaits
   every handler, `Emit` is the fire-and-forget twin for a synchronous caller; auto-registered
   by `Build()` via `TryAdd` — replaceable).
+- **`Shenora.Core`'s resource-interception layer (2026-08-04, D45)** — how a page gets bytes the platform will
+  not give it, portable and identical on all three shells. `WebViewResourceRequest`/`Response`/
+  `WebViewByteRange` are the exchange (relocated here in 0.8.0 by D2a); on top of them:
+  `IWebViewInterceptor` (`RangeDelivery` + `Use(middleware)` → `IDisposable`), the
+  `WebViewResourceMiddleware`/`WebViewResourceHandler` delegates, and `WebViewResourcePipeline` — the
+  registry and composition itself, shared by every shell so the back-to-front chain build, the
+  copy-on-write array and reference-identity removal exist ONCE and are unit-testable with no webview.
+  **MIDDLEWARE, not a handler list,** because the cross-cutting concerns are the point (containment, a
+  cache, a metric, a log of what a payload decoded to) — the same shape `IMessageDispatcher` already is
+  for messages, applied to bytes.
+  `WebViewRangeDelivery` (`Sliced`/`Unsliced`) is a property of the INTERCEPTION rather than of the
+  content: Android's webview applies the `Range` start to whatever body it receives, WebView2's and iOS's
+  send it verbatim (D44, measured on each).
+  Serving files is `WebViewFileOptions` + `WebViewFiles.ResolveContained`/`Serve` +
+  `interceptor.UseFiles(…)` — an extension over the interceptor so `RangeDelivery` is READ from the
+  platform and cannot be passed in wrong. Fail-closed: no allowed roots means nothing is servable, `..`
+  is refused before the filesystem is touched, roots are compared with a separator appended, and every
+  refusal is the same 404 as a missing file so nothing probes for existence. `WebViewContentTypes`
+  (public here since D45) answers the MIME type, and `DerivedCacheKey` keys anything derived from a
+  source file by identity + length + mtime rather than by path.
+  **This is what makes `<video>`, `<audio>` and `<img>` work with no media package at all** — a file the
+  platform cannot decode simply errors in the element, and deciding what to do about that is
+  `Shenora.Media`'s job as a further middleware.
 - **`Shenora.Core`'s mission-scheduling layer (0.3.0, `Missions/` + `Io/`)** — the EXECUTION half of
   long-running work, portable and with no DI, storage or reporting dependency of its own:
   `IMissionScheduler`/`MissionScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `PendingCount`/
@@ -412,8 +426,14 @@ changes, noting them in `CHANGELOG.md`).
   event policies: new-window→system browser, downloads canceled, permissions denied except
   allowlist, guarded renderer-crash reload); `IWebViewResourceProvider` seam +
   `EmbeddedResourceProvider(+Options)` (assembly+prefix, lazy-with-warmup, file-fallback mode,
-  path→name lookups) — the no-cache-HTML / immutable-hashed-asset header policy lives in the
-  internal `WebViewContentTypes` and is applied by `WebViewHost` when it serves; `WebViewIpcBridge(+Options)`
+  path→name lookups) — the no-cache-HTML / immutable-hashed-asset header policy lives in
+  `Shenora.Core`'s `WebViewContentTypes` (public since D45, because every shell's interceptor needs a
+  MIME map) and is applied by `WebViewHost` when it serves; **`WebViewHost.Interceptor`** — the desktop
+  half of the D45 contract (`WebView2Interceptor`, `RangeDelivery = Sliced`, measured by the sample's
+  `InterceptorProbe`), wired into the host's ONE `WebResourceRequested` subscription rather than a second
+  one, sharing the page's own origin with the bundle: a path the bundle does not contain falls through to
+  the pipeline (`WebViewBundleServing.TryServe`) instead of 404ing, and in DEV an extra filter is
+  registered for the dev-server origin because that is where the page lives then; `WebViewIpcBridge(+Options)`
   (the postMessage transport: UI-thread async-interleaved request dispatch into an
   `IMessageDispatcher`, `IsHandleCreated`-guarded `BeginInvoke` posts, bounded drop-oldest
   notification queue buffering from construction + ~50 ms batch flush after the reserved

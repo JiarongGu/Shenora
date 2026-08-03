@@ -1142,8 +1142,10 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     keeps `Shenora.Media` the right name: it covers audio AND video (the frequent real failure is AC-3
     *audio*), and `Shenora.Video` would be wrong on the first day.
   - **⚠ It follows that anything the FAMILY shares belongs in Core, not in a member.** `MediaCacheKey` keys any
-    derived artefact — a thumbnail, a probe result, a rendered sheet — so it moves to `Shenora.Core` beside
-    `Files`. A shared helper living in `.Media` would make `.Image` depend on media to cache a thumbnail.
+    derived artefact — a thumbnail, a probe result, a rendered sheet — so it moved to `Shenora.Core` beside
+    `Files` **and was renamed `DerivedCacheKey`**, because the new name says what is cached rather than which
+    feature happened to need it first. A shared helper living in `.Media` would make `.Image` depend on media
+    to cache a thumbnail.
   - **`Shenora.Media.Android` and `Shenora.Media.iOS` are DELETED** (8 package ids → 6). With interception in
     the shells and generic serving in Core, they held only the platform's range-delivery constant — which is
     a property of the INTERCEPTION, so it became `Core.WebViewRangeDelivery` and the packages had nothing
@@ -1160,3 +1162,44 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     ⚠ The handshake must advertise NEITHER the url scheme NOR the range delivery — a page told "you are on
     iOS, use `app://`" is branching on platform again, and it is unnecessary because a relative url already
     resolves correctly on each shell (D44's matrix).
+
+  **BUILT, on all three shells — and three things only the desktop half settled (2026-08-04).**
+
+  - **The registry and composition are in Core, not in each shell** (`WebViewResourcePipeline`). Writing the
+    back-to-front chain build three times is three chances to invert someone's routing, and neither the
+    copy-on-write array nor reference-identity removal is obvious. It is also the only way any of it is
+    TESTABLE: order, decline-and-fall-through, wrapping and independent removal are all provable with no
+    webview, where before this the only way to learn whether a route ran first was to launch a device. A
+    shell implementation is now just the platform's event glue — and the two are genuinely different there:
+    mobile must resolve the pipeline SYNCHRONOUSLY (both platforms need status and headers when the event
+    returns), while the desktop has a deferral and must not block the UI thread.
+  - **The desktop interceptor shares the page's own origin with the packaged bundle, and the BUNDLE wins.**
+    A relative media URL on the desktop is `https://app.local/media?…` — the same virtual host the frontend
+    is served from — so one handler now answers both. Order: the bundle is asked first and, if it *has* the
+    path, serves it synchronously and inline (the pre-existing invariant: deferring the MAIN DOCUMENT stalls
+    the initial navigation, which only ever reproduced in production); a path it does NOT have falls through
+    to the pipeline instead of 404ing, which is what makes the relative-URL contract work here at all.
+    ⚠ **It is the opposite order from mobile,** where the platform serves the bundle and therefore only sees
+    what the pipeline declined. The rule that holds on both: **keep interception paths off bundle paths** — a
+    route that collides with one is relying on a difference between shells.
+    One handler, not two, for the reason `SessionBrowser.DecideRequest` already documents: two
+    `WebResourceRequested` subscriptions each assigning `args.Response` is last-writer-wins by subscription
+    order.
+  - **In DEV the page lives on the Vite server, so that origin is filtered too.** WebView2 raises
+    `WebResourceRequested` only for registered filter patterns, and in production the bundle's pattern
+    already covers the page's origin — in development nothing did. Without the extra filter a file route
+    works in a packaged build and 404s through every day of development, which is the worst possible place
+    for the gap. A blanket `"*"` was rejected (it raises the event for every request the page makes,
+    including the open internet), and a `ProductionUrl` origin is deliberately NOT filtered: that profile has
+    a real in-process HTTP server behind the page, and letting middleware shadow Kestrel's routes means two
+    servers for one origin, silently disagreeing.
+  - **`WebViewRangeDelivery.Sliced` on the desktop is MEASURED.** `samples/Shenora.Sample.Desktop`'s
+    `InterceptorProbe` answers `bytes=3-7` and the page reads `DEFGH`; sabotaged to `Unsliced` it reads 1000
+    bytes starting at `A`, which is the direct observation that WebView2 does not apply the offset itself.
+    The probe also pins containment (a traversal to a file that really exists → 404) and that the bundle
+    still wins on the shared origin. Both directions verified, per the repo's tripwire rule.
+  - **The SSRF policy seam did not survive the move, deliberately.** `MediaAccess.IsRemoteAllowed` had no
+    caller once serving became generic — nothing in the kit fetches a remote resource on a page's behalf — so
+    it would have shipped as a public type with no consumer. It returns with the middleware that needs it
+    (D15). The reasoning to keep: the host can reach addresses the page cannot, so a *throwing* policy must
+    deny.

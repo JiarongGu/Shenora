@@ -203,8 +203,20 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 - **Prewarm stays BEHIND the single-instance gate.** Environment creation takes the user-data
   OS lock; a losing second launch must never touch it (`PrewarmWebView2` registers a lifecycle
   hook, not an immediate call — keep it that way).
-- **Caching policy: no-cache HTML, immutable hashed assets** (`WebViewContentTypes`). The source
-  served `index.html` immutable — stale bundle after every update.
+- **Caching policy: no-cache HTML, immutable hashed assets** (`WebViewContentTypes`, in `Shenora.Core`
+  since D45). The source served `index.html` immutable — stale bundle after every update.
+- **The interceptor (D45) shares the page's origin with the bundle, and the ORDER is the invariant.**
+  `WebViewHost` asks the bundle first (`WebViewBundleServing.TryServe`) and serves a hit SYNCHRONOUSLY —
+  that is the main-document rule above, unchanged. A MISS falls through to the middleware pipeline
+  instead of 404ing, which is the only reason a relative route (`https://app.local/media?…`) works at
+  all. So: **keep interception routes off bundle paths.** A colliding route resolves differently on
+  desktop (bundle wins) and mobile (middleware wins), because there the PLATFORM serves the bundle and
+  only sees what the pipeline declined.
+  ⚠ **In dev, the page is on the Vite origin and nothing filters it** unless you register it —
+  `WebView2Interceptor.ExtraFilters`. Forget that and a route works packaged and 404s all through
+  development. `"*"` is not the fix (it raises the event for every request the page makes, the open
+  internet included), and a `ProductionUrl` origin is left alone on purpose: a real in-process server is
+  behind it, and shadowing its routes means two servers for one origin.
 - **Injected script values are JSON-serialized, never interpolated** (`WebViewScripts.
   BuildGlobalScript` — STJ's default encoder escapes `</script>` breakouts). New injection points
   must go through it.

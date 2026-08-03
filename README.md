@@ -36,9 +36,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 |---|---|---|---|
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.Media` | NuGet | `net10.0` | The portable half of playing media a webview cannot decode: a per-stream playability planner, a range server, path/SSRF authorization, a probe-result shape and the content cache key. Ships no codec list and no engine. |
-| `Shenora.Media.Android` | NuGet | `net10.0-android` | Serves media to a MAUI `HybridWebView`, supplying the body rule Android's webview requires. |
-| `Shenora.Media.iOS` | NuGet | `net10.0-ios` | The same, for `WKWebView` — same source, the opposite body rule. |
+| `Shenora.Media` | NuGet | `net10.0` | Media LOGIC only: a per-stream playability planner and the probe-result shape it reads. Ships no codec list and no engine — and **is not needed to play a file** (see below). |
 | `Shenora.Windows` | NuGet | `net10.0-windows` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
@@ -62,26 +60,28 @@ Dependencies — the graph is a **diamond, not a chain**:
 
         Shenora.Core
               ↑
-        Shenora.Media                                   net10.0
-              ↑
-              ├──── Shenora.Media.Android               net10.0-android
-              └──── Shenora.Media.iOS                   net10.0-ios
+        Shenora.Media                                   net10.0    optional, media LOGIC only
 ```
 
-**The media family is OPTIONAL, which is the whole reason it is a family.** Media splits from
-`Shenora.Core` because a demuxer or an image codec is real shipped bytes and every package references Core
-— so an app that never touches media should not pay for one. `Shenora.Media` itself stays `net10.0`, so
-app logic compiles against it on any shell.
+**`<video>`, `<audio>` and `<img>` over local files need NO media package.** Serving bytes to a page is
+resource interception, and that is a SHELL capability (D45): `Shenora.Core` declares
+`IWebViewInterceptor` plus a file middleware that does path containment, HTTP ranges and content types,
+and each shell implements the contract over its own webview — `WebViewHost.Interceptor` on Windows,
+`MobileWebViewInterceptor` on Android and iOS. One route, and the same three lines compile on all three:
 
-**Note what the platform packages do NOT reference: the shell packages.** A media route needs a resource
-handler and a range decision, not a window or a UI dispatcher — so that edge would be declared and never
-crossed. **App logic names `Shenora.Media` only**; the platform package is registered once in the platform
-head and invisible everywhere else.
+```csharp
+host.Interceptor.UseFiles(new WebViewFileOptions { AllowedRoots = [libraryDir], Resolve = MyRoute });
+```
 
-⚠ **And they exist for one measured reason.** Android's webview applies the `Range` start to whatever body
-it is handed; iOS's passes the body through verbatim. So the same request needs an *unsliced* body on one
-and a *sliced* body on the other. The two packages are the same source with one compile symbol apart, and
-a third platform cannot compile without declaring its own answer.
+A file the platform cannot decode simply errors in the element, which is the honest outcome. **Deciding
+what to do about that** — probe it, remux it, transcode it — is what `Shenora.Media` adds, as a further
+middleware. That is why it is optional: an app that serves ordinary files never references it.
+
+⚠ **One measured platform fact rides on the interceptor, not on media.** Android's webview applies the
+`Range` start to whatever body it is handed; WebView2's and iOS's send the body verbatim. So the same
+request needs an *unsliced* body on one and a *sliced* body on the other two —
+`IWebViewInterceptor.RangeDelivery` reports which, `UseFiles` reads it from the platform so it cannot be
+passed in wrong, and a fourth shell cannot compile without declaring its own answer.
 
 **`Shenora.Ipc` is platform-neutral and stays that way.** It targets `net10.0`, references only
 `Shenora.Core`, and binds to no UI framework at all — the whole transport story (D16) rests on that:

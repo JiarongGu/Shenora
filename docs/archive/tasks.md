@@ -15,6 +15,130 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### D45 — the interceptor is a MIDDLEWARE pipeline, re-layered by DEPENDENCY (2026-08-04) — DONE
+
+**Outcome: built on all three shells and verified on each — Android and iOS on devices, the desktop through a
+real WebView2 (`InterceptorProbe`, sabotage-verified both ways). 8 package ids → 6.** The decision and the
+as-built shape live in `docs/DECISIONS.md` D45; the release-facing account is `CHANGELOG.md` `## Unreleased`.
+Commits: `cc49f8f` (contract) · `1fa4e06` (React + D45) · `8d7c271` (layers 2–3) · `2e31224` (shipped
+`mediaUrl`) + the desktop half.
+
+The plan below is kept verbatim because the ORDER of the owner's three corrections is the argument, and
+because it records what was deliberately NOT built.
+
+
+> **The framing that settles the shape** (owner): *"the interceptor today we focus on media, but in future
+> this is going to be bigger than what we currently have — it's more like a middleware design if you think
+> this way."*
+>
+> **And the kit already made this exact choice once.** `IMessageDispatcher` is a composable middleware
+> pipeline over ONE transport, with the family's §5 order encoded (error boundary → app middleware →
+> facades). This is that shape applied to RESOURCES instead of messages, which means the precedent, the
+> vocabulary and the review instincts all transfer.
+>
+> **Why middleware and not a flat list of handlers:** the cross-cutting concerns are the point. Path
+> containment, the SSRF guard, a cache, a log of what an opaque payload decoded to, a metric — each WRAPS
+> the next rather than terminating, and expressing them as layers is what stops every route
+> re-implementing them. A flat "first non-null wins" list cannot express any of them.
+>
+> **Media is today's only consumer and deliberately NOT the shape.** Local file access, generated images,
+> exports and thumbnails are the same problem; a media-shaped seam would have to be broken to admit the
+> second one. `Shenora.Core.WebViewResourceMiddleware` is written accordingly (done, uncommitted at time
+> of writing).
+
+Owner's correction, in three steps across one conversation, and each step widened it:
+1. *"the interceptor interface should live in the core, and the implementation should live in
+   mobile.ios/android, and media just taking care of media logic not really the interceptor logic"*
+2. *"desktop will also have issue with access local folder/files so the interceptor is needed"* — so this
+   is not a mobile workaround; a page cannot reach a local file on ANY shell.
+3. *"even file access too"* — media is ONE CASE. The generic case is serving a local file to a page.
+
+**So the split is by DEPENDENCY, not by feature — the same test D43 applied to thumbnails:**
+
+| Layer | Holds | Why there |
+|---|---|---|
+| `Shenora.Core` | `IWebViewInterceptor` + `WebViewRangeDelivery` (**done**, uncommitted at time of writing) · the request/response/range types (**shipped**) · **the generic FILE server + path containment** | needs no dependencies, and every consumer wants local-file serving. An app serving a PDF or a generated image should not take a media package to get containment and ranges |
+| `Shenora.Windows` · `.Android` · `.iOS` | one `IWebViewInterceptor` implementation each, declaring its own `RangeDelivery` | intercepting a request configures a WEBVIEW — a shell capability |
+| `Shenora.Media` | **media logic only**: the playability planner, the probe-result shape, the cache key | needs a demuxer's vocabulary; nothing else does |
+| `@shenora/react` | `mediaUrl(payload)` → a RELATIVE `\<route\>?\<base64url\>` · one new `ShellCapabilities` entry | ONE npm package for every shell, via the D36 handshake — capability, never platform |
+| the app | the route name, the payload's contents, allowed roots, codec policy | all policy |
+
+**What this MOVES from what already landed** (nothing is published — `shenora.media*` are all 404 on
+nuget.org, verified — so it costs nothing but the edit):
+- [x] `MediaRangeServer` → Core, renamed to drop "Media": it answers ranges for ANY file.
+- [x] `MediaAccess` → Core, same reason: path containment and the SSRF guard are not media concerns.
+- [x] `MediaBodyMode` → **already superseded** by `Core.WebViewRangeDelivery`; delete it from Media.
+- [x] `MediaWebViewRoute` → dissolve. Its interception half becomes the shell implementations; its media
+      half was only ever the body-rule constant, which is now the shell's.
+- [x] **DELETE `Shenora.Media.Android` + `Shenora.Media.iOS`** (owner approved). With interception in the
+      shells and serving in Core, they hold nothing. 8 package ids → 6. They come back only if genuinely
+      platform-specific MEDIA work lands — the frame-grab / thumbnail pixels D43 deferred.
+- [x] `Shenora.Media` keeps: `MediaPlaybackPlanner`, `MediaProbeResult`/`MediaStreamInfo`,
+      `MediaPlaybackPolicy`, `MediaCacheKey`.
+
+**⚠ CORE MUST SERVE MEDIA ON ITS OWN — the media package is an ADDITION, not a prerequisite** (owner,
+2026-08-04: *"the interceptor without media bundle should still allow to load video/image/audio just by
+default; if the platform does not support it just go error"* … *"and media bundle adds a middleware to
+this"*).
+
+So `Shenora.Core` ships a **working file middleware**, not only the contract: route + allowed roots →
+containment → ranges → content type. With that alone, `<video src=…>`, `<audio>` and `<img>` all work for
+anything the platform can already decode, and a file it cannot decode simply errors in the element — which
+is the honest outcome and needs no kit code to produce. `Shenora.Media` then adds a middleware for exactly
+the cases that default cannot serve: deciding playability, and later converting. **That ordering is what
+makes the family opt-in rather than load-bearing** — an app serving a PDF or a JPEG never takes a media
+dependency.
+
+- [x] Core needs a content-type map for this. ⚠ One already exists as `WebViewContentTypes` in
+  `Shenora.Windows` — check before writing a second (`extraction-sources.md`'s "grep for an owner before
+  porting a helper a second time", which this repo has already been bitten by).
+
+**Order to build, because layer 1 sets the shape of everything under it** (owner: *"the first thing to do
+is setup the react"*): ~~React helper + capability~~ **(DONE)** → Core file middleware → three shell
+interceptors → trim Media → rewire the sample → re-verify on both devices.
+
+⚠ **The handshake must NOT carry the scheme or the range delivery.** A page told "you are on iOS, use
+`app://`" is branching on platform again, and it is unnecessary: a relative url already resolves to
+`app://…` on iOS and `https://…` on Android by itself. `RangeDelivery` is a host-side fact a page must never
+see. The handshake answers only *"can you serve local files?"*.
+
+⚠ **The route is `media`, not `video`.** Owner: *"this is going for audio/video/image"* — and with "even
+file access too", serving is kind-agnostic. Only the PLANNER is playable-media-specific; an image needs
+serving and no plan. The sample currently says `/video?…` and must be renamed.
+
+_**DM5 is DONE for the shipping platforms** — `Shenora.Media` + `Shenora.Media.Android` +
+`Shenora.Media.iOS`, all three packing at 0.8.0, all three with the full checklist (inline `IsPackable`,
+`packableProjects`, description, solution entry, API baseline, README row + graph, `ARCHITECTURE.md`,
+lexicon). The mobile pair is ONE shared source (`src/Shenora.Media.Mobile/`) differing by one compile
+symbol, and a package built with neither fails **`#error` at compile time** — sabotage-verified, so a third
+platform cannot inherit a guess. They reference `Shenora.Media` and the MAUI SDK but **NOT the shell
+packages**: D40 left that edge "to determine when building", and built, it does not exist. The D41 tripwire
+is armed and sabotage-verified (`NU1201`, cascading to the MAUI sample)._
+
+_**The mobile media packages were VERIFIED WORKING on both devices** (2026-08-04, owner asked): served
+through `MediaWebViewRoute.TryServe`, `[Unsliced]` on Android and `[Sliced]` on iOS chosen by the PACKAGE —
+there is no `mode=` in either URL, so the app does not choose. Android: 3 requests, no loop,
+`duration=60.00s`, `seeked -> 48.00s`. iOS: many small exact windows, `seeked -> 48.04s`. The gap that check
+found was real — the packages packed while their entry point had never run._
+
+⚠ **THE TWO PARAGRAPHS ABOVE ARE SUPERSEDED — read them as history, not as the shipped shape.** They
+describe the intermediate 8-package layout, which was **deleted the same day and never published**.
+`Shenora.Media.Android`, `Shenora.Media.iOS`, `MediaWebViewRoute`, `MediaRangeServer`, `MediaBodyMode`,
+`MediaAccess` and `MediaCacheKey` **do not exist**. What shipped instead:
+
+| Was | Is |
+|---|---|
+| `MediaWebViewRoute.TryServe` (per-platform package) | `MobileWebViewInterceptor` in `Shenora.Android`/`.iOS`, + `WebViewHost.Interceptor` on Windows |
+| `MediaRangeServer.Serve` | `Core.WebViewFiles.Serve` + `interceptor.UseFiles(…)` |
+| `MediaBodyMode` | `Core.WebViewRangeDelivery`, read off the interceptor |
+| `MediaAccess.ResolveLocal` | `Core.WebViewFiles.ResolveContained` |
+| `MediaAccess.IsRemoteAllowed` | dropped — no caller (`TASKS.md` DM4) |
+| `MediaCacheKey` | `Core.DerivedCacheKey` |
+
+The device evidence still stands, because the same clips play through the same seam — it was re-run after
+the move (Android `Unsliced`, iOS `Sliced`, `seeked -> 48.00s`/`48.03s`), and the desktop was added
+(`InterceptorProbe`, sabotage-verified). Current shape: `docs/DECISIONS.md` D45 + `docs/ARCHITECTURE.md`.
+
 ### `IpcJson` takes an app-supplied type-info resolver (2026-08-02) — DONE
 
 Parked at the two-consumer bar since it was found while assessing on-device mobile; **owner direction
