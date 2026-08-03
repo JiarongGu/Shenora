@@ -507,27 +507,13 @@ enum Shenora.Windows.UnhandledExceptionSource (int)
   public int value__
 static class Shenora.Windows.WebView2BuilderExtensions
   public static Shenora.Core.ShenoraApplicationBuilder PrewarmWebView2(Shenora.Core.ShenoraApplicationBuilder builder, System.Func<Shenora.Core.ShenoraApplication, Shenora.Windows.WebViewEnvironmentOptions> options)
-struct Shenora.Windows.WebViewByteRange : System.IEquatable<Shenora.Windows.WebViewByteRange>
-  public .ctor(long From, long To)
-  public bool Equals(Shenora.Windows.WebViewByteRange other)
-  public bool IsSatisfiable(long totalLength)
-  public long From { get; init; }
-  public long Length { get; }
-  public long To { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool TryParse(string? headerValue, long totalLength, out Shenora.Windows.WebViewByteRange range)
-  public static bool op_Equality(Shenora.Windows.WebViewByteRange left, Shenora.Windows.WebViewByteRange right)
-  public static bool op_Inequality(Shenora.Windows.WebViewByteRange left, Shenora.Windows.WebViewByteRange right)
-  public void Deconstruct(out long From, out long To)
 sealed class Shenora.Windows.WebViewCustomScheme
   public System.Collections.Generic.IReadOnlyList<string> AllowedOrigins { get; init; }
   public bool HasAuthorityComponent { get; init; }
   public bool TreatAsSecure { get; init; }
   public required string Name { get; init; }
 sealed class Shenora.Windows.WebViewDeferredScheme
-  public required System.Func<Shenora.Windows.WebViewResourceRequest, System.Threading.Tasks.Task<Shenora.Windows.WebViewResourceResponse>> Handler { get; init; }
+  public required System.Func<Shenora.Core.WebViewResourceRequest, System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse>> Handler { get; init; }
   public required string Scheme { get; init; }
   public string CacheControl { get; init; }
 static class Shenora.Windows.WebViewEnvironment
@@ -596,21 +582,6 @@ sealed class Shenora.Windows.WebViewIpcBridgeOptions
   public System.TimeSpan NotificationInterval { get; init; }
   public int MaxQueuedNotifications { get; init; }
   public required Shenora.Ipc.IMessageDispatcher Dispatcher { get; init; }
-sealed class Shenora.Windows.WebViewResourceRequest
-  public required System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
-  public required System.Uri Uri { get; init; }
-  public required string Method { get; init; }
-  public string? GetHeader(string name)
-sealed class Shenora.Windows.WebViewResourceResponse
-  public System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
-  public int StatusCode { get; init; }
-  public required System.IO.Stream Content { get; init; }
-  public static Shenora.Windows.WebViewResourceResponse Bytes(byte[] content, string contentType, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
-  public static Shenora.Windows.WebViewResourceResponse NotFound()
-  public static Shenora.Windows.WebViewResourceResponse Ok(System.IO.Stream content, string contentType, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
-  public static Shenora.Windows.WebViewResourceResponse PartialContent(System.IO.Stream content, string contentType, Shenora.Windows.WebViewByteRange range, long totalLength, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
-  public static Shenora.Windows.WebViewResourceResponse RangeNotSatisfiable(long totalLength)
-  public string ReasonPhrase { get; init; }
 static class Shenora.Windows.WinFormsBootstrap
   public static void Initialize(Shenora.Windows.WinFormsBootstrapOptions? options = null)
 sealed class Shenora.Windows.WinFormsBootstrapOptions

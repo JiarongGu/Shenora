@@ -1,6 +1,22 @@
 using System.Globalization;
 
-namespace Shenora.Windows;
+namespace Shenora.Core;
+
+// MOVED HERE FROM Shenora.Windows on 2026-08-03 (D2a). These three types describe a resource exchange
+// between a host and a page — "URI plus headers in, status plus content-type plus a stream out" — and
+// nothing about that is Windows-specific. They were only in the Windows package because that was the
+// one shell when they were written.
+//
+// What forced the move: MAUI's HybridWebView turns out to HAVE a request-interception seam in .NET 10
+// (`WebResourceRequested`, with readable request headers and a SetResponse that accepts 206), so the
+// mobile shells can serve dynamic, seekable content too — and `src/Shenora.Mobile/` cannot reference
+// Shenora.Windows. Portable contracts live in Core (D19/D20); this is that rule catching up with a
+// capability the platform gained after the split.
+//
+// It is a BREAKING namespace change on published types, documented under `### Breaking`. There is no
+// type-forward shim: forwarding preserves the full name INCLUDING the namespace, so it would leave a
+// `Shenora.Windows.*` type name living in the Core assembly — which contradicts the one-namespace-per-
+// package convention the whole kit reads by, to spare consumers a single `using`.
 
 /// <summary>
 /// The request a deferred-scheme handler is answering.

@@ -617,3 +617,32 @@ sealed class Shenora.Core.UpdateStageStatus
   public System.DateTimeOffset? StagedAt { get; init; }
   public required bool Pending { get; init; }
   public string? Version { get; init; }
+struct Shenora.Core.WebViewByteRange : System.IEquatable<Shenora.Core.WebViewByteRange>
+  public .ctor(long From, long To)
+  public bool Equals(Shenora.Core.WebViewByteRange other)
+  public bool IsSatisfiable(long totalLength)
+  public long From { get; init; }
+  public long Length { get; }
+  public long To { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool TryParse(string? headerValue, long totalLength, out Shenora.Core.WebViewByteRange range)
+  public static bool op_Equality(Shenora.Core.WebViewByteRange left, Shenora.Core.WebViewByteRange right)
+  public static bool op_Inequality(Shenora.Core.WebViewByteRange left, Shenora.Core.WebViewByteRange right)
+  public void Deconstruct(out long From, out long To)
+sealed class Shenora.Core.WebViewResourceRequest
+  public required System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
+  public required System.Uri Uri { get; init; }
+  public required string Method { get; init; }
+  public string? GetHeader(string name)
+sealed class Shenora.Core.WebViewResourceResponse
+  public System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
+  public int StatusCode { get; init; }
+  public required System.IO.Stream Content { get; init; }
+  public static Shenora.Core.WebViewResourceResponse Bytes(byte[] content, string contentType, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
+  public static Shenora.Core.WebViewResourceResponse NotFound()
+  public static Shenora.Core.WebViewResourceResponse Ok(System.IO.Stream content, string contentType, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
+  public static Shenora.Core.WebViewResourceResponse PartialContent(System.IO.Stream content, string contentType, Shenora.Core.WebViewByteRange range, long totalLength, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
+  public static Shenora.Core.WebViewResourceResponse RangeNotSatisfiable(long totalLength)
+  public string ReasonPhrase { get; init; }

@@ -1,6 +1,7 @@
 using Shenora.Windows;
+using Shenora.Core;
 
-namespace Shenora.Tests.WebView2;
+namespace Shenora.Tests.Core;
 
 /// <summary>
 /// P6.6 found that a deferred-scheme handler could only ever answer "200, here are all the bytes":

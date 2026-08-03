@@ -2,6 +2,7 @@ using Microsoft.Web.WebView2.Core;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core;
 
 namespace Shenora.Windows;
 

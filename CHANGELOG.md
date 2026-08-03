@@ -12,6 +12,29 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Breaking
+
+- **`WebViewResourceRequest`, `WebViewResourceResponse` and `WebViewByteRange` moved from
+  `Shenora.Windows` to `Shenora.Core`** (namespace `Shenora.Windows` → `Shenora.Core`).
+  `WebViewDeferredScheme.Handler`'s signature now names the Core types; the member is otherwise unchanged.
+
+  **Migration: add `using Shenora.Core;` to files that name these types.** That is the whole fix, and it
+  was measured rather than asserted — the move broke exactly three files in this repo (one sample, two test
+  files) and each needed exactly that one line. Code that already has both usings does not change at all.
+
+  **Why:** these three types describe a resource exchange between a host and a page — "URI plus headers in,
+  status plus content-type plus a stream out" — and nothing about that is Windows-specific. They sat in the
+  Windows package only because it was the one shell when they were written. MAUI's `HybridWebView` turns
+  out to have a request-interception seam in .NET 10, so the mobile shells can serve dynamic, seekable
+  content too, and `src/Shenora.Mobile/` cannot reference `Shenora.Windows`. Portable contracts live in
+  Core (D19/D20) — this is that rule catching up with a capability the platform gained after the split.
+
+  **No type-forward shim, deliberately.** Type forwarding preserves the full name *including* the
+  namespace, so it would leave `Shenora.Windows.*` type names living inside the Core assembly — breaking
+  the one-namespace-per-package convention the whole kit reads by, to save consumers a single `using`.
+
 ## 0.7.0 — 2026-08-02
 
 ### Breaking
