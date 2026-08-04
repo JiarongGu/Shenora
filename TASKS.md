@@ -535,6 +535,24 @@ than being encouraging about both.
   would compile, assemble, plist and hand them to `AdditionalAppExtensions`. That is the difference between
   "here is how to configure Xcode" and "add a file".
 
+  **✅ SECOND PROBE ALSO DONE (2026-08-04) — a Live Activity STARTS from C# and the system launches the
+  widget to render it.** So the entire chain is proven, not just the build: `Activity.request` returned an
+  id, three updates were accepted, `liveactivitiesd` logged *"Starting activity … state: active"*, and
+  `chronod` launched the extension through ExtensionKit. Mechanics and the four traps are in
+  `.claude/knowledge/mobile-shells.md`; the two that change the DESIGN:
+  - **The app-side shim is a static Swift library** (`swiftc -emit-library -static`, `@_cdecl`,
+    `<NativeReference Kind="Static">`, `[DllImport("__Internal")]`), because activities are started BY THE
+    APP. Verified with `nm` on the app executable. So piece 2 below is confirmed, and its shape is known.
+  - **⚠ `-module-name` must MATCH between the appex and the shim**, or ActivityKit cannot pair the activity
+    with the widget: a Swift type's identity includes its module, so one shared source compiled into two
+    module names is two different types — and every API call still reports success while nothing renders.
+    **That makes piece 1 (one definition, projected to both sides) strictly more valuable than it looked:
+    the contract is not just the field list, it is the field list AND the module name.**
+  - Not visually confirmed, with an informative reason: the activity's `sceneTargets` came back
+    `[lockscreen: …]` only — no Island destination on this simulator — so an unlocked simulator shows an
+    empty pill no matter what. A simulator presentation limit rather than a limit of the approach. Settle
+    on a real device before claiming the Island renders.
+
   **The boundary falls exactly on the kit's existing headless law, which is what makes this clean rather
   than a compromise.** A Live Activity's UI *is* a SwiftUI view in a widget extension — an OS requirement,
   not a .NET limitation. But D13 already says the kit ships no design system and no UI component library, so
@@ -586,9 +604,8 @@ than being encouraging about both.
   **✅ The de-risking probe is DONE** (see the top of this entry). The question it answered was not
   ActivityKit's API surface but whether the .NET for iOS build can carry a widget extension at all — it
   can, through in-SDK support, and `swiftc` needs no Xcode project. Nothing here rests on an unknown any
-  more. **The next probe, when this is picked up: does a Live Activity actually START and render in the
-  Island** (needs `NSSupportsLiveActivities` + the C#→Swift call). Prove that before writing the
-  contract, per `.claude/knowledge/doc-claims.md`.
+  more. **Both probes are answered.** The only thing still unverified is whether the ISLAND
+  specifically renders, and that needs a real device — this simulator offers no Island scene target.
 
   **Not started, and it must not jump the queue** (D15): `DM3` is the live media work, and this wants a
   second consumer before it earns a package. The direction changes the SCOPE, not the order.

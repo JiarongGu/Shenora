@@ -168,7 +168,35 @@ Earned across the Android port and the iOS port (both 2026-08-02).
     the entire API is in `ActivityKit.swiftmodule`. So the start/update/end LIFECYCLE needs a Swift shim
     too, not only the view. (WidgetKit does ship headers, but declaring a widget is a Swift
     result-builder DSL regardless.)
-  - **Still unproven, so do not claim it:** that a Live Activity actually STARTS and renders in the
-    Dynamic Island. That needs `NSSupportsLiveActivities` in the app's Info.plist plus the C#→Swift shim
-    call, and is the next probe. A device build additionally needs entitlements for the appex — the
-    simulator build logs `No entitlements set for …IslandProbe.appex` and that warning is expected there.
+  - **A Live Activity really STARTS from C#, and the system launches the widget to render it** (second
+    probe, same day). `Activity.request` returned an id, three `update`s were accepted, and
+    `liveactivitiesd` logged `Created activity` / `Starting activity … state: active`. Then `chronod`
+    launched the extension through ExtensionKit — `Executing launch request for
+    xpcservice<…islandprobe>` — so the whole chain works, not just the build.
+    - **The app-side shim is a STATIC Swift library, and this is the part with a real recipe.** Activities
+      are started BY THE APP, so Swift has to be linked into the app too, not only into the appex.
+      `swiftc -emit-library -static -parse-as-library` produces a `.a`; `@_cdecl` gives each entry point an
+      unmangled C symbol; `<NativeReference Include="…/lib.a"><Kind>Static</Kind></NativeReference>` links
+      it; and C# reaches it with `[DllImport("__Internal")]` — `"__Internal"` because the symbols end up in
+      the app binary itself. Verified with `nm` on the app executable, not inferred.
+      Compile the shim at the APP's minimum OS and guard ActivityKit with `if #available(iOS 16.2, *)`; a
+      static library built for a higher floor than its host is an argument nobody needs.
+    - **⚠ `-module-name` MUST MATCH between the appex and the shim.** ActivityKit pairs a running activity
+      with a widget by its `ActivityAttributes` TYPE, and a Swift type's identity includes its module — so
+      the same shared source compiled into two different module names declares two different types, the
+      pairing silently fails, and every API call still reports success. Hit live.
+    - **⚠ Never hand-delete part of an app bundle to force a rebuild.** Doing that produced
+      `SIGKILL (Code Signature Invalid)` / `CODESIGNING Invalid Page` at launch, which reads like a
+      provisioning problem and is really "the bundle no longer matches its signature". `rm -rf bin obj` and
+      build clean instead. Cost: one full build; the alternative cost an hour chasing a phantom.
+    - **⚠ An edited `Platforms/iOS/Info.plist` does NOT reach the app on an incremental build.**
+      `_WriteAppManifest` merges `obj/**/AppManifest.plist` — a COPY of the source — with generated
+      fragments, and its Inputs/Outputs are satisfied by that copy. The built plist's mtime moves while its
+      CONTENT stays stale, which is the worst possible symptom. Delete the intermediate, or build clean.
+    - **Still not visually confirmed on a simulator, and the reason is informative:** the activity's
+      `sceneTargets` came back as `[lockscreen: widget(...)]` only — no Dynamic Island destination — so an
+      unlocked simulator shows an empty pill however long you wait. That is a SIMULATOR presentation limit,
+      not a limit of this approach; the extension is launched and the activity is active either way. Settle
+      it on a real device before claiming the Island renders.
+    - A device build additionally needs entitlements for the appex — the simulator build logs
+      `No entitlements set for …IslandProbe.appex` and that warning is expected there.
