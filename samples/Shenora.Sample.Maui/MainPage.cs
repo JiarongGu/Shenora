@@ -95,6 +95,11 @@ public sealed class MainPage : ContentPage
 			catch (Exception ex) { MauiProgram.Log($"media: staging FAILED — {ex}"); }
 		});
 
+		// The system media transport surface. Resolved from DI rather than constructed, because that is
+		// what an adopting app does and it also proves the registration in UseMobile picked the right
+		// implementation for this platform.
+		PlaybackSessionProbe.Run(services.GetRequiredService<IPlaybackSession>(), MauiProgram.Log);
+
 		// A heartbeat on the bus, so the NOTIFICATION direction is visible on screen rather than
 		// merely wired: the desktop sample proves the same path with its 1 Hz tick source.
 		_ = Task.Run(async () =>

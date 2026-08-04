@@ -28,6 +28,14 @@ Shenora.Mobile.MobileIpcBridgeOptions
   property NotificationInterval
   property OnClientReady
   property Shell
+Shenora.Mobile.MobilePlaybackSession
+  event CommandReceived
+  method .ctor
+  method Clear
+  method Dispose
+  method Publish
+  method Report
+  property Supported
 Shenora.Mobile.MobileUiDispatcher
   method .ctor
   method InvokeAsync

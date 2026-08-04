@@ -46,6 +46,27 @@ public static class MobileHostExtensions
         builder.Services.TryAddSingleton<IUiInteraction, MobileUiInteraction>();
         builder.Services.TryAddSingleton<IFileDialogs, MobileFileDialogs>();
 
+        // The system media transport surface. ONE NAME, two entirely separate bodies — Android registers a
+        // MediaSession, iOS writes two process-wide singletons and shares no code with it at all. That is
+        // unlike every service above, which really is one class for both platforms; the shared NAME is what
+        // keeps this registration, the docs and the metadata baselines symmetrical anyway.
+        //
+        // LAZY, because both constructors touch platform state an app that never plays anything should not
+        // pay for. DI disposes it, which matters on iOS: its command targets are attached to a shared
+        // command center and would outlive the object otherwise.
+        //
+        // No log sink is passed, deliberately: `onError` takes an Exception, and wrapping a diagnostic line
+        // in one would report ordinary information as a fault. An app that wants these diagnostics
+        // registers its own instance with a sink — `TryAdd` means an app registration wins, which is the
+        // same escape hatch every other service here has.
+#if !ANDROID && !IOS && !MACCATALYST
+        // A hard COMPILE error rather than a missing registration: without this a fourth shell would build
+        // clean and fail at the INJECTION SITE, with nothing naming which platform forgot to implement it.
+        // Same fail-closed choice as MobileWebViewInterceptor's undeclared range delivery.
+#error Shenora.Mobile: this platform has no MobilePlaybackSession. Add one under Services/, or register a stub that throws ShellCapability.NotSupported.
+#endif
+        builder.Services.TryAddSingleton<IPlaybackSession>(_ => new MobilePlaybackSession());
+
         return builder;
     }
 }
