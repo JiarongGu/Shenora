@@ -1203,3 +1203,42 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     it would have shipped as a public type with no consumer. It returns with the middleware that needs it
     (D15). The reasoning to keep: the host can reach addresses the page cannot, so a *throwing* policy must
     deny.
+
+- **D46 — a capability that needs a newer PLATFORM TARGET is opt-in, never imposed. The consumer picks the
+  target; the kit makes the consequence explicit** (owner, 2026-08-04: *"so we let the consumer decide their
+  target platform instead of force it?"*).
+  - **The case that produced it.** `IPlaybackSession` on the desktop needs `SystemMediaTransportControls`,
+    which is WinRT, and the WinRT projections exist only when the TFM names a Windows SDK version — with a
+    bare `net10.0-windows`, `Windows.Media` is not a namespace at all (measured: `CS0234`). The first
+    implementation simply raised `Shenora.Windows` to a versioned TFM, which made every Windows consumer
+    retarget for a capability most of them will never call.
+  - **The rule: multi-target, and let the plain variant REFUSE BY NAME.** `Shenora.Windows` ships
+    `net10.0-windows` and `net10.0-windows10.0.17763.0`. On the plain one the type still exists and throws
+    `ShellCapability.NotSupported` at construction with the one-line remedy in the message. Absent would be
+    worse — resolving a missing service names neither the shell nor the reason — and that is the same
+    reasoning `ShellCapability` was created for.
+  - **Why a build flag CANNOT do this, which is the question worth pre-answering.** A consumer's MSBuild
+    property is evaluated long after the kit's assemblies were compiled and packed; all a csproj can do at
+    that point is choose a lib folder. So content can only vary by TFM, by package, or by having no
+    compile-time dependency at all (hand-rolled COM — invented interop this kit declines). A flag WOULD work
+    for a `ProjectReference` consumer building from source, which is exactly why a project reference hides
+    packaging (`ADOPTION.md`).
+  - **Measured cost, so the trade is not a guess:** ~190 KB of extra nupkg content (two `lib/` folders at
+    ~275 KB each before compression), a doubled build for that one package, and one hand-written refusal
+    stub. Paid only by Windows consumers.
+  - **⚠ Two hand-written variants of one type need TWO gates.** `ApiSurfaceTests` loads the assembly the test
+    project itself references, so it sees only one TFM; the plain variant has its own entry in
+    `MetadataSurfaceTests` — the machinery that already existed for assemblies the test project cannot
+    reference. One type name in one package differing only by TFM must expose the same members, or a consumer
+    that retargets finds a different API.
+  - **The generalisation, which is the part to apply next time:** the kit must not narrow a consumer's
+    supported platforms as a side effect of one feature it happens to implement. If a capability needs a
+    newer floor, the floor moves for the consumers who ask for that capability — and the ones who do not get
+    a message naming the platform, the capability and the fix. Applies to any future WinRT surface, and to
+    the same question on the mobile shells.
+  - **Related trap, recorded because it cost a commit:** `TargetPlatformVersion` (from the TFM) is what you
+    may COMPILE against; `SupportedOSPlatformVersion`/`TargetPlatformMinVersion` is the floor you RUN on —
+    and leaving the latter unset silently defaults it to the former. That is how bumping a TFM for one API
+    quietly raises everyone's minimum OS. It is pinned here, matched on `-windows10.` rather than an exact
+    TFM string so a later bump cannot slip past the latch, with `CA1416` (a build error in this repo) forcing
+    any newer API to be guarded instead.
