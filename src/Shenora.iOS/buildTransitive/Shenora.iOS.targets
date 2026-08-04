@@ -1,0 +1,131 @@
+<Project>
+
+  <!--
+    Builds a Live Activity widget extension for the consuming app, from the kit's Swift plus the app's own
+    SwiftUI views, and wires it into the app bundle. Nothing here runs unless the app opts in:
+
+      <PropertyGroup>
+        <ShenoraLiveActivityViews>Platforms/iOS/IslandViews.swift</ShenoraLiveActivityViews>
+      </PropertyGroup>
+
+    That one property is the whole adoption. The app writes Swift VIEWS and no Swift lifecycle, no
+    Info.plist, no .xcodeproj and no codesigning — which is the point, and is only possible because
+    `swiftc` alone can build a WidgetKit extension (measured; see .claude/knowledge/mobile-shells.md).
+
+    ⚠ macOS only, guarded on IsMacEnabled. An iOS app build needs a Mac regardless, so this adds no new
+    requirement — but the guard keeps a Windows-side restore/evaluate from trying to run swiftc.
+  -->
+
+  <PropertyGroup>
+    <!-- The kit's own Swift, beside this file inside the package. -->
+    <_ShenoraLiveActivitySwift>$(MSBuildThisFileDirectory)swift/ShenoraLiveActivity.swift</_ShenoraLiveActivitySwift>
+    <_ShenoraLiveActivityOut>$(IntermediateOutputPath)shenora-liveactivity</_ShenoraLiveActivityOut>
+    <_ShenoraLiveActivityAppex>$(_ShenoraLiveActivityOut)/ShenoraLiveActivity.appex</_ShenoraLiveActivityAppex>
+    <_ShenoraLiveActivityLib>$(_ShenoraLiveActivityOut)/libshenoraliveactivity.a</_ShenoraLiveActivityLib>
+    <!--
+      The module name is part of the CONTRACT, not a detail. ActivityKit pairs a running activity with a
+      widget by its ActivityAttributes type, and a Swift type's identity includes its module — so the shim
+      (linked into the app) and the widget (in the .appex) MUST agree here or nothing renders and every call
+      still reports success. Measured the hard way.
+    -->
+    <ShenoraLiveActivityModule Condition="'$(ShenoraLiveActivityModule)' == ''">ShenoraLiveActivity</ShenoraLiveActivityModule>
+    <!-- ActivityKit's floor. The app's own SupportedOSPlatformVersion can be lower; the extension simply
+         is not loaded on older systems, which is normal for a widget. -->
+    <ShenoraLiveActivityMinimumOS Condition="'$(ShenoraLiveActivityMinimumOS)' == ''">16.2</ShenoraLiveActivityMinimumOS>
+  </PropertyGroup>
+
+  <Target Name="ShenoraBuildLiveActivity"
+          Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'"
+          BeforeTargets="_ExpandNativeReferences;_ExtendAppExtensionReferences;_CompileToNative"
+          Inputs="$(_ShenoraLiveActivitySwift);$(ShenoraLiveActivityViews)"
+          Outputs="$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity;$(_ShenoraLiveActivityLib)">
+
+    <Error Condition="!Exists('$(ShenoraLiveActivityViews)')"
+           Text="ShenoraLiveActivityViews points at '$(ShenoraLiveActivityViews)', which does not exist. It must be a Swift file declaring the widget — see Shenora's ADOPTION.md for the four view bodies it needs." />
+
+    <!--
+      The simulator/device split. `_SdkIsSimulator` is the iOS SDK's own property, so this follows whatever
+      the build is actually targeting rather than guessing, and the ARCHITECTURE follows the RID — the same
+      trap the Android sample's csproj documents (a default build can produce the wrong arch and the failure
+      reads like a packaging fault).
+    -->
+    <PropertyGroup>
+      <_ShenoraLaSdk Condition="'$(_SdkIsSimulator)' == 'true'">iphonesimulator</_ShenoraLaSdk>
+      <_ShenoraLaSdk Condition="'$(_ShenoraLaSdk)' == ''">iphoneos</_ShenoraLaSdk>
+      <_ShenoraLaArch Condition="$(RuntimeIdentifier.EndsWith('-x64'))">x86_64</_ShenoraLaArch>
+      <_ShenoraLaArch Condition="'$(_ShenoraLaArch)' == ''">arm64</_ShenoraLaArch>
+      <_ShenoraLaSuffix Condition="'$(_SdkIsSimulator)' == 'true'">-simulator</_ShenoraLaSuffix>
+      <_ShenoraLaTriple>$(_ShenoraLaArch)-apple-ios$(ShenoraLiveActivityMinimumOS)$(_ShenoraLaSuffix)</_ShenoraLaTriple>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(_ShenoraLiveActivityOut);$(_ShenoraLiveActivityAppex)" />
+
+    <Exec Command="xcrun --sdk $(_ShenoraLaSdk) --show-sdk-path" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_ShenoraLaSdkPath" />
+    </Exec>
+
+    <!--
+      THE WIDGET. -parse-as-library because @main in a file set otherwise collides with swiftc's
+      top-level-code mode. -Xlinker -syslibroot because swiftc passes -sdk to the COMPILE phase but the
+      clang driver it invokes to LINK picks up the host sysroot and warns about targeting iPhone with a
+      MacOSX sysroot; the binary happened to work anyway, which is exactly why it is worth fixing rather
+      than tolerating.
+    -->
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
+
+    <!--
+      THE SHIM, as a static library linked into the APP. Activities are started BY THE APP, so the same
+      Swift has to exist on both sides — compiled at the app's own floor here, with availability guarded
+      inside, because a static library built for a higher minimum than its host is an argument nobody needs.
+    -->
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot;" />
+
+    <!--
+      The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
+      the whole app at install; PackageType is XPC!; a WidgetKit extension declares only the point
+      identifier because the @main WidgetBundle is the entry point.
+    -->
+    <PropertyGroup>
+      <_ShenoraLaPlist>$(_ShenoraLiveActivityAppex)/Info.plist</_ShenoraLaPlist>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_ShenoraLaPlist)" Overwrite="true" WriteOnlyWhenDifferent="true" Lines="
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;;
+&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;;
+&lt;plist version=&quot;1.0&quot;&gt;&lt;dict&gt;;
+  &lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
+  &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;$(ApplicationId).shenoraliveactivity&lt;/string&gt;;
+  &lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
+  &lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;XPC!&lt;/string&gt;;
+  &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;1.0&lt;/string&gt;;
+  &lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;1&lt;/string&gt;;
+  &lt;key&gt;MinimumOSVersion&lt;/key&gt;&lt;string&gt;$(ShenoraLiveActivityMinimumOS)&lt;/string&gt;;
+  &lt;key&gt;NSExtension&lt;/key&gt;&lt;dict&gt;;
+    &lt;key&gt;NSExtensionPointIdentifier&lt;/key&gt;&lt;string&gt;com.apple.widgetkit-extension&lt;/string&gt;;
+  &lt;/dict&gt;;
+&lt;/dict&gt;&lt;/plist&gt;" />
+
+    <Message Importance="high" Text="Shenora: built ShenoraLiveActivity.appex ($(_ShenoraLaTriple)) from $(ShenoraLiveActivityViews)" />
+  </Target>
+
+  <!--
+    Hand the results to the iOS SDK's own machinery: AdditionalAppExtensions embeds and re-signs the .appex
+    (_ExtendAppExtensionReferences, reached from _CompileToNativeDependsOn), and NativeReference links the
+    shim so [DllImport("__Internal")] can find its @_cdecl symbols.
+
+    Static items rather than items produced inside the target, because both are consumed by targets whose
+    Inputs/Outputs are computed early. The FILES only have to exist by the time those run, which the
+    BeforeTargets above guarantees.
+  -->
+  <ItemGroup Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'">
+    <AdditionalAppExtensions Include="$(_ShenoraLiveActivityOut)">
+      <BuildOutput>.</BuildOutput>
+      <Name>ShenoraLiveActivity</Name>
+    </AdditionalAppExtensions>
+    <NativeReference Include="$(_ShenoraLiveActivityLib)">
+      <Kind>Static</Kind>
+      <Frameworks>ActivityKit Foundation</Frameworks>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>

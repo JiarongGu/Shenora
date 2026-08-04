@@ -28,6 +28,12 @@ Shenora.Mobile.MobileIpcBridgeOptions
   property NotificationInterval
   property OnClientReady
   property Shell
+Shenora.Mobile.MobileLiveActivities
+  method .ctor
+  method End
+  method Start
+  method Update
+  property Unavailable
 Shenora.Mobile.MobilePlaybackSession
   event CommandReceived
   method .ctor

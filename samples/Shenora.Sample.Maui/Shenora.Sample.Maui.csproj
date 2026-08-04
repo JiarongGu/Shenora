@@ -107,6 +107,26 @@
                LogicalName="wwwroot/media/clip-tailmoov.mp4" />
   </ItemGroup>
 
+  <!--
+    THE LIVE ACTIVITY OPT-IN — one property, which is the whole adoption. The kit compiles this file together
+    with its own ShenoraLiveActivity.swift into a widget extension, embeds it in the app bundle and re-signs
+    it. The app writes four SwiftUI view bodies and no lifecycle Swift, no Info.plist, no .xcodeproj.
+  -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('ios'))">
+    <ShenoraLiveActivityViews>Platforms/iOS/IslandViews.swift</ShenoraLiveActivityViews>
+  </PropertyGroup>
+
+  <!--
+    ⚠ A PROJECT reference does NOT import a package's buildTransitive targets, so the sample has to import
+    them by hand. A real consumer with a <PackageReference Include="Shenora.iOS" /> gets this automatically
+    and writes only the property above.
+    That difference is exactly the packaging a project reference hides — the lesson `ADOPTION.md` records as
+    "spike against the published artifact" — so the automatic path is verified separately by a pack test
+    rather than assumed to work because this one does.
+  -->
+  <Import Project="..\..\src\Shenora.iOS\buildTransitive\Shenora.iOS.targets"
+          Condition="$(TargetFramework.Contains('ios'))" />
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <RunAOTCompilation>true</RunAOTCompilation>
     <AndroidEnableProfiledAot>true</AndroidEnableProfiledAot>

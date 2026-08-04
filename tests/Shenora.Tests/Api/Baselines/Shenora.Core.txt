@@ -286,6 +286,11 @@ interface Shenora.Core.ILane
   public abstract string Name { get; }
   public abstract void Hold()
   public abstract void Release()
+interface Shenora.Core.ILiveActivities
+  public abstract string? Start(Shenora.Core.LiveActivityState state)
+  public abstract string? Unavailable { get; }
+  public abstract void End(string handle)
+  public abstract void Update(string handle, Shenora.Core.LiveActivityState state)
 interface Shenora.Core.IMissionChainContext
   public abstract T Get<T>(string key)
   public abstract int StepCount { get; }
@@ -349,6 +354,18 @@ interface Shenora.Core.IUrlLauncher
 interface Shenora.Core.IWebViewInterceptor
   public abstract Shenora.Core.WebViewRangeDelivery RangeDelivery { get; }
   public abstract System.IDisposable Use(Shenora.Core.WebViewResourceMiddleware middleware)
+sealed class Shenora.Core.LiveActivityState : System.IEquatable<Shenora.Core.LiveActivityState>
+  public .ctor()
+  public Shenora.Core.LiveActivityState <Clone>$()
+  public bool Equals(Shenora.Core.LiveActivityState? other)
+  public double? Progress { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.LiveActivityState? left, Shenora.Core.LiveActivityState? right)
+  public static bool op_Inequality(Shenora.Core.LiveActivityState? left, Shenora.Core.LiveActivityState? right)
+  public string? Subtitle { get; init; }
+  public string? Title { get; init; }
 sealed class Shenora.Core.ManifestDiff
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Added { get; }
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Updated { get; }

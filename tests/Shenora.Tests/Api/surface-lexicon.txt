@@ -339,6 +339,20 @@ Pipeline
 # swept by this gate, so that discipline is a review matter; it is written down here so the next person
 # renaming them for convenience meets the reason first.
 Commands
+
+# ── Live status surfaces (Shenora.Core + Shenora.iOS, 2026-08-04) ─────────────────────────────────
+# `ILiveActivities` / `LiveActivityState` put a long-running job on the OS-rendered strip an app gets
+# while backgrounded — iOS's Dynamic Island and lock screen today. `Live` and `Activity` are both
+# mechanism words: a live surface is one the OS keeps updating, and an activity is a unit of work in
+# progress. Neither names a product concept, and the state record carries Title / Subtitle / Progress
+# with no domain vocabulary at all.
+#
+# ⚠ `Activity` is the word to watch here, for the same reason `Media` and `Download` are watched above:
+# it is Apple's and Android's term as well as a generic one, so a type that starts meaning "an
+# ActivityKit thing" rather than "a unit of work" has drifted and must be argued afresh.
+Live
+Activity
+Activities
 # Core resource serving, re-layered 2026-08-04 (D45). `Derived` names WHAT is cached (anything derived
 # from a source file) rather than the feature that caches it — the family shares this helper.
 Content

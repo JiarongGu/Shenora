@@ -100,6 +100,17 @@ public sealed class MainPage : ContentPage
 		// implementation for this platform.
 		PlaybackSessionProbe.Run(services.GetRequiredService<IPlaybackSession>(), MauiProgram.Log);
 
+		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
+		// the media staging above.
+		_ = Task.Run(async () =>
+		{
+			try
+			{
+				await LiveActivityProbe.RunAsync(services.GetRequiredService<ILiveActivities>(), MauiProgram.Log);
+			}
+			catch (Exception ex) { MauiProgram.Log($"[ACTIVITY] probe threw: {ex}"); }
+		});
+
 		// A heartbeat on the bus, so the NOTIFICATION direction is visible on screen rather than
 		// merely wired: the desktop sample proves the same path with its 1 Hz tick source.
 		_ = Task.Run(async () =>

@@ -67,6 +67,12 @@ public static class MobileHostExtensions
 #endif
         builder.Services.TryAddSingleton<IPlaybackSession>(_ => new MobilePlaybackSession());
 
+        // The live status surface. Registered on BOTH shells even though only iOS can do it, because the
+        // contract carries its own "cannot" channel (`Unavailable`) — so portable logic asks and branches
+        // instead of catching, and Android answers with a reason rather than failing at the injection site
+        // with a message about a missing service.
+        builder.Services.TryAddSingleton<ILiveActivities>(_ => new MobileLiveActivities());
+
         return builder;
     }
 }

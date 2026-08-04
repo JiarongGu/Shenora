@@ -18,7 +18,23 @@
     <!-- Inline on purpose — the baseline coverage gate text-matches it here. See Shenora.Mobile.props. -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.iOS</PackageId>
-    <Description>Shenora's iOS shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a UI-thread dispatcher, and the iOS implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.Android.</Description>
+    <Description>Shenora's iOS shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a UI-thread dispatcher, and the iOS implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.Android. Also ships the Live Activity devkit: the app writes four SwiftUI view bodies and sets one MSBuild property, and the package supplies the ActivityKit shim, the state mirror and the build step that produces and signs the widget extension.</Description>
   </PropertyGroup>
+
+  <!--
+    The Live Activity devkit's two shipped artifacts. Both go under buildTransitive/ so a PackageReference
+    picks the targets up automatically and the Swift sits beside it at a path the targets can name.
+
+    ⚠ The SWIFT IS SHIPPED AS SOURCE and that is forced, not a style choice: ActivityKit pairs a running
+    activity with a widget by its ActivityAttributes TYPE, and a Swift type's identity includes its MODULE —
+    so the attributes must be compiled into the same module as the app's own views. A prebuilt binary could
+    never satisfy that. Measured; see .claude/knowledge/mobile-shells.md.
+  -->
+  <ItemGroup>
+    <None Include="buildTransitive\Shenora.iOS.targets" Pack="true" PackagePath="buildTransitive\" />
+    <!-- PackagePath puts it beside the targets, which name it by $(MSBuildThisFileDirectory)swift/. -->
+    <None Include="LiveActivity\ShenoraLiveActivity.swift" Pack="true"
+          PackagePath="buildTransitive\swift\ShenoraLiveActivity.swift" />
+  </ItemGroup>
 
 </Project>

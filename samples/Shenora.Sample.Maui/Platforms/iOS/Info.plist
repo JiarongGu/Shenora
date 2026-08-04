@@ -26,5 +26,11 @@
 	</array>
 	<key>XSAppIconAssets</key>
 	<string>Assets.xcassets/appicon.appiconset</string>
+	<!-- Required for ActivityKit: without it Activity.request fails and the reason is not obvious. It is
+	     the APP's declaration, not the kit's, and the kit cannot add it for you — no MSBuild item merges a
+	     key into this file. ⚠ Editing it does not reach an INCREMENTAL build either, because
+	     _WriteAppManifest merges a stale obj/**/AppManifest.plist copy; see mobile-shells.md. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>
