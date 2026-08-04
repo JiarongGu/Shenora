@@ -139,6 +139,54 @@ The device evidence still stands, because the same clips play through the same s
 the move (Android `Unsliced`, iOS `Sliced`, `seeked -> 48.00s`/`48.03s`), and the desktop was added
 (`InterceptorProbe`, sabotage-verified). Current shape: `docs/DECISIONS.md` D45 + `docs/ARCHITECTURE.md`.
 
+### Release hygiene — the two items the 0.6.0 incident earned (2026-08-04) — BOTH DONE
+
+**1. A release now FAILS when `## Unreleased` is missing or empty.** `dev.mjs changelog` used to warn and
+carry on, which is exactly how v0.6.0 published **0.5.1's code**: the work was committed locally and never
+pushed, so the workflow released the remote's tree, bumped the version correctly, found nothing to stamp,
+and shipped a version with no changelog entry at all. *The empty section was the signal, and it was there
+and unused.*
+
+- It FAILS rather than warns, which is a different judgement from the size/style budgets this repo keeps
+  non-fatal. The rule is `RULES_INDEX.md`'s: correctness stops a release, style warns — and publishing the
+  wrong code is correctness. The asymmetry settles it: a false stop costs one bullet and always has an
+  obvious fix; a miss burns a version number, and this repo has burned two.
+- **No override flag, on purpose.** The escape hatch is writing the line. Any other one gets used.
+- The failure message points at the LIKELIER cause first — *check that the commits you mean to release are
+  actually on the remote* — because an empty changelog is far more often a symptom of a stale tree than of
+  forgotten prose. That is the whole 0.6.0 lesson, and it belongs in the message rather than only in a doc.
+- "Entries" means at least one **bullet**, not merely a non-blank line: a `### Added` with nothing under it
+  is precisely the artefact a half-finished release leaves behind, and it satisfies any looser test.
+- It cannot turn ordinary commits red, which was checked rather than assumed: `changelogDoctor` is called
+  only from the `changelog` command, which only the release workflow runs. `verify` never touches it.
+- **Sabotage-verified across seven cases**, including the three that must stay QUIET (the real section, a
+  one-bullet minimum, and the titled `## Unreleased — <title>` form) and on a **CRLF** checkout — "a gate
+  that had never run on CRLF" is how one of the 0.4.0 gates broke.
+
+⚠ **The harness was wrong before the gate was.** The first version spliced at
+`indexOf('## Unreleased')`, which finds that phrase in the file's INTRO PROSE rather than at the heading.
+So five sabotage cases "failed correctly" for entirely the wrong reason, and the one case that should have
+stayed quiet failed too. **A gate that reaches the right verdict by the wrong path is indistinguishable
+from a working one until you read WHICH message it printed.** An exit code is not enough when a check has
+more than one failure branch.
+
+**2. The stray tracked file is gone, and `doctor` now sweeps for the next one.** A 0-byte file whose name
+was two Private-Use-Area characters then "This" — a mangled shell redirect — was committed in `11e3469`,
+reached the public repo and rode in the 0.6.0 tree. Harmless (no csproj referenced it, so it never entered
+a package) but junk in a public repo, and **nothing was looking**: not `doctor`, not the sensitive scan,
+not CI. Deleting the one file would have left the next one just as invisible, so `doctor` now fails on any
+tracked PATH outside printable ASCII, printing the offending name `\uXXXX`-escaped so the message itself
+does not carry unprintable characters into whatever reads the log.
+
+- Deliberately narrow — tracked **paths**, printable ASCII — because that is what this repo uses and a
+  narrow check cannot cry wolf. It is **not** a ban on non-ASCII CONTENT: sources here are UTF-8 with CJK
+  in comments and strings. A legitimate non-ASCII filename would be a real decision, so failing and making
+  someone widen the check deliberately is the right cost.
+- Skipped with a stated reason outside a git checkout, rather than reporting a clean sweep — the same
+  convention `doctor` already applies to the tag check it skips during a release.
+- Sabotage-verified both ways: planting a PUA-named tracked file fails naming the escaped name; removing
+  it returns green.
+
 ### `IpcJson` takes an app-supplied type-info resolver (2026-08-02) — DONE
 
 Parked at the two-consumer bar since it was found while assessing on-device mobile; **owner direction

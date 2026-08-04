@@ -455,22 +455,19 @@ per player and per DEVICE on Android._
 _Thumbnails and image resize are DEFERRED with the analysis already done — D43. They cost 0 MB on every
 platform and need no engine, so they are cheap to add later, and the player does not depend on them._
 
-### Release hygiene — two items earned by the 0.6.0 incident (2026-08-02)
+### Release hygiene — ✅ both items the 0.6.0 incident earned are CLOSED (2026-08-04)
 
-- [ ] **Gate a release on `## Unreleased` having CONTENT.** v0.6.0 published 0.5.1's code because the
-  work was committed locally and never pushed: the workflow released the remote's tree, bumped the
-  version correctly, and had no `## Unreleased` to stamp — so it shipped with no changelog entry at all.
-  **The empty section is the signal, and it was there and unused.** Cost of a false stop is one changelog
-  line; cost of a miss is a burned version number, which this repo has now done twice (0.2.0 consumed,
-  0.6.0 released stale). Make it FAIL rather than warn — releasing the wrong code is correctness, not
-  style — and sabotage-verify that it stays QUIET on a legitimate release, which is the direction the
-  0.4.0 gates all got wrong. Full account in `CHANGELOG.md` under `## 0.6.0`.
-- [ ] **Remove the stray tracked file `\357\200\252\357\200\252This`** — 0 bytes, name is two
-  Private-Use-Area characters then "This", almost certainly a mangled shell redirect. Added in
-  `11e3469`, so it is in the public repo and in the 0.6.0 tree. Harmless (no csproj references it, so it
-  reaches no package) but it is junk in a public repo. Worth asking the related question while there:
-  **nothing looks for stray files** — neither `doctor` nor the sensitive scan — so a `git ls-files`
-  sweep for names outside a sane charset may be worth adding rather than just deleting this one.
+_**Both DONE 2026-08-04**, and both sabotage-verified in both directions — details in
+`docs/archive/tasks.md`. In one line each: `dev.mjs changelog` now FAILS a release whose `## Unreleased`
+is missing or has no bullets, with the message pointing first at the likelier cause (*the commits you
+mean to ship are not on the remote*); and `doctor` now sweeps `git ls-files` for names outside printable
+ASCII, which is what nothing was doing when a mangled shell redirect became a tracked file._
+
+_⚠ One lesson from doing them that generalises: **my first sabotage harness was wrong, not the gate.**
+It spliced at `indexOf('## Unreleased')`, which found the phrase in the intro PROSE rather than the
+heading, so five cases "failed correctly" for the wrong reason and one that should have stayed quiet
+also failed. A gate that reports the right verdict via the wrong path is indistinguishable from a
+working one until you check WHICH message it printed. Read the message, not just the exit code._
 
 ### Standing (habits, not a queue)
 

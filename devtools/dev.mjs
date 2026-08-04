@@ -151,12 +151,38 @@ function evictGlobalCache() {
 const unreleasedHeading =
   /^## Unreleased(?:[ \t]*\([^)]*\))?[ \t]*(?:[—–-][ \t]*(.+?))?[ \t]*$/m;
 
+// THE STALE-RELEASE GATE, earned by v0.6.0 — which published 0.5.1's CODE. The work was committed
+// locally and never pushed, so the workflow released the remote's tree: it bumped the version
+// correctly, found nothing under `## Unreleased` to stamp, and shipped a version with no changelog
+// entry at all. **The empty section was the signal, and it was there and unused.** A release whose
+// changelog says nothing is a release nobody wrote anything for, which is very nearly a proof that the
+// tree is not the one the author was working in.
+//
+// It FAILS rather than warns, deliberately, and that is a different judgement from the size/style
+// budgets this repo keeps non-fatal (`RULES_INDEX.md`: "correctness stops a release; style warns").
+// Publishing the wrong code is correctness. The asymmetry decides it: a false stop costs one changelog
+// line and always has an obvious fix, while a miss burns a version number — which this repo has now
+// done twice (0.2.0 consumed without shipping, 0.6.0 released stale). There is no override flag on
+// purpose: the escape hatch IS writing the line, and any other one would get used.
+//
+// "Content" means at least one BULLET, not merely a non-blank line. `### Added` with nothing under it
+// is the exact artefact a half-finished release leaves behind, and it would satisfy any looser test.
+function unreleasedBody(changelog, headingMatch) {
+  const from = headingMatch.index + headingMatch[0].length;
+  const rest = changelog.slice(from);
+  const next = rest.search(/^## /m);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+
 function changelogDoctor({ fix = false, version = config.version, date } = {}) {
   const file = path.join(repo, 'CHANGELOG.md');
   const changelog = fs.readFileSync(file, 'utf8');
   const stamped = new RegExp(`^## ${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[ \t]|$)`, 'm');
 
   if (stamped.test(changelog)) {
+    // Already stamped — a pipeline re-run of a release that got this far once. Its content was gated
+    // on the first pass, so re-checking here would only be able to fail a release that has already
+    // published packages.
     console.log(`  ok  CHANGELOG already has a "## ${version}" heading`);
     return true;
   }
@@ -164,12 +190,25 @@ function changelogDoctor({ fix = false, version = config.version, date } = {}) {
   const match = changelog.match(unreleasedHeading);
   if (!match) {
     // Neither a section for this version nor an Unreleased one to promote: nothing DOCUMENTS what is
-    // being shipped. Report it, but never fail a release over a doc heading — the packages are the
-    // deliverable, and a release blocked on prose is a worse outcome than an unlabelled section.
-    console.warn(`  warn  no "## ${version}" and no "## Unreleased" heading in CHANGELOG.md — `
-      + 'nothing to stamp (add the section by hand).');
-    return true;
+    // being shipped. THIS IS THE 0.6.0 PATH, and it used to warn and carry on.
+    console.error(`  FAIL no "## ${version}" and no "## Unreleased" heading in CHANGELOG.md, so this `
+      + 'release documents nothing. That is how v0.6.0 shipped 0.5.1\'s code: the work had never been '
+      + 'pushed, so the workflow released the remote tree and found nothing to stamp. **Check that the '
+      + 'commits you mean to release are actually on the remote**, then add a `## Unreleased` section '
+      + 'describing them. See CHANGELOG.md under `## 0.6.0`.');
+    return false;
   }
+
+  const body = unreleasedBody(changelog, match);
+  if (!/^[ \t]*[-*][ \t]+\S/m.test(body)) {
+    console.error(`  FAIL CHANGELOG "## Unreleased" has no entries, so releasing ${version} would ship `
+      + 'an empty section. An empty Unreleased is the signal that the tree is not the one the work was '
+      + 'done in — v0.6.0 published the previous release\'s code exactly this way. **Check that the '
+      + 'commits you mean to release are on the remote**, then write at least one bullet. There is no '
+      + 'override: the fix is one line, and a burned version number is not recoverable.');
+    return false;
+  }
+
   if (!fix) {
     console.error(`  FAIL CHANGELOG "## Unreleased" is not stamped for ${version} — `
       + 'run `node devtools/dev.mjs changelog --fix` (the release workflow does this for you).');
@@ -359,11 +398,40 @@ function doctor({ fix = false } = {}) {
     }
   }
 
+  // STRAY TRACKED FILES. Earned by a real one: a 0-byte file whose name was two Private-Use-Area
+  // characters then "This" — a mangled shell redirect — was committed, reached the public repo and rode
+  // in the 0.6.0 tree. Harmless (no csproj referenced it, so it never entered a package) but junk in a
+  // public repo, and NOTHING was looking: not doctor, not the sensitive scan, not CI. Deleting the one
+  // file would have left the next one just as invisible.
+  //
+  // The rule is deliberately narrow — printable ASCII in tracked PATHS — because that is what this repo
+  // actually uses and a narrow check cannot cry wolf. It is not a ban on non-ASCII content: source files
+  // here are UTF-8 with CJK in comments and strings. A legitimate non-ASCII FILENAME would be a real
+  // decision, so failing and making someone widen this deliberately is the right cost.
+  const tracked = spawnSync('git', ['ls-files', '-z'], { cwd: repo, encoding: 'utf8' });
+  if (tracked.status === 0) {
+    // eslint-disable-next-line no-control-regex
+    const odd = tracked.stdout.split('\0').filter(Boolean).filter(p => /[^\x20-\x7e]/.test(p));
+    for (const p of odd) {
+      // Escaped, or the message itself carries the unprintable characters into whatever reads the log.
+      const escaped = [...p].map(c => (/[\x20-\x7e]/.test(c) ? c
+        : `\\u${c.codePointAt(0).toString(16).padStart(4, '0')}`)).join('');
+      fail(`stray tracked file with a non-printable-ASCII name: "${escaped}" — almost certainly not `
+        + `intended (the known case was a mangled shell redirect). Remove it with \`git rm\`, or widen `
+        + `this check in devtools/dev.mjs if the name is genuinely wanted.`);
+    }
+  } else {
+    // Not a git checkout (a source archive, say). Say so rather than reporting a clean sweep — the
+    // convention this file already applies to the skipped tag check.
+    console.log('  ..  stray-file sweep skipped (not a git checkout)');
+  }
+
   if (problems === 0)
     // Don't claim the tag matched when the check was skipped — a success line that overstates what
     // ran is the same defect class as a doc that overstates what the code does.
     console.log(`  ok  version ${config.version} consistent (props · npm · README · ARCHITECTURE · LICENSE)`
-      + (releasing ? ' — tag check skipped, this is the release' : ' and matches the newest tag'));
+      + (releasing ? ' — tag check skipped, this is the release' : ' and matches the newest tag')
+      + '; no stray tracked filenames');
   return problems === 0;
 }
 

@@ -92,6 +92,16 @@ at the first list and missed five more breaking changes.
     caller once serving moved: nothing in the kit fetches a remote resource for a page. It comes back with
     the middleware that does, rather than shipping as a public type with no consumer (D15). Its reasoning
     is worth keeping: the host can reach addresses the page cannot, so a *throwing* policy must deny.
+- **A release now FAILS when `## Unreleased` is missing or has no entries** (`dev.mjs changelog`). Nothing
+  in a package changes; this protects the *next* release. It used to warn and carry on, which is exactly
+  how **v0.6.0 published 0.5.1's code**: the work was committed locally and never pushed, so the workflow
+  released the remote's tree, bumped the version correctly, found nothing to stamp, and shipped with no
+  changelog entry at all. The empty section was the signal, and it was there and unused. The message points
+  at the likelier cause first — *check that the commits you mean to release are on the remote* — and there
+  is no override flag, because the escape hatch is writing one bullet and any other one would get used.
+  Also: `doctor` now rejects a tracked filename outside printable ASCII, and the stray 0-byte file with a
+  Private-Use-Area name (a mangled shell redirect, committed in `11e3469`) is deleted. Both
+  sabotage-verified in both directions, the quiet direction included.
 - **`UpdateStageOptions.BaselinePath` — the baseline manifest no longer has to live inside the tree being
   updated.** Null (the default) is `{installRoot}/manifest.json`, so nothing changes for an app install,
   where the baseline genuinely belongs with the thing it describes. A relative path resolves against the

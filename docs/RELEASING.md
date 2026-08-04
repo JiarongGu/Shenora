@@ -55,6 +55,21 @@ burns no version:
    in v0.1.1). The step then asks *git* whether any of the four files actually changed, rather than
    comparing version strings: the edits move independently, so a string compare would skip the commit
    when only one moved — and would produce an empty commit on a re-run that moved none.
+
+   ⚠ **The stamp step now FAILS the release when `## Unreleased` is missing or has no entries**
+   (2026-08-04, earned by v0.6.0). It used to warn and carry on, which is precisely how that release
+   published **0.5.1's code**: the work had been committed locally and never pushed, so the workflow
+   released the remote's tree, bumped correctly, found nothing to stamp, and shipped a version with no
+   changelog entry at all. *The empty section was the signal, and it was there and unused.* If this
+   stops your release, **first check that the commits you mean to ship are actually on the remote** —
+   the empty changelog is far more often a symptom of that than of forgotten prose. There is no
+   override flag on purpose: the fix is one bullet, and a burned version number is not recoverable
+   (this repo has burned two — 0.2.0 consumed without shipping, 0.6.0 released stale).
+   "Entries" means at least one **bullet**, because a `### Added` with nothing under it is exactly what
+   a half-finished release leaves behind and would satisfy any looser test. Sabotage-verified in both
+   directions across seven cases, including the two that must stay QUIET (a one-bullet section, and the
+   titled `## Unreleased — <title>` form) and against a **CRLF** checkout, since "a gate that had never
+   run on CRLF" is how one of the 0.4.0 gates broke.
 2. **Verify gate**: `node devtools/dev.mjs verify --release` — the subset that protects the ARTIFACT.
    A release gate answers a narrower question than a dev gate: *could this harm a consumer?* So
    `--release` drops the rule-base checks (`knowledge check`/`footprint`), which police this repo's
