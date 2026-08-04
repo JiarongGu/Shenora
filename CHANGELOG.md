@@ -26,8 +26,19 @@ at the first list and missed five more breaking changes.
   + <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
   ```
 
-  Nothing else changes — no type, no signature, no behaviour. The OS floor becomes Windows 10 2004, which
-  is below every currently-supported Windows build.
+  Nothing else changes — no type, no signature, no behaviour, **and no higher Windows requirement**:
+  `SupportedOSPlatformVersion` is pinned at `10.0.17763.0`, so the minimum Windows you can RUN on is
+  unchanged in practice even though the SDK version you COMPILE against moved.
+
+  ⚠ That second part is a trap worth knowing if you do the same thing in your own project. The two
+  versions are separate and only one of them is in the TFM: `TargetPlatformVersion` (from the TFM) is what
+  you may compile against, while `TargetPlatformMinVersion`/`SupportedOSPlatformVersion` is the floor you
+  run on — **and leaving the latter unset silently defaults it to the former.** Doing that turns "reference
+  a package" into "require Windows 10 2004", which is a far bigger ask than the change needs. This package
+  had exactly that defect for one commit before it was measured and pinned; the WinRT types it uses
+  (`MediaPlayer`, `SystemMediaTransportControls`) have existed since Windows 10 1507, so nothing is being
+  called that the lower floor cannot reach — and `CA1416` is a build error here, so an API newer than the
+  floor cannot slip in unguarded.
 
   **Why:** Windows' only system-wide media transport is `SystemMediaTransportControls`, and it is WinRT.
   Without a Windows SDK version in the TFM the projections do not exist at all (`Windows.Media` does not

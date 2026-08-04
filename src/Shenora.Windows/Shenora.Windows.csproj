@@ -20,7 +20,24 @@
       Sessions/   auxiliary browser sessions — render pool, interactive, streaming
   -->
   <PropertyGroup>
+    <!--
+      The SDK version in the TFM is what pulls in the WinRT PROJECTIONS (Microsoft.Windows.SDK.NET.Ref, the
+      CsWinRT-generated `Windows.*` surface). Without any version, `Windows.Media` does not exist as a C#
+      namespace at all — measured — and SystemMediaTransportControls is therefore unreachable, which is why
+      IPlaybackSession forced this. 19041 is the oldest projection this machine's SDK ships (the other is
+      22621) and nothing here needs a newer API.
+    -->
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!--
+      ⚠ AND THE RUNTIME FLOOR IS SET SEPARATELY, or it silently follows the TFM. TargetPlatformVersion
+      (19041, above) is what you may COMPILE against; SupportedOSPlatformVersion is the minimum you RUN on,
+      and leaving it unset defaults it to the TFM version — which quietly turned "reference this package"
+      into "require Windows 10 2004", a much bigger ask than the change needed. Pinning it low keeps the
+      break to the TFM string alone. The WinRT types used here (MediaPlayer, SystemMediaTransportControls)
+      have existed since Windows 10 1507, so nothing is being called that this floor cannot reach — and
+      CA1416 is a build ERROR in this repo, so an API newer than this floor cannot slip in unguarded.
+    -->
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Windows</PackageId>
