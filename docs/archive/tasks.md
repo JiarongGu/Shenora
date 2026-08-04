@@ -139,6 +139,52 @@ The device evidence still stands, because the same clips play through the same s
 the move (Android `Unsliced`, iOS `Sliced`, `seeked -> 48.00s`/`48.03s`), and the desktop was added
 (`InterceptorProbe`, sabotage-verified). Current shape: `docs/DECISIONS.md` D45 + `docs/ARCHITECTURE.md`.
 
+### The presence-vs-content gate audit (2026-08-04) — DONE, two real holes closed
+
+The general question the empty-baseline incident left open: **which other gates are satisfied by the
+presence of a file rather than its content?** Answered by walking every gate `verify` runs. Two were open,
+one was already safe for a reason worth writing down, and the mechanism turns out to be predictable.
+
+**The mechanism.** A presence-only coverage check is safe *only when the same set that drives it also
+drives the content check*. `ApiSurfaceTests` is safe: `ShenoraAssemblies()` is derived from the baseline
+FILES, so an empty baseline is still a test case and the drift assertion fails on it. The metadata path was
+vulnerable precisely because its case source is a **hand-maintained list** — an empty baseline there had no
+test comparing it to anything. So the smell to look for is not "does this check content" but **"is the
+coverage set the same set as the content set?"**
+
+**Hole 1 — `check-sensitive` failed closed on a MISSING patterns file and open on an EMPTY one.** The
+guard's own comment says silently degrading to the two structural patterns "is indistinguishable from
+clean" — and that reasoning was attached to one of the two ways of getting there. A file truncated by a
+crashed editor or a mangled redirect (this repo has already had a file *created* that way), or created and
+not yet filled in, ran two patterns and reported clean with no message at all. Now:
+
+- Zero private patterns loaded → fail closed, same as missing.
+- **A pattern that does not compile now FAILS instead of logging.** This was the worse half: partial,
+  permanent, and invisible after the first scroll of output — the author believes a token is banned and it
+  is not. The file is gitignored and the author's own, so "fix your line" is the only useful outcome.
+- The "running built-ins ONLY" notice moved to where it belongs: it now prints whenever the private half
+  did not load, not only when the file is absent. Under the CI opt-in an empty file used to run degraded
+  and say only "clean".
+- Sabotage-verified six ways including the two that must stay QUIET, with the patterns file restored
+  byte-identical afterwards (asserted, not assumed).
+
+**Hole 2 — nothing compared the two hand-maintained definitions of "shipped".**
+`project.config.mjs`'s `packableProjects` is what `pack` iterates; `<IsPackable>true</IsPackable>` in the
+csproj is what the surface gate means by shipped. That config file's own comment already states the
+invariant — a project "claiming it while the tooling skips it is the two halves disagreeing" — and nothing
+enforced it. The dangerous direction is silent and release-affecting: a new package with
+`IsPackable=true` and no entry in the list has its surface gated correctly, is never packed, and the
+release ships without it with every gate green. `doctor` now fails on either direction, and
+sabotage-verified both.
+
+**Already safe, and why:** the runtime API baselines (case source derived from the files), the surface
+lexicon (an empty one fails every type name — loudly, not silently), `knowledge check`/`footprint` (they
+read content, and the footprint budget warns by design), doc-drift (resolves pointers, i.e. content).
+
+⚠ **Both fixes are in gates that must stay quiet in normal use**, which is the direction this repo's 0.4.0
+incident got wrong three times in one day. Both were therefore verified on the path they should IGNORE as
+well as the path they should catch — and both harnesses restore what they sabotage and assert the restore.
+
 ### Release hygiene — the two items the 0.6.0 incident earned (2026-08-04) — BOTH DONE
 
 **1. A release now FAILS when `## Unreleased` is missing or empty.** `dev.mjs changelog` used to warn and

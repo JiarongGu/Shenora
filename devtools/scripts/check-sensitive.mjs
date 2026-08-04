@@ -61,11 +61,48 @@ const builtins = [
 const patterns = [...builtins];
 const localFile = path.join(repo, 'local', 'sensitive-patterns.txt');
 if (existsSync(localFile)) {
+  let loaded = 0;
+  const bad = [];
   for (const raw of readFileSync(localFile, 'utf8').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
-    try { patterns.push({ re: new RegExp(line, 'i'), why: 'private ban pattern' }); }
-    catch { console.error(`check-sensitive: bad regex in local/sensitive-patterns.txt: ${line}`); }
+    try { patterns.push({ re: new RegExp(line, 'i'), why: 'private ban pattern' }); loaded++; }
+    catch { bad.push(line); }
+  }
+
+  // A PATTERN THAT DOES NOT COMPILE PROTECTS NOTHING, and the author believes it does. This used to
+  // log and carry on, which is the worse half of the same fail-open family as the empty file below:
+  // partial, permanent, and invisible after the first scroll of output. The file is the author's own
+  // (gitignored), so failing means "fix your line", which is the only useful outcome.
+  if (bad.length > 0 && !allowBuiltinsOnly) {
+    console.error('\n\x1b[31m✖ check-sensitive: local/sensitive-patterns.txt has ' +
+      `${bad.length} line(s) that are not valid regexes.\x1b[0m`);
+    for (const line of bad) console.error(`    ${line}`);
+    console.error('  Each of those bans NOTHING while looking like it does. Fix or remove them.\n');
+    process.exit(1);
+  }
+
+  // THE OTHER WAY TO GET A HALF-SCAN, and it was open: the fail-closed branch below only covers a
+  // MISSING file, so a file that exists and yields no patterns — truncated by a crashed editor or a
+  // mangled redirect (this repo has already had a file created that way), or created and not yet
+  // filled in — degraded to the two builtins and reported CLEAN with no message at all. Same
+  // reasoning, same verdict. Found by asking the general question the media incident raised: which
+  // gates are satisfied by the PRESENCE of a file rather than its CONTENT?
+  if (loaded === 0 && allowBuiltinsOnly) {
+    // The SAME notice the missing-file branch prints. Without it, an existing-but-empty file under the
+    // CI opt-in ran degraded and said only "clean" — the announcement was attached to one way of
+    // getting here rather than to the fact of being here.
+    console.error('check-sensitive: local/sensitive-patterns.txt has no patterns — running built-ins ONLY '
+      + '(explicitly allowed).');
+  }
+  if (loaded === 0 && !allowBuiltinsOnly) {
+    console.error('\n\x1b[31m✖ check-sensitive: local/sensitive-patterns.txt has NO patterns.\x1b[0m');
+    console.error('  The file exists but every line is blank or a comment, so only the two structural');
+    console.error('  path patterns ran — the brand/sibling-name half of the guard did NOT. A file that');
+    console.error('  exists is not the property this guard needs; patterns in it are.');
+    console.error('  Fix: restore its contents (see .claude/rules/sensitive-info.md),');
+    console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.\n');
+    process.exit(1);
   }
 } else if (allowBuiltinsOnly) {
   console.error('check-sensitive: local/sensitive-patterns.txt missing — running built-ins ONLY (explicitly allowed).');

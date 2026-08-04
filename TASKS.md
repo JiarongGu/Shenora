@@ -445,12 +445,18 @@ per player and per DEVICE on Android._
   mobile pair — which no longer exists either. **Every public type earns its keep**
   (`generic-library.md`); package symmetry is not a reason.
 
-- [ ] **⚠ A GATE WEAKNESS found while landing the mobile pair, and worth remembering beyond media.**
-  `MetadataSurfaceTests.MetadataAssemblies()` is a HAND-MAINTAINED list, and the coverage test only checked
-  that a baseline FILE existed — so two brand-new platform packages, seeded with EMPTY baselines and missing
-  from that list, passed every gate with zero surface coverage. Closed by making the coverage test require a
-  NON-EMPTY baseline. Left open here as the general question: **which other gates are satisfied by the
-  presence of a file rather than its content?**
+_**The gate weakness and its general question are both CLOSED (2026-08-04)** — full account in
+`docs/archive/tasks.md`. The audit found two more real holes: `check-sensitive` failed closed on a MISSING
+patterns file and OPEN on an empty one (and logged-but-ignored a pattern that would not compile — partial,
+permanent and invisible), and **nothing compared the two hand-maintained definitions of "shipped"**
+(`packableProjects` vs `<IsPackable>true</IsPackable>`), whose dangerous direction is a new package that
+gates its surface correctly and then silently never ships._
+
+_The reusable smell, worth more than either fix: **a presence-only coverage check is safe only when the
+same set that drives it also drives the content check.** The runtime API baselines were never vulnerable
+because their case source IS the baseline files; the metadata ones were, because that case source is a
+hand-maintained list. So the question to ask a coverage gate is not "does it check content" but "is the
+coverage set the same set as the content set?"_
 
 _Thumbnails and image resize are DEFERRED with the analysis already done — D43. They cost 0 MB on every
 platform and need no engine, so they are cheap to add later, and the player does not depend on them._

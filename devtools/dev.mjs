@@ -398,6 +398,41 @@ function doctor({ fix = false } = {}) {
     }
   }
 
+  // THE TWO HALVES OF "SHIPPED" MUST AGREE. `packableProjects` here is what `pack` iterates; the API
+  // surface gate uses `<IsPackable>true</IsPackable>` in the csproj as its definition of shipped
+  // (MetadataSurfaceTests.Every_packable_project_has_a_baseline_of_one_kind_or_the_other). Both are
+  // hand-maintained and NOTHING compared them — project.config.mjs's own comment already says a project
+  // "claiming it while the tooling skips it is the two halves disagreeing", which is an invariant stated
+  // in prose and enforced nowhere.
+  //
+  // The failure is silent in the direction that matters most: a new package with IsPackable=true and no
+  // entry here has its SURFACE gated correctly and then simply never gets packed, so the release ships
+  // without it and every gate is green. Found by asking the general question the empty-baseline incident
+  // raised — which gates are satisfied by the presence of a thing rather than its content — and this one
+  // was satisfied by nothing at all.
+  const srcDir = path.join(repo, 'src');
+  if (fs.existsSync(srcDir)) {
+    const declared = fs.readdirSync(srcDir, { withFileTypes: true })
+      .filter(e => e.isDirectory())
+      .map(e => ({ name: e.name, csproj: path.join(srcDir, e.name, `${e.name}.csproj`) }))
+      .filter(p => fs.existsSync(p.csproj))
+      .filter(p => fs.readFileSync(p.csproj, 'utf8').includes('<IsPackable>true</IsPackable>'))
+      .map(p => `src/${p.name}`);
+    const listed = new Set(config.packableProjects);
+    const declaredSet = new Set(declared);
+
+    for (const p of declared.filter(p => !listed.has(p))) {
+      fail(`${p} declares <IsPackable>true</IsPackable> but is NOT in project.config.mjs `
+        + `packableProjects, so \`dev.mjs pack\` never builds a nupkg for it — a release would silently `
+        + `ship without it while every other gate stayed green. Add it to the list.`);
+    }
+    for (const p of config.packableProjects.filter(p => !declaredSet.has(p))) {
+      fail(`project.config.mjs lists ${p} in packableProjects, but its csproj does not declare `
+        + `<IsPackable>true</IsPackable> (or does not exist), so packing it produces nothing. Remove it `
+        + `from the list, or make the project packable.`);
+    }
+  }
+
   // STRAY TRACKED FILES. Earned by a real one: a 0-byte file whose name was two Private-Use-Area
   // characters then "This" — a mangled shell redirect — was committed, reached the public repo and rode
   // in the 0.6.0 tree. Harmless (no csproj referenced it, so it never entered a package) but junk in a
@@ -431,6 +466,7 @@ function doctor({ fix = false } = {}) {
     // ran is the same defect class as a doc that overstates what the code does.
     console.log(`  ok  version ${config.version} consistent (props · npm · README · ARCHITECTURE · LICENSE)`
       + (releasing ? ' — tag check skipped, this is the release' : ' and matches the newest tag')
+      + `; ${config.packableProjects.length} packable project(s) agree with their csprojs`
       + '; no stray tracked filenames');
   return problems === 0;
 }
