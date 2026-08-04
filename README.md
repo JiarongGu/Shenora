@@ -13,7 +13,7 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.9.0 — pre-release, stabilising toward 1.0.** The application builder, WinForms host, WebView2
+**v0.9.1 — pre-release, stabilising toward 1.0.** The application builder, WinForms host, WebView2
 hosting, the full typed IPC stack (envelopes, middleware dispatcher, scoped-container router, event
 bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
