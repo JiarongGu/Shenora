@@ -41,6 +41,7 @@ Shenora.Mobile.MobilePlaybackSession
   method Dispose
   method Publish
   method Report
+  property SessionToken
   property SkipInterval
   property Supported
 Shenora.Mobile.MobileUiDispatcher

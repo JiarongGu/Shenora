@@ -100,6 +100,25 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         set { lock (_gate) _skipInterval = value; }
     }
 
+    /// <summary>
+    /// The platform session's token — what an app passes to
+    /// <c>Notification.MediaStyle.SetMediaSession(token)</c>.
+    /// <para>
+    /// ⚠ <b>Without this the kit's own boundary was unbuildable, which the first adopter found.</b> The class
+    /// remarks say "the kit owns the session, the app owns the notification" — but a MediaStyle notification
+    /// binds to a session BY TOKEN, and there was no way to get one. So the split read as a clean division of
+    /// labour while leaving the app's half impossible, and they kept a hand-written session instead.
+    /// </para>
+    /// <para>
+    /// Android-only, and deliberately not on <see cref="IPlaybackSession"/>: the type is
+    /// <c>Android.Media.Session.MediaSession.Token</c> and putting it on the portable contract would drag a
+    /// platform type into <c>Shenora.Core</c>. An app that needs it is already writing Android notification
+    /// code, so it can name the Android type — cast the injected <see cref="IPlaybackSession"/>, or register
+    /// this class itself.
+    /// </para>
+    /// </summary>
+    public MediaSession.Token? SessionToken => _disposed ? null : _session.SessionToken;
+
     /// <inheritdoc />
     public event Action<PlaybackCommandRequest>? CommandReceived;
 
