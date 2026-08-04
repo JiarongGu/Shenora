@@ -503,19 +503,69 @@ than being encouraging about both.
   - It clears the two-consumer bar the moment a second sibling wants it; media was the first thing three of
     them all needed, so ask before assuming this is only one app's.
 
-- [ ] **DYNAMIC ISLAND / Live Activities — worth doing, but it cannot be zero Swift, and the plan must say
-  so.** A Live Activity's UI *is* a SwiftUI view in a widget extension. That is an OS requirement, not a
-  .NET limitation, so no amount of kit work removes it and a `net10.0-ios` library cannot supply it.
-  ⚠ **VERIFY FIRST, do not design on it:** the crux is whether ActivityKit's start/update/end surface is
-  reachable from C# at all, or only from Swift. My understanding is that ActivityKit is a Swift-only API
-  with no Objective-C interface, which would mean a small Swift shim is required even for the LIFECYCLE and
-  not just the view — but that is a claim to test with a probe on the Mac before it steers anything, and
-  this repo has a rule about exactly that (`.claude/knowledge/doc-claims.md`: verify against the source,
-  not the design doc). The honest goal is therefore **shrink the Swift, not eliminate it**: the kit owns the
-  activity's state model, its lifecycle and the update pipe from C#, so the app's Swift is a thin view over
-  a payload the kit defines. That is a real reduction and it is defensible; "no Swift" would not be.
-  - The same question then applies to Android's equivalent surfaces (foreground-service notifications,
-    `MediaStyle`) — which is what keeps this a PORTABLE capability rather than an iOS feature.
+- [ ] **DYNAMIC ISLAND / Live Activities — a DEVKIT, which is where the whole cost actually is.**
+  Owner, 2026-08-04: *"yes I know Dynamic Island cannot be zero swift, but its better if we can support some
+  kind of devkit for that?"* — so the goal is not to hide the Swift, it is to make everything *around* the
+  Swift free. That framing is the right one, because the SwiftUI views are the SMALL part.
+
+  **The boundary falls exactly on the kit's existing headless law, which is what makes this clean rather
+  than a compromise.** A Live Activity's UI *is* a SwiftUI view in a widget extension — an OS requirement,
+  not a .NET limitation. But D13 already says the kit ships no design system and no UI component library, so
+  "the views are the app's" is a rule this kit already had. Everything else is ours:
+
+  | The app writes | The kit provides |
+  |---|---|
+  | the four SwiftUI presentations (lock screen, compact leading/trailing, minimal, expanded) | the state contract, both sides of it |
+  | what its activity MEANS | the lifecycle (start / update / end), callable from portable C# |
+  | | the C-callable Swift shim, so the app writes no lifecycle Swift |
+  | | the tooling to drive and observe an activity without rebuilding the app |
+
+  **The four pieces, strongest first — and the first one is the real prize.**
+
+  1. **ONE definition of the activity's state, projected to BOTH languages.** A Live Activity's
+     `ContentState` has to agree across Swift and C#, and when it drifts the on-device failure is SILENT:
+     the activity simply does not appear, or appears stale. This repo has already solved this exact class
+     twice — the C#⇄TS wire mirror kept by tripwires (`.claude/knowledge/ipc-contracts.md`), and `mediaUrl`
+     shipped as CODE after the sample's hand-rolled copy drifted from the host route and cost a device run
+     to find. A Swift peer is the same machine with a third target. **This is the highest-leverage part of
+     the devkit and it is the one nobody builds for themselves**, because it only pays off after the second
+     drift.
+  2. **A thin C-callable Swift shim the KIT ships** — `@_cdecl` entry points (`start(json) -> id`,
+     `update(id, json)`, `end(id, policy)`) with `[DllImport]` on the C# side. Mechanical, tiny, and
+     written once instead of per app. ⚠ **This is the load-bearing unverified assumption** (see the probe
+     below): if ActivityKit turns out to be reachable from C# directly, the shim disappears and this gets
+     simpler, not harder — so the design is safe either way, but the plan must not ASSERT which.
+  3. **The devtooling, which is the part that makes Live Activity work bearable at all.** Iterating on one
+     today is miserable for three specific reasons, and each has an obvious answer in machinery this repo
+     already has:
+     - *You cannot see it without a device run, and the Island only exists on some models.* → **`dev.mjs
+       activity start|update|end <json>`**, driving a real activity on the connected device or simulator
+       from the dev loop. That turns "rebuild the app to try another state" into one line, exactly as
+       `dev.mjs click|shot|input` did for the desktop.
+     - *A malformed state fails silently.* → validate the payload against the declared contract BEFORE it
+       leaves the host, so the failure is a message instead of an absence.
+     - *There is no fast way to iterate the state MACHINE.* → a preview harness in the page, the same idea
+       as the sibling's `installFakeBridge.ts`: render the activity's states in the browser during
+       development, get the logic right with no device at all, then verify the real thing once.
+     `dev.mjs mac` already has the capture half (`mirror`, screenshots, `cliclick`), so observing the Island
+     is existing machinery pointed at a new target.
+  4. **The portable half, which is what stops this being an iOS feature.** An activity almost always mirrors
+     something the app ALREADY knows — playback position, a download's progress, a mission's status — and
+     `IMissionScheduler` already produces exactly that shape. So the contract is *"project this state onto a
+     platform live surface"*, with Android's foreground-service notification (`MediaStyle` /
+     `setProgress`) as the second implementation. Two implementations is also what stops the contract being
+     shaped around ActivityKit specifically, which is the mistake D45 had to undo for media.
+
+  **⚠ ONE PROBE DE-RISKS ALL OF IT, and it is not the one you would guess.** The interesting unknown is not
+  ActivityKit's API surface — it is **whether the .NET for iOS build can carry a widget extension at all**:
+  can a prebuilt `.appex` be embedded by MSBuild, or must the app be built through Xcode? That answer
+  decides whether this is a nice-to-have or the thing that makes Live Activities possible for a MAUI app at
+  all, and it is cheap to find out (a hello-world extension, one simulator run). **Do that before designing
+  anything above**, per `.claude/knowledge/doc-claims.md` — verify against the source, not the design doc.
+  Everything in this entry is a sketch until that probe runs.
+
+  **Not started, and it must not jump the queue** (D15): `DM3` is the live media work, and this wants a
+  second consumer before it earns a package. The direction changes the SCOPE, not the order.
 
 - [ ] **"Powerful devtooling" is the other half of the direction, and it is the part this repo has already
   proved works.** Every platform capability so far became trustworthy the moment it had a HARNESS: `dev.mjs
