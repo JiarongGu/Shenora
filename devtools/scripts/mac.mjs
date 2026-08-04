@@ -870,6 +870,43 @@ function log(cfg, n = 80, { all = false } = {}) {
 }
 
 // ---------------------------------------------------------------- awake
+// The simulator's view of LIVE ACTIVITIES — what exists, who owns it, and whether the widget that renders
+// it was ever launched.
+//
+// It OBSERVES rather than drives, and that limit is real rather than laziness: an activity is started BY THE
+// APP (or by an APNs push), so there is no `simctl` verb to start one from outside and any "drive it" tool
+// would really be driving the app's own IPC, which is the app's shape and not the kit's. What a developer
+// actually lacks is sight — a Live Activity is invisible until you background the app, the Dynamic Island is
+// not rendered on a simulator at all (its scene target is lockscreen-only there, measured), and a malformed
+// state fails with no error anywhere. This answers the three questions that follow from that: is my extension
+// registered, did an activity really start, and did the OS launch the widget to render it.
+function activities(cfg) {
+  const sh = (script) => (ssh(cfg, script).stdout ?? '').trim();
+
+  console.log('== widget extensions the OS has registered (pluginkit)');
+  const plugins = sh('xcrun simctl spawn booted pluginkit -mAvvv 2>/dev/null '
+    + `| grep -i -A1 ${q(cfg.bundleId)} | head -20`);
+  console.log(plugins || `  none for ${cfg.bundleId} — the build produced no widget extension, or it was `
+    + 'never installed. Check ShenoraLiveActivityViews is set.');
+
+  console.log('\n== activities liveactivitiesd knows about (last 15m)');
+  // `Starting activity` carries the id, the state and the content sources on one line, which is the single
+  // most informative line the daemon emits — so it is the one worth surfacing rather than the whole subsystem.
+  const started = sh('xcrun simctl spawn booted log show --last 15m --style compact '
+    + `--predicate 'process == "liveactivitiesd"' 2>/dev/null `
+    + "| grep -E 'Created activity|Starting activity|Ending activity|Dismissed' | tail -12");
+  console.log(started || '  none — no activity was started in the last 15 minutes.');
+
+  console.log('\n== was the widget LAUNCHED to render (chronod/ExtensionKit)');
+  const launched = sh('xcrun simctl spawn booted log show --last 15m --style compact 2>/dev/null '
+    + `| grep -i ${q(cfg.bundleId)} | grep -iE 'Launching process|launch request' | tail -4`);
+  console.log(launched || '  no launch recorded. An activity can be ACTIVE with the widget never launched — '
+    + 'that is the shape of a module-name mismatch between the shim and the extension.');
+
+  console.log('\n⚠ An empty Dynamic Island on a SIMULATOR is expected: an activity there reports only a '
+    + 'lockscreen scene target, so the pill stays blank however long you wait. Use a device to see it.');
+}
+
 const AGENT_LABEL = 'dev.shenora.caffeinate';
 
 function awake(cfg, mode = 'on') {
@@ -938,10 +975,11 @@ switch (cmd) {
     log(cfg, i >= 0 ? rest[i + 1] : 80, { all: rest.includes('--all') });
     break;
   }
+  case 'activity': activities(cfg); break;
   case 'awake': awake(cfg, rest[0]); break;
   case 'ssh': ssh(cfg, rest.join(' '), { inherit: true, check: true }); break;
   default:
     console.log('usage: node devtools/dev.mjs mac <doctor|setup|push|build|run|shot|tap|type|swipe|'
-      + 'safari-eval|mirror|log|awake|ssh>');
+      + 'safari-eval|mirror|log|activity|awake|ssh>');
     process.exit(cmd ? 1 : 0);
 }

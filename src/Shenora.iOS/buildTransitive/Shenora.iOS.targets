@@ -78,7 +78,7 @@
       Swift has to exist on both sides — compiled at the app's own floor here, with availability guarded
       inside, because a static library built for a higher minimum than its host is an argument nobody needs.
     -->
-    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot;" />
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot;" />
 
     <!--
       The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
