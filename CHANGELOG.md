@@ -146,7 +146,11 @@ at the first list and missed five more breaking changes.
   screen on all three platforms.
   - Verified against each OS's own view rather than the app's claim. iOS: Apple's `mediaremoted` logged
     `setting nowPlayingItem` for our bundle id with every field intact — title, artist, album,
-    `Duration = 240`, `ElapsedTime = 42`, `PlaybackRate = 1`.
+    `Duration = 240`, `ElapsedTime = 42`, `PlaybackRate = 1`. Android: `dumpsys media_session` reported
+    `active=true`, `state=3`, `position=42000`, `speed=1.0`, all three metadata fields, and
+    **`actions=822`** — which decodes exactly to the requested set (512 `PLAY_PAUSE` + 256 `SEEK_TO` +
+    32 `SKIP_TO_NEXT` + 16 `SKIP_TO_PREVIOUS` + 4 `PLAY` + 2 `PAUSE`, and no `STOP`, which was not asked
+    for). That bitmask proves the whole flags mapping arithmetically.
   - ⚠ **A session makes an app CONTROLLABLE; being VISIBLE is separate, and it is the app's.** Android needs
     a MediaStyle notification and iOS an active `AVAudioSession`; both mean choosing icons, channels,
     categories and interruption behaviour, which are app design decisions rather than the kit's (D13).

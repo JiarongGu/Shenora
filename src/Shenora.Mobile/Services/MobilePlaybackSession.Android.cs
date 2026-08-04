@@ -50,8 +50,19 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         _log = log;
         _session = new MediaSession(Android.App.Application.Context, SessionTag);
         _session.SetCallback(new CommandCallback(this));
-        // Active BEFORE anything is published: an inactive session is invisible to dumpsys and to media
-        // button routing, so a host that set this last would look like it had done nothing at all.
+        // Active marks this as a CURRENT session — the flag the system reads when choosing which one to
+        // surface and to route hardware buttons to.
+        //
+        // ⚠ Sabotage-measured on Android 12, and the result corrected two guesses, so only what was
+        // observed is claimed here. Removing this line leaves the session STILL LISTED by
+        // `dumpsys media_session`, with its metadata and playback state intact, and only `active=false` to
+        // show it — so "is it registered?" answers yes either way and is not the check that catches this.
+        // Setting it flips that to `active=true`, which is the whole measured difference.
+        //
+        // What was NOT demonstrated: that this alone wins the media button session. `Media button session`
+        // stayed null in BOTH runs, because the probe publishes metadata without playing audio or taking
+        // audio focus — and audio focus is the app's to own, which is the same boundary as the MediaStyle
+        // notification in the class remarks. Do not read this line as "buttons now work".
         _session.Active = true;
     }
 
