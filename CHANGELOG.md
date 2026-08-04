@@ -140,6 +140,21 @@ at the first list and missed five more breaking changes.
     asserting the title, subtitle, group and a `Playing` status. Sabotage-verified — dropping the
     `DisplayUpdater.Update()` call leaves our session visible with an *empty* title, which the probe
     distinguishes from having no session at all.
+- **`IPlaybackSession` on the mobile shells too** (`MobilePlaybackSession` in `Shenora.Android` and
+  `Shenora.iOS`) — one name, two entirely separate bodies: Android registers a platform `MediaSession`, iOS
+  writes `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`. The same three calls now publish to the lock
+  screen on all three platforms.
+  - Verified against each OS's own view rather than the app's claim. iOS: Apple's `mediaremoted` logged
+    `setting nowPlayingItem` for our bundle id with every field intact — title, artist, album,
+    `Duration = 240`, `ElapsedTime = 42`, `PlaybackRate = 1`.
+  - ⚠ **A session makes an app CONTROLLABLE; being VISIBLE is separate, and it is the app's.** Android needs
+    a MediaStyle notification and iOS an active `AVAudioSession`; both mean choosing icons, channels,
+    categories and interruption behaviour, which are app design decisions rather than the kit's (D13).
+    Everything else — metadata, state, offered actions, hardware button routing — works without them.
+  - iOS has **no** playback-state property to set: `MPNowPlayingInfoCenter.playbackState` is macOS/tvOS only
+    and absent from the iOS binding, so the RATE carries the state and Paused/Stopped/Buffering all report 0.
+    All three shells agree that `TogglePlayPause` also lights the concrete play and pause controls, because
+    hardware sends whichever it likes.
 - **A release now FAILS when `## Unreleased` is missing or has no entries** (`dev.mjs changelog`). Nothing
   in a package changes; this protects the *next* release. It used to warn and carry on, which is exactly
   how **v0.6.0 published 0.5.1's code**: the work was committed locally and never pushed, so the workflow
