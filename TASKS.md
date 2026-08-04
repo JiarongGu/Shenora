@@ -316,7 +316,18 @@ hand-written equivalent it had built the day before. **The contract matched almo
 portable above the platform. That convergence is the useful signal; the two gaps below are the whole
 delta, and only the first blocks anything.
 
-- [ ] **`PlaybackCommands` needs SKIP-BY-INTERVAL (±15 s), and it is a functional loss without it.** The
+- [x] **DONE 2026-08-04 — shipped as `SkipForward`/`SkipBackward` + `IPlaybackSession.SkipInterval`
+  (default 15 s) + `PlaybackCommandRequest.Interval`.** Additive, no break. Both suggestions were taken:
+  the interval is stated once (and IS what makes iOS draw the number), and it rides the request too,
+  because iOS sends its own with the event and honouring what arrived beats assuming what was asked for.
+  Verified against the OS registries — Android `actions=894` (= 822 + 64 FAST_FORWARD + 8 REWIND, the
+  previous number plus exactly the two new bits) and Windows reading back `ff=True|rw=True`; iOS is
+  compile-verified, its interval rendering being a device concern like the Island. The note about a FIXED
+  15 s is in the XML docs so nobody widens it casually.
+
+  <details><summary>the original filing, kept for the reasoning</summary>
+
+  **`PlaybackCommands` needs SKIP-BY-INTERVAL (±15 s), and it is a functional loss without it.** The
   shipped set is Play/Pause/TogglePlayPause/Stop/Next/Previous/Seek, so an adopter with **long-form
   audio** — an audiobook, a podcast, a lecture, an hour-plus spoken-word track — cannot offer the one
   transport control that shape of content actually wants. Next/Previous are the wrong granularity when a
@@ -333,6 +344,8 @@ delta, and only the first blocks anything.
     `PlaybackCommandRequest` alongside the existing `Position` — mirroring how `Seek` already carries one.
   - ⚠ The adopter's own note, worth keeping: a *fixed* 15 s is what both platforms' UI is designed
     around, so an arbitrary interval is not obviously better than a small allowed set.
+
+  </details>
 
 - [ ] **🔴 BLOCKER: `Shenora.iOS` 0.9.0 cannot be consumed unless the app opts into the Live Activity
   devkit.** An iOS app that references the package and does NOT set `ShenoraLiveActivityViews` fails to
@@ -390,7 +403,16 @@ delta, and only the first blocks anything.
     was noticed and appreciated) and adopt the kit's on iOS, where the app's half — an `AVAudioSession`
     category — needs nothing from the session.
 
-- [ ] **Document what a MAUI shell's page ORIGIN means for a server-backed adopter — it cost a day.**
+- [x] **DONE 2026-08-04 — `docs/ADOPTION.md` now has it**, as its own section before the Live Activity
+  recipe: both origins in a table (`https://0.0.0.1` Android, `app://0.0.0.1` iOS — **including the iOS one
+  the adopter could not measure**, taken from this repo's own device runs), the mixed-content relaxation
+  with the code and the reason it is the app's call, the CORS consequence that only appears after fixing
+  the first, and the caveat that a non-standard scheme may present as `Origin: null` so an allowlist should
+  follow what the server actually logs. The page-diagnostic gap is noted there too.
+
+  <details><summary>the original filing, kept for the reasoning</summary>
+
+  **Document what a MAUI shell's page ORIGIN means for a server-backed adopter — it cost a day.**
   `HybridWebView` serves the bundle from a synthetic virtual host (`https://0.0.0.1` on Android,
   measured), which is a SECURE origin. Two separate consequences follow, and both present as the same
   useless symptom — a bare `TypeError: Failed to fetch`:
@@ -412,6 +434,14 @@ delta, and only the first blocks anything.
     **shipping a tiny page-diagnostic facade in the kit** rather than leaving every adopter to rebuild
     it. Filed as an observation, not a request — it is three lines to write and possibly not worth a
     public type.
+
+  </details>
+
+- [ ] **STILL OPEN from that round: should the kit SHIP a page-diagnostic facade?** Two repos have now
+  built the same three lines for the same reason (WebKit does not forward page `console.*`), which is the
+  two-consumer signal — but the adopter filed it as an observation and explicitly doubted it earns a public
+  type. `generic-library.md`'s bar is that every public type earns its keep, so the honest question is
+  whether a documented PATTERN (now in `ADOPTION.md`) is the right shape instead of an API.
 
 - Noted for `DM3`, not a request: that adopter is a **second consumer for the conversion**, and its case
   is the interesting one — it converts SERVER-side today and would rather the phone decided for itself,

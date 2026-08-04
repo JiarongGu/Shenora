@@ -12,6 +12,39 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Added
+
+- **`IPlaybackSession` gains SKIP-BY-INTERVAL** — `PlaybackCommands.SkipForward`/`SkipBackward`,
+  `IPlaybackSession.SkipInterval` (default 15 s) and `PlaybackCommandRequest.Interval`. Additive; nothing
+  breaks.
+  - **Filed by the first adopter the day 0.9.0 shipped.** An app with LONG-FORM audio — an audiobook, a
+    podcast, a lecture — could not offer the one transport control that shape of content wants: `Next` is
+    the wrong granularity when a track is fifty minutes long, and `Seek` is a scrubber rather than a
+    button. They had it working and gave it up to adopt the kit, which is the trade the kit must not force.
+  - **The interval is stated once, not per press**, because that is what the platforms take — and on iOS
+    `PreferredIntervals` is also what makes the control DRAW the number rather than a bare arrow. Keep it
+    to a value the platform UI is designed around; 15 s is the near-universal default.
+  - It rides the request as well, because iOS sends its own interval with the event and honouring what
+    arrived beats assuming what was asked for. Android and Windows send none, so the configured value is
+    supplied — a handler can always just use it.
+  - ⚠ Windows maps these onto SMTC fast-forward/rewind, which is the closest it offers and is an honest
+    approximation rather than an exact match.
+  - Verified against the OS registries: Android `actions=894` — exactly the previous `822` plus
+    `ACTION_FAST_FORWARD` and `ACTION_REWIND` — and Windows reading back `ff=True|rw=True` from
+    `GlobalSystemMediaTransportControlsSessionManager`.
+
+### Changed
+
+- **`ADOPTION.md` documents what a MAUI shell's page ORIGIN means for a server-backed app**, which cost
+  the first adopter a day. `HybridWebView` serves the bundle from a synthetic SECURE origin —
+  `https://0.0.0.1` on Android, `app://0.0.0.1` on iOS, both measured — so a plain-`http` backend is
+  blocked as mixed content, and once that is relaxed the response is withheld by CORS instead. Both
+  present as the same bare `TypeError: Failed to fetch`. Neither is a kit defect and neither needs an API;
+  the doc states the origins (the iOS one is not otherwise discoverable), the Android relaxation and why
+  it is the app's call, and the caveat that a non-standard scheme may present as `Origin: null`.
+
 ## 0.9.0 — 2026-08-04
 
 ### Added

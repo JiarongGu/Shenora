@@ -496,6 +496,53 @@ clipboard IMAGES (Essentials is text-only) and the folder picker throw
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
 
+### ⚠ A server-backed app on a MAUI shell: the page's ORIGIN is not what you expect, and it costs a day
+
+Filed by the first adopter (2026-08-04) after losing a day to it. Not a kit defect and it needs no kit API —
+but nothing said it, and **both failures present as the same useless symptom: a bare
+`TypeError: Failed to fetch`**, with the engine logging the real reason only as a `[warning security]` line
+you cannot see without attaching devtools.
+
+`HybridWebView` serves your bundle from a synthetic virtual host, so the page is on a **secure origin you did
+not choose**:
+
+| Shell | The page's origin |
+|---|---|
+| Android | `https://0.0.0.1` |
+| iOS | `app://0.0.0.1` |
+
+Both measured on real runs. **The iOS one especially is worth having from us** — the adopter could not measure
+it at all (`ios-webkit-debug-proxy` would not install on their Mac), and it is not otherwise discoverable.
+
+Two consequences, and they bite in sequence:
+
+1. **Mixed content.** Every request from that secure origin to a plain-`http` backend is blocked outright.
+   On Android the app can allow it, and that is where the decision belongs — it is a real security
+   relaxation and the kit will not make it silently on your behalf:
+
+   ```csharp
+   Microsoft.Maui.Handlers.HybridWebViewHandler.Mapper.AppendToMapping("MixedContent", (handler, view) =>
+   {
+   #if ANDROID
+       handler.PlatformView.Settings.MixedContentMode =
+           Android.Webkit.MixedContentHandling.AlwaysAllow;
+   #endif
+   });
+   ```
+
+   Prefer `https` on the backend if you can; this is the escape hatch, not the recommendation.
+
+2. **CORS, which only appears after you fix (1).** The request now leaves the device and the *response* is
+   withheld instead, because your backend has never heard of that origin. **Allowlist the origins above**
+   server-side. ⚠ A non-standard scheme may present as `Origin: null` rather than the literal string, so
+   allowlist by what your server actually logs rather than by what this table says — check the header once
+   and trust that.
+
+**The related tooling gap, if you hit it:** WebKit does not forward the page's `console.*` to the device log,
+so a page-side error can be genuinely invisible. Both this repo and the adopter independently ended up
+routing page → host over IPC and logging host-side (`PageDiagFacade` in `samples/Shenora.Sample.Maui`). It is
+a few lines; copy the pattern.
+
 ### Live Activities / the Dynamic Island — the whole adoption is one property and four view bodies
 
 The OS requires the UI to be a SwiftUI view in a widget extension, so **you cannot avoid writing Swift** —
