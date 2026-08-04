@@ -23,6 +23,11 @@
   `src/Directory.Build.props`).
 - Git Bash path mangling: set `MSYS_NO_PATHCONV=1` when an argument like `/p:...` or a
   device-style path must reach a native tool untouched.
+- **Never build this repo from the session scratchpad path** — it is deep enough that `aapt2` fails
+  with `APT2098 …flat: error: failed to open file`, which reads as a corrupt Android resource and is
+  really MAX_PATH. It cost a false "this commit is broken" verdict against a `git worktree` there.
+  Build a worktree under `devtools/_*` (gitignored) instead. The tell that it is the PATH and not the
+  code: check out a tree you KNOW is green and confirm it fails identically.
 - **WebView2 + CDP:** setting `CoreWebView2EnvironmentOptions.AdditionalBrowserArguments` makes
   WebView2 IGNORE the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` env var — a dev-mode host must
   re-append the env var's value itself or the devtools CDP loop silently gets no port. (Proven in
