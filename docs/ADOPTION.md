@@ -487,12 +487,64 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 | **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
 | **Transfers, INCLUDING seekable media — this row has been wrong twice** | **Resource serving.** `HybridWebView` has a request-interception seam in .NET 10 (`WebResourceRequested`, `e.Uri`, `e.Headers`, `e.Handled`), and the simple case needs none of it — put the built frontend in `Resources/Raw/wwwroot` and the platform serves it. What the seam buys is DYNAMIC content: a generated image, an exported file, **and seekable media**. ⚠ This row previously said seeking was impossible without `e.PlatformArgs`. **That is false** (corrected 2026-08-03 by device runs — **D44**): `SetResponse` has a SECOND overload taking a header DICTIONARY, on both mobile TFMs, and every header reaches the native response. Neither platform needed `PlatformArgs`. **But the two shells need OPPOSITE BODIES** for the same request — Android applies the `Range` start itself so you must NOT slice; iOS passes the body through so you MUST. **You do not write that yourself any more** (D45): `MobileWebViewInterceptor` implements the same `IWebViewInterceptor` the desktop does, so `interceptor.UseFiles(…)` and the page's `mediaUrl(…)` are literally the same code on all three shells and the delivery rule is read off the platform. Read D44 only if you are writing a middleware that answers ranges by hand; getting it wrong plays every faststart file perfectly and fails every other one. |
 | **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
+| **The OS media transport** | `IPlaybackSession` — the lock screen, the media flyout, headphone and car-stereo buttons. One contract, three implementations, verified against each OS's own registry. `Publish` / `Report` / `Clear` go app → OS and `CommandReceived` comes back. ⚠ Two things to know. `Report` is for JUMPS, not a timer: all three platforms extrapolate the displayed time from a position plus a rate, so pushing it every 250 ms spends battery telling the OS what it already knows — and a *delayed* report lands as a jump backwards, because the platform treats it as current. And a session makes you CONTROLLABLE, not VISIBLE: Android needs a MediaStyle notification, iOS an active `AVAudioSession`, and both mean picking icons, channels, categories and interruption behaviour — your decisions, not the kit's. |
+| **Live Activities / Dynamic Island (iOS)** | `ILiveActivities` — see the recipe below. Android registers an implementation that answers `Unavailable` with a reason rather than throwing, so portable logic asks and branches. |
 
 **Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing:
 clipboard IMAGES (Essentials is text-only) and the folder picker throw
 `ShellCapability.NotSupported` naming the platform and the alternative. `IUiInteraction`'s
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
+
+### Live Activities / the Dynamic Island — the whole adoption is one property and four view bodies
+
+The OS requires the UI to be a SwiftUI view in a widget extension, so **you cannot avoid writing Swift** —
+but you write only the views, which are your design system anyway and the one thing the kit does not ship
+(D13). Everything else is the package's: the state contract, the ActivityKit shim, the extension's plist, the
+build, and the codesigning.
+
+**1.** Write the views. One file, four bodies — the lock-screen banner plus the Island's compact leading,
+compact trailing, minimal and expanded regions. `ShenoraActivityAttributes` and its
+`ShenoraActivityState` (`title` / `subtitle` / `progress`) come from the kit, compiled into the same module.
+Copy `samples/Shenora.Sample.Maui/Platforms/iOS/IslandViews.swift` and restyle it.
+
+**2.** Point one MSBuild property at it:
+
+```xml
+<PropertyGroup Condition="$(TargetFramework.Contains('ios'))">
+  <ShenoraLiveActivityViews>Platforms/iOS/IslandViews.swift</ShenoraLiveActivityViews>
+</PropertyGroup>
+```
+
+**3.** Declare `NSSupportsLiveActivities` in your app's `Platforms/iOS/Info.plist`. The kit cannot add this
+for you — no MSBuild item merges a key into that file — and without it `Activity.request` fails for a reason
+that is not obvious.
+
+**4.** Use it from portable C#:
+
+```csharp
+var state = new LiveActivityState { Title = "Converting", Subtitle = "starting" };
+var handle = activities.Start(state);              // null if it could not start
+if (handle is not null)
+    activities.Update(handle, state = state with { Progress = 0.6 });
+activities.End(handle!);
+```
+
+**Ask `Unavailable` FIRST.** It returns null when activities can be started and otherwise a reason — the OS
+being too old, the user having switched them off, or the shim not being linked. Android returns a reason
+always, so portable logic branches instead of catching.
+
+⚠ **Traps, all measured:**
+- **A `null` `Progress` means INDETERMINATE**, not 0. Render a spinner; an empty bar claims "0% done".
+- **Never change `LiveActivityState` without changing the Swift mirror in the same commit.** Drift fails
+  SILENTLY — a renamed field decodes to nil and the activity just does not appear. A tripwire
+  (`LiveActivityMirrorTests`) guards the kit's copy; if you widen the record in a fork, keep both sides.
+- **An empty Dynamic Island on the SIMULATOR is expected.** An activity there reports only a lock-screen
+  scene target, so the pill stays blank however long you wait. Use a device to see the Island itself.
+  `node devtools/dev.mjs mac activity` shows what the OS actually registered, started and launched.
+- **An active activity with the widget never launched** is the signature of a module-name mismatch between
+  the shim and the extension — every call reports success and nothing renders. The kit sets
+  `-module-name` on both sides for exactly this reason; do not override `ShenoraLiveActivityModule` on one.
 
 **SAVING is universal, but only through `SaveAsync(options, write)`** — implemented natively on both
 mobile shells since 2026-08-03 (`ACTION_CREATE_DOCUMENT`, `UIDocumentPickerViewController`). Call that,

@@ -159,6 +159,37 @@ at the first list and missed five more breaking changes.
     and absent from the iOS binding, so the RATE carries the state and Paused/Stopped/Buffering all report 0.
     All three shells agree that `TogglePlayPause` also lights the concrete play and pause controls, because
     hardware sends whichever it likes.
+- **The Live Activity devkit (iOS)** — `ILiveActivities` + `LiveActivityState` in `Shenora.Core`, the
+  ActivityKit implementation in `Shenora.iOS`, and **the whole adoption is one MSBuild property plus four
+  SwiftUI view bodies**:
+
+  ```xml
+  <ShenoraLiveActivityViews>Platforms/iOS/IslandViews.swift</ShenoraLiveActivityViews>
+  ```
+
+  No lifecycle Swift, no extension `Info.plist`, no `.xcodeproj`, no codesigning. The package ships the
+  ActivityKit shim, the state mirror and an MSBuild target that compiles the widget from its Swift plus
+  yours, then hands it to the iOS SDK's own `AdditionalAppExtensions`/`NativeReference` to be embedded and
+  re-signed. Recipe and traps in `ADOPTION.md`.
+  - **You cannot avoid writing Swift and the docs say so.** A Live Activity's UI *is* a SwiftUI view in a
+    widget extension — an OS requirement, not a .NET limitation — and it is your design system anyway,
+    which the kit does not ship (D13). What the kit removes is everything around it.
+  - **The Swift is shipped as SOURCE, and that is forced.** ActivityKit pairs an activity with a widget by
+    its `ActivityAttributes` TYPE, and a Swift type's identity includes its MODULE — so the attributes must
+    compile into the same module as your views. No prebuilt binary can satisfy that.
+  - **A C#⇄Swift mirror tripwire**, because drift between the two state shapes fails completely silently: a
+    renamed field decodes to nil, the activity does not appear, and no exception, log line or build warning
+    is raised anywhere. It also catches the subtler half — a non-optional Swift property fails the WHOLE
+    decode, since C# omits nulls. Sabotage-verified five ways.
+  - **`Unavailable` returns a REASON, not a bool** (OS too old, switched off in Settings, shim not linked),
+    and Android registers an implementation that answers with one rather than throwing — so portable logic
+    asks and branches instead of catching. Android's own live surface is deliberately unbuilt: for media it
+    is already `IPlaybackSession`, and a progress notification means choosing icons and channels (D15/D13).
+  - Verified end to end on the simulator: `pluginkit` registered the extension, `liveactivitiesd` reported
+    `Starting activity … state: active`, and `chronod` launched the widget through ExtensionKit to render
+    it. ⚠ The Island itself stays blank on a simulator — an activity there reports only a lock-screen scene
+    target — so seeing the pill needs a device. `dev.mjs mac activity` reports all three from the OS's own
+    records.
 - **A release now FAILS when `## Unreleased` is missing or has no entries** (`dev.mjs changelog`). Nothing
   in a package changes; this protects the *next* release. It used to warn and carry on, which is exactly
   how **v0.6.0 published 0.5.1's code**: the work was committed locally and never pushed, so the workflow
