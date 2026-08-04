@@ -32,9 +32,14 @@
   -->
   <ItemGroup>
     <None Include="buildTransitive\Shenora.iOS.targets" Pack="true" PackagePath="buildTransitive\" />
-    <!-- PackagePath puts it beside the targets, which name it by $(MSBuildThisFileDirectory)swift/. -->
-    <None Include="LiveActivity\ShenoraLiveActivity.swift" Pack="true"
-          PackagePath="buildTransitive\swift\ShenoraLiveActivity.swift" />
+    <!--
+      ⚠ The repo path and the PackagePath are deliberately IDENTICAL (`buildTransitive/swift/`). The targets
+      find this by `$(MSBuildThisFileDirectory)swift/`, so making the source tree mirror the package layout
+      means the path the sample exercises is the path a real consumer gets — rather than two paths where only
+      one is ever tested. Getting this wrong is how the first Mac build failed.
+    -->
+    <None Include="buildTransitive\swift\ShenoraLiveActivity.swift" Pack="true"
+          PackagePath="buildTransitive\swift\" />
   </ItemGroup>
 
 </Project>

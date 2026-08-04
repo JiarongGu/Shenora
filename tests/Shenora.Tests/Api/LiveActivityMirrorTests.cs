@@ -6,7 +6,7 @@ namespace Shenora.Tests.Api;
 
 /// <summary>
 /// The tripwire on the C#⇄SWIFT state mirror. <c>Shenora.Core.LiveActivityState</c> and the
-/// <c>ShenoraActivityState</c> struct in <c>src/Shenora.iOS/LiveActivity/ShenoraLiveActivity.swift</c> are
+/// <c>ShenoraActivityState</c> struct in <c>src/Shenora.iOS/buildTransitive/swift/ShenoraLiveActivity.swift</c> are
 /// the same shape written twice, and they HAVE to be: ActivityKit decodes the Swift side from JSON the C#
 /// side wrote.
 /// <para>
@@ -32,7 +32,7 @@ public class LiveActivityMirrorTests
     }
 
     private static string SwiftPath() =>
-        Path.Combine(RepoRoot(), "src", "Shenora.iOS", "LiveActivity", "ShenoraLiveActivity.swift");
+        Path.Combine(RepoRoot(), "src", "Shenora.iOS", "buildTransitive", "swift", "ShenoraLiveActivity.swift");
 
     /// <summary>
     /// The <c>var name: Type</c> declarations inside the mirrored struct. Scoped to that struct so the
