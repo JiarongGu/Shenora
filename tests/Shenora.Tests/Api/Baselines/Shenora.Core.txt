@@ -316,6 +316,12 @@ interface Shenora.Core.IPathLease : System.IAsyncDisposable
   public abstract string Path { get; }
 interface Shenora.Core.IPathLocker
   public abstract System.Threading.Tasks.Task<Shenora.Core.IPathLease> TryAcquireAsync(string path, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default)
+interface Shenora.Core.IPlaybackSession
+  public abstract Shenora.Core.PlaybackCommands Supported { get; set; }
+  public abstract event System.Action<Shenora.Core.PlaybackCommandRequest> CommandReceived
+  public abstract void Clear()
+  public abstract void Publish(Shenora.Core.PlaybackInfo info)
+  public abstract void Report(Shenora.Core.PlaybackProgress progress)
 interface Shenora.Core.IShenoraLifecycleHook
   public virtual void OnStarting(Shenora.Core.ShenoraApplication app)
   public virtual void OnStopping(Shenora.Core.ShenoraApplication app)
@@ -507,6 +513,66 @@ static class Shenora.Core.PathClaims
   public static Shenora.Core.NestedClaimScope Scope { get; }
   public static bool IsContained(string root, string candidate)
   public static string Canonical(string path)
+enum Shenora.Core.PlaybackCommand (int)
+  public const Shenora.Core.PlaybackCommand Next = 4
+  public const Shenora.Core.PlaybackCommand Pause = 1
+  public const Shenora.Core.PlaybackCommand Play = 0
+  public const Shenora.Core.PlaybackCommand Previous = 5
+  public const Shenora.Core.PlaybackCommand Seek = 6
+  public const Shenora.Core.PlaybackCommand Stop = 3
+  public const Shenora.Core.PlaybackCommand TogglePlayPause = 2
+  public int value__
+sealed class Shenora.Core.PlaybackCommandRequest : System.IEquatable<Shenora.Core.PlaybackCommandRequest>
+  public Shenora.Core.PlaybackCommandRequest <Clone>$()
+  public System.TimeSpan? Position { get; init; }
+  public bool Equals(Shenora.Core.PlaybackCommandRequest? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public required Shenora.Core.PlaybackCommand Command { get; init; }
+  public static bool op_Equality(Shenora.Core.PlaybackCommandRequest? left, Shenora.Core.PlaybackCommandRequest? right)
+  public static bool op_Inequality(Shenora.Core.PlaybackCommandRequest? left, Shenora.Core.PlaybackCommandRequest? right)
+[Flags] enum Shenora.Core.PlaybackCommands (int)
+  public const Shenora.Core.PlaybackCommands Next = 16
+  public const Shenora.Core.PlaybackCommands None = 0
+  public const Shenora.Core.PlaybackCommands Pause = 2
+  public const Shenora.Core.PlaybackCommands Play = 1
+  public const Shenora.Core.PlaybackCommands Previous = 32
+  public const Shenora.Core.PlaybackCommands Seek = 64
+  public const Shenora.Core.PlaybackCommands Stop = 8
+  public const Shenora.Core.PlaybackCommands TogglePlayPause = 4
+  public int value__
+sealed class Shenora.Core.PlaybackInfo : System.IEquatable<Shenora.Core.PlaybackInfo>
+  public .ctor()
+  public Shenora.Core.PlaybackInfo <Clone>$()
+  public System.ReadOnlyMemory<byte> Artwork { get; init; }
+  public System.TimeSpan? Duration { get; init; }
+  public bool Equals(Shenora.Core.PlaybackInfo? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.PlaybackInfo? left, Shenora.Core.PlaybackInfo? right)
+  public static bool op_Inequality(Shenora.Core.PlaybackInfo? left, Shenora.Core.PlaybackInfo? right)
+  public string? GroupName { get; init; }
+  public string? Subtitle { get; init; }
+  public string? Title { get; init; }
+sealed class Shenora.Core.PlaybackProgress : System.IEquatable<Shenora.Core.PlaybackProgress>
+  public Shenora.Core.PlaybackProgress <Clone>$()
+  public System.TimeSpan Position { get; init; }
+  public bool Equals(Shenora.Core.PlaybackProgress? other)
+  public double Rate { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public required Shenora.Core.PlaybackState State { get; init; }
+  public static bool op_Equality(Shenora.Core.PlaybackProgress? left, Shenora.Core.PlaybackProgress? right)
+  public static bool op_Inequality(Shenora.Core.PlaybackProgress? left, Shenora.Core.PlaybackProgress? right)
+enum Shenora.Core.PlaybackState (int)
+  public const Shenora.Core.PlaybackState Buffering = 3
+  public const Shenora.Core.PlaybackState Paused = 2
+  public const Shenora.Core.PlaybackState Playing = 1
+  public const Shenora.Core.PlaybackState Stopped = 0
+  public int value__
 sealed class Shenora.Core.PriorityMissionPolicy : Shenora.Core.IMissionPolicy
   public .ctor()
   public bool ShouldStart(in Shenora.Core.MissionExecution mission, in Shenora.Core.MissionSchedulerState state)

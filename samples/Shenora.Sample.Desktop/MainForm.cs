@@ -418,6 +418,11 @@ public sealed class MainForm : OptimizedForm
 
         try { Console.WriteLine(await InterceptorProbe.RunAsync(core).ConfigureAwait(true)); }
         catch (Exception ex) { Console.WriteLine($"INTERCEPTOR SEAM: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+
+        // The system media transport surface. Unrelated to the webview, but it belongs on the same
+        // startup self-check for the same reason: it is only provable against the real OS.
+        try { Console.WriteLine(await PlaybackSessionProbe.RunAsync().ConfigureAwait(true)); }
+        catch (Exception ex) { Console.WriteLine($"PLAYBACK SESSION: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private void ReportSplashCaptionButtons()

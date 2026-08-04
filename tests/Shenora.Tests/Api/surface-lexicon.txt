@@ -325,6 +325,20 @@ Delivery
 # `Pipeline` (2026-08-04) is the composition itself, now a public type because all three shells share it
 # rather than hand-rolling the back-to-front chain build three times.
 Pipeline
+
+# ── System transport / Now Playing (Shenora.Core, 2026-08-04) ─────────────────────────────────────
+# `IPlaybackSession` and friends publish to the OS's media transport surface (lock screen, media
+# notification, SystemMediaTransportControls) and receive its commands back. Every word was already here
+# for other reasons — Playback, Session, Progress, Info, State, Command, Request — which is itself the
+# evidence that the naming stayed on mechanism vocabulary. Only the PLURAL is new: `PlaybackCommands` is
+# the flags SET of controls the OS should offer, distinct from the single `PlaybackCommand` it sends back.
+#
+# ⚠ Note what is deliberately NOT here: Artist, Album, Track, Artwork. The record's fields are Title /
+# Subtitle / GroupName precisely so this contract can sit in Shenora.Core — which every package
+# references — without putting music vocabulary on the surface of an app that has none. Fields are not
+# swept by this gate, so that discipline is a review matter; it is written down here so the next person
+# renaming them for convenience meets the reason first.
+Commands
 # Core resource serving, re-layered 2026-08-04 (D45). `Derived` names WHAT is cached (anything derived
 # from a source file) rather than the feature that caches it — the family shares this helper.
 Content

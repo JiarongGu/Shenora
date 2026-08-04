@@ -3,7 +3,7 @@
   <!-- tests/ sits OUTSIDE src/, so src/Directory.Build.props does not apply — the shared build
        properties are restated here on purpose (tests must never inherit packability). -->
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>

@@ -14,6 +14,29 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- **`Shenora.Windows` now targets `net10.0-windows10.0.19041.0`** (was `net10.0-windows`). A consumer
+  targeting plain `net10.0-windows` can no longer reference it.
+
+  **Migration: change one line in your csproj.**
+
+  ```diff
+  - <TargetFramework>net10.0-windows</TargetFramework>
+  + <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  ```
+
+  Nothing else changes — no type, no signature, no behaviour. The OS floor becomes Windows 10 2004, which
+  is below every currently-supported Windows build.
+
+  **Why:** Windows' only system-wide media transport is `SystemMediaTransportControls`, and it is WinRT.
+  Without a Windows SDK version in the TFM the projections do not exist at all (`Windows.Media` does not
+  resolve), so `IPlaybackSession` could not be implemented on the desktop. The two alternatives were both
+  worse: multi-targeting would give the package a feature set that depends silently on the consumer's TFM,
+  and hand-rolling `ISystemMediaTransportControlsInterop` means `RoGetActivationFactory`, HSTRINGs and
+  manual reference counting — invented interop, which is the opposite of how this kit grows. The bump also
+  unlocks every other WinRT projection for future work rather than only this one.
+
 ### Added
 
 - **Resource interception, in `Shenora.Core` and implemented by every shell (D45).** How a page gets bytes
@@ -92,6 +115,31 @@ at the first list and missed five more breaking changes.
     caller once serving moved: nothing in the kit fetches a remote resource for a page. It comes back with
     the middleware that does, rather than shipping as a public type with no consumer (D15). Its reasoning
     is worth keeping: the host can reach addresses the page cannot, so a *throwing* policy must deny.
+- **`IPlaybackSession` — the OS's media transport surface, as a portable contract** (`Shenora.Core`), plus
+  the desktop implementation (`WindowsPlaybackSession`, registered by `UseWinForms`). This is the lock
+  screen, the media flyout, the headphone gesture and the car stereo: `Publish(PlaybackInfo)` /
+  `Report(PlaybackProgress)` / `Clear()` go app → OS, and `CommandReceived` comes back the other way.
+  - **It is two-way, and the return direction is the design.** Commands arrive from outside the app, so
+    this is an event source as much as a publisher — and the kit deliberately ships no queue model behind
+    it, because only the app knows what "next" means.
+  - **The fields are `Title` / `Subtitle` / `GroupName`, not `Artist` / `Album`.** This contract lives in
+    `Shenora.Core`, which every package references, so music vocabulary here would put those words on the
+    surface of an app that has none — the same reasoning that keeps `Shenora.Media` separate and optional
+    (D40/D45). The generic names are also honest: the same three fields carry a podcast's show and episode,
+    an audiobook's book and chapter, a lecture's course.
+  - **`Report` is for jumps, not for a timer.** All three platforms take a position plus a rate and
+    extrapolate the displayed time themselves, so a host pushing the position every 250 ms is spending
+    battery and IPC to tell the OS what it already worked out. Call it on seek, pause, resume, rate change
+    and track change. A *delayed* report is worse than none, because the platform treats it as current.
+  - **`Buffering` is its own state** — two of the three platforms have one, and folding it into `Playing`
+    makes the OS extrapolate a position that is not moving.
+  - ⚠ `CommandReceived` fires on a platform thread, **not** the UI thread on Windows. Marshal with
+    `IUiDispatcher`. A throwing handler is caught and logged rather than escaping into a native callback.
+  - Verified against the real OS, not asserted: the desktop sample's `PlaybackSessionProbe` publishes a
+    known item and reads it back out of Windows' own `GlobalSystemMediaTransportControlsSessionManager`,
+    asserting the title, subtitle, group and a `Playing` status. Sabotage-verified — dropping the
+    `DisplayUpdater.Update()` call leaves our session visible with an *empty* title, which the probe
+    distinguishes from having no session at all.
 - **A release now FAILS when `## Unreleased` is missing or has no entries** (`dev.mjs changelog`). Nothing
   in a package changes; this protects the *next* release. It used to warn and carry on, which is exactly
   how **v0.6.0 published 0.5.1's code**: the work was committed locally and never pushed, so the workflow

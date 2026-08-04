@@ -116,6 +116,13 @@ public static class WinFormsHostExtensions
             },
             sp.GetService<ILogger<FileDialogs>>()));
 
+        // The system media transport surface, registered LAZILY like everything else here — a
+        // WindowsPlaybackSession creates a MediaPlayer in its constructor, and an app that never plays
+        // anything should not pay for a media pipeline just by calling UseWinForms(). DI disposes it.
+        builder.Services.TryAddSingleton<IPlaybackSession>(sp =>
+            new WindowsPlaybackSession(message =>
+                sp.GetService<ILogger<WindowsPlaybackSession>>()?.LogDebug("{Message}", message)));
+
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
         // the SAME singleton — so an app's own logic can inject Shenora.Core contracts, compile
         // without a Windows reference, and still get these implementations at runtime.

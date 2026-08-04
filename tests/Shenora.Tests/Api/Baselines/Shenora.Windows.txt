@@ -662,3 +662,11 @@ sealed class Shenora.Windows.WindowStateOptions
   public int MinVisibleHeight { get; init; }
   public int MinVisibleWidth { get; init; }
   public int MinWidth { get; init; }
+sealed class Shenora.Windows.WindowsPlaybackSession : Shenora.Core.IPlaybackSession, System.IDisposable
+  public .ctor(System.Action<string>? log = null)
+  public Shenora.Core.PlaybackCommands Supported { get; set; }
+  public event System.Action<Shenora.Core.PlaybackCommandRequest> CommandReceived
+  public void Clear()
+  public void Dispose()
+  public void Publish(Shenora.Core.PlaybackInfo info)
+  public void Report(Shenora.Core.PlaybackProgress progress)
