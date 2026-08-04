@@ -508,6 +508,33 @@ than being encouraging about both.
   kind of devkit for that?"* — so the goal is not to hide the Swift, it is to make everything *around* the
   Swift free. That framing is the right one, because the SwiftUI views are the SMALL part.
 
+  **✅ THE PROBE RAN (2026-08-04) AND EVERY ANSWER CAME BACK IN THE GOOD DIRECTION.** Full mechanics in
+  `.claude/knowledge/mobile-shells.md`; the short version, all measured rather than read:
+  - **A Swift/SwiftUI app extension ships in a .NET iOS app, and `AdditionalAppExtensions` is FIRST-CLASS
+    in-SDK support** — `_ExtendAppExtensionReferences` injects a prebuilt `.appex` into the embed and
+    codesign lists and is reached from `_CompileToNativeDependsOn`, so it runs on every app build. Checked
+    that the target is *reached*, not merely present, which is the distinction the presence-vs-content audit
+    was about.
+  - **`swiftc` alone builds the widget — no `.xcodeproj`, no second build system.** This was the answer that
+    mattered most and it was not guaranteed: a devkit that had to own an Xcode project would be a different
+    and much worse proposition than one that adds a file.
+  - **iOS itself registered it:** `pluginkit` inside the simulator reported
+    `com.shenora.sample.maui.islandprobe(1.0)` with `SDK = com.apple.widgetkit-extension`, the app
+    installed and launched, and `codesign --verify --deep` confirmed the nested code did not break the
+    container's signature.
+  - **ActivityKit has no Objective-C surface** — `Headers/ActivityKit.h` is an empty include guard, the whole
+    API is in the Swift module. So the earlier flagged assumption was RIGHT and is now verified: the
+    lifecycle needs a Swift shim too, not just the view. Piece 2 below stands as written.
+  - **Still unproven, so it is not claimed:** that a Live Activity actually STARTS and renders in the
+    Island. That needs `NSSupportsLiveActivities` plus the C#→Swift call, and is the next probe.
+
+  So the sketch below is no longer resting on an unknown, and the remaining work is ordinary. **What the
+  probe changes about it:** piece 2 (the shim) is confirmed necessary rather than possibly-avoidable, and a
+  new piece appears that is arguably more valuable than any of the four — **the kit can own the `.appex`
+  BUILD**, since `swiftc` needs no project file. An app would supply four SwiftUI view bodies and the kit
+  would compile, assemble, plist and hand them to `AdditionalAppExtensions`. That is the difference between
+  "here is how to configure Xcode" and "add a file".
+
   **The boundary falls exactly on the kit's existing headless law, which is what makes this clean rather
   than a compromise.** A Live Activity's UI *is* a SwiftUI view in a widget extension — an OS requirement,
   not a .NET limitation. But D13 already says the kit ships no design system and no UI component library, so
@@ -556,13 +583,12 @@ than being encouraging about both.
      `setProgress`) as the second implementation. Two implementations is also what stops the contract being
      shaped around ActivityKit specifically, which is the mistake D45 had to undo for media.
 
-  **⚠ ONE PROBE DE-RISKS ALL OF IT, and it is not the one you would guess.** The interesting unknown is not
-  ActivityKit's API surface — it is **whether the .NET for iOS build can carry a widget extension at all**:
-  can a prebuilt `.appex` be embedded by MSBuild, or must the app be built through Xcode? That answer
-  decides whether this is a nice-to-have or the thing that makes Live Activities possible for a MAUI app at
-  all, and it is cheap to find out (a hello-world extension, one simulator run). **Do that before designing
-  anything above**, per `.claude/knowledge/doc-claims.md` — verify against the source, not the design doc.
-  Everything in this entry is a sketch until that probe runs.
+  **✅ The de-risking probe is DONE** (see the top of this entry). The question it answered was not
+  ActivityKit's API surface but whether the .NET for iOS build can carry a widget extension at all — it
+  can, through in-SDK support, and `swiftc` needs no Xcode project. Nothing here rests on an unknown any
+  more. **The next probe, when this is picked up: does a Live Activity actually START and render in the
+  Island** (needs `NSSupportsLiveActivities` + the C#→Swift call). Prove that before writing the
+  contract, per `.claude/knowledge/doc-claims.md`.
 
   **Not started, and it must not jump the queue** (D15): `DM3` is the live media work, and this wants a
   second consumer before it earns a package. The direction changes the SCOPE, not the order.

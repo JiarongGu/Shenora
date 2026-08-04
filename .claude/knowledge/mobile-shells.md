@@ -133,3 +133,42 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   the Application) — use `Dispatcher.GetForCurrentThread()`. And the page MUST load the platform's own
   bridge script or `window.HybridWebView` never exists, the page renders fine, and the host sits
   waiting for a handshake that cannot arrive.
+
+- **A SWIFT/SwiftUI app extension (widget, Live Activity) CAN ship in a .NET iOS app, and needs no second
+  build system.** Measured end-to-end on 2026-08-04 before any of it was designed on; every claim below is
+  from that run, not from documentation.
+  - **`AdditionalAppExtensions` is first-class in-SDK support**, not a community hack:
+    `_ExtendAppExtensionReferences` (Xamarin.Shared.targets) injects a prebuilt `.appex` into the embed and
+    codesign lists, and it is reached from `_CompileToNativeDependsOn`, so it runs on every app build.
+    `_CopyAppExtensionsToBundle` dittos it to `.app/PlugIns/`, deletes the stale signature, and re-signs
+    with the app's identity. ⚠ **Check the target is REACHED, not just present** — that distinction is the
+    whole point of the presence-vs-content audit in `docs/archive/tasks.md`.
+    Metadata: `Include` = a directory, `BuildOutput` = a subdirectory under it, `Name` = the appex name
+    without extension (the path built is `%(Identity)/%(BuildOutput)/%(Name).appex`), plus optional
+    `CodesignEntitlements`.
+  - **`swiftc` alone builds the widget** — no `.xcodeproj`, no `xcodebuild`. `-parse-as-library` is
+    required (`@main` in a single file otherwise collides with swiftc's top-level-code mode), plus
+    `-target <arch>-apple-ios16.2-simulator`, `-sdk $(xcrun --sdk iphonesimulator --show-sdk-path)` and
+    `-framework ActivityKit -framework WidgetKit -framework SwiftUI`. That this works is what keeps a
+    devkit from having to own a second build system.
+    ⚠ Known rough edge, not yet fixed: the LINK step emits `clang: warning: using sysroot for 'MacOSX' but
+    targeting 'iPhone'` — it produced a binary the OS accepted, but the linker is getting the macOS
+    sysroot and a real implementation should pass the SDK through explicitly.
+  - **The appex's `CFBundleIdentifier` MUST be prefixed by the container app's**, `CFBundlePackageType` is
+    `XPC!`, and a WidgetKit extension declares only `NSExtensionPointIdentifier =
+    com.apple.widgetkit-extension` — no principal class, because the `@main WidgetBundle` is the entry.
+    A higher `MinimumOSVersion` than the app's is normal (ActivityKit is 16.1+); the OS just does not load
+    it on older systems.
+  - **Verify with the OS's own registry, not the file listing.** `xcrun simctl spawn <udid> pluginkit
+    -mAvvv` reported `com.shenora.sample.maui.islandprobe(1.0)` with `SDK =
+    com.apple.widgetkit-extension`, which is iOS saying it accepted and classified the extension —
+    strictly stronger evidence than "the .appex is in PlugIns". `codesign --verify --deep` on the app then
+    confirms the nested code did not break the container's signature.
+  - **ActivityKit has NO Objective-C surface** — its `Headers/ActivityKit.h` is an empty include guard and
+    the entire API is in `ActivityKit.swiftmodule`. So the start/update/end LIFECYCLE needs a Swift shim
+    too, not only the view. (WidgetKit does ship headers, but declaring a widget is a Swift
+    result-builder DSL regardless.)
+  - **Still unproven, so do not claim it:** that a Live Activity actually STARTS and renders in the
+    Dynamic Island. That needs `NSSupportsLiveActivities` in the app's Info.plist plus the C#→Swift shim
+    call, and is the next probe. A device build additionally needs entitlements for the appex — the
+    simulator build logs `No entitlements set for …IslandProbe.appex` and that warning is expected there.
