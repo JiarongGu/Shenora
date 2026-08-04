@@ -42,6 +42,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
     private readonly object _gate = new();
     private PlaybackCommands _supported;
     private long _lastPositionMs;
+    private TimeSpan _skipInterval = TimeSpan.FromSeconds(15);
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
@@ -86,6 +87,18 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
 
     private PortableState _lastState = PortableState.Stopped;
     private double _lastRate = 1.0;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Android takes no preferred interval — its media notification renders fixed fast-forward/rewind
+    /// glyphs — so this is not pushed anywhere. It is what the request carries back, so a handler can
+    /// always just use it.
+    /// </remarks>
+    public TimeSpan SkipInterval
+    {
+        get { lock (_gate) return _skipInterval; }
+        set { lock (_gate) _skipInterval = value; }
+    }
 
     /// <inheritdoc />
     public event Action<PlaybackCommandRequest>? CommandReceived;
@@ -190,14 +203,18 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         if (commands.HasFlag(PlaybackCommands.Next)) actions |= AndroidState.ActionSkipToNext;
         if (commands.HasFlag(PlaybackCommands.Previous)) actions |= AndroidState.ActionSkipToPrevious;
         if (commands.HasFlag(PlaybackCommands.Seek)) actions |= AndroidState.ActionSeekTo;
+        // Android names these fast-forward/rewind; the SEMANTICS an app gives them are the skip interval,
+        // which is how every long-form player on the platform uses them.
+        if (commands.HasFlag(PlaybackCommands.SkipForward)) actions |= AndroidState.ActionFastForward;
+        if (commands.HasFlag(PlaybackCommands.SkipBackward)) actions |= AndroidState.ActionRewind;
         return actions;
     }
 
-    private void Raise(PlaybackCommand command, TimeSpan? position = null)
+    private void Raise(PlaybackCommand command, TimeSpan? position = null, TimeSpan? interval = null)
     {
         var handler = CommandReceived;
         if (handler is null) return;
-        var request = new PlaybackCommandRequest { Command = command, Position = position };
+        var request = new PlaybackCommandRequest { Command = command, Position = position, Interval = interval };
         // The ONE guard. These run on the session's handler thread, where an escaping exception has no
         // caller and takes the process with it.
         AppCallback.Run(() => handler(request),
@@ -249,6 +266,14 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
 
         public override void OnSeekTo(long pos) =>
             owner.Raise(PlaybackCommand.Seek, TimeSpan.FromMilliseconds(pos));
+
+        // No interval arrives with these, so the configured one is supplied — the contract promises
+        // Interval is always set for a skip.
+        public override void OnFastForward() =>
+            owner.Raise(PlaybackCommand.SkipForward, interval: owner.SkipInterval);
+
+        public override void OnRewind() =>
+            owner.Raise(PlaybackCommand.SkipBackward, interval: owner.SkipInterval);
     }
 }
 #endif

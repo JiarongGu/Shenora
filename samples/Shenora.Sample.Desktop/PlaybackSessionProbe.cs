@@ -41,8 +41,10 @@ internal static class PlaybackSessionProbe
             var commands = new List<string>();
             session.CommandReceived += r => { lock (commands) commands.Add(r.Command.ToString()); };
 
+            session.SkipInterval = TimeSpan.FromSeconds(15);
             session.Supported = PlaybackCommands.Play | PlaybackCommands.Pause
-                | PlaybackCommands.Next | PlaybackCommands.Previous | PlaybackCommands.Seek;
+                | PlaybackCommands.Next | PlaybackCommands.Previous | PlaybackCommands.Seek
+                | PlaybackCommands.SkipForward | PlaybackCommands.SkipBackward;
 
             session.Publish(new PlaybackInfo
             {
@@ -82,6 +84,10 @@ internal static class PlaybackSessionProbe
             // Publish(). They are separate calls onto separate SMTC properties and either can be wrong
             // alone.
             if (!report.Contains("status=Playing", StringComparison.Ordinal)) failures.Add("status is not Playing");
+            // The skip-by-interval buttons the first adopter needed (2026-08-04). Windows exposes them as
+            // fast-forward/rewind, so this is the read-back that proves the mapping actually lit them.
+            if (!report.Contains("ff=True", StringComparison.Ordinal)) failures.Add("SkipForward did not enable fast-forward");
+            if (!report.Contains("rw=True", StringComparison.Ordinal)) failures.Add("SkipBackward did not enable rewind");
 
             session.Clear();
             return failures.Count == 0
@@ -114,8 +120,14 @@ internal static class PlaybackSessionProbe
                 var status = s.GetPlaybackInfo().PlaybackStatus;
                 if (props?.Title == Title)
                 {
+                    // Controls, not just metadata: Supported maps onto SMTC button flags through a
+                    // different call than Publish does, so reading only the text would leave the whole
+                    // PlaybackCommands mapping ungated.
+                    var controls = s.GetPlaybackInfo().Controls;
                     return $"app={s.SourceAppUserModelId}|title={props.Title}|artist={props.Artist}"
-                        + $"|album={props.AlbumTitle}|status={status}";
+                        + $"|album={props.AlbumTitle}|status={status}"
+                        + $"|next={controls.IsNextEnabled}|ff={controls.IsFastForwardEnabled}"
+                        + $"|rw={controls.IsRewindEnabled}";
                 }
                 others.Add($"{s.SourceAppUserModelId}:{props?.Title}");
             }

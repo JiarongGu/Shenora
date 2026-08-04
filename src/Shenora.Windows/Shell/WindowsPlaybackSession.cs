@@ -44,6 +44,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     private readonly Action<string>? _log;
     private readonly object _gate = new();
     private PlaybackCommands _supported;
+    private TimeSpan _skipInterval = TimeSpan.FromSeconds(15);
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a WinRT callback.</param>
@@ -77,8 +78,24 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
                 _controls.IsStopEnabled = value.HasFlag(PlaybackCommands.Stop);
                 _controls.IsNextEnabled = value.HasFlag(PlaybackCommands.Next);
                 _controls.IsPreviousEnabled = value.HasFlag(PlaybackCommands.Previous);
+                // ⚠ SMTC has no skip-by-interval button. FastForward/Rewind are the closest thing it
+                // offers and are CONTINUOUS-seek semantics on some surfaces, so this is an honest
+                // approximation rather than an exact match — documented on IPlaybackSession, and the
+                // reason the request still carries the interval the app configured.
+                _controls.IsFastForwardEnabled = value.HasFlag(PlaybackCommands.SkipForward);
+                _controls.IsRewindEnabled = value.HasFlag(PlaybackCommands.SkipBackward);
             }, nameof(Supported));
         }
+    }
+
+    /// <inheritdoc />
+    public TimeSpan SkipInterval
+    {
+        get { lock (_gate) return _skipInterval; }
+        // Nothing to push to SMTC: Windows has no preferred-interval concept, so this is only what the
+        // request carries back. The property still exists on every shell because the CONTRACT is portable —
+        // an app sets it once and the platforms that can render it, do.
+        set { lock (_gate) _skipInterval = value; }
     }
 
     /// <inheritdoc />
@@ -194,11 +211,17 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             SmtcButton.Stop => PlaybackCommand.Stop,
             SmtcButton.Next => PlaybackCommand.Next,
             SmtcButton.Previous => PlaybackCommand.Previous,
+            SmtcButton.FastForward => PlaybackCommand.SkipForward,
+            SmtcButton.Rewind => PlaybackCommand.SkipBackward,
             _ => (PlaybackCommand?)null,
         };
         // An unmapped button (record, channel up, fast-forward…) is dropped rather than guessed at. The
         // app declared what it supports; inventing a mapping here would fire a command it never offered.
-        if (command is { } mapped) Raise(new PlaybackCommandRequest { Command = mapped });
+        if (command is not { } mapped) return;
+        var interval = mapped is PlaybackCommand.SkipForward or PlaybackCommand.SkipBackward
+            ? SkipInterval
+            : (TimeSpan?)null;
+        Raise(new PlaybackCommandRequest { Command = mapped, Interval = interval });
     }
 
     private void OnPositionChangeRequested(

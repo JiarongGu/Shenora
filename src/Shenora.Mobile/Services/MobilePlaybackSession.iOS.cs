@@ -29,6 +29,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
     private readonly object _gate = new();
     private readonly List<(MPRemoteCommand Command, NSObject Target)> _targets = [];
     private PlaybackCommands _supported;
+    private TimeSpan _skipInterval = TimeSpan.FromSeconds(15);
     private MPNowPlayingInfo _info = new();
     private bool _disposed;
 
@@ -46,6 +47,8 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         Wire(MPRemoteCommandCenter.Shared.NextTrackCommand, PlaybackCommand.Next);
         Wire(MPRemoteCommandCenter.Shared.PreviousTrackCommand, PlaybackCommand.Previous);
         WireSeek(MPRemoteCommandCenter.Shared.ChangePlaybackPositionCommand);
+        WireSkip(MPRemoteCommandCenter.Shared.SkipForwardCommand, PlaybackCommand.SkipForward);
+        WireSkip(MPRemoteCommandCenter.Shared.SkipBackwardCommand, PlaybackCommand.SkipBackward);
         Supported = PlaybackCommands.None;
     }
 
@@ -70,9 +73,40 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
                 c.NextTrackCommand.Enabled = value.HasFlag(PlaybackCommands.Next);
                 c.PreviousTrackCommand.Enabled = value.HasFlag(PlaybackCommands.Previous);
                 c.ChangePlaybackPositionCommand.Enabled = value.HasFlag(PlaybackCommands.Seek);
+                c.SkipForwardCommand.Enabled = value.HasFlag(PlaybackCommands.SkipForward);
+                c.SkipBackwardCommand.Enabled = value.HasFlag(PlaybackCommands.SkipBackward);
+                // The interval is re-applied here as well as in the setter, because an app may set
+                // Supported first — and without PreferredIntervals iOS draws a bare arrow with no number,
+                // which reads to a user as a different control entirely.
+                ApplySkipInterval();
             }, nameof(Supported));
         }
     }
+
+    /// <inheritdoc />
+    public TimeSpan SkipInterval
+    {
+        get { lock (_gate) return _skipInterval; }
+        set
+        {
+            lock (_gate) _skipInterval = value;
+            ApplySkipInterval();
+        }
+    }
+
+    /// <summary>
+    /// Push the interval to both commands. ⚠ This is what makes iOS render the NUMBER on the button —
+    /// PreferredIntervals is a display contract as much as a behavioural one, so an unset interval looks
+    /// like a bare skip arrow rather than a 15-second one.
+    /// </summary>
+    private void ApplySkipInterval() => Try(() =>
+    {
+        // double[], NOT NSNumber[] — checked against the binding after assuming otherwise, the same way
+        // MPNowPlayingInfoCenter.playbackState turned out not to exist here at all.
+        double[] seconds = [SkipInterval.TotalSeconds];
+        MPRemoteCommandCenter.Shared.SkipForwardCommand.PreferredIntervals = seconds;
+        MPRemoteCommandCenter.Shared.SkipBackwardCommand.PreferredIntervals = seconds;
+    }, nameof(SkipInterval));
 
     /// <inheritdoc />
     public event Action<PlaybackCommandRequest>? CommandReceived;
@@ -167,6 +201,26 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         _targets.Add((command, target));
     }
 
+    /// <summary>
+    /// iOS sends the interval WITH the event, so that is what is reported rather than the configured value
+    /// — honouring what arrived is more correct than assuming what was asked for, and the two can differ if
+    /// the system chose from the preferred list.
+    /// </summary>
+    private void WireSkip(MPSkipIntervalCommand command, PlaybackCommand mapped)
+    {
+        var target = command.AddTarget(args =>
+        {
+            // Interval is a plain double on the event (not an NSNumber, unlike the ObjC signature), and
+            // it can arrive as 0 — in which case the configured value is the honest fallback.
+            var seconds = args is MPSkipIntervalCommandEvent e && e.Interval > 0
+                ? e.Interval
+                : SkipInterval.TotalSeconds;
+            Raise(mapped, interval: TimeSpan.FromSeconds(seconds));
+            return MPRemoteCommandHandlerStatus.Success;
+        });
+        _targets.Add((command, target));
+    }
+
     private void WireSeek(MPChangePlaybackPositionCommand command)
     {
         var target = command.AddTarget(args =>
@@ -179,11 +233,11 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         _targets.Add((command, target));
     }
 
-    private void Raise(PlaybackCommand command, TimeSpan? position = null)
+    private void Raise(PlaybackCommand command, TimeSpan? position = null, TimeSpan? interval = null)
     {
         var handler = CommandReceived;
         if (handler is null) return;
-        var request = new PlaybackCommandRequest { Command = command, Position = position };
+        var request = new PlaybackCommandRequest { Command = command, Position = position, Interval = interval };
         AppCallback.Run(() => handler(request),
             ex => Log(() => $"[Shenora.Mobile] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
     }

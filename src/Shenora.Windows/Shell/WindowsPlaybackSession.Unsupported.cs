@@ -45,6 +45,10 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
 
     /// <inheritdoc />
     /// <remarks>Unreachable — the constructor refuses first.</remarks>
+    public TimeSpan SkipInterval { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <inheritdoc />
+    /// <remarks>Unreachable — the constructor refuses first.</remarks>
     public event Action<PlaybackCommandRequest>? CommandReceived;
 
     /// <inheritdoc />

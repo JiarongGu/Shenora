@@ -323,6 +323,7 @@ interface Shenora.Core.IPathLocker
   public abstract System.Threading.Tasks.Task<Shenora.Core.IPathLease> TryAcquireAsync(string path, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IPlaybackSession
   public abstract Shenora.Core.PlaybackCommands Supported { get; set; }
+  public abstract System.TimeSpan SkipInterval { get; set; }
   public abstract event System.Action<Shenora.Core.PlaybackCommandRequest> CommandReceived
   public abstract void Clear()
   public abstract void Publish(Shenora.Core.PlaybackInfo info)
@@ -536,11 +537,14 @@ enum Shenora.Core.PlaybackCommand (int)
   public const Shenora.Core.PlaybackCommand Play = 0
   public const Shenora.Core.PlaybackCommand Previous = 5
   public const Shenora.Core.PlaybackCommand Seek = 6
+  public const Shenora.Core.PlaybackCommand SkipBackward = 8
+  public const Shenora.Core.PlaybackCommand SkipForward = 7
   public const Shenora.Core.PlaybackCommand Stop = 3
   public const Shenora.Core.PlaybackCommand TogglePlayPause = 2
   public int value__
 sealed class Shenora.Core.PlaybackCommandRequest : System.IEquatable<Shenora.Core.PlaybackCommandRequest>
   public Shenora.Core.PlaybackCommandRequest <Clone>$()
+  public System.TimeSpan? Interval { get; init; }
   public System.TimeSpan? Position { get; init; }
   public bool Equals(Shenora.Core.PlaybackCommandRequest? other)
   public override bool Equals(object? obj)
@@ -556,6 +560,8 @@ sealed class Shenora.Core.PlaybackCommandRequest : System.IEquatable<Shenora.Cor
   public const Shenora.Core.PlaybackCommands Play = 1
   public const Shenora.Core.PlaybackCommands Previous = 32
   public const Shenora.Core.PlaybackCommands Seek = 64
+  public const Shenora.Core.PlaybackCommands SkipBackward = 256
+  public const Shenora.Core.PlaybackCommands SkipForward = 128
   public const Shenora.Core.PlaybackCommands Stop = 8
   public const Shenora.Core.PlaybackCommands TogglePlayPause = 4
   public int value__

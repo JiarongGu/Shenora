@@ -38,9 +38,11 @@ internal static class PlaybackSessionProbe
                 log($"[PLAYBACK] command <= {r.Command}"
                     + (r.Position is { } p ? $" @{p.TotalSeconds:0.00}s" : ""));
 
+            session.SkipInterval = TimeSpan.FromSeconds(15);
             session.Supported = PlaybackCommands.Play | PlaybackCommands.Pause
                 | PlaybackCommands.TogglePlayPause | PlaybackCommands.Next
-                | PlaybackCommands.Previous | PlaybackCommands.Seek;
+                | PlaybackCommands.Previous | PlaybackCommands.Seek
+                | PlaybackCommands.SkipForward | PlaybackCommands.SkipBackward;
 
             session.Publish(new PlaybackInfo
             {

@@ -87,4 +87,39 @@ public class PlaybackSessionTests
         Assert.NotEqual(PlaybackState.Paused, PlaybackState.Buffering);
         Assert.NotEqual(PlaybackState.Stopped, PlaybackState.Buffering);
     }
+
+    [Fact]
+    public void Skip_by_interval_exists_on_BOTH_enums_and_is_distinct_from_Next_and_Seek()
+    {
+        // Added on adopter feedback (2026-08-04): the first adopter had ±15 s working and gave it up to
+        // adopt the kit. For long-form audio Next is the wrong granularity and Seek is a scrubber, so
+        // neither substitutes — which is exactly why these are their own commands rather than aliases.
+        Assert.NotEqual(PlaybackCommands.Next, PlaybackCommands.SkipForward);
+        Assert.NotEqual(PlaybackCommands.Seek, PlaybackCommands.SkipForward);
+        Assert.NotEqual(PlaybackCommands.Previous, PlaybackCommands.SkipBackward);
+        Assert.NotEqual(PlaybackCommand.Next, PlaybackCommand.SkipForward);
+        Assert.NotEqual(PlaybackCommand.Seek, PlaybackCommand.SkipForward);
+    }
+
+    [Fact]
+    public void A_skip_request_carries_an_interval_and_a_seek_carries_a_position()
+    {
+        // The two are separate properties on purpose: a skip is relative and a seek is absolute, and one
+        // field serving both would make a handler guess which meaning it received.
+        var skip = new PlaybackCommandRequest
+        {
+            Command = PlaybackCommand.SkipForward,
+            Interval = TimeSpan.FromSeconds(15),
+        };
+        var seek = new PlaybackCommandRequest
+        {
+            Command = PlaybackCommand.Seek,
+            Position = TimeSpan.FromMinutes(3),
+        };
+
+        Assert.Equal(TimeSpan.FromSeconds(15), skip.Interval);
+        Assert.Null(skip.Position);
+        Assert.Equal(TimeSpan.FromMinutes(3), seek.Position);
+        Assert.Null(seek.Interval);
+    }
 }

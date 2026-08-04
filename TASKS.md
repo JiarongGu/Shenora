@@ -307,6 +307,118 @@ it. See `docs/archive/tasks.md`._
   - It belongs where `IUpdateSource` already lives (`Shenora.Core`, no new package per D2) and needs
     no dependency: `System.IO.Compression` is in the shared framework.
 
+### From the first adopter, `IPlaybackSession` + MAUI shell adoption (2026-08-04)
+
+The server-backed sibling adopted 0.9.0's `IPlaybackSession` the day it shipped, replacing a
+hand-written equivalent it had built the day before. **The contract matched almost exactly** — its
+`Set`/`SetState`/`Clear`/`CommandRequested` map one-for-one onto `Publish`/`Report`/`Clear`/
+`CommandReceived`, and it had independently arrived at artwork-as-BYTES with the fetch and cache kept
+portable above the platform. That convergence is the useful signal; the two gaps below are the whole
+delta, and only the first blocks anything.
+
+- [ ] **`PlaybackCommands` needs SKIP-BY-INTERVAL (±15 s), and it is a functional loss without it.** The
+  shipped set is Play/Pause/TogglePlayPause/Stop/Next/Previous/Seek, so an adopter with **long-form
+  audio** — an audiobook, a podcast, a lecture, an hour-plus spoken-word track — cannot offer the one
+  transport control that shape of content actually wants. Next/Previous are the wrong granularity when a
+  "track" is fifty minutes long, and `Seek` is a scrubber rather than a button. The adopter had this
+  working and gave it up to adopt the kit, which is exactly the trade the kit should not force.
+  - Both platforms already express it and the code exists to port: iOS
+    `MPRemoteCommandCenter.SkipForwardCommand`/`SkipBackwardCommand`, where **`PreferredIntervals` is
+    also what makes iOS draw the "15" ON the button** — without it the control renders as a bare arrow
+    with no interval, which reads as a different feature. Android is
+    `PlaybackState.ActionFastForward`/`ActionRewind` + `OnFastForward`/`OnRewind`. Windows' SMTC has
+    `FastForward`/`Rewind` too, so all three can answer.
+  - Shape suggestion, deliberately small: two more `PlaybackCommands` flags plus an interval the app
+    states once (the platforms take a preferred interval, not a per-press value), and `Seconds` on
+    `PlaybackCommandRequest` alongside the existing `Position` — mirroring how `Seek` already carries one.
+  - ⚠ The adopter's own note, worth keeping: a *fixed* 15 s is what both platforms' UI is designed
+    around, so an arbitrary interval is not obviously better than a small allowed set.
+
+- [ ] **🔴 BLOCKER: `Shenora.iOS` 0.9.0 cannot be consumed unless the app opts into the Live Activity
+  devkit.** An iOS app that references the package and does NOT set `ShenoraLiveActivityViews` fails to
+  LINK. Measured on the adopter's first 0.9.0 build:
+
+  ```
+  clang++ exited with code 1: Undefined symbols for architecture x86_64:
+    "_shenora_activity_end",  referenced from: <initial-undefines>
+    "_shenora_activity_free", referenced from: <initial-undefines>
+    …
+  ```
+
+  - **Mechanism.** `MobileLiveActivities.iOS` declares `[DllImport("__Internal")]` for the five
+    `shenora_activity_*` entry points. On iOS `__Internal` is resolved by the STATIC LINKER, not at
+    runtime — so the symbols must exist in the final binary. They are produced by
+    `ShenoraBuildLiveActivity`, whose condition is `'$(ShenoraLiveActivityViews)' != ''`. No opt-in ⇒ no
+    library ⇒ no symbols ⇒ the app does not link. The type is always registered, so nothing can be
+    dropped by trimming either.
+  - **Why the gate missed it: `samples/Shenora.Sample.Maui` OPTS IN** (its csproj sets the property), so
+    the only iOS app the repo builds is the one configuration that works. This is the repo's own
+    "a package no gate compiles" objection, one level in — the package compiles, but the package as a
+    NON-Live-Activity adopter consumes it does not. A second sample, or the existing one built twice, is
+    what would have caught it.
+  - **It contradicts the shipped design.** The CHANGELOG says `Unavailable` returns a reason including
+    *"shim not linked"*, and the class XML says the type "does nothing useful unless the app's build
+    includes the widget extension" — both describe graceful degradation that a link-time `__Internal`
+    import makes impossible. The intent is right; the binding mechanism defeats it.
+  - **Fix options, cheapest first.** (a) Resolve the five entry points with `dlsym` and report
+    `Unavailable("shim not linked")` when absent — this is what the docs already promise, keeps the
+    opt-in property meaningful, and makes the type honest on every configuration. (b) Build and link the
+    SHIM unconditionally (it does not need the app's views; only the `.appex` does) and keep only the
+    widget extension behind the property. (c) Leave it link-time but make the package's presence imply
+    the opt-in, which is the worst of the three — every adopter then pays for a devkit they may not want.
+  - **Adopter impact right now:** iOS is stuck. Rolling back is not available either, because
+    `IPlaybackSession` — the thing being adopted — is new in 0.9.0, so 0.8.0 has no iOS lock screen at
+    all. The Android half is unaffected and is verified.
+
+- [ ] **Android: the session's `Token` has to cross the kit/app boundary, and today nothing does.** This
+  one BLOCKS the Android half of the adoption, and it is the kit's own documented split that cannot be
+  built: *"the kit owns the session and the app owns the notification"* — but a `Notification.MediaStyle`
+  is attached to a session by `SetMediaSession(session.SessionToken)`, and `MobilePlaybackSession` exposes
+  no token (nothing in `src/` mentions one). So the app can post a notification with buttons, and it
+  cannot post the MEDIA notification the split describes.
+  - What is lost without it is the visible half the boundary was drawn around: the system media player in
+    the shade and on the lock screen is built from the SESSION and adopts a notification only through that
+    token. Buttons in a plain notification are not the same surface.
+  - Smallest fix is a read-only platform-typed property on the Android implementation (the class is
+    already `public` and platform-specific, so this adds no portable surface and no `Shenora.Core`
+    vocabulary). A portable `object? PlatformSessionHandle` on the interface would also work but puts a
+    weakly-typed member on every shell to serve one.
+  - ⚠ Worth stating in the same breath as the split in the class remarks, since the remarks currently
+    describe a division of labour the adopter then discovers is not connected.
+  - Interim on the adopter's side: keep an app-owned `IPlaybackSession` implementation on Android (the
+    kit's `TryAddSingleton` registration makes overriding it a one-liner, which is the right shape and
+    was noticed and appreciated) and adopt the kit's on iOS, where the app's half — an `AVAudioSession`
+    category — needs nothing from the session.
+
+- [ ] **Document what a MAUI shell's page ORIGIN means for a server-backed adopter — it cost a day.**
+  `HybridWebView` serves the bundle from a synthetic virtual host (`https://0.0.0.1` on Android,
+  measured), which is a SECURE origin. Two separate consequences follow, and both present as the same
+  useless symptom — a bare `TypeError: Failed to fetch`:
+  1. **Mixed content.** Every request to a plain-`http` backend is blocked outright. On Android the app
+     can fix this itself (`MixedContentHandling.AlwaysAllow` appended to `HybridWebViewHandler.Mapper`),
+     and that is arguably where it belongs — it is a real security relaxation and the kit should not
+     make it silently. But nothing SAYS so, and the engine only logs it as a `[warning security]` line
+     that is invisible without a devtools attach.
+  2. **CORS.** After the relaxation the request leaves the device and the *response* is then withheld,
+     because the backend has never heard of that origin. This one the app must fix server-side.
+  - Neither is a kit defect, and neither needs a kit API — **a paragraph in `ADOPTION.md` would have
+    saved the day**: "a server-backed adopter must allowlist the hybrid origin, and relax mixed content
+    if the backend is http". Suggest stating the origins per platform, since an adopter cannot guess
+    them and they are not obviously discoverable. ⚠ iOS's was NOT measurable from the adopter's machine
+    (no `ios-webkit-debug-proxy`; see below), so the kit stating it is worth more than it sounds.
+  - The adopter's workaround for the measurement gap was to port this repo's own `PageDiagFacade`
+    pattern — page → host over IPC, host writes to the device log. That it was needed twice, in two
+    repos, for the same reason (WebKit does not forward page `console.*`) is the two-consumer signal for
+    **shipping a tiny page-diagnostic facade in the kit** rather than leaving every adopter to rebuild
+    it. Filed as an observation, not a request — it is three lines to write and possibly not worth a
+    public type.
+
+- Noted for `DM3`, not a request: that adopter is a **second consumer for the conversion**, and its case
+  is the interesting one — it converts SERVER-side today and would rather the phone decided for itself,
+  because Android codec support is vendor-declared per DEVICE and the server is therefore guessing on
+  the client's behalf. The planner already moves that decision to the right machine; the conversion is
+  what it cannot yet act on.
+
 ### C. Held at the two-consumer bar
 
 **Nothing below is blocking.** The 0.2.0 design pass (D1–D4) and the two whole-codebase reviews are

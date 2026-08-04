@@ -57,6 +57,20 @@ public enum PlaybackCommands
 
     /// <summary>Scrubbing to an absolute position — the OS renders a draggable timeline.</summary>
     Seek = 1 << 6,
+
+    /// <summary>
+    /// Jump forward by <see cref="IPlaybackSession.SkipInterval"/> — the ±15 s button.
+    /// <para>
+    /// Distinct from <see cref="Next"/> and from <see cref="Seek"/>, and both distinctions are the point.
+    /// For LONG-FORM audio — an audiobook, a podcast, a lecture — "next" is the wrong granularity when a
+    /// track is fifty minutes long, and a scrubber is a drag rather than a button. Added because the first
+    /// adopter had this working and gave it up to adopt the kit, which is the trade the kit must not force.
+    /// </para>
+    /// </summary>
+    SkipForward = 1 << 7,
+
+    /// <summary>Jump back by <see cref="IPlaybackSession.SkipInterval"/>.</summary>
+    SkipBackward = 1 << 8,
 }
 
 /// <summary>One transport control. A single value, never a combination — see <see cref="PlaybackCommands"/>.</summary>
@@ -82,6 +96,12 @@ public enum PlaybackCommand
 
     /// <summary>Scrub to <see cref="PlaybackCommandRequest.Position"/>.</summary>
     Seek,
+
+    /// <summary>Jump forward by <see cref="PlaybackCommandRequest.Interval"/>.</summary>
+    SkipForward,
+
+    /// <summary>Jump back by <see cref="PlaybackCommandRequest.Interval"/>.</summary>
+    SkipBackward,
 }
 
 /// <summary>
@@ -100,6 +120,19 @@ public sealed record PlaybackCommandRequest
     /// Where to seek to — set only for <see cref="PlaybackCommand.Seek"/>, null for every other command.
     /// </summary>
     public TimeSpan? Position { get; init; }
+
+    /// <summary>
+    /// How far to jump — set for <see cref="PlaybackCommand.SkipForward"/> and
+    /// <see cref="PlaybackCommand.SkipBackward"/>, null otherwise.
+    /// <para>
+    /// It is carried on the request even though the app already declared
+    /// <see cref="IPlaybackSession.SkipInterval"/>, because one platform sends the interval WITH the event
+    /// (iOS's <c>MPSkipIntervalCommandEvent</c>) and honouring what arrived is more correct than assuming
+    /// what was asked for. Where a platform sends nothing, this is the configured interval, so a handler
+    /// can always just use it.
+    /// </para>
+    /// </summary>
+    public TimeSpan? Interval { get; init; }
 }
 
 /// <summary>
@@ -200,6 +233,22 @@ public interface IPlaybackSession
     /// <see cref="PlaybackCommands.Seek"/>.
     /// </summary>
     PlaybackCommands Supported { get; set; }
+
+    /// <summary>
+    /// How far <see cref="PlaybackCommands.SkipForward"/>/<see cref="PlaybackCommands.SkipBackward"/> jump.
+    /// Default 15 seconds.
+    /// <para>
+    /// Stated ONCE rather than per press, because that is what the platforms take — a *preferred* interval
+    /// they render onto the button itself. On iOS it is literally what makes the control draw "15" instead of
+    /// a bare arrow, so leaving it unset reads to a user as a different feature.
+    /// </para>
+    /// <para>
+    /// ⚠ Keep it to a value the platform UI is designed around. 15 s is the near-universal default and 10/30
+    /// are common; an arbitrary interval is not obviously better and renders less well. Set it before
+    /// <see cref="Supported"/>, since that is when the controls are configured.
+    /// </para>
+    /// </summary>
+    TimeSpan SkipInterval { get; set; }
 
     /// <summary>Say what is playing. Call on a track change, or when metadata arrives late (a tag read, artwork decoded).</summary>
     void Publish(PlaybackInfo info);

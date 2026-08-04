@@ -677,4 +677,5 @@ Shenora.Windows.WindowsPlaybackSession
   method Dispose
   method Publish
   method Report
+  property SkipInterval
   property Supported
