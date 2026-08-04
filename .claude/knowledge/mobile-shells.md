@@ -189,6 +189,12 @@ Earned across the Android port and the iOS port (both 2026-08-02).
       `SIGKILL (Code Signature Invalid)` / `CODESIGNING Invalid Page` at launch, which reads like a
       provisioning problem and is really "the bundle no longer matches its signature". `rm -rf bin obj` and
       build clean instead. Cost: one full build; the alternative cost an hour chasing a phantom.
+      **This has now bitten twice, the second time from a DEVTOOL** — `dev.mjs mac build`'s link check
+      deleted the `.app` but not `obj/`, so its follow-up rebuild shipped an inconsistent bundle and every
+      launch died instantly. Both times the build reported success throughout, which is the whole problem:
+      a partially-deleted bundle is a RUN-time failure that no build output mentions. If a script deletes
+      anything under `bin/`, it must clean `obj/` too — and something must actually LAUNCH the app
+      afterwards, or the corruption ships.
     - **⚠ An edited `Platforms/iOS/Info.plist` does NOT reach the app on an incremental build.**
       `_WriteAppManifest` merges `obj/**/AppManifest.plist` — a COPY of the source — with generated
       fragments, and its Inputs/Outputs are satisfied by that copy. The built plist's mtime moves while its

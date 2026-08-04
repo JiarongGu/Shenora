@@ -14,6 +14,31 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Fixed
+
+- 🔴 **`Shenora.iOS` 0.9.0 could not be linked by an app that did not enable the Live Activity devkit.**
+  Five undefined symbols at link time (`_shenora_activity_*`). If you are on 0.9.0 and hit this, the only
+  workaround was to enable the devkit; rolling back does not help, because `IPlaybackSession` is new in
+  0.9.0 and 0.8.0 has no iOS lock screen at all. **Reported by the first adopter and reproduced exactly.**
+  - `[DllImport("__Internal")]` is resolved at STATIC LINK time, and the library carrying those symbols
+    was only built when `ShenoraLiveActivityViews` was set. The shim is now built **unconditionally**;
+    only the widget stays opt-in, because only it needs the app's own SwiftUI views.
+  - Runtime lookup was tried first and does not work: removing the `DllImport` removes the only reference
+    to the symbols, and nothing retains them. Measured — the archive held all five while the app binary
+    held zero. Neither `ForceLoad` nor `-u` via the linker args changed that.
+  - ⚠ `ILiveActivities.Unavailable` no longer claims it can report a missing shim. It never could: that
+    was a link-time failure being described by a runtime property. It now reports what it can actually
+    observe — the OS version, the user having switched activities off, or a failed call.
+  - **The gate that should have caught this now exists.** `dev.mjs mac build` also builds the sample
+    WITHOUT the opt-in, because the one iOS app this repo builds was the single configuration that
+    worked. Sabotage-verified in both directions.
+
+- **Android: the session token is exposed** (`MobilePlaybackSession.SessionToken`). The kit documented
+  "the kit owns the session, the app owns the notification", but a `MediaStyle` notification binds to a
+  session BY TOKEN and none was reachable — so the app's half of that split could not be written at all.
+  Android-only on purpose: the type is `Android.Media.Session.MediaSession.Token`, and putting it on the
+  portable contract would drag a platform type into `Shenora.Core`.
+
 ### Added
 
 - **`IPlaybackSession` gains SKIP-BY-INTERVAL** — `PlaybackCommands.SkipForward`/`SkipBackward`,
