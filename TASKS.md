@@ -45,6 +45,13 @@ and hits something, or when a feature worth generalising emerges while building 
 > while developing another application, it gets generalized and promoted into Shenora (common
 > design/library/tool sharing). And the kit must be able to adopt MOBILE application logic too:
 > Capacitor (and similar) shells speaking the same IPC envelope through a pluggable transport.
+>
+> DIRECTION (user, 2026-08-04): *"one thing you need to keep in mind, we are doing a library, for
+> multiple platform, so if the library can provide powerful devtooling that will be even better so
+> for example rely on less swift code for ios (dynamic island) and support platform logic like now
+> playing"* — so **PLATFORM LOGIC is in scope, not just the shell**, and the measure of a platform
+> capability is *how little native code an adopting app has to write*. See
+> `### Platform integration` below for the read on the two named examples.
 
 ## Open
 
@@ -460,6 +467,69 @@ coverage set the same set as the content set?"_
 
 _Thumbnails and image resize are DEFERRED with the analysis already done — D43. They cost 0 MB on every
 platform and need no engine, so they are cheap to add later, and the player does not depend on them._
+
+### Platform integration — OS-level logic, measured by how little native code an app writes
+
+> DIRECTION (user, 2026-08-04): *"we are doing a library, for multiple platform, so if the library can
+> provide powerful devtooling that will be even better so for example rely on less swift code for ios
+> (dynamic island) and support platform logic like now playing"*
+
+This widens the kit's scope in a specific way and it is worth stating precisely, because it is easy to
+read as "add features". The shell packages so far hold what an app needs to *host a page* — windows, IPC,
+dialogs, interception. This direction says they should also hold what an app needs to *be a citizen of the
+OS*: the lock-screen transport, the system media controls, the live-activity surface. The stated measure is
+the useful part — **not "does the kit expose the API" but "how much native code does the adopting app still
+have to write"** — which is the same test D45 passed by moving interception into the shells (an adopting app
+writes `interceptor.UseFiles(...)` and no platform code at all).
+
+Two named examples, and they are NOT the same difficulty. Being honest about which is which matters more
+than being encouraging about both.
+
+- [ ] **NOW PLAYING — the textbook fit, and the natural successor to D45.** Once a page can play a local
+  file, the OS needs to know what is playing: iOS `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`,
+  Android `MediaSession`, Windows `SystemMediaTransportControls`. One portable contract in `Shenora.Core`
+  (metadata + playback state + position + which transport commands are supported), three shell
+  implementations — exactly the `IWebViewInterceptor`/`IFileDialogs`/`IUiDispatcher` shape the kit already
+  has three times over, so the precedent, the layering law and the review instincts all transfer.
+  - **The interesting design half is the DIRECTION of travel.** Metadata flows app → OS, but commands flow
+    OS → app: a lock-screen pause, a headphone double-tap, a car stereo's next-track. That makes it an
+    EVENT SOURCE, so it rides `IEventBus` / the batched notification pipe rather than request/response —
+    and it must be a *seam the app answers*, because only the app knows what "next" means. The kit must not
+    ship a queue model; that is the app's.
+  - **Position reporting is the trap to design for up front.** These APIs want an elapsed time and a rate,
+    not a tick stream, and a naive "push the current time every 250 ms" both burns battery and drifts
+    against the OS's own extrapolation. The contract should take *(position, rate, timestamp)* and let the
+    platform extrapolate — which is what all three actually want.
+  - It clears the two-consumer bar the moment a second sibling wants it; media was the first thing three of
+    them all needed, so ask before assuming this is only one app's.
+
+- [ ] **DYNAMIC ISLAND / Live Activities — worth doing, but it cannot be zero Swift, and the plan must say
+  so.** A Live Activity's UI *is* a SwiftUI view in a widget extension. That is an OS requirement, not a
+  .NET limitation, so no amount of kit work removes it and a `net10.0-ios` library cannot supply it.
+  ⚠ **VERIFY FIRST, do not design on it:** the crux is whether ActivityKit's start/update/end surface is
+  reachable from C# at all, or only from Swift. My understanding is that ActivityKit is a Swift-only API
+  with no Objective-C interface, which would mean a small Swift shim is required even for the LIFECYCLE and
+  not just the view — but that is a claim to test with a probe on the Mac before it steers anything, and
+  this repo has a rule about exactly that (`.claude/knowledge/doc-claims.md`: verify against the source,
+  not the design doc). The honest goal is therefore **shrink the Swift, not eliminate it**: the kit owns the
+  activity's state model, its lifecycle and the update pipe from C#, so the app's Swift is a thin view over
+  a payload the kit defines. That is a real reduction and it is defensible; "no Swift" would not be.
+  - The same question then applies to Android's equivalent surfaces (foreground-service notifications,
+    `MediaStyle`) — which is what keeps this a PORTABLE capability rather than an iOS feature.
+
+- [ ] **"Powerful devtooling" is the other half of the direction, and it is the part this repo has already
+  proved works.** Every platform capability so far became trustworthy the moment it had a HARNESS: `dev.mjs
+  android`/`mac` for the device loops, `InterceptorProbe` and `MediaRangeProbe` for the serving seam, and
+  the D44 body-rule asymmetry was only ever *found* because a probe could run on both devices. So the rule
+  to carry into any of the above: **a platform capability ships with the tooling that drives and observes
+  it**, or it ships as an assertion. For Now Playing that means being able to see the OS's own view of the
+  session from the dev loop (Android `dumpsys media_session`, and the simulator/device equivalent on iOS)
+  rather than trusting that a call succeeded.
+
+**⚠ Nothing here is started, and none of it should jump the queue on its own.** `DM3` (the conversion) is
+the live media work, and the harvest rule (D15) still applies: these arrive when a sibling app needs them,
+which is what stops the kit growing features nobody adopts. The direction above changes what is IN SCOPE
+when that happens, not the order.
 
 ### Release hygiene — ✅ both items the 0.6.0 incident earned are CLOSED (2026-08-04)
 
