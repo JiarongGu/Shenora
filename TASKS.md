@@ -7,11 +7,19 @@ of this file is the size of the remaining work, which is the whole point of look
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
-**Status: 0.8.0 PUBLISHED (2026-08-03).** Five NuGet packages + `@shenora/react` on npm, verified live on
-the feed. It carries the **D2a relocation** — `WebViewResourceRequest`/`Response`/`ByteRange` moved
+**Status: 0.9.0 PUBLISHED (2026-08-04).** Six NuGet packages (`Shenora.Media` is new) + `@shenora/react`,
+**verified against the FEED with the local 0.9.0 cache cleared first** — otherwise you validate your own build.
+It carries the D45 re-layering (interception is a middleware pipeline in Core, implemented per shell),
+`IPlaybackSession` on all three shells, and the iOS Live Activity devkit. **No `### Breaking` section**: the
+WinRT requirement is opt-in via a second TFM on `Shenora.Windows` (**D46**), so existing consumers change
+nothing. Post-publish verification — including a real `PackageReference` spike proving the devkit's automatic
+`buildTransitive` import — is in `docs/archive/tasks.md`. The only item still unproven is the Dynamic Island's
+visual rendering, which needs a device.
+
+_0.8.0 (2026-08-03) carried the **D2a relocation** — `WebViewResourceRequest`/`Response`/`ByteRange` moved
 `Shenora.Windows` → `Shenora.Core`, a documented break whose whole migration is one `using Shenora.Core;`.
-That release exists because the move had shipped in the DOCS and not in the PACKAGES, which would have met
-the first adopter as a compile error.
+That release existed because the move had shipped in the DOCS and not in the PACKAGES, which would have met
+the first adopter as a compile error._
 
 > **This library is the intended foundation for the author's apps** (owner, 2026-08-03), so the bar on the
 > published surface is an adopter's, not a maintainer's: docs that match the artifact, breaks documented

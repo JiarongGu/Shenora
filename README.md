@@ -37,7 +37,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
 | `Shenora.Media` | NuGet | `net10.0` | Media LOGIC only: a per-stream playability planner and the probe-result shape it reads. Ships no codec list and no engine — and **is not needed to play a file** (see below). |
-| `Shenora.Windows` | NuGet | `net10.0-windows` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. |
+| `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
 | `@shenora/react` | npm | ES2022 / ESM | The client half — bridge, event bus, store, hooks. |
@@ -45,6 +45,13 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 The TFM column is here so an adopter can tell whether a package fits without downloading the nupkg to
 inspect it. **One shell package per platform** — you reference the one you are building for, and the
 two mobile ones are built from a single shared source tree so they cannot drift.
+
+**`Shenora.Windows` offers two TFMs and you pick, which is the point** (D46). Everything in the shell is in
+both; the versioned one additionally implements `IPlaybackSession` (Windows' media flyout and lock-screen
+transport), because `SystemMediaTransportControls` is WinRT and the WinRT projections exist only when the
+target framework names a Windows SDK version. Stay on plain `net10.0-windows` and that one capability refuses
+by name with the one-line fix in the message; retarget and it works, on a Windows 10 1809 floor. **The kit
+does not narrow your supported platforms for a feature you did not ask for.**
 
 Dependencies — the graph is a **diamond, not a chain**:
 

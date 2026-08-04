@@ -15,6 +15,46 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### 0.9.0 post-publish verification (2026-08-04) — DONE, against the FEED
+
+All six packages confirmed present on nuget.org at 0.9.0, then verified by **clearing the local NuGet cache
+for 0.9.0 first** — without that you validate your own build instead of the feed, which is the trap
+`ADOPTION.md` Stage 0 records and which applies to verifying a release as much as to adopting one.
+
+Three things had been flagged as *unproven in the way a consumer meets them* before the release. Two are now
+closed, against real `PackageReference` spikes rather than project references:
+
+- ✅ **The Live Activity devkit's AUTOMATIC `buildTransitive` import.** This was the real gap: the devkit had
+  only ever been built through an explicit `<Import>` in the sample, because a `ProjectReference` does not
+  pick up `buildTransitive`. A scratch `net10.0-ios` app with nothing but
+  `<PackageReference Include="Shenora.iOS" Version="0.9.0" />`, the one
+  `<ShenoraLiveActivityViews>` property and a views file built
+  `PlugIns/ShenoraLiveActivity.appex` — the kit's own target message
+  (`Shenora: built ShenoraLiveActivity.appex … from Platforms/iOS/IslandViews.swift`) proves the import
+  fired. So the adoption really is one property plus four view bodies.
+- ✅ **The plain-TFM refusal, EXECUTED.** Previously only inferred from the assembly containing the stub
+  rather than the WinRT implementation. A plain `net10.0-windows` consumer restored the package fine, used
+  `WebViewHostOptions` normally, and got the full actionable `NotSupportedException` from
+  `WindowsPlaybackSession`. The versioned-TFM spike constructed, published and reported for real. Both halves
+  of **D46** hold against the published artifact.
+- ⏳ **The Dynamic Island's visual rendering** still needs a device; a simulator gives an activity only a
+  lock-screen scene target. Unchanged, and the only open item.
+
+**Two process notes worth keeping.**
+
+- **An `OutputType=Library` iOS project does NOT exercise the devkit**, and it builds clean while doing
+  nothing — the app-side targets (`_CompileToNative` and friends) never run, so the guard that errors on a
+  missing views file never fires either. The first spike "passed" that way with no views file present at all.
+  An app-shaped spike needs `OutputType=Exe` plus an `ApplicationId`, or the iOS SDK stops at
+  *"A bundle identifier is required"*.
+- **A scratch consumer project under `devtools/` inherits the repo's `Directory.Packages.props`** and fails
+  `NU1008` (central package management forbids inline `Version`). Set
+  `<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>` so the spike behaves like an
+  external consumer, which is the whole point of running it.
+
+`MSB3277` appeared in the consumer build exactly as `ADOPTION.md` Stage 0 says it does — the doc was right,
+and the kit demoting it internally while warning adopters is the correct split.
+
 ### The Live Activity devkit (2026-08-04) — DONE, iOS, verified end to end
 
 **Outcome: the whole adoption is ONE MSBuild property plus four SwiftUI view bodies.** No lifecycle
