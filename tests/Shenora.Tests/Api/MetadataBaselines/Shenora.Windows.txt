@@ -1,0 +1,680 @@
+Shenora.Windows.BrowserArguments
+  method Build
+  method Compose
+Shenora.Windows.CaptionButtonColors
+  method .ctor
+  property CloseGlyphHot
+  property CloseHover
+  property ClosePressed
+  property Glyph
+  property Hover
+  property Pressed
+  property Surface
+Shenora.Windows.CaptionButtonKind
+  field Close
+  field Maximize
+  field Minimize
+  field value__
+Shenora.Windows.CaptionButtonRegion
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Bounds
+  property Kind
+Shenora.Windows.CaptionButtonState
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Hot
+  property Pressed
+Shenora.Windows.ClipboardService
+  method .ctor
+  method GetTextAsync
+  method SetImageFromFileAsync
+  method SetTextAsync
+  method TrySaveImageToFileAsync
+Shenora.Windows.DownloadHit
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property FileName
+  property Url
+Shenora.Windows.DpiHelper
+  field BaseDpi
+  method Scale
+  method ScaleFromDeviceDpi
+  method SystemScale
+Shenora.Windows.DropZoneFacade
+  method .ctor
+  method RouteMessageAsync
+  property ModuleName
+Shenora.Windows.DropZoneManager
+  field Module
+  method .ctor
+  method ClearAll
+  method Dispose
+  method RegisterZone
+  method ShowOverlay
+  method UnregisterZone
+  method UpdateZoneBounds
+Shenora.Windows.DropZoneManagerOptions
+  method .ctor
+  property EventBus
+  property ParentForm
+  property WebView
+Shenora.Windows.EmbeddedResourceProvider
+  method .ctor
+  method BeginWarmup
+  method Exists
+  method GetResourceStream
+  property CanServe
+  property IsEmbedded
+Shenora.Windows.EmbeddedResourceProviderOptions
+  method .ctor
+  property Assembly
+  property FileFallbackDirectory
+  property Log
+  property PreferFiles
+  property ResourcePrefix
+Shenora.Windows.FileDialogs
+  method .ctor
+  method OpenFileAsync
+  method OpenFolderAsync
+  method SaveFileAsync
+Shenora.Windows.FileDialogsOptions
+  method .ctor
+  property Interaction
+  property PathStore
+Shenora.Windows.FormInteraction
+  method .ctor
+  method BlockInteraction
+  method GetMainForm
+  method GetMainFormHandle
+  method SetMainForm
+  method UnblockInteraction
+Shenora.Windows.IAppMaximizable
+  property AppRestoreBounds
+  property IsAppMaximized
+Shenora.Windows.IFormInteraction
+  method GetMainForm
+  method GetMainFormHandle
+  method SetMainForm
+Shenora.Windows.IShellLauncher
+  method LaunchProcess
+  method OpenDirectory
+  method RevealInExplorer
+Shenora.Windows.IWebViewResourceProvider
+  method Exists
+  method GetResourceStream
+Shenora.Windows.IWindowStateStore
+  method Load
+  method Save
+Shenora.Windows.InteractiveSession
+  method .ctor
+  method ClearProfile
+  method ComposeProfileDirectory
+  method RunAsync
+  property IsBusy
+Shenora.Windows.InteractiveSessionOptions
+  method .ctor
+  property Anchor
+  property BackColor
+  property ClientSize
+  property Icon
+  property LoadingFallbackTimeout
+  property MinimumSize
+  property NavigationGuard
+  property OnLoading
+  property Owner
+  property ProfileDirectory
+  property RevealImmediately
+  property Title
+Shenora.Windows.JsonFileWindowStateStore
+  method .ctor
+  method Load
+  method Save
+Shenora.Windows.OptimizedForm
+  event MaximizedChanged
+  method .ctor
+  method .ctor
+  method ApplyChromeTheme
+  method Dispose
+  method Maximize
+  method OnHandleCreated
+  method OnPaint
+  method OnShown
+  method RestoreFromMax
+  method SetCaptionButtons
+  method ToggleMaximize
+  method WndProc
+  property AppRestoreBounds
+  property CaptionButtonColors
+  property CaptionButtonStateChanged
+  property CreateParams
+  property IsAppMaximized
+  property WndProcHook
+Shenora.Windows.OptimizedFormOptions
+  method .ctor
+  property BackColor
+  property DwmBorderColor
+  property FramelessChrome
+  property ImmersiveDarkMode
+  property NativeCaptionButtons
+  property RoundedCorners
+  property TopResizeBorder
+Shenora.Windows.RenderSession
+  method CallDevToolsAsync
+  method DisposeAsync
+  method ExecuteScriptAsync
+  method GetHtmlAsync
+  method NavigateAsync
+  method OnMessage
+  method OnNetwork
+Shenora.Windows.RenderSessionPool
+  method .ctor
+  method Dispose
+  method LeaseAsync
+Shenora.Windows.RenderSessionPoolOptions
+  method .ctor
+  property Anchor
+  property Browser
+  property Capacity
+  property Log
+  property NavigationGuard
+  property NavigationTimeout
+  property OffscreenClientSize
+  property OpTimeout
+  property ResetTimeout
+  property VisiblePerSession
+Shenora.Windows.RestartManagerLockInspector
+  method .ctor
+  method WhoHolds
+Shenora.Windows.SecondaryWindowOptions
+  method .ctor
+  property CreateForm
+  property StateOptions
+  property StateStore
+Shenora.Windows.SecondaryWindows
+  method .ctor
+  method Activate
+  method Close
+  method CloseAll
+  method Dispose
+  method HasWindow
+  method Open
+Shenora.Windows.SessionApiCall
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property BodySample
+  property ContentType
+  property Method
+  property Url
+Shenora.Windows.SessionBrowser
+Shenora.Windows.SessionBrowserOptions
+  method .ctor
+  property AdditionalBrowserArguments
+  property FolderMappings
+  property InitTimeout
+  property IsDevelopment
+  property KeepAliveInBackground
+  property Log
+  property MuteAudio
+  property ProfileDirectory
+  property RequestFilter
+  property ResourceProvider
+  property VirtualHost
+Shenora.Windows.SessionController
+  method ExecuteScriptAsync
+  method FitToBox
+  method GetCookiesAsync
+  method NavigateAsync
+  method OnDownload
+  method OnMessage
+  method OnNavigation
+  method OnNewWindow
+  method Reveal
+  method SetLoading
+  property WindowClosed
+Shenora.Windows.SessionCookie
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Domain
+  property Name
+  property Path
+  property Value
+Shenora.Windows.SessionEndReason
+  field Disposed
+  field RendererFailed
+  field value__
+Shenora.Windows.SessionEnded
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Detail
+  property Reason
+Shenora.Windows.SessionErrorCodes
+  field Busy
+  field Cancelled
+  field Error
+  field Incomplete
+  field Unavailable
+Shenora.Windows.SessionFrame
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Height
+  property Jpeg
+  property Width
+Shenora.Windows.SessionInput
+  method .ctor
+  method Equals
+  method Equals
+  method GetHashCode
+  method PrintMembers
+  method ToString
+  method TryParseLegacyJson
+  method op_Equality
+  method op_Inequality
+  property EqualityContract
+Shenora.Windows.SessionKeyInput
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method Equals
+  method GetHashCode
+  method PrintMembers
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Alt
+  property Ctrl
+  property EqualityContract
+  property Key
+  property Meta
+  property Shift
+Shenora.Windows.SessionPointerAction
+  field Down
+  field Move
+  field Up
+  field value__
+Shenora.Windows.SessionPointerInput
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method Equals
+  method GetHashCode
+  method PrintMembers
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Action
+  property EqualityContract
+  property X
+  property Y
+Shenora.Windows.SessionResult
+  method .ctor
+  method ThrowIfFailed
+  property Blob
+  property ErrorCode
+  property Success
+Shenora.Windows.SessionTextInput
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method Equals
+  method GetHashCode
+  method PrintMembers
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property EqualityContract
+  property Text
+Shenora.Windows.SessionViewport
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property DeviceScaleFactor
+  property Height
+  property Width
+Shenora.Windows.SessionViewportInput
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method Equals
+  method GetHashCode
+  method PrintMembers
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property DeviceScaleFactor
+  property EqualityContract
+  property Height
+  property Width
+Shenora.Windows.SessionWheelInput
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method Equals
+  method GetHashCode
+  method PrintMembers
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property DeltaY
+  property EqualityContract
+  property X
+  property Y
+Shenora.Windows.ShellLauncher
+  method .ctor
+  method LaunchProcess
+  method OpenDirectory
+  method OpenUrl
+  method RevealInExplorer
+Shenora.Windows.SingleInstanceGuard
+  method .ctor
+  method BroadcastActivate
+  method ChannelKey
+  method Dispose
+  method TryAcquire
+  method TryAcquire
+  property ActivateMessageId
+  property ActivateMessageName
+  property ApplicationName
+  property MutexName
+Shenora.Windows.SingleInstanceHostOptions
+  method .ctor
+  property OnSecondInstance
+  property RestartArgument
+  property RestartWaitTimeout
+  property Scope
+Shenora.Windows.SplashPanel
+  method .ctor
+  method Dispose
+  method SetColors
+  method UpdateProgress
+Shenora.Windows.SplashPanelOptions
+  method .ctor
+  property BackColor
+  property BarColor
+  property BarHeight
+  property BarMaxWidth
+  property BarWidthFraction
+Shenora.Windows.StreamingSession
+  method DispatchAsync
+  method DisposeAsync
+  method StartAsync
+  property Controller
+  property Frames
+Shenora.Windows.StreamingSessionOptions
+  method .ctor
+  property Anchor
+  property Browser
+  property FrameBuffer
+  property InitialViewport
+  property JpegQuality
+  property Log
+  property MaxFrameHeight
+  property MaxFrameWidth
+  property NavigationGuard
+  property OnEnded
+Shenora.Windows.TrayIcon
+  method .ctor
+  method Dispose
+  method ExitApplication
+  method ShowWindow
+  property Menu
+Shenora.Windows.TrayIconOptions
+  method .ctor
+  property CloseToTray
+  property ConfigureMenu
+  property ExitMenuItemText
+  property Icon
+  property MenuColors
+  property OpenMenuItemText
+  property Text
+  property Window
+Shenora.Windows.TrayMenuColors
+  method .ctor
+  property Accent
+  property Border
+  property DisabledText
+  property Hover
+  property Surface
+  property Text
+Shenora.Windows.UnhandledExceptionReport
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Exception
+  property IsTerminating
+  property Source
+Shenora.Windows.UnhandledExceptionSource
+  field AppDomain
+  field UiThread
+  field UnobservedTask
+  field value__
+Shenora.Windows.WebView2BuilderExtensions
+  method PrewarmWebView2
+Shenora.Windows.WebView2Interceptor
+  method Use
+  property RangeDelivery
+Shenora.Windows.WebViewCustomScheme
+  method .ctor
+  property AllowedOrigins
+  property HasAuthorityComponent
+  property Name
+  property TreatAsSecure
+Shenora.Windows.WebViewDeferredScheme
+  method .ctor
+  property CacheControl
+  property Handler
+  property Scheme
+Shenora.Windows.WebViewEnvironment
+  method CreateForCurrentThreadAsync
+  method GetAvailableRuntimeVersion
+  method GetSharedAsync
+  method IsRuntimeAvailable
+  method Prewarm
+Shenora.Windows.WebViewEnvironmentOptions
+  method .ctor
+  property AdditionalArguments
+  property BrowserExecutableFolder
+  property CustomSchemes
+  property DevExtraArguments
+  property IsDevelopment
+  property Log
+  property UserDataFolder
+Shenora.Windows.WebViewFolderMapping
+  method .ctor
+  property AccessKind
+  property FolderPath
+  property HostName
+Shenora.Windows.WebViewHost
+  method .ctor
+  method InitializeAsync
+  method Navigate
+  property Interceptor
+  property IsDevelopment
+Shenora.Windows.WebViewHostOptions
+  method .ctor
+  property AllowExternalDrop
+  property AutoReloadCooldown
+  property BackgroundColor
+  property BlockBrowserShortcutsInProduction
+  property ConfigureSettings
+  property DeferredSchemes
+  property DevUrl
+  property DocumentCreatedScripts
+  property Environment
+  property FolderMappings
+  property InitTimeout
+  property InjectedGlobals
+  property Log
+  property MaxAutoReloads
+  property OnDownloadStarting
+  property OnPermissionRequested
+  property OnProcessFailed
+  property OpenExternalLinksInSystemBrowser
+  property PermittedPermissions
+  property PreventDefaultFileDrop
+  property ProductionUrl
+  property ReloadOnRenderProcessFailure
+  property ResourceProvider
+  property UseSharedEnvironment
+  property VirtualHost
+Shenora.Windows.WebViewIpcBridge
+  field HandshakeModule
+  field HandshakeType
+  method .ctor
+  method Attach
+  method Dispose
+  method SendNotification
+  property IsClientReady
+Shenora.Windows.WebViewIpcBridgeOptions
+  method .ctor
+  property Dispatcher
+  property EventBus
+  property Log
+  property MaxQueuedNotifications
+  property NotificationFilter
+  property NotificationInterval
+  property OnClientReady
+  property Shell
+Shenora.Windows.WinFormsBootstrap
+  method Initialize
+Shenora.Windows.WinFormsBootstrapOptions
+  method .ctor
+  property ApplicationName
+  property HighDpiMode
+  property ObserveUnobservedTaskExceptions
+  property OnUnhandledException
+  property ShowCrashDialog
+Shenora.Windows.WinFormsHostExtensions
+  method UseWinForms
+Shenora.Windows.WinFormsHostOptions
+  method .ctor
+  property Bootstrap
+  property MainForm
+  property SingleInstance
+  property WindowState
+Shenora.Windows.WinFormsUiDispatcher
+  method .ctor
+  method InvokeAsync
+  method InvokeAsync
+  method InvokeAsync
+  method InvokeOrDefaultAsync
+  method Post
+  method Post
+  property IsOnUiThread
+  property State
+Shenora.Windows.WindowCommandFacade
+  field Module
+  method .ctor
+  method RouteMessageAsync
+  property ModuleName
+Shenora.Windows.WindowCommandOptions
+  method .ctor
+  property ApplyTheme
+  property CoordinateSpace
+  property IsMaximized
+  property SetCaptionButtons
+  property ToggleMaximize
+  property Window
+Shenora.Windows.WindowState
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Height
+  property Maximized
+  property Width
+  property X
+  property Y
+Shenora.Windows.WindowStateHostOptions
+  method .ctor
+  property Options
+  property Store
+Shenora.Windows.WindowStateManager
+  method .ctor
+  method Apply
+  method Apply
+  method AttachTo
+  method AttachTo
+  method IsVisible
+  method Save
+  method ToLogical
+  method ToPhysical
+  method ToPhysical
+Shenora.Windows.WindowStateOptions
+  method .ctor
+  property DefaultHeight
+  property DefaultWidth
+  property MaxToWorkArea
+  property MinHeight
+  property MinVisibleHeight
+  property MinVisibleWidth
+  property MinWidth
+Shenora.Windows.WindowsPlaybackSession
+  event CommandReceived
+  method .ctor
+  method Clear
+  method Dispose
+  method Publish
+  method Report
+  property Supported

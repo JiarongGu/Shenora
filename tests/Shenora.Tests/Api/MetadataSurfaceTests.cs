@@ -63,6 +63,13 @@ public class MetadataSurfaceTests
         {
             { "Shenora.Android", "net10.0-android" },
             { "Shenora.iOS", "net10.0-ios" },
+            // Shenora.Windows' PLAIN-TFM variant. Unlike the two above, the test project CAN reference this
+            // package — but only one of its two TFMs, whichever it targets itself (the versioned one), so
+            // `ApiSurfaceTests` gates the WinRT implementation and would never see this one. Both variants are
+            // hand-written and must expose the SAME public shape, because they are one type name in one
+            // package differing only by TFM: a consumer that retargets has to find the same members. Two
+            // hand-written shapes with only one gated is precisely the drift this file exists to catch.
+            { "Shenora.Windows", "net10.0-windows" },
             // Shenora.Media.Android/.iOS were here for one commit and are gone (D45): interception moved to
             // the shells and generic serving to Core, leaving them nothing to hold.
         };

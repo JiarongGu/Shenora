@@ -14,49 +14,6 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
-### Breaking
-
-- **`Shenora.Windows` now targets `net10.0-windows10.0.17763.0`** (was `net10.0-windows`). A consumer
-  targeting plain `net10.0-windows` can no longer reference it.
-
-  **Migration: change one line in your csproj.**
-
-  ```diff
-  - <TargetFramework>net10.0-windows</TargetFramework>
-  + <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
-  ```
-
-  Nothing else changes — no type, no signature, no behaviour, **and no higher Windows requirement**:
-  17763 is Windows 10 1809 — the LOWEST ref pack .NET offers — so the minimum Windows is as low as a
-  versioned TFM can go.
-
-  ⚠ **Two traps worth knowing if you version a Windows TFM in your own project.**
-
-  *Pick the lowest SDK version that compiles, not the newest installed.* The version's only job is to pull
-  in the WinRT projections; it is not a feature level you opt into. This shipped as 19041 for one commit
-  simply because that was the oldest ref pack already on the build machine — then dropping to 17763 built
-  clean, raised no `CA1416`, and the desktop sample's read-back probe still passed, because everything used
-  here (`MediaPlayer`, `SystemMediaTransportControls`) dates to Windows 10 1507 and the sample's
-  `GlobalSystemMediaTransportControlsSessionManager` to 1809.
-
-  *The compile-against and run-on versions are separate, and only one is in the TFM.*
-  `TargetPlatformVersion` (from the TFM) is what you may compile against;
-  `TargetPlatformMinVersion`/`SupportedOSPlatformVersion` is the floor you run on — **and leaving the latter
-  unset silently defaults it to the former.** That is how bumping a TFM for one new API quietly raises the
-  minimum Windows every consumer needs. This package had that defect too, in the same commit
-  (`TargetPlatformMinVersion` reported `10.0.19041.0`, i.e. "requires Windows 10 2004", which nobody chose).
-  `SupportedOSPlatformVersion` is now pinned — redundant today, deliberately, as a latch: raise the TFM later
-  and the floor stays put until someone moves it on purpose, with `CA1416` (a build error here) forcing any
-  newer API to be guarded.
-
-  **Why:** Windows' only system-wide media transport is `SystemMediaTransportControls`, and it is WinRT.
-  Without a Windows SDK version in the TFM the projections do not exist at all (`Windows.Media` does not
-  resolve), so `IPlaybackSession` could not be implemented on the desktop. The two alternatives were both
-  worse: multi-targeting would give the package a feature set that depends silently on the consumer's TFM,
-  and hand-rolling `ISystemMediaTransportControlsInterop` means `RoGetActivationFactory`, HSTRINGs and
-  manual reference counting — invented interop, which is the opposite of how this kit grows. The bump also
-  unlocks every other WinRT projection for future work rather than only this one.
-
 ### Added
 
 - **Resource interception, in `Shenora.Core` and implemented by every shell (D45).** How a page gets bytes
@@ -139,6 +96,26 @@ at the first list and missed five more breaking changes.
   the desktop implementation (`WindowsPlaybackSession`, registered by `UseWinForms`). This is the lock
   screen, the media flyout, the headphone gesture and the car stereo: `Publish(PlaybackInfo)` /
   `Report(PlaybackProgress)` / `Clear()` go app → OS, and `CommandReceived` comes back the other way.
+  - **`Shenora.Windows` now multi-targets `net10.0-windows` and `net10.0-windows10.0.17763.0`, and NOTHING
+    BREAKS.** Existing consumers change nothing and keep their Windows 7-era floor. The second TFM exists for
+    this one capability: `SystemMediaTransportControls` is WinRT, and the WinRT projections only exist when
+    the TFM names a Windows SDK version — with a bare `net10.0-windows`, `Windows.Media` is not a namespace
+    at all (measured: `CS0234`). An app that wants Now Playing on the desktop retargets to
+    `net10.0-windows10.0.17763.0`; everyone else is unaffected.
+    - On the plain TFM the type still EXISTS and **refuses by name at construction**, with the one-line fix
+      in the message. Absent would have been worse: resolving a missing service names neither the shell nor
+      the reason (`ShellCapability`).
+    - 17763 is Windows 10 1809, the lowest ref pack .NET offers. **The SDK version in a Windows TFM is only
+      the switch that turns the WinRT projections on — it is not a feature level you opt into**, so pick the
+      lowest that compiles rather than the newest installed. This briefly shipped as 19041 purely because
+      that was the oldest pack on the build machine.
+    - ⚠ **The compile-against and run-on versions are separate, and only one is in the TFM.**
+      `TargetPlatformVersion` (from the TFM) is what you may compile against;
+      `SupportedOSPlatformVersion`/`TargetPlatformMinVersion` is the floor you run on — and **leaving the
+      latter unset silently defaults it to the former**, which is how bumping a TFM for one API quietly
+      raises the minimum Windows every consumer needs. This package had exactly that defect for one commit.
+      It is now pinned (and matched on `-windows10.` rather than an exact TFM string, so a future bump cannot
+      slip past it), with `CA1416` — a build error here — forcing any newer API to be guarded instead.
   - **It is two-way, and the return direction is the design.** Commands arrive from outside the app, so
     this is an event source as much as a publisher — and the kit deliberately ships no queue model behind
     it, because only the app knows what "next" means.

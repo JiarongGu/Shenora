@@ -1,3 +1,12 @@
+// SystemMediaTransportControls is WinRT, and the WinRT projections only exist when the target framework
+// names a Windows SDK version — with a bare `net10.0-windows`, `Windows.Media` is not a namespace at all
+// (measured: CS0234). So this package MULTI-TARGETS and this whole file is the versioned half; the plain
+// half is WindowsPlaybackSession.Unsupported.cs, which refuses by name.
+//
+// Guarding the FILE rather than each body: the alternative was a dozen #if blocks inside one class, which
+// is harder to read and easy to get subtly wrong. The cost is that the public shape is written twice, so
+// the plain TFM is gated by its own metadata baseline — see MetadataSurfaceTests.
+#if WINDOWS10_0_17763_0_OR_GREATER
 using Shenora.Core;
 // `global::` on every WinRT namespace below, and it is not optional: inside `namespace Shenora.Windows`
 // the bare identifier `Windows` binds to THIS namespace, so `Windows.Media` resolves to
@@ -247,3 +256,4 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
         try { _player.Dispose(); } catch (Exception ex) { Log(() => $"[Shenora.Windows] Player dispose: {ex.Message}"); }
     }
 }
+#endif

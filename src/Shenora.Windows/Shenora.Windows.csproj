@@ -21,19 +21,25 @@
   -->
   <PropertyGroup>
     <!--
-      The SDK VERSION IN THE TFM is the switch that pulls in the WinRT projections
-      (Microsoft.Windows.SDK.NET.Ref — the CsWinRT-generated `Windows.*` surface). With a bare
-      `net10.0-windows`, `Windows.Media` is not a namespace that exists at all (measured: CS0234), so
-      SystemMediaTransportControls is unreachable and IPlaybackSession cannot be implemented here. That, and
-      only that, is why this TFM carries a version.
+      TWO TFMs, and the second exists for exactly one capability. Everything in this shell compiles on plain
+      net10.0-windows EXCEPT the system media transport: SystemMediaTransportControls is WinRT, and the WinRT
+      projections only exist when the TFM names a Windows SDK version (measured: with a bare -windows,
+      `Windows.Media` is not a namespace — CS0234).
 
-      17763 (Windows 10 1809) because it is the LOWEST ref pack .NET offers and nothing here needs more:
-      MediaPlayer and SystemMediaTransportControls date to Windows 10 1507, and the sample's read-back
-      (GlobalSystemMediaTransportControlsSessionManager) to 1809. Verified by dropping to it from 19041 —
-      builds clean, no CA1416, and the desktop sample's PLAYBACK SESSION probe still reads back out of
-      Windows' own session registry. Pick the lowest that compiles, not the newest installed.
+      So existing consumers change NOTHING, and only an app that wants Now Playing retargets. The plain
+      variant refuses BY NAME with the one-line fix in the message (WindowsPlaybackSession.Unsupported.cs)
+      rather than being absent, so asking for it on the wrong TFM is a clear error and not a missing service.
+
+      17763 (Windows 10 1809) is the LOWEST ref pack .NET offers, and nothing here needs more — MediaPlayer
+      and SystemMediaTransportControls date to Windows 10 1507. Pick the lowest that compiles, not the newest
+      installed.
+
+      ⚠ TargetFramework must be CLEARED, not merely left unset: src/Directory.Build.props sets it to net10.0
+      for every src project, and when both it and TargetFrameworks are set the SINGULAR one wins — which
+      builds a plain net10.0 variant and fails NETSDK1136 (WinForms needs a Windows platform). Met once.
     -->
-    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <TargetFramework />
+    <TargetFrameworks>net10.0-windows;net10.0-windows10.0.17763.0</TargetFrameworks>
     <!--
       ⚠ THIS LOOKS REDUNDANT AND IS NOT. It currently restates the default — an unset
       SupportedOSPlatformVersion follows TargetPlatformVersion — so today it changes nothing. It is here as a
@@ -45,7 +51,13 @@
       With the pin, raising the TFM leaves the floor here and CA1416 — a build ERROR in this repo — forces
       any newer API to be guarded or the floor to be raised DELIBERATELY. Keep them in step only on purpose.
     -->
-    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <!--
+      Only on the VERSIONED TFM: the plain one has TargetPlatformVersion 7.0, and a SupportedOSPlatformVersion
+      above it is NETSDK1135. Matched on "-windows10." rather than the exact TFM string ON PURPOSE — an exact
+      match would stop applying the moment someone bumps the version, silently re-opening the floor-raise this
+      latch exists to prevent.
+    -->
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows10.'))">10.0.17763.0</SupportedOSPlatformVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Windows</PackageId>
