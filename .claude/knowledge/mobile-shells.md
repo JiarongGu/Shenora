@@ -48,6 +48,20 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   independently wants the SDK headers Xcode ships. `PublishTrimmed=false` is rejected outright and
   `MtouchLink=None` still fails MT0180 — do not retry either. Simulator-debug only; matching the pair
   is the real fix. Machine-specific, so it belongs in gitignored config, never a tracked csproj.
+- **A LINK-time package defect is invisible to every project-reference check — only an app-shaped
+  PACKAGE consumer finds it.** `Shenora.iOS` 0.9.0 could not be linked by any iOS app that had not
+  enabled the Live Activity devkit (five undefined `_shenora_activity_*`), and shipped anyway because
+  a `DllImport("__Internal")` resolves at STATIC LINK time, which nothing in this repo's own builds
+  exercised the way a consumer does. Verify a published iOS package like this, and each step is load-
+  bearing: purge that version from `~/.nuget/packages/<id>/<ver>` first (else you validate your own
+  build); `OutputType=Exe` + an `ApplicationId` (a library builds clean while doing NOTHING);
+  `ManagePackageVersionsCentrally=false`; **and actually CALL the API** — an app that never touches
+  the kit roots no `DllImport` and proves nothing. Then read the binary, don't trust "Build
+  succeeded": `nm <app>/<name> | grep " T _<sym>"` for each symbol and `nm -u` for undefined. Two
+  traps met while doing it: `dotnet new ios`'s own sources did not compile here (implicit global
+  usings not applying), so hand-write the app rather than debug the template; and `$?` after a pipe
+  reads the LAST command, so `dotnet build … | tail` reported exit 0 for a FAILED build — use
+  `${PIPESTATUS[0]}`.
 - **"iOS needs a Mac" is TRUE OF AN APP AND FALSE OF A LIBRARY, and the difference cost a whole
   release design.** A `net10.0-ios` library builds anywhere the `maui-ios` workload is installed —
   Windows included — because compiling C# against `Microsoft.iOS` reference assemblies needs no Xcode.

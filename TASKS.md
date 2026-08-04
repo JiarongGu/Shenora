@@ -7,14 +7,26 @@ of this file is the size of the remaining work, which is the whole point of look
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
-**Status: 0.9.0 PUBLISHED (2026-08-04).** Six NuGet packages (`Shenora.Media` is new) + `@shenora/react`,
-**verified against the FEED with the local 0.9.0 cache cleared first** — otherwise you validate your own build.
-It carries the D45 re-layering (interception is a middleware pipeline in Core, implemented per shell),
-`IPlaybackSession` on all three shells, and the iOS Live Activity devkit. **No `### Breaking` section**: the
-WinRT requirement is opt-in via a second TFM on `Shenora.Windows` (**D46**), so existing consumers change
-nothing. Post-publish verification — including a real `PackageReference` spike proving the devkit's automatic
-`buildTransitive` import — is in `docs/archive/tasks.md`. The only item still unproven is the Dynamic Island's
-visual rendering, which needs a device.
+**Status: 0.9.1 PUBLISHED (2026-08-04).** Six NuGet packages + `@shenora/react`, all confirmed at 0.9.1 on
+the feed. **A patch release, and the reason matters more than the size: 0.9.0's `Shenora.iOS` could not be
+LINKED by any iOS app that had not enabled the Live Activity devkit** — five undefined `_shenora_activity_*`
+symbols — so the package was unusable for its intended default case. Found by the first adopter, not by us;
+the gap was that every local check used a PROJECT reference, and the defect only exists for a PACKAGE
+consumer. `dev.mjs mac build` now runs a link check in exactly the configuration the adopter had.
+
+**0.9.1 is verified against the published package, not the tree** (2026-08-04): a scratch app-shaped iOS
+consumer, cache purged so restore had to hit nuget.org, `PackageReference Shenora.iOS 0.9.1` and **no devkit
+opt-in**, touching the API so the `DllImport`s are actually rooted. It builds; all five `@_cdecl` symbols are
+defined (`T`) in the app binary with **zero undefined** — the exact inverse of 0.9.0 — and no `PlugIns/`, so
+the widget extension stayed opt-in and the fix did not push the expensive half onto everyone. Recipe and its
+traps: `.claude/knowledge/mobile-shells.md`.
+
+0.9.0 carried the D45 re-layering (interception is a middleware pipeline in Core, implemented per shell),
+`IPlaybackSession` on all three shells, and the iOS Live Activity devkit. **No `### Breaking` section in
+either**: the WinRT requirement is opt-in via a second TFM on `Shenora.Windows` (**D46**), so existing
+consumers change nothing. Post-publish verification — including a real `PackageReference` spike proving the
+devkit's automatic `buildTransitive` import — is in `docs/archive/tasks.md`. The only item still unproven is
+the Dynamic Island's visual rendering, which needs a device.
 
 _0.8.0 (2026-08-03) carried the **D2a relocation** — `WebViewResourceRequest`/`Response`/`ByteRange` moved
 `Shenora.Windows` → `Shenora.Core`, a documented break whose whole migration is one `using Shenora.Core;`.

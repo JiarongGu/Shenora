@@ -15,6 +15,37 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+### 0.9.1 post-publish verification (2026-08-04) — DONE, against the FEED
+
+Six NuGet packages + `@shenora/react` all confirmed at 0.9.1. A patch release, and its whole subject is the
+defect the 0.9.0 verification below did **not** catch: `Shenora.iOS` 0.9.0 could not be LINKED by any iOS app
+that had not enabled the Live Activity devkit — five undefined `_shenora_activity_*` symbols. The first
+adopter found it, which is the part worth keeping. **The 0.9.0 spikes below were real `PackageReference`
+spikes and still missed it**, because each one exercised the devkit path it was written to prove; nobody
+built the configuration where the feature is simply *off*, which is the default every other adopter gets.
+
+Verified the fix the way the defect would have been caught:
+
+- ✅ **An app-shaped consumer with the devkit OFF links.** Scratch `net10.0-ios` app, `OutputType=Exe` +
+  `ApplicationId`, `ManagePackageVersionsCentrally=false`, `PackageReference Shenora.iOS 0.9.1`, **no
+  `ShenoraLiveActivityViews` anywhere**, with the 0.9.1 packages purged from `~/.nuget/packages` so restore
+  had to hit nuget.org (the log names the feed and the content hash). It builds.
+- ✅ **Read from the binary, not from "Build succeeded".** All five `@_cdecl` symbols are defined text
+  symbols (`T _shenora_activity_start|update|end|unavailable|free`) and `nm -u` reports **zero** undefined —
+  the exact inverse of 0.9.0. The app CALLS the API so the `DllImport`s are genuinely rooted; an app that
+  never touches the kit would have proven nothing.
+- ✅ **The fix stayed opt-in.** No `PlugIns/` in the bundle, so making the shim unconditional did not drag
+  the widget extension — the expensive half — onto every consumer.
+
+Three traps, all recorded in `.claude/knowledge/mobile-shells.md`: `dotnet new ios`'s own sources did not
+compile here (implicit global usings not applying — hand-write the app instead of debugging the template);
+`$?` after `dotnet build … | tail` reads `tail`, so a FAILED build reported exit 0 until it used
+`${PIPESTATUS[0]}`; and this Mac's Xcode/workload mismatch needs the two flags `local/mac.json` already
+carries, neither of which touches the native link step under test.
+
+`dev.mjs mac build` now runs this link check on every iOS build, so the configuration that shipped broken is
+one the harness cannot skip again.
+
 ### 0.9.0 post-publish verification (2026-08-04) — DONE, against the FEED
 
 All six packages confirmed present on nuget.org at 0.9.0, then verified by **clearing the local NuGet cache
