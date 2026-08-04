@@ -38,7 +38,7 @@
           Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'"
           BeforeTargets="_ExpandNativeReferences;_ExtendAppExtensionReferences;_CompileToNative"
           Inputs="$(_ShenoraLiveActivitySwift);$(ShenoraLiveActivityViews)"
-          Outputs="$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity;$(_ShenoraLiveActivityLib)">
+          Outputs="$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity">
 
     <Error Condition="!Exists('$(ShenoraLiveActivityViews)')"
            Text="ShenoraLiveActivityViews points at '$(ShenoraLiveActivityViews)', which does not exist. It must be a Swift file declaring the widget — see Shenora's ADOPTION.md for the four view bodies it needs." />
@@ -74,13 +74,6 @@
     <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
 
     <!--
-      THE SHIM, as a static library linked into the APP. Activities are started BY THE APP, so the same
-      Swift has to exist on both sides — compiled at the app's own floor here, with availability guarded
-      inside, because a static library built for a higher minimum than its host is an argument nobody needs.
-    -->
-    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot;" />
-
-    <!--
       The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
       the whole app at install; PackageType is XPC!; a WidgetKit extension declares only the point
       identifier because the @main WidgetBundle is the entry point.
@@ -108,6 +101,53 @@
   </Target>
 
   <!--
+    ⚠ THE SHIM IS BUILT UNCONDITIONALLY, and that is a fix for a real defect rather than a preference.
+
+    It used to be gated on ShenoraLiveActivityViews together with the widget. But the C# side reaches it via
+    [DllImport("__Internal")], which iOS resolves at STATIC LINK time — so any app that referenced this
+    package WITHOUT opting in failed to link, with five undefined symbols. That shipped in 0.9.0, was reported
+    by the first adopter, and reproduced exactly here. The repo never caught it because the only iOS app it
+    builds is the one that opts in: the single configuration that worked.
+
+    Runtime lookup (NativeLibrary.TryGetExport) was tried first and is the tidier idea — it would also let
+    `Unavailable` report a missing shim, which the docs promised. It does not survive contact with the
+    linker: removing the DllImport removes the only reference to the symbols, and MEASURED, the archive then
+    held all five while the app binary held zero. Neither NativeReference/ForceLoad nor `-u` via the linker
+    args changed that. Always building is what the linker can be relied on to honour.
+
+    Cost: one swiftc call on a Mac that an iOS build already requires. The WIDGET stays opt-in above, because
+    that is the half needing the app's own SwiftUI views.
+  -->
+  <Target Name="ShenoraBuildLiveActivityShim"
+          Condition="'$(IsMacEnabled)' == 'true'"
+          BeforeTargets="_ExpandNativeReferences;_CompileToNative"
+          Inputs="$(_ShenoraLiveActivitySwift)"
+          Outputs="$(_ShenoraLiveActivityLib)">
+
+    <PropertyGroup>
+      <_ShenoraLaSdk Condition="'$(_SdkIsSimulator)' == 'true'">iphonesimulator</_ShenoraLaSdk>
+      <_ShenoraLaSdk Condition="'$(_ShenoraLaSdk)' == ''">iphoneos</_ShenoraLaSdk>
+      <_ShenoraLaArch Condition="$(RuntimeIdentifier.EndsWith('-x64'))">x86_64</_ShenoraLaArch>
+      <_ShenoraLaArch Condition="'$(_ShenoraLaArch)' == ''">arm64</_ShenoraLaArch>
+      <_ShenoraLaSuffix Condition="'$(_SdkIsSimulator)' == 'true'">-simulator</_ShenoraLaSuffix>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(_ShenoraLiveActivityOut)" />
+
+    <Exec Command="xcrun --sdk $(_ShenoraLaSdk) --show-sdk-path" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_ShenoraLaSdkPath" />
+    </Exec>
+
+    <!--
+      Compiled at the APP's floor, not ActivityKit's, with availability guarded inside the Swift — a static
+      library built for a higher minimum than its host is an argument nobody needs.
+    -->
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot;" />
+
+    <Message Importance="high" Text="Shenora: built the live-activity shim ($(_ShenoraLiveActivityLib))" />
+  </Target>
+
+  <!--
     Hand the results to the iOS SDK's own machinery: AdditionalAppExtensions embeds and re-signs the .appex
     (_ExtendAppExtensionReferences, reached from _CompileToNativeDependsOn), and NativeReference links the
     shim so [DllImport("__Internal")] can find its @_cdecl symbols.
@@ -116,14 +156,30 @@
     Inputs/Outputs are computed early. The FILES only have to exist by the time those run, which the
     BeforeTargets above guarantees.
   -->
+  <!-- The WIDGET is opt-in: it needs the app's own SwiftUI views. -->
   <ItemGroup Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'">
     <AdditionalAppExtensions Include="$(_ShenoraLiveActivityOut)">
       <BuildOutput>.</BuildOutput>
       <Name>ShenoraLiveActivity</Name>
     </AdditionalAppExtensions>
+  </ItemGroup>
+
+  <!--
+    The SHIM is NOT opt-in — see the target above. [DllImport("__Internal")] is resolved at link time, so the
+    symbols have to be present in every app that references this package, whether or not it uses the feature.
+  -->
+  <ItemGroup Condition="'$(IsMacEnabled)' == 'true'">
     <NativeReference Include="$(_ShenoraLiveActivityLib)">
       <Kind>Static</Kind>
       <Frameworks>ActivityKit Foundation</Frameworks>
+      <!--
+        ForceLoad is belt-and-braces only. What actually guarantees the symbols is that the C# side keeps a
+        [DllImport("__Internal")] — the linker resolves it, so the objects are pulled in and kept. Measured
+        while trying the alternative: with the DllImport removed in favour of a runtime lookup, `nm` found
+        ZERO shenora_activity symbols in the app binary even with ForceLoad set AND `-u` passed through the
+        linker args. That is why the shim is built unconditionally instead (see the target above) rather than
+        the reference being made cleverer.
+      -->
       <ForceLoad>True</ForceLoad>
     </NativeReference>
   </ItemGroup>

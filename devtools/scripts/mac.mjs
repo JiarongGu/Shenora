@@ -418,6 +418,53 @@ function build(cfg, { skipPush = false } = {}) {
     process.exit(r.status ?? 1);
   }
   console.log('\nmac: build ok');
+
+  // ⚠ THE SECOND CONFIGURATION, and it exists because not building it shipped a broken package.
+  //
+  // Shenora.iOS 0.9.0 could not be linked by any app that did not opt into the Live Activity devkit —
+  // [DllImport("__Internal")] is resolved at link time, and the shim was only built when
+  // ShenoraLiveActivityViews was set. The repo never saw it because this sample IS opted in: the single
+  // configuration that worked was the only one ever built. Found by the first adopter, not by the gate.
+  //
+  // So the gate now builds the OTHER one. It is a link check, not a run — cheap, and it is exactly the
+  // failure that got through. Non-fatal on its own line so the reason is unmistakable when it breaks.
+  console.log('\nmac: link check — the same sample WITHOUT the Live Activity opt-in…');
+  // ⚠ The shim output and the app bundle are DELETED first, and that is what makes this a real check.
+  // Without it the .a left by the build above satisfies the link, and the gate passes a sabotage — measured:
+  // re-gating the shim on the opt-in (the exact 0.9.0 defect) still reported "link check ok". The question
+  // is whether the kit PRODUCES what it needs, not whether something happens to be lying around.
+  const optOut = ssh(cfg, `set -e -o pipefail
+    cd ~/${cfg.work}
+    rm -rf ${q(`${cfg.project.replace(/\/[^/]+\.csproj$/, '')}/shenora-liveactivity`)}
+    rm -rf ${q(`${cfg.project.replace(/\/[^/]+\.csproj$/, '')}/bin/Debug/${cfg.tfm}/${rid}`)}
+    dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode} \
+      -p:ShenoraLiveActivityViews= 2>&1 | tail -25`);
+  if (optOut.status !== 0) {
+    console.error('\nmac: LINK CHECK FAILED — an app that does NOT enable the devkit cannot build.\n'
+      + 'That is the 0.9.0 defect: the kit must link for consumers who never use the feature.\n'
+      + (optOut.stdout ?? '').split('\n').slice(-12).join('\n'));
+    process.exit(optOut.status ?? 1);
+  }
+  console.log('mac: link check ok — the kit links without the devkit too');
+
+  // Leave the tree holding the REAL build, or `mac run` would install the opt-out one.
+  //
+  // ⚠ CLEAN, not incremental, and that is not caution — an incremental rebuild here produced an app that
+  // launched and was killed instantly with SIGKILL (Code Signature Invalid). The link check above removes
+  // the .app but not obj/, so the follow-up build re-assembled a bundle whose parts no longer matched their
+  // signature. It is the same partial-deletion trap `mobile-shells.md` already records, reintroduced by this
+  // very gate; the failure reads like a provisioning fault and has nothing to do with provisioning.
+  console.log('mac: restoring the real build (clean, so the bundle and its signature agree)…');
+  const sampleDir = cfg.project.replace(/\/[^/]+\.csproj$/, '');
+  const restore = ssh(cfg, `set -e -o pipefail
+    cd ~/${cfg.work}
+    rm -rf ${q(`${sampleDir}/bin`)} ${q(`${sampleDir}/obj`)} ${q(`${sampleDir}/shenora-liveactivity`)}
+    dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode} 2>&1 | tail -8`);
+  if (restore.status !== 0) {
+    console.error('\nmac: could not restore the real build after the link check.\n'
+      + (restore.stdout ?? '').split('\n').slice(-8).join('\n'));
+    process.exit(restore.status ?? 1);
+  }
   return rid;
 }
 

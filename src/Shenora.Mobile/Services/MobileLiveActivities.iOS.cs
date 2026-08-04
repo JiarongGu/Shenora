@@ -19,6 +19,14 @@ namespace Shenora.Mobile;
 /// assumed.
 /// </para>
 /// <para>
+/// ⚠ <b>That link is why the kit builds the shim for EVERY iOS app, opted in or not.</b> A
+/// <c>DllImport("__Internal")</c> is resolved at STATIC LINK time, so gating the shim on the devkit property
+/// made the package fail to link — five undefined symbols — for any app that had not enabled the feature.
+/// Shipped that way in 0.9.0 and reported by the first adopter. Runtime lookup was tried instead and did not
+/// survive the linker: with nothing referencing the symbols they were not retained, measured as present in
+/// the archive and absent from the app binary. See <c>Shenora.iOS.targets</c>.
+/// </para>
+/// <para>
 /// ⚠ <b>This type does nothing useful unless the app's build includes the widget extension</b>, because the
 /// activity has no view to render otherwise: <see cref="Start"/> succeeds and nothing appears.
 /// <c>Shenora.iOS.targets</c> is what builds it, and <see cref="Unavailable"/> cannot detect the omission —
@@ -88,12 +96,13 @@ public sealed class MobileLiveActivities : ILiveActivities
             }
             catch (Exception ex)
             {
-                // An EntryPointNotFoundException here means the SHIM DID NOT LINK, which is a build
-                // problem and the single most likely thing to go wrong — so it is reported as the reason
-                // rather than thrown, and the message says what to check.
+                // Defensive only. The shim is now linked into EVERY iOS app that references this package, so
+                // "not linked" is no longer a reachable state — and an earlier version of this property
+                // promised to report exactly that, which a LINK-time failure could never deliver. What can
+                // still fail is the call itself, and a reason is worth returning rather than throwing at an
+                // app that asked a simple question.
                 Log(() => $"[Shenora.Mobile] Live activity probe failed ({ex.GetType().Name}: {ex.Message}).");
-                return "The Shenora live-activity shim is not linked into this app — check that "
-                    + "ShenoraLiveActivityViews is set and the build produced a widget extension.";
+                return $"The live-activity shim could not be reached ({ex.GetType().Name}).";
             }
         }
     }
