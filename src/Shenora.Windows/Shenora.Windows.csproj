@@ -21,21 +21,29 @@
   -->
   <PropertyGroup>
     <!--
-      The SDK version in the TFM is what pulls in the WinRT PROJECTIONS (Microsoft.Windows.SDK.NET.Ref, the
-      CsWinRT-generated `Windows.*` surface). Without any version, `Windows.Media` does not exist as a C#
-      namespace at all — measured — and SystemMediaTransportControls is therefore unreachable, which is why
-      IPlaybackSession forced this. 19041 is the oldest projection this machine's SDK ships (the other is
-      22621) and nothing here needs a newer API.
+      The SDK VERSION IN THE TFM is the switch that pulls in the WinRT projections
+      (Microsoft.Windows.SDK.NET.Ref — the CsWinRT-generated `Windows.*` surface). With a bare
+      `net10.0-windows`, `Windows.Media` is not a namespace that exists at all (measured: CS0234), so
+      SystemMediaTransportControls is unreachable and IPlaybackSession cannot be implemented here. That, and
+      only that, is why this TFM carries a version.
+
+      17763 (Windows 10 1809) because it is the LOWEST ref pack .NET offers and nothing here needs more:
+      MediaPlayer and SystemMediaTransportControls date to Windows 10 1507, and the sample's read-back
+      (GlobalSystemMediaTransportControlsSessionManager) to 1809. Verified by dropping to it from 19041 —
+      builds clean, no CA1416, and the desktop sample's PLAYBACK SESSION probe still reads back out of
+      Windows' own session registry. Pick the lowest that compiles, not the newest installed.
     -->
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <!--
-      ⚠ AND THE RUNTIME FLOOR IS SET SEPARATELY, or it silently follows the TFM. TargetPlatformVersion
-      (19041, above) is what you may COMPILE against; SupportedOSPlatformVersion is the minimum you RUN on,
-      and leaving it unset defaults it to the TFM version — which quietly turned "reference this package"
-      into "require Windows 10 2004", a much bigger ask than the change needed. Pinning it low keeps the
-      break to the TFM string alone. The WinRT types used here (MediaPlayer, SystemMediaTransportControls)
-      have existed since Windows 10 1507, so nothing is being called that this floor cannot reach — and
-      CA1416 is a build ERROR in this repo, so an API newer than this floor cannot slip in unguarded.
+      ⚠ THIS LOOKS REDUNDANT AND IS NOT. It currently restates the default — an unset
+      SupportedOSPlatformVersion follows TargetPlatformVersion — so today it changes nothing. It is here as a
+      LATCH, because that default is how the runtime floor gets raised by accident: bumping the TFM for one
+      new API silently moves the minimum Windows every consumer needs, which is a far bigger change than the
+      one being made. This package shipped exactly that defect for one commit (TFM 19041 with no pin ⇒
+      TargetPlatformMinVersion 10.0.19041.0, i.e. "requires Windows 10 2004", nobody's decision).
+
+      With the pin, raising the TFM leaves the floor here and CA1416 — a build ERROR in this repo — forces
+      any newer API to be guarded or the floor to be raised DELIBERATELY. Keep them in step only on purpose.
     -->
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWindowsForms>true</UseWindowsForms>

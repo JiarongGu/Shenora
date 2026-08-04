@@ -16,29 +16,38 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
-- **`Shenora.Windows` now targets `net10.0-windows10.0.19041.0`** (was `net10.0-windows`). A consumer
+- **`Shenora.Windows` now targets `net10.0-windows10.0.17763.0`** (was `net10.0-windows`). A consumer
   targeting plain `net10.0-windows` can no longer reference it.
 
   **Migration: change one line in your csproj.**
 
   ```diff
   - <TargetFramework>net10.0-windows</TargetFramework>
-  + <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  + <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
   ```
 
   Nothing else changes — no type, no signature, no behaviour, **and no higher Windows requirement**:
-  `SupportedOSPlatformVersion` is pinned at `10.0.17763.0`, so the minimum Windows you can RUN on is
-  unchanged in practice even though the SDK version you COMPILE against moved.
+  17763 is Windows 10 1809 — the LOWEST ref pack .NET offers — so the minimum Windows is as low as a
+  versioned TFM can go.
 
-  ⚠ That second part is a trap worth knowing if you do the same thing in your own project. The two
-  versions are separate and only one of them is in the TFM: `TargetPlatformVersion` (from the TFM) is what
-  you may compile against, while `TargetPlatformMinVersion`/`SupportedOSPlatformVersion` is the floor you
-  run on — **and leaving the latter unset silently defaults it to the former.** Doing that turns "reference
-  a package" into "require Windows 10 2004", which is a far bigger ask than the change needs. This package
-  had exactly that defect for one commit before it was measured and pinned; the WinRT types it uses
-  (`MediaPlayer`, `SystemMediaTransportControls`) have existed since Windows 10 1507, so nothing is being
-  called that the lower floor cannot reach — and `CA1416` is a build error here, so an API newer than the
-  floor cannot slip in unguarded.
+  ⚠ **Two traps worth knowing if you version a Windows TFM in your own project.**
+
+  *Pick the lowest SDK version that compiles, not the newest installed.* The version's only job is to pull
+  in the WinRT projections; it is not a feature level you opt into. This shipped as 19041 for one commit
+  simply because that was the oldest ref pack already on the build machine — then dropping to 17763 built
+  clean, raised no `CA1416`, and the desktop sample's read-back probe still passed, because everything used
+  here (`MediaPlayer`, `SystemMediaTransportControls`) dates to Windows 10 1507 and the sample's
+  `GlobalSystemMediaTransportControlsSessionManager` to 1809.
+
+  *The compile-against and run-on versions are separate, and only one is in the TFM.*
+  `TargetPlatformVersion` (from the TFM) is what you may compile against;
+  `TargetPlatformMinVersion`/`SupportedOSPlatformVersion` is the floor you run on — **and leaving the latter
+  unset silently defaults it to the former.** That is how bumping a TFM for one new API quietly raises the
+  minimum Windows every consumer needs. This package had that defect too, in the same commit
+  (`TargetPlatformMinVersion` reported `10.0.19041.0`, i.e. "requires Windows 10 2004", which nobody chose).
+  `SupportedOSPlatformVersion` is now pinned — redundant today, deliberately, as a latch: raise the TFM later
+  and the floor stays put until someone moves it on purpose, with `CA1416` (a build error here) forcing any
+  newer API to be guarded.
 
   **Why:** Windows' only system-wide media transport is `SystemMediaTransportControls`, and it is WinRT.
   Without a Windows SDK version in the TFM the projections do not exist at all (`Windows.Media` does not
