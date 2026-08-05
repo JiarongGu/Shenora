@@ -43,7 +43,7 @@ entry template:
   value in the caller's own space silently reinterpreted as a command. ⚠ Still locale-fragile in a second
   way (the placeholder is a hardcoded English string), which the fix makes harmless in practice but does not
   remove.
-- **Commit:** _pending_
+- **Commit:** `6b6cbe2`
 
 ## 2026-08-02
 
