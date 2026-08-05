@@ -640,7 +640,7 @@ switch (cmd) {
     const macOnly = new Set(config.macOnlyPackableProjects ?? []);
     const macPass = args.includes('--mac');
 
-    // Projects that pack DOWNLOADED artifacts rather than anything built here. `Shenora.Launcher.Native`
+    // Projects that pack DOWNLOADED artifacts rather than anything built here. `Shenora.Launcher`
     // carries per-RID native binaries produced by the `launcher` CI matrix on two different runners, so
     // no single machine can pack it from source. Skipped when its artifacts are absent — which is every
     // ordinary dev-box run — and packed normally once a release workflow has staged them. It is NOT

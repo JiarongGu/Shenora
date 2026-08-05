@@ -149,7 +149,7 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
   - Verified on device at first paint: `top=48.762px bottom=24px color=#14161a` while `env()` still
     reported zero, including the bottom inset Android never exposes to CSS.
 
-- **NEW PACKAGE `Shenora.Launcher.Native`** — the prebuilt launcher that runs BEFORE your app and
+- **NEW PACKAGE `Shenora.Launcher`** — the prebuilt launcher that runs BEFORE your app and
   applies a staged update. It is the one part of staged updating that cannot be done in .NET: it runs
   when the runtime may be absent and must replace files the app holds open. **A self-contained app needs
   none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET.

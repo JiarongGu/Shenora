@@ -32,11 +32,11 @@ export default {
     // a file tree should not carry.
     'src/Shenora.IO',
     'src/Shenora.IO.Compression',
-    // The native launcher's packaging project (B4b). Listed here because it IS shipped and the
+    // The native launcher's packaging project. Listed here because it IS shipped and the
     // coverage check reads IsPackable as the definition of "shipped" — but it packs DOWNLOADED CI
     // artifacts, not anything built on this machine, so `pack` skips it unless they are staged. See
     // artifactPackableProjects below.
-    'src/Shenora.Launcher.Native',
+    'src/Shenora.Launcher',
     'src/Shenora.Media',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
@@ -66,7 +66,7 @@ export default {
    * routine dev-box pack — while the csproj itself still errors if pack is forced without them, so the
    * only way to ship an empty native package is to work at it.
    */
-  artifactPackableProjects: ['src/Shenora.Launcher.Native'],
+  artifactPackableProjects: ['src/Shenora.Launcher'],
   /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
   npmDir: 'src/Shenora.React',
   /** Pack output (gitignored). */

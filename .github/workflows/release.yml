@@ -231,7 +231,7 @@ jobs:
         with:
           pattern: release-launcher-*
           merge-multiple: true
-          path: src/Shenora.Launcher.Native/artifacts
+          path: src/Shenora.Launcher/artifacts
 
       # A release must not publish a package set that silently lost one. `pack` SKIPS the launcher
       # project when its binaries are absent — the right behaviour on a dev box, and exactly the wrong
@@ -240,7 +240,7 @@ jobs:
       - name: Assert both launcher RIDs are present
         shell: pwsh
         run: |
-          $root = 'src/Shenora.Launcher.Native/artifacts/runtimes'
+          $root = 'src/Shenora.Launcher/artifacts/runtimes'
           foreach ($rid in @('win-x64', 'linux-x64')) {
             $found = Get-ChildItem "$root/$rid/native" -File -ErrorAction SilentlyContinue
             if (-not $found) { throw "launcher binary missing for $rid — the matrix job did not deliver it" }

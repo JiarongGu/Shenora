@@ -172,7 +172,7 @@ public class MetadataSurfaceTests
         var metadata = Directory.Exists(BaselinesDir()) ? NonEmpty(BaselinesDir()) : [];
         var baselined = runtime.Concat(metadata).ToHashSet(StringComparer.Ordinal)!;
 
-        // A package can legitimately ship NO managed assembly — `Shenora.Launcher.Native` carries
+        // A package can legitimately ship NO managed assembly — `Shenora.Launcher` carries
         // per-RID native binaries and C++ sources and nothing else, so there is no surface to reflect
         // over and neither baseline kind can exist for it. The exemption is opt-in BY THE PROJECT
         // (`<NoManagedSurface>true</NoManagedSurface>`) rather than a name hard-coded here, for the

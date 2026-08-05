@@ -13,7 +13,7 @@ length stops tracking the remaining work. Two of the stale entries still showed 
 after they shipped.
 
 **Status: 0.9.1 is the last PUBLISHED release (2026-08-04). `## Unreleased` is large and is the
-next one** — three new packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher.Native`), the
+next one** — three new packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
 safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
 Release history and its incidents live in `CHANGELOG.md`; the current package set is the table at the top
 of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.

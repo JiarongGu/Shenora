@@ -72,7 +72,7 @@ trade. The page's CSS fallback covers that frame. Revisit if the shell needs tha
 
 ### B4b — packing the launcher as `runtimes/{rid}/native/` (2026-08-05) — DONE
 
-`src/Shenora.Launcher.Native`: a packaging-only project that compiles nothing. It puts the per-RID
+`src/Shenora.Launcher`: a packaging-only project that compiles nothing. It puts the per-RID
 binaries the `launcher` CI matrix builds into `runtimes/{rid}/native/`, so a consumer's
 `PackageReference` drops the right one into their output by RID — D50's stated shape.
 

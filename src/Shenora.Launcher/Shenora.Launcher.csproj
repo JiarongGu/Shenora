@@ -1,0 +1,90 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The launcher's PACKAGING project. It compiles nothing: it exists to put the per-RID native binaries
+    CI builds, plus the C++ sources an adopter may want to build their own from, into one nupkg.
+
+    IT LIVES IN THE SAME DIRECTORY AS THE C++ IT SHIPS, and that is deliberate. This repo's tooling
+    treats the directory name as the package id — `doctor` looks for `src/<name>/<name>.csproj`,
+    `doc-drift` requires `<name>` to be documented, and the metadata baselines are keyed on it — so a
+    package called `Shenora.Launcher` has to live in `src/Shenora.Launcher/`. It was briefly
+    `Shenora.Launcher.Native` in a directory of its own purely to avoid colliding with the C++ tree,
+    which is naming a package after an implementation detail to work around a layout problem. One
+    directory holding the sources and the project that ships them is the simpler answer, and `Native`
+    was never a mechanism (D22) — the launcher is the mechanism, native is how it happens to be built.
+
+    WHY IT CANNOT BUILD WHAT IT PACKS. The binaries come from two toolchains (CMake/MSVC and CMake/gcc)
+    on two RUNNERS, so no single `dotnet pack` produces both. `release.yml`'s matrix builds and
+    conformance-tests each one and the publish job depends on it; `dev.mjs pack` on a dev box skips this
+    project and says why.
+  -->
+  <PropertyGroup>
+    <!-- IsPackable stays INLINE — the coverage gate finds shipped projects by text-matching it. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Launcher</PackageId>
+    <Description>Shenora launcher: the native applier that runs BEFORE your app and applies a staged update, for framework-dependent apps whose runtime may be absent and whose files may be held open. Ships per-RID binaries (win-x64, linux-x64) plus the C++17 library sources and the main.cpp template, so you can use the stock launcher or build your own from the same library. A self-contained app needs none of this — Shenora.IO's UpdateStage.ApplyAsync already applies updates in portable .NET.</Description>
+
+    <!--
+      ⚠ THIS PACKAGE HAS NO MANAGED SURFACE, and that is declared rather than inferred.
+      `MetadataSurfaceTests` requires every packable project to have an API baseline of one kind or the
+      other, which is right for every other package here and impossible for this one: it contains no
+      assembly to reflect over. The property is checked BY NAME in that test, so the exemption is one
+      deliberate line in one place instead of a special case hidden in the test — and a project that
+      grows a managed assembly later must delete this line to stay exempt, which is the direction that
+      fails safe.
+    -->
+    <NoManagedSurface>true</NoManagedSurface>
+
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoWarn>$(NoWarn);NU5128</NoWarn> <!-- no lib/ for the declared TFM: correct here, by construction -->
+    <!-- Off, or the SDK would glob the C++ sitting beside this file into a C# compilation. -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!--
+      No .snupkg, overriding the shared default in src/Directory.Build.props. There is no managed
+      assembly here, so there is no PDB, so the symbols package comes out empty and pack fails with
+      NU5017 — AFTER having written a perfectly good main package, which is why the failure reads as a
+      mystery rather than as "symbols". Native debug info belongs with the toolchain that produced it.
+    -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- Where the release workflow drops the artifacts it downloaded from the launcher matrix. -->
+    <LauncherArtifacts Condition="'$(LauncherArtifacts)' == ''">$(MSBuildThisFileDirectory)artifacts</LauncherArtifacts>
+  </PropertyGroup>
+
+  <!--
+    FAIL LOUD rather than ship an empty package. A nupkg whose `runtimes/` folder is missing looks
+    identical to a working one at restore time and only fails at the consumer's build, which is the
+    worst place to discover it.
+  -->
+  <Target Name="RequireLauncherArtifacts" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <_FoundLaunchers Include="$(LauncherArtifacts)/runtimes/**/native/*" />
+    </ItemGroup>
+    <Error Condition="'@(_FoundLaunchers)' == ''"
+           Text="Shenora.Launcher has no binaries under $(LauncherArtifacts)/runtimes/**/native/. They are built by release.yml's launcher matrix (win-x64 + linux-x64) and downloaded there before packing. Packing an empty runtimes/ would produce a package that restores fine and fails at the consumer's build." />
+  </Target>
+
+  <ItemGroup>
+    <!--
+      The prebuilt launchers, laid out so MSBuild's RID resolution copies the right one. BUILT BY CI and
+      downloaded here, never committed — committing them was tried and reverted: it put a build output in
+      git, could only carry the one RID the maintainer's machine builds, and would go stale against the
+      C++ the moment someone edited it without rebuilding.
+    -->
+    <None Include="$(LauncherArtifacts)/runtimes/**/native/*" Pack="true" PackagePath="runtimes/" />
+
+    <!--
+      The library SOURCES ship too. An adopter has two legitimate needs: use the stock binary (rename,
+      re-icon, sign) — that is `runtimes/` above — or build their own launcher from the same library with
+      their own main.cpp. A template left only in the repo rots and gets copied at the wrong version;
+      shipping it versions it in lockstep with the library it is built against (D4). A plain folder
+      rather than `contentFiles/` deliberately: the consumer's launcher build is CMake, not MSBuild.
+    -->
+    <None Include="CMakeLists.txt" Pack="true" PackagePath="launcher-src/" />
+    <None Include="include/**/*" Pack="true" PackagePath="launcher-src/include/" />
+    <None Include="src/**/*" Pack="true" PackagePath="launcher-src/src/" />
+    <None Include="template/**/*" Pack="true" PackagePath="launcher-src/template/" />
+  </ItemGroup>
+
+</Project>

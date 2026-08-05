@@ -84,7 +84,7 @@ jobs:
           exe=$(find build -name '${{ matrix.exe }}' -type f | head -n1)
           cp "$exe" "artifact/runtimes/${{ matrix.rid }}/native/"
 
-      # These are what `src/Shenora.Launcher.Native` packs (B4b). A release downloads BOTH into that
+      # These are what `src/Shenora.Launcher` packs (B4b). A release downloads BOTH into that
       # project's `artifacts/` folder and runs `dotnet pack` on it — no single runner can build both,
       # which is the whole reason that project consumes artifacts instead of sources.
       #

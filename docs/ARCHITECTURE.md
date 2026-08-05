@@ -118,7 +118,7 @@ Shenora.slnx
 │   │                                          linux-x64) running the conformance harness against the
 │   │                                          built binary, NOT by `dev.mjs verify`, which has no C++
 │   │                                          toolchain and deliberately does not grow one.
-│   ├── Shenora.Launcher.Native (packaging only — compiles NOTHING)
+│   ├── Shenora.Launcher/    (C++17 + CMake, plus the packaging csproj)
 │   │                                          B4b: puts the per-RID launcher binaries the `launcher`
 │   │                                          CI matrix builds (win-x64 + linux-x64) into one nupkg
 │   │                                          under runtimes/{rid}/native/, alongside the C++ library
