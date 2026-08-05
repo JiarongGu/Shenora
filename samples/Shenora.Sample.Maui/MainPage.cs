@@ -93,6 +93,27 @@ public sealed class MainPage : ContentPage
 		{
 			try { await _media.PrepareAsync(_webView); }
 			catch (Exception ex) { MauiProgram.Log($"media: staging FAILED — {ex}"); }
+
+			// The two adopter-filed seam tests, and they run HERE — after a route is registered — because
+			// that is the precondition for both. Give the page a moment to finish its own load first: a
+			// reload probe that fires mid-load would be testing the wrong navigation.
+			try
+			{
+				await Task.Delay(TimeSpan.FromSeconds(3));
+				if (_media.Interceptor is { } interceptor)
+				{
+					using var headerRoute = PageProbe.RegisterHeaderRoute(interceptor, MauiProgram.Log);
+					MauiProgram.Log(await PageProbe.CheckResponseHeadersAsync(_webView, MauiProgram.Log));
+				}
+				// Media BEFORE the reload probe: the reload replaces the document, so anything asserted
+				// about the page's <video> has to happen while that document is still the one under test.
+				MauiProgram.Log(await PageProbe.CheckMediaAsync(_webView, MauiProgram.Log));
+				// To sabotage-verify the gate below, wrap it in:
+				//     using var s = PageProbe.SabotageMainDocument(_media.Interceptor!, MauiProgram.Log);
+				// Done 2026-08-05: FAIL with `title=|nodes=5|text=Not Found`, PASS without.
+				MauiProgram.Log(await PageProbe.CheckReloadAsync(_webView, MauiProgram.Log));
+			}
+			catch (Exception ex) { MauiProgram.Log($"[NAV] probe threw — {ex}"); }
 		});
 
 		// The system media transport surface. Resolved from DI rather than constructed, because that is

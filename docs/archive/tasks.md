@@ -15,6 +15,556 @@
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
 
+---
+
+### File dialogs, end to end on both sides of the wire (2026-08-05) — DONE, six phases
+
+Owner direction: *"we can also have react part to support too, and it can detect the system type just like
+the media one does"*. Built through the `new-ipc-module` skill; every gate it predicts fired exactly where
+it said it would.
+
+**The gap that justified it, measured rather than asserted.** `ShellCapability.FilePicker`/`FolderPicker`/
+`SavePicker` were already kit vocabulary crossing the wire in the ready handshake, and the kit shipped no way
+to satisfy them — so every app wrote the same routes and then claimed the capability itself. Both samples in
+this repo had done that independently.
+
+**⚠ Two corrections to the premise, both from reading rather than assuming:**
+- **`mediaUrl()` detects NOTHING.** It returns a RELATIVE url, and that is the trick (D44). The detection
+  half is a separate mechanism — and it turned out to be missing (below). A dialog helper needs the
+  detection half, not the relative-url half, because it calls a host route.
+- **Shipping the client half is what FLIPPED the `FileDialogOptions` shape question.** Leaving the single
+  bag alone had been the right call while it was C#-only (the XML tags each field and a caller sees them in
+  a tooltip); it stops being right the moment a page author names the same shape. Deciding the split as part
+  of this work rather than after it avoided breaking the wire contract twice.
+
+**Phase findings worth keeping:**
+1. **The split immediately caught a real regression.** `ShowFileOrFolderDialog` passes `Filters`, and in
+   `AllowFileSelection` mode that is a genuine capability (an `OpenFileDialog` underneath). Dropping filters
+   from the folder options would have silently removed working behaviour, so `Filters` is on
+   `OpenFolderOptions`, documented as ignored without `AllowFileSelection`. **A field conditional on a
+   SIBLING field is a different thing from one conditional on which METHOD you called.**
+2. **The surface lexicon gate fired on `Open`/`Save` — the first VERBS on this surface** — and was taken
+   deliberately rather than renamed around: they are the platform's own words (`OpenFileDialog`/
+   `SaveFileDialog` are BCL type names), `IFileDialogs` has used them as METHOD names since P5.5 (members
+   are not swept, which is why it never fired before), and `FileSourceOptions`/`FileTargetOptions`
+   mis-describe the folder case, which is a source when it grants a working directory and a target when it
+   picks an export destination. Reasoning + a watch-note are in `surface-lexicon.txt`.
+3. **`SAVE_TEXT` carries TEXT because `SaveAsync` takes a write DELEGATE a page cannot send.** The content
+   must cross the envelope, and that bounds what the route may honestly offer. Binary or large payloads
+   belong host-side, where they never enter a message.
+4. **A capability refusal gets a NAMED code** (`CapabilityNotSupported`), built from the kit's own words
+   plus the capability name — never `ex.Message`, which crosses the wire verbatim and would bypass the
+   error boundary entirely. Sabotage-verified.
+5. 🔴 **`useShellInfo()` did not exist, and two shipped doc examples called it.** `media.ts` and `types.ts`
+   both wrote `const shell = useShellInfo();` while only `bridge.shell` was real — so an adopter following
+   the kit's own example wrote code that does not compile. **Third instance this session of "the docs
+   described something that was not connected"**, after the MediaSession token and `FilePath`-when-`Success`.
+6. **Two gates proved themselves on demand, which is the only reason to trust them.** Dropping
+   `FileDialogResult` from the barrel fails `npm run typecheck` NAMING the type while all 115 runtime tests
+   still pass — the `OperationProgress` defect class reproduced. And the wire mirror failed the moment a
+   host-side error code was added without its client half.
+7. ⚠ **The mirror parser could not read `export interface X extends Y {`** and failed claiming the interface
+   did not exist. Fixed in the PARSER, per that file's own standing rule — the tempting reading ("the mirror
+   is obviously fine, loosen the check") is how a tripwire stops checking anything.
+8. 🔴 **The phase review found a real one, in its own first checklist class** (request→file mapping).
+   **`RememberPathKey` becomes PAGE-SUPPLIED the moment these routes are registered.** Every other options
+   field is an inert hint the system dialog interprets with the user still confirming the selection — but
+   this one is handed verbatim to the app's `IFileDialogPathStore`, which until now only ever saw
+   app-authored keys. An implementation that composes it into a filename (`{key}.json`, a directory per
+   key) was safe by construction and is not any more: `../../config` is newly expressible.
+   - The kit ships NO store, so it cannot fix this for the adopter — which makes it a documentation duty,
+     not an optional note. Stated on `IFileDialogPathStore.GetPathAsync`'s parameter, on
+     `FileDialogOptions.RememberPathKey`, and on the facade's own class remarks.
+   - **The general shape is worth more than the instance: exposing an existing app-facing seam to the PAGE
+     changes its threat model even though neither side's code changed.** Ask it of any facade that forwards
+     an app-supplied value into an app-implemented interface.
+9. **The samples KEEP their hand-rolled routes, with a comment saying why.** `PortableSampleFacade` still
+   demonstrates portable app LOGIC composing a dialog with behaviour of its own (a deliberately slow,
+   interruptible write). Deleting them would have taught "write your own route"; the comment teaches the
+   actual rule — your own route when you have logic AROUND the dialog, the kit's when you just need it.
+
+### The greenfield-shape sweep, findings 1–3 (2026-08-05) — DONE, and one of them was wrong
+
+Swept all four API baselines (~1,840 lines) under **D47** for shapes surviving only because changing them
+used to be expensive. Three were taken; the fourth (`FileDialogOptions` serving three dialogs) is still open
+in `TASKS.md`.
+
+**1 — `IEventBus` now returns `IDisposable`; `Unsubscribe` is gone.** The kit was disagreeing with itself:
+`IWebViewInterceptor.Use` and `WebViewResourcePipeline.Use` already returned a disposable that removes the
+registration, while the bus returned a string you had to hand back — and `Unsubscribe` ignored an id it did
+not recognise, so a typo or double-release was a silent no-op.
+
+- **It deleted a real leak, not just an inconsistency.** `NotificationPump` had to hold BOTH the id and a
+  live bus reference to release, so a pump torn down after its bus had gone away leaked the subscription
+  silently. The disposable owns its own release, so that failure mode no longer exists to get wrong.
+- Only ONE call site in the entire repo consumed the returned id (a single test) — every other caller
+  discarded it. That is what made a five-overload signature change cheap, and it is worth checking before
+  assuming a return-type change is expensive.
+- ⚠ **The idempotency latch is defence-in-depth, and the sabotage proved it rather than the test.** The
+  first sabotage — removing the `Interlocked` latch — did not COMPILE (unused field, warnings-as-errors),
+  and would not have failed anything anyway: ids are fresh GUIDs and `TryRemove` on a missing key is
+  harmless, so double-dispose is already safe without it. The tests assert the OBSERVABLE contract instead
+  (delivery stops; a second dispose is harmless; other subscriptions survive), which is what would still
+  hold if the id format changed. Verified by two sabotages that DO bite: a no-op dispose fails three tests,
+  and a dispose that clears every subscription fails the "leaves the others alone" one.
+
+**2 — `GlobalLaneCapacity` is `int?` with `null` = auto.** It was the LAST magic sentinel on the surface —
+checked, not assumed: every other option carries a real default and rejects nonsense (`LeaseTimeout` 30 s,
+`PollInterval` 50 ms, `MaxQueuedNotifications` 10 000, and the IPC options throw rather than reinterpret).
+A sentinel makes one legal-looking value mean something else, and what `0` actually describes is a scheduler
+that can never run anything — so it now throws.
+
+**3 — ⚠ THE FINDING WAS WRONG, AND THE SOURCE SAID SO. Read this before re-proposing it.** It was filed as
+"`FileDialogResult` encodes one state in two fields — `Success` plus `FilePath` permits an invalid
+combination". It does not. `Success = true, FilePath = null` is a **deliberate, shipped third outcome**: both
+mobile shells return it from `SaveAsync`, because the bytes went to a content URI, and a revocable grant is
+not something the app should be handed back to reopen later. The implementations say so in comments.
+
+- **It was filed off the BASELINE SIGNATURE and died on the implementations** — in the same sweep whose own
+  note said "each was checked against the SOURCE, not the signature". Two fields that look redundant in an
+  API listing are exactly the case where the listing cannot tell you.
+- **What was actually wrong is the opposite of what was filed:** the contract's XML said `FilePath` is "the
+  picked location when `Success`", which reads as *present whenever Success*. The Android implementation's
+  comment even asserts "the contract says FilePath is populated only when the host HAS an addressable
+  destination" — a contract that was not written anywhere. So an adopter reading the type would write
+  `result.FilePath!` after checking `Success` and get a null-reference on a phone. Same shape as the
+  MediaSession-token defect: **the docs described a division the adopter then discovers is not connected.**
+- Fixed by stating all three outcomes on the type, and by adding `FileDialogResult.Completed()` so the
+  mobile shells construct that outcome BY NAME instead of open-coding `new() { Success = true }`, which read
+  like a forgotten field rather than a decision.
+
+### `ILane.Capacity` "can only narrow a lane" (2026-08-05) — CLOSED, but not as filed
+
+Filed as a 🔴 defect with a measured table (9 missions × 200 ms on one lane): effective width is
+`min(DefaultLaneCapacity, Capacity)`, so a widen is stored, reported, and changes nothing.
+
+**Half of that is the documented design and stays.** `MissionSchedulerOptions.DefaultLaneCapacity` is "the
+global concurrency bound" in its own XML, and design §3 says "the default lane bounds total concurrency" —
+every mission draws one permit from it. A named lane being unable to exceed the global bound is what a
+global bound MEANS; removing that would let a lane flood the machine. Checking the design before writing the
+fix is what stopped this becoming a behaviour regression dressed as a bug fix.
+
+**The other half was real, and it was two things, neither of which is the capping rule:**
+
+1. **It was undetectable.** `Capacity` answered the requested value while the lane ran narrower, so the only
+   way to discover it was to time the work — which is exactly how the adopter found it. Now
+   `ILane.EffectiveCapacity` answers `min(Capacity, GlobalLane.Capacity)` directly, and setting a capacity
+   above the bound LOGS which value will apply and how to raise it.
+   - ⚠ `Capacity` still reports what was REQUESTED rather than clamping to the bound. Clamping looks tidier
+     and silently discards intent: a governor that widens a lane and then widens the global bound would find
+     its first call had been thrown away. Keeping the request and exposing the effective value separately is
+     the only shape where both round-trip honestly.
+2. **The bound could never be raised at runtime.** `DefaultLaneCapacity` is `init`-only and the lane it sized
+   had no name (`""`) and no accessor. So the adopter's `CapacityGovernor` — which throttles gpu/cpu lanes
+   under load and RESTORES them when the machine idles — could throttle and never recover past the value
+   chosen at startup. That is the functional hole, and it is the one the filing under-stated. Fixed by
+   exposing the lane: `IMissionScheduler.GlobalLane`.
+
+**Judgement calls worth keeping:**
+
+- **Exposed as an `ILane`, not as a `GlobalCapacity` setter.** The lane already carries `Hold`/`Release`, so
+  exposing the object rather than the number also delivered "pause the whole scheduler without cancelling
+  anything" — a capability the machinery already had and that nothing could ask for. A bespoke setter would
+  have shipped one third of what was already built.
+- **`GlobalLaneName = "(global)"`, and `Lane(name)` resolves it to the SAME instance.** Giving the lane a
+  real name creates a trap the empty string did not have: a lane merely SHARING the name would be a separate
+  pool that accepts a capacity change and alters nothing — the reported defect, reachable a second way. The
+  same resolution runs for a mission DECLARING the lane, where it also makes the existing permit-merge rule
+  do the right thing (permits add on top of the implicit one, from one pool, instead of being taken twice
+  from two).
+- **The `IsGlobal` check is by REFERENCE, not by name.** The global lane is constructed before the field
+  holding it is assigned, so a name comparison would be true during its own construction and would then read
+  an uninitialised field.
+- **The tests assert PEAK CONCURRENCY, never the property** — the filing's own suggestion, and the reason it
+  is right is that a test which set a capacity and read it back passes in all three rows of the table,
+  including the broken one. `EffectiveCapacity` is asserted alongside the observed peak rather than instead
+  of it: a derived number is only worth having if something proves it matches reality.
+- ⚠ **One test was wrong before the code was.** "A mission declaring the global lane behaves exactly like
+  not naming it" — it does not, and should not: `MissionDefinition.Lanes` is documented as permits drawn "on
+  top of the scheduler's default lane", so naming it costs two. The test also could not have discriminated a
+  decoy pool at the capacity it used. Rewritten to a capacity where the two outcomes differ. **Check that a
+  failing assertion is wrong about the code before changing the code.**
+- Sabotage-verified both ways, and the failures named their own mechanisms: dropping the `min` fails only
+  the wider-than-bound test; removing the global-name resolution fails only the same-instance and
+  permit-merge tests.
+
+**The rename followed, same day, owner-approved:** `DefaultLaneCapacity` → `GlobalLaneCapacity`, a documented
+break under `### Breaking` whose whole migration is renaming the assignment. The name is what let the adopter
+write the bug, so renaming it was worth more than the doc paragraph papering over it.
+
+⚠ **An `[Obsolete]` alias was built first and then DELETED on owner direction** — *"we dont really need
+Obsolete, lets keep this library logic clean"* — and the reasoning is worth keeping because the first
+instinct was the wrong one. A warning-level alias leaves BOTH names on the public surface indefinitely, and
+the misleading one keeps getting written, which is the entire thing the rename exists to prevent. It also
+costs a backing field, a resolution rule for "what if both are set", and a test to pin a promise nobody
+would otherwise check. **A compile error naming the new property is a better outcome than a warning**: the
+fix is one word per site and the compiler finds every one of them. Deprecation earns its keep when migration
+is genuinely hard; here it was a rename.
+
+**Considered and rejected:** renaming `ILane` itself. It is the harvested word (the donor apps already said
+"named lanes (gpu/cpu)"), the metaphor is what carries weighted permits, and it is published surface whose
+rename cascades through `MissionLane`/`Lanes`/`Lane`.
+
+⚠ **A scripted bulk rename corrupted `ARCHITECTURE.md` on the way through, and the mechanism is now a rule**
+(`windows-dev-gotchas.md`): PS 5.1 collapses `@(@(a,b))` when there is exactly ONE nested pair, so `$pair`
+became a string and `.Replace($pair[0], $pair[1])` was `Replace('E','v')` over the whole file. The same
+script's OTHER target had five pairs, stayed nested, and was correct — which is why this passes any test
+written with more than one case. Caught by `git diff --numstat` showing 191 changed lines for a two-line
+edit; reverted and redone with the Edit tool. **The tell is a diff far larger than the edit.**
+
+### Three adopter defects from the 0.9.1 round (2026-08-05) — FIXED, each with the gate that missed it
+
+All three shared one shape, which is the part worth keeping: **the code did not throw, and nothing asked
+what the OS or the page ended up believing.** Detail in `CHANGELOG.md`; what follows is the judgement.
+
+**1. Windows dropped `PlaybackInfo.Duration`.** `Publish` drove only the `DisplayUpdater` and `Report` built
+a timeline with no `EndTime`; nothing carried the duration between the two calls, so it could never be
+anything but zero. The session now remembers it (and clears it on `Clear`, and on a `Publish` that omits
+one, so a new item cannot inherit the last one's length).
+
+- **`EndTime` AND `MaxSeekTime`.** One is what the flyout draws against, the other bounds a DRAG — setting
+  only the first renders a length the user cannot reach.
+- **A position past the end is CLAMPED, not passed through.** SMTC rejects an out-of-order timeline
+  wholesale, which would lose the duration as well as the position, and reporting a position a tick past the
+  end is ordinary at the moment a track finishes. The incoherent field must not cost the coherent one.
+- **Null and non-positive durations both still mean UNKNOWN** and leave the end at zero — pinned by a test,
+  because that is the direction a fix like this breaks silently, and a live stream legitimately has no end.
+- ⚠ **The probe had published a 240 s duration since the day it was written and never checked it.** Every
+  other assertion in it passed. That is the whole defect in one sentence: a seam test that publishes a field
+  it does not read back is not testing that field. It now asserts the OS's own `EndTime`
+  (`pos=00:00:42|end=00:04:00`), and `TimelineFor` is a pure `internal static` so the arithmetic is
+  unit-testable with no media pipeline — sabotage-verified both ways.
+
+**2. Android published `speed=1.0` for a PAUSED track.** `MobilePlaybackSession` forwarded `Rate` verbatim
+while the iOS session already derived it from `State`, so one portable contract produced two behaviours from
+identical input, and only one platform punished the app for it. Derived from the state on Android too.
+
+- **Fixed in the SESSION rather than documented as the app's job**, which is the point of a portable
+  contract: the adopter's workaround was to zero `Rate` before calling — i.e. to lie about its own rate to
+  satisfy one platform.
+- ⚠ **The general question this raised is now answered in the contract's own docs, not just fixed.**
+  `PlaybackProgress.Rate` states that no shell needs the caller to zero it, and that Windows cannot carry a
+  rate AT ALL (`SystemMediaTransportControls` has no speed field), so a 1.5× audiobook reads as normal speed
+  there. Third finding of the shape "one shell silently ignores a field the contract offers", after the
+  paused rate and the skip interval — the answer to "does every shell honour every field?" belongs on the
+  field, where an adopter is already looking.
+
+**3. Android duplicated `Content-Length`, first value `0`.** Reproduced on the sample, then ATTRIBUTED with a
+diagnostic route that varied only which headers the kit supplied — which is the technique worth keeping,
+because "the page saw two content-types" cannot otherwise be pinned on us or on the platform. The table is in
+`.claude/knowledge/mobile-shells.md`. MAUI's Android path always emits its own `Content-Type` and
+`Content-Length: 0` AND passes our dictionary through; a custom `X-` header arrived exactly once in every
+variant, so it is those two fields being re-derived, not blanket duplication.
+
+- **`Content-Length` dropped, `Content-Type` kept, and the asymmetry is the decision.** Two DIFFERING values
+  is an invalid message (RFC 9110 §8.6) and a consumer taking the first reads the body as empty; ours bought
+  nothing because the platform ignores both and delivered the complete body in every variant. Dropping
+  `Content-Type` instead yields `application/octet-stream`, which no `<video>` will touch — and there is no
+  `SetResponse` overload taking a content type alongside a dictionary, so the repeat cannot be avoided. Both
+  its values are identical, so nothing can be misled.
+- **Android only.** iOS builds an `NSHTTPURLResponse` through different platform code, was not measured, and
+  AVFoundation is the pickiest consumer the kit has (D44). A shared-source file with a real per-platform
+  difference is exactly where `#if` earns its keep.
+- ⚠ **D44's evidence became a GATE in the same change**, because this altered what a media pipeline
+  receives: the MAUI sample now loads BOTH clips — including the one whose mp4 index sits at the END, which
+  cannot open unless a tail range is answered correctly — and asserts each resolves a duration and seeks.
+  `duration=60.00|seeked=48.00` for both, after the change. A gate that only ran the faststart clip would
+  have been green for every version of the bug D44 exists to prevent.
+
+**The fourth defect of that round did not reproduce and was deliberately NOT fixed** — see `TASKS.md`.
+Writing a main-frame fall-through change with no reproduction would have been a change verifiable in neither
+direction.
+
+---
+
+## The 2026-08-05 sweep — eleven closed items moved out of `TASKS.md`
+
+`TASKS.md` had stopped being an open backlog: closed sections were being annotated in place
+(*"CLOSED"*, *"DONE"*, `[x]`) instead of moved, so its length measured the work DONE rather than the work
+LEFT — the one thing it exists to show. The entries below were moved verbatim-in-substance on 2026-08-05;
+each keeps its own completion date. **Two were still `[ ]` unchecked and had been done for a day**
+(Now Playing, and the Android session token), which is the concrete cost of annotating in place: an open
+box is the only signal the file gives, and it was wrong twice.
+
+### Adoption readiness for the server-backed sibling (2026-08-03) — CLEARED, recorded so it is not re-checked
+
+Readiness was checked against the **published artifacts** rather than the tree, which is the only check
+that counts. Everything found is resolved or documented; nothing was left open.
+
+- **The one blocker was FIXED by 0.8.0.** D2a had shipped in the docs and not in the packages, so
+  `using Shenora.Core;` — what every doc says — would not have compiled. Confirmed live: `Shenora.Core`
+  0.8.0 restored *from nuget.org* contains all three types under `Shenora.Core.*`, and `Shenora.Windows`
+  0.8.0 carries none of the old names. ⚠ The cache trap in `ADOPTION.md` Stage 0 is real and applies to
+  verifying a release too — clear any locally-cached copy of that version first, or you validate your own
+  build instead of the feed.
+- **No TFM blocker** — the adopter targets `net10.0` / `net10.0-windows`, exactly what the kit ships.
+- **Stage 0 works from a clean feed**: `Core` + `Ipc` on a bare `net10.0` project, `Windows` on
+  `net10.0-windows`.
+- **Stage 1 spike compiled clean against the PUBLISHED package** (a `PackageReference`, not a project
+  reference — that is what surfaced the next point). An app's real window-state usage maps onto
+  `WindowStateManager` unchanged in shape, and the off-screen guard it would have kept private is here as
+  a pure, unit-testable function.
+- **`MSB3277` on a consumer's first build is documented in `ADOPTION.md` Stage 0.** Harmless, and the kit
+  already demoted it in its own projects while telling adopters nothing — so "the kit builds clean" was
+  never a claim that theirs would. Worth remembering as a pattern: **spike against the published artifact,
+  because a project reference hides packaging.**
+
+### A — the second shell (MAUI): A1–A8 all CLOSED (2026-08-02 → 2026-08-03)
+
+`Shenora.Mobile` ships, is in the solution and the gate, and was run on a real Android device —
+request/response, batched notifications, the structured error boundary, the native file picker through the
+portable `IFileDialogs`, and the mission scheduler serializing a contended mission.
+`samples/Shenora.Sample.Maui` hosts the SAME `Shenora.Sample.Logic` as the desktop sample. Commits
+`a85280e` · `31b9aaa` · `b87cf9c`; narrative in `docs/ROADMAP.md` `## Done`.
+
+Where each item's record lives, since they closed into different homes:
+
+| Item | Closed as | Record |
+|---|---|---|
+| A1 — the client speaks both shells | built | this file, `### A1` |
+| A2 — capability stubs | **closed by ANALYSIS**, the hole did not exist (the layering already prevents it) | this file, `### A2` — read it before re-proposing stubs |
+| A3 — the adopter guide | written | `docs/ADOPTION.md` Stage 5 |
+| A4 — the decisions | written | `docs/DECISIONS.md` D32–D34 |
+| A5 — `dev.mjs android` | built (`devices\|connect\|deploy\|run\|log\|shot`, four traps folded in) | `devtools/README.md` |
+| A6 — iOS, the THIRD shell | built — `dev.mjs mac` drives a Mac over SSH; the simulator answers the same handshake with `maui · [filePicker]`, plus `ECHO` and `UI_STATE` (`onUiThread: true`). `Shenora.Mobile` needed **no platform directive at all**; the sample needed one, for the log sink. Five traps folded in | this file, `## A6`; `devtools/README.md` |
+| A7 — capability advertisement | built — `ShellInfo` rides the ready handshake, so ONE web bundle renders correctly on both shells by reading `bridge.shell` instead of sniffing the platform (owner, 2026-08-02: *"the universal I mean is more about the interfaces also about the frontend code itself"*). Proven on the device | `docs/ADOPTION.md` |
+| A8 — iOS published | 0.5.1 shipped all five packages from one Windows runner. The macOS pack job was retired **unbuilt**: only an iOS APP needs a Mac | this file, `## A8` |
+
+### B2 + B3 — the staging area and the release-source seam (2026-08-02) — DONE
+
+- **B2 — `UpdateStage`**, 9 tests, the write-the-marker-LAST ordering sabotage-verified. It also carries
+  B1's deferred empty-manifest guard.
+- **B3 — the release-source seam** — `IUpdateSource` + `UpdateStage.FetchAsync`. The kit ships **no
+  implementation** of the seam, and the differential-vs-full manifest distinction is documented on
+  `FetchAsync`.
+
+### NOW PLAYING — `IPlaybackSession` on all three shells (0.9.0, 2026-08-04) — DONE
+
+The textbook fit predicted for the platform-integration direction, and it landed exactly as predicted: ONE
+portable contract in `Shenora.Core`, three shell implementations — the same
+`IWebViewInterceptor`/`IFileDialogs`/`IUiDispatcher` shape the kit already had three times over.
+`Publish(PlaybackInfo)` / `Report(PlaybackProgress)` / `Clear()` go app → OS; `CommandReceived` comes back.
+
+Three decisions were asked of the owner and answered: **all three shells**; **the contract in
+`Shenora.Core` with GENERIC field names** (`Title`/`Subtitle`/`GroupName`, never `Artist`/`Album` — Core is
+referenced by every package); and **multi-target `Shenora.Windows`** (`net10.0-windows` +
+`net10.0-windows10.0.17763.0`, **not** breaking — D46) because `SystemMediaTransportControls` is WinRT and
+the projections do not exist without a Windows SDK version.
+
+Verified against each OS's OWN records, not against "the call succeeded":
+
+| Shell | Evidence |
+|---|---|
+| Windows | `PlaybackSessionProbe` reads it back out of Windows' own `GlobalSystemMediaTransportControlsSessionManager` — app, title/artist/album, `status=Playing`. Sabotage-verified: dropping `DisplayUpdater.Update()` leaves the session visible with an EMPTY title, reported distinctly from "no session" |
+| iOS | `mediaremoted` (Apple's own Now Playing daemon) logged `setting nowPlayingItem`, and every field came back: `Title`, `Artist`, `Album`, `Duration = 240`, `ElapsedTime = 42`, `PlaybackRate = 1` |
+| Android | `adb shell dumpsys media_session`: `active=true`, `state=3`, `position=42000`, all three metadata fields, and **`actions=822`** — which decodes EXACTLY to what the probe asked for (512 `PLAY_PAUSE` + 256 `SEEK_TO` + 32 `SKIP_TO_NEXT` + 16 `SKIP_TO_PREVIOUS` + 4 `PLAY` + 2 `PAUSE`, and no 1 `STOP` because Stop was not requested). That bitmask is the flags mapping proven arithmetically, `TogglePlayPause` rule included |
+
+Both design traps the item was filed with were designed for and held: commands flow OS → app so it is an
+EVENT SOURCE riding the batched notification pipe, and the kit ships **no queue model** (only the app knows
+what "next" means); and position is reported as *(position, rate, timestamp)* for the platform to
+extrapolate, never as a tick stream.
+
+⚠ Its two follow-ups did NOT close with it and were filed separately — the Android session TOKEN (below,
+closed in 0.9.1) and skip-by-interval (below, closed in 0.9.1). A capability shipping is not the same as
+its adopter being able to use it.
+
+### C — the desktop-flavoured service contracts, and folder picking (2026-08-02 → 2026-08-03) — CLOSED
+
+Held at the two-consumer bar for a real mobile consumer rather than another spike. `MobileFileDialogs`
+became that consumer, and the finding was better than expected.
+
+- **`OpenFileAsync` needs NO break.** `FileDialogContracts.cs` had conceded in writing that
+  `FileDialogOptions` carries Win32 vocabulary and that "a mobile picker would ignore the validation hints
+  and return a content URI" — but `FileDialogResult.FilePath` is already specified as "a path or URI the
+  HOST can resolve", which is exactly what Android returns. The desktop-only options are simply ignored,
+  and *which* ones is now written in the implementation's XML rather than left to be discovered.
+- **`OpenReadAsync` closed the universal half** (owner, 2026-08-02: *"make the frontend and interface as
+  universal as we can"* — the C# layer is device-dependent, the JS is not). Portable logic reads a picked
+  handle through the contract instead of calling `File.OpenRead` on it. Measured on a device: MAUI's picker
+  COPIES the document into app cache and returns a real path, so the default works on both shells — the
+  method exists so a shell returning a genuine content URI can override it invisibly.
+- **`SaveAsync` is done on all three shells** — separate record, `## C — the SAVE picker` below.
+- **`OpenFolderAsync` is CLOSED as a portable capability — D35**, not deferred. Owner's framing: on mobile
+  "open folder" means the camera roll, or the app's own space, or a system-authorized grant; on desktop it
+  is free access to any path. **Same word, different guarantee.** So it is documented as a DESKTOP
+  capability and the mobile refusal points at the three intents that ARE portable — `ShenoraPaths` (app-owned
+  space, no picker), a media picker (camera roll), and `OpenFileAsync` + `OpenReadAsync` (one document).
+  (`FolderPicker` also lives in **CommunityToolkit.Maui** — checked by compiling — a UI-component package
+  D13 forbids, so Android would have needed raw `ACTION_OPEN_DOCUMENT_TREE` anyway.)
+
+### `UpdateStageOptions.BaselinePath` (2026-08-04) — DONE
+
+Exactly the fix the first adopter suggested, with one improvement found while writing it: `ApplyAsync` now
+writes the baseline EXPLICITLY and **always** excludes it from the overlay, rather than skipping it only
+when it points outside the root. The conditional version would have left a stray copy at
+`{installRoot}/manifest.json` whenever the baseline was configured anywhere else — including inside the root
+under a different name — so the unconditional rule is both simpler and more correct.
+
+Default behaviour is pinned by a test that did not exist before (nothing asserted `UpdateOutcome.Written` at
+all), and the two new rules are sabotage-verified in both directions: un-skip the overlay and the "pure
+function of the payload" test fails; read the old hardcoded path and the "still READ for removals" test
+fails.
+
+<details><summary>the original filing, kept for the reasoning</summary>
+
+**`ApplyAsync` writes its baseline `manifest.json` INTO the install root, which rules out any target whose
+bytes are themselves hashed or shipped.** `FetchAsync` stages the release manifest and `ApplyAsync` overlays
+it, so after an apply the tree contains a kit bookkeeping file. For an app install tree that is exactly
+right — the baseline belongs with the thing it describes, and both donor implementations put it there.
+But this adopter's targets are **deploy inputs**, not an install tree: two directories whose aggregate
+content hash decides what gets re-uploaded to a cloud account. Its hash walks every file with no exclusions
+— deliberately, because it mirrors the build's own manifest aggregate so the two agree. A per-release
+`manifest.json` inside that tree changes the hash on every release even when the payload is byte-identical,
+so "did the backend actually change?" answers YES always, and a frontend-only change stops taking the
+seconds-long path and takes a full cloud reconcile instead. That breaks a documented invariant there ("a
+part's content must be a pure function of SOURCE, never of build HISTORY"), so the adoption cannot proceed
+on those terms.
+Worth separating what is NOT the problem: staging, per-file SHA verification, the diff, the
+marker-written-LAST ordering and resume are all exactly what was wanted, and better than the hand-rolled
+version. The blocker is purely WHERE the baseline lives.
+Suggested: make the baseline location a parameter — `UpdateStageOptions.BaselinePath`, defaulting to
+`{installRoot}/manifest.json` so nothing changes for the install-tree case, with `ApplyAsync` skipping it
+during the overlay when it points outside the root. That also serves any target the app does not want the
+kit writing into at all.
+
+</details>
+
+### `IPlaybackSession` skip-by-interval (0.9.1, 2026-08-04) — DONE
+
+Shipped as `PlaybackCommands.SkipForward`/`SkipBackward` + `IPlaybackSession.SkipInterval` (default 15 s) +
+`PlaybackCommandRequest.Interval`. Additive, no break. **Both of the adopter's suggestions were taken:** the
+interval is stated once (and IS what makes iOS draw the number on the button), and it rides the request too,
+because iOS sends its own with the event and honouring what arrived beats assuming what was asked for.
+
+Verified against the OS registries — Android `actions=894` (= the previous `822` + 64 `FAST_FORWARD` + 8
+`REWIND`, the old number plus exactly the two new bits) and Windows reading back `ff=True|rw=True`. iOS is
+compile-verified, its interval rendering being a device concern like the Island. The note about a FIXED 15 s
+is in the XML docs so nobody widens it casually.
+
+<details><summary>the original filing, kept for the reasoning</summary>
+
+**`PlaybackCommands` needs SKIP-BY-INTERVAL (±15 s), and it is a functional loss without it.** The shipped
+set is Play/Pause/TogglePlayPause/Stop/Next/Previous/Seek, so an adopter with **long-form audio** — an
+audiobook, a podcast, a lecture, an hour-plus spoken-word track — cannot offer the one transport control
+that shape of content actually wants. Next/Previous are the wrong granularity when a "track" is fifty
+minutes long, and `Seek` is a scrubber rather than a button. The adopter had this working and gave it up to
+adopt the kit, which is exactly the trade the kit should not force.
+- Both platforms already express it and the code exists to port: iOS
+  `MPRemoteCommandCenter.SkipForwardCommand`/`SkipBackwardCommand`, where **`PreferredIntervals` is also
+  what makes iOS draw the "15" ON the button** — without it the control renders as a bare arrow with no
+  interval, which reads as a different feature. Android is
+  `PlaybackState.ActionFastForward`/`ActionRewind` + `OnFastForward`/`OnRewind`. Windows' SMTC has
+  `FastForward`/`Rewind` too, so all three can answer.
+- Shape suggestion, deliberately small: two more `PlaybackCommands` flags plus an interval the app states
+  once (the platforms take a preferred interval, not a per-press value), and `Seconds` on
+  `PlaybackCommandRequest` alongside the existing `Position` — mirroring how `Seek` already carries one.
+- ⚠ The adopter's own note, worth keeping: a *fixed* 15 s is what both platforms' UI is designed around, so
+  an arbitrary interval is not obviously better than a small allowed set.
+
+</details>
+
+### Android: the session's `Token` crosses the kit/app boundary (0.9.1, 2026-08-04) — DONE
+
+Shipped as `MobilePlaybackSession.SessionToken` (`src/Shenora.Mobile/Services/MobilePlaybackSession.Android.cs:120`,
+commit `0fad3ef`) — the smallest of the three options considered: a read-only, platform-typed property on the
+Android implementation. The class is already `public` and platform-specific, so it adds **no portable surface
+and no `Shenora.Core` vocabulary**; the rejected alternative, a portable `object? PlatformSessionHandle`,
+would have put a weakly-typed member on every shell to serve one.
+
+**This BLOCKED the Android half of the first adopter's 0.9.0 adoption, and it blocked the kit's own
+documented split** — *"the kit owns the session and the app owns the notification"* — because a
+`Notification.MediaStyle` is attached to a session by `SetMediaSession(session.SessionToken)`, and nothing in
+`src/` exposed one. So the app could post a notification with buttons and could not post the MEDIA
+notification the split describes. What was lost without it is the visible half the boundary was drawn
+around: the system media player in the shade and on the lock screen is built from the SESSION and adopts a
+notification only through that token. Buttons in a plain notification are not the same surface.
+
+⚠ **The lesson is about the remarks, not the property.** The class remarks described a division of labour
+the adopter then discovered was not connected — the split was documented before it was reachable. State the
+connecting member in the same breath as the split.
+
+The adopter's interim was worth recording as a compliment to the design: keep an app-owned
+`IPlaybackSession` on Android (the kit's `TryAddSingleton` registration makes overriding it a one-liner,
+"which is the right shape and was noticed and appreciated") and adopt the kit's on iOS, where the app's
+half — an `AVAudioSession` category — needs nothing from the session.
+
+### 🔴 `Shenora.iOS` 0.9.0 could not be LINKED without the devkit opt-in — FIXED in 0.9.1 (2026-08-04)
+
+**Fixed and verified by the adopter**: iOS builds 0 warnings / 0 errors without the opt-in, launches, arms
+its audio session and completes the handshake. The kit's own verification against the feed is
+`### 0.9.1 post-publish verification` below; the original report is kept here because its *analysis* is the
+reusable part.
+
+An iOS app that referenced the package and did NOT set `ShenoraLiveActivityViews` failed to LINK. Measured
+on the adopter's first 0.9.0 build:
+
+```
+clang++ exited with code 1: Undefined symbols for architecture x86_64:
+  "_shenora_activity_end",  referenced from: <initial-undefines>
+  "_shenora_activity_free", referenced from: <initial-undefines>
+  …
+```
+
+- **Mechanism.** `MobileLiveActivities.iOS` declares `[DllImport("__Internal")]` for the five
+  `shenora_activity_*` entry points. On iOS `__Internal` is resolved by the STATIC LINKER, not at runtime —
+  so the symbols must exist in the final binary. They are produced by `ShenoraBuildLiveActivity`, whose
+  condition was `'$(ShenoraLiveActivityViews)' != ''`. No opt-in ⇒ no library ⇒ no symbols ⇒ the app does
+  not link. The type is always registered, so nothing could be dropped by trimming either.
+- **Why the gate missed it: `samples/Shenora.Sample.Maui` OPTS IN** (its csproj sets the property), so the
+  only iOS app the repo built was the one configuration that works. This is the repo's own "a package no
+  gate compiles" objection, one level in — the package compiled, but the package *as a non-Live-Activity
+  adopter consumes it* did not. A second sample, or the existing one built twice, is what would have caught
+  it. **`dev.mjs mac build` now builds the sample without the opt-in.**
+- **It contradicted the shipped design.** The CHANGELOG said `Unavailable` returns a reason including *"shim
+  not linked"*, and the class XML said the type "does nothing useful unless the app's build includes the
+  widget extension" — both describe graceful degradation that a link-time `__Internal` import makes
+  impossible. The intent was right; the binding mechanism defeated it. `ILiveActivities.Unavailable` no
+  longer claims it can report a missing shim: that was a link-time failure being described by a runtime
+  property.
+- **Fix options as filed, cheapest first** — (a) resolve the five entry points with `dlsym`; (b) build and
+  link the SHIM unconditionally and keep only the widget extension behind the property; (c) make the
+  package's presence imply the opt-in, "the worst of the three". **(b) shipped.** (a) was tried first and
+  does **not** work: removing the `DllImport` removes the only reference to the symbols and nothing retains
+  them — measured, the archive held all five while the app binary held zero, and neither `ForceLoad` nor
+  `-u` via the linker args changed that.
+- **Adopter impact while it was open:** iOS was stuck, and rolling back was not available either, because
+  `IPlaybackSession` — the thing being adopted — is new in 0.9.0, so 0.8.0 has no iOS lock screen at all.
+  The Android half was unaffected.
+
+### The MAUI page ORIGIN, documented for server-backed adopters (2026-08-04) — DONE
+
+`docs/ADOPTION.md` now has it as its own section before the Live Activity recipe: both origins in a table
+(`https://0.0.0.1` Android, `app://0.0.0.1` iOS — **including the iOS one the adopter could not measure**,
+taken from this repo's own device runs), the mixed-content relaxation with the code and the reason it is the
+app's call, the CORS consequence that only appears after fixing the first, and the caveat that a
+non-standard scheme may present as `Origin: null` so an allowlist should follow what the server actually
+logs.
+
+<details><summary>the original filing, kept for the reasoning</summary>
+
+**Document what a MAUI shell's page ORIGIN means for a server-backed adopter — it cost a day.**
+`HybridWebView` serves the bundle from a synthetic virtual host (`https://0.0.0.1` on Android, measured),
+which is a SECURE origin. Two separate consequences follow, and both present as the same useless symptom — a
+bare `TypeError: Failed to fetch`:
+1. **Mixed content.** Every request to a plain-`http` backend is blocked outright. On Android the app can
+   fix this itself (`MixedContentHandling.AlwaysAllow` appended to `HybridWebViewHandler.Mapper`), and that
+   is arguably where it belongs — it is a real security relaxation and the kit should not make it silently.
+   But nothing SAYS so, and the engine only logs it as a `[warning security]` line that is invisible without
+   a devtools attach.
+2. **CORS.** After the relaxation the request leaves the device and the *response* is then withheld, because
+   the backend has never heard of that origin. This one the app must fix server-side.
+- Neither is a kit defect, and neither needs a kit API — **a paragraph in `ADOPTION.md` would have saved the
+  day**. ⚠ iOS's origin was NOT measurable from the adopter's machine (no `ios-webkit-debug-proxy`), so the
+  kit stating it is worth more than it sounds.
+- The adopter's workaround for the measurement gap was to port this repo's own `PageDiagFacade` pattern —
+  page → host over IPC, host writes to the device log. That it was needed twice, in two repos, for the same
+  reason (WebKit does not forward page `console.*`) is a two-consumer signal, filed as an observation rather
+  than a request. **That question is still open — `TASKS.md`.**
+
+</details>
+
+---
+
 ### 0.9.1 post-publish verification (2026-08-04) — DONE, against the FEED
 
 Six NuGet packages + `@shenora/react` all confirmed at 0.9.1. A patch release, and its whole subject is the

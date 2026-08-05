@@ -24,7 +24,7 @@ public sealed class NotificationPump : IDisposable
     private readonly NotificationPumpOptions _options;
     private readonly ConcurrentQueue<IpcNotification> _pending = new();
     private int _pendingCount;
-    private string? _busSubscriptionId;
+    private IDisposable? _busSubscription;
     private volatile bool _open;
     private bool _disposed;
 
@@ -62,7 +62,7 @@ public sealed class NotificationPump : IDisposable
         // lost (the buffered-startup lesson from the server-backed sibling).
         if (_options.EventBus is { } bus)
         {
-            _busSubscriptionId = bus.SubscribeToAll(message =>
+            _busSubscription = bus.SubscribeToAll(message =>
             {
                 Enqueue(new IpcNotification
                 {
@@ -211,10 +211,10 @@ public sealed class NotificationPump : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        if (_busSubscriptionId is { } id)
-        {
-            _options.EventBus?.Unsubscribe(id);
-            _busSubscriptionId = null;
-        }
+        // The subscription releases itself. The id version needed BOTH the id and a live reference to
+        // the bus here — so a pump torn down after its bus went away leaked the subscription, silently.
+        // That whole failure mode is gone rather than fixed.
+        _busSubscription?.Dispose();
+        _busSubscription = null;
     }
 }

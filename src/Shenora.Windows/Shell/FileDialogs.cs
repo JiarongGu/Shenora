@@ -38,7 +38,7 @@ public sealed class FileDialogs : IFileDialogs
     }
 
     /// <inheritdoc />
-    public Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null) =>
+    public Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null) =>
         ShowAsync(options, (opts, initialPath, owner) =>
         {
             using var dialog = new OpenFileDialog
@@ -59,14 +59,14 @@ public sealed class FileDialogs : IFileDialogs
         });
 
     /// <inheritdoc />
-    public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
+    public Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null) =>
         ShowAsync(options, (opts, initialPath, owner) =>
             opts?.AllowFileSelection == true
                 ? ShowFileOrFolderDialog(opts, initialPath, owner)
                 : ShowFolderBrowser(opts, initialPath, owner));
 
     /// <inheritdoc />
-    public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null) =>
+    public Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null) =>
         ShowAsync(options, (opts, initialPath, owner) =>
         {
             using var dialog = new SaveFileDialog
@@ -88,8 +88,9 @@ public sealed class FileDialogs : IFileDialogs
         });
 
     /// <summary>The shared flow: resolve start dir → block the window → dedicated STA thread → unblock.</summary>
-    private async Task<FileDialogResult> ShowAsync(
-        FileDialogOptions? options, Func<FileDialogOptions?, string, IntPtr, FileDialogResult> show)
+    private async Task<FileDialogResult> ShowAsync<TOptions>(
+        TOptions? options, Func<TOptions?, string, IntPtr, FileDialogResult> show)
+        where TOptions : FileDialogOptions
     {
         // Load the start directory BEFORE showing (the store may be async I/O).
         var initialPath = await ResolveInitialPathAsync(options).ConfigureAwait(false);
@@ -108,7 +109,7 @@ public sealed class FileDialogs : IFileDialogs
         }
     }
 
-    private FileDialogResult ShowFileOrFolderDialog(FileDialogOptions opts, string initialPath, IntPtr owner)
+    private FileDialogResult ShowFileOrFolderDialog(OpenFolderOptions opts, string initialPath, IntPtr owner)
     {
         // "Folder OR file" via OpenFileDialog with relaxed validation and a placeholder name —
         // FolderBrowserDialog can't offer files, and this keeps the modern dialog UI.
@@ -143,7 +144,7 @@ public sealed class FileDialogs : IFileDialogs
         return FileDialogResult.Selected(selected);
     }
 
-    private FileDialogResult ShowFolderBrowser(FileDialogOptions? opts, string initialPath, IntPtr owner)
+    private FileDialogResult ShowFolderBrowser(OpenFolderOptions? opts, string initialPath, IntPtr owner)
     {
         using var dialog = new FolderBrowserDialog
         {

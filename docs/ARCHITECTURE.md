@@ -211,7 +211,7 @@ changes, noting them in `CHANGELOG.md`).
   `Shenora.Media`'s job as a further middleware.
 - **`Shenora.Core`'s mission-scheduling layer (0.3.0, `Missions/` + `Io/`)** — the EXECUTION half of
   long-running work, portable and with no DI, storage or reporting dependency of its own:
-  `IMissionScheduler`/`MissionScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `PendingCount`/
+  `IMissionScheduler`/`MissionScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `GlobalLane`, `PendingCount`/
   `RunningCount`, `IsActive(MissionKey)`, `Snapshot()`, `Reevaluate()`, `RecoverAsync(rehydrate)`;
   `IAsyncDisposable` — dispose cancels what is queued and awaits what is running). **Admission** is
   event-driven, evaluated on submit and on each completion (no worker thread, no polling), and an item
@@ -229,8 +229,15 @@ changes, noting them in `CHANGELOG.md`).
   ceiling; lowering swallows permits as items finish rather than killing in-flight work; `Hold`/`Release`
   re-entrant, the mechanism a load governor actuates with — the kit ships no probe, hysteresis or
   debounce policy), `MissionLane(Name, Permits = 1)` for a lane that is a BUDGET rather than a slot count.
-  Every request also draws one permit from the default lane (`DefaultLaneCapacity`, 0 = `clamp(cores-1,
-  1, 4)`), which is the global concurrency bound.
+  Every request also draws one permit from the GLOBAL lane (`GlobalLaneCapacity`, 0 = `clamp(cores-1,
+  1, 4)`), which is the total concurrency bound — so a named lane runs at `min(its capacity, the bound)`,
+  and `ILane.EffectiveCapacity` is what reports that (`Capacity` keeps the value you REQUESTED, and a
+  request above the bound is logged rather than clamped or thrown). The bound is itself a lane —
+  `IMissionScheduler.GlobalLane`, addressable as `MissionScheduler.GlobalLaneName` and resolving to the
+  same instance from `Lane(name)` or from a mission declaring it — so it is live-resizable and holdable,
+  which is what lets a load governor RESTORE and not only throttle (before it existed the bound was
+  `init`-only and unreachable, so a throttled lane could never recover past its startup value).
+  (`GlobalLaneCapacity` was renamed from `DefaultLaneCapacity`, a documented break with no alias kept.)
   **Definition vs execution — the split the rest of the layer is built on.** `MissionDefinition` is
   WHAT should run (`Run` + optional `Commit`: setting `Commit` makes `Run` run exactly ONCE and retries
   only the commit, so a failed cheap replace never recompresses; plus `Claims`, `Lanes`, `Priority`,
@@ -621,6 +628,18 @@ changes, noting them in `CHANGELOG.md`).
   `OperationRegistryOptions` instance so the two can never drift apart:
   `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`), `AddShenoraOperations` (opt-in DI
   wiring; an app with no long-running work pays nothing).
+  **The file-dialog cluster** (2026-08-05) — the page's route to whichever `IFileDialogs` the SHELL
+  registered, so a picker needs no app-written route: `FileDialogFacade` (module `FILE_DIALOGS`, a fixed
+  const because this facade publishes nothing for a configurable name to stay in step with —
+  `OPEN_FILE`/`OPEN_FOLDER`/`SAVE_FILE`/`SAVE_TEXT`) + `AddShenoraFileDialogs` (opt-in). `SAVE_TEXT` is the
+  PORTABLE save — the host does the writing, so it works on every shell — and carries text rather than
+  arbitrary bytes because the content crosses the envelope. `OPEN_FOLDER`/`SAVE_FILE` are desktop
+  capabilities (D35) and refuse elsewhere with `IpcErrorCodes.CapabilityNotSupported`, a NAMED code so a
+  client can hide the control instead of showing a fault — which is what `@shenora/react`'s
+  `useFileDialogs()` does, reading `canPickFile`/`canPickFolder`/`canPickSavePath` off the handshake (D36).
+  This closed a real gap: `ShellCapability.FilePicker`/`FolderPicker`/`SavePicker` were kit vocabulary that
+  crossed the wire with nothing in the kit able to satisfy them, so both samples had written the same
+  routes independently.
   **Post-0.2.0-merge generic-library audit (before publish, so free):** the harvest absorbed one
   app's shape on the removal/asking halves of the lifecycle its own source never had to solve.
   `ClearFinished` gained the `module?`/`scope?` filter above (was unfilterable — a scoped window's

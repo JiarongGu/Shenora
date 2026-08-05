@@ -39,7 +39,7 @@ public class MissionSchedulerAdoptionTests
     {
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 8,
+            GlobalLaneCapacity = 8,
             Scopes = [new FlatClaimScope("entity"), new FlatClaimScope("category")],
         });
 
@@ -87,7 +87,7 @@ public class MissionSchedulerAdoptionTests
     {
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 8,
+            GlobalLaneCapacity = 8,
             Scopes = [new FlatClaimScope("entity")],
         });
         var lane = scheduler.Lane("jobs");
@@ -141,7 +141,7 @@ public class MissionSchedulerAdoptionTests
     {
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 8,
+            GlobalLaneCapacity = 8,
             Scopes = [new FlatClaimScope("entity")],
         });
         var lane = scheduler.Lane("jobs");

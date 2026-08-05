@@ -21,7 +21,7 @@ public sealed partial class MobileFileDialogs
 {
     // No `= default` on the implementing half (CS1066) — the default lives on the shared declaration.
     /// <inheritdoc />
-    public partial async Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+    public partial async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                                           Func<Stream, CancellationToken, Task> write,
                                                           CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public sealed partial class MobileFileDialogs
             // addressable destination, and what comes back here is a security-scoped URL that is not
             // valid for the app to reopen later.
             return await ExportAsync(temp, cancellationToken).ConfigureAwait(false)
-                ? new FileDialogResult { Success = true }
+                ? FileDialogResult.Completed()
                 : FileDialogResult.Cancelled();
         }
         finally

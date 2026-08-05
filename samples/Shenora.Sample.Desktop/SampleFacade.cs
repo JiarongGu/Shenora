@@ -52,7 +52,7 @@ internal sealed class SampleFacade(
 
             // Native file dialog (P4.3) — a human picks; not driven by the automated e2e.
             case "PICK_FILE":
-                var picked = await dialogs.OpenFileAsync(new FileDialogOptions
+                var picked = await dialogs.OpenFileAsync(new OpenFileOptions
                 {
                     Title = "Pick any file",
                     RememberPathKey = "sample-pick",

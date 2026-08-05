@@ -94,7 +94,7 @@ internal static class Program
         {
             // Explicit rather than the clamp(cores-1,1,4) default, so the sample behaves the same on
             // every machine — the same reason the concurrency tests pass one.
-            DefaultLaneCapacity = 4,
+            GlobalLaneCapacity = 4,
             Scopes = [PathClaims.Scope],
             // Execution reports through the operations registry via ONE observer written in the app
             // (Shenora.Core must never learn what an operation is — D19/D20). This is the whole cost
@@ -112,7 +112,12 @@ internal static class Program
         // the default capacity rather than rejected, so a typo silently costs the budget you meant.
         builder.OnStarting(app =>
             app.Services.GetRequiredService<IMissionScheduler>().Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2);
-        builder.Services.AddModuleFacade<SampleFacade>();
+        // The kit's own dialog routes, so the PAGE can open a picker without this sample writing a route for
+// it — which is what it used to do, in two samples, identically. Opt-in like every other kit cluster;
+// it needs the IFileDialogs that UseWinForms registered above.
+builder.Services.AddShenoraFileDialogs();
+
+builder.Services.AddModuleFacade<SampleFacade>();
         // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
         // resolves the same implementations through their platform-neutral contracts.
         builder.Services.AddModuleFacade<Shenora.Sample.Logic.PortableSampleFacade>();

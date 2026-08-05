@@ -201,8 +201,22 @@ public sealed record PlaybackProgress
     public TimeSpan Position { get; init; }
 
     /// <summary>
-    /// How fast, as a multiplier — 1.0 normal, 0.0 not advancing. The OS uses this to extrapolate, so a
-    /// paused session must report 0.0 or the displayed time keeps climbing while nothing plays.
+    /// How fast, as a multiplier — 1.0 normal, 0.0 not advancing. The OS uses this to extrapolate the
+    /// displayed position as <c>position + elapsed × rate</c>.
+    /// <para>
+    /// <b>You do not have to zero it when pausing.</b> A rate is only meaningful while
+    /// <see cref="State"/> is <see cref="PlaybackState.Playing"/>, so every shell derives the published
+    /// speed from the state and ignores this value otherwise — set it to the app's real playback speed and
+    /// let the state say whether anything is moving. (Android forwarded it verbatim until 2026-08-05, which
+    /// made a paused session advertise <c>speed=1.0</c> and its scrubber drift; the fix went in the shell
+    /// rather than in a note telling apps to compensate.)
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Not every shell can carry a rate.</b> Windows' <c>SystemMediaTransportControls</c> has no speed
+    /// field at all — its timeline is a position and an end, and "is it advancing" is the playback status —
+    /// so a 1.5× audiobook reads as normal speed there. Stated because it is not discoverable from the
+    /// types: the two mobile shells honour the multiplier, the desktop conveys only moving/not-moving.
+    /// </para>
     /// </summary>
     public double Rate { get; init; } = 1.0;
 }

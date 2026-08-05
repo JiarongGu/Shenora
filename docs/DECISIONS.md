@@ -1242,3 +1242,37 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     quietly raises everyone's minimum OS. It is pinned here, matched on `-windows10.` rather than an exact
     TFM string so a later bump cannot slip past the latch, with `CA1416` (a build error in this repo) forcing
     any newer API to be guarded instead.
+
+- **D47 — while ONE repo fully adopts the surface, prefer the CORRECT shape over the compatible one. Ship no
+  compatibility aliases; rename when the name is the defect** (owner, 2026-08-05).
+
+  > *"sonora actually is the first one fully adopting all features so you can fix anything into the best here
+  > which only cause 1 repo to update"*
+
+  - **What changed is the PRICE of a break, not the rules about it.** `TASKS.md` had said the
+    free-breaking-change window closed when the surface was published, which was right about publication and
+    wrong about cost: a break against a known, single, same-author adopter is one repo's compile errors,
+    found by the compiler and fixed by the person who asked for the change. That is a bounded, visible cost —
+    not the unbounded one "published" usually implies.
+  - **The test to apply: would this be the shape on a greenfield surface?** If yes, take it and write the
+    migration. **Compatibility is not, by itself, a reason to keep a worse API right now.** Backward
+    compatibility is a promise you make to people who cannot be in the room; while every consumer is in the
+    room, it buys nothing and costs clarity.
+  - **Concretely, no `[Obsolete]` aliases.** One was built for the
+    `DefaultLaneCapacity` → `GlobalLaneCapacity` rename and deleted the same day on this direction. An alias
+    leaves BOTH names on the public surface indefinitely and the misleading one still writeable — which is
+    the entire thing a rename exists to prevent — and it costs a backing field, a rule for "what if both are
+    set", and a test to pin a promise nobody would otherwise check. Deprecation earns its keep when migration
+    is genuinely hard; a rename is one word per site.
+  - **What this does NOT change.** A break is still recorded under `### Breaking` in `CHANGELOG.md` with its
+    migration, still shows up as API-baseline drift, and still needs a reason. The packages are public on
+    nuget.org, so "one adopter" describes who we KNOW of; the record is also what makes a deliberate 1.0
+    freeze possible later. Cheap is not free, and undocumented is not an option.
+  - **⚠ This expires, and it expires quietly.** It is a property of TODAY's adoption count, not a permanent
+    licence — the moment a second repo fully adopts, the calculus reverts and this decision should be amended
+    rather than cited. Check the adoption reality before invoking it.
+  - **It does not revive every rejected rename.** `ILane` → `IPermitPool` was declined on three grounds and
+    only one of them was the cost of the break; the other two (it is the HARVESTED word the donor apps
+    already used, and the metaphor is what carries weighted permits — `MissionLane("gpu", Permits: 2)` reads
+    as "occupies 2 of the lane's width") stand on their own. A cheaper break is not an argument for a change
+    that was rejected on merit.

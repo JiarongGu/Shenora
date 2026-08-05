@@ -73,8 +73,13 @@ public class WireMirrorTests
     /// </summary>
     private static HashSet<string> ParseInterfaceFieldNames(string source, string exportName)
     {
+        // The optional `extends` clause is what the file-dialog options needed (2026-08-05): without it
+        // the pattern demanded `{` straight after the name, so `export interface OpenFileOptions extends
+        // FileDialogOptions {` matched NOTHING and the test failed claiming the interface did not exist.
+        // Fixed in the PARSER, per this file's own rule — the alternative reading ("the mirror is fine,
+        // loosen the check") is how a tripwire stops checking anything.
         var block = Regex.Match(source,
-            $@"export\s+interface\s+{Regex.Escape(exportName)}\s*\{{(?<body>.*?)\}}",
+            $@"export\s+interface\s+{Regex.Escape(exportName)}(?:\s+extends\s+[^{{]+)?\s*\{{(?<body>.*?)\}}",
             RegexOptions.Singleline);
         Assert.True(block.Success, $"could not find `export interface {exportName} {{ … }}`");
 
@@ -232,7 +237,7 @@ public class WireMirrorTests
     [Fact]
     public void OperationProgress_fields_match_the_host()
     {
-        AssertMirroredFields(typeof(OperationProgress), "OperationProgress");
+        AssertMirroredFields(typeof(OperationProgress), "operations.ts", "OperationProgress");
     }
 
     /// <summary>
@@ -254,7 +259,7 @@ public class WireMirrorTests
     [Fact]
     public void OperationInfo_fields_match_the_host()
     {
-        AssertMirroredFields(typeof(OperationInfo), "OperationInfo");
+        AssertMirroredFields(typeof(OperationInfo), "operations.ts", "OperationInfo");
     }
 
     /// <summary>
@@ -310,12 +315,81 @@ public class WireMirrorTests
     /// <see cref="IpcJson"/> serializes them, must equal the TS interface's field names exactly.
     /// One helper so a third wire shape cannot be added with a subtly weaker check.
     /// </summary>
-    private static void AssertMirroredFields(Type hostType, string clientInterface)
+    /// <summary>
+    /// The file-dialog MODULE and ROUTE strings, read from the client's actual <c>send()</c> calls rather
+    /// than from its request-map interface.
+    /// <para>
+    /// Deliberately the call sites: <c>FileDialogRequests</c> is not exported (the same shape
+    /// <c>windowCommands.ts</c> uses), and more importantly a route the map DECLARES but the methods never
+    /// send would still mirror perfectly while doing nothing. What a client actually puts on the wire is
+    /// the thing worth pinning.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void File_dialog_module_and_routes_match_the_host()
+    {
+        var source = ClientSource("fileDialogs.ts");
+
+        var module = Regex.Match(source, @"super\('(?<module>[A-Z_]+)'");
+        Assert.True(module.Success, "could not find the FileDialogs `super('MODULE'` call");
+        Assert.Equal(FileDialogFacade.Module, module.Groups["module"].Value);
+
+        var routes = Regex.Matches(source, @"\.send<[^>]*>\('(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(routes);    // parser self-check
+
+        var hostRoutes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            FileDialogFacade.OpenFileType,
+            FileDialogFacade.OpenFolderType,
+            FileDialogFacade.SaveFileType,
+            FileDialogFacade.SaveTextType,
+        };
+        Assert.Equal(hostRoutes, routes);
+    }
+
+    /// <summary>
+    /// The three per-method options shapes and the result. These are the reason the options were split at
+    /// all: the page NAMES them now, so a host-side field the client cannot express is a capability an
+    /// adopter simply cannot reach, and a client field the host never reads is silently ignored input.
+    /// </summary>
+    [Fact]
+    public void File_dialog_option_and_result_shapes_match_the_host()
+    {
+        const string file = "fileDialogs.ts";
+        // Each derived type is compared against its own interface PLUS the base it extends — C# reflection
+        // already includes inherited properties, the TS parser reads one declaration.
+        AssertMirroredFields(typeof(OpenFileOptions), file, "OpenFileOptions", "FileDialogOptions");
+        AssertMirroredFields(typeof(OpenFolderOptions), file, "OpenFolderOptions", "FileDialogOptions");
+        AssertMirroredFields(typeof(SaveFileOptions), file, "SaveFileOptions", "FileDialogOptions");
+        AssertMirroredFields(typeof(FileDialogResult), file, "FileDialogResult");
+        AssertMirroredFields(typeof(FileDialogFilter), file, "FileDialogFilter");
+    }
+
+    /// <param name="hostType">The host record. Inherited properties count — they are on the wire too.</param>
+    /// <param name="sourceFile">
+    /// Which client module declares it. Explicit rather than defaulted to <c>operations.ts</c>: a default
+    /// here is how a later shape gets pointed at the wrong file and mirrors nothing, which is the exact
+    /// "tripwire checking nothing" this file exists to prevent.
+    /// </param>
+    /// <param name="clientInterface">The exported TS interface.</param>
+    /// <param name="clientBaseInterfaces">
+    /// Any interfaces <paramref name="clientInterface"/> <c>extends</c>. TypeScript inheritance is
+    /// declaration-by-declaration and the parser reads ONE block, while C# reflection already returns
+    /// inherited properties — so without this the two sides are compared at different depths and a base
+    /// field reads as "missing on the client" when it is right there.
+    /// </param>
+    private static void AssertMirroredFields(Type hostType, string sourceFile, string clientInterface,
+        params string[] clientBaseInterfaces)
     {
         var host = hostType.GetProperties()
             .Select(p => JsonNamingPolicy.CamelCase.ConvertName(p.Name))
             .ToHashSet(StringComparer.Ordinal);
-        var client = ParseInterfaceFieldNames(ClientSource("operations.ts"), clientInterface);
+        var source = ClientSource(sourceFile);
+        var client = ParseInterfaceFieldNames(source, clientInterface);
+        foreach (var baseInterface in clientBaseInterfaces)
+            client.UnionWith(ParseInterfaceFieldNames(source, baseInterface));
 
         Assert.NotEmpty(host);      // parser/reflection self-check: neither side may be silently empty
         Assert.NotEmpty(client);

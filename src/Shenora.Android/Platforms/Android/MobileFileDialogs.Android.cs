@@ -25,7 +25,7 @@ public sealed partial class MobileFileDialogs
     /// <inheritdoc />
     // No `= default` here: the default belongs to the DEFINING declaration in the shared source, and
     // repeating it on the implementing half is CS1066.
-    public partial async Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+    public partial async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                                           Func<Stream, CancellationToken, Task> write,
                                                           CancellationToken cancellationToken)
     {
@@ -57,7 +57,7 @@ public sealed partial class MobileFileDialogs
             // No path is reported. The contract says FilePath is populated only when the host HAS an
             // addressable destination, and a content URI is a revocable grant rather than something the
             // app could legitimately reopen later — handing one back would invite exactly that.
-            return new FileDialogResult { Success = true };
+            return FileDialogResult.Completed();
         }
         finally
         {
@@ -79,7 +79,7 @@ public sealed partial class MobileFileDialogs
     /// .NET 10 (verified by compiling; the whole chain here was).
     /// </para>
     /// </summary>
-    private static async Task<AndroidUri?> PickDestinationAsync(FileDialogOptions? options,
+    private static async Task<AndroidUri?> PickDestinationAsync(SaveFileOptions? options,
                                                                 CancellationToken cancellationToken)
     {
         if (Platform.CurrentActivity is not ComponentActivity activity)

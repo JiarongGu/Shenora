@@ -21,13 +21,13 @@ public class FileDialogSaveTests
     {
         public int SaveFileCalls { get; private set; }
 
-        public Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null) =>
             throw new NotSupportedException();
 
-        public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null) =>
             throw new NotSupportedException();
 
-        public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null)
+        public Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null)
         {
             SaveFileCalls++;
             return Task.FromResult(destination is null
@@ -184,19 +184,19 @@ public class FileDialogSaveTests
         public string? Written { get; private set; }
         public int SaveFileCalls { get; private set; }
 
-        public Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null) =>
             throw new NotSupportedException();
 
-        public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null) =>
             throw new NotSupportedException();
 
-        public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null)
+        public Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null)
         {
             SaveFileCalls++;
             throw new NotSupportedException("no addressable destination on this shell");
         }
 
-        public async Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+        public async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                                      Func<Stream, CancellationToken, Task> write,
                                                      CancellationToken cancellationToken = default)
         {

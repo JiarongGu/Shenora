@@ -44,6 +44,14 @@ internal sealed class MediaRangeProbe : IDisposable
 	public MediaRangeProbe(Action<string> log) => _log = log;
 
 	/// <summary>
+	/// The shell's interceptor, once <see cref="PrepareAsync"/> has built it — so a second probe can add its
+	/// own middleware to the SAME pipeline rather than constructing a second interceptor over one webview.
+	/// (Two interceptors would mean two <c>WebResourceRequested</c> subscriptions, which is exactly the
+	/// last-writer-wins hazard the desktop host's single-subscription comment warns about.)
+	/// </summary>
+	public IWebViewInterceptor? Interceptor => _interceptor;
+
+	/// <summary>
 	/// Stage the clips out of the app package, then wire the route.
 	/// <para>
 	/// The route is registered LAST, so a request arriving mid-copy finds no handler rather than a

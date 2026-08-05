@@ -40,6 +40,19 @@ export const IpcErrorCodes = {
    * one failure a UI should stay silent about. Previously indistinguishable from `UNKNOWN_ERROR`.
    */
   operationCancelled: 'OPERATION_CANCELLED',
+  /**
+   * The shell has NO EXPRESSION of what was asked for — not a fault, and not something a retry fixes.
+   * Parameters: `capability` (a {@link ShellCapabilities} value).
+   *
+   * Treat it like `operationCancelled`: do not show a fault. The right response is to hide the control,
+   * because the capability is absent by design on that platform (a folder picker on a phone, for
+   * instance) rather than broken.
+   *
+   * ⚠ A page should not normally NEED this. The ready handshake advertises `ShellInfo.capabilities`
+   * precisely so one bundle can decide BEFORE it asks — `useFileDialogs().canPickFolder` is the
+   * intended path. This is the honest answer when a page asks anyway.
+   */
+  capabilityNotSupported: 'CAPABILITY_NOT_SUPPORTED',
   /** Client-only: the request timed out waiting for a response. */
   timeout: 'TIMEOUT',
   /** Client-only: no transport is available and no fallback was configured. */

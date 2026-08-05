@@ -32,4 +32,18 @@ public static class IpcErrorCodes
 
     /// <summary>A payload value could not convert to the requested type. Parameters: <c>key</c>.</summary>
     public const string InvalidPayloadValue = "INVALID_PAYLOAD_VALUE";
+
+    /// <summary>
+    /// The shell has NO EXPRESSION of what was asked for — not a fault, and not something a retry fixes.
+    /// Parameters: <c>capability</c> (a <see cref="Shenora.Core.ShellCapability"/> constant).
+    /// <para>
+    /// Its own code for the same reason <see cref="OperationCancelled"/> has one: a client must be able to
+    /// tell "this shell cannot do that" from "something broke", because the correct UI is different — hide
+    /// the control, do not show an error. ⚠ A page should not NEED this: the ready handshake advertises
+    /// <c>ShellInfo.Capabilities</c> precisely so a bundle can decide before it asks (D36). This is the
+    /// honest answer when it asks anyway, so a refusal never arrives as <see cref="UnknownError"/> plus an
+    /// exception type name.
+    /// </para>
+    /// </summary>
+    public const string CapabilityNotSupported = "CAPABILITY_NOT_SUPPORTED";
 }

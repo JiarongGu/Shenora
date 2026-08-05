@@ -61,7 +61,7 @@ public class MissionSchedulerConcurrencyTests
     private static MissionScheduler NewScheduler(int capacity, IMissionPolicy? policy = null) =>
         new(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = capacity,
+            GlobalLaneCapacity = capacity,
             Scopes = [new FlatClaimScope("entity"), new NestedClaimScope("tree", '/')],
             Policy = policy,
         });

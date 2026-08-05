@@ -15,15 +15,38 @@ public interface ILane
     string Name { get; }
 
     /// <summary>
-    /// Permits available concurrently. Settable LIVE.
+    /// Permits available concurrently — <b>as requested</b>. Settable LIVE.
     ///
     /// <para>
     /// Lowering it never cancels running work: the surplus is swallowed as in-flight items finish.
     /// A user dragging a concurrency slider down means "run less from now on", never "kill what is
     /// already going" — getting this wrong destroys work the user did not ask to lose.
     /// </para>
+    /// <para>
+    /// ⚠ <b>This is what you asked for, not necessarily what the lane runs at.</b> Every mission also
+    /// draws a permit from the scheduler's <see cref="IMissionScheduler.GlobalLane"/>, so the width a
+    /// named lane actually achieves is the SMALLER of the two — read
+    /// <see cref="EffectiveCapacity"/> for that. Raising a lane above the global bound is therefore
+    /// legal and does nothing on its own; raise <see cref="IMissionScheduler.GlobalLane"/> too. The
+    /// requested value is kept rather than clamped so that a later widening of the global bound gives
+    /// you the width you asked for, instead of silently having discarded it.
+    /// </para>
     /// </summary>
     int Capacity { get; set; }
+
+    /// <summary>
+    /// The width this lane can actually reach right now: <see cref="Capacity"/> bounded by every other
+    /// limit the scheduler applies to it — in practice
+    /// <c>min(Capacity, scheduler.GlobalLane.Capacity)</c>.
+    ///
+    /// <para>
+    /// It exists because the alternative was measuring wall-clock time. A lane set to 3 under a global
+    /// bound of 1 runs at 1 while <see cref="Capacity"/> answers 3, and nothing an app could ASK
+    /// distinguished that from a lane genuinely running at 3 — so a governor that widened a lane had no
+    /// way to notice its request had no effect (found by the first adopter, 2026-08-05).
+    /// </para>
+    /// </summary>
+    int EffectiveCapacity { get; }
 
     /// <summary>True while <see cref="Hold"/> is in effect.</summary>
     bool IsHeld { get; }
@@ -76,8 +99,30 @@ public interface IMissionScheduler : IAsyncDisposable
     /// </param>
     Task<MissionResult> SubmitAsync(MissionDefinition definition, CancellationToken cancellationToken = default);
 
-    /// <summary>Get a lane by name, creating it with the default capacity on first use.</summary>
+    /// <summary>
+    /// Get a lane by name, creating it on first use with the same capacity as <see cref="GlobalLane"/>
+    /// currently has — so a fresh lane never narrows anything until you narrow it.
+    /// </summary>
     ILane Lane(string name);
+
+    /// <summary>
+    /// The lane EVERY mission draws one permit from — the scheduler's total concurrency bound, sized by
+    /// <c>MissionSchedulerOptions.GlobalLaneCapacity</c>.
+    ///
+    /// <para>
+    /// It has always bounded everything; it just was not reachable, so the bound could be set once at
+    /// construction and never afterwards. That made a runtime capacity governor unbuildable in one
+    /// direction: it could throttle a named lane and could never restore it past the bound chosen at
+    /// startup. Exposing the lane rather than adding a bespoke setter means <see cref="ILane.Hold"/>
+    /// works on it too — which is "pause the whole scheduler without cancelling anything", a capability
+    /// the machinery already had and could not be asked for.
+    /// </para>
+    /// <para>
+    /// ⚠ Holding this lane stops ALL admission. That is the point, and it is re-entrant like any other
+    /// hold — N calls to <see cref="ILane.Hold"/> need N calls to <see cref="ILane.Release"/>.
+    /// </para>
+    /// </summary>
+    ILane GlobalLane { get; }
 
     /// <summary>Accepted but not yet started.</summary>
     int PendingCount { get; }

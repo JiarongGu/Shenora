@@ -16,7 +16,7 @@ namespace Shenora.Tests.Missions;
 public class MissionChainTests
 {
     private static MissionScheduler NewScheduler(params IClaimScope[] scopes) =>
-        new(new MissionSchedulerOptions { DefaultLaneCapacity = 4, Scopes = scopes });
+        new(new MissionSchedulerOptions { GlobalLaneCapacity = 4, Scopes = scopes });
 
     [Fact]
     public async Task Steps_run_in_order_and_share_one_context()

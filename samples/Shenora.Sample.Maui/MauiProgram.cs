@@ -81,7 +81,7 @@ public static class MauiProgram
 
 		shenora.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
 		{
-			DefaultLaneCapacity = 4,
+			GlobalLaneCapacity = 4,
 			Scopes = [PathClaims.Scope],
 			Observers = [new MissionOperationObserver(
 				sp.GetRequiredService<IOperationRegistry>(), PortableSampleFacade.Module)],
@@ -98,6 +98,10 @@ public static class MauiProgram
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagFacade.
 		shenora.Services.AddModuleFacade<PageDiagFacade>();
+		// The SAME line the desktop sample writes, over the SAME routes — the mobile shell's IFileDialogs
+		// is what differs, and the page never learns which. What the page DOES learn is which of the four
+		// routes this shell will honour, from the capabilities advertised in MainPage's handshake.
+		shenora.Services.AddShenoraFileDialogs();
 		shenora.Services.AddMessageDispatcher();
 
 		// The on-device probe for Start's idempotency. It must appear exactly ONCE per process.

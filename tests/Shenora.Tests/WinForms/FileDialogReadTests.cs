@@ -18,13 +18,13 @@ public class FileDialogReadTests
     /// <summary>A dialogs implementation that only picks — exactly what a shell provides.</summary>
     private sealed class PathOnlyDialogs(string? picked) : IFileDialogs
     {
-        public Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null) =>
             Task.FromResult(picked is null ? FileDialogResult.Cancelled() : FileDialogResult.Selected(picked));
 
-        public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null) =>
             throw new NotSupportedException();
 
-        public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null) =>
             throw new NotSupportedException();
     }
 
@@ -76,13 +76,13 @@ public class FileDialogReadTests
 
     private sealed class ContentUriDialogs : IFileDialogs
     {
-        public Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null) =>
             Task.FromResult(FileDialogResult.Selected("content://docs/42"));
 
-        public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null) =>
             throw new NotSupportedException();
 
-        public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null) =>
+        public Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null) =>
             throw new NotSupportedException();
 
         public Task<Stream?> OpenReadAsync(string handle, CancellationToken cancellationToken = default) =>

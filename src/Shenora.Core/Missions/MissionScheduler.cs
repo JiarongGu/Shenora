@@ -41,8 +41,17 @@ public sealed class MissionScheduler : IMissionScheduler
     private long _nextId;
     private bool _disposed;
 
-    /// <summary>The lane every request draws from. Not addressable by name; use the options to size it.</summary>
-    private const string DefaultLaneName = "";
+    /// <summary>
+    /// The name of the lane every request draws from — see <see cref="GlobalLane"/>.
+    /// <para>
+    /// It has a real name rather than the empty string it used to carry, because the lane became
+    /// addressable: <see cref="Lane"/> and a mission declaring this name both resolve to the ONE global
+    /// lane instance. Parenthesised so it cannot collide with an app's own lane by accident — and
+    /// resolving it to the same instance is what stops a caller silently getting a decoy lane whose
+    /// capacity changes nothing.
+    /// </para>
+    /// </summary>
+    public const string GlobalLaneName = "(global)";
 
     /// <param name="options">Scopes, capacity, store and logging.</param>
     public MissionScheduler(MissionSchedulerOptions? options = null)
@@ -57,11 +66,13 @@ public sealed class MissionScheduler : IMissionScheduler
             _scopes[scope.Name] = scope;
         }
 
-        var capacity = _options.DefaultLaneCapacity > 0
-            ? _options.DefaultLaneCapacity
-            : Math.Clamp(Environment.ProcessorCount - 1, 1, 4);
-        _defaultLane = new LaneState(DefaultLaneName, capacity, this);
-        Log(() => $"mission scheduler ready (default lane capacity {capacity}, scopes: {_scopes.Count})");
+        // Null means "choose for me"; anything below 1 is a caller bug and says so rather than being
+        // quietly reinterpreted — a scheduler admitting 0 missions would look like a hang.
+        if (_options.GlobalLaneCapacity is { } requested)
+            ArgumentOutOfRangeException.ThrowIfLessThan(requested, 1, $"{nameof(options)}.{nameof(MissionSchedulerOptions.GlobalLaneCapacity)}");
+        var capacity = _options.GlobalLaneCapacity ?? Math.Clamp(Environment.ProcessorCount - 1, 1, 4);
+        _defaultLane = new LaneState(GlobalLaneName, capacity, this);
+        Log(() => $"mission scheduler ready (global lane capacity {capacity}, scopes: {_scopes.Count})");
     }
 
     /// <inheritdoc/>
@@ -89,18 +100,35 @@ public sealed class MissionScheduler : IMissionScheduler
     public void Reevaluate() => OnLaneChanged();
 
     /// <inheritdoc/>
+    public ILane GlobalLane => _defaultLane;
+
+    /// <inheritdoc/>
     public ILane Lane(string name)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
-        lock (_gate)
+        lock (_gate) return LaneLocked(name);
+    }
+
+    /// <summary>
+    /// Resolve a lane name to its ONE instance, creating it on first use.
+    /// <para>
+    /// ⚠ <see cref="GlobalLaneName"/> resolves to the global lane rather than making a lane that merely
+    /// shares its name. Both callers need that: a decoy would accept a capacity change and alter
+    /// nothing, and a mission DECLARING the global lane would take a second permit from a different
+    /// pool than the one it is already bounded by.
+    /// </para>
+    /// </summary>
+    private LaneState LaneLocked(string name)
+    {
+        if (string.Equals(name, GlobalLaneName, StringComparison.Ordinal)) return _defaultLane;
+        if (!_lanes.TryGetValue(name, out var lane))
         {
-            if (!_lanes.TryGetValue(name, out var lane))
-            {
-                lane = new LaneState(name, _defaultLane.Capacity, this);
-                _lanes[name] = lane;
-            }
-            return lane;
+            // Start at the global bound, not below it: a new lane should never be the thing that
+            // narrows work before anyone has asked it to.
+            lane = new LaneState(name, _defaultLane.Capacity, this);
+            _lanes[name] = lane;
         }
+        return lane;
     }
 
     /// <inheritdoc/>
@@ -487,12 +515,10 @@ public sealed class MissionScheduler : IMissionScheduler
         {
             ArgumentException.ThrowIfNullOrEmpty(name, nameof(definition));
             ArgumentOutOfRangeException.ThrowIfLessThan(permits, 1, nameof(definition));
-            if (!_lanes.TryGetValue(name, out var lane))
-            {
-                lane = new LaneState(name, _defaultLane.Capacity, this);
-                _lanes[name] = lane;
-            }
+            var lane = LaneLocked(name);
             // Naming one lane twice would take its permits twice and could deadlock against itself.
+            // ⚠ This is also what makes declaring the GLOBAL lane safe: it resolves to the instance
+            // already in this list, so the permits MERGE instead of being taken from it twice.
             var index = lanes.FindIndex(x => ReferenceEquals(x.Lane, lane));
             if (index >= 0) lanes[index] = (lane, lanes[index].Permits + permits);
             else lanes.Add((lane, permits));
@@ -593,12 +619,49 @@ public sealed class MissionScheduler : IMissionScheduler
             set
             {
                 ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
-                lock (_owner._gate) _capacity = value;
+                int bound;
+                lock (_owner._gate)
+                {
+                    _capacity = value;
+                    bound = IsGlobal ? value : _owner._defaultLane._capacity;
+                }
+                // ⚠ SAY SO when the request cannot take effect. Storing it silently is what made this
+                // invisible: the getter answered with the requested value while the lane ran narrower,
+                // so the only way to find out was to time the work. Logged rather than thrown or
+                // clamped — a governor may legitimately widen a lane just before widening the global
+                // bound, and neither order should be an error.
+                if (value > bound)
+                {
+                    _owner.Log(() =>
+                        $"lane '{Name}' capacity set to {value}, but the global lane admits {bound}, so it will " +
+                        $"run at {bound}. Raise IMissionScheduler.GlobalLane.Capacity to widen it.");
+                }
                 // Raising capacity can admit queued work immediately; lowering it cannot cancel
                 // anything, it just means AvailableLocked stays <= 0 until enough items finish.
                 _owner.OnLaneChanged();
             }
         }
+
+        /// <inheritdoc/>
+        public int EffectiveCapacity
+        {
+            get
+            {
+                lock (_owner._gate)
+                    return IsGlobal ? _capacity : Math.Min(_capacity, _owner._defaultLane._capacity);
+            }
+        }
+
+        /// <summary>
+        /// Whether this IS the scheduler's global lane — which bounds every other lane and is therefore
+        /// bounded by nothing but itself.
+        /// </summary>
+        /// <remarks>
+        /// Compared by REFERENCE, not by name: the global lane is constructed before
+        /// <see cref="_defaultLane"/> is assigned, so during its own construction this is false, and a
+        /// name comparison would be true — which would then read an uninitialised field.
+        /// </remarks>
+        private bool IsGlobal => ReferenceEquals(this, _owner._defaultLane);
 
         public bool IsHeld { get { lock (_owner._gate) return _holds > 0; } }
 

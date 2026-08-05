@@ -91,9 +91,9 @@ sealed class Shenora.Windows.EmbeddedResourceProviderOptions
   public string? FileFallbackDirectory { get; init; }
 sealed class Shenora.Windows.FileDialogs : Shenora.Core.IFileDialogs
   public .ctor(Shenora.Windows.FileDialogsOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.FileDialogs>? logger = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.FileDialogOptions? options = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.FileDialogOptions? options = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.FileDialogOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.OpenFileOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.OpenFolderOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.SaveFileOptions? options = null)
 sealed class Shenora.Windows.FileDialogsOptions
   public .ctor()
   public Shenora.Core.IFileDialogPathStore? PathStore { get; init; }

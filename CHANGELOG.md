@@ -12,6 +12,213 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Breaking
+
+_Three shape fixes from a sweep of the whole public surface under **D47** (while one repo fully adopts the
+kit, prefer the correct shape over the compatible one). All three are mechanical at the call site._
+
+- **`FileDialogOptions` is split per method: `OpenFileOptions`, `OpenFolderOptions`, `SaveFileOptions`.**
+  The base keeps the three fields every dialog takes (`Title`, `DefaultPath`, `RememberPathKey`); each
+  derived type adds what only that dialog can honour. `IFileDialogs`' four methods take the matching type,
+  so `new OpenFolderOptions { OverwritePrompt = true }` no longer compiles.
+
+  It was one bag for all four methods with only XML tags saying which field applied where — survivable
+  while the type was C#-only and a caller saw the tags in a tooltip, **not survivable now that a page names
+  the same shape through `@shenora/react`**. The vocabulary stays unified, which was the point of a base
+  rather than three unrelated types.
+  - ⚠ `Filters` is on `OpenFolderOptions` too, honoured only when `AllowFileSelection` is set — the
+    file-or-folder mode really is a file dialog underneath and really does filter. The split is what
+    surfaced that; dropping it would have silently removed working behaviour. A field conditional on a
+    SIBLING field is visible in one place, unlike one conditional on which method you called.
+
+- **`IEventBus` subscriptions return `IDisposable` instead of a subscription-id string, and `Unsubscribe`
+  is gone.** Assign the return value and dispose it; a subscription that was never released needs no
+  change, because the id was already being discarded.
+
+  ```csharp
+  var id = bus.Subscribe("APP", "UPDATED", handler);   // before
+  bus.Unsubscribe(id);
+
+  var sub = bus.Subscribe("APP", "UPDATED", handler);  // after
+  sub.Dispose();                                       // or `using`, or a field disposed in teardown
+  ```
+
+  **This was the kit disagreeing with itself.** `IWebViewInterceptor.Use` and
+  `WebViewResourcePipeline.Use` already returned an `IDisposable` that removes the registration; the bus
+  returned a string you had to remember to hand back, and `Unsubscribe`'s own contract *ignored* an id it
+  did not recognise — so a typo or a double-release was a silent no-op. One library should have one answer
+  to "how do I undo a registration".
+  - It deleted a real leak rather than just tidying: `NotificationPump` had to hold BOTH the id AND a live
+    reference to the bus in order to release, so a pump torn down after its bus had gone away leaked the
+    subscription silently. That failure mode no longer exists to get wrong.
+  - Double-dispose is safe and does not disturb other subscriptions — both pinned by tests, and both
+    sabotage-verified.
+
+- **`MissionSchedulerOptions.GlobalLaneCapacity` is now `int?`, where `null` means auto.** Previously `0`
+  meant auto; now a value below 1 throws.
+
+  ```csharp
+  new MissionSchedulerOptions { GlobalLaneCapacity = 0 }   // before: auto
+  new MissionSchedulerOptions { }                          // after: auto (or `= null`)
+  ```
+
+  It was **the last magic sentinel on the kit's surface** — every other option carries a real default and
+  rejects nonsense (`LeaseTimeout` 30 s, `PollInterval` 50 ms, `MaxQueuedNotifications` 10 000; the IPC
+  options throw rather than reinterpret). A sentinel makes one legal-looking value mean something else
+  entirely, and what `0` actually describes is a scheduler that can never run anything.
+
+- **`MissionSchedulerOptions.DefaultLaneCapacity` is renamed to `GlobalLaneCapacity`.** Rename the
+  assignment; nothing else changes, and the value means exactly what it did.
+
+  ```csharp
+  new MissionSchedulerOptions { DefaultLaneCapacity = 8 }   // before
+  new MissionSchedulerOptions { GlobalLaneCapacity = 8 }    // after
+  ```
+
+  **The old name is what caused the defect below.** It reads as "the default capacity a lane gets" and it is
+  really the global CEILING over every lane, so the first adopter set it to 1 believing it was a per-lane
+  default, gave a named lane 3, and got a lane that ran at 1 — with no way to discover that but to time the
+  work. A doc paragraph can explain that; a name can stop it being written.
+
+  **No compatibility alias was kept, deliberately.** A warning-level `[Obsolete]` leaves both names on the
+  surface for years and the misleading one keeps getting written, which is the entire thing the rename
+  exists to prevent. A compile error that names the new property is a better outcome than a warning nobody
+  reads — the fix is one word, at every site, found by the compiler rather than by a measurement.
+
+### Added
+
+- **Native file dialogs are reachable FROM THE PAGE, on both sides of the wire.** The kit already had
+  `ShellCapability.FilePicker`/`FolderPicker`/`SavePicker` in its vocabulary — three capabilities a shell
+  advertises in the ready handshake — and shipped no way to use them, so every app wrote the same routes and
+  then claimed the capability itself. This repo's own two samples had each done exactly that.
+  - **`FileDialogFacade` + `services.AddShenoraFileDialogs()`** (`Shenora.Ipc`) — routes `OPEN_FILE`,
+    `OPEN_FOLDER`, `SAVE_FILE`, `SAVE_TEXT` over whichever `IFileDialogs` the shell registered. Opt-in, like
+    `AddShenoraOperations`.
+  - **`FileDialogs` + `useFileDialogs()`** (`@shenora/react`) — the typed client, plus `canPickFile` /
+    `canPickFolder` / `canPickSavePath` read from the handshake. **Use them to decide what to RENDER, not
+    what to catch**: on a phone `canPickFolder` is false, so the button is never drawn.
+
+    ```tsx
+    const { dialogs, canPickFolder } = useFileDialogs();
+    <button onClick={() => dialogs.openFile()}>Choose a file</button>
+    {canPickFolder && <button onClick={() => dialogs.openFolder()}>Choose a folder</button>}
+    ```
+  - **`SAVE_TEXT` is the portable save** and works on every shell, because the HOST does the writing. It
+    carries TEXT on purpose — the content crosses the IPC envelope, so anything large or binary should be
+    produced host-side through `IFileDialogs.SaveAsync`, where it never enters a message.
+  - **`IpcErrorCodes.CapabilityNotSupported` / `capabilityNotSupported`** — a refusal is not a fault, and a
+    client must be able to tell the two apart. Built from the kit's own words plus the capability name,
+    never from the caught exception's message.
+  - Route names, the module name and all five wire shapes are pinned by `WireMirrorTests` against the TS
+    source, both directions, sabotage-verified.
+
+- **`useShellInfo()`** (`@shenora/react`) — what the host is and what it can do, from the ready handshake.
+  ⚠ **This hook was referenced by two of this package's own doc examples for several releases and did not
+  exist**; `bridge.shell` was the only way to read it, so anyone following the kit's own example wrote code
+  that did not compile. It reads synchronously and does not re-render on a late handshake — the bridge's
+  documented design, since a capability learned after layout is a visible flash — so await
+  `bridge.notifyReady()` before rendering the tree that depends on it.
+
+- **`FileDialogResult.Completed()` — success with NO addressable location, stated by name.** A dialog has
+  THREE outcomes, not two, and the third is the one that surprises people: `SaveAsync` on both mobile shells
+  returns `Success` with a null `FilePath`, because the bytes went to a content URI that is a revocable
+  grant rather than something the app may reopen. **The contract did not say so** — `FilePath` was
+  documented as "the picked location when `Success`", so an adopter writing `result.FilePath!` after
+  checking `Success` had a null-reference waiting for them on a phone. The XML now states all three
+  outcomes, and the mobile shells construct this outcome by name instead of open-coding
+  `new() { Success = true }`, which read like a forgotten field rather than a decision.
+
+- **`IMissionScheduler.GlobalLane` — the bound every mission draws from is now reachable, resizable and
+  holdable.** It always bounded everything (design §3: "the default lane bounds total concurrency"), but it
+  had no name and no accessor, so `MissionSchedulerOptions.DefaultLaneCapacity` was `init`-only and the
+  bound could be chosen once at construction and never again. **That made a runtime capacity governor
+  unbuildable in one direction:** it could throttle a named lane and could never restore it past the value
+  picked at startup — a lane throttled once stayed throttled, as a permanent silent slowdown rather than a
+  crash. Reported by the first adopter, whose governor throttles the gpu/cpu lanes under load and restores
+  them when the machine goes idle.
+  - Exposed as an `ILane` rather than as a bespoke setter, so `Hold()`/`Release()` work on it too — which is
+    "pause the whole scheduler without cancelling anything", a capability the machinery already had and
+    that could not be asked for.
+  - `MissionScheduler.GlobalLaneName` (`"(global)"`) makes it addressable: `Lane(GlobalLaneName)` and a
+    mission declaring that name both resolve to the **same instance**, never a decoy that would accept a
+    capacity change and alter nothing. A mission naming it takes its permits **on top of** the implicit one,
+    which is how a heavy mission counts double against the bound.
+  - Additive; nothing breaks. Only an app that implements `IMissionScheduler` itself — which the kit does
+    not expect — would need to add the member.
+
+- **`ILane.EffectiveCapacity` — the width a lane can actually reach**, i.e. `min(Capacity, GlobalLane.Capacity)`.
+  A lane set to 3 under a global bound of 1 runs at 1 while `Capacity` answers 3, and **nothing an app could
+  ask distinguished that from a lane genuinely running at 3** — the only way to find out was to time the
+  work. `Capacity` still reports what was REQUESTED rather than clamping, so a later widening of the global
+  bound gives the caller the width they asked for instead of having silently discarded it.
+
+### Fixed
+
+- **Setting a lane's capacity above the global bound no longer does so silently.** It is still legal — a
+  governor may widen a lane just before widening the bound, and neither order should be an error — but it
+  now logs which value will actually apply and how to raise it. Nothing was wrong with the *behaviour*
+  (`min(lane, global)` is what a global bound means); the defect was that it was undetectable.
+
+- **Windows: `PlaybackInfo.Duration` was accepted and then DROPPED, so the OS never learned the track
+  length.** Reported by the first adopter on the desktop adoption and reproduced exactly: title, artist,
+  album, status, position and the whole control set read back correctly from Windows' own
+  `GlobalSystemMediaTransportControlsSessionManager`, while `EndTime` was `00:00:00` for a track published
+  with `Duration = 240s`. The flyout therefore had no total to draw its scrubber against — while
+  `IsPlaybackPositionEnabled` was advertised, so the OS offered seeking on a timeline whose end it did not
+  know.
+  - `Publish` drove only the `DisplayUpdater` and `Report` built a timeline with no `EndTime`; nothing
+    carried the duration between the two calls, so it could never be anything but zero. The session now
+    remembers it, and `Clear` (and a `Publish` with no duration) resets it, so a new item cannot inherit the
+    last one's length.
+  - **`EndTime` AND `MaxSeekTime`**, not just the first: one is what the flyout draws against, the other is
+    what bounds a drag, so setting only `EndTime` renders a length the user is not allowed to reach.
+  - A position past the end is CLAMPED rather than passed through — SMTC rejects an out-of-order timeline
+    wholesale, which would lose the duration as well as the position, and a position a tick past the end is
+    ordinary at the moment a track finishes. Unknown and non-positive durations still leave the end at zero,
+    which is what a live stream needs.
+  - **The gate that should have caught it now exists.** The desktop sample's `PlaybackSessionProbe` had
+    published a 240 s duration since the day it was written and never asserted the timeline; it now reads
+    `EndTime` back out of the OS. Verified live: `pos=00:00:42|end=00:04:00`.
+
+- **Android: a PAUSED session advertised `speed=1.0`, so the lock-screen scrubber drifted.**
+  `MobilePlaybackSession` forwarded `PlaybackProgress.Rate` verbatim into
+  `PlaybackState.setState(state, position, speed)` (measured on Android 12 via `dumpsys media_session`),
+  while the iOS session already derived it from `State` — one portable contract producing two behaviours
+  from identical input. A controller extrapolates the displayed position as `position + elapsed × speed`, so
+  a paused session claiming 1.0 walks away from audio that is not moving. The speed is now derived from the
+  state on Android too. **Apps do not need to zero `Rate` when pausing** — the adopter's workaround (lying
+  about its own rate to satisfy one platform) can be deleted.
+
+- **Android: every intercepted response carried a DUPLICATED `Content-Length`, whose first value was `0`.**
+  A file served through `UseFiles` came back as `content-length: 0, 1102544` — an invalid HTTP message
+  (RFC 9110 §8.6: two differing values), and a consumer taking the first reads the payload as empty.
+  Reproduced on the sample and attributed on a device with a route that varied only which headers the kit
+  supplied: **MAUI's Android intercept path always emits a `Content-Type` and a `Content-Length: 0` of its
+  own AND passes our dictionary through as well** — a custom `X-` header arrived exactly once in every
+  variant, so this is those two fields being re-derived, not blanket duplication. The kit no longer sends
+  `Content-Length` on Android; the platform ignores both and delivered the complete body in every variant.
+  - ⚠ **`Content-Type` still arrives twice on Android and that is deliberate.** MAUI reads it out of the
+    dictionary to set the native mime type and then hands the dictionary over too, and there is no
+    `SetResponse` overload taking a content type *alongside* headers — so the only way to avoid the repeat
+    is to send none, which yields `application/octet-stream` and no `<video>` will touch that. Both values
+    are identical, so nothing can be misled about the type.
+  - **Android only**, deliberately: iOS builds an `NSHTTPURLResponse` through different platform code, has
+    not been measured for this, and AVFoundation is the pickiest consumer the kit has (D44).
+  - D44's behaviour is now a GATE rather than a human reading log lines: the MAUI sample loads both clips —
+    including the one whose mp4 index sits at the END, which cannot open unless a tail range is answered
+    correctly — and asserts each resolves a duration and seeks. Verified after the change:
+    `duration=60.00|seeked=48.00` for both.
+
+### Changed
+
+- **`PlaybackProgress.Rate` now documents what each shell does with it**, because it was not discoverable
+  from the types. An app never has to zero it when pausing (every shell derives the published speed from
+  `State`), and ⚠ Windows cannot carry a rate at all — `SystemMediaTransportControls` has no speed field, so
+  a 1.5× audiobook reads as normal speed there. This is the third finding of the shape "one shell silently
+  ignores a field the contract offers", after the paused rate and the skip interval.
+
 ## 0.9.1 — 2026-08-04
 
 ### Fixed

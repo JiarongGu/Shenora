@@ -167,10 +167,30 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         {
             var builder = new AndroidState.Builder();
             builder.SetActions(ActionsFor(Supported));
-            builder.SetState(StateFor(progress.State), _lastPositionMs, (float)progress.Rate);
+            builder.SetState(StateFor(progress.State), _lastPositionMs, (float)RateFor(progress));
             _session.SetPlaybackState(builder.Build());
         }, nameof(Report));
     }
+
+    /// <summary>
+    /// The speed to publish — DERIVED from the state, never the caller's rate verbatim.
+    /// <para>
+    /// ⚠ <b>This is not cosmetic.</b> A controller extrapolates the displayed position as
+    /// <c>position + elapsed × speed</c>, so a paused session advertising <c>1.0</c> lets the lock-screen
+    /// scrubber walk away from audio that is not moving, until the next report snaps it back. Android
+    /// documents 0 as the paused speed and measurably behaves that way (<c>state=2 … speed=1.0</c> on
+    /// Android 12 via <c>dumpsys media_session</c>, found by the first adopter on the 0.9.1 adoption).
+    /// </para>
+    /// <para>
+    /// Derived HERE rather than asked of every app, and that is the point of a portable contract: iOS
+    /// already derived it, so one <see cref="PlaybackProgress"/> produced two behaviours and only one of the
+    /// platforms punished the app for it. The adopter's workaround was to zero <c>Rate</c> before calling —
+    /// i.e. to lie about its own rate to satisfy one platform, which is exactly what this contract exists to
+    /// prevent.
+    /// </para>
+    /// </summary>
+    private static double RateFor(PlaybackProgress progress) =>
+        progress.State == PortableState.Playing ? progress.Rate : 0.0;
 
     /// <inheritdoc />
     public void Clear()

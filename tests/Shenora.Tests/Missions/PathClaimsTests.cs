@@ -93,7 +93,7 @@ public class PathClaimsTests
         // The end-to-end shape an adopting app writes: this is the family's file-operation planner.
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 4,
+            GlobalLaneCapacity = 4,
             Scopes = [PathClaims.Scope],
         });
 

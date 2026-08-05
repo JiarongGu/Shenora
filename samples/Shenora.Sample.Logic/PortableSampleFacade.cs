@@ -47,8 +47,16 @@ public sealed class PortableSampleFacade(
                 return new { Echoed = text.ToUpperInvariant(), Length = text.Length };
 
             // A file picker exists on every host worth shipping to; only the implementation differs.
+            //
+            // ⚠ AN APP THAT ONLY WANTS A PICKER SHOULD NOT WRITE THIS ROUTE ANY MORE. The kit ships
+            // FileDialogFacade (`services.AddShenoraFileDialogs()`), and `@shenora/react`'s
+            // `useFileDialogs()` calls it with capability gating already done. These two routes stay
+            // because they demonstrate something different and still true: portable APP LOGIC composing a
+            // dialog with behaviour of its own — see SAVE_TEXT's deliberately slow, interruptible write,
+            // which no generic route could offer. Reach for your own route when you have logic AROUND the
+            // dialog; reach for the kit's when you just need the dialog.
             case "PICK_FILE":
-                var picked = await dialogs.OpenFileAsync(new FileDialogOptions
+                var picked = await dialogs.OpenFileAsync(new OpenFileOptions
                 {
                     Title = "Pick any file",
                     RememberPathKey = "portable-sample-pick",
@@ -63,7 +71,7 @@ public sealed class PortableSampleFacade(
             case "SAVE_TEXT":
                 var body = PayloadHelper.GetRequiredValue<string>(request.Payload, "text");
                 var saved = await dialogs.SaveAsync(
-                    new FileDialogOptions
+                    new SaveFileOptions
                     {
                         Title = "Save the sample text",
                         FileName = "shenora-sample",

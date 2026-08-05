@@ -45,6 +45,10 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
     private readonly object _gate = new();
     private PlaybackCommands _supported;
     private TimeSpan _skipInterval = TimeSpan.FromSeconds(15);
+    // Remembered from Publish so Report can build a complete timeline. SMTC splits what one PlaybackInfo
+    // says across two calls — the duration belongs to the ITEM and the position to the moment — and nothing
+    // carried it between them, so EndTime could only ever be zero (found by the first adopter, 2026-08-05).
+    private TimeSpan? _duration;
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a WinRT callback.</param>
@@ -107,6 +111,10 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
         ArgumentNullException.ThrowIfNull(info);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        // Before the Try, and assigned unconditionally: a track published WITHOUT a duration must clear the
+        // previous one, or the OS keeps drawing the last item's length under the new item's position.
+        lock (_gate) _duration = info.Duration;
+
         Try(() =>
         {
             var updater = _controls.DisplayUpdater;
@@ -146,24 +154,59 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
                 _ => SmtcStatus.Stopped,
             };
 
+            TimeSpan? duration;
+            lock (_gate) duration = _duration;
+            var (position, end) = TimelineFor(progress.Position, duration);
+
             // The OS extrapolates from these, so they are a snapshot as of now — see PlaybackProgress.
             var timeline = new global::Windows.Media.SystemMediaTransportControlsTimelineProperties
             {
                 StartTime = TimeSpan.Zero,
                 MinSeekTime = TimeSpan.Zero,
-                Position = progress.Position,
+                Position = position,
+                // BOTH, not one: EndTime is what the flyout draws the scrubber against and MaxSeekTime is
+                // what bounds a DRAG, so setting only EndTime renders a length the user is not allowed to
+                // reach. They stay zero when the duration is unknown — see TimelineFor.
+                EndTime = end,
+                MaxSeekTime = end,
             };
-            // EndTime/MaxSeekTime are left at zero unless a duration is known: setting them to the
-            // position would tell the OS the item is exactly as long as how far we have got, and the
-            // flyout renders a permanently-full scrubber.
             _controls.UpdateTimelineProperties(timeline);
         }, nameof(Report));
+    }
+
+    /// <summary>
+    /// The timeline to hand SMTC, from the position the app reported and the duration
+    /// <see cref="Publish"/> remembered.
+    /// <para>
+    /// Pure and <c>internal</c> so it is unit-testable with no media pipeline. That matters here more than
+    /// usual: the defect this exists for shipped because the only evidence was "the call did not throw", and
+    /// a timeline is the kind of thing that comes out silently wrong rather than loudly broken.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>A position past the end is CLAMPED, not passed through.</b> SMTC wants
+    /// <c>StartTime ≤ Position ≤ MaxSeekTime ≤ EndTime</c> and rejects the whole timeline otherwise — which
+    /// would lose the duration as well as the position. An app reporting a position a tick past the end is
+    /// ordinary at the moment a track finishes, so the incoherent input must not cost the coherent field.
+    /// </para>
+    /// <para>
+    /// A null OR non-positive duration both mean UNKNOWN and both leave <c>EndTime</c> at zero. Telling the
+    /// OS an item ends at 0 renders a permanently-full scrubber, and a live stream legitimately has no end.
+    /// </para>
+    /// </summary>
+    internal static (TimeSpan Position, TimeSpan End) TimelineFor(TimeSpan position, TimeSpan? duration)
+    {
+        if (position < TimeSpan.Zero) position = TimeSpan.Zero;
+        if (duration is not { } total || total <= TimeSpan.Zero) return (position, TimeSpan.Zero);
+        return (position > total ? total : position, total);
     }
 
     /// <inheritdoc />
     public void Clear()
     {
         if (_disposed) return;
+        // The duration belongs to the item that is going away. Left set, the next Publish that omits one
+        // would inherit it — the same staleness the assignment in Publish prevents, from the other side.
+        lock (_gate) _duration = null;
         Try(() =>
         {
             _controls.DisplayUpdater.ClearAll();

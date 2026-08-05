@@ -727,16 +727,19 @@ and none of them is exotic — they are what this problem costs when each app so
 ```csharp
 var scheduler = new MissionScheduler(new MissionSchedulerOptions
 {
-    DefaultLaneCapacity = 0,   // 0 = clamp(cores-1, 1, 4), the value both hand-rolled planners chose
+    // ⚠ A CEILING over every lane, not just their starting value — see "Known gaps" #5 before choosing
+    // it. Omit it (or null) for auto = clamp(cores-1, 1, 4), the value both hand-rolled planners chose;
+    // anything below 1 throws.
+    GlobalLaneCapacity = null,
     Scopes = [PathClaims.Scope, new FlatClaimScope("entity"), new FlatClaimScope("category")],
     Log = message => logger.LogDebug("{Message}", message),
 });
-scheduler.Lane("gpu").Capacity = 1;   // a scarce shared resource — see the lane trap below
+scheduler.Lane("gpu").Capacity = 1;   // a scarce shared resource — see "Known gaps" #5 (the lane trap)
 ```
 
 Register only the scopes you use. A claim naming an **unregistered scope throws at submit** rather
 than being ignored — silently dropping an exclusion the caller asked for is the one failure mode a
-scheduler must not have. Pass an explicit `DefaultLaneCapacity` in your own tests: a concurrency
+scheduler must not have. Pass an explicit `GlobalLaneCapacity` in your own tests: a concurrency
 assertion keyed off the host's core count passes or fails by machine, which is how a parallelism
 regression hides on the one box with two cores.
 
@@ -749,10 +752,11 @@ regression hides on the one box with two cores.
 | A per-entity mutex or per-key semaphore dictionary | `MissionClaim.Exclusive("entity", id)` over a `FlatClaimScope` | Flat keys conflict only when equal. |
 | A second lock for a coarser key, plus a lock-order rule | both claims on ONE request — `Claims = [MissionClaim.Exclusive("entity", id), MissionClaim.Exclusive("category", group)]` | Acquired as a set, so deadlock is structurally impossible and the lock-order rule stops being something anyone must remember. Guarded by `MissionSchedulerAdoptionTests.Claims_acquired_as_a_set_cannot_deadlock_on_lock_order`, which drives crossing pairs under a timeout (a deadlock shows up as a hang, so the assertion has to be the timeout). |
 | A mailbox actor that serializes one stream of items | one `Exclusive` claim on a single key | The actor falls out of the model; the kit ships no `Actor` type on purpose. |
-| A `maxConcurrency` constructor argument | `MissionSchedulerOptions.DefaultLaneCapacity` | Every request draws one permit from the default lane. |
+| A `maxConcurrency` constructor argument | `MissionSchedulerOptions.GlobalLaneCapacity` | Every request draws one permit from the global lane. ⚠ It is also a CEILING over every named lane — see "Known gaps" #5. (Renamed from `DefaultLaneCapacity`; rename the assignment, nothing else changes.) |
 | A static gate/semaphore singleton over a scarce resource (one GPU, a rate-limited endpoint) | `scheduler.Lane("gpu").Capacity = 1` + `Lanes = [new MissionLane("gpu")]` on the request | Removes the singleton, so it is testable and there can be more than one. A lane that is a BUDGET rather than a slot count takes weighted permits: `new MissionLane("vram", 4)`. |
 | A live "max active" slider | the `ILane.Capacity` setter | Lowering it never cancels running work — the surplus is swallowed as items finish. Proven in both directions: `Lowering_lane_capacity_throttles_new_work_without_killing_running_work` and `A_lowered_capacity_is_enforced_once_the_surplus_drains`. The setter enforces a floor of 1 and no ceiling, so clamp to your own maximum before assigning. |
-| A capacity governor that suspends work under system load | `ILane.Hold()` / `Release()` (re-entrant) | The kit ships the mechanism and no policy: load probes, hysteresis and debounce stay yours. This is the difference between "yield the GPU while the user games" and "kill the user's transcode". |
+| A hand-written IPC route that opens a file/folder/save dialog for the page | `services.AddShenoraFileDialogs()` + `useFileDialogs()` from `@shenora/react` | The kit ships the routes and the typed client. `canPickFile`/`canPickFolder`/`canPickSavePath` come from the ready handshake, so ONE bundle hides the controls a shell cannot honour rather than calling and catching. Keep your own route only when you have logic AROUND the dialog (a slow interruptible write, app validation) — not for a plain picker. |
+| A capacity governor that suspends work under system load | `ILane.Hold()` / `Release()` (re-entrant), and `IMissionScheduler.GlobalLane` to move the total bound | The kit ships the mechanism and no policy: load probes, hysteresis and debounce stay yours. This is the difference between "yield the GPU while the user games" and "kill the user's transcode". ⚠ A governor that RESTORES as well as throttles must raise `GlobalLane.Capacity` too — see "Known gaps" #5. |
 | Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `MissionDefinition.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission completes eagerly against the existing item with `MissionOutcome.Deduplicated`, and the body runs once. |
 | `MAX_RETRY_ATTEMPTS` / `RETRY_DELAY_MS` constants | `RetryPolicy` | Same defaults as the family's measured value: 3 attempts, 500 ms × attempt, `IOException` only. `RetryPolicy.None` opts out; `Retry = null` already means none. |
 | A retry loop wrapped around an expensive operation to survive a cheap final step | `Run` (the expensive phase, runs ONCE) + `Commit` (cheap, retried) | Setting `Commit` is what makes `Run` exempt from the retry budget. |
@@ -882,6 +886,19 @@ is the one to verify against real workloads rather than only against tests.
 4. **Content URIs are not paths.** `PathClaims` assumes a hierarchical filesystem with a platform
    separator — right for app-private storage, wrong for an Android MediaStore/SAF content URI, which
    needs its own `IClaimScope`. Nothing else in the scheduler cares.
+5. **⚠ `GlobalLaneCapacity` is a CEILING over every lane, not just their starting value** — the lane
+   trap, and it cost the first adopter a measurement (2026-08-05). Every mission also draws one permit
+   from the global lane, so a named lane runs at `min(its own capacity, the global bound)`. Set
+   `GlobalLaneCapacity` to the widest any lane will ever need and narrow from there — a global bound of
+   1 with `Lane("gpu").Capacity = 3` gives you a lane that runs at **1**.
+   - **Read `ILane.EffectiveCapacity`, not `Capacity`,** to find out what a lane will actually reach.
+     `Capacity` deliberately reports what you REQUESTED (so a later widening of the bound gives you the
+     width you asked for rather than having discarded it), and setting it above the bound logs why it
+     will not apply.
+   - **A runtime governor must move the bound too.** `IMissionScheduler.GlobalLane` is that lane, and it
+     is live-resizable like any other: `scheduler.GlobalLane.Capacity = 8`. Before it existed, a
+     governor could throttle a lane and never restore it past the value chosen at startup. Its
+     `Hold()`/`Release()` also give you "pause the whole scheduler without cancelling anything".
 
 **Verify:** one run must prove exclusion AND parallelism together — work on the same key never
 overlaps *while* disjoint work does. Asserting only that results are correct passes a fully serial

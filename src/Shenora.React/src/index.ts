@@ -79,7 +79,25 @@ export {
   type DropZoneFileDrop,
   type UseDropZoneOptions,
 } from './useDropZone.js';
-export { useShenora, useShenoraEvent, useShenoraQuery, type ShenoraQueryResult } from './hooks.js';
+export {
+  useShenora,
+  useShenoraEvent,
+  useShenoraQuery,
+  useShellInfo,
+  type ShenoraQueryResult,
+} from './hooks.js';
+// Native dialogs, capability-gated. The client half of the host's FILE_DIALOGS module.
+export {
+  FileDialogs,
+  useFileDialogs,
+  type FileDialogFilter,
+  type FileDialogOptions,
+  type OpenFileOptions,
+  type OpenFolderOptions,
+  type SaveFileOptions,
+  type FileDialogResult,
+  type FileDialogsHandle,
+} from './fileDialogs.js';
 export {
   installDevInterceptor,
   type DevInterceptorOptions,

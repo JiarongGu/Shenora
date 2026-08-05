@@ -1,12 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
-import type { EventMessage } from './types.js';
+import type { EventMessage, ShellInfo } from './types.js';
 
 /** Host access for components: the (default) bridge and whether a host transport exists. */
 export function useShenora(): { isAvailable: boolean; bridge: ShenoraBridge } {
   const bridge = getBridge();
   return { isAvailable: bridge.isAvailable, bridge };
+}
+
+/**
+ * What the host IS and what it can do — the way one bundle renders correctly on every shell.
+ * Branch on {@link ShellInfo.capabilities}, never on {@link ShellInfo.name}.
+ *
+ * ```tsx
+ * const shell = useShellInfo();
+ * return <>{shell?.capabilities.includes(ShellCapabilities.windowChrome) && <TitleBar />}</>;
+ * ```
+ *
+ * `undefined` means no host said anything — a plain browser tab, a host predating the handshake, or a
+ * handshake that has not finished. **Treat absent as "assume nothing", never as "assume desktop".**
+ *
+ * ⚠ **Await `bridge.notifyReady()` before rendering the tree that depends on this.** The value is read
+ * SYNCHRONOUSLY from the bridge's cache, deliberately — a capability learned after layout is a visible
+ * flash — which means this hook does not re-render when a handshake lands later. A component mounted
+ * mid-handshake sees `undefined` and keeps seeing it, which is the documented "assume nothing" tree
+ * rather than a wrong one, but it is not the tree you wanted.
+ *
+ * ⚠ This hook was referenced by two doc examples in this package for several releases before it
+ * existed — `bridge.shell` was the only way to read it. If you wrote that workaround, this replaces it.
+ */
+export function useShellInfo(bridge?: ShenoraBridge): ShellInfo | undefined {
+  return (bridge ?? getBridge()).shell;
 }
 
 /**

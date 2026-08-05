@@ -32,26 +32,43 @@ public sealed class EventBus : IEventBus
     }
 
     /// <inheritdoc />
-    public string Subscribe(string module, string type, string scope, Func<EventMessage, Task> handler) =>
+    public IDisposable Subscribe(string module, string type, string scope, Func<EventMessage, Task> handler) =>
         SubscribeCore(module, type, scope, handler);
 
     /// <inheritdoc />
-    public string Subscribe(string module, string type, Func<EventMessage, Task> handler) =>
+    public IDisposable Subscribe(string module, string type, Func<EventMessage, Task> handler) =>
         SubscribeCore(module, type, null, handler);
 
     /// <inheritdoc />
-    public string SubscribeToModule(string module, string scope, Func<EventMessage, Task> handler) =>
+    public IDisposable SubscribeToModule(string module, string scope, Func<EventMessage, Task> handler) =>
         SubscribeCore(module, "*", scope, handler);
 
     /// <inheritdoc />
-    public string SubscribeToModule(string module, Func<EventMessage, Task> handler) =>
+    public IDisposable SubscribeToModule(string module, Func<EventMessage, Task> handler) =>
         SubscribeCore(module, "*", null, handler);
 
     /// <inheritdoc />
-    public string SubscribeToAll(Func<EventMessage, Task> handler) =>
+    public IDisposable SubscribeToAll(Func<EventMessage, Task> handler) =>
         SubscribeCore("*", "*", null, handler);
 
-    private string SubscribeCore(string modulePattern, string typePattern, string? scopePattern,
+    /// <summary>
+    /// Removes one subscription, once. Idempotent by an <see cref="Interlocked"/> latch rather than by
+    /// relying on the dictionaries' remove being harmless: the id is a fresh GUID per subscription, so a
+    /// second dispose could not currently hit someone else's — but that is a property of the ID FORMAT,
+    /// and a gate should not depend on a detail three methods away.
+    /// </summary>
+    private sealed class Subscription(EventBus owner, string id) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            owner.RemoveCore(id);
+        }
+    }
+
+    private IDisposable SubscribeCore(string modulePattern, string typePattern, string? scopePattern,
         Func<EventMessage, Task> handler)
     {
         ArgumentException.ThrowIfNullOrEmpty(modulePattern);
@@ -69,14 +86,19 @@ public sealed class EventBus : IEventBus
         _handlers[subscriptionId] = handler;
         _matchCache[subscriptionId] = new ConcurrentDictionary<string, bool>();
         _patterns[subscriptionId] = (modulePattern, typePattern, scopePattern);
-        return subscriptionId;
+        return new Subscription(this, subscriptionId);
     }
 
-    /// <inheritdoc />
-    public void Unsubscribe(string subscriptionId)
+    /// <summary>
+    /// Unregister everything the subscription owns. Reverse of <see cref="SubscribeCore"/>'s ordering
+    /// comment: <c>_patterns</c> goes FIRST, because it is what <see cref="EmitAsync(EventMessage)"/>
+    /// enumerates — so an emit racing a dispose stops matching before the handler it would have called
+    /// disappears.
+    /// </summary>
+    private void RemoveCore(string subscriptionId)
     {
-        _handlers.TryRemove(subscriptionId, out _);
         _patterns.TryRemove(subscriptionId, out _);
+        _handlers.TryRemove(subscriptionId, out _);
         _matchCache.TryRemove(subscriptionId, out _);
     }
 

@@ -13,23 +13,32 @@ namespace Shenora.Core;
 /// </summary>
 public interface IEventBus
 {
-    /// <summary>Subscribe to one event type in one scope. Returns the subscription id.</summary>
-    string Subscribe(string module, string type, string scope, Func<EventMessage, Task> handler);
+    /// <summary>
+    /// Subscribe to one event type in one scope.
+    /// </summary>
+    /// <returns>
+    /// Dispose to unsubscribe. Disposing twice is safe and does nothing the second time.
+    /// <para>
+    /// ⚠ <b>An <see cref="IDisposable"/>, not an id string, and the whole kit answers this way</b> —
+    /// <c>IWebViewInterceptor.Use</c> and <c>WebViewResourcePipeline.Use</c> already did. The id version
+    /// this replaced could not be scoped with <c>using</c>, could not be released by a compiler-enforced
+    /// path, and ignored an id it did not recognise — so a typo or a double-release was a silent no-op
+    /// rather than a failure. One library should have ONE answer to "how do I undo a registration".
+    /// </para>
+    /// </returns>
+    IDisposable Subscribe(string module, string type, string scope, Func<EventMessage, Task> handler);
 
-    /// <summary>Subscribe to one event type across all scopes. Returns the subscription id.</summary>
-    string Subscribe(string module, string type, Func<EventMessage, Task> handler);
+    /// <summary>Subscribe to one event type across all scopes. Dispose to unsubscribe.</summary>
+    IDisposable Subscribe(string module, string type, Func<EventMessage, Task> handler);
 
-    /// <summary>Subscribe to all of a module's events in one scope. Returns the subscription id.</summary>
-    string SubscribeToModule(string module, string scope, Func<EventMessage, Task> handler);
+    /// <summary>Subscribe to all of a module's events in one scope. Dispose to unsubscribe.</summary>
+    IDisposable SubscribeToModule(string module, string scope, Func<EventMessage, Task> handler);
 
-    /// <summary>Subscribe to all of a module's events across all scopes. Returns the subscription id.</summary>
-    string SubscribeToModule(string module, Func<EventMessage, Task> handler);
+    /// <summary>Subscribe to all of a module's events across all scopes. Dispose to unsubscribe.</summary>
+    IDisposable SubscribeToModule(string module, Func<EventMessage, Task> handler);
 
-    /// <summary>Subscribe to every event. Returns the subscription id.</summary>
-    string SubscribeToAll(Func<EventMessage, Task> handler);
-
-    /// <summary>Remove a subscription by the id its Subscribe call returned. Unknown ids are ignored.</summary>
-    void Unsubscribe(string subscriptionId);
+    /// <summary>Subscribe to every event. Dispose to unsubscribe.</summary>
+    IDisposable SubscribeToAll(Func<EventMessage, Task> handler);
 
     /// <summary>Emit to all matching subscribers; completes when every handler has run.</summary>
     Task EmitAsync(EventMessage message);

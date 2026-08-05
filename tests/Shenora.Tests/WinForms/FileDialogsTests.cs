@@ -46,7 +46,7 @@ public class FileDialogsTests
         var store = new FakePathStore { Paths = { ["import"] = existing } };
         var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
 
-        var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions { RememberPathKey = "import" });
+        var resolved = await dialogs.ResolveInitialPathAsync(new OpenFileOptions { RememberPathKey = "import" });
 
         Assert.Equal(existing, resolved);
     }
@@ -59,7 +59,7 @@ public class FileDialogsTests
         var store = new FakePathStore { Paths = { ["import"] = Path.Combine(defaultDir, "gone-subdir") } };
         var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
 
-        var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions
+        var resolved = await dialogs.ResolveInitialPathAsync(new OpenFileOptions
         {
             RememberPathKey = "import",
             DefaultPath = defaultDir,
@@ -85,13 +85,13 @@ public class FileDialogsTests
         var existing = temp.Root;
         var store = new FakePathStore();
         var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = store });
-        var keyed = new FileDialogOptions { RememberPathKey = "import" };
+        var keyed = new OpenFileOptions { RememberPathKey = "import" };
 
         await dialogs.RememberPathAsync(keyed, existing);
         Assert.Equal(existing, store.Paths["import"]);
 
         await dialogs.RememberPathAsync(keyed, Path.Combine(existing, "missing"));
-        await dialogs.RememberPathAsync(new FileDialogOptions(), existing); // no key
+        await dialogs.RememberPathAsync(new OpenFileOptions(), existing); // no key
         await dialogs.RememberPathAsync(keyed, null);
         Assert.Single(store.Paths); // nothing else landed
     }
@@ -101,7 +101,7 @@ public class FileDialogsTests
     {
         var dialogs = new FileDialogs(new FileDialogsOptions { PathStore = new ThrowingStore() });
 
-        var resolved = await dialogs.ResolveInitialPathAsync(new FileDialogOptions { RememberPathKey = "x" });
+        var resolved = await dialogs.ResolveInitialPathAsync(new OpenFileOptions { RememberPathKey = "x" });
 
         Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), resolved);
     }

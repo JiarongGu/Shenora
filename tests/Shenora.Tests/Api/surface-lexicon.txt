@@ -361,3 +361,23 @@ Derived
 Files
 Options
 Extensions
+
+# ── File dialogs, split per method (2026-08-05) ────────────────────────────────────────────────
+# `Open` and `Save` are the only VERBS in this file, and they were admitted deliberately rather than
+# renamed around. Three things decided it:
+#   1. They are the PLATFORM's own vocabulary, not ours — `OpenFileDialog` and `SaveFileDialog` are
+#      BCL type names, and every shell expresses the same pair (ACTION_CREATE_DOCUMENT,
+#      UIDocumentPickerViewController's export mode).
+#   2. `IFileDialogs` has used them as METHOD names since P5.5. Members are not swept by this gate,
+#      which is the only reason this never fired before — so the words were already the kit's, and
+#      what changed is that the split PROMOTED them to type names.
+#   3. Every mechanism-noun alternative was worse. `FileSourceOptions`/`FileTargetOptions` are
+#      buildable from words already here, and they mis-describe the folder case: a folder pick is a
+#      SOURCE when it grants a working directory and a TARGET when it chooses an export destination,
+#      so the honest name for that one is neither.
+# ⚠ Watch these the way `Media` and `Download` are watched. A verb on this surface is a step toward
+# naming ACTIONS rather than mechanisms (D22). These two are anchored to a specific OS dialog that
+# every platform ships; a `LoadOptions`, `ImportOptions` or `ExportOptions` would not be, and must be
+# argued on its own merits rather than waved past because this section exists.
+Open
+Save

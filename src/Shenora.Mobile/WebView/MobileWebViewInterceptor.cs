@@ -100,8 +100,63 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         // ⚠ The PORTABLE overload, with a header dictionary. `e.PlatformArgs` is not needed on either
         // platform: every header reaches the native response, verified on devices after this repo spent a
         // session believing otherwise (D44).
-        e.SetResponse(response.StatusCode, response.ReasonPhrase, response.Headers, response.Content);
+        e.SetResponse(response.StatusCode, response.ReasonPhrase, PlatformHeaders(response.Headers), response.Content);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// The headers as the PLATFORM should receive them — which is not always the headers the response
+    /// carries, because one platform emits some of them itself and then passes ours through as well.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠ <b>Android duplicates.</b> Measured on a device (2026-08-05, from the first adopter's report) with a
+    /// route that varied only which headers the kit supplied, so each value could be attributed:
+    /// </para>
+    /// <code>
+    /// kit supplies      page receives content-type                 page receives content-length
+    /// ────────────      ─────────────────────────                  ───────────────────────────
+    /// type + length     application/x-probe, application/x-probe   0, 32
+    /// type only         application/x-probe, application/x-probe   0
+    /// length only       application/octet-stream                   0, 32
+    /// neither           application/octet-stream                   0
+    /// </code>
+    /// <para>
+    /// So the platform ALWAYS emits a <c>Content-Type</c> and a <c>Content-Length: 0</c> of its own, AND
+    /// copies our dictionary verbatim — a custom <c>X-</c> header arrived exactly once in every variant, so
+    /// this is not blanket duplication, it is these two fields being re-derived. MAUI's Android intercept
+    /// path reads <c>Content-Type</c> out of the dictionary to use as the native response's mime type and
+    /// then hands the same dictionary over; its own comment concedes it cannot know a length
+    /// (<c>MauiHybridWebViewClient</c>), which is where the <c>0</c> comes from. There is no
+    /// <c>SetResponse</c> overload taking a content type AND a dictionary, so neither can be avoided by
+    /// choosing a different one.
+    /// </para>
+    /// <para>
+    /// <b>What is dropped and why only that.</b> <c>Content-Length</c> goes: two DIFFERENT values for it is
+    /// an invalid HTTP message (RFC 9110 §8.6 — a recipient must reject or repair it), a consumer taking the
+    /// first reads the payload as EMPTY, and ours buys nothing because the platform ignores both and
+    /// delivered the complete body in every variant above. <c>Content-Type</c> STAYS: dropping it is what
+    /// produces <c>application/octet-stream</c> in the table, and no <c>&lt;video&gt;</c> will touch that —
+    /// a far worse regression than a repeated field whose two values are identical and therefore cannot
+    /// mislead anyone about the type.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Android only, deliberately.</b> iOS builds an <c>NSHTTPURLResponse</c> through completely
+    /// different platform code and has NOT been measured for this; AVFoundation is the pickiest consumer the
+    /// kit has (D44), so its headers are left exactly as D44 proved them. Do not generalise this without a
+    /// device run.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyDictionary<string, string> PlatformHeaders(IReadOnlyDictionary<string, string> headers)
+    {
+#if ANDROID
+        if (!headers.ContainsKey("Content-Length")) return headers;
+        var trimmed = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
+        trimmed.Remove("Content-Length");
+        return trimmed;
+#else
+        return headers;
+#endif
     }
 
     /// <summary>

@@ -19,6 +19,9 @@ internal static class PlaybackSessionProbe
     private const string Title = "Shenora probe title";
     private const string Subtitle = "Shenora probe subtitle";
     private const string GroupName = "Shenora probe group";
+    private static readonly TimeSpan Duration = TimeSpan.FromSeconds(240);
+    /// <summary>What the OS should report back as the timeline end, formatted the way the read-back prints it.</summary>
+    private static readonly string ExpectedEnd = Duration.ToString("c");
 
     /// <summary>
     /// Publish a known item, read it back from the OS, and report a one-line verdict — PASS, or FAIL
@@ -51,7 +54,7 @@ internal static class PlaybackSessionProbe
                 Title = Title,
                 Subtitle = Subtitle,
                 GroupName = GroupName,
-                Duration = TimeSpan.FromSeconds(240),
+                Duration = Duration,
             });
             session.Report(new PlaybackProgress
             {
@@ -88,6 +91,12 @@ internal static class PlaybackSessionProbe
             // fast-forward/rewind, so this is the read-back that proves the mapping actually lit them.
             if (!report.Contains("ff=True", StringComparison.Ordinal)) failures.Add("SkipForward did not enable fast-forward");
             if (!report.Contains("rw=True", StringComparison.Ordinal)) failures.Add("SkipBackward did not enable rewind");
+            // The DURATION, which this probe published from the day it was written and never checked
+            // (2026-08-05). That gap is the whole defect: Publish took a 240 s Duration, nothing carried it
+            // to the timeline, and every other assertion here passed. Asserting the OS's own EndTime is the
+            // only thing that would have caught it — "Publish did not throw" never could.
+            if (!report.Contains($"end={ExpectedEnd}", StringComparison.Ordinal))
+                failures.Add($"duration did not reach the OS timeline (expected end={ExpectedEnd})");
 
             session.Clear();
             return failures.Count == 0
@@ -124,10 +133,16 @@ internal static class PlaybackSessionProbe
                     // different call than Publish does, so reading only the text would leave the whole
                     // PlaybackCommands mapping ungated.
                     var controls = s.GetPlaybackInfo().Controls;
+                    // The TIMELINE is a third call again — separate from metadata and from playback info —
+                    // which is exactly why the duration could go missing while both of those read back
+                    // perfectly. Position is printed alongside the end so a clamp is visible rather than
+                    // silently indistinguishable from a correct report.
+                    var timeline = s.GetTimelineProperties();
                     return $"app={s.SourceAppUserModelId}|title={props.Title}|artist={props.Artist}"
                         + $"|album={props.AlbumTitle}|status={status}"
                         + $"|next={controls.IsNextEnabled}|ff={controls.IsFastForwardEnabled}"
-                        + $"|rw={controls.IsRewindEnabled}";
+                        + $"|rw={controls.IsRewindEnabled}"
+                        + $"|pos={timeline.Position:c}|end={timeline.EndTime:c}";
                 }
                 others.Add($"{s.SourceAppUserModelId}:{props?.Title}");
             }

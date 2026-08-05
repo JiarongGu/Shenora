@@ -9,7 +9,7 @@ namespace Shenora.Tests.Missions;
 public class MissionSchedulerBehaviourTests
 {
     private static MissionScheduler NewScheduler(MissionSchedulerOptions? options = null) =>
-        new(options ?? new MissionSchedulerOptions { DefaultLaneCapacity = 4 });
+        new(options ?? new MissionSchedulerOptions { GlobalLaneCapacity = 4 });
 
     [Fact]
     public async Task A_failing_body_is_reported_not_thrown()
@@ -77,7 +77,7 @@ public class MissionSchedulerBehaviourTests
     [Fact]
     public async Task An_identical_key_is_deduplicated_and_the_body_runs_once()
     {
-        await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });
 
         var runs = 0;
         var gate = new TaskCompletionSource();
@@ -107,7 +107,7 @@ public class MissionSchedulerBehaviourTests
     [Fact]
     public async Task Cancelling_while_queued_never_runs_the_body()
     {
-        await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });
 
         var blocker = new TaskCompletionSource();
         var busy = scheduler.SubmitAsync(new MissionDefinition { Run = async (_, _) => await blocker.Task });
@@ -132,7 +132,7 @@ public class MissionSchedulerBehaviourTests
     {
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 1,   // force a strict ordering so the sequence is observable
+            GlobalLaneCapacity = 1,   // force a strict ordering so the sequence is observable
             Scopes = [new FlatClaimScope("entity")],
         });
 
@@ -167,7 +167,7 @@ public class MissionSchedulerBehaviourTests
         var policy = new DelegatePolicy((_, _) => open);
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 4,
+            GlobalLaneCapacity = 4,
             Policy = policy,
         });
 
@@ -199,7 +199,7 @@ public class MissionSchedulerBehaviourTests
         });
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 2,
+            GlobalLaneCapacity = 2,
             Policy = policy,
         });
 
@@ -227,7 +227,7 @@ public class MissionSchedulerBehaviourTests
         var good = new RecordingObserver();
         var options = new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 2,
+            GlobalLaneCapacity = 2,
             Observers = [new ThrowingObserver(), good],
         };
         await using var scheduler = new MissionScheduler(options);
@@ -246,7 +246,7 @@ public class MissionSchedulerBehaviourTests
         var store = new RecordingStore();
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 2,
+            GlobalLaneCapacity = 2,
             QueueStore = store,
         });
 
@@ -273,7 +273,7 @@ public class MissionSchedulerBehaviourTests
 
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 2,
+            GlobalLaneCapacity = 2,
             QueueStore = store,
         });
 
@@ -297,7 +297,7 @@ public class MissionSchedulerBehaviourTests
 
         await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
         {
-            DefaultLaneCapacity = 2,
+            GlobalLaneCapacity = 2,
             QueueStore = store,
             // This app knows "resumable" work checkpoints safely, so overrides the cautious default.
             RecoveryPolicyFor = _ => RecoveryPolicy.Requeue,
@@ -329,7 +329,7 @@ public class MissionSchedulerBehaviourTests
         // mistake, and the XML on SubmitAsync/MissionResult claimed both threw until 2026-08-02. It is
         // pinned here because the consequence is silent: a misspelled lane draws on a NEW lane at the
         // default capacity, so the exclusivity the app configured on the real lane is simply gone.
-        await using var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 3 });
+        await using var scheduler = NewScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 3 });
         scheduler.Lane("gpu").Capacity = 1;
 
         var result = await scheduler.SubmitAsync(new MissionDefinition
@@ -346,7 +346,7 @@ public class MissionSchedulerBehaviourTests
     [Fact]
     public async Task Dispose_cancels_queued_work_and_awaits_what_is_running()
     {
-        var scheduler = NewScheduler(new MissionSchedulerOptions { DefaultLaneCapacity = 1 });
+        var scheduler = NewScheduler(new MissionSchedulerOptions { GlobalLaneCapacity = 1 });
 
         var entered = new TaskCompletionSource();
         var finished = false;

@@ -96,18 +96,58 @@ public class EventBusTests
     }
 
     [Fact]
-    public async Task Unsubscribe_stops_delivery()
+    public async Task Disposing_a_subscription_stops_delivery()
     {
         var bus = new EventBus();
         var received = new List<EventMessage>();
-        var id = bus.Subscribe("APP", "UPDATED", Collect(received));
+        var subscription = bus.Subscribe("APP", "UPDATED", Collect(received));
 
         await bus.EmitAsync("APP", "UPDATED");
-        bus.Unsubscribe(id);
+        subscription.Dispose();
         await bus.EmitAsync("APP", "UPDATED");
 
         Assert.Single(received);
+        // Not just "delivery stopped" — the registration is GONE. Leaving the handler in place while
+        // skipping it would pass the assertion above and leak every subscription the app ever made.
         Assert.Equal(0, bus.GetHandlerCount());
+    }
+
+    [Fact]
+    public async Task Disposing_a_subscription_TWICE_is_safe_and_leaves_the_others_alone()
+    {
+        // The reason the id version was replaced: it took a string, and an unknown one was IGNORED — so a
+        // double-release or a typo was a silent no-op. `IDisposable` makes double-release the NORMAL case
+        // (a `using` inside a loop, a defensive Dispose in a teardown path), so it has to be harmless AND
+        // must not take anyone else's subscription with it.
+        var bus = new EventBus();
+        var first = new List<EventMessage>();
+        var second = new List<EventMessage>();
+        var subscription = bus.Subscribe("APP", "UPDATED", Collect(first));
+        bus.Subscribe("APP", "UPDATED", Collect(second));
+
+        subscription.Dispose();
+        subscription.Dispose();
+        await bus.EmitAsync("APP", "UPDATED");
+
+        Assert.Empty(first);
+        Assert.Single(second);
+        Assert.Equal(1, bus.GetHandlerCount());
+    }
+
+    [Fact]
+    public async Task A_subscription_can_be_scoped_with_using()
+    {
+        // The shape the change exists to enable, and the one an id could not express at all.
+        var bus = new EventBus();
+        var received = new List<EventMessage>();
+
+        using (bus.Subscribe("APP", "UPDATED", Collect(received)))
+        {
+            await bus.EmitAsync("APP", "UPDATED");
+        }
+        await bus.EmitAsync("APP", "UPDATED");
+
+        Assert.Single(received);
     }
 
     [Fact]

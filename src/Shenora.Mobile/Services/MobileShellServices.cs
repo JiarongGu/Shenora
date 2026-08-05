@@ -146,12 +146,12 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     /// callback as "may run even if the user ultimately cancels".
     /// </para>
     /// </summary>
-    public partial Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+    public partial Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                                     Func<Stream, CancellationToken, Task> write,
                                                     CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
-    public async Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null)
+    public async Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null)
     {
         var result = await FilePicker.Default.PickAsync(new PickOptions
         {
@@ -169,7 +169,7 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     }
 
     /// <inheritdoc />
-    public Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null) =>
+    public Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null) =>
         throw ShellCapability.NotSupported("Picking a folder", MauiShellNames.Shell,
             "This is a desktop concept (D35) — a folder browser grants ambient access to an arbitrary path, " +
             "which no mobile system does. Ask for what you meant instead: ShenoraPaths for space the app owns " +
@@ -177,7 +177,7 @@ public sealed partial class MobileFileDialogs : IFileDialogs
             "document.");
 
     /// <inheritdoc />
-    public Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null) =>
+    public Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null) =>
         throw ShellCapability.NotSupported("Choosing a save destination as a PATH", MauiShellNames.Shell,
             "No mobile system has that concept: the user grants access to one document and the app writes " +
             "INTO it while the grant is live, so there is no path to hand back. Use SaveAsync(options, write) " +
@@ -222,12 +222,12 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     }
 
     /// <summary>
-    /// The name to suggest in the picker: the caller's <see cref="FileDialogOptions.FileName"/>, with
-    /// <see cref="FileDialogOptions.DefaultExtension"/> appended when it carries no extension of its
+    /// The name to suggest in the picker: the caller's <see cref="SaveFileOptions.FileName"/>, with
+    /// <see cref="SaveFileOptions.DefaultExtension"/> appended when it carries no extension of its
     /// own. Unlike the desktop, the NAME is the only place an extension can be expressed here — the
     /// MIME type is deliberately generic (see the platform implementations).
     /// </summary>
-    private static string SuggestedName(FileDialogOptions? options)
+    private static string SuggestedName(SaveFileOptions? options)
     {
         var name = options?.FileName;
         if (string.IsNullOrWhiteSpace(name)) name = "untitled";

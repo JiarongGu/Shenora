@@ -3,6 +3,11 @@
 - **NEVER roundtrip source files through PowerShell 5 `Get-Content`/`Set-Content`** — it mangles
   UTF-8 (mojibake incident in the family; restored via git). Use the Edit/Write tools or Node
   scripts for text.
+- **PS 5.1 collapses `@(@(a,b))` when there is exactly ONE nested pair** — `$pair` becomes a STRING, so
+  `.Replace($pair[0],$pair[1])` is `Replace('E','v')`. Rewrote every capital E in a tracked doc
+  (2026-08-05); the same script's five-pair target stayed nested and was correct, so more than one case
+  hides it. **Bulk text edits go through the Edit tool**; if scripted, `git diff --numstat` before moving
+  on — the tell is a diff far larger than the edit.
 - **Undo a sabotage with the SAME tool that applied it (Edit/Write), then confirm GREEN.** Both
   restore shortcuts lie, and both were hit live in one session: `Move-Item`/`Copy-Item` preserve
   `LastWriteTime`, so the restored file can be older than the assembly built from the sabotage and

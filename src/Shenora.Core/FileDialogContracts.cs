@@ -25,11 +25,23 @@ public sealed class FileDialogFilter
 }
 
 /// <summary>
-/// Inputs for one dialog call — the frontend typically sends these over IPC, so the shape is
-/// wire-friendly. Members documented as "default true" describe the desktop implementation; a host
-/// that has no equivalent (a mobile document picker) may ignore them.
+/// What EVERY dialog call takes. The per-dialog types below add what only that dialog can honour.
+///
+/// <para>
+/// <b>One vocabulary, three shapes — and the split is load-bearing now that these cross the wire.</b>
+/// This was a single bag carrying every field for all four methods, with only XML tags saying which
+/// applied where: <c>OverwritePrompt</c> did nothing on a folder pick, <c>AllowFileSelection</c> did
+/// nothing on a save, and both compiled silently. That was survivable while the type was C#-only and a
+/// caller saw the tags in a tooltip; it is not once a page author names the same shape through
+/// <c>@shenora/react</c>. The base keeps the vocabulary unified — an app learns one options idea, not
+/// three — while the derived types make the mode-mixing unwriteable rather than merely documented.
+/// </para>
+/// <para>
+/// Members documented as "default true" describe the desktop implementation; a host that has no
+/// equivalent (a mobile document picker) may ignore them.
+/// </para>
 /// </summary>
-public sealed class FileDialogOptions
+public abstract class FileDialogOptions
 {
     /// <summary>Dialog title. Null = a neutral default per dialog kind.</summary>
     public string? Title { get; init; }
@@ -37,21 +49,32 @@ public sealed class FileDialogOptions
     /// <summary>Start location when nothing is remembered. Null/missing = a host-chosen default.</summary>
     public string? DefaultPath { get; init; }
 
-    /// <summary>Filter rows; null/empty = "All Files".</summary>
-    public IReadOnlyList<FileDialogFilter>? Filters { get; init; }
-
     /// <summary>
     /// Key under which the last-used directory is remembered (via the app's
     /// <see cref="IFileDialogPathStore"/>) and restored next time. Null = no memory.
+    /// <para>
+    /// ⚠ This is one of only TWO things the kit implements itself rather than passing to the system
+    /// dialog — the desktop implementation sets Win32's own <c>RestoreDirectory</c> OFF to substitute
+    /// it. It earns that: Windows remembers per application, and this remembers per KEY, so "the import
+    /// folder" and "the export folder" stay separate. Everything else on these types is a passthrough.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Since the file-dialog routes shipped, this value can arrive from the PAGE</b> — a web bundle
+    /// calling <c>useFileDialogs()</c> chooses it. Treat it as untrusted input in your
+    /// <see cref="IFileDialogPathStore"/>: see that interface's remarks.
+    /// </para>
     /// </summary>
     public string? RememberPathKey { get; init; }
+}
 
-    /// <summary>
-    /// Folder dialog only: also allow picking a FILE. The desktop implementation uses an
-    /// OpenFileDialog with relaxed validation and a placeholder file name instead of the folder
-    /// browser — the family's proven pattern for "give me a folder or an archive".
-    /// </summary>
-    public bool AllowFileSelection { get; init; }
+/// <summary>Inputs for <see cref="IFileDialogs.OpenFileAsync"/>.</summary>
+public sealed class OpenFileOptions : FileDialogOptions
+{
+    /// <summary>Filter rows; null/empty = "All Files".</summary>
+    public IReadOnlyList<FileDialogFilter>? Filters { get; init; }
+
+    /// <summary>Initial file name shown in the dialog.</summary>
+    public string? FileName { get; init; }
 
     /// <summary>File dialog: require the picked file to exist. Default true. Desktop hint.</summary>
     public bool? CheckFileExists { get; init; }
@@ -61,36 +84,99 @@ public sealed class FileDialogOptions
 
     /// <summary>Validate the host's file-name rules. Default true for file dialogs. Desktop hint.</summary>
     public bool? ValidateNames { get; init; }
+}
 
-    /// <summary>Initial file name shown in the dialog.</summary>
+/// <summary>
+/// Inputs for <see cref="IFileDialogs.OpenFolderAsync"/> — deliberately the smallest of the three,
+/// because a folder browser takes almost nothing. It carries NO filters and no file name: a folder
+/// picker has nothing to filter and nothing to pre-name, and offering them was the clearest case of
+/// the old single-bag shape accepting fields it could never honour.
+/// </summary>
+public sealed class OpenFolderOptions : FileDialogOptions
+{
+    /// <summary>
+    /// Also allow picking a FILE. The desktop implementation swaps the folder browser for an
+    /// OpenFileDialog with relaxed validation and a placeholder file name — the family's proven pattern
+    /// for "give me a folder or an archive".
+    /// <para>
+    /// ⚠ This is the kit's one hand-rolled dialog behaviour, and it exists because Windows has no
+    /// native "either" mode: the Common Item Dialog offers folders-only (<c>FOS_PICKFOLDERS</c>, which
+    /// is what the plain branch uses) or files-only, never both. So this is a workaround by necessity,
+    /// not by neglect.
+    /// </para>
+    /// </summary>
+    public bool AllowFileSelection { get; init; }
+
+    /// <summary>
+    /// Filter rows for the FILE half of <see cref="AllowFileSelection"/>; null/empty = "All Files".
+    /// <para>
+    /// ⚠ Ignored unless <see cref="AllowFileSelection"/> is set — a folder browser has nothing to filter.
+    /// It is still here rather than dropped because the file-or-folder mode really is a file dialog
+    /// underneath and really does honour filters, and the split flushed that out: removing it silently
+    /// took a working capability away. A field conditional on a SIBLING field in the same type is a very
+    /// different thing from a field conditional on which METHOD you called — the pairing is visible in one
+    /// place, which is the whole point of the split.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<FileDialogFilter>? Filters { get; init; }
+}
+
+/// <summary>Inputs for <see cref="IFileDialogs.SaveFileAsync"/> and <see cref="IFileDialogs.SaveAsync"/>.</summary>
+public sealed class SaveFileOptions : FileDialogOptions
+{
+    /// <summary>Filter rows; null/empty = "All Files".</summary>
+    public IReadOnlyList<FileDialogFilter>? Filters { get; init; }
+
+    /// <summary>Initial file name shown in the dialog — on a save, the name being suggested.</summary>
     public string? FileName { get; init; }
 
-    /// <summary>Save dialog: extension appended when the user omits one (no dot).</summary>
+    /// <summary>Extension appended when the user omits one (no dot).</summary>
     public string? DefaultExtension { get; init; }
 
-    /// <summary>Save dialog: prompt before overwriting an existing file. Default true. Desktop hint.</summary>
+    /// <summary>Prompt before overwriting an existing file. Default true. Desktop hint.</summary>
     public bool OverwritePrompt { get; init; } = true;
+
+    /// <summary>Require the path to exist. Default true. Desktop hint.</summary>
+    public bool? CheckPathExists { get; init; }
 }
 
 /// <summary>
 /// A dialog outcome: the selection, or a cancellation (<see cref="Success"/> false). Failures
 /// THROW — the source app flattened exceptions into a wire-bound error string, which is the
 /// exact leak shape the IPC error contract forbids; the dispatch boundary maps throws instead.
+///
+/// <para>
+/// ⚠ <b>There are THREE outcomes, not two, and the third is the one that surprises people:</b>
+/// cancelled (<see cref="Success"/> false); succeeded WITH an addressable location
+/// (<see cref="FilePath"/> set); and <b>succeeded with NO location</b> — which is what
+/// <see cref="IFileDialogs.SaveAsync"/> returns on both mobile shells, because the bytes went to a
+/// content URI that is a revocable grant rather than something the app may reopen later.
+/// <c>Success &amp;&amp; FilePath is null</c> is therefore a legitimate, shipped state, and
+/// <c>result.FilePath!</c> after checking <c>Success</c> is a null-reference waiting for a phone.
+/// </para>
 /// </summary>
 public sealed class FileDialogResult
 {
-    /// <summary>True when the user picked something.</summary>
+    /// <summary>True when the operation completed — the user picked something, or the save went through.</summary>
     public required bool Success { get; init; }
 
     /// <summary>
-    /// The picked location when <see cref="Success"/> — a path or URI THE HOST CAN RESOLVE (the
-    /// desktop implementation returns an absolute filesystem path; another host may return its own
+    /// The picked location, or <b>null even on success</b> when the host has no addressable one — see the
+    /// three outcomes on <see cref="FileDialogResult"/>. When set it is a path or URI THE HOST CAN RESOLVE
+    /// (the desktop implementation returns an absolute filesystem path; another host may return its own
     /// resolvable form). Pass it back to host services rather than parsing it yourself.
     /// </summary>
     public string? FilePath { get; init; }
 
-    /// <summary>A successful selection.</summary>
+    /// <summary>A successful selection at a location the caller can name.</summary>
     public static FileDialogResult Selected(string path) => new() { Success = true, FilePath = path };
+
+    /// <summary>
+    /// Success with NO addressable location — the write completed somewhere the app cannot reopen.
+    /// Exists so the mobile save path states this outcome by NAME instead of open-coding
+    /// <c>new() { Success = true }</c>, which reads like a forgotten field rather than a decision.
+    /// </summary>
+    public static FileDialogResult Completed() => new() { Success = true };
 
     /// <summary>The user cancelled.</summary>
     public static FileDialogResult Cancelled() => new() { Success = false };
@@ -104,6 +190,14 @@ public sealed class FileDialogResult
 public interface IFileDialogPathStore
 {
     /// <summary>The remembered directory for a key, or null.</summary>
+    /// <param name="key">
+    /// ⚠ <b>UNTRUSTED when the kit's file-dialog routes are registered.</b> A page calling
+    /// <c>useFileDialogs()</c> supplies <see cref="FileDialogOptions.RememberPathKey"/> itself, and it
+    /// reaches you verbatim. Before this store was reachable from a page the key was always app-authored,
+    /// so an implementation that composes it into a FILENAME (<c>{key}.json</c>, a registry path, a
+    /// directory per key) was safe by construction and is not any more — a key of <c>../../config</c> is
+    /// now expressible. Look it up in a dictionary or a keyed table, or sanitise before it touches a path.
+    /// </param>
     Task<string?> GetPathAsync(string key);
 
     /// <summary>Remember a directory for a key.</summary>
@@ -117,10 +211,10 @@ public interface IFileDialogPathStore
 public interface IFileDialogs
 {
     /// <summary>Pick an existing file.</summary>
-    Task<FileDialogResult> OpenFileAsync(FileDialogOptions? options = null);
+    Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null);
 
     /// <summary>
-    /// Pick a folder (or a file too, with <see cref="FileDialogOptions.AllowFileSelection"/>).
+    /// Pick a folder (or a file too, with <see cref="OpenFolderOptions.AllowFileSelection"/>).
     /// <para>
     /// <b>DESKTOP CAPABILITY — do not expect this on every shell (D35).</b> A desktop folder browser
     /// returns ambient, permanent access to an arbitrary path; a mobile system returns a revocable,
@@ -136,7 +230,7 @@ public interface IFileDialogs
     /// working directory" genuinely needs this, and that is the desktop-shaped one.
     /// </para>
     /// </summary>
-    Task<FileDialogResult> OpenFolderAsync(FileDialogOptions? options = null);
+    Task<FileDialogResult> OpenFolderAsync(OpenFolderOptions? options = null);
 
     /// <summary>
     /// Pick a save destination and get the PATH back.
@@ -149,7 +243,7 @@ public interface IFileDialogs
     /// something path-shaped that silently goes nowhere.
     /// </para>
     /// </summary>
-    Task<FileDialogResult> SaveFileAsync(FileDialogOptions? options = null);
+    Task<FileDialogResult> SaveFileAsync(SaveFileOptions? options = null);
 
     /// <summary>
     /// Pick a destination AND write to it, in ONE call — the PORTABLE save. This is the counterpart to
@@ -191,7 +285,7 @@ public interface IFileDialogs
     /// <see cref="FileDialogResult.Success"/> with no path, because there is nothing the app could
     /// legitimately do with one.
     /// </returns>
-    async Task<FileDialogResult> SaveAsync(FileDialogOptions? options,
+    async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                            Func<Stream, CancellationToken, Task> write,
                                            CancellationToken cancellationToken = default)
     {

@@ -143,6 +143,42 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   whether the tool is needed at all: two rounds went into a 2019-era Homebrew for a CDP bridge when the
   actual goal (read page state programmatically) can be met by having the PAGE post to the LAN relay.
 
+- **⚠ MAUI's Android intercept path RE-DERIVES `Content-Type` and `Content-Length`, so supplying either in
+  the header dictionary makes the page see it twice.** Measured 2026-08-05 with a route that varied only
+  which headers the kit supplied — which is the technique worth keeping, because "the page saw two
+  content-types" cannot otherwise be attributed to us or to the platform:
+
+  | kit supplies | page receives content-type | page receives content-length |
+  |---|---|---|
+  | type + length | `x-probe, x-probe` | `0, 32` |
+  | type only | `x-probe, x-probe` | `0` |
+  | length only | `application/octet-stream` | `0, 32` |
+  | neither | `application/octet-stream` | `0` |
+
+  A custom `X-` header arrived exactly ONCE in every variant, so this is two well-known fields being
+  re-derived, not blanket duplication. `Content-Length` must therefore NOT be sent (two differing values is
+  an invalid message per RFC 9110 §8.6, and a consumer taking the first reads the body as EMPTY); the
+  platform's own `0` cannot be removed and is what MAUI serves its own assets with. `Content-Type` must
+  still be sent — MAUI reads it from the dictionary to set the native mime type, and there is **no
+  `SetResponse` overload taking a content type alongside a dictionary**, so omitting it means
+  `application/octet-stream` and no `<video>` will play. Fix lives in `MobileWebViewInterceptor.PlatformHeaders`,
+  Android-only, because iOS's `NSHTTPURLResponse` path is different and unmeasured.
+
+- **⚠ `e.Handled = true` WITHOUT calling `SetResponse` is a no-op on Android, not a broken response.** MAUI
+  returns `platformArgs.Response` (null), and Android reads a null from `shouldInterceptRequest` as "not
+  intercepted, serve it yourself". Worth knowing for its own sake, but it was learned as a **failed
+  sabotage**: it was the obvious way to break a top-level navigation for a gate that had to be shown to
+  fail, the gate reported PASS, and the honest reading was "my harness did nothing", not "the gate works".
+  What DOES break a main-frame navigation is claiming it and answering — a 404 for `/` renders Chromium's
+  error document (`title=` empty, ~5 nodes, `text=Not Found`), which is what
+  `PageProbe.SabotageMainDocument` does. **Read what the harness actually did, not just the verdict.**
+
+- **A page-state probe must prove the page actually NAVIGATED, not merely that it is healthy.** A reload gate
+  that only checks `document.readyState === 'complete'` passes against the PRE-navigation document — the
+  first version here passed in 515 ms and may never have left. Stamp a JS global immediately before
+  navigating and require it to be GONE afterwards: a real navigation destroys the context, so its absence is
+  the only evidence that the document under test is a new one.
+
 - **`Application.Current` is null inside `CreateMauiApp`** (`builder.Build()` makes the MauiApp, not
   the Application) — use `Dispatcher.GetForCurrentThread()`. And the page MUST load the platform's own
   bridge script or `window.HybridWebView` never exists, the page renders fine, and the host sits
