@@ -113,7 +113,6 @@ public sealed class FileDialogs : IFileDialogs
     {
         // "Folder OR file" via OpenFileDialog with relaxed validation and a placeholder name —
         // FolderBrowserDialog can't offer files, and this keeps the modern dialog UI.
-        const string placeholder = "Folder Selection";
         using var dialog = new OpenFileDialog
         {
             Title = opts.Title ?? "Select Folder or File",
@@ -122,17 +121,14 @@ public sealed class FileDialogs : IFileDialogs
             CheckFileExists = false, // allow non-file selections
             CheckPathExists = true,
             ValidateNames = false,   // allow folder paths
-            FileName = placeholder,  // the placeholder enables picking the current folder
+            FileName = FolderPlaceholder,  // the placeholder enables picking the current folder
             Filter = BuildFilterString(opts.Filters),
         };
 
         if (ShowDialog(dialog, owner) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
             return FileDialogResult.Cancelled();
 
-        var selected = dialog.FileName;
-        // Picking the placeholder means "this folder".
-        if (Path.GetFileName(selected) == placeholder || Path.GetFileNameWithoutExtension(selected) == placeholder)
-            selected = Path.GetDirectoryName(selected) ?? selected;
+        var selected = ResolveFileOrFolderSelection(dialog.FileName);
 
         if (!File.Exists(selected) && !Directory.Exists(selected))
         {
@@ -142,6 +138,49 @@ public sealed class FileDialogs : IFileDialogs
 
         RememberPathFireAndForget(opts, File.Exists(selected) ? Path.GetDirectoryName(selected) : selected);
         return FileDialogResult.Selected(selected);
+    }
+
+    /// <summary>
+    /// The fake file name that makes an <c>OpenFileDialog</c> able to return the folder the user is
+    /// standing in. Not localised, and it does not need to be: it is never shown as a label, only typed
+    /// into the name box and read straight back out — see <see cref="ResolveFileOrFolderSelection"/> for
+    /// why a user who happens to have a real file of this name is no longer affected by it.
+    /// </summary>
+    internal const string FolderPlaceholder = "Folder Selection";
+
+    /// <summary>
+    /// Work out what the user actually picked out of the file-or-folder dialog: a real path, or the
+    /// <see cref="FolderPlaceholder"/> standing in for "the folder I am looking at".
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠ <b>A REAL FILE WINS OVER THE PLACEHOLDER, and that ordering is the whole fix.</b> This used to
+    /// test the name FIRST — including <c>GetFileNameWithoutExtension(selected) == placeholder</c> — so
+    /// picking an existing file called <c>Folder Selection.txt</c> silently returned its DIRECTORY
+    /// instead of the file. Unlikely input, but a wrong ANSWER rather than a refusal, which is the class
+    /// that matters. The placeholder is a name nothing put on disk, so it can only mean "this folder"
+    /// when no file by that name exists.
+    /// </para>
+    /// <para>
+    /// Pure and <c>internal</c> so it is testable with no dialog, alongside
+    /// <see cref="BuildFilterString"/> and <see cref="ResolveInitialPathAsync"/> — the disambiguation is
+    /// the only part of this dialog with a decision in it, and it was previously reachable only by
+    /// opening one.
+    /// </para>
+    /// <para>
+    /// This trick exists because Windows offers no "either" mode: the Common Item Dialog picks folders
+    /// (<c>FOS_PICKFOLDERS</c>, what <see cref="ShowFolderBrowser"/> uses) or files, never both. So it is
+    /// a workaround by necessity — worth knowing before anyone tries to delete it as a hack.
+    /// </para>
+    /// </remarks>
+    internal static string ResolveFileOrFolderSelection(string selected)
+    {
+        if (File.Exists(selected)) return selected;
+
+        var name = Path.GetFileName(selected);
+        return name == FolderPlaceholder || Path.GetFileNameWithoutExtension(selected) == FolderPlaceholder
+            ? Path.GetDirectoryName(selected) ?? selected
+            : selected;
     }
 
     private FileDialogResult ShowFolderBrowser(OpenFolderOptions? opts, string initialPath, IntPtr owner)

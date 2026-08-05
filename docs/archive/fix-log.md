@@ -12,6 +12,39 @@ entry template:
 - **Commit:** <hash>
 ```
 
+## 2026-08-05
+
+### Windows dialogs: `OpenFolderAsync(AllowFileSelection: true)` returned the PARENT FOLDER for a file named `Folder Selection.txt`
+
+- **Symptom:** with `AllowFileSelection` set, picking an existing file whose name matches the internal
+  placeholder — `Folder Selection` exactly, or `Folder Selection.<any extension>` — yielded that file's
+  DIRECTORY instead of the file. Silent, and a wrong answer rather than a refusal. Found by reading during
+  the public-surface sweep, not reported by an adopter.
+- **Root cause:** Windows has no "file OR folder" dialog mode — the Common Item Dialog picks folders
+  (`FOS_PICKFOLDERS`, what the plain branch uses) or files, never both — so `ShowFileOrFolderDialog` types a
+  fake file name into an `OpenFileDialog` and recovers the user's intent by reading it back out. The
+  read-back tested the NAME first, `Path.GetFileName(selected) == placeholder ||
+  Path.GetFileNameWithoutExtension(selected) == placeholder`, and a real file satisfies both. The placeholder
+  trick came in with `43f18ad` (P4, ported from the primary desktop sibling along with the rest of the STA
+  dialogs); the collision was in the port from the start rather than introduced later.
+- **Fix:** a REAL FILE now wins over the placeholder — `if (File.Exists(selected)) return selected;` before
+  any name test, since a name nothing put on disk can only mean "this folder" when no file by it exists. The
+  disambiguation moved out of the dialog into `FileDialogs.ResolveFileOrFolderSelection` (`internal static`,
+  pure) with the placeholder as `FileDialogs.FolderPlaceholder`, so the only decision in that dialog is
+  reachable without opening one — the reason it went untested for four months.
+  `src/Shenora.Windows/Shell/FileDialogs.cs`, `tests/Shenora.Tests/WinForms/FileOrFolderSelectionTests.cs`.
+- **Verify:** five tests, and sabotage-verified in both directions — restoring the old name-first ordering
+  fails exactly the two defect cases (`A_REAL_file_named_like_the_placeholder_wins_over_it`,
+  `A_REAL_extensionless_file_named_EXACTLY_the_placeholder_also_wins`) while the three that must stay QUIET
+  keep passing, which is what proves the fix does not break the ordinary pick. `dev.mjs verify` green.
+- **Reusable half, worth more than the fix:** *a workaround that encodes intent in a STRING must treat a
+  real collision as the higher authority.* The placeholder is a sentinel in a namespace the user also
+  controls, which is the same shape as `GlobalLaneCapacity`'s `0 = auto` retired the same day — a legal
+  value in the caller's own space silently reinterpreted as a command. ⚠ Still locale-fragile in a second
+  way (the placeholder is a hardcoded English string), which the fix makes harmless in practice but does not
+  remove.
+- **Commit:** _pending_
+
 ## 2026-08-02
 
 ### release: three gates failed the 0.4.0 run, each never tested on the path it should ignore

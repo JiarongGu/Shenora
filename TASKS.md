@@ -265,7 +265,14 @@ in `docs/archive/tasks.md`; surface in `CHANGELOG.md` `## Unreleased`._
 
 </details>
 
-- [ ] **4a — 🔴 `OpenFolderAsync(AllowFileSelection: true)` returns the PARENT FOLDER for a file named
+_**4a is DONE (2026-08-05)** — a real file now wins over the placeholder, the disambiguation is a pure
+`internal static` with five tests, and the old ordering is sabotage-verified to fail exactly the two defect
+cases. Record in `docs/archive/fix-log.md`; surface in `CHANGELOG.md` `## Unreleased`. This closes the whole
+file-dialog cluster (4 · 4a · 4b)._
+
+<details><summary>the original filing, kept for the reasoning</summary>
+
+- [x] **4a — 🔴 `OpenFolderAsync(AllowFileSelection: true)` returns the PARENT FOLDER for a file named
   `Folder Selection.txt`.** `ShowFileOrFolderDialog` fakes "folder or file" with an `OpenFileDialog` whose
   `FileName` is the literal placeholder `"Folder Selection"`, then recovers the intent by string-matching it
   back out — including `Path.GetFileNameWithoutExtension(selected) == placeholder`, which a REAL file of that
@@ -282,6 +289,8 @@ in `docs/archive/tasks.md`; surface in `CHANGELOG.md` `## Unreleased`._
     internal seams for exactly this reason.
   - ⚠ The placeholder is also a hardcoded English string, so the recovery is locale-fragile in a second way.
     Worth stating even if the fix above makes it harmless in practice.
+
+</details>
 
 _**4b — the dialog half on both sides — is COMPLETE (all six phases, 2026-08-05).** `verify` green.
 `FileDialogFacade` + `AddShenoraFileDialogs`, `FileDialogs`/`useFileDialogs()`/`useShellInfo()` in

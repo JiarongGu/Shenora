@@ -156,6 +156,18 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Fixed
 
+- **`OpenFolderAsync(AllowFileSelection: true)` returned the PARENT FOLDER for a real file named
+  `Folder Selection.txt`.** Windows has no "file or folder" dialog mode — the Common Item Dialog picks
+  folders or files, never both — so the kit types a placeholder name into an `OpenFileDialog` and reads it
+  back. That read-back tested the NAME first (including `GetFileNameWithoutExtension`), so an existing file
+  matching the placeholder was silently converted into its directory. A real file now wins: the placeholder
+  can only mean "this folder" when nothing by that name exists.
+  - Found by reading during the greenfield sweep, not reported — but it is the wrong-ANSWER class rather
+    than a refusal, which is why it was worth fixing over a doc note.
+  - The disambiguation is now a pure `internal static` with five tests, so the only decision in that dialog
+    is reachable without opening one. Sabotage-verified: the old ordering fails both defect tests while the
+    three must-stay-quiet cases keep passing.
+
 - **Setting a lane's capacity above the global bound no longer does so silently.** It is still legal — a
   governor may widen a lane just before widening the bound, and neither order should be an error — but it
   now logs which value will actually apply and how to raise it. Nothing was wrong with the *behaviour*
