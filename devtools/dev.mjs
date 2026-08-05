@@ -639,7 +639,20 @@ switch (cmd) {
 
     const macOnly = new Set(config.macOnlyPackableProjects ?? []);
     const macPass = args.includes('--mac');
-    const selected = config.packableProjects.filter((p) => macOnly.has(p) === macPass);
+
+    // Projects that pack DOWNLOADED artifacts rather than anything built here. `Shenora.Launcher.Native`
+    // carries per-RID native binaries produced by the `launcher` CI matrix on two different runners, so
+    // no single machine can pack it from source. Skipped when its artifacts are absent — which is every
+    // ordinary dev-box run — and packed normally once a release workflow has staged them. It is NOT
+    // silently skipped when present, and it FAILS LOUD rather than shipping an empty runtimes/ folder;
+    // both halves of that matter, because an empty native package restores fine and breaks the consumer.
+    const needsArtifacts = (config.artifactPackableProjects ?? []);
+    const artifactless = needsArtifacts.filter(
+      (p) => !fs.existsSync(path.join(repo, p, 'artifacts', 'runtimes')));
+
+    const selected = config.packableProjects
+      .filter((p) => macOnly.has(p) === macPass)
+      .filter((p) => !artifactless.includes(p));
     const skipped = config.packableProjects.filter((p) => !selected.includes(p));
 
     if (macPass && process.platform !== 'darwin') {
@@ -648,8 +661,13 @@ switch (cmd) {
       break;
     }
     if (skipped.length) {
-      console.log(`  skipped (${macPass ? 'not part of --mac' : 'needs macOS — see macOnlyPackableProjects'}):`);
-      for (const p of skipped) console.log(`    ${p}`);
+      console.log('  skipped:');
+      for (const p of skipped) {
+        const why = artifactless.includes(p)
+          ? 'no CI artifacts staged — see the `launcher` workflow'
+          : (macPass ? 'not part of --mac' : 'needs macOS — see macOnlyPackableProjects');
+        console.log(`    ${p}  (${why})`);
+      }
     }
 
     let ok = true;

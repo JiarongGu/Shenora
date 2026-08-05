@@ -25,6 +25,11 @@ devtools/_*
 devtools/screenshots/
 devtools/.cdp-port
 
+# CI artifacts staged for packing. `Shenora.Launcher.Native` packs the per-RID launcher binaries that
+# the `launcher` workflow builds on two different runners; a release downloads them into this folder.
+# They are BUILD OUTPUT from elsewhere — never sources, and never committed.
+src/Shenora.Launcher.Native/artifacts/
+
 # Private local-only notes/config (real paths, sibling names, sensitive patterns) — never tracked
 local/
 

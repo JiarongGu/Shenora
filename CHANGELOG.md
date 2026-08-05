@@ -121,6 +121,23 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Added
 
+- **NEW PACKAGE `Shenora.Launcher.Native`** — the prebuilt launcher that runs BEFORE your app and
+  applies a staged update. It is the one part of staged updating that cannot be done in .NET: it runs
+  when the runtime may be absent and must replace files the app holds open. **A self-contained app needs
+  none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET.
+  - Ships **per-RID binaries** (`runtimes/win-x64|linux-x64/native/`) plus the **C++17 library sources
+    and `main.cpp` template** under `launcher-src/`, so you can use the stock launcher — rename, re-icon
+    and sign it — or build your own from the same library. What stays yours either way is small: the exe
+    name, icon and version resources, the signature, four constants, and the wording of failure UI.
+  - **322 KB**, statically linked against the CRT so it needs no VC++ redistributable — a launcher that
+    required one would have the bootstrap problem it exists to solve.
+  - **It re-hashes nothing.** `ready.json` exists only when the staging side verified the whole stage,
+    and the marker's meaning is that an applier need not re-check.
+  - Gated by a CI matrix on win-x64 AND linux-x64 running a conformance harness against the built
+    binary, where every stage it applies is produced by the real C# implementation rather than a fixture.
+    ⚠ `dev.mjs verify` does NOT compile it — this repo has no C++ toolchain and deliberately does not
+    require one.
+
 - **NEW PACKAGE `Shenora.IO.Compression`** — getting files into and out of an archive SAFELY. `net10.0`,
   no native engine, and the first member of the `Shenora.IO.*` family (D48) — file-operation work that does
   not belong in every consumer's `Shenora.Core`. It depends on `Shenora.IO`, which arrives with it.

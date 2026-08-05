@@ -32,6 +32,11 @@ export default {
     // a file tree should not carry.
     'src/Shenora.IO',
     'src/Shenora.IO.Compression',
+    // The native launcher's packaging project (B4b). Listed here because it IS shipped and the
+    // coverage check reads IsPackable as the definition of "shipped" — but it packs DOWNLOADED CI
+    // artifacts, not anything built on this machine, so `pack` skips it unless they are staged. See
+    // artifactPackableProjects below.
+    'src/Shenora.Launcher.Native',
     'src/Shenora.Media',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
@@ -55,6 +60,13 @@ export default {
    * better answer to "why does the release only run on Windows?" than silence.
    */
   macOnlyPackableProjects: [],
+  /**
+   * Packable projects whose CONTENT comes from CI artifacts rather than from a build on this machine.
+   * `pack` skips one when `<project>/artifacts/runtimes/` is absent and says why, instead of failing a
+   * routine dev-box pack — while the csproj itself still errors if pack is forced without them, so the
+   * only way to ship an empty native package is to work at it.
+   */
+  artifactPackableProjects: ['src/Shenora.Launcher.Native'],
   /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
   npmDir: 'src/Shenora.React',
   /** Pack output (gitignored). */

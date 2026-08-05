@@ -118,6 +118,21 @@ Shenora.slnx
 │   │                                          linux-x64) running the conformance harness against the
 │   │                                          built binary, NOT by `dev.mjs verify`, which has no C++
 │   │                                          toolchain and deliberately does not grow one.
+│   ├── Shenora.Launcher.Native (packaging only — compiles NOTHING)
+│   │                                          B4b: puts the per-RID launcher binaries the `launcher`
+│   │                                          CI matrix builds (win-x64 + linux-x64) into one nupkg
+│   │                                          under runtimes/{rid}/native/, alongside the C++ library
+│   │                                          sources and template under launcher-src/ so an adopter
+│   │                                          can either use the stock binary or build their own.
+│   │                                          It consumes DOWNLOADED artifacts because the binaries
+│   │                                          come from two different toolchains on two different
+│   │                                          runners — no single `dotnet pack` can produce both — so
+│   │                                          `dev.mjs pack` skips it unless they are staged, and the
+│   │                                          csproj ERRORS rather than shipping an empty runtimes/.
+│   │                                          ⚠ It is the one packable project with NO managed
+│   │                                          surface, so it declares <NoManagedSurface>true</> and
+│   │                                          MetadataSurfaceTests exempts it BY THAT DECLARATION —
+│   │                                          delete the line and the baseline gate turns back on.
 │   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders

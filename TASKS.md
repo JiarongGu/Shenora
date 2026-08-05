@@ -160,16 +160,14 @@ artifacts, nothing packs them yet._
 
 </details>
 
-- [ ] **B4b — pack the launcher as `runtimes/{rid}/native/`.** CI already produces the per-RID artifacts
-  (`.github/workflows/launcher.yml` uploads `launcher-win-x64` / `launcher-linux-x64`); nothing consumes
-  them yet. The remaining work is a packaging project that pulls both artifacts into one nupkg so a
-  consumer's `PackageReference` drops the right binary into their output by RID — D50's stated shape.
-  - ⚠ **It cannot be a normal `src/` csproj that builds the binary**, because the binary comes from a
-    different toolchain on a different runner. The pack step consumes downloaded artifacts, which means
-    it belongs in a release workflow rather than in `dotnet pack` on a dev box.
-  - Decide at that point whether the **template** ships in the same package (as `contentFiles`) or stays
-    a file an adopter copies out of the repo. Shipping it means versioning it; copying it means it can
-    rot. Neither is obviously right and neither is urgent.
+_**B4b IS DONE (2026-08-05)** — `src/Shenora.Launcher.Native`, a packaging-only project that puts the
+per-RID binaries under `runtimes/{rid}/native/` plus the C++ library sources and template under
+`launcher-src/`. Packed and inspected: 200,926 bytes with the binary and all nine sources in the right
+places. The open question is decided — **the template SHIPS**, because one left only in the repo rots and
+gets copied at the wrong version; it goes to a plain folder rather than `contentFiles/` because the
+consumer's launcher build is CMake, not MSBuild. Record in `docs/archive/tasks.md`.
+**Still owed by a RELEASE, not by this repo:** a release must download both `launcher-*` CI artifacts
+into that project's `artifacts/` before packing it._
 
 _**DONE 2026-08-05 — the real-release validation is now `node devtools/dev.mjs update-probe`**, and it
 found a defect on its first run. Record in `docs/archive/tasks.md`; surface in `CHANGELOG.md`._

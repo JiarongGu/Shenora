@@ -17,6 +17,34 @@
 
 ---
 
+### B4b — packing the launcher as `runtimes/{rid}/native/` (2026-08-05) — DONE
+
+`src/Shenora.Launcher.Native`: a packaging-only project that compiles nothing. It puts the per-RID
+binaries the `launcher` CI matrix builds into `runtimes/{rid}/native/`, so a consumer's
+`PackageReference` drops the right one into their output by RID — D50's stated shape.
+
+**The open question is decided: the TEMPLATE ships**, alongside the library sources, under
+`launcher-src/`. A template left only in the GitHub repo rots and gets copied at the wrong version;
+shipping it versions it in lockstep with the library it is built against (D4). It goes to a plain folder
+rather than `contentFiles/` deliberately — the consumer's launcher build is CMake, not MSBuild, so
+MSBuild content injection would push C++ into a C# project where nothing wants it. Both audiences are
+served: use the stock binary (rename, re-icon, sign), or build your own from the same library.
+
+**Three things this needed that are worth knowing before adding another package of this shape:**
+- **It packs DOWNLOADED artifacts.** The binaries come from two toolchains on two runners, so no single
+  `dotnet pack` can produce both. `dev.mjs pack` skips it when `artifacts/runtimes/` is absent and says
+  why; the csproj ERRORS if pack is forced without them. Both halves matter — an empty native package
+  restores fine and fails at the consumer's build, which is the worst place to find out.
+- **It is the first packable project with NO managed surface**, so `MetadataSurfaceTests` could not
+  possibly find a baseline for it. Exempted by an opt-in declaration in the csproj
+  (`<NoManagedSurface>true</NoManagedSurface>`) rather than a name hard-coded in the test: a project
+  that later grows an assembly must DELETE that line to stay exempt, so the failure direction is "the
+  gate turns back on".
+- ⚠ **`IncludeSymbols` had to be turned off.** The shared props enable snupkg symbols for every package;
+  with no assembly there is no PDB, so the symbols package is empty and pack fails **NU5017 — after
+  having written a perfectly good main package**, which is why the error reads as a mystery rather than
+  as "symbols".
+
 ### B4 — the native launcher: C++ library + template, CMake, CI matrix, conformance harness (2026-08-05)
 
 Built to D50's settled shape. `src/Shenora.Launcher/` — 994 lines across 9 files.

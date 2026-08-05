@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    B4b — the launcher's PACKAGING project. It compiles nothing: it exists to put the per-RID native
+    binaries CI already builds, plus the library sources an adopter may want to build their own from,
+    into one nupkg (D50's stated shape).
+
+    WHY IT CANNOT BE A NORMAL PROJECT. The binaries come from a different toolchain (CMake/MSVC and
+    CMake/gcc) on a different RUNNER (windows-latest and ubuntu-latest). No single `dotnet pack` on any
+    one machine can produce both, so this project consumes DOWNLOADED ARTIFACTS rather than building
+    them. That is why `dev.mjs pack` skips it on a dev box and only the release workflow feeds it.
+  -->
+  <PropertyGroup>
+    <!-- IsPackable stays INLINE — the coverage gate finds shipped projects by text-matching it. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.Launcher.Native</PackageId>
+    <Description>Shenora launcher: the prebuilt native applier that runs BEFORE your app and applies a staged update, for framework-dependent apps whose runtime may be absent and whose files may be held open. Ships per-RID binaries (win-x64, linux-x64) plus the C++17 library sources and the main.cpp template, so you can either use the stock launcher or build your own from the same library. A self-contained app needs none of this — Shenora.IO's UpdateStage.ApplyAsync already applies updates in portable .NET.</Description>
+
+    <!--
+      ⚠ THIS PACKAGE HAS NO MANAGED SURFACE, and that is declared rather than inferred.
+      `MetadataSurfaceTests` requires every packable project to have an API baseline of one kind or the
+      other, which is right for every other package here and impossible for this one: it contains no
+      assembly to reflect over. The property is checked BY NAME in that test, so the exemption is one
+      deliberate line in one place instead of a special case hidden in the test — and a project that
+      grows a managed assembly later must delete this line to stay exempt, which is the direction that
+      fails safe.
+    -->
+    <NoManagedSurface>true</NoManagedSurface>
+
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoWarn>$(NoWarn);NU5128</NoWarn> <!-- no lib/ for the declared TFM: correct here, by construction -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!--
+      No .snupkg for this one, overriding the shared default in src/Directory.Build.props. There is no
+      managed assembly here, so there is no PDB, so the symbols package comes out empty and pack fails
+      with NU5017 — AFTER having written a perfectly good main package, which is why the failure reads
+      as a mystery rather than as "symbols". Native debug info for these binaries belongs with the
+      toolchain that produced them, not in a snupkg.
+    -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- Where the release workflow drops the artifacts it downloaded from the launcher matrix. -->
+    <LauncherArtifacts Condition="'$(LauncherArtifacts)' == ''">$(MSBuildThisFileDirectory)artifacts</LauncherArtifacts>
+  </PropertyGroup>
+
+  <!--
+    FAIL LOUD rather than ship an empty package. A nupkg whose `runtimes/` folder is missing looks
+    identical to a working one at restore time and only fails at the consumer's build, which is the
+    worst place to discover it. `dev.mjs pack` skips this project entirely when the artifacts are
+    absent; if pack is invoked anyway, this stops it.
+  -->
+  <Target Name="RequireLauncherArtifacts" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <_FoundLaunchers Include="$(LauncherArtifacts)/runtimes/**/native/*" />
+    </ItemGroup>
+    <Error Condition="'@(_FoundLaunchers)' == ''"
+           Text="Shenora.Launcher.Native has no binaries under $(LauncherArtifacts)/runtimes/**/native/. They are produced by the `launcher` CI matrix (win-x64 + linux-x64); download those artifacts into that folder before packing. Packing an empty runtimes/ would produce a package that restores fine and fails at the consumer's build." />
+  </Target>
+
+  <ItemGroup>
+    <!-- The prebuilt launchers, laid out so MSBuild's RID resolution copies the right one. -->
+    <None Include="$(LauncherArtifacts)/runtimes/**/native/*" Pack="true" PackagePath="runtimes/" />
+
+    <!--
+      The library SOURCES ship too, and that settles the open question B4b carried. An adopter has two
+      legitimate needs: use the stock binary (rename, re-icon, sign) — that is `runtimes/` above — or
+      build their own launcher from the same library with their own main.cpp. A template left only in
+      the GitHub repo rots and gets copied at the wrong version; shipping it inside the package versions
+      it in lockstep with the library it is built against (D4). It goes to a plain folder rather than
+      `contentFiles/` deliberately: the consumer's launcher build is CMake, not MSBuild, so MSBuild
+      content injection would put C++ into a C# project where nothing wants it.
+    -->
+    <None Include="../Shenora.Launcher/CMakeLists.txt" Pack="true" PackagePath="launcher-src/" />
+    <None Include="../Shenora.Launcher/include/**/*" Pack="true" PackagePath="launcher-src/include/" />
+    <None Include="../Shenora.Launcher/src/**/*" Pack="true" PackagePath="launcher-src/src/" />
+    <None Include="../Shenora.Launcher/template/**/*" Pack="true" PackagePath="launcher-src/template/" />
+  </ItemGroup>
+
+</Project>

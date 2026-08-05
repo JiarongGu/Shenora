@@ -172,10 +172,19 @@ public class MetadataSurfaceTests
         var metadata = Directory.Exists(BaselinesDir()) ? NonEmpty(BaselinesDir()) : [];
         var baselined = runtime.Concat(metadata).ToHashSet(StringComparer.Ordinal)!;
 
+        // A package can legitimately ship NO managed assembly — `Shenora.Launcher.Native` carries
+        // per-RID native binaries and C++ sources and nothing else, so there is no surface to reflect
+        // over and neither baseline kind can exist for it. The exemption is opt-in BY THE PROJECT
+        // (`<NoManagedSurface>true</NoManagedSurface>`) rather than a name hard-coded here, for the
+        // reason this whole file exists: a special case living in the test is one nobody sees when they
+        // add the next package. A project that later grows an assembly has to DELETE that line to stay
+        // exempt, so the failure direction is "gate turns back on", not "gate silently stays off".
         var packable = Directory.EnumerateDirectories(Path.Combine(root, "src"))
             .Select(dir => (Name: Path.GetFileName(dir), Csproj: Path.Combine(dir, Path.GetFileName(dir) + ".csproj")))
             .Where(p => File.Exists(p.Csproj))
-            .Where(p => File.ReadAllText(p.Csproj).Contains("<IsPackable>true</IsPackable>", StringComparison.Ordinal))
+            .Select(p => (p.Name, Text: File.ReadAllText(p.Csproj)))
+            .Where(p => p.Text.Contains("<IsPackable>true</IsPackable>", StringComparison.Ordinal))
+            .Where(p => !p.Text.Contains("<NoManagedSurface>true</NoManagedSurface>", StringComparison.Ordinal))
             .Select(p => p.Name)
             .ToArray();
 
