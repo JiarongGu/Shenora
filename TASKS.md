@@ -121,7 +121,15 @@ to, kept because it explains why the surface is smaller than the doc's pipeline 
     already moves that decision to the right machine; the conversion is what it cannot yet act on.
 
 </details>
-- [ ] **DM4 — the REMOTE authorization seam only; the local half is DONE.** Path containment shipped as
+_**DM4 IS DONE (2026-08-05), and it landed WITH its consumer** — `MediaConversionOptions.AllowRemoteSource`,
+fail-closed on a missing policy AND on a throwing one, both sabotage-verified. ⚠ **Read the archive entry
+before assuming the kit fetches: it does not.** It AUTHORISES, and the app's engine reads the url — which is
+what gave the guard a real caller without the kit growing an HTTP client, and is why this could close at all
+rather than repeating `MediaAccess.IsRemoteAllowed`'s "public seam with no consumer"._
+
+<details><summary>the original filing, kept for the reasoning</summary>
+
+- [x] **DM4 — the REMOTE authorization seam only; the local half is DONE.** Path containment shipped as
   `Core.WebViewFiles.ResolveContained` (generic, fail-closed, tested) because the page supplies the path.
   What is left is the SSRF surface: a fail-CLOSED guard for *may the host FETCH this url on the page's
   behalf*, the shape `NavigationGuard` already has — denying with no policy AND when the policy throws,
@@ -129,6 +137,8 @@ to, kept because it explains why the surface is smaller than the doc's pipeline 
   `MediaAccess.IsRemoteAllowed` and deliberately dropped in the D45 re-layer: nothing in the kit fetches a
   remote resource for a page, so it had no caller. **Land it WITH the middleware that needs it, not before**
   (D15) — a public seam with no consumer is exactly what the last one was.
+
+</details>
 
 ### From the first adopter — defects found on the 0.9.1 adoption (2026-08-04/05)
 

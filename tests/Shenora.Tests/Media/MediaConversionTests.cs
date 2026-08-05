@@ -226,6 +226,108 @@ public class MediaConversionTests : IDisposable
         Assert.False(converted, "a source outside the allowed roots reached the converter");
     }
 
+    private MediaConversionOptions RemoteOptions(string url, Func<Uri, bool>? allow,
+        Func<MediaConversionRequest, CancellationToken, Task> convert) => new()
+    {
+        Resolve = uri => uri.AbsolutePath.StartsWith("/media", StringComparison.Ordinal) ? url : null,
+        Convert = convert,
+        CacheRoot = _cache,
+        AllowedRoots = [_sources],
+        AllowRemoteSource = allow,
+    };
+
+    [Fact]
+    public async Task A_remote_source_is_refused_when_there_is_NO_policy()
+    {
+        // Fail-CLOSED by default (DM4). An app that never thought about SSRF is safe rather than exposed:
+        // the page picks the url, and the HOST can reach addresses the page cannot.
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
+        {
+            GlobalLaneCapacity = 2,
+            Scopes = [PathClaims.Scope],
+        });
+        var converted = false;
+        var interceptor = new FakeInterceptor();
+        interceptor.UseMediaConversion(scheduler, new EventBus(), RemoteOptions(
+            "http://169.254.169.254/latest/meta-data/", allow: null,
+            (_, _) => { converted = true; return Task.CompletedTask; }));
+
+        var response = await interceptor.AskAsync("https://0.0.0.1/media?whatever");
+
+        Assert.Equal(404, response!.StatusCode);
+        Assert.False(converted, "a remote source reached the engine with no policy allowing it");
+    }
+
+    [Fact]
+    public async Task A_remote_source_is_refused_when_the_policy_THROWS()
+    {
+        // The second fail-closed direction, and the one that is easy to get wrong: a check that could not
+        // be COMPLETED is not a check that passed.
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
+        {
+            GlobalLaneCapacity = 2,
+            Scopes = [PathClaims.Scope],
+        });
+        var converted = false;
+        var interceptor = new FakeInterceptor();
+        interceptor.UseMediaConversion(scheduler, new EventBus(), RemoteOptions(
+            "https://cdn.example/clip.mkv", allow: _ => throw new InvalidOperationException("policy broke"),
+            (_, _) => { converted = true; return Task.CompletedTask; }));
+
+        var response = await interceptor.AskAsync("https://0.0.0.1/media?whatever");
+
+        Assert.Equal(404, response!.StatusCode);
+        Assert.False(converted, "a throwing policy was treated as permission");
+    }
+
+    [Fact]
+    public async Task An_ALLOWED_remote_source_reaches_the_engine_as_its_url()
+    {
+        // The kit authorises; it never fetches. The engine gets the url and reads it itself, which is what
+        // keeps an HTTP client (and its credential and proxy questions) out of this package.
+        const string url = "https://cdn.example/clip.mkv";
+        var seen = new TaskCompletionSource<string>();
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
+        {
+            GlobalLaneCapacity = 2,
+            Scopes = [PathClaims.Scope],
+        });
+        var interceptor = new FakeInterceptor();
+        interceptor.UseMediaConversion(scheduler, new EventBus(), RemoteOptions(
+            url, allow: u => u.Host == "cdn.example",
+            async (conversion, ct) =>
+            {
+                seen.TrySetResult(conversion.SourcePath);
+                await File.WriteAllTextAsync(conversion.DestinationPath, "converted", ct);
+            }));
+
+        Assert.Equal(503, (await interceptor.AskAsync("https://0.0.0.1/media?whatever"))!.StatusCode);
+
+        Assert.Equal(url, await seen.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task A_non_web_scheme_falls_to_the_LOCAL_branch_and_is_contained()
+    {
+        // Only http/https count as remote. Anything else must NOT skip containment by being called
+        // "remote" and then meeting a policy written to think about web addresses — file:// most of all.
+        await using var scheduler = new MissionScheduler(new MissionSchedulerOptions
+        {
+            GlobalLaneCapacity = 2,
+            Scopes = [PathClaims.Scope],
+        });
+        var converted = false;
+        var interceptor = new FakeInterceptor();
+        interceptor.UseMediaConversion(scheduler, new EventBus(), RemoteOptions(
+            "file:///C:/Windows/System32/config/SAM", allow: _ => true,
+            (_, _) => { converted = true; return Task.CompletedTask; }));
+
+        var response = await interceptor.AskAsync("https://0.0.0.1/media?whatever");
+
+        Assert.Equal(404, response!.StatusCode);
+        Assert.False(converted, "a file:// source was treated as remote and skipped containment");
+    }
+
     [Fact]
     public async Task A_request_this_route_does_not_own_falls_through_to_the_rest_of_the_pipeline()
     {

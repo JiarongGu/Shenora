@@ -109,6 +109,19 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
     alternative, and it is not one.
   - Failures cross as a TYPE name only, never exception text — the same boundary the IPC error contract
     enforces, because page script can read what it is told.
+  - **`MediaConversionOptions.AllowRemoteSource` is the SSRF boundary (DM4), and it fails CLOSED twice
+    over**: no policy refuses every remote source, and a policy that THROWS refuses too — a check that
+    could not be completed is not a check that passed. The page picks the url and **the host can reach
+    addresses the page cannot**, which is the whole asymmetry. Only `http`/`https` count as remote;
+    anything else (`file:` above all) falls to the local branch and meets path containment instead of a
+    policy written to think about web addresses.
+    - **The kit authorises; it never fetches.** The app's engine reads the url — ffmpeg and friends open
+      them natively — which keeps an HTTP client, and the credential/proxy/retry questions, out of the
+      package. Synchronous unlike `NavigationGuard`'s async shape, because this runs on a resource path the
+      mobile shells resolve synchronously: an async policy doing a lookup would block a webview callback on
+      the network.
+    - ⚠ A remote source is cached by its URL alone — nothing else is knowable without fetching it — so a
+      url whose content changes at a fixed address will serve a stale conversion. Version your urls.
 
 - **Native file dialogs are reachable FROM THE PAGE, on both sides of the wire.** The kit already had
   `ShellCapability.FilePicker`/`FolderPicker`/`SavePicker` in its vocabulary — three capabilities a shell

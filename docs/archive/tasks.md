@@ -60,6 +60,40 @@ would marshal to the UI thread); and the fire-and-forget submit is guarded, beca
 event thread with nothing above it. `SubmitAsync` reports a failed BODY through `MissionResult` rather than
 by throwing, so what the guard catches is a submit-time fault.
 
+### DM4 — the remote authorization seam (2026-08-05) — DONE, and it landed WITH its consumer
+
+`MediaConversionOptions.AllowRemoteSource`. The entry's own warning was the hard part: this had been written
+once as `MediaAccess.IsRemoteAllowed` and DELETED in the D45 re-layer for having no caller, so shipping it
+again without one would have repeated the exact mistake.
+
+**What gave it a caller was a design choice, not scope growth: the kit AUTHORISES, it never FETCHES.** The
+app's `Convert` engine reads the url itself — ffmpeg and friends open them natively — so the guard sits
+between a page-supplied url and the engine, which is a real decision point, while an HTTP client (and the
+credential, proxy and retry questions that come with it) stays out of the package entirely.
+
+- **Fail-closed twice over**, both sabotage-verified: no policy refuses every remote source, and a policy
+  that THROWS refuses too. A check that could not be COMPLETED is not a check that passed, and this one
+  stands between the page and the host's own network position — **the host can reach addresses the page
+  cannot** is the whole asymmetry the guard exists for.
+- ⚠ **Only `http`/`https` count as remote.** Everything else — `file:` above all — falls to the LOCAL branch
+  and meets path containment. That direction is the safe one: a scheme the kit does not understand must not
+  skip the path check by being called "remote" and then meeting a policy written to think about web
+  addresses. Pinned by a test that points a `file://` source at Windows' SAM hive with the policy set to
+  allow everything.
+- ⚠ **Synchronous, unlike `InteractiveSession.NavigationGuard`'s async shape.** This runs on the resource
+  path, which the mobile shells resolve synchronously — an async policy doing a DNS or directory lookup
+  would block a webview callback on the network. A policy needing I/O must precompute at startup. The
+  deviation is documented at the member, because copying the async shape would have looked more consistent
+  and been wrong.
+- ⚠ **A remote source is cached by its URL ALONE** — nothing else is knowable without fetching it, unlike a
+  local file's identity+length+mtime. So a url whose content changes at a fixed address serves a stale
+  conversion; the remedy is the app versioning its urls, and it is stated on the member rather than left to
+  be discovered.
+- **A remote source takes NO path claim.** The claim exists to stop a conversion racing a file update on the
+  same path; a url has no such race, and feeding one to a path-shaped scope would have it normalised as a
+  path and made to conflict with unrelated urls sharing a prefix. Convert-once is `MissionDefinition.Key`,
+  which covers both.
+
 ### File dialogs, end to end on both sides of the wire (2026-08-05) — DONE, six phases
 
 Owner direction: *"we can also have react part to support too, and it can detect the system type just like

@@ -7,6 +7,7 @@ static class Shenora.Media.MediaConversionExtensions
 sealed class Shenora.Media.MediaConversionOptions
   public System.Action<string>? Log { get; init; }
   public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, bool>? AllowRemoteSource { get; init; }
   public System.Func<string, string>? ContentType { get; init; }
   public required System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> Convert { get; init; }
   public required System.Func<System.Uri, string> Resolve { get; init; }
