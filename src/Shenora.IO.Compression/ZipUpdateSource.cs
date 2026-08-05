@@ -1,6 +1,7 @@
 using System.IO.Compression;
+using Shenora.Core;
 
-namespace Shenora.Core;
+namespace Shenora.IO.Compression;
 
 /// <summary>
 /// An <see cref="IUpdateSource"/> over one or more ZIP archives — the release shape GitHub Releases

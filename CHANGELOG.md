@@ -89,6 +89,30 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Added
 
+- **NEW PACKAGE `Shenora.IO.Compression`** — getting files into and out of an archive SAFELY. `net10.0`,
+  no native engine, and the first member of a `Shenora.IO.*` family for file-operation work that does not
+  belong in every consumer's `Shenora.Core`.
+  - **`ZipExtraction.ExtractTo` refuses any entry that would land outside the destination.** An archive is
+    a list of paths chosen by whoever built it, and nothing stops one being `../../autoexec.bat` — the
+    "zip slip" family. `ZipFile.ExtractToDirectory` has guarded this for years, but the hand-rolled
+    `foreach` over `archive.Entries` that anyone writing progress or filtering ends up with does not, and
+    neither does a native extractor unless it says so. **The donor this was harvested from has no check of
+    its own** — it relies on its 7-Zip library's behaviour — which is exactly the gap
+    `extraction-sources.md` says to fix during a port rather than carry.
+    - A refused entry is SKIPPED and NAMED rather than throwing: one hostile entry is usually still an
+      archive you want the rest of, and a caller who disagrees can treat a non-empty `Refused` as fatal in
+      one line. Silently dropping it would hide an attack; throwing would deny the choice.
+    - Size and entry-count LIMITS throw (default 1 GiB / 100k) — the zip-bomb bound. A partial extraction
+      that stopped quietly would leave the caller believing it had everything.
+    - Containment compares against the destination **plus a separator**, or `data-evil` passes as a child
+      of `data` — the same prefix bug `WebViewFiles.ResolveContained` already documents. Sabotage-verified.
+  - **Naming, recorded because the first attempt was wrong:** this shipped briefly as `Shenora.Archives`
+    with `Archive…` type names, which over-claimed (everything in it is zip-only) and contradicted the
+    kit's own lexicon note in the same file on the same day. Naming it after the framework's own area —
+    `System.IO.Compression` — made the types SMALLER too (`ExtractionResult`, not
+    `ArchiveExtractionResult`), because the namespace already says what they operate on. **A package name
+    that has to be explained by its type names is the wrong package name.**
+
 - **`ZipUpdateSource` — an `IUpdateSource` over one or more ZIP archives**, the release shape GitHub
   Releases encourages. The interface needed NO change to admit it: `OpenAsync(ManifestFile) → Task<Stream>`
   is exactly what a zip entry is, so this is a shipped implementation rather than a contract change. It

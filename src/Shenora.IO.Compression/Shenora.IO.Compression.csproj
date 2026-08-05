@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      IsPackable stays INLINE, never hoisted into shared props. The API-baseline coverage gate finds
+      shipped projects by TEXT-MATCHING this element, so hoisting it would make this package invisible to
+      the gate: it would ship with no baseline and nothing would say so. Media and the mobile pair already
+      documented this trap; one duplicated line is the cheaper mistake.
+    -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora.IO.Compression</PackageId>
+    <Description>Shenora archives: getting files into and out of an archive SAFELY — containment against archive path traversal, bounded recursion and size, and a ZIP-backed update source. Ships no native engine: zip works on the framework alone, and any other format is a seam the application fills.</Description>
+  </PropertyGroup>
+
+  <!--
+    net10.0, deliberately not a platform TFM. Nothing here is platform-specific: containment is arithmetic
+    over paths and System.IO.Compression is in the shared framework, so the same call site works on all
+    three shells. If a format ever needs a native library it arrives as a SEAM the app fills, never as a
+    dependency of this package — the same rule D42 applies to media engines.
+  -->
+  <ItemGroup>
+    <!--
+      Shenora.Core, and the edge is REAL rather than declared: ZipUpdateSource implements Core's
+      IUpdateSource and speaks UpdateManifest/ManifestFile. Added because something crosses it.
+    -->
+    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+  </ItemGroup>
+
+</Project>

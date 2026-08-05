@@ -46,6 +46,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.IO.Compression\Shenora.IO.Compression.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Media\Shenora.Media.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />
     <!-- The desktop SAMPLE, so the cookie-login driver keeps its tests after moving out of the

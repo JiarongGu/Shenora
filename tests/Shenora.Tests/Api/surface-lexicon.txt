@@ -221,7 +221,17 @@ Manifest
 # ⚠ Still no Release, Download, Install or Patch noun, and this line is not a licence for one. A
 # `DownloadingUpdateSource` or an `Installer` would be the kit growing the updater it deliberately does not
 # ship — argue those on their own merits.
+#
+# `Extraction` + `Limits` (2026-08-05) arrived with Shenora.IO.Compression, and the package's NAME is what
+# kept `Archive` off this list: because the namespace already says what these operate on, the types are
+# `ExtractionResult`/`ExtractionLimits` rather than `Archive…`. Worth recording, because the first attempt
+# named the package `Shenora.Archives` and added `Archive` here — directly contradicting the bullet above,
+# in the same file, on the same day. **A package name that has to be explained by its type names is the
+# wrong package name**; naming it after the framework's own area (System.IO.Compression) made the types
+# smaller and the lexicon smaller at once.
 Zip
+Extraction
+Limits
 Delete
 Directory
 Entry
@@ -402,3 +412,11 @@ Extensions
 # argued on its own merits rather than waved past because this section exists.
 Open
 Save
+# -- Archives (Shenora.Archives, 2026-08-05) ------------------------------------------------------
+# Safe extraction, split out of Core because "I am building an app that unpacks archives" is a boundary a
+# CONSUMER experiences (D37's own test) while a phone app hosting a page is not one.
+# Archive is admitted here after being warned against in the filesystem-updates section above, and the
+# warning still stands for what it was about: the kit shipping an UPDATER. This package does not — it puts
+# files where you asked and refuses the ones that would land elsewhere. Extraction names that mechanism,
+# Limits names the bounds a caller sets on it.
+# Watch: a Downloader, Installer or Patcher here would be exactly the growth the older note forbids.

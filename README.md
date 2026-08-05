@@ -37,6 +37,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
 | `Shenora.Media` | NuGet | `net10.0` | Media LOGIC only: a per-stream playability planner and the probe-result shape it reads. Ships no codec list and no engine — and **is not needed to play a file** (see below). |
+| `Shenora.IO.Compression` | NuGet | `net10.0` | Getting files into and out of an archive SAFELY: extraction that refuses any entry escaping its destination, bounded size and count, and a ZIP-backed update source. No native engine — zip works on the framework alone. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
@@ -68,6 +69,7 @@ Dependencies — the graph is a **diamond, not a chain**:
         Shenora.Core
               ↑
         Shenora.Media                                   net10.0    optional, media LOGIC only
+        Shenora.IO.Compression                          net10.0    optional, safe archive extraction
 ```
 
 **`<video>`, `<audio>` and `<img>` over local files need NO media package.** Serving bytes to a page is

@@ -27,6 +27,8 @@ export default {
     'src/Shenora.Core',
     'src/Shenora.Ipc',
     // net10.0 and portable, so it packs and gates exactly like Core/Ipc — no platform host needed.
+    // Compression: net10.0, no native engine, packs and gates exactly like Core/Ipc/Media.
+    'src/Shenora.IO.Compression',
     'src/Shenora.Media',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable

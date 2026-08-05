@@ -1,8 +1,9 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using Shenora.IO.Compression;
 using Shenora.Core;
 
-namespace Shenora.Tests.Io;
+namespace Shenora.Tests.Compression;
 
 /// <summary>
 /// The ZIP-backed <see cref="IUpdateSource"/>. The interesting cases are the ones a single-archive or

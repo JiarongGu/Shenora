@@ -1,0 +1,26 @@
+sealed class Shenora.IO.Compression.ExtractionLimits
+  public .ctor()
+  public int MaxEntries { get; init; }
+  public long MaxTotalBytes { get; init; }
+sealed class Shenora.IO.Compression.ExtractionResult : System.IEquatable<Shenora.IO.Compression.ExtractionResult>
+  public .ctor(System.Collections.Generic.IReadOnlyList<string> Files, long Bytes, System.Collections.Generic.IReadOnlyList<string> Refused)
+  public Shenora.IO.Compression.ExtractionResult <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<string> Files { get; init; }
+  public System.Collections.Generic.IReadOnlyList<string> Refused { get; init; }
+  public bool Equals(Shenora.IO.Compression.ExtractionResult? other)
+  public long Bytes { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.IO.Compression.ExtractionResult? left, Shenora.IO.Compression.ExtractionResult? right)
+  public static bool op_Inequality(Shenora.IO.Compression.ExtractionResult? left, Shenora.IO.Compression.ExtractionResult? right)
+  public void Deconstruct(out System.Collections.Generic.IReadOnlyList<string> Files, out long Bytes, out System.Collections.Generic.IReadOnlyList<string> Refused)
+static class Shenora.IO.Compression.ZipExtraction
+  public static Shenora.IO.Compression.ExtractionResult ExtractTo(System.IO.Compression.ZipArchive archive, string destinationDirectory, Shenora.IO.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.IO.Compression.ExtractionResult ExtractTo(string archivePath, string destinationDirectory, Shenora.IO.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
+sealed class Shenora.IO.Compression.ZipUpdateSource : Shenora.Core.IUpdateSource, System.IDisposable
+  public .ctor(Shenora.Core.UpdateManifest manifest, System.Collections.Generic.IEnumerable<System.IO.Stream> archives, bool leaveOpen = false)
+  public System.Threading.Tasks.Task<Shenora.Core.UpdateManifest> GetManifestAsync(System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.Core.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.IO.Compression.ZipUpdateSource Open(Shenora.Core.UpdateManifest manifest, params string[] archivePaths)
+  public void Dispose()
