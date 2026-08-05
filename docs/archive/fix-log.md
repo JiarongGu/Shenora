@@ -39,7 +39,7 @@ entry template:
   Windows unaffected: `dev.mjs launcher` still builds at 322 KB with 6/6 conformance cases, `verify`
   green. Also measured the figure D50 had only ever guessed for Linux: **46.8 KB** vs 322 KB on Windows,
   the whole gap being the statically linked CRT.
-- **Commit:** _(pending)_
+- **Commit:** `5e50674`
 
 ### Windows dialogs: `OpenFolderAsync(AllowFileSelection: true)` returned the PARENT FOLDER for a file named `Folder Selection.txt`
 
