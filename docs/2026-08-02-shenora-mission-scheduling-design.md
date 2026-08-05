@@ -2,7 +2,8 @@
 
 **Status: IMPLEMENTED 2026-08-02, and RENAMED the same day** (`Work*` → `Mission*`, plus the
 definition/execution split — A3 below, and `DECISIONS.md` D27). Surface: `src/Shenora.Core/Missions/`
-+ `src/Shenora.Core/Io/`.
++ `src/Shenora.Core/Io/` — of which the second half **moved out to the `Shenora.IO` package on
+2026-08-05 (D48)**; `PathClaims` and `Files` stayed in Core.
 
 **This document dates its claims and does not name release versions** (owner, 2026-08-02). Versions
 are assigned by the release workflow, so a version written into a design doc is a guess that goes

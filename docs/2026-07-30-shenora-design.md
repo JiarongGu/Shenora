@@ -34,7 +34,9 @@ Goals (initial releases):
 - Extraction-first: prefer lifting proven sibling code (with its hard-won comments) over new
   abstractions. The framework's opinions are the family's measured lessons.
 - Ship as `Shenora.Core`, `Shenora.Ipc`, `Shenora.WebView2`, `Shenora.WinForms` (NuGet) and
-  `@shenora/react` (npm), versioned in lockstep.
+  `@shenora/react` (npm), versioned in lockstep. *(The original set. The two Windows ids were merged
+  into `Shenora.Windows` by D37, and three optional feature packages were added since — `Shenora.Media`
+  (D40) and `Shenora.IO`/`Shenora.IO.Compression` (D48). Lockstep versioning is unchanged.)*
 
 Non-goals (per the brief, unchanged): domain entities, business workflows, AI/LLM orchestration,
 app screens/branding, plugin marketplaces, contract codegen, cross-platform shells, alternative
@@ -58,6 +60,11 @@ Consequence: `Shenora.Ipc`'s **contracts** are transport-neutral, and `@shenora/
 layer is transport-pluggable (postMessage or WebSocket, one envelope).
 
 ## 4. Package architecture
+
+> **This table is the 2026-07-30 SNAPSHOT and is kept as such** — the package set has changed twice
+> since (D37 merged the three Windows ids into `Shenora.Windows`; D40/D48 added the optional
+> `Media`/`IO`/`IO.Compression` feature packages). `docs/ARCHITECTURE.md` is the as-built map.
+> <!-- doc-drift:history — the whole section names the original ids deliberately. -->
 
 | Package | TFM | Depends on | Contents |
 |---|---|---|---|
@@ -146,6 +153,11 @@ recorded privately in `local/EXTRACTION-MAP.md` with a de-identified summary in
 `.claude/knowledge/extraction-sources.md`.
 
 ## Amendments
+
+<!-- doc-drift:history — everything below is a dated amendment stack: each entry records what was
+     decided AT ITS DATE, in the package names of that date, and is superseded in place rather than
+     rewritten. `docs/ARCHITECTURE.md` is what is true now. -->
+
 
 **2026-07-30 (user direction — scope sharpened).** Shenora is the shared infrastructure kit — a
 "UI kit for non-web applications" in the *headless* sense — for ALL sibling projects: it holds

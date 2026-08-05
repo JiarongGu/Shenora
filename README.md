@@ -24,8 +24,8 @@ public and protected member is documented and gated by API-surface baselines. Th
 
 ⚠ **The package set was reorganised by platform in 0.5.0.** `Shenora.WinForms`, `Shenora.WebView2`
 and `Shenora.WebView2.Sessions` are superseded by a single `Shenora.Windows`, and `Shenora.Android` /
-`Shenora.iOS` are new. The old ids remain restorable at their last version (0.4.0) and carry a
-deprecation notice; **migration is a rename, not a rewrite** — every type keeps its name and
+`Shenora.iOS` are new. The old ids remain restorable at their last version (0.4.0);
+**migration is a rename, not a rewrite** — every type keeps its name and
 signature. `CHANGELOG.md` under `### Breaking` has the mapping.
 
 ## Packages

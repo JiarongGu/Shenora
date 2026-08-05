@@ -128,21 +128,32 @@ Neither step breaks an existing build: unlisting hides a package from search but
 version keeps working, and both are reversible from the Manage page. Versions are immutable
 regardless — an unlisted version number can never be re-published.
 
-Pending as of 2026-08-02: `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions`
-merged into `Shenora.Windows` (D37), so all three need this once the next release ships.
+⚠ **Do NOT run this yet, and that is a decision rather than a backlog item — D49.** `Shenora.WinForms`,
+`Shenora.WebView2` and `Shenora.WebView2.Sessions` were merged into `Shenora.Windows` by D37 and are
+deliberately left listed. **Every pre-1.0 id is retired in ONE pass, once the kit is a fully working app
+framework** — the same milestone that makes a 1.0 freeze possible. The set is still moving (D48 has just
+added two packages; one id came and went inside a day), so retiring in batches means repeating the
+ceremony every time the shape changes.
+
+Two things that must stay true while it is deferred: no doc may CLAIM the retirement has happened
+(`README.md` said the old ids "carry a deprecation notice" until 2026-08-05 — they do not), and the
+deferral stays written down. The earlier version of this note said "once the next release ships"; four
+releases shipped, and a review then re-raised it as a defect. **A deferral nobody records gets
+rediscovered as a bug.**
 
 ## Consuming pre-release (in-house siblings)
 
-Until the first public release, siblings consume the local pack output. The recipe, smoke-proven
+The packages are public on nuget.org, so this is for consuming a build that has NOT been released yet —
+co-development against an unpublished change, or a pre-release smoke test. The recipe, smoke-proven
 2026-07-30 (P1.1; the rerunnable scratch consumer lives untracked in `devtools/_p11-consumer/`):
 
 - NuGet: `node devtools/dev.mjs pack`, then in the consumer's `nuget.config` add
   `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the
   WebView2 package come from there) and pin EXACT versions with the range syntax:
   `<PackageReference Include="Shenora.Windows" Version="[0.1.0]" />`. Reference the leaf package you
-  actually need and the rest arrive transitively: `Shenora.Windows` pulls `WinForms` + `Ipc` + `Core`
-  (D19 — the two Windows packages are one layer), and `Shenora.Windows` pulls `WebView2`.
-  Reference `Shenora.Windows` directly only for a shell with no web frontend.
+  actually need and the rest arrive transitively: `Shenora.Windows` pulls `Shenora.Ipc` + `Shenora.Core`.
+  The optional feature packages hang off Core and arrive with NOTHING — add `Shenora.Media`,
+  `Shenora.IO` or `Shenora.IO.Compression` yourself when you want one (D48).
   A consumer inside this repo's tree must set `ManagePackageVersionsCentrally=false`.
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
@@ -153,8 +164,9 @@ Until the first public release, siblings consume the local pack output. The reci
 > `~/.nuget/packages` is keyed on id+VERSION, and a cached copy wins over any feed — including this
 > repo's `publish/packages`. Re-packing `0.1.0` therefore leaves consumers restoring whatever
 > `0.1.0` they cached first, silently: no warning, no restore error, and `--no-cache` does not help
-> (that flag is HTTP caching). Found in P6.1, and it is not a theoretical risk — a consumer resolved
-> a `Shenora.Windows` packed BEFORE the D19 re-layer, so `Shenora.Windows` was absent from its
+> (that flag is HTTP caching). Found in P6.1, and it is not a theoretical risk — a consumer resolved a
+> web-hosting package cached from BEFORE the D19 re-layer, so the WinForms package it should have
+> pulled was absent from its
 > dependency graph and the build failed with "the namespace does not exist" while the freshly packed
 > nupkg on disk was perfectly correct. The diagnosis is `obj/project.assets.json`: compare the
 > dependencies it recorded against the `.nuspec` inside the nupkg you just built.

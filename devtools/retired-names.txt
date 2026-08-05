@@ -76,3 +76,23 @@ MissionSnapshot          # -> MissionExecution, whose IsRunning replaced the wra
 # --- 2026-08-02: the store is the QUEUE's store -----------------------------------------------------
 IMissionStore            # -> IMissionQueueStore (where the pending queue lives across a restart)
 LoadPendingAsync         # -> IMissionQueueStore.LoadAsync
+
+# --- 2026-08-05: retired PACKAGE IDS -----------------------------------------------------------------
+# This whole section was MISSING until the 2026-08-05 review, and the omission had already cost two
+# defects that a reader would have taken at face value: `Shenora.IO.Compression`'s shipped nupkg
+# <Description> still opened with "Shenora archives" (the name the CHANGELOG says was the defect), and
+# docs/RELEASING.md told an adopter that "Shenora.Windows pulls WinForms + Ipc + Core" — a package that
+# has not existed since 0.5.0. A retired package id is the MOST consumer-visible name the kit can get
+# wrong, because it is the one an adopter types into a csproj, and it was the only category of retired
+# name this file did not watch.
+#
+# ⚠ A limit worth knowing rather than discovering: this gate matches names that are still THERE. It
+# cannot see a retired name that a bulk rename REPLACED with the current one, which is how
+# docs/REVIEW-GUIDE.md came to say "Shenora.Windows depends on Shenora.Windows" twice — a false
+# sentence with nothing left in it to match. After any rename sweep, read the diff.
+Shenora.WinForms         # -> Shenora.Windows (D37, 0.5.0 — three ids merged into one)
+Shenora.WebView2         # -> Shenora.Windows
+Shenora.WebView2.Sessions # -> Shenora.Windows
+Shenora.Archives         # -> Shenora.IO.Compression (2026-08-05, never released under this name)
+Shenora.Media.Android    # -> deleted by D45; serving is a SHELL capability, not a media package
+Shenora.Media.iOS        # -> deleted by D45

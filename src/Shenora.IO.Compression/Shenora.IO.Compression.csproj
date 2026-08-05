@@ -9,7 +9,15 @@
     -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.IO.Compression</PackageId>
-    <Description>Shenora archives: getting files into and out of an archive SAFELY — containment against archive path traversal, bounded recursion and size, and a ZIP-backed update source. Ships no native engine: zip works on the framework alone, and any other format is a seam the application fills.</Description>
+    <!--
+      ⚠ This text SHIPS to nuget.org and no gate reads it: the D22 domain-word audit sweeps the API
+      baselines, so a csproj Description is invisible to it. Two defects lived here until the 2026-08-05
+      review — it opened with "Shenora archives", the very name the CHANGELOG records as the defect this
+      package was renamed to fix, and it claimed "bounded recursion", which does not exist (zip entries
+      are a flat list; the bounds are MaxTotalBytes and MaxEntries). Read it against the code when the
+      code changes.
+    -->
+    <Description>Shenora IO compression: getting files into and out of an archive SAFELY — extraction that refuses any entry escaping its destination, with total-size and entry-count limits, plus a ZIP-backed update source for Shenora.IO's staged updater. Ships no native engine: zip works on the framework alone, and any other format is a seam the application fills.</Description>
   </PropertyGroup>
 
   <!--
@@ -20,8 +28,10 @@
   -->
   <ItemGroup>
     <!--
-      Shenora.Core, and the edge is REAL rather than declared: ZipUpdateSource implements Core's
+      Shenora.IO, and the edge is REAL rather than declared: ZipUpdateSource implements Shenora.IO's
       IUpdateSource and speaks UpdateManifest/ManifestFile. Added because something crosses it.
+      There is deliberately NO Shenora.Core reference: nothing here names a Core type, and Core arrives
+      transitively for anyone who needs it. A declared edge nothing crosses is a review finding here.
     -->
     <ProjectReference Include="..\Shenora.IO\Shenora.IO.csproj" />
   </ItemGroup>

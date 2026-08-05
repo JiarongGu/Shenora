@@ -268,6 +268,29 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Fixed
 
+_From a full review of the kit's non-code surface (2026-08-05). The correctness hot spots were clean; every
+finding was in what a gate is structurally blind to — shipped package metadata, the npm barrel, and prose._
+
+- **`@shenora/react` now exports `SubscribeOptions`**, the options type of all three
+  `ShenoraEventBus.subscribe*` methods. It was reachable to CALL and impossible to NAME, so an app could
+  not write a typed wrapper or a shared const around it. Identical to the `OperationProgress` gap the
+  barrel already documents; the type-only pin in `index.test.ts` now covers it.
+- **`Shenora.IO.Compression`'s NuGet description carried two errors and is rewritten.** It opened with
+  "Shenora archives" — the retired name this package was renamed away from — and claimed "bounded
+  recursion", which does not exist (zip entries are a flat list; the bounds are total bytes and entry
+  count). A csproj `<Description>` ships to nuget.org and no gate reads it: the D22 domain-word audit
+  sweeps the API baselines only.
+- **Docs an adopter reads, corrected:** `README.md` said the three retired 0.5.0 package ids "carry a
+  deprecation notice" — they do not, that action is still pending; `docs/RELEASING.md` told adopters
+  `Shenora.Windows` pulls `WinForms`, a package that has not existed since 0.5.0, and framed pre-release
+  consumption as being for "until the first public release".
+- **`doc-drift` gained the retired PACKAGE IDS it had never watched** (every previous entry was a type
+  name), which is what let the two items above survive. Two defects in the gate itself were fixed with
+  them: its history heuristic could not match the repo's most common past-tense shape — ``was `X` `` — because
+  `was ` was written with a trailing space followed by `\b`, requiring a word character after the space;
+  and it scanned `devtools/_*` scratch directories, so its result depended on which throwaway consumers
+  happened to exist locally. Six sabotage cases now pin both directions.
+
 - **`OpenFolderAsync(AllowFileSelection: true)` returned the PARENT FOLDER for a real file named
   `Folder Selection.txt`.** Windows has no "file or folder" dialog mode — the Common Item Dialog picks
   folders or files, never both — so the kit types a placeholder name into an `OpenFileDialog` and reads it

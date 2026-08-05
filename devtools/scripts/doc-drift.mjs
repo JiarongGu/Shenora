@@ -120,7 +120,16 @@ function retiredNames() {
 // Words that mark a sentence as history rather than a current claim. Checked over a WINDOW around
 // the match, not just its own line: this repo's prose wraps at ~100 columns and an amendment's
 // "superseded / used to / before publish" routinely sits several lines above the name it is about.
-const HISTORY = /\b(used to|use to|formerly|former|previously|rename[sd]?|removed|no longer|until|was |were |had |used only|superseded|retired|deleted|cut|dropped|replaced|before publish|history|historical|obsolete|legacy|once|sketch|originally|no such|used the)\b/i;
+// ⚠ `was`/`were`/`had` carry NO trailing space, and that is a fix rather than a style choice (2026-08-05).
+// They used to be written `was ` — a trailing space followed by the `\b` at the end of the group, which
+// requires a WORD character after the space. So `was `Shenora.WebView2`` did not match (the next
+// character is a backtick), nor did `was ~9,300 lines`, nor `was "…"`. In a repo whose prose says
+// "X was `Something`" constantly, the single most common past-tense shape was silently not counting as
+// history — so the gate fired on correctly-written sentences and taught its readers to work around it.
+// `\bwas\b` is both simpler and right; it still cannot match inside `wash` or `wasteful`.
+// `merged` is new for the same reason `superseded` is here: it is how this repo says a thing stopped
+// existing separately (D37 merged three package ids into one).
+const HISTORY = /\b(used to|use to|formerly|former|previously|rename[sd]?|removed|no longer|until|was|were|had|used only|superseded|retired|deleted|cut|dropped|replaced|merged|before publish|history|historical|obsolete|legacy|once|sketch|originally|no such|used the)\b/i;
 const CONTEXT_LINES = 6;
 
 // An explicit escape hatch for a whole passage — a preserved design SKETCH, an amendment stack, a
@@ -143,9 +152,24 @@ function suppressedLines(lines, isMarkdown) {
   return covered;
 }
 
+// `devtools/_*` is this repo's GITIGNORED scratch convention (`.gitignore`, `devtools/README.md`), and
+// until 2026-08-05 this walk read it. Two consequences, both bad: the gate's result depended on which
+// throwaway consumers happened to exist on the machine (15 of one run's 34 hits came from
+// `devtools/_p6-consumer/` and `_p7-profiles/`, which no adopter will ever read), and CI — where those
+// directories cannot exist — was checking a different file set than the developer. The property this
+// gate means is "no file a READER can reach states a retired name as current", and an untracked scratch
+// file is not one.
+//
+// ⚠ Scoped to `devtools/`, matching `.gitignore` EXACTLY. The first attempt skipped every `_`-prefixed
+// entry anywhere, which silently excluded a `docs/_x.md` or `src/_y.cs` from all four checks — caught
+// immediately because the sabotage harness writes its probe as `docs/_gate-probe.md` and three cases
+// that must FAIL went quiet. A skip rule wider than the ignore rule it mirrors is a gate hole.
+const SCRATCH = /^devtools[\\/]_/;
+
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (/^(node_modules|bin|obj|dist|\.git|publish|local)$/.test(entry.name)) continue;
+    if (SCRATCH.test(path.relative(repo, path.join(dir, entry.name)))) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
     else if (/\.(md|cs|ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.actual')) out.push(full);

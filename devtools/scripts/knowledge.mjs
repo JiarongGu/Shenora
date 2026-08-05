@@ -12,12 +12,21 @@ const rulesDir = path.join(repo, '.claude', 'rules');
 const knowledgeDir = path.join(repo, '.claude', 'knowledge');
 const skillsDir = path.join(repo, '.claude', 'skills');
 const indexPath = path.join(rulesDir, 'RULES_INDEX.md');
-const templatePath = path.join(rulesDir, 'TEMPLATE.md');
+// In `.claude/knowledge/`, NOT `.claude/rules/`, since 2026-08-05 — and the move is the budget's own
+// advice applied honestly. `rules/` auto-loads WHOLESALE, so this 0.9 KB template was in every
+// session's context despite being needed only when AUTHORING a rule, and it was what pushed the core
+// budget over. The comment below says "trim the index or move a rule"; deleting a file that is not a
+// rule at all beats shrinking one someone earned. Nothing else changes — `knowledge new` copies it
+// from here, and `NON_RULES` already exempted it from needing an index row in either directory.
+const templatePath = path.join(knowledgeDir, 'TEMPLATE.md');
 // skill-loader's own table is the skills index, exactly as RULES_INDEX is the rules index.
 const skillIndexPath = path.join(skillsDir, 'skill-loader', 'SKILL.md');
 const claudeMd = path.join(repo, 'CLAUDE.md');
 
-// Core rules + index + template; keeps the auto-loaded base small. Raised 16 -> 17 KB on 2026-08-02,
+// Core rules + index; keeps the auto-loaded base small. (It used to include TEMPLATE.md, which moved
+// to `.claude/knowledge/` on 2026-08-05 — see templatePath above. That is a TRIM, not a raise: the
+// budget went 18.5 -> 17.6 KB and back under the cap without touching a single rule.)
+// Raised 16 -> 17 KB on 2026-08-02,
 // deliberately and with the reasoning recorded, because the alternative was leaving the warning
 // permanently lit — and a warning that is always on is one nobody reads.
 //
@@ -107,11 +116,16 @@ if (sub === 'check') {
 }
 
 if (sub === 'footprint') {
-  const coreBytes = size(indexPath) + size(templatePath)
+  // The template is NOT in this sum any more: it lives in `.claude/knowledge/`, which is not
+  // auto-loaded, so counting it would report context nobody pays for. Measure what the harness
+  // actually injects — everything in `.claude/rules/`, and nothing else.
+  const coreBytes = size(indexPath)
     + mdFiles(rulesDir).reduce((n, f) => n + size(path.join(rulesDir, f)), 0);
-  const knowledgeBytes = mdFiles(knowledgeDir).reduce((n, f) => n + size(path.join(knowledgeDir, f)), 0);
+  const onDemand = [...mdFiles(knowledgeDir), 'TEMPLATE.md']
+    .filter((f) => fs.existsSync(path.join(knowledgeDir, f)));
+  const knowledgeBytes = onDemand.reduce((n, f) => n + size(path.join(knowledgeDir, f)), 0);
   console.log(`always-loaded: CLAUDE.md ${kb(size(claudeMd))} + core rules/index ${kb(coreBytes)} = ${kb(size(claudeMd) + coreBytes)}`);
-  console.log(`on-demand:     .claude/knowledge/ ${kb(knowledgeBytes)} (${mdFiles(knowledgeDir).length} files, read only when a task matches)`);
+  console.log(`on-demand:     .claude/knowledge/ ${kb(knowledgeBytes)} (${onDemand.length} files, read only when a task matches)`);
   const over = coreBytes > CORE_BUDGET;
   console.log(`core budget:   ${kb(coreBytes)} / ${kb(CORE_BUDGET)} — ${over ? '⚠ OVER: trim the index or move a rule to .claude/knowledge/' : 'ok'}`);
 

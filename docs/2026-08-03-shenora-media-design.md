@@ -884,8 +884,10 @@ what is used and come in under 33.5 MB.
 
 **And for scale, the kit itself is noise:** all five current packages total **459 KB**
 (`Windows` 194, `Core` 123, `Ipc` 89, `Android` 26, `iOS` 26). Four more `Media*` packages add tens of KB.
-The bundle question is entirely the engine, never the kit — which is the strongest argument for D40's
-split: `Shenora.Media.Android`/`.iOS` must ship ~26 KB like their shell counterparts and take **no engine
+The bundle question is entirely the engine, never the kit — which was the strongest argument for D40's
+split (a split D45 later removed: serving bytes to a page is a SHELL capability, so those two packages
+were deleted before they ever shipped): `Shenora.Media.Android`/`.iOS` would ship ~26 KB like their
+shell counterparts and take **no engine
 dependency at all**, because paying 42 MB to duplicate hardware decoders the OS already exposes — and
 then running them in software, on battery — is the wrong trade twice over.
 

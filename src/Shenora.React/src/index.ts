@@ -25,7 +25,16 @@ export {
   createHybridWebViewTransport,
   type ShenoraTransport,
 } from './transport.js';
-export { ShenoraEventBus, eventBus } from './eventBus.js';
+export {
+  ShenoraEventBus,
+  eventBus,
+  // The options type of all THREE public subscribe methods, and it was unexported until the 2026-08-05
+  // review — so an app could call them but could not name what it was passing (no typed wrapper, no
+  // shared const, no signature that mentions it). Identical to the `OperationProgress` gap recorded
+  // below, which is the point: the barrel is a surface, and shipping a method without its parameter
+  // type is shipping half of it.
+  type SubscribeOptions,
+} from './eventBus.js';
 export {
   ShenoraBridge,
   getBridge,

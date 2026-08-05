@@ -97,13 +97,30 @@ keeps the library reusable (adopted from the family's other library, where it's 
   — `Shenora.Windows`, or `src/Shenora.Mobile/` for the shared source behind `Shenora.Android` and
   `Shenora.iOS`. The bar for moving a contract to Core is **"app logic must be able to compile off
   Windows"**, NOT "the signature happens to be platform-neutral" — which is exactly why the whole
-  window-state stack stays in `Shenora.Windows` (window geometry is a desktop concept). No new package
-  for a seam (D2); a sixth `*.Abstractions` package was considered and rejected.
+  window-state stack stays in `Shenora.Windows` (window geometry is a desktop concept).
+- **⚠ A Core CONTRACT must be implementable without an optional package (D48).** This is the corollary
+  that decides the hard cases, and it was learned by getting one wrong: `IFileLockInspector` initially
+  travelled with the file-operation engine into `Shenora.IO`, which would have forced
+  `Shenora.Windows → Shenora.IO` for a single interface. If a shell implements it, the contract lives in
+  Core — full stop. Its sibling `IPathLocker` went the other way for the opposite reason: advisory lock
+  files are portable, so contract and implementation ship together with the engine that uses them.
+- **A package for a SEAM is still rejected (D2). A package for optional WEIGHT is not.** The old
+  wording of this rule said flatly "no new package", which by 2026-08-05 would have condemned three
+  packages that exist. Read it as it was meant: a `*.Abstractions` package for interfaces earns nothing
+  (Core already holds them), but an optional FEATURE package earns its place when **(a)** it is
+  something only SOME apps do and **(b)** it is real shipped weight sitting in a package everything
+  references. `Shenora.Media` (D40) and `Shenora.IO` + `Shenora.IO.Compression` (D48) each passed both;
+  `Io/` was 34% of `Shenora.Core` and a phone app that hosts a page carried a self-updater. These hang
+  OFF Core — they are not layers under it, and no shell reference brings them.
 - **One shell package per PLATFORM, named for the platform (2026-08-02).** Not per framework, and not
   per sub-area. Windows merged three packages into one because the seam they preserved protected a
   consumer this kit cannot have; mobile SPLIT into two because Android and iOS ship, build and get
-  consumed separately. The test both times was the same: does the boundary correspond to something a
-  CONSUMER experiences? "WinForms without WebView2" did not. "I am building an Android app" does.
+  consumed separately. The test both times was the same, and it is the same test the feature packages
+  pass: does the boundary correspond to something a CONSUMER experiences? "WinForms without WebView2"
+  did not. "I am building an Android app" does; so does "my app mutates a file tree".
+- **Reserve a family name before you need it; ship the member only when it has contents.**
+  `Shenora.IO.Windows` and `Shenora.IO.Android` are deliberately NOT created — today they would hold one
+  class and zero classes. The naming leaves room, D15 decides the timing.
 - **Options records over magic values.** Every number/color/URL a source app hardcoded (dev port,
   background color, timeouts, batch intervals) becomes a documented option with the family-proven
   default.

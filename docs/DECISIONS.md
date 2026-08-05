@@ -108,8 +108,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   render sessions with a bounded session pool, login windows with per-provider persistent
   profiles, and co-browse streaming (CDP screencast frames out, human input back). Proven in two
   siblings (one's render/login/co-browse stack; another's external-login window). Ships as its
-  own later package (working name `Shenora.WebView2.Sessions`) so the core hosting package stays
-  lean — phase P5 in `docs/ROADMAP.md`.
+  own later package (working name `Shenora.WebView2.Sessions`, which was merged away by D37) so the
+  core hosting package stays lean — phase P5 in `docs/ROADMAP.md`.
 
 - **D15 — Growth is harvest-driven** (user direction, 2026-07-30). Shenora evolves by promotion:
   when something proves nice while an application is being developed, it gets generalized (per
@@ -160,24 +160,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   packages with 5 incompatible pre-handle policies**, and the divergence produced real defects (7
   unguarded `BeginInvoke`s in the sessions package; a site whose comment explains the pre-handle
   trap and then commits it on the next line; a P0 where `RenderSession` accepts cancellation tokens
-  it cannot observe). Deciding facts: `Shenora.WebView2` is ALREADY a WinForms assembly — its csproj
-  sets `<UseWindowsForms>true</UseWindowsForms>`, it hosts the `Microsoft.Web.WebView2.WinForms`
-  control, and 5 of its files use a `Form`/`Control`-derived type — so the edge adds no new
+  it cannot observe). Deciding facts, in the package names of the day: `Shenora.WebView2` was already
+  a WinForms assembly — its csproj
+  set `<UseWindowsForms>true</UseWindowsForms>`, it hosted the `Microsoft.Web.WebView2.WinForms`
+  control, and 5 of its files used a `Form`/`Control`-derived type — so the edge added no new
   *technology* dependency, only an honest package reference; and **neither consumption profile (§3)
-  takes `WinForms` without `WebView2`**, so that split served no profile. The boundary is now
+  took `WinForms` without `WebView2`**, so that split served no profile. The boundary is now
   **primitives → hosting-on-primitives**, all edges still strictly downward. UNCHANGED and still
-  load-bearing: `Shenora.WinForms` carries NO `Shenora.Ipc` dependency — the reason is that it keeps a
-  **WinForms-only consumer** viable (a tray/single-instance utility with no web frontend), and it is
-  why the window-command and drop-zone facades stay in `Shenora.WebView2`. (NOT because profile 2
-  avoids `Ipc`: `Shenora.WebView2` references `Shenora.Ipc`, so profile 2 receives it transitively and
+  load-bearing, stated in the CURRENT shape: `Shell/` carries no `Shenora.Ipc` dependency — the reason
+  is that it keeps a **WinForms-only consumer** viable (a tray/single-instance utility with no web
+  frontend), and it is why the window-command and drop-zone facades live in `WebView/`. (NOT because
+  profile 2 avoids `Ipc`: the shell references `Shenora.Ipc`, so profile 2 receives it transitively and
   merely doesn't use the postMessage bridge — an earlier draft of this entry claimed otherwise.)
   `WinForms` never references `WebView2`. Rejected:
   merging into one `Shenora.Windows` package (preserves no WebView2-free option, much larger diff
   for the same benefit) and sharing via a linked source file (two binaries carrying the same
   internal type; solves the least). As-built layering and full surface: `docs/ARCHITECTURE.md`.
 
-- **D20 — Portable contracts live in `Shenora.Core`; only Windows implementations live in
-  `Shenora.WinForms`.** (User direction, 2026-07-30.) The reusable part of a desktop kit is the
+- **D20 — Portable contracts live in `Shenora.Core`; only Windows implementations live in the Windows
+  shell** (written as `Shenora.WinForms`, which was merged into `Shenora.Windows` by D37).
+  (User direction, 2026-07-30.) The reusable part of a desktop kit is the
   *logic* — IPC and the feature contracts — because that is what a non-Windows shell (mobile, D16)
   can share; an app's facades should compile with no Windows reference. So the platform-neutral
   contracts move to `Shenora.Core` (`IClipboardService`, `IFileDialogs`/`IFileDialogPathStore` +
@@ -192,7 +194,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `Shenora.Shell.Abstractions` package — D2 resists speculative packages and §4 already placed
   these seam types in Core. Scope guard: contracts move only when **app logic needs them to compile
   off Windows** — portable-in-signature is not the bar, which is why the whole window-state stack
-  stays in `Shenora.WinForms` (window geometry is a desktop concept). Per D16 this pass ships NO
+  stays in the Windows shell (window geometry is a desktop concept). Per D16 this pass ships NO
   mobile host or transport adapter — the seam, not the package.
 
 - **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns
@@ -536,8 +538,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     frameless chrome D24/D25 just settled, discarding the Snap Layouts / DWM / rounded-corner work,
     for no capability gain.
   - **Measured cost of a Linux desktop shell** (2026-08-02): `Shenora.Core` + `Shenora.Ipc` are ~6,000
-    lines and already run on Linux (`net10.0`, no UI binding, D16/D3). `Shenora.WinForms` +
-    `WebView2` + `WebView2.Sessions` are ~9,300 lines of `net10.0-windows` — **~60% of the kit's C#,
+    lines and already run on Linux (`net10.0`, no UI binding, D16/D3). The Windows shell — three
+    packages then (`Shenora.WinForms` + `WebView2` + `WebView2.Sessions`, merged into `Shenora.Windows`
+    by D37 later the same day) — was ~9,300 lines of `net10.0-windows` — **~60% of the kit's C#,
     and it is the part that IS the value**: frameless chrome, tray, single-instance, DPI-correct
     window state, drop-zone overlays, WebView2 hosting and sessions. None of it ports. A Linux shell
     shares Core, Ipc and the React client, and re-implements the rest.
@@ -628,7 +631,10 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     antivirus, another application editing the same tree: none will ever take a lease, so exclusion is
     impossible and the only useful thing is a NAME. `WhoHolds` returning empty means "cannot tell",
     never "nobody" — the distinction matters at a call site. The Windows implementation is Restart
-    Manager, and it lives in `Shenora.WinForms` because it is Win32.
+    Manager, and it lives in `Shenora.Windows` because it is Win32. **The CONTRACT stayed in
+    `Shenora.Core` when the rest of the file-operation engine left for `Shenora.IO`** (D48), and for
+    this same reason: a per-platform answer means a portable contract with a shell implementation, and
+    a shell must not need an optional feature package in order to implement one.
   - **Lock files live in the app's own directory, never the managed tree.** An app frequently does
     not own the folder it manages; sidecar locks there get synced, committed, and outlive the process.
   - **Network shares are supported, correcting an earlier "not a target".** Leases work over SMB2+
@@ -1313,7 +1319,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     native engine and rides on `System.IO.Compression`; 7-Zip or rar would each drag real shipped bytes, so
     each earns its own package rather than a flag. Naming the package after the framework's own area also made
     the TYPES smaller — `ExtractionResult`, not `ArchiveExtractionResult` — because the namespace already says
-    what they operate on. It shipped for a few hours as `Shenora.Archives` with `Archive…` type names, which
+    what they operate on. It was briefly shipped as `Shenora.Archives` with `Archive…` type names, which
     over-claimed (everything in it is zip-only) and contradicted the kit's lexicon note written the same day.
     **A package name that has to be explained by its type names is the wrong package name.**
   - **`Shenora.IO.Windows` / `Shenora.IO.Android` are NOT being created yet, and that is deliberate.** The
@@ -1344,3 +1350,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     and in `ARCHITECTURE.md`. It is exact rather than heuristic (a name either appears or it does not), which
     is the bar `doc-drift`'s own header sets, and it is case-sensitive with a trailing-identifier fence so
     `Shenora.IO` cannot be satisfied by `Shenora.iOS` or by `Shenora.IO.Compression` — both verified.
+
+- **D49 — retired package ids stay LISTED until 1.0. Pre-1.0 ids are retired in ONE deliberate pass, once
+  the kit is a fully working app framework** (owner, 2026-08-05: *"its okay let them be there we will retire
+  all pre-1.0 packages once we got a fully working app framework working"*).
+
+  - **What this settles.** `Shenora.WinForms`, `Shenora.WebView2` and `Shenora.WebView2.Sessions` were merged
+    into `Shenora.Windows` by D37 and are still listed, undeprecated, on nuget.org. That is now a CHOICE with
+    a trigger, not an overdue chore — which matters because a note reading "pending, do it next release"
+    survived four releases and was re-raised as a finding by the 2026-08-05 review. **A deferral nobody wrote
+    down gets rediscovered as a defect.**
+  - **Why deferring is the better trade.** Unlisting costs an API key, a `--apply` run and a web-UI pass per
+    id, and it buys nothing while the id set is still moving: three ids were retired by D37, one more
+    (`Shenora.Archives`) came and went inside a day, and D48 has just added two packages. Retiring them one
+    batch at a time means repeating the ceremony every time the shape changes. **The set is not stable yet,
+    so the cleanup is not ready to be done once.**
+  - **The trigger, stated so it can actually fire:** the kit reaching "a fully working app framework" — the
+    same milestone that makes a deliberate 1.0 surface freeze possible. At that point retire EVERY pre-1.0 id
+    the set no longer uses, in one pass, with `dev.mjs nuget-retire`. Until then the tool stays built and
+    unused, which is fine: it already refuses to unlist an id whose replacement is not published.
+  - **What must stay true in the meantime.** Nothing may CLAIM the retirement has happened. `README.md` said
+    the old ids "carry a deprecation notice" — they do not, and that sentence was removed in the same review
+    that produced this entry. An unlisted-but-restorable id is harmless; a doc describing a state of
+    nuget.org that does not exist is not.

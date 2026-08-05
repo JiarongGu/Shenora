@@ -31,6 +31,7 @@ import type {
   ShenoraBridgeOptions,
   ShenoraQueryResult,
   ShellInfo,
+  SubscribeOptions,
   ShenoraStore,
   ShenoraStoreIo,
   ShenoraStoreOptions,
@@ -111,7 +112,7 @@ type ExportedTypeSurface = [
   OpenFileOptions, OpenFolderOptions, SaveFileOptions,
   OperationInfo, OperationLabel, OperationProgress, OperationStatus,
   OperationsActions, OperationsState, OperationsStoreOptions,
-  PostFailure, PostOptions, ShellInfo, ShenoraBridgeOptions, ShenoraQueryResult<unknown>,
+  PostFailure, PostOptions, ShellInfo, ShenoraBridgeOptions, ShenoraQueryResult<unknown>, SubscribeOptions,
   ShenoraStore<unknown, unknown>, ShenoraStoreIo, ShenoraStoreOptions<unknown, unknown>,
   ShenoraStoreSnapshot<unknown>, ShenoraTransport, UseDropZoneOptions, WindowResizeEdge,
 ];

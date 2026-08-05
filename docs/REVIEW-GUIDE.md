@@ -44,10 +44,12 @@ the rules — it routes you to them and flags what's already settled.
 
 ## 1. What Shenora is (the review lens)
 
-Shenora (神阙) is a **reusable library, not an app**: the desktop "body" (WinForms + WebView2 +
-React hosting, typed IPC, modules, native services, auxiliary browser sessions) for a family of
-Windows apps, shipped as NuGet (`Shenora.Core|Ipc|WebView2|WebView2.Sessions|WinForms`) + npm
-(`@shenora/react`), versioned in lockstep.
+Shenora (神阙) is a **reusable library, not an app**: the desktop and mobile "body" (WinForms +
+WebView2 + React hosting on Windows, MAUI `HybridWebView` on Android/iOS, typed IPC, modules, native
+services, auxiliary browser sessions) for a family of apps. Shipped as eight NuGet packages —
+five shells (`Core`, `Ipc`, `Windows`, `Android`, `iOS`; D37) plus three optional feature packages
+hanging off Core (`Media`, `IO`, `IO.Compression`; D40/D48) — and npm `@shenora/react`, versioned in
+lockstep.
 
 > **The owner's standing criterion, in their words (2026-08-01) — this is the review, everything
 > below is detail:** *"make sure this is a library — we're not solving specific business logic.
@@ -83,14 +85,18 @@ Two properties follow from that and shape every judgement:
   member names, parameter names, csproj `<Description>`s, and the docs — and it says nothing at all
   about the second test above. **A green suite is not evidence that a component earns its place.**
 
-Design contract: `docs/2026-07-30-shenora-design.md`. Load-bearing choices: `docs/DECISIONS.md`
-(D1–D22 — numbered; don't relitigate, they record *why*). **D21 + D22 are the newest and the most
-likely to look like violations:** a feature ships as primitives + lifecycle hooks rather than the
-product, and every public type is named for its MECHANISM (so `InteractiveSession`/`StreamingSession`
-are deliberately not named after logging in or co-browsing). D19 + D20 changed the package layering
-(D19 + D20 — implemented in P5.5, so the tree matches them). As-built map + full public surface:
-`docs/ARCHITECTURE.md`. Phase-by-phase narrative of what changed and how it was verified:
-`docs/ROADMAP.md` `## Done`.
+Design contract: `docs/2026-07-30-shenora-design.md` (a dated snapshot — read `ARCHITECTURE.md` for
+what is true now). Load-bearing choices: `docs/DECISIONS.md` (D1–D48 — numbered; don't relitigate,
+they record *why*; the count grows, so check the file rather than trusting a range written here).
+**The ones most likely to look like violations:** D21 + D22 (a feature ships as primitives + lifecycle
+hooks rather than the product, and every public type is named for its MECHANISM — so
+`InteractiveSession`/`StreamingSession` are deliberately not named after logging in or co-browsing);
+**D37** (ONE shell package per PLATFORM — do not propose re-splitting `Shenora.Windows`, and read the
+measurements that killed the counter-arguments first); **D47** (while one repo fully adopts, the kit
+prefers the correct shape to the compatible one and ships no `[Obsolete]` aliases — so a break with a
+CHANGELOG migration is not a finding); and **D48** (the optional feature packages hang OFF Core).
+As-built map + full public surface: `docs/ARCHITECTURE.md`. Narrative of what changed and how it was
+verified: `docs/ROADMAP.md` `## Done`.
 
 ## 2. What exists (commit-by-commit)
 
@@ -102,9 +108,14 @@ are deliberately not named after logging in or co-browsing). D19 + D20 changed t
 | `0776f37` | P1.1 | Local-feed consumption smoke — caught + fixed a real npm ESM packaging bug (extensionless imports) |
 | `4ebb8e0` | P5 | `Shenora.Windows`: session browser, render-session pool, login windows, co-browse streaming |
 
-Layout: `src/` (5 packable projects + `Shenora.React/`), `tests/Shenora.Tests` (one project, folders
-mirror src), `samples/` (desktop + web; the e2e subject), `devtools/` (one-entry dev loop). Detail
-per package is in `docs/ARCHITECTURE.md` — this guide does not duplicate it.
+⚠ **That table stops at P5 and is kept for the bootstrap history only.** Everything after it — the
+mission layer, the mobile shells, media, file dialogs, the `Shenora.IO` split — is narrated in
+`docs/ROADMAP.md` `## Done` (newest first), which is the list to read for "what exists".
+
+Layout: `src/` (8 packable projects + `Shenora.React/` + `Shenora.Mobile/`, which is SOURCE with no
+csproj, compiled into both mobile packages), `tests/Shenora.Tests` (one project, folders
+mirror src), `samples/` (desktop + web + MAUI; the e2e subject), `devtools/` (one-entry dev loop).
+Detail per package is in `docs/ARCHITECTURE.md` — this guide does not duplicate it.
 
 ## 3. Invariants by area — where "correct" is DEFINED
 
@@ -118,7 +129,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 | Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
 | Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
 | Missions (`src/Shenora.Core/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
-| File updates + locking (`src/Shenora.Core/Io/`) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
+| File updates + locking (`src/Shenora.IO/`, its own package since D48) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
 | Windows/build/shell | `.claude/rules/windows-dev-gotchas.md` | PS5 UTF-8/BOM traps; `fs.cpSync` avoided; WinForms `AllowDrop`/OLE handle-creation must be on an STA thread (xunit workers are MTA) |
 | Any tracked file / commit message | `.claude/rules/sensitive-info.md` | NO absolute local paths, NO private sibling names, NO personal/network data (this repo goes public) |
 
@@ -145,7 +156,12 @@ a finding that contradicts one of these is either a real regression or a rule th
    version source (npm/README synced by tooling, never hand-edited); `devtools/project.config.mjs`
    `packableProjects` must list every packable project; the npm package must resolve under **native
    Node ESM** (the P1.1 bug — bundler resolution hides it). `node devtools/dev.mjs pack` must
-   produce all five nupkgs + the tarball.
+   produce a nupkg + snupkg for EVERY packable project plus the tarball — count them against
+   `src/`, never against a number written in a doc (0.5.0 published four of five because `pack`
+   skipped iOS on a mistaken belief that it needed a Mac, and no gate counted).
+   ⚠ **A csproj `<Description>` ships to nuget.org and NO gate reads it** — the D22 word audit sweeps
+   the API baselines only. Two defects lived in one Description until 2026-08-05: a retired package
+   name, and a safety claim ("bounded recursion") the code does not implement.
 5. **Sensitive-info.** Public repo. The pre-commit guard scans staged changes, but review tracked
    content too — any dev path, private sibling name, or personal data is a history problem once
    committed.
@@ -155,15 +171,18 @@ a finding that contradicts one of these is either a real regression or a rule th
 **Accepted design deviations (with rationale in `docs/DECISIONS.md` / port comments):**
 - `Shenora.Core` depends on the Microsoft DI *implementation* package, not just abstractions (D17 —
   the builder needs `BuildServiceProvider`).
-- `WindowCommandFacade` / the drop-zone stack live in `Shenora.Windows` (not `WinForms`) because
-  they need `Shenora.Ipc`, which `WinForms` deliberately does not reference.
-- `Shenora.Windows` depends on `Shenora.Windows` (D14 keeps the session stack out of the
-  core hosting package), and `Shenora.Windows` depends on `Shenora.Windows` (**D19** — the two
-  Windows packages are one layer: primitives, then web hosting on top). Both edges are deliberate, so
-  neither is a violation; the old "never sideways" rule was retired on evidence. `WinForms` →
-  `WebView2` is still forbidden, and `WinForms` still carries no `Ipc` dependency. Note the Sessions
-  edge is currently **declared but unused**: nothing in the package imports a `Shenora.Windows`
-  type, which is `TASKS.md` H4.4.
+- `WindowCommandFacade` / the drop-zone stack live in `Shenora.Windows/WebView/` (not `Shell/`)
+  because they need `Shenora.Ipc`, which the primitives half deliberately does not reference.
+- ⚠ **The three Windows packages are ONE package now (D37, 0.5.0): `Shenora.Windows`.** What used to
+  be `Shenora.WinForms` → `Shenora.WebView2` → `Shenora.WebView2.Sessions` is `Shell/` → `WebView/` →
+  `Sessions/` inside it, and D19's rule survives one level down: `Shell/` must never depend on
+  `WebView/`, and `Shell/` still carries no `Ipc` dependency. The edges are deliberate, so neither is
+  a violation; the old "never sideways" package rule was retired on evidence.
+  **This bullet is also the review's own cautionary tale.** Until 2026-08-05 it read
+  *"`Shenora.Windows` depends on `Shenora.Windows` … and `Shenora.Windows` depends on
+  `Shenora.Windows`"* — twice — because the D37 rename replaced both old ids with the new one and
+  nobody read the result. `doc-drift`'s retired-name check is structurally blind to this: the retired
+  name is GONE, so there is nothing left to match on. **After a rename sweep, read the diff.**
 - The portable contracts (`IUiDispatcher`, `IFileDialogs` + models, `IClipboardService`,
   `IUrlLauncher`, `IUiInteraction`) live in `Shenora.Core` with their implementations in
   `Shenora.Windows` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
@@ -256,7 +275,9 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   and are validated by hand. Judge their code by inspection against the source + the invariants,
   not by expecting a test.
 
-Current totals: **442 dotnet + 63 vitest** green; `verify` PASSED; `doctor` consistent. The dotnet
+Totals as of 2026-08-05: **1043 dotnet + 115 vitest** green; `verify` PASSED; `doctor` consistent.
+⚠ **Dated, because a bare "current totals" goes stale silently and this one sat at 442 + 63 for four
+months of growth.** Run `dev.mjs verify` rather than trusting the number. The dotnet
 suite runs SERIALLY (`tests/Shenora.Tests/xunit.runner.json`, P5.5 H7) — it creates real STA message
 pumps, real OS mutexes and real window threads, and collection parallelism was both a flake vector and
 an active mask: it hid a test that entered the OS modal size loop for ~17 s.
@@ -264,12 +285,16 @@ an active mask: it hid a test that entered the OS modal size loop for ~17 s.
 ## 7. Reproduce / verify locally
 
 ```
-node devtools/dev.mjs verify   # build · test · sensitive scan · knowledge check — the "am I done?" gate
-node devtools/dev.mjs pack     # all five nupkgs + the npm tarball into publish/packages
+node devtools/dev.mjs verify   # build · test · typechecks · sensitive scan · knowledge · doc-drift · doctor
+node devtools/dev.mjs pack     # every nupkg + snupkg + the npm tarball into publish/packages
 node devtools/dev.mjs sample --dev   # run the sample against Vite with CDP (e2e subject)
 node devtools/dev.mjs vite      # the sample's Vite dev server (port 3900)
 node devtools/dev.mjs shot|wgc|click|input   # desktop capture/input without stealing focus
+node devtools/dev.mjs android|mac    # the device harnesses for the two mobile shells
 ```
+
+The full command list is `devtools/README.md`. ⚠ **`dev.mjs changelog` is the RELEASE pipeline's, not
+yours** — it stamps the `## Unreleased` heading, which the workflow owns (`CLAUDE.md`).
 
 Report findings as file:line + why it's real (a concrete failure scenario), ranked by severity —
 no style nits. If a finding contradicts a rule in `.claude/knowledge/`, say which, so the invariant
