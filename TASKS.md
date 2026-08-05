@@ -12,11 +12,11 @@ here as long as they still steer.
 length stops tracking the remaining work. Two of the stale entries still showed an unchecked `[ ]` a day
 after they shipped.
 
-**Status: 0.9.1 is the last PUBLISHED release (2026-08-04). `## Unreleased` is large and is the
-next one** — three new packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
+**Status: 0.10.0 is PUBLISHED (2026-08-05)** — nine NuGet packages + `@shenora/react`, all nine confirmed
+on the feed. It added three packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
 safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
-Release history and its incidents live in `CHANGELOG.md`; the current package set is the table at the top
-of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
+`## Unreleased` is empty again. Release history and its incidents live in `CHANGELOG.md`; the current
+package set is the table at the top of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
@@ -38,6 +38,19 @@ of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
   shape on a greenfield surface?"* It still belongs under `### Breaking` with its migration, and it still
   shows as API-baseline drift. ⚠ This is a property of today's adoption count and reverts the moment a
   second repo fully adopts. 1.0 is a separate deliberate freeze, not yet cut.
+- **The launcher binaries are BUILT BY THE RELEASE, both RIDs, and never committed.** `release.yml` has a
+  matrix job (win-x64 + MSVC, linux-x64 + gcc) that builds and conformance-tests each one, and `publish`
+  `needs:` it — so a launcher that fails conformance, or a missing RID, stops the release before anything
+  is published rather than silently shipping a package short. ⚠ Committing them was tried and reverted the
+  same day, history rewritten so the blob never existed: "a release might forget the download step" was a
+  real risk solved in the wrong place — a build output in git, carrying only the ONE rid this machine
+  builds, going stale the moment someone edited the C++ without rebuilding.
+- **A one-platform build proves one platform.** The launcher's POSIX half went uncompiled until the 0.10.0
+  release tried it and failed on two missing includes. Before a release that touches C++, run
+  `node devtools/dev.mjs launcher --posix`; fix-log 2026-08-05.
+- **NuGet lags npm on a release, by minutes.** 0.10.0 showed npm at the new version while all nine NuGet
+  packages still read 0.9.1 and the three new IDs 404'd — that is the validation pipeline, not a failed
+  push. All nine indexed within ~2 minutes. Re-check the feed before concluding anything is broken.
 
 > **This library is the intended foundation for the author's apps** (owner, 2026-08-03), so the bar on the
 > published surface is an adopter's, not a maintainer's: docs that match the artifact, breaks documented
@@ -121,34 +134,6 @@ of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
        middleware into a 404, deliberately, which for the DOCUMENT is indistinguishable from the report.
   - Do not "fix" this speculatively. A change to main-frame fall-through with no reproduction is a change
     that cannot be verified in either direction.
-
-### B. Staged application updates
-
-Design + evidence: `docs/2026-08-02-shenora-app-update-design.md` (two independent sibling
-implementations, same two-phase model, same `{path, size, sha256}` manifest). The claim to build
-against: **only the apply step is native.** B1 (manifest + diff), B2 (the staging area) and B3 (the
-release-source seam) are done — `docs/archive/tasks.md`.
-
-**B4 (the native launcher), B4b (its package) and the real-release validation of the update stage all
-closed on 2026-08-05** — records in `docs/archive/tasks.md`, shape in **D50**, surface in `CHANGELOG.md`.
-
-**The launcher binaries are BUILT BY THE RELEASE, both RIDs, and never committed.** `release.yml` has a
-matrix job (win-x64 + MSVC, linux-x64 + gcc) that builds and conformance-tests each one, and `publish`
-`needs:` it — so a launcher that fails conformance, or a missing RID, stops the release before anything
-is published rather than silently shipping a package short.
-
-⚠ Committing the binaries was tried and reverted the same day, and the history was rewritten so the blob
-never existed. The reasoning had been "a release might forget the download step, and a missing package
-announces itself to nobody" — true, but it solved that in the wrong place: it put a build output in git,
-could only ever carry the ONE rid this machine builds, and would go stale against the C++ the moment
-someone edited it without rebuilding. A job dependency fixes the same failure and gets both RIDs.
-
-### Safe-area insets
-
-**DONE (2026-08-05) — `SafeAreaOptions` + `MobileSafeArea`, proven on device at first paint.** Four
-defects were measured; two were fixed in the page and two needed the shell, because Android reports the
-display cutout to CSS but never the system bars, and reports nothing at all for the whole first page
-load. Record in `docs/archive/tasks.md`; adopter-facing recipe in `docs/ADOPTION.md`.
 
 ### Platform integration — OS-level logic, measured by how little native code an app writes
 

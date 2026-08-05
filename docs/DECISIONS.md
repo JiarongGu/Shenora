@@ -3,19 +3,25 @@
 Numbered rationale log so a future session doesn't relitigate them. Amend an entry by appending
 a dated note (or a later entry that supersedes it) — never silently rewrite.
 
-> **The package set lives HERE, once** (2026-08-05). Four entries have moved it — D2 drew it, D37
-> reorganised it by platform, D40 added an optional feature package and D48 added a family of them — and
-> reconstructing it from that chain is how three of them ended up stating a set that no longer existed.
-> **As of 2026-08-05 there are eight packable projects + npm:**
+> **The package set lives HERE, once** (2026-08-05). Five entries have moved it — D2 drew it, D37
+> reorganised it by platform, D40 added an optional feature package, D48 added a family of them and D50
+> added the native launcher — and reconstructing it from that chain is how three of them ended up stating
+> a set that no longer existed. **As of v0.10.0 (2026-08-05) there are nine packable projects + npm:**
 >
 > | | | |
 > |---|---|---|
 > | **shells** (D37) | `Shenora.Core` · `Shenora.Ipc` · `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform |
 > | **optional features** (D40, D48) | `Shenora.Media` · `Shenora.IO` · `Shenora.IO.Compression` | hang OFF Core; no shell reference brings them |
+> | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
 > | **npm** | `@shenora/react` | |
 >
 > `docs/ARCHITECTURE.md` is the as-built map and `doc-drift` gates it against the csproj files. **When an
 > entry below names a package set, read it as the set AT ITS DATE.**
+>
+> ⚠ This block went stale within a day of being written as the one place the set lives: D50 landed
+> `Shenora.Launcher` and the count above still said eight, caught only by reading it against `doctor` after
+> the 0.10.0 release. A prose count is not gated by anything — **`node devtools/dev.mjs doctor` prints the
+> real number of packable projects, so check it here rather than trusting the sentence.**
 
 - **D1 — Shenora is the desktop body; Lyntai is the brain; no dependency between them.** Apps may
   use both; Shenora must never reference Lyntai (brief, "Relationship to Lyntai"). Keeps each

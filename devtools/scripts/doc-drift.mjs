@@ -262,7 +262,10 @@ function checkPackagesAreDocumented() {
     problems.push('no packable project found under src/ — this check would pass for the wrong reason.');
     return;
   }
-  for (const rel of ['README.md', path.join('docs', 'ARCHITECTURE.md')]) {
+  // DECISIONS.md joined this list after the 0.10.0 release, where its header — written the day before as
+  // "the package set lives HERE, once" — still said eight packable projects and omitted Shenora.Launcher.
+  // The one place a fact is supposed to live is the place worth gating.
+  for (const rel of ['README.md', path.join('docs', 'ARCHITECTURE.md'), path.join('docs', 'DECISIONS.md')]) {
     const file = path.join(repo, rel);
     // FAIL CLOSED. `checkDependencyGraph` above skips a missing file because it checks claims that
     // may or may not be made; this one checks that a REQUIRED document exists and says something, so
@@ -281,6 +284,44 @@ function checkPackagesAreDocumented() {
   }
 }
 
+// Naming every package is not the same as counting them right: a reader who trusts "there are eight"
+// stops looking after eight. The count is prose, so nothing had ever checked it, and it was wrong within
+// a day. Spelled-out numbers are allowed because that block reads better with them.
+const NUMBER_WORDS = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
+  seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+
+function checkPackageCountClaim() {
+  const rel = 'docs/DECISIONS.md';
+  const file = path.join(repo, 'docs', 'DECISIONS.md');
+  if (!fs.existsSync(file)) {
+    problems.push(`${rel} does not exist, so the canonical package set has nowhere to live.`);
+    return;
+  }
+  const match = /there are ([A-Za-z]+|\d+) packable projects/.exec(fs.readFileSync(file, 'utf8'));
+  // FAIL CLOSED. If the sentence is reworded out of existence this check would otherwise pass forever
+  // while silently checking nothing — the "gate that fails open" class this repo has already been bitten by.
+  if (!match) {
+    problems.push(`${rel}: no "there are <n> packable projects" claim found.\n`
+      + '      That sentence is the canonical count and this check reads it; reword it and the gate goes\n'
+      + '      blind, so the wording is load-bearing. Restore it, or update doc-drift deliberately.');
+    return;
+  }
+  const claimed = /^\d+$/.test(match[1]) ? Number(match[1]) : NUMBER_WORDS[match[1].toLowerCase()];
+  if (claimed === undefined) {
+    problems.push(`${rel}: "there are ${match[1]} packable projects" — not a number this check understands.\n`
+      + `      Use a digit or one of: ${Object.keys(NUMBER_WORDS).join(', ')}.`);
+    return;
+  }
+  const actual = packableProjects().length;
+  if (claimed !== actual) {
+    problems.push(`${rel}: claims ${claimed} packable projects, but src/ has ${actual} `
+      + `(${packableProjects().join(', ')}).\n`
+      + '      A reader who trusts the count stops looking once they have that many.');
+  }
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────────────────────────
 
 if (listOnly) {
@@ -295,10 +336,11 @@ checkDependencyGraph();
 checkRetiredNames();
 checkDocLinks();
 checkPackagesAreDocumented();
+checkPackageCountClaim();
 
 if (problems.length === 0) {
   console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as ' +
-              'current; every docs/ pointer resolves; every packable project is documented');
+              'current; every docs/ pointer resolves; every packable project is documented and counted');
   process.exit(0);
 }
 console.error(`\n\x1b[31m✖ doc-drift: ${problems.length} stale claim(s) in prose:\x1b[0m`);

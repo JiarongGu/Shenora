@@ -19,12 +19,12 @@ check the file, not this range; its header carries the current package set) befo
 `docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the
 code cites its `§` numbers.
 
-**Status: v0.9.1 published (2026-08-04)**, six packages; `## Unreleased` adds two (`IO`, `IO.Compression`)
-and carries **five breaking changes** — read `CHANGELOG.md` before touching the surface. Repo public, verified
-against the FEED rather than the tree; 0.5.0 reorganised the set BY PLATFORM (D37); the kit runs on all three
-shells, proven on a device and a simulator. P1–P7 are complete. `TASKS.md` has the open work. Growth is
-harvest-driven (D15) and adoption-driven. **Every public change is SemVer surface**; 1.0 is a separate
-deliberate freeze, not yet cut.
+**Status: v0.10.0 published (2026-08-05)**, nine NuGet packages + npm, all nine verified on the FEED —
+0.10.0 added `IO`, `IO.Compression` and the native `Launcher`, and carried **five breaking changes**; read
+`CHANGELOG.md` before touching the surface. Repo public, verified against the FEED rather than the tree;
+0.5.0 reorganised the set BY PLATFORM (D37); the kit runs on all three shells, proven on a device and a
+simulator. P1–P7 are complete. `TASKS.md` has the open work. Growth is harvest-driven (D15) and
+adoption-driven. **Every public change is SemVer surface**; 1.0 is a separate deliberate freeze, not yet cut.
 
 **Read first:** `docs/README.md` — the memory map that routes any task to the right doc or rule.
 **Private companion:** also read `local/CLAUDE.local.md` + `local/PROJECT_NOTES.md` at session

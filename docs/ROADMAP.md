@@ -5,6 +5,34 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-05 — 0.10.0 ships: a NINTH package that carries no managed code, and a mobile shell that knows where the screen is
+
+**`Shenora.Launcher` (D50).** The staged-update design's native half, built as a **C++ library + a
+template** rather than a copy-paste snippet — an adopter links the library and starts from `template/main.cpp`.
+C++ was chosen over Rust on the user's stated grounds: the consuming project already carries a C++ toolchain,
+so Rust would have to earn a second one, and long-term platform support matters more than novelty here. The
+package is packaging-only (`NoManagedSurface`) — it ships per-RID binaries plus the sources, so no API
+baseline applies and `MetadataSurfaceTests` skips it.
+
+- **Sizes are now MEASURED, not banded** — 322 KB on Windows, **46.8 KB on Linux**; D50 had guessed
+  150–300 KB for both. The whole gap is the statically linked CRT on Windows, kept deliberately: a launcher
+  that needs a VC++ redistributable installed has the same bootstrap problem it exists to solve.
+- **The conformance harness drives the real binary** through the real C# stager (`update-probe --stage-only`),
+  never a local fixture — a protocol written twice, once per language, is one that drifts. 6 cases.
+- ⚠ **The POSIX half had never actually been compiled** by anything until the first release tried, and it
+  failed on two missing includes MSVC supplies transitively. Compiling both platform `.cpp` files is not the
+  same as proving both platforms — an `#ifdef`-guarded body is only checked by the compiler that takes the
+  branch. Closed by `dev.mjs launcher --posix` (a gcc container a Windows box can run); fix-log 2026-08-05.
+
+**Safe areas, as a configurable shell capability (D51 neighbourhood).** `env(safe-area-inset-*)` on Android
+reports the display cutout ONLY — never the system bars — and reports 0 for the entire first page load, so
+the web side cannot ask the question and the shell has to answer it. `SafeAreaScript.Build` is a pure
+function in `Shenora.Core` (15 tests) and the Android measurement uses `ViewCompat.GetRootWindowInsets`
+rather than a listener, because `OnApplyWindowInsetsListener` *replaces* inset handling instead of observing
+it — which silently SUPPRESSED the insets it was meant to report. Everything an adopter might disagree with
+is theirs: the default inset, its colour, the settle animation, the splash and its timeout, and the CSS
+variable prefix.
+
 ### 2026-08-05 — the package set grows a THIRD kind: optional feature packages hanging off Core (D48)
 
 **`Shenora.IO` and `Shenora.IO.Compression`, so eight packable projects.** Until now the set was five shells
@@ -612,11 +640,7 @@ until adoption time, now decided.
   implementation until there is a consumer.
 - Harvest-promotions from ongoing app development (D15) — any proven-nice feature gets
   generalized and lands here as a task before shipping in a minor.
-- **Staged application updates + the C++ launcher template — now DESIGNED, not a candidate:**
-  `docs/2026-08-02-shenora-app-update-design.md`. A survey found **two** independent sibling
-  implementations with the same two-phase model, the same `{path, size, sha256}` manifest and the
-  same `.update`/`ready.json` protocol, so the two-consumer bar is met on evidence. The design's
-  claim: only the *apply* step is native — the manifest, the diff, the staging and the sha256
-  verification are portable `Shenora.Core` material this repo's gate already covers.
+- ~~**Staged application updates + the C++ launcher template**~~ — **SHIPPED in 0.10.0, see `## Done`.**
+  The portable half is `Shenora.IO` and the native half is the `Shenora.Launcher` package (D50).
 - Contract codegen (C# ⇄ TS) — explicitly out of initial scope; revisit after adoption feedback.
   (Scaffolding skills graduated out of this list on 2026-08-02 — see `## Done`.)
