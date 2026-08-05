@@ -204,6 +204,17 @@ release-source seam) are done — `docs/archive/tasks.md`.
   Still the one artifact this repo's gate cannot compile, so it ships as a TEMPLATE with that said
   plainly, and the sibling's Node harness (drive a PREBUILT exe over sandbox dirs) is the model for
   testing it on demand rather than in `verify`.
+  - **⚠ THE SHAPE IS SETTLED — do not re-argue it, build to it (D50, 2026-08-05; design
+    `docs/2026-08-02-shenora-app-update-design.md` §5a).** It is a **C++ LIBRARY + a template**, not a
+    template alone: §0's own table shows both siblings split the same way, `updater.cpp` +
+    `dotnet_runtime.cpp` generic against a per-app `main.cpp`. Requirements are Linux+Windows (Linux for
+    later), small, one binary per platform on the mobile model. CMake, `std::filesystem`, Win32 behind a
+    thin header, per-RID binaries from a CI matrix into `runtimes/{rid}/native/`.
+  - **Rust was evaluated and rejected on the owner's own criterion** — it brings ZERO NuGet-packing
+    benefit, and D8 favours the two proven C++ implementations. D50 records why, and the revisit trigger.
+  - **First step when this is picked up is a MEASUREMENT, not code:** the binary-size figures in D50 are
+    bands nobody has built. And the Node conformance harness is not optional — without it "library" is a
+    promotion in name only.
 
 _**DONE 2026-08-05 — `ZipUpdateSource`.** ⚠ This entry said "DEFERRED by owner direction"; that was a
 MISREADING of *"do our own first … in the meantime you should have your own"*, which meant lower PRIORITY,

@@ -1468,3 +1468,76 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     the old ids "carry a deprecation notice" — they do not, and that sentence was removed in the same review
     that produced this entry. An unlisted-but-restorable id is harmless; a doc describing a state of
     nuget.org that does not exist is not.
+
+- **D50 — the native launcher is a LIBRARY plus a template, written in C++, shipped as one binary per
+  platform. Amends the design doc's §5, which said "template only".** (Owner, 2026-08-05.) Design shape:
+  `docs/2026-08-02-shenora-app-update-design.md` §5a. **Nothing is built — this decides the shape so B4 can
+  be picked up without re-arguing it.**
+
+  > *"so it probably need to be template + c++ library"* … *"the only requirement is (compatibale linux+
+  > windows for future needs, and small) we can have for different platform use differnt binary too just
+  > like the mobile development"*
+
+  - **The requirements, in the owner's terms:** Linux **and** Windows (Linux for a future need, not today);
+    **small**; one binary per platform is fine, explicitly on the mobile model — ONE shared source tree, N
+    platform artifacts.
+  - **Library + template is not a judgement call — §0 measured the seam twice.** Two siblings, no contact,
+    wrote the same three files: `updater.cpp` (234/145 lines) and `dotnet_runtime.cpp` (170/116) are generic
+    → the LIBRARY; `main.cpp` (142/76) is per-app → the TEMPLATE. The library is the larger half. What stays
+    per-app is smaller than "a launcher": exe name, icon and version resources, the code signature, topology
+    constants, failure-UI wording. On Windows those are embedded, so an adopter applies them as a post-build
+    step before signing; on Linux the same facts live in a `.desktop` file and never touch the binary. **That
+    asymmetry is a build step, not a source fork** — which is what makes one shared tree honest.
+  - **Rust was evaluated properly and lost on the criterion the owner named.** The question put was whether
+    it helps **NuGet packing**, because that would have outweighed size. It does not, at all: a `.nupkg` is a
+    zip, `runtimes/{rid}/native/` is a folder convention, and MSBuild's RID-based copy cannot tell what
+    compiler produced the bytes. The packing story is identical for any language that emits a native binary.
+    - ⚠ **A cross-compilation advantage was also claimed for Rust, and it was overstated in the discussion
+      that produced this entry — recorded so it is not repeated.** `--target x86_64-unknown-linux-musl` still
+      needs a linker for the target (Zig, Docker, or WSL). It is somewhat smoother than C++, not
+      categorically different — and once each target builds on its own CI runner, which is what the mobile
+      packages already do, the advantage disappears for both languages.
+  - **D8 decides it.** Two proven C++ implementations exist, in production, one carrying an incident that is
+    expensive to re-earn (§4: omitting the launcher from the new manifest made the OLD launcher delete the
+    freshly-copied new one). Extraction-first means porting proven code *with its post-mortem comments,
+    which are the product*. Rewriting that in a language neither donor uses is the thing D8 exists to
+    prevent. Note also that the two-consumer bar is met **in C++ specifically**, not for "a launcher" in the
+    abstract.
+  - **The durability argument, in the owner's own framing, because it is the forward-looking half:** the
+    choice is not about the language being old. It is that C++ **will not lose support in any relevant
+    horizon and its platform coverage keeps growing** — AI workloads have pulled real, current investment
+    back into the C++ toolchain (the performance layer of essentially every ML stack), so the compilers and
+    the platform support are being funded, not merely maintained. For an artifact whose entire job is to run
+    on a machine you do not control, before anything else is installed, "there is a mature compiler and a
+    stable ABI for this platform" IS the requirement — and it is the one C++ has never failed.
+    - **The concrete in-repo payoff:** the toolchain is reusable. D42 says the app supplies the media engine
+      and the kit vendors none — LibVLC, ffmpeg, image codecs and any inference shim are all C++-shaped. If
+      native work ever appears in this family beyond the launcher, it lands in the toolchain the launcher
+      already paid for. Rust would mean a second toolchain talking to the first over FFI.
+  - **⚠ C++ was NOT chosen because Rust is worse, and the record should not be read that way.** It was
+    chosen because the prior art is in C++, the NuGet benefit that would have justified switching is zero,
+    and the toolchain investment is reusable. **Revisit trigger:** a future native component with no C++
+    prior art and no native engine to talk to — decide that one on its own evidence rather than by citing
+    this entry.
+  - **Shape:** one source tree; `std::filesystem` (C++17) for everything portable with the Win32 specifics
+    (§4's `GetModuleFileNameW` self-exclusion) behind a thin platform header; **CMake**, so MSVC and
+    gcc/clang build the same tree; per-RID binaries from a CI matrix (`windows-latest` + `ubuntu-latest`)
+    into `runtimes/win-x64/native/` + `runtimes/linux-x64/native/`. No cross-compilation anywhere.
+  - **The JSON parser is a CONFORMANCE requirement, not a taste one.** Whether it is hand-rolled (what both
+    siblings did) or vendored single-header `nlohmann/json`, it must agree with `UpdateManifest.Parse` —
+    including the two comparison rules already sabotage-verified on the C# side: paths normalise separators
+    AND case, hashes compare case-insensitively. A second implementation is a second place to get those
+    wrong, and getting either wrong makes a release look either fully changed or fully unchanged.
+  - **⚠ Sizes are BANDS, not measurements: ~150–300 KB (C++) against ~300 KB–1 MB (Rust, size-optimised).**
+    Nobody has built either. If this is ever revisited on size, build a hello-world of each and put real
+    numbers here first — the standard D40 and D46 were held to.
+  - **§5's verification problem is UNCHANGED, and calling it a library makes it sharper, not softer.** A
+    library implies the kit owns its correctness while `dev.mjs verify` compiles none of it. The answer stays
+    the sibling's: ship the Node harness that drives a PREBUILT launcher with `--apply-and-exit` over sandbox
+    directories, so an adopter's CI builds once and runs THE KIT'S conformance suite against THEIR binary.
+    Without that harness this is a promotion in name only, and `README`/`ADOPTION` must still say plainly
+    that this repo's gate does not compile it.
+  - **Bounded, so nobody over-builds it:** a **self-contained** app needs no launcher at all —
+    `UpdateStage.ApplyAsync` already overlays, removes and clears in portable .NET, gate-covered and
+    sabotage-verified. This whole capability serves framework-dependent apps, where the runtime may be
+    absent and files may be held open. Harvest-driven (D15): build it when an app needs it.

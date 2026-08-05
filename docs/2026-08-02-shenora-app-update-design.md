@@ -74,7 +74,9 @@ differently; the kit keeps the argument form it already ships, and an adopter's 
 
 ## §3 What Shenora ships
 
-In `Shenora.Core` (portable, no new package — D2):
+In `Shenora.Core` (portable, no new package — D2) — **⚠ all of the below shipped in `Shenora.IO`
+instead, once D48 (2026-08-05) split the file-operation engine out of Core. Portable either way; the
+namespace is `Shenora.IO`:**
 
 - **`UpdateManifest` / `ManifestFile`** — `{path, size, sha256}`, the on-disk contract, plus read/write.
 - **`ManifestDiff.Compute(installed, release)`** → added / updated / removed + total download bytes.
@@ -126,6 +128,60 @@ Two things make it tractable, and both come from the sibling:
 **A template the kit cannot compile must not pretend otherwise.** If the launcher template ships,
 `README`/`ADOPTION` say plainly that it is unverified by this repo's gate and that the adopter's CI
 builds it — the same honesty `doc-claims` requires everywhere else.
+
+## §5a AMENDMENT 2026-08-05 — it is a LIBRARY plus a template, and the language question is settled
+
+Owner direction, refining §5's "ship it as a template". **Decision and full reasoning: D50.** This
+section records the shape; that entry records why.
+
+**The requirements, as stated:** compatible with **Linux and Windows** (Linux for future need, not
+today), **small**, and **one binary per platform is fine** — explicitly modelled on how the mobile
+shells work: one shared source tree, N platform artifacts.
+
+**The split is library + template, and §0 already drew the line twice.** Both siblings independently
+wrote the same three files, and the boundary between them is not a judgement call:
+
+| file | sibling A | sibling B | which half |
+|---|---|---|---|
+| `updater.cpp` | 234 | 145 | generic → the **library** |
+| `dotnet_runtime.cpp` | 170 | 116 | generic → the **library** |
+| `main.cpp` | 142 | 76 | per-app → the **template** |
+
+Two teams, no contact, same seam — and the library is the larger half. What stays per-app is smaller
+than "a launcher": the exe name, icon and version resources, the code signature, the topology
+constants, and the wording of failure UI. On Windows those are embedded in the binary, so an adopter
+applies them as a post-build step before signing; on Linux the same information lives in a `.desktop`
+file and touches no binary. **That asymmetry is a build step, not a source fork.**
+
+**Language: C++.** Rust was evaluated properly and lost on the criterion the owner named — it brings
+**zero** NuGet-packing benefit (a `.nupkg` is a zip; `runtimes/{rid}/native/` is a folder convention;
+MSBuild's RID copy cannot tell what compiler produced the bytes), and once each target builds on its
+own CI runner the cross-compilation advantage disappears too. D8 then decides it: two proven C++
+implementations exist, one carrying an incident that is expensive to re-earn (§4). See D50.
+
+**Shape:**
+
+- ONE source tree, `std::filesystem` (C++17) for everything portable, Win32 specifics (the
+  `GetModuleFileNameW` self-exclusion of §4) behind a thin platform header. **CMake**, so the same
+  tree builds under MSVC and gcc/clang.
+- **Per-RID binaries from a CI matrix** (`windows-latest` + `ubuntu-latest`), shipped as
+  `runtimes/win-x64/native/` + `runtimes/linux-x64/native/` — the mobile pattern, and no
+  cross-compilation anywhere.
+- **The JSON decision is a conformance question, not a taste one.** The siblings hand-rolled a parser;
+  vendoring single-header `nlohmann/json` is the likely better trade. Either way the requirement is
+  that it agrees with `UpdateManifest.Parse` — including the two comparison rules that are already
+  sabotage-verified on the C# side (separator AND case normalisation on paths, case-insensitive hash
+  compare). A second implementation of a parser is a second place to get those wrong.
+- **⚠ Sizes below are BANDS, not measurements** — roughly 150–300 KB for C++ against 300 KB–1 MB for
+  Rust with size optimisation. Nobody has built either. If this is ever revisited on size, build a
+  hello-world of each first and put real numbers here, the way D40 and D46 were decided.
+
+**§5's verification problem is UNCHANGED and gets no free pass from being called a library.** A
+library implies the kit owns its correctness while `dev.mjs verify` still compiles none of it. The
+answer stays the sibling's: ship the Node harness that drives a PREBUILT launcher with
+`--apply-and-exit` over sandbox directories, so the adopter's CI builds once and runs **the kit's**
+conformance suite against **their** binary. That is what makes "library" honest rather than a
+promotion in name only.
 
 ## §6 Not building
 
