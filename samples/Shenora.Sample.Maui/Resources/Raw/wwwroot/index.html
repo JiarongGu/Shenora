@@ -22,11 +22,49 @@
     rather than 0, so the two go together — and on a shell with no insets every calc() below collapses
     back to the plain 12px.
   */
-  body { margin: 0;
-         padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
-                  calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+  /*
+    ⚠ AND PADDING ALONE IS NOT ENOUGH — that is the second half of this lesson, found on a device
+    (2026-08-05, Android 16 / API 36, where edge-to-edge is enforced) after the first half had been
+    "fixed" for days. Inset padding on <body> positions the page correctly ONLY while it is scrolled to
+    the top. The document itself scrolls, so the padded strip scrolls away with everything else and the
+    content underneath it passes straight under the status bar / Dynamic Island. A screenshot after
+    three swipes showed the button row rendering behind the clock and the battery icon.
+
+    The fix is structural, not more padding: BODY MUST NOT SCROLL. It is a viewport-sized flex column
+    that owns the insets permanently, and a child scrolls inside it. The inset region is then outside
+    the scrolling box and nothing can ever enter it.
+
+    Why not the popular alternative — a fixed overlay painted over the inset strip: that only HIDES
+    content that is still there, which is right for a translucent status bar and wrong for a physical
+    cutout, and it leaves the content unreachable underneath rather than never placed there.
+  */
+  html { height: 100%; }
+  body { margin: 0; height: 100%; box-sizing: border-box;
+         display: flex; flex-direction: column;
+         overflow: hidden;               /* the document does not scroll — #scroll does */
+         /*
+           max(), NOT calc(12px + inset) — which is what this used to say, and it reserved 61 CSS px at
+           the top where the platform asked for 49. The inset ALREADY includes the clearance; adding the
+           page's own padding to it stacks two paddings and shows up as a dead strip visibly larger than
+           the thing it is avoiding (measured on a punch-hole device: the camera band is 49 CSS px, the
+           reserved strip was 61). max() means "at least my 12px of breathing room, or the platform's
+           number where that is larger" — which is the behaviour both cases actually want, and it still
+           collapses to a plain 12px on a shell with no insets.
+         */
+         /*
+           The vars are what the JS re-read below keeps current; env() is the fallback for the first
+           frame and for any shell where the script does not run. See that block for why a static env()
+           is not enough on Android.
+         */
+         padding: max(12px, var(--sa-top,  env(safe-area-inset-top)))
+                  max(12px, var(--sa-right, env(safe-area-inset-right)))
+                  max(12px, var(--sa-bottom, env(safe-area-inset-bottom)))
+                  max(12px, var(--sa-left,  env(safe-area-inset-left)));
          background: #14161a; color: #e6e6e6;
          font: 13px/1.45 ui-monospace, "Cascadia Mono", Menlo, monospace; }
+  /* min-height:0 is load-bearing: without it a flex child refuses to shrink below its content and
+     the scrollbar never appears — the classic flexbox overflow trap. */
+  #scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   h1 { font-size: 15px; margin: 0 0 2px; color: #7fd1ff; }
   .sub { color: #8b93a1; margin-bottom: 10px; font-size: 11px; }
   .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -43,6 +81,8 @@
 </style>
 </head>
 <body>
+<!-- Everything scrollable lives in here, so the safe-area padding on <body> can never scroll away. -->
+<div id="scroll">
 <h1>Shenora · mobile shell</h1>
 <div class="sub">the same IPC envelope the desktop shell speaks, over HybridWebView</div>
 <div class="row">
@@ -90,6 +130,7 @@
 <video id="vid" controls playsinline preload="none"
        style="width:100%; max-height:34vh; background:#000; border-radius:8px; margin-bottom:10px;"></video>
 <div id="log"></div>
+</div><!-- /#scroll -->
 
 <script type="module">
 // This page speaks the envelope by hand — a real app uses `@shenora/react`'s bridge, which does
@@ -330,6 +371,60 @@ document.getElementById('mwhere').onclick = () => {
 // The handshake. Until this lands the host BUFFERS notifications rather than dropping them, which
 // is why the tick events that fired before this point still arrive.
 log('t', `channel: ${channelSource}`);
+
+// ── Safe-area insets: MEASURE them, and KEEP measuring ────────────────────────────────────────────
+//
+// 🔴 THE FIRST SCREEN WAS WRONG AND THIS IS WHY. On Android the insets are **0 for the whole of the
+// first page load** and only appear on a later one — measured, not inferred: this probe logged
+// `top=0 right=0 bottom=0 left=0` on the initial load and `top=49` after the reload probe navigated.
+// A page that reads env() once, at parse time, therefore lays out its first screen against zero and
+// never corrects, because within that load nothing changes to trigger a reflow.
+//
+// So the values are re-read whenever the viewport can have changed and published as CSS variables the
+// stylesheet prefers over the raw env(). This costs nothing where env() is already right — the numbers
+// simply match — and it is what makes the FIRST screen correct rather than the second.
+//
+// ⚠ It does NOT fix everything. Android reports only the display CUTOUT here, never the system bars:
+// measured `bottom=0` on a device whose navigation bar is genuinely 24 CSS px tall, so content still
+// sits under the gesture pill and no amount of CSS or JS in the page can discover that. That half needs
+// the HOST to hand the page its `WindowInsetsCompat` — see `.claude/knowledge/mobile-shells.md`.
+const readInsets = (announce) => {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;'
+    + 'padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);'
+    + 'padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);';
+  document.body.appendChild(probe);
+  const s = getComputedStyle(probe);
+  const px = (v) => Math.round(parseFloat(v) || 0);
+  const v = { top: px(s.paddingTop), right: px(s.paddingRight),
+              bottom: px(s.paddingBottom), left: px(s.paddingLeft) };
+  probe.remove();
+
+  const root = document.documentElement.style;
+  for (const side of ['top', 'right', 'bottom', 'left']) root.setProperty(`--sa-${side}`, `${v[side]}px`);
+  if (announce) {
+    log('t', `insets: top=${v.top} right=${v.right} bottom=${v.bottom} left=${v.left} (css px) · `
+      + `viewport=${innerWidth}x${innerHeight} dpr=${devicePixelRatio}`);
+  }
+  return v;
+};
+
+let lastInsets = JSON.stringify(readInsets(true));
+// resize fires when the window insets finally land; visualViewport catches the keyboard and the
+// rotation cases that do not always produce a window resize.
+const recheck = () => {
+  const now = JSON.stringify(readInsets(false));
+  if (now === lastInsets) return;
+  lastInsets = now;
+  log('t', `insets CHANGED after first paint -> ${now}`);
+};
+addEventListener('resize', recheck);
+visualViewport?.addEventListener('resize', recheck);
+// Two early re-reads for the case that produced this: the insets arrive after first paint but without
+// any event the page can hear.
+requestAnimationFrame(recheck);
+setTimeout(recheck, 250);
+
 log('t', 'page loaded — sending handshake');
 post('SHENORA', 'READY', { client: 'maui-sample' });
 

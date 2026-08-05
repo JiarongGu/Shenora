@@ -10,10 +10,30 @@ Earned across the Android port and the iOS port (both 2026-08-02).
 
 - **Write the page for the SUPERSET of shells, never the one you tested on.** Identical markup looked
   correct on an Android emulator for a whole session and put its heading under the status bar and the
-  Dynamic Island on the first iPhone run. An emulator has no safe-area insets to violate, so the bug
-  cannot appear there. Use `env(safe-area-inset-*)` with `viewport-fit=cover` — both collapse to
-  nothing where there are no insets, so it costs the desktop shell zero. The same law covers strings:
-  a shared bundle means `hello from android` eventually appears in an iPhone screenshot.
+  Dynamic Island on the first iPhone run. Use `env(safe-area-inset-*)` with `viewport-fit=cover` —
+  both collapse to nothing where there are no insets, so it costs the desktop shell zero. The same law
+  covers strings: a shared bundle means `hello from android` eventually appears in an iPhone screenshot.
+- **⚠ `env(safe-area-inset-*)` IS NOT THE WHOLE ANSWER, and the three ways it fails were each measured
+  on a device (2026-08-05, Android 16 / API 36, punch-hole emulator).** The rule above used to stop at
+  "use env()", which is why all three shipped:
+  1. **Padding on `<body>` scrolls away.** The document scrolls, so the inset strip goes with it and
+     content passes under the status bar the moment you scroll. Screenshot showed the button row behind
+     the clock. **Fix is structural: body must NOT scroll** — make it a viewport-height flex column that
+     owns the insets, and scroll a child (`min-height: 0` on that child, or it never shrinks).
+  2. **`max()`, never `calc(12px + inset)`.** The inset already contains the clearance; adding your own
+     padding stacks two and shows as a dead strip visibly bigger than the thing it avoids — measured 61
+     CSS px reserved where the platform asked for 49. `max(12px, env(...))` gives breathing room where
+     there is no inset and the platform's number where there is.
+  3. 🔴 **Android reports the display CUTOUT only — never the system bars.** Measured on one device:
+     `top=49` CSS px (exactly the 128-device-px camera band) while `bottom=0` **even though the
+     navigation bar is genuinely 24 CSS px tall**. So content sits under the gesture pill and no amount
+     of CSS can discover it. iOS does report both. **A page cannot solve this alone: the inset has to
+     come from the host**, which knows it from `WindowInsetsCompat`.
+  - **And they are 0 at FIRST PAINT.** The same probe logged `top=0 right=0 bottom=0 left=0` on the
+    initial load and `top=49` only after a reload — so even the cutout is unprotected on first render.
+  - **Measure, do not squint at a screenshot.** The sample logs its four insets plus viewport and dpr at
+    startup (`samples/Shenora.Sample.Maui/.../index.html`); that one line turned three guesses into
+    three numbers, one of which contradicted what the screenshot appeared to show.
 - **The runtime identifier must match the TARGET, and the failure always names the wrong step.** Twice
   in the same shape now: `android-x64` against an arm64-only build fails at INSTALL with
   `INSTALL_FAILED_NO_MATCHING_ABIS`, and `iossimulator-x64` against `-arm64` fails the same way. The

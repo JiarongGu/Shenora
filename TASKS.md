@@ -127,50 +127,41 @@ implementations, same two-phase model, same `{path, size, sha256}` manifest). Th
 against: **only the apply step is native.** B1 (manifest + diff), B2 (the staging area) and B3 (the
 release-source seam) are done — `docs/archive/tasks.md`.
 
-_**B4 IS BUILT (2026-08-05)** — `src/Shenora.Launcher/`: the C++17 library + template, CMake, a
-win-x64/linux-x64 CI matrix, and a conformance harness that drives the PREBUILT binary against stages the
-real C# side produced. **Measured: 322 KB**, above D50's 150–300 KB band — the static CRT is the
-difference, and it is a deliberate trade (no VC++ redistributable to bootstrap). Six conformance cases,
-sabotage-verified. It found two bugs while being built. Record in `docs/archive/tasks.md`.
-**What is NOT done and is the next step: the `runtimes/{rid}/native/` nupkg** — CI produces the per-RID
-artifacts, nothing packs them yet._
+**B4 (the native launcher), B4b (its package) and the real-release validation of the update stage all
+closed on 2026-08-05** — records in `docs/archive/tasks.md`, shape in **D50**, surface in `CHANGELOG.md`.
 
-<details><summary>the original filing, kept for the port notes</summary>
+- [ ] **A release must STAGE the launcher artifacts before packing them.** `src/Shenora.Launcher.Native`
+  packs `artifacts/runtimes/**`, and nothing fills that folder yet: the binaries come from the `launcher`
+  workflow's two runners, so a release has to download both `launcher-win-x64` and `launcher-linux-x64`
+  into it first. Procedure is in `docs/RELEASING.md`; wiring it into `release.yml` is the owner's, since
+  that workflow is theirs.
+  - ⚠ **The failure mode is a MISSING package, not a broken one** — `dev.mjs pack` skips that project and
+    says why, and `dotnet pack` on it errors rather than emitting an empty `runtimes/`. That is the safe
+    direction, and it also means a release would ship without the launcher and look entirely normal.
 
-- [x] **B4 — the NATIVE launcher, and it is now much smaller than the design assumed.** Owner's call
-  (2026-08-02): ship the apply logic as portable .NET first. Done — `UpdateStage.ApplyAsync` overlays,
-  removes and clears, gate-covered and sabotage-verified, so **a self-contained app needs no native
-  code at all.** What is left for the launcher is only what genuinely cannot be done in .NET: detect
-  and install the runtime when it may be absent, then invoke the applier. Take Sonora's topology
-  (app in `{root}/app/`, overlay only that) — the applier already documents and tests that layout.
-  Still the one artifact this repo's gate cannot compile, so it ships as a TEMPLATE with that said
-  plainly, and the sibling's Node harness (drive a PREBUILT exe over sandbox dirs) is the model for
-  testing it on demand rather than in `verify`.
-  - **⚠ THE SHAPE IS SETTLED — do not re-argue it, build to it (D50, 2026-08-05; design
-    `docs/2026-08-02-shenora-app-update-design.md` §5a).** It is a **C++ LIBRARY + a template**, not a
-    template alone: §0's own table shows both siblings split the same way, `updater.cpp` +
-    `dotnet_runtime.cpp` generic against a per-app `main.cpp`. Requirements are Linux+Windows (Linux for
-    later), small, one binary per platform on the mobile model. CMake, `std::filesystem`, Win32 behind a
-    thin header, per-RID binaries from a CI matrix into `runtimes/{rid}/native/`.
-  - **Rust was evaluated and rejected on the owner's own criterion** — it brings ZERO NuGet-packing
-    benefit, and D8 favours the two proven C++ implementations. D50 records why, and the revisit trigger.
-  - **First step when this is picked up is a MEASUREMENT, not code:** the binary-size figures in D50 are
-    bands nobody has built. And the Node conformance harness is not optional — without it "library" is a
-    promotion in name only.
+### Safe-area insets — the page cannot solve this, the SHELL must
 
-</details>
-
-_**B4b IS DONE (2026-08-05)** — `src/Shenora.Launcher.Native`, a packaging-only project that puts the
-per-RID binaries under `runtimes/{rid}/native/` plus the C++ library sources and template under
-`launcher-src/`. Packed and inspected: 200,926 bytes with the binary and all nine sources in the right
-places. The open question is decided — **the template SHIPS**, because one left only in the repo rots and
-gets copied at the wrong version; it goes to a plain folder rather than `contentFiles/` because the
-consumer's launcher build is CMake, not MSBuild. Record in `docs/archive/tasks.md`.
-**Still owed by a RELEASE, not by this repo:** a release must download both `launcher-*` CI artifacts
-into that project's `artifacts/` before packing it._
-
-_**DONE 2026-08-05 — the real-release validation is now `node devtools/dev.mjs update-probe`**, and it
-found a defect on its first run. Record in `docs/archive/tasks.md`; surface in `CHANGELOG.md`._
+- [ ] 🔴 **The shell must hand the page its window insets.** Three defects were found on a device
+  (2026-08-05, Android 16 / API 36, punch-hole emulator) and **two of them are unfixable from CSS or
+  page JS** — proven by trying:
+  1. ~~inset padding on a scrolling `<body>` scrolls away~~ — FIXED in the sample: body is a
+     non-scrolling flex column, a child scrolls.
+  2. ~~`calc(12px + inset)` stacks two paddings~~ — FIXED: `max(12px, inset)`. Reserved 61 CSS px where
+     the platform asked for 49.
+  3. 🔴 **Android reports the display CUTOUT only, never the system bars.** Measured `bottom=0` on a
+     device whose navigation bar is genuinely 24 CSS px — so content sits under the gesture pill and
+     CSS cannot discover it. iOS reports both.
+  4. 🔴 **The insets are 0 for the WHOLE first page load** and only appear on a later one. A page-side
+     re-read (rAF + timeout + `resize` + `visualViewport`) was written and **did not help** — no change
+     event ever fires, because the value never becomes non-zero in that document. The sample's own
+     reload probe is what makes the first screen *look* right, which is why this hid for so long.
+  - **So the fix is a shell capability, not page CSS:** read `WindowInsetsCompat` (Android) /
+    `safeAreaInsets` (iOS) and push them to the page as CSS custom properties, re-pushing on change.
+    The page already prefers `var(--sa-*)` with `env()` as fallback, so the host half is all that is
+    missing. This fits the owner's platform-logic direction below: the measure is how little native
+    code an adopting app writes, and today every adopter has to solve this themselves — badly, because
+    two of the four defects are invisible without a device.
+  - Full measurements and the three traps: `.claude/knowledge/mobile-shells.md`.
 
 ### Platform integration — OS-level logic, measured by how little native code an app writes
 
