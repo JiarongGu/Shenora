@@ -12,8 +12,8 @@ plus the optional `Media|IO|IO.Compression` hanging off Core, D48) + npm
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
 (postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See
-`docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D48 and growing —
-check the file, not this range) before relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design docs once implemented
+`docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D49 and growing —
+check the file, not this range; its header carries the current package set) before relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design docs once implemented
 (re-layering → D19/D20, one-way IPC → D23, plus the originating brief): decisions live in
 `DECISIONS.md`, as-built shape in `ARCHITECTURE.md`. One design doc survives —
 `docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the

@@ -3,6 +3,20 @@
 Numbered rationale log so a future session doesn't relitigate them. Amend an entry by appending
 a dated note (or a later entry that supersedes it) — never silently rewrite.
 
+> **The package set lives HERE, once** (2026-08-05). Four entries have moved it — D2 drew it, D37
+> reorganised it by platform, D40 added an optional feature package and D48 added a family of them — and
+> reconstructing it from that chain is how three of them ended up stating a set that no longer existed.
+> **As of 2026-08-05 there are eight packable projects + npm:**
+>
+> | | | |
+> |---|---|---|
+> | **shells** (D37) | `Shenora.Core` · `Shenora.Ipc` · `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform |
+> | **optional features** (D40, D48) | `Shenora.Media` · `Shenora.IO` · `Shenora.IO.Compression` | hang OFF Core; no shell reference brings them |
+> | **npm** | `@shenora/react` | |
+>
+> `docs/ARCHITECTURE.md` is the as-built map and `doc-drift` gates it against the csproj files. **When an
+> entry below names a package set, read it as the set AT ITS DATE.**
+
 - **D1 — Shenora is the desktop body; Lyntai is the brain; no dependency between them.** Apps may
   use both; Shenora must never reference Lyntai (brief, "Relationship to Lyntai"). Keeps each
   library adoptable alone.
@@ -15,15 +29,30 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   nothing to put in it yet.
   *(Amended 2026-07-30: the set is now FIVE NuGet packages + npm — `Shenora.WebView2.Sessions` was
   added per D14. A sixth, `Shenora.Shell.Abstractions`, was considered and rejected per D20.)*
-  **⚠ SUPERSEDED 2026-08-02 by D37** — the set is now ONE shell package per PLATFORM:
+  **⚠ SUPERSEDED 2026-08-02 by D37** — the SHELL set became ONE package per PLATFORM:
   `Shenora.Core` / `Shenora.Ipc` / `Shenora.Windows` / `Shenora.Android` / `Shenora.iOS` + npm. The
   three Windows ids named above merged into one. This entry stands as the record of why the original
   split was drawn, which is still worth reading before anyone proposes another one.
+  **⚠ Further amended by D40 (2026-08-03) and D48 (2026-08-05)**, which added three OPTIONAL feature
+  packages hanging off Core — `Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression`. Note what this
+  entry's "no separate package" instinct still gets right and where it stops: a package for a SEAM or an
+  `*.Abstractions` split earns nothing and is still rejected, but a package for optional WEIGHT in the
+  one assembly everything references does earn its keep. `.claude/knowledge/generic-library.md` carries
+  the current rule; the header table above carries the current set.
 
-- **D3 — Single TFM `net10.0` / `net10.0-windows`, not the brief's ".NET 8".** The brief predates
+- **D3 — One .NET VERSION, .NET 10, not the brief's ".NET 8".** The brief predates
   the survey: every family app and Lyntai target .NET 10, the dev machine has no .NET 8 SDK, and
-  .NET 8 LTS reaches end-of-support 2026-11 — multi-targeting a nearly-dead TFM buys nothing.
+  .NET 8 LTS reaches end-of-support 2026-11 — multi-targeting a nearly-dead .NET version buys nothing.
   Revisit only if an external consumer asks.
+  **⚠ Amended 2026-08-05 (a review found this entry stating the opposite of what the tree does).** It
+  was written as "single TFM `net10.0` / `net10.0-windows`" and said multi-targeting "buys nothing",
+  which two later decisions overtook:
+  - **Platform TFMs multiplied with the shells** — `net10.0-android` and `net10.0-ios` (D16 → D32 → D37).
+    Portable code is still plain `net10.0`, which is the part of this entry that was actually load-bearing.
+  - **`Shenora.Windows` deliberately MULTI-TARGETS** `net10.0-windows` + `net10.0-windows10.0.17763.0`
+    (D46), so a WinRT-only capability does not force every Windows consumer to raise their minimum OS.
+  **What survives is the VERSION rule, not a TFM list:** one .NET version across the kit, and a TFM added
+  only when a real capability needs it. D46 is the bar for adding one.
 
 - **D4 — Lockstep versioning from one `<VersionPrefix>` in `src/Directory.Build.props`** (the
   Lyntai model), including the npm package: devtools `pack`/`doctor --fix` write the npm
@@ -39,11 +68,16 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   npm trusted-publisher policy is configured).** The version bump is committed only after both
   publishes succeed — a failed release leaves no phantom bump.
 
-- **D7 — One test project (`tests/Shenora.Tests`) referencing every src project** (in practice the
-  four leaf projects; `Shenora.Core` arrives transitively), not
+- **D7 — One test project (`tests/Shenora.Tests`) referencing every src project it CAN** (in practice
+  the leaf projects — five as of 2026-08-05: `Ipc`, `Windows`, `Media`, `IO`, `IO.Compression`;
+  `Shenora.Core` arrives transitively), not
   per-package test projects (the brief sketched four). Lyntai proves the single-project layout
   scales to 11 packages; folders mirror src. API-surface baseline tests gate SemVer from the
   first release.
+  **⚠ "Every src project" has an exception, and it is why D34 exists:** a `net10.0-windows` test project
+  cannot reference `Shenora.Android` or `Shenora.iOS`, so those two are gated from their IL METADATA
+  instead (`MetadataSurfaceTests` + `Api/MetadataBaselines/`). A packable project with neither kind of
+  baseline fails a test — count coverage against `src/`, never against this sentence.
 
 - **D8 — Extraction-first.** Prefer lifting proven sibling code — including its post-mortem
   comments, which are the product — over new abstractions (brief instruction). The primary source
@@ -58,6 +92,19 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   `docs/archive/fix-log.md`, plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`,
   design-contract doc). Done work is archived narratively in `docs/ROADMAP.md` `## Done` rather than
   in a separate task-archive file.
+  **⚠ Amended 2026-08-05 — that last sentence stopped being true and `docs/archive/tasks.md` is now the
+  LARGEST doc in the repo (290 KB).** The two archives are not duplicates and the split is worth keeping,
+  so this records which is which rather than pretending one of them does not exist:
+  - **`docs/ROADMAP.md` `## Done` — the NARRATIVE**, newest first: what changed, why, and how it was
+    verified. Milestone-sized. This is what you read to learn what the kit is.
+  - **`docs/archive/tasks.md` — the closed BACKLOG**, entry by entry, with file:line anchors and the
+    judgement calls. This is what you read before re-litigating a finished decision, and several entries
+    carry warnings written deliberately for a future session.
+  - **`TASKS.md` holds ONLY open work** (owner, 2026-08-05: *"this should just be a backlog with active
+    task, completed should move to other docs"*). It had grown to 762 lines with eleven closed items
+    annotated in place, and **two of those still showed an unchecked `[ ]` a day after they shipped** —
+    the checkbox is the only signal that file gives, and it was wrong twice. **Prune by MOVING an entry
+    out, never by ticking it in place**; the file's length should be the size of the remaining work.
 
 - **D10 — Two consumption profiles; server-backed hosting helpers are deferred.** The package
   split (Ipc separate from the shell packages) exists so a Sonora-style app (in-process HTTP
@@ -110,6 +157,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   siblings (one's render/login/co-browse stack; another's external-login window). Ships as its
   own later package (working name `Shenora.WebView2.Sessions`, which was merged away by D37) so the
   core hosting package stays lean — phase P5 in `docs/ROADMAP.md`.
+  **⚠ Scope narrowed by D39 (2026-08-03): this stack is DESKTOP-ONLY and stays that way.** Both mobile
+  shells host a webview, so "port the sessions to mobile" looks obvious and is not — read D39 before
+  proposing it. Built and shipped inside `Shenora.Windows` (`Sessions/`) since D37.
 
 - **D15 — Growth is harvest-driven** (user direction, 2026-07-30). Shenora evolves by promotion:
   when something proves nice while an application is being developed, it gets generalized (per
@@ -127,6 +177,15 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   packaging (`@shenora/capacitor` transport adapter vs an adapter inside `@shenora/react`) is
   decided when the first mobile adoption happens, not before (YAGNI on the package, not on the
   seam).
+  **✅ RESOLVED 2026-08-02/03 — it happened, and both open questions closed the other way than sketched.**
+  The shell is **MAUI `HybridWebView`**, not Capacitor (D32; `src/Shenora.Mobile/` compiled into
+  `Shenora.Android` + `Shenora.iOS`, D37). The transport is **`createHybridWebViewTransport` INSIDE
+  `@shenora/react`**, not a separate `@shenora/capacitor` package — deferring that packaging call was
+  the right move, and the answer turned out to be "no package at all".
+  **The load-bearing prediction held exactly:** the envelope was transport-neutral, so the mobile shells
+  needed no contract change and app logic written against `@shenora/react` runs unchanged on all three.
+  Proven on a device and a simulator. What mobile actually cost landed elsewhere — see
+  `.claude/knowledge/mobile-shells.md`, D44 (opposite range bodies per platform) and D45 (interception).
 
 - **D17 — `Shenora.Core` depends on the Microsoft DI IMPLEMENTATION package, not only the
   abstractions.** The builder (`ShenoraApplication.CreateBuilder` → `Build()`) constructs the
@@ -196,6 +255,13 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   off Windows** — portable-in-signature is not the bar, which is why the whole window-state stack
   stays in the Windows shell (window geometry is a desktop concept). Per D16 this pass ships NO
   mobile host or transport adapter — the seam, not the package.
+  **⚠ Corollary added by D48 (2026-08-05), which decides the cases this entry does not:** a contract a
+  SHELL implements must live in Core even when its subject matter belongs to an optional feature
+  package, because **a shell must never need an optional package in order to implement a Core
+  contract**. `IFileLockInspector` travelled out with the file-operation engine and had to be split
+  back, or `Shenora.Windows` would have gained a `Shenora.IO` reference for one interface. The mirror
+  case is also recorded there: `IPathLocker` stays WITH its implementation, because advisory lock files
+  are portable and no shell implements it.
 
 - **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns
   the product.** (User direction, 2026-07-30: *"co-browse itself is a whole feature — you just need
@@ -523,8 +589,13 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     running desktop sample. That session also exposed the stale-bundle defect in `docs/archive/fix-log.md` —
     worth remembering that the hands-on test found something eight green `verify` runs did not.
 
-- **D26 — the kit stays Windows-desktop-scoped. Linux is served by the SERVER-BACKED profile, not by
+- **D26 — the kit's DESKTOP scope is Windows only. Linux is served by the SERVER-BACKED profile, not by
   a native Linux shell.** (Owner, 2026-08-02, asked whether MAUI could cover Linux + Windows.)
+  **⚠ Read the headline as DESKTOP scope, not kit scope — it was written "the kit stays
+  Windows-desktop-scoped" and that stopped being true the same week.** D32 (2026-08-02) added MAUI
+  shells for **Android and iOS**, and they ship. That is not a reversal of this entry: everything below
+  argues against MAUI *for desktop* and against a native *Linux* shell, and both still stand. The two
+  decisions are about different platforms and neither weakens the other.
   - **A candidate shell must expose the NATIVE WINDOW, not merely host a WebView.** This is the
     selection criterion, and it is the one that actually decides the question — earned by the owner
     having already tried and abandoned **Photino** for exactly this: *it cannot do drop zones at all*,
@@ -621,6 +692,11 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     change is planned before it is applied — **do not "simplify" that split away**. Recovery rolls
     back an update interrupted while APPLYING and FINISHES one interrupted while COMMITTING; rolling
     the latter back would undo a success.
+  - **⚠ It is a separate PACKAGE too, since D48 (2026-08-05): `Shenora.IO`.** This entry made it a
+    separate component; the measurement that later made it a separate package is the same shape of
+    argument — it was 34% of `Shenora.Core`, which everything references, for a job most apps never do.
+    Everything above still describes the code exactly; only the namespace moved (`Shenora.Core` →
+    `Shenora.IO`), and `PathClaims` stayed behind because it is scheduling vocabulary.
 
 - **D31 — cross-process file access is TWO problems, and one mechanism cannot serve both.** (Owner,
   2026-08-02, from a filesystem-heavy adopter that does not own its working folder.)
@@ -883,6 +959,15 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   Media.Windows Media.Android Media.iOS packages, so what should be stay in core is generic connection
   functions and the rest should be stay at Media"*.) The set becomes **`Core` · `Ipc` · `Windows` ·
   `Android` · `iOS` · `Media` · `Media.Windows` · `Media.Android` · `Media.iOS`** — nine.
+
+  > **⚠ THAT NINE-PACKAGE SET NEVER EXISTED. `Shenora.Media.Windows`, `.Android` and `.iOS` were
+  > deleted by D45 (2026-08-04) before any of them shipped** — serving bytes to a page turned out to be
+  > resource INTERCEPTION, which configures a webview and is therefore a shell capability, so the
+  > per-platform media packages had nothing left to hold. `Shenora.Media` alone shipped, in v0.9.0.
+  > A 2026-08-05 review found this entry still declaring the nine, with no pointer to what replaced it;
+  > flagged rather than rewritten, per this file's amend-in-place rule. **`Shenora.Media` is the only
+  > `Media*` package there has ever been** — see the header table for the current set, D45 for the
+  > re-layer, and D42 for the correction to this entry's engine reasoning.
   - **The argument is DEPENDENCIES, not size — and it passes D37's own test where the Windows split
     failed it.** D37 asks whether a boundary corresponds to something a CONSUMER experiences. It rejected
     the WinForms/WebView2 split because the measured cost was 52.6 MB of DEV-TIME restore for a runtime
@@ -933,6 +1018,13 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   media library instead from platform library so we keep the interface unified"*, plus *"we should not
   update platform dependency package that often (because its big binary files) so we might need a
   different release pipeline… only the major version catches the main library if needed"*.)
+
+  > **⚠ THE "PACKAGE FAMILY" THIS ENTRY GOVERNS WAS NEVER BUILT.** `Shenora.Media.{Windows,Android,iOS}`
+  > were deleted by D45 (2026-08-04) before shipping, so there is one `Shenora.Media` and no range-versioned
+  > family under it. Everything below about range-vs-lockstep is **unexercised design**, kept because the
+  > question returns the moment any package carries a large binary. **The half that DID survive and is
+  > live today is the consumption rule:** app logic names `Shenora.Media` and never a platform package —
+  > which is now trivially true, and is still the rule if a `Media.{Platform}` ever appears.
   - **App logic names `Shenora.Media` and NEVER `Shenora.Media.{Windows,Android,iOS}`.** The platform
     packages exist to be REGISTERED at composition, in the app's platform head, and to be invisible
     everywhere else. This is D19/D20's law restated for a feature family rather than a new rule, and it is
@@ -1107,9 +1199,11 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     not a graceful degradation: a sliced body on Android has the offset applied twice — `bytes=4-11`
     returned four bytes of file bytes 8-11 — and a player asking for a file's tail receives an empty body
     and **retries the identical range forever**.
-  - **This is the measured justification for D40's `Shenora.Media.{Platform}` split.** D40 argued the
-    split from dependencies and shipped bytes; this is a case where the platforms need genuinely opposite
-    behaviour behind one portable contract, which is what such a package is FOR. Everything else is
+  - **This was written as the measured justification for D40's `Shenora.Media.{Platform}` split, and one
+    day later it justified something else instead.** The observation stands — the platforms need genuinely
+    opposite behaviour behind one portable contract — but D45 (2026-08-04) put that divergence in the SHELL
+    packages, where the platform code already lived, and deleted the media platform packages entirely.
+    Read this bullet as evidence about the DIVERGENCE, not about where it belongs. Everything else is
     identical across the two — the URL, the call, the 206, `Content-Range`, `Accept-Ranges`. One row of the
     table differs, and an app must never have to know which side it is on.
   - **⚠ The trap this leaves for whoever implements it: the wrong choice looks CORRECT.** A faststart file
@@ -1152,7 +1246,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     `Files` **and was renamed `DerivedCacheKey`**, because the new name says what is cached rather than which
     feature happened to need it first. A shared helper living in `.Media` would make `.Image` depend on media
     to cache a thumbnail.
-  - **`Shenora.Media.Android` and `Shenora.Media.iOS` are DELETED** (8 package ids → 6). With interception in
+  - **`Shenora.Media.Android` and `Shenora.Media.iOS` are DELETED** (8 package ids → 6 **as of 2026-08-04**;
+    D48 later took it back to 8 by a different route — see the header table). With interception in
     the shells and generic serving in Core, they held only the platform's range-delivery constant — which is
     a property of the INTERCEPTION, so it became `Core.WebViewRangeDelivery` and the packages had nothing
     left. **Free: all three `shenora.media*` ids were unpublished (verified 404) when this was decided.**
