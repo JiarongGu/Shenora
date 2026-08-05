@@ -94,12 +94,28 @@ is the table at the top of `docs/DECISIONS.md`; the closed backlog is `docs/arch
     re-serve the main document once a `WebResourceRequested` subscriber exists" is not what happens:
     `MauiHybridWebViewClient.ShouldInterceptRequest` raises the event FIRST and, when the app does not claim
     the request, falls through to its own asset serving. Subscribing costs the main document nothing.
+  - 🔴 **THE NON-REPRODUCTION IS WEAKER THAN IT READS, measured 2026-08-05 — and this is now the leading
+    hypothesis for the whole disagreement.** The emulator's WebView is **`com.android.webview`
+    110.0.5481.154.1** — the AOSP build, not Google's, roughly **20 major Chromium versions behind** what a
+    real user runs. The reported error is `net::ERR_INVALID_RESPONSE`, and what counts as an *invalid
+    response* is precisely what Chromium tightened across those releases; `shouldInterceptRequest`'s
+    fall-through contract, by contrast, has been stable for years. So "passes here" means **"does not
+    reproduce on Chromium 110"**, which is not the same claim.
+    - **MuMu cannot be upgraded to test this:** the image ships no `config-webview.xml` and
+      `com.android.webview` is its ONLY allowed provider — there is no Chrome and no Google WebView to
+      switch to. A current WebView needs a different emulator image (an SDK AVD) or a real device.
+    - Applies to every Chromium-decided Android claim from this box, not just this one — recorded in
+      `.claude/knowledge/mobile-shells.md` with the split between what MuMu IS and is not evidence for.
   - **What to ask the adopter before doing anything else**, since a fix cannot be designed against a defect
-    that will not reproduce: their MAUI version (this ran 10.0.20); whether their middleware ever returns
-    NON-null for `/` (the kit's file middleware answers a 404 for a path it resolves but cannot find, which
-    would produce exactly this symptom and is the likeliest candidate); and whether it ever THROWS on the
-    main-frame request — `MobileWebViewInterceptor` converts a throwing middleware into a 404, deliberately,
-    which for the DOCUMENT is indistinguishable from the report.
+    that will not reproduce:
+    1. **Their WebView version** (`adb shell dumpsys webviewupdate`) — cheapest question, newly added, and
+       the one that tests the hypothesis above. If they are on 13x and we are on 110, that gap is the story.
+    2. Their MAUI version (this ran 10.0.20).
+    3. Whether their middleware ever returns NON-null for `/` — the kit's file middleware answers a 404 for
+       a path it resolves but cannot find, which would produce exactly this symptom and is the likeliest
+       candidate.
+    4. Whether it ever THROWS on the main-frame request — `MobileWebViewInterceptor` converts a throwing
+       middleware into a 404, deliberately, which for the DOCUMENT is indistinguishable from the report.
   - Do not "fix" this speculatively. A change to main-frame fall-through with no reproduction is a change
     that cannot be verified in either direction.
 

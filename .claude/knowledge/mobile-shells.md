@@ -21,6 +21,23 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   what it is (`dev.mjs mac` reads the Mac's `uname -m` over ssh); never assume the dev machine matches.
 - **Prove it on the device, and say which half you proved.** A shell that compiles is not a shell that
   runs; `dev.mjs android` and `dev.mjs mac` exist so a claim about either can carry a screenshot.
+- **⚠ MuMu's WebView is CHROMIUM 110 (AOSP), so an Android web claim proven only there is weaker than
+  it looks — and this applies to EVERY such claim, not one.** Measured 2026-08-05:
+  `com.android.webview 110.0.5481.154.1` on Android 12 / API 32 / x86_64. That is the AOSP WebView, not
+  Google's, and it is roughly **20 major Chromium versions behind** what any real user runs. It also
+  **cannot be upgraded**: the image ships no `config-webview.xml` and `com.android.webview` is the only
+  allowed provider, so there is no Google WebView or Chrome to switch to.
+  - **What it is still fine for:** anything above the web-platform layer — the IPC envelope, transports,
+    lifecycle, file dialogs, the MediaSession/`IPlaybackSession` bridge, deployment and logging. Those
+    are Android-framework behaviours, and MuMu is a real Android 12.
+  - **What it is NOT sufficient for:** anything decided by Chromium — response validation
+    (`net::ERR_INVALID_RESPONSE`), ORB/CORS, range handling, codec support, `fetch` semantics. A
+    negative result there means "does not reproduce on Chromium 110", which is not "does not reproduce".
+    Say which one you mean. The adopter's Android navigation report is exactly this shape: it
+    reproduces for them, not for us, and we are 2½ years apart on the component that emits the error.
+  - **So ask an adopter for their WebView version** (`adb shell dumpsys webviewupdate`) before treating
+    a non-reproduction as evidence. It is the cheapest question on any Android web report and it was
+    missing from ours.
 - **A webview on both shells does NOT mean the auxiliary-SESSION stack ports (D39).** `StreamingSession`
   and friends rest on CDP (screencast, device metrics, OS-level input replay), which neither shell
   exposes in-process — iOS has no CDP at all. The trap is that a port IS buildable behind the same
