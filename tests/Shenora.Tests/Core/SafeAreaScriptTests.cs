@@ -162,6 +162,17 @@ public class SafeAreaScriptTests
     }
 
     [Fact]
+    public void The_script_reports_a_DELIVERY_marker()
+    {
+        // Load-bearing, not decoration. Evaluating script against a webview with no document does not
+        // throw — it silently does nothing — so "the call succeeded" and "the page got it" are the same
+        // observation without this. That is exactly how the first version shipped publishing to nobody.
+        var js = SafeAreaScript.Build(new SafeAreaOptions(), Real);
+
+        Assert.Contains($"return '{SafeAreaScript.DeliveredMarker}';", js);
+    }
+
+    [Fact]
     public void The_script_is_a_self_contained_expression()
     {
         // It is injected at document start, possibly before <body>, and possibly more than once. A

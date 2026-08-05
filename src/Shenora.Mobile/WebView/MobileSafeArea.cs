@@ -46,28 +46,81 @@ public sealed class MobileSafeArea : IDisposable
     public void Report(SafeAreaInsets insets)
     {
         if (_disposed) return;
-        if (_last is { } previous && previous == insets) return;
+
+        // 🔴 NO "skip if unchanged" here, and that is the fix for the second delivery bug rather than an
+        // oversight. CSS custom properties live on the DOCUMENT, so every navigation throws them away —
+        // and the insets do not change across a navigation, so a value-equality guard meant the new
+        // document never received them. Measured: the shell reported "delivered", and the page then
+        // loaded and reported `color=transparent`, its own fallback.
+        //
+        // Publishing on every layout is cheap (one idempotent script) and the generation counter in
+        // Publish collapses overlapping attempts, so a rotation storm still only lands once.
         _last = insets;
         Publish(insets);
     }
 
-    private void Publish(SafeAreaInsets? insets)
+    /// <summary>
+    /// Evaluate the script, and KEEP TRYING until the page confirms it ran.
+    ///
+    /// <para>
+    /// 🔴 This retry is the whole delivery mechanism, and it exists because of a measured failure:
+    /// publishing once from the constructor put the script into a webview that had no document yet.
+    /// <c>EvaluateJavaScriptAsync</c> did not throw — it silently did nothing — so the capability
+    /// reported success and the page never received a thing. The proof was <c>color=transparent</c> in
+    /// the page's own diagnostic: the page's fallback, not the shell's colour.
+    /// </para>
+    /// <para>
+    /// ⚠ The IDEAL mechanism is document-start injection (AndroidX's <c>DOCUMENT_START_SCRIPT</c>, iOS's
+    /// <c>WKUserScript</c> at <c>atDocumentStart</c>), which would land before the first paint instead of
+    /// shortly after it. It is not used because it costs a <c>Xamarin.AndroidX.WebKit</c>
+    /// <c>PackageReference</c> on EVERY Android consumer for one call — the same "everything references
+    /// this, so nothing may tax it" reasoning as D40/D48. Revisit if the shell ever needs that package
+    /// for a second reason. The page's own CSS fallback covers the first frame in the meantime.
+    /// </para>
+    /// </summary>
+    private async void Publish(SafeAreaInsets? insets)
     {
         var script = SafeAreaScript.Build(_options, insets);
-        try
+        var generation = ++_generation;
+
+        // ~2s of attempts on a rising interval. A page that never arrives stops costing anything, and a
+        // newer Publish supersedes this one immediately via the generation check.
+        foreach (var delay in Delays)
         {
-            // Fire-and-forget with a GUARDED continuation, never bare — the same rule the rest of the
-            // mobile shell follows. A page that has not finished loading rejects the evaluation, and that
-            // is not worth faulting anything over: the next report will land.
-            _ = _webView.EvaluateJavaScriptAsync(script)
-                .ContinueWith(t => Log($"safe-area script failed: {t.Exception?.GetType().Name}"),
-                              TaskContinuationOptions.OnlyOnFaulted);
+            if (_disposed || generation != _generation) return;
+            try
+            {
+                var result = await _webView.EvaluateJavaScriptAsync(script).ConfigureAwait(true);
+                if (result is not null && result.Contains(SafeAreaScript.DeliveredMarker, StringComparison.Ordinal))
+                {
+                    // Logged ONCE, not per delivery: this fires on every layout pass by design, and a
+                    // line per pass would bury the device log the rest of the shell writes to.
+                    if (!_delivered)
+                    {
+                        _delivered = true;
+                        Log($"safe-area delivered to the page ({(insets is null ? "default" : "measured")})");
+                    }
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Evaluating before there is a document throws on some hosts and returns null on others.
+                // Both mean the same thing here — not yet — so neither is worth faulting over.
+                Log($"safe-area not delivered yet ({ex.GetType().Name}); retrying");
+            }
+
+            if (delay > 0) await Task.Delay(delay).ConfigureAwait(true);
         }
-        catch (Exception ex)
-        {
-            Log($"safe-area script could not be evaluated ({ex.GetType().Name})");
-        }
+
+        Log("safe-area was never delivered — the page kept no document. "
+          + "The page's own CSS fallback is what it is laying out with.");
     }
+
+    // 0 first so a webview that IS ready pays nothing, then a short ramp.
+    private static readonly int[] Delays = [0, 50, 100, 200, 300, 500, 800];
+    private int _generation;
+    private bool _delivered;
 
     private void OnHandlerChanged(object? sender, EventArgs e)
     {

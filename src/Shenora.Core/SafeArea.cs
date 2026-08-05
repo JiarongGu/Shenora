@@ -122,6 +122,18 @@ public sealed class SafeAreaOptions
 public static class SafeAreaScript
 {
     /// <summary>
+    /// What <see cref="Build"/>'s script evaluates to when it actually ran in a document.
+    ///
+    /// <para>
+    /// A shell should treat any other result as NOT DELIVERED and try again. Evaluating script against a
+    /// webview that has no document yet does not throw — it silently does nothing — so without a marker
+    /// "the call succeeded" and "the page received it" are the same observation, and they are not the
+    /// same thing.
+    /// </para>
+    /// </summary>
+    public const string DeliveredMarker = "shenora-safe-area";
+
+    /// <summary>
     /// The document-start script. Idempotent, so a shell may inject it once and then call it again with
     /// fresh insets on every change; safe to run before <c>&lt;body&gt;</c> exists.
     /// </summary>
@@ -179,7 +191,11 @@ public static class SafeAreaScript
                 script.Append("window.__shenoraDismissSafeSplash();");
         }
 
-        script.Append("})();");
+        // A truthy marker, so a caller can tell DELIVERED from EVALUATED-AGAINST-NOTHING. Without it,
+        // evaluating against a webview that has no document yet is indistinguishable from success: the
+        // call does not throw, it simply does nothing. That is exactly how the first version of this
+        // shipped looking correct while publishing to no one.
+        script.Append("return '").Append(DeliveredMarker).Append("';})();");
         return script.ToString();
     }
 
