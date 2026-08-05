@@ -89,6 +89,27 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Added
 
+- **`interceptor.UseMediaConversion(scheduler, events, options)` (`Shenora.Media`) — serving media the
+  platform cannot decode: convert once, cache the result, serve it with ranges.** It BUILDS nothing. Every
+  hard part already shipped, and this is the composition: `IMissionScheduler` runs the long job without a
+  thread of its own, `PathClaims.Exclusive` means one source converts once however many requests arrive,
+  `MissionDefinition.Key` deduplicates the submissions, `Files.BeginReplace` makes the output atomic, and
+  `DerivedCacheKey` keys on identity+length+mtime so replacing a source invalidates its conversion.
+  - **The app supplies the engine** — `MediaConversionOptions.Convert` is a delegate. The kit ships no
+    encoder and never vendors one (D42): the right one differs per app, and a bundled one is tens of
+    megabytes every consumer pays for.
+  - ⚠ **No probe and no codec policy in the options, deliberately.** Whether a source needs converting is
+    the APP's decision, made before it builds the URL with the `MediaPlaybackPlanner` the kit already ships;
+    a source that plays directly is pointed at `UseFiles` instead. Putting that decision here would mean
+    launching a probe inside a webview callback, per request — the mobile interceptor resolves
+    SYNCHRONOUSLY, so everything slow has to live in the mission.
+  - **A cache miss answers `503` + `Retry-After` and starts the conversion.** The page is event-driven:
+    `MediaConversionEvents.SourceProgress`/`Ready`/`Failed` ride the existing notification pipe, and the
+    page sets its element's `src` on `READY`. Holding a webview callback open for a transcode is the
+    alternative, and it is not one.
+  - Failures cross as a TYPE name only, never exception text — the same boundary the IPC error contract
+    enforces, because page script can read what it is told.
+
 - **Native file dialogs are reachable FROM THE PAGE, on both sides of the wire.** The kit already had
   `ShellCapability.FilePicker`/`FolderPicker`/`SavePicker` in its vocabulary — three capabilities a shell
   advertises in the ready handshake — and shipped no way to use them, so every app wrote the same routes and

@@ -17,6 +17,49 @@
 
 ---
 
+### DM3 — the media conversion, COMPOSED not built (2026-08-05) — DONE
+
+`interceptor.UseMediaConversion(scheduler, events, options)` in `Shenora.Media`. It builds nothing:
+`IMissionScheduler` runs the long job, `PathClaims.Exclusive` converts one source once, `MissionDefinition.Key`
+deduplicates the submissions, `Files.BeginReplace` makes the output atomic, `DerivedCacheKey` invalidates on a
+replaced source. §0f said this was a composition of primitives the kit already had; building it confirmed that.
+
+**Reading the SEAM rather than the design doc shrank the surface twice, and both cuts are load-bearing:**
+1. 🔴 **The mobile interceptor resolves SYNCHRONOUSLY** (`MobileWebViewInterceptor.Run` does
+   `.GetAwaiter().GetResult()` — both platforms need the status line when the event returns). So the
+   middleware can neither await a conversion NOR probe on the request path: a process launch per request is
+   a webview callback blocked on an external tool. Everything slow moved into the mission, leaving the
+   request path as resolve → contain → cache key → hit? serve : start-and-answer-503.
+2. **The middleware does not DECIDE whether conversion is needed — the app does**, before it builds the URL,
+   with the planner the kit already ships. That deleted `Probe` and `Policy` from the options entirely and
+   kept the design's own ownership line: the app owns the engine, the codec policy and the decision. A
+   source that plays directly is pointed at `UseFiles`.
+
+**A cache miss answers `503` + `Retry-After`.** The page is event-driven by design
+(`SOURCE_PROGRESS`/`READY`/`FAILED`), so it sets `src` on READY. The alternative is holding a webview
+callback open for a transcode.
+
+**The tests assert the COMPOSITION's guarantees, not that four calls happen** — a version calling all four
+primitives in the wrong order would pass any "did it run" check while converting twice or serving a
+half-file. Both sabotage-verified:
+- Writing straight to the target instead of `BeginReplace`'s temp fails three tests, including
+  `A_FAILED_conversion_leaves_NO_cache_entry_to_serve` — a converter that writes half a file and dies must
+  not leave something a later request treats as a HIT, which is a permanently broken video with nothing to
+  notice it.
+- Keying on the path alone fails `Replacing_the_SOURCE_invalidates_its_conversion`.
+
+⚠ **A test was wrong before the code was, again** — the second time this session. Two tests signalled
+completion from INSIDE the convert delegate, which runs BEFORE the atomic commit, so they raced the thing
+under test and failed with a `503` that was CORRECT. Both now wait on the `READY` event, which is also the
+contract a real page uses — so the fix made them test more, not less. **Check that a failing assertion is
+wrong about the code before changing the code.**
+
+⚠ **Two small implementation choices worth keeping:** `System.Progress<T>` is NOT used (it captures the
+SynchronizationContext at construction, and a mission body can start on one — every tick of a chatty encoder
+would marshal to the UI thread); and the fire-and-forget submit is guarded, because it runs on a platform
+event thread with nothing above it. `SubmitAsync` reports a failed BODY through `MissionResult` rather than
+by throwing, so what the guard catches is a submit-time fault.
+
 ### File dialogs, end to end on both sides of the wire (2026-08-05) — DONE, six phases
 
 Owner direction: *"we can also have react part to support too, and it can detect the system type just like

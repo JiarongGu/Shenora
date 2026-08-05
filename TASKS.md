@@ -80,7 +80,14 @@ lives in `docs/archive/tasks.md`.
 
 Everything `DM3` needs already exists; the item is a composition, not a build.
 
-  **DESIGN SETTLED 2026-08-05 (not yet built) — read this before writing any of it.** Two constraints
+_**DM3 IS DONE (2026-08-05)** — `UseMediaConversion` in `Shenora.Media`, 6 tests, both atomicity and the
+content-key sabotage-verified, `Conversion` argued into the surface lexicon. Record in
+`docs/archive/tasks.md`; surface in `CHANGELOG.md` `## Unreleased`. The design below is what it was built
+to, kept because it explains why the surface is smaller than the doc's pipeline suggests._
+
+<details><summary>the settled design, kept for the reasoning</summary>
+
+  **DESIGN SETTLED 2026-08-05 — read this before changing any of it.** Two constraints
   found by checking the seam rather than the doc, and each one SHRANK the surface:
   - 🔴 **The mobile interceptor resolves SYNCHRONOUSLY** (`MobileWebViewInterceptor.Run` does
     `.GetAwaiter().GetResult()` — both platforms need the status line and headers when the event returns).
@@ -101,7 +108,7 @@ Everything `DM3` needs already exists; the item is a composition, not a build.
     the kit ships no engine and never vendors one (D42).
   - ⚠ `Conversion` is a NEW word for the surface lexicon and will fail the gate until argued there.
 
-- [ ] **DM3 — the conversion, COMPOSED not built.** `IMissionScheduler` (the long run) +
+- [x] **DM3 — the conversion, COMPOSED not built.** `IMissionScheduler` (the long run) +
   `PathClaims.Exclusive` (convert once, never twice) + `Files.BeginReplace` (atomic output) +
   `Core.DerivedCacheKey` (identity + length + mtime — the piece DM3 used to say was missing, and it now
   ships). `Files.BeginReplace`'s own XML already names this composition. Progress rides the existing
@@ -112,6 +119,8 @@ Everything `DM3` needs already exists; the item is a composition, not a build.
     SERVER-side today and would rather the phone decided for itself, because Android codec support is
     vendor-declared per DEVICE and the server is therefore guessing on the client's behalf. The planner
     already moves that decision to the right machine; the conversion is what it cannot yet act on.
+
+</details>
 - [ ] **DM4 — the REMOTE authorization seam only; the local half is DONE.** Path containment shipped as
   `Core.WebViewFiles.ResolveContained` (generic, fail-closed, tested) because the page supplies the path.
   What is left is the SSRF surface: a fail-CLOSED guard for *may the host FETCH this url on the page's

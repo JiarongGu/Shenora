@@ -313,6 +313,15 @@ Result
 Stream
 Info
 Kind
+# `Conversion` (2026-08-05, DM3) — turning one encoding into another. A mechanism noun, and admitted for the
+# same reason `MediaPlaybackPlanner` was: the kit decides what must HAPPEN and never how to encode anything.
+# `MediaConversionOptions.Convert` is the APP's delegate (D42, the engine is never vendored), so what these
+# four types actually name is the COMPOSITION around it — a mission for the long run, a path claim so one
+# source converts once, an atomic replace, and a content key so a replaced source invalidates its output.
+# ⚠ Watch it the way `Media` and `Download` are watched. A `Transcoder`, `Encoder`, or a filter `Ladder`
+# would be the kit growing an engine, which the design puts explicitly out of scope (§2) — argue those
+# afresh rather than waving them past because this line exists.
+Conversion
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher
