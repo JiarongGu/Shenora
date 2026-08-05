@@ -143,6 +143,33 @@ public sealed class UpdateStageStatus
 /// applier never has to re-check. A crash mid-download leaves files but no marker, and the next run
 /// restages — which is why the marker is the only thing an applier may trust.
 /// </para>
+/// <para><b>THE ON-DISK LAYOUT IS A SUPPORTED CONTRACT, not an implementation detail.</b></para>
+/// <code>
+/// {UpdateStageOptions.Root}/
+///   ready.json          ← the MARKER. Written LAST. Its existence means "complete and verified".
+///   staged/
+///     manifest.json     ← the full release manifest, for the applier's REMOVALS
+///     &lt;every changed file, at its manifest-relative path&gt;
+/// </code>
+/// <para>
+/// <c>ready.json</c> is <see cref="UpdateStageStatus"/> as camelCase JSON —
+/// <c>{"pending":true,"version":"1.4.0","stagedAt":"2026-08-06T09:12:33.4+00:00"}</c>. An applier that
+/// only needs "is there an update" may test for the file's existence and nothing more.
+/// </para>
+/// <para>
+/// It is stated because <b>staging and applying are SEPARATELY adoptable, and for some apps only one of
+/// them ever will be</b> (first adopter, 2026-08-06). An app whose applier is a native launcher living
+/// beside the install — never replaced by its own updates, so every copy in the field keeps the applier it
+/// shipped with — can adopt this half only down to the marker. That app answered "can our frozen applier
+/// consume a kit-produced stage?" by reading these three names out of the source, which is a question that
+/// should be answerable from the documentation. It can now.
+/// </para>
+/// <para>
+/// ⚠ <b>What that means for changing any of it.</b> These three names and the write ORDER are now a
+/// compatibility surface with appliers this repo did not write and cannot recompile. Renaming
+/// <c>ready.json</c>, moving <c>staged/</c>, or publishing the marker before verification completes are
+/// breaking changes to an audience the API baseline cannot see — treat them as such.
+/// </para>
 /// </summary>
 public sealed class UpdateStage
 {

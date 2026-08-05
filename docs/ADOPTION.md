@@ -1106,6 +1106,36 @@ file" becomes "held by 3DMigoto (12345)", which an app can retry against or show
 for the same reason as the scheduler. Then fail a change mid-update under `AllOrNothing` and confirm
 the earlier ones were undone in reverse, and that a staged delete came back.
 
+### Adopting the STAGE without adopting the applier — the on-disk contract
+
+**Staging and applying are separately adoptable, and for some apps only one of them ever will be.** If your
+updates are applied by something the kit did not write — typically a native launcher that lives beside the
+install and is never replaced by its own updates, so every copy in the field keeps the applier it shipped
+with — you can still produce stages with `UpdateStage` and let your existing applier consume them. **The
+layout is a supported contract, not an implementation detail:**
+
+```
+{UpdateStageOptions.Root}/
+  ready.json          ← the MARKER. Written LAST, after every file has matched its hash.
+  staged/
+    manifest.json     ← the full release manifest, which is where an applier reads REMOVALS
+    <every changed file, at its manifest-relative path>
+```
+
+`ready.json` is camelCase JSON: `{"pending":true,"version":"1.4.0","stagedAt":"2026-08-06T09:12:33.4+00:00"}`.
+An applier that only asks "is an update waiting" may test for the file and read nothing.
+
+**The marker is the only thing an applier may trust**, and that is the whole design: it appears only after
+every staged file has been verified, so a crash mid-download leaves files and no marker, and the next run
+restages. An applier that scans `staged/` for content instead will eventually act on a half-downloaded one.
+
+> ⚠ **Take this half deliberately, not by default.** The strong half of the story is the journaled,
+> recoverable APPLY (`FileUpdateQueue`, `RecoverAsync`, `AllOrNothing`) — and that is exactly the half a
+> frozen applier already owns and cannot hand over. If your applier is already installed on your whole user
+> base, adopting the stage is cheap and adopting the apply is a migration question the kit does not answer
+> for you yet (`Shenora.Launcher` assumes it is the applier from day one, which is true only for a product
+> that has not shipped). Naming that up front is more useful than a recipe that quietly assumes both.
+
 ---
 
 ## What stays yours, permanently
