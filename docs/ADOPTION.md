@@ -680,6 +680,35 @@ Two things that only showed up here, and both are about your PAGE rather than th
   a whole session put its heading under the status bar and the Dynamic Island on the first iPhone
   run. Use `env(safe-area-inset-*)` with `viewport-fit=cover`; both collapse to nothing where there
   are no insets.
+  - 🔴 **…and on Android that is NOT enough, so the kit ships the missing half.** Measured on Android 16:
+    `env()` reports the display CUTOUT only — **never the system bars** (`bottom` came back 0 on a device
+    whose navigation bar is genuinely 24 CSS px) — and reports **0 for the whole first page load**. No
+    page-side code can work around either; a re-read on `resize`/`visualViewport` was written and does
+    nothing, because nothing changes within that document to observe.
+  - **`MobileSafeArea` publishes the platform's real insets as CSS variables**, at first paint, from the
+    host. Opt-in, and every part of it is individually declinable:
+
+    ```csharp
+    _safeArea = new MobileSafeArea(webView, new SafeAreaOptions
+    {
+        Default = new SafeAreaInsets(24, 0, 24, 0), // published BEFORE the platform reports, so the
+                                                    // first screen is right instead of laid out at 0
+        Color   = "#14161a",                        // painted behind the inset strips
+        Settle  = TimeSpan.FromMilliseconds(180),   // the correction eases instead of snapping
+        Splash  = true,                             // covers the page until the real numbers land
+    }, log);
+    ```
+
+    Your page then reads `var(--sa-top)` / `--sa-right` / `--sa-bottom` / `--sa-left` (rename the prefix
+    with `VariablePrefix`), keeping `env()` as the fallback for anything that opens it outside the shell:
+
+    ```css
+    body { padding: max(12px, var(--sa-top, env(safe-area-inset-top))) /* …and the other three */ }
+    ```
+  - ⚠ **Two page-side rules the variables do not fix, both measured:** inset padding on a **scrolling**
+    `<body>` scrolls away, so make body a non-scrolling flex column and scroll a child; and use
+    `max(12px, inset)` rather than `calc(12px + inset)`, which stacks two paddings and reserved 61 CSS px
+    where the platform asked for 49. `samples/Shenora.Sample.Maui/.../index.html` does both.
 - **Strings leak the shell you developed on.** A shared bundle means "hello from android" eventually
   appears in an iPhone screenshot.
 

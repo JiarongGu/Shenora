@@ -7,19 +7,21 @@ of this file is the size of the remaining work, which is the whole point of look
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
-⚠ **This rule keeps not being followed, and the file has now been swept TWICE on the same day
-(2026-08-05).** The first sweep moved eleven closed items out — two of which were still showing an unchecked
-`[ ]` a day after they shipped (Now Playing, the Android session token). The second removed **295 more
-lines**: seven blocks that were annotated `DONE`/`CLOSED` in place, kept their `<details>` filings, and were
-*already recorded in the archive* — so the file had grown to 502 lines while holding six open tasks.
-**An entry is either open or gone. Annotating it in place is how this file stops being usable**, and the
-tell is the same every time: the length stops tracking the remaining work.
+⚠ **An entry is either OPEN or GONE — never annotated `DONE` in place.** This rule was broken twice on
+2026-08-05 and the file reached 502 lines while holding six open tasks; the tell is always the same, the
+length stops tracking the remaining work. Two of the stale entries still showed an unchecked `[ ]` a day
+after they shipped.
 
-**Status: 0.9.1 PUBLISHED (2026-08-04)**, six packages on the feed, **verified against the published
-package rather than the tree** — a scratch app-shaped iOS consumer with the cache purged and no devkit
-opt-in. **`## Unreleased` is large and unshipped:** two new packages (`Shenora.IO`, `Shenora.IO.Compression`)
-and five breaking changes. Release history and its incidents live in `CHANGELOG.md`; the current package set
-is the table at the top of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
+**Status: 0.9.1 is the last PUBLISHED release (2026-08-04). `## Unreleased` is large and is the
+next one** — three new packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher.Native`), the
+safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
+Release history and its incidents live in `CHANGELOG.md`; the current package set is the table at the top
+of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
+
+> **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
+> work, and a short list here means the kit is in good shape rather than that nothing is happening — what
+> SHIPPED is `CHANGELOG.md` and `docs/ROADMAP.md`. The three items below are honest about what is not
+> done: one is blocked on an adopter's answers, one on a release step, and one on a physical device.
 
 ### Release mechanics that still steer
 
@@ -139,52 +141,12 @@ closed on 2026-08-05** — records in `docs/archive/tasks.md`, shape in **D50**,
     says why, and `dotnet pack` on it errors rather than emitting an empty `runtimes/`. That is the safe
     direction, and it also means a release would ship without the launcher and look entirely normal.
 
-### Safe-area insets — the page cannot solve this, the SHELL must
+### Safe-area insets
 
-- [ ] 🔴 **The shell must hand the page its window insets.** Three defects were found on a device
-  (2026-08-05, Android 16 / API 36, punch-hole emulator) and **two of them are unfixable from CSS or
-  page JS** — proven by trying:
-  1. ~~inset padding on a scrolling `<body>` scrolls away~~ — FIXED in the sample: body is a
-     non-scrolling flex column, a child scrolls.
-  2. ~~`calc(12px + inset)` stacks two paddings~~ — FIXED: `max(12px, inset)`. Reserved 61 CSS px where
-     the platform asked for 49.
-  3. 🔴 **Android reports the display CUTOUT only, never the system bars.** Measured `bottom=0` on a
-     device whose navigation bar is genuinely 24 CSS px — so content sits under the gesture pill and
-     CSS cannot discover it. iOS reports both.
-  4. 🔴 **The insets are 0 for the WHOLE first page load** and only appear on a later one. A page-side
-     re-read (rAF + timeout + `resize` + `visualViewport`) was written and **did not help** — no change
-     event ever fires, because the value never becomes non-zero in that document. The sample's own
-     reload probe is what makes the first screen *look* right, which is why this hid for so long.
-  - **So the fix is a shell capability, not page CSS:** read `WindowInsetsCompat` (Android) /
-    `safeAreaInsets` (iOS) and push them to the page as CSS custom properties, re-pushing on change.
-    The page already prefers `var(--sa-*)` with `env()` as fallback, so the host half is all that is
-    missing. This fits the owner's platform-logic direction below: the measure is how little native
-    code an adopting app writes, and today every adopter has to solve this themselves — badly, because
-    two of the four defects are invisible without a device.
-  - Full measurements and the three traps: `.claude/knowledge/mobile-shells.md`.
-
-  > **DIRECTION (owner, 2026-08-05):** *"we better have some pre configured default height for this hole
-  > area, and when it changes we do an animation … a splash screen is also the solution"*, then:
-  > *"we should be able to let consumer choose to use or not use the splash, and use or not use the
-  > default size, we should be provide enough freedom for cusomer but prove all our solution works"*.
-
-  - **The shape this asks for is THREE independent, individually declinable mechanisms** — D21's
-    primitives-and-hooks rule applied to a UX problem rather than a feature:
-    1. **A pre-configured default inset**, so the first paint is right rather than zero. Opt-out (an app
-       that would rather render flush takes nothing) and configurable (an app that knows its device
-       class sets the number and never sees a correction).
-    2. **An animated settle** when the real value replaces the default, so the unavoidable reflow reads
-       as intentional. Opt-out — an app with its own motion language will want its own curve, and one
-       that dislikes motion wants none.
-    3. **A splash that spans the gap.** ⚠ Evidence this is real: on this emulator the MAUI splash is
-       STILL UP at 2 s while the page's first paint has already happened behind it — so whether an
-       adopter ever sees the wrong first screen is a RACE they are currently winning or losing by luck.
-       The kit already ships `SplashPanel` on desktop; the mobile equivalent is the hook.
-  - ⚠ **"Prove all our solution works" is the load-bearing half of that direction.** Each of the three
-    needs its own device evidence, and two of them are invisible in a screenshot taken at the wrong
-    moment — the default is only observable BEFORE the real inset lands, and the animation only in the
-    ~180 ms between. Timed captures, or a probe that reports the value it laid out with, not a photo of
-    the settled state. The measurement probe already in the sample page is the starting point.
+**DONE (2026-08-05) — `SafeAreaOptions` + `MobileSafeArea`, proven on device at first paint.** Four
+defects were measured; two were fixed in the page and two needed the shell, because Android reports the
+display cutout to CSS but never the system bars, and reports nothing at all for the whole first page
+load. Record in `docs/archive/tasks.md`; adopter-facing recipe in `docs/ADOPTION.md`.
 
 ### Platform integration — OS-level logic, measured by how little native code an app writes
 

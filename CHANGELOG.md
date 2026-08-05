@@ -121,6 +121,34 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Added
 
+- **Safe-area insets, published by the SHELL** — `SafeAreaOptions`/`SafeAreaInsets`/`SafeAreaScript` in
+  `Shenora.Core`, `MobileSafeArea` in the mobile shells. Opt-in; an app that takes nothing keeps today's
+  behaviour exactly.
+
+  **The web platform's own answer is not sufficient on Android, measured on Android 16 / API 36:**
+  `env(safe-area-inset-*)` reports the display CUTOUT only — never the system bars, so `bottom` came back
+  0 on a device whose navigation bar is genuinely 24 CSS px tall — and reports **0 for the entire first
+  page load**. Neither is fixable from the page: a re-read on `resize`/`visualViewport` was written and
+  does nothing, because nothing changes within that document to observe.
+
+  ```csharp
+  new MobileSafeArea(webView, new SafeAreaOptions
+  {
+      Default = new SafeAreaInsets(24, 0, 24, 0),  // right at FIRST paint, not after the platform reports
+      Color   = "#14161a",
+      Settle  = TimeSpan.FromMilliseconds(180),
+      Splash  = true,
+  }, log);
+  ```
+  The page reads `var(--sa-top)` and friends, with `env()` as its fallback outside the shell.
+  - **Every mechanism is individually declinable** (D21): the default, the colour, the settle animation,
+    the splash and the variable prefix are each independent. The splash always carries a self-dismissing
+    timeout — a page hidden forever is worse than the flash it hides.
+  - **`SafeAreaScript.Build` is a pure function**, so the judgements — whether a zero measurement may
+    overwrite a default, when the splash gives up — are unit-tested with no device (15 tests).
+  - Verified on device at first paint: `top=48.762px bottom=24px color=#14161a` while `env()` still
+    reported zero, including the bottom inset Android never exposes to CSS.
+
 - **NEW PACKAGE `Shenora.Launcher.Native`** — the prebuilt launcher that runs BEFORE your app and
   applies a staged update. It is the one part of staged updating that cannot be done in .NET: it runs
   when the runtime may be absent and must replace files the app holds open. **A self-contained app needs

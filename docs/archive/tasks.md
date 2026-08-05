@@ -17,6 +17,59 @@
 
 ---
 
+### Safe-area insets — a configurable shell capability (2026-08-05) — DONE, proven on device
+
+`SafeAreaOptions`/`SafeAreaInsets`/`SafeAreaScript` in `Shenora.Core`, `MobileSafeArea` in the mobile
+shell. Owner's framing drove the shape: *"we better have some pre configured default height … and when
+it changes we do an animation … a splash screen is also the solution"*, then *"we should be able to let
+consumer choose to use or not use … provide enough freedom for cusomer but prove all our solution works"*.
+
+**Four defects, all measured on an Android 16 / API 36 punch-hole emulator, and the split between them is
+the interesting part:**
+1. Inset padding on a scrolling `<body>` scrolls away — content passed under the status bar. **Page fix:**
+   body is a non-scrolling flex column, a child scrolls.
+2. `calc(12px + inset)` stacked two paddings — 61 CSS px reserved where the platform asked for 49.
+   **Page fix:** `max(12px, inset)`.
+3. **Android reports the display CUTOUT only, never the system bars** — `bottom=0` on a device whose
+   navigation bar is genuinely 24 CSS px. **No page can fix this.**
+4. **The insets are 0 for the WHOLE first page load.** A page-side re-read (rAF, timeout, `resize`,
+   `visualViewport`) was written and did not help — nothing changes within that document to observe.
+   **No page can fix this either.**
+
+**Five mechanisms, each individually declinable (D21):** `Default` (published before the platform
+reports, so the first screen is right rather than laid out against zero), `Color`, `Settle` (the
+correction eases), `Splash` (covers the page until the real numbers land), `VariablePrefix`.
+
+**The design decision worth keeping: `SafeAreaScript.Build` is a PURE function.** Every judgement —
+whether a zero measurement may overwrite a default, when the splash gives up, what the fallbacks are —
+is therefore unit-tested with no device, no webview and no platform (15 tests). What is left for a
+device is only "the platform's numbers are right and the script ran".
+
+**⚠ THREE BUGS THIS SHIPPED WITH, each invisible to every gate the repo has:**
+- **The capability SUPPRESSED the insets it exists to supplement.** Installing an
+  `OnApplyWindowInsetsListener` REPLACES the view's inset handling rather than observing it, so the
+  WebView stopped applying insets and `env(safe-area-inset-top)` went 49 → 0. It built clean, 1060 tests
+  passed, and three runs read `env top=0` as "Android does not report" — which had been TRUE before this
+  code existed, so the wrong reading was the plausible one. An A/B (remove the capability, watch env()
+  return) settled it in one deploy. Now uses `GetRootWindowInsets`, which cannot consume or suppress.
+  **A capability that supplements platform behaviour must not be able to damage it.**
+- **Publishing once from the constructor delivered to nobody.** `EvaluateJavaScriptAsync` against a
+  webview with no document does not throw — it silently does nothing — so "the call succeeded" and "the
+  page received it" were the same observation. Fixed by returning a `DeliveredMarker` and retrying until
+  the page confirms.
+- **`Report` skipped unchanged values, so no NEW document ever got them.** CSS custom properties live on
+  the document; every navigation discards them, and the insets do not change across a navigation.
+
+**Device proof, on the first page load — the one that was always broken:**
+`env: top=0 … · laid out with var: top=48.762px bottom=24px color=#14161a settle=180ms`. That is the real
+cutout (128 device px ÷ 2.625), the shell's colour rather than the page's fallback, and the bottom inset
+Android never exposes to CSS at all.
+
+**Deliberately NOT done:** document-start injection (AndroidX `DOCUMENT_START_SCRIPT` / `WKUserScript`)
+would land before first paint rather than shortly after. It costs a `Xamarin.AndroidX.WebKit` reference
+on every Android consumer for one call — the D40/D48 "everything references this, so nothing may tax it"
+trade. The page's CSS fallback covers that frame. Revisit if the shell needs that package anyway.
+
 ### B4b — packing the launcher as `runtimes/{rid}/native/` (2026-08-05) — DONE
 
 `src/Shenora.Launcher.Native`: a packaging-only project that compiles nothing. It puts the per-RID
