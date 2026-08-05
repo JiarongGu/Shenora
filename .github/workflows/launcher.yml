@@ -26,6 +26,18 @@ on:
       - 'devtools/update-probe/**'
       - 'src/Shenora.IO/**'
   workflow_dispatch:
+  # THE RELEASE CALLS THIS ONE, rather than carrying its own copy of the matrix. It had a duplicate for
+  # exactly one commit and that was already one too many: two definitions of "how the launcher is built
+  # and proven" drift, and the one that drifts is the one nobody looks at until a release fails. Calling
+  # it means the binary a release publishes is produced by the same job that gates every push.
+  workflow_call:
+    inputs:
+      fail-fast:
+        description: >-
+          false for ordinary CI, so a Linux-only break cannot hide behind a Windows-only one.
+          TRUE from a release: publishing half a launcher is worse than publishing none.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,7 +45,8 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: false          # a Linux-only break must not hide behind a Windows-only one
+      # `inputs.fail-fast` is null outside a workflow_call, and `|| false` resolves that to the CI default.
+      fail-fast: ${{ inputs.fail-fast || false }}
       matrix:
         include:
           - { os: windows-latest, rid: win-x64,   exe: shenora-launcher.exe }
