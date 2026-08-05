@@ -210,6 +210,18 @@ Create
 # its own: no Release, Download, Install or Patch noun. The kit ships the changeset, not the updater.
 Diff
 Manifest
+# `Zip` (2026-08-05) — the CONTAINER FORMAT, in ZipUpdateSource. Admitted against the two warnings above,
+# and the argument is that it is narrower than either of them rather than an exception to them:
+#   - It is a format the BCL already names (System.IO.Compression.ZipArchive), not a product concept. The
+#     type reads zip entries and does nothing else — it never downloads, never installs, never decides what
+#     a release IS. Where the archives come from stays the app's, exactly as IUpdateSource intends.
+#   - `Archive` would have been the WORSE name here, which is the part worth keeping: it is the generic
+#     noun the section above warns about, and it would over-claim — this reads zips, not tar or 7z. Naming
+#     the format is the honest, smaller commitment.
+# ⚠ Still no Release, Download, Install or Patch noun, and this line is not a licence for one. A
+# `DownloadingUpdateSource` or an `Installer` would be the kit growing the updater it deliberately does not
+# ship — argue those on their own merits.
+Zip
 Delete
 Directory
 Entry

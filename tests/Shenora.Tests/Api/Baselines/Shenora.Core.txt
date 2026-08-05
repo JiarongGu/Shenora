@@ -795,3 +795,9 @@ sealed class Shenora.Core.WebViewResourceResponse
   public static Shenora.Core.WebViewResourceResponse PartialContent(System.IO.Stream content, string contentType, Shenora.Core.WebViewByteRange range, long totalLength, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
   public static Shenora.Core.WebViewResourceResponse RangeNotSatisfiable(long totalLength)
   public string ReasonPhrase { get; init; }
+sealed class Shenora.Core.ZipUpdateSource : Shenora.Core.IUpdateSource, System.IDisposable
+  public .ctor(Shenora.Core.UpdateManifest manifest, System.Collections.Generic.IEnumerable<System.IO.Stream> archives, bool leaveOpen = false)
+  public System.Threading.Tasks.Task<Shenora.Core.UpdateManifest> GetManifestAsync(System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.Core.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Core.ZipUpdateSource Open(Shenora.Core.UpdateManifest manifest, params string[] archivePaths)
+  public void Dispose()

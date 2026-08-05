@@ -205,7 +205,15 @@ release-source seam) are done — `docs/archive/tasks.md`.
   plainly, and the sibling's Node harness (drive a PREBUILT exe over sandbox dirs) is the model for
   testing it on demand rather than in `verify`.
 
-- [ ] **The archive-backed `IUpdateSource` — DEFERRED by owner direction, and the deferral is the point.**
+_**DONE 2026-08-05 — `ZipUpdateSource`.** ⚠ This entry said "DEFERRED by owner direction"; that was a
+MISREADING of *"do our own first … in the meantime you should have your own"*, which meant lower PRIORITY,
+not deferral (owner, 2026-08-05: "I didn't say defer was just put on lower priority"). Corrected here rather
+than quietly, because the wrong word had been propagated into three documents and would have kept the item
+from ever being picked up. Record in `docs/archive/tasks.md`._
+
+<details><summary>the original filing, kept for the four port notes it carries</summary>
+
+- [x] **The archive-backed `IUpdateSource`.**
   `IUpdateSource.OpenAsync(ManifestFile)` fits a release that publishes loose files. The first adopter's
   releases publish one ZIP per part with a manifest listing per-file hashes — a shape at least as common,
   since it is what GitHub Releases encourages. Everything else fits perfectly: `UpdateStage` verifies every
@@ -233,7 +241,11 @@ release-source seam) are done — `docs/archive/tasks.md`.
   - **Recorded honestly:** the adopter declined partly on a BAD metric — adapter lines ≈ deleted lines —
     which misses that the tricky, worth-inheriting logic (staging, verification, journal, resume) is all on
     the kit's side and the bridge is boring. With the source shipped, this becomes a straight adoption.
-  - ⚠ **Still owed with the port: validate against a REAL release, not fixtures.** The stage verifier's
+
+</details>
+
+- [ ] **⚠ Still owed, and it survives `ZipUpdateSource` shipping: validate the update stage against a REAL
+  release, not fixtures.** The stage verifier's
     third failure mode (intrusion) is closed — `UpdateStage.CommitAsync` rejects a staged file the manifest
     does not list, exempted by the caller-supplied `UpdateStageOptions.IsUnindexed` predicate. But **the
     failure mode of getting the exclusion list wrong is inverted**: too LOOSE lets an injected file through;

@@ -60,6 +60,46 @@ would marshal to the UI thread); and the fire-and-forget submit is guarded, beca
 event thread with nothing above it. `SubmitAsync` reports a failed BODY through `MissionResult` rather than
 by throwing, so what the guard catches is a submit-time fault.
 
+### The archive-backed `IUpdateSource` (2026-08-05) — DONE as `ZipUpdateSource`
+
+⚠ **First, the record correction, because it is the reusable part.** This item sat under "DEFERRED by owner
+direction" citing *"do our own first … in the meantime you should have your own"*. That was a MISREADING —
+the owner meant lower PRIORITY, not deferral (*"IUpdateSource can be bring back I didn't say defer was just
+put on lower priority"*, 2026-08-05). The wrong word had propagated into `TASKS.md`, the private notes and a
+verbal inventory, and it was strong enough to keep the item from ever being picked up: "deferred by owner
+direction" reads as a decision that needs reversing, while "lower priority" only needs a free slot.
+**Recording an instruction in stronger words than it was given is a way to lose work silently.**
+
+**The build itself was small, exactly as the 2026-08-03 verification predicted:**
+`OpenAsync(ManifestFile) → Task<Stream>` is what a zip entry already is, so no contract changed. All four
+port notes were honoured, and each one is now a test:
+- **Multiple archives.** A release is published one zip PER PART with a single manifest spanning them, so a
+  single-archive implementation serves half of it. Entries are indexed across all archives at construction,
+  and a duplicate path is REFUSED rather than last-wins — which bytes get installed must not depend on the
+  order the archives were passed.
+- **Seekable streams only, rejected up front with the reason.** `ZipArchive` reads the central directory
+  from the END, so a live HTTP response fails deep inside with an unhelpful format error. The note called
+  this out; the fix turns it into an `ArgumentException` naming the remedy.
+- **Not thread-safe, stated on the type**, because `ZipArchive` is not. Safe with `FetchAsync` today only
+  because that opens files sequentially — the coupling is documented rather than left for whoever
+  parallelises that loop.
+- **`Shenora.Core`, no new package** (D2): `System.IO.Compression` is in the shared framework.
+
+**Separator AND case normalisation, the same two rules `ManifestDiff` already learned** — sabotage-verified:
+removing it fails exactly the backslash and the case tests. Without the first, a Windows-built manifest
+matches nothing in a zip forever; without the second, one letter's case turns a whole release into "not
+carried by any archive".
+
+**A missing entry THROWS and names the path** rather than returning an empty stream. The whole point of
+`UpdateStage` is that a truncated release is never staged as whole, and an empty stream would defeat that
+with a SHA mismatch instead of a name.
+
+⚠ **`Zip` was argued into the surface lexicon against its own "no archive, download, install or sync noun"
+warning**, and the argument is that it is NARROWER than that warning rather than an exception to it: it
+names a container format the BCL already names, the type reads zip entries and does nothing else, and
+`Archive` would have been the WORSE name — the generic noun the warning is actually about, and an
+over-claim, since this reads zips and not tar or 7z.
+
 ### DM4 — the remote authorization seam (2026-08-05) — DONE, and it landed WITH its consumer
 
 `MediaConversionOptions.AllowRemoteSource`. The entry's own warning was the hard part: this had been written

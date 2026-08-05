@@ -89,6 +89,28 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Added
 
+- **`ZipUpdateSource` — an `IUpdateSource` over one or more ZIP archives**, the release shape GitHub
+  Releases encourages. The interface needed NO change to admit it: `OpenAsync(ManifestFile) → Task<Stream>`
+  is exactly what a zip entry is, so this is a shipped implementation rather than a contract change. It
+  turns "adoptable if you write the adapter" into "adoptable" — everything genuinely hard (staging, per-file
+  SHA-256 verification, the journal, resume) was already on `UpdateStage`'s side, and the bridge is boring
+  enough that several adopters would have written it identically.
+  - **MULTIPLE archives, not one.** A release is commonly published as one zip PER PART with a single
+    manifest spanning them, so a single-archive implementation would serve half a release. Entries are
+    indexed across every archive at construction, and a path carried by TWO archives is refused rather than
+    last-wins — which archive wins should never depend on the order they were passed.
+  - **It does not download.** Where the archives come from stays the app's, for the same reason
+    `IUpdateSource` ships no client: baking one in would drag an HTTP dependency into `Shenora.Core`.
+  - ⚠ **A non-seekable stream is refused up front, naming the fix.** `ZipArchive` reads the central
+    directory from the END of the file, so a live HTTP response fails with an unhelpful format error deep
+    inside — download to a file or a `MemoryStream` first.
+  - ⚠ **Not thread-safe**, because `ZipArchive` is not. Safe with `UpdateStage.FetchAsync` today because
+    that opens files sequentially; parallelising that loop without a source per worker would corrupt reads
+    rather than merely slow them, so it is stated on the type.
+  - Paths normalise separators AND case, the same two rules `ManifestDiff` already learned: without the
+    first a Windows-built manifest matches nothing in a zip forever, and without the second one letter's
+    case turns a whole release into "not carried".
+
 - **`interceptor.UseMediaConversion(scheduler, events, options)` (`Shenora.Media`) — serving media the
   platform cannot decode: convert once, cache the result, serve it with ranges.** It BUILDS nothing. Every
   hard part already shipped, and this is the composition: `IMissionScheduler` runs the long job without a
