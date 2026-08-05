@@ -605,6 +605,7 @@ sealed class Shenora.Core.WebViewResourceRequest
   public required System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }
   public required System.Uri Uri { get; init; }
   public required string Method { get; init; }
+  public static bool IsRootWithFragment(System.Uri uri)
   public string? GetHeader(string name)
 sealed class Shenora.Core.WebViewResourceResponse
   public System.Collections.Generic.IReadOnlyDictionary<string, string> Headers { get; init; }

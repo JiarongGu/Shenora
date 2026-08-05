@@ -228,6 +228,62 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   navigating and require it to be GONE afterwards: a real navigation destroys the context, so its absence is
   the only evidence that the document under test is a new one.
 
+- 🔴 **RECOGNISE YOUR OWN DOCUMENT — never try to recognise the platform's ERROR document.** The reload gate
+  reported `RELOAD: PASS` on 2026-08-06 while staring at Chromium's error page, and it did so because the
+  check was a BLOCKLIST — "an empty `title`, or `ERR_` in the body text". **Both signals failed at once and
+  independently**, which is what makes this worth a rule rather than a fix:
+  - the error page's title is **LOCALIZED and non-empty**. This CJK-locale device reported
+    `title=网页无法打开`, so a test for `title=|` matched nothing — and on an English-locale device the same
+    bug would have stayed hidden indefinitely.
+  - the body text was truncated to 60 characters **one character before the underscore** (`net::ERR`), so
+    the second signal missed too. **A diagnostic truncated mid-token is worse than no diagnostic**: it reads
+    as evidence.
+  The allow-check has no such holes — read the live page's `<title>` as a baseline BEFORE navigating and
+  require the post-navigation document to carry it. Whatever the platform substitutes, it is not your page.
+  ⚠ **The hole was in the ORIGINAL probe as well**; it never fired because the arm it guarded never failed.
+  A gate is only verified on the paths its sabotage actually exercised.
+
+- **A probe with an ARM must prove the arm was AIMED.** The same gate reloads at `/` and at `#/route`; if
+  the fragment silently fails to take, the hash arm quietly re-runs the plain arm and passes. Assert the
+  precondition (here `location.hash`) from the PAGE's own state rather than assuming the assignment worked,
+  and report "misaimed" distinctly from "failed" — they need opposite responses.
+
+- **Two arms beat one when a failure has to be ATTRIBUTABLE.** Plain-pass + fragment-fail is a platform
+  defect and nothing else; both failing is a broken harness that has proven nothing about fragments. One
+  extra reload buys the difference between a verdict and a guess.
+
+- 🔴 **⚠ MAUI's Android asset mapping strips a QUERY and NOT a FRAGMENT, so every hash-routed page dies on
+  RELOAD** — `https://host/#/library` looks for an asset named `#/library`, 404s with no body and no MIME,
+  and Chromium reports `net::ERR_INVALID_RESPONSE`. Reproduced here 2026-08-06 on WebView 110 after being
+  filed by the first adopter, and it reproduces **with the kit entirely absent** (A/B on one binary, the
+  arm with no interceptor constructed fails identically). `MobileWebViewInterceptor.RepairDocumentRequest`
+  owns the fix — the interceptor is the ONLY seam that sees the document request while it can still be
+  answered, since the request fails before any page script runs.
+  - **This is why the gate was green for a real bug for two days.** The reload probe passed on Chromium
+    110 *and* 133 because it reloaded at `/`. It was aimed one character short of the defect. **When a
+    report will not reproduce, suspect the SHAPE of your reproduction before you suspect the report.**
+  - ⚠ **iOS has the same trigger and different machinery, and is NOT repaired.** The reload never produces
+    a second document at all, and WKWebView keeps the PREVIOUS page on screen when a provisional navigation
+    fails — so the app looks perfectly healthy and "it rendered" is not evidence. `nodes` and the
+    pre-reload stamp are load-bearing there in a way they are not on Android. Applying the Android repair
+    there was measured (by the adopter) to make it worse: no document request at all, and
+    `EvaluateJavaScriptAsync` stopped answering.
+
+- **`WebViewResourceRequest.Uri` CARRIES A FRAGMENT, and the safe reading hides it.** `AbsolutePath` is
+  correct (`/`) where `ToString()`/`PathAndQuery` mis-resolve — but because `AbsolutePath` reports `/` for
+  `https://host/#/library`, logging it is what convinced the adopter the URL was fragment-free and produced
+  a defect filed against the wrong component. **Log the whole `Uri` when a document request surprises you.**
+
+- **A page-side probe cannot report its own death** (adopter, 2026-08-06). "The reload failed" and "the
+  reload succeeded but the bridge never came back" are the same silence, so only a NATIVE-side witness
+  survives the event it is measuring. A probe that lives in the page is the obvious first design and is
+  wrong for this whole class of question — which is why `PageProbe` drives from the host.
+
+- **There IS an eval on iOS: `EvaluateJavaScriptAsync`, from native code** — no `ios-webkit-debug-proxy`,
+  no bridge, no CDP. Worth knowing next to the "get page state as TEXT" routes above, whose first two are
+  both closed: it keeps working precisely when the page or the bridge is the suspect, which is when it is
+  needed. If the kit ever wants an observable iOS shell, that is the seam.
+
 - **`Application.Current` is null inside `CreateMauiApp`** (`builder.Build()` makes the MauiApp, not
   the Application) — use `Dispatcher.GetForCurrentThread()`. And the page MUST load the platform's own
   bridge script or `window.HybridWebView` never exists, the page renders fine, and the host sits

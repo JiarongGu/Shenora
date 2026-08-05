@@ -12,6 +12,46 @@ entry template:
 - **Commit:** <hash>
 ```
 
+## 2026-08-06
+
+### Android: reloading any hash-routed page died with `net::ERR_INVALID_RESPONSE`
+
+- **Symptom:** filed by the first adopter against 0.9.1 — with a route registered, a page RELOAD showed
+  the webview's error document while sub-resources and in-page hash routing stayed fine. **It would not
+  reproduce here across three sessions**, on MuMu's Chromium 110 and on a purpose-built API 36 AVD running
+  Chromium 133, which is what killed the repo's own version-gap hypothesis.
+- **Root cause:** MAUI's request→asset mapping strips a QUERY and not a FRAGMENT, so a reload at
+  `https://host/#/library` looks for an asset literally named `#/library`, answers 404 with no body and no
+  MIME type, and Chromium turns that into `ERR_INVALID_RESPONSE`. **Not the kit's**: the adopter's A/B on
+  one binary failed identically with no interceptor constructed at all. **Why every gate here was green:
+  the reload probe reloaded at `/`** — it was aimed one character short of the defect. The misattribution
+  had the same shape: `AbsolutePath` reads `/` for a fragment URL, so logging it *proves* nothing about
+  whether a fragment is present, and it is also the reading everyone is told to use.
+- **Fix:** `MobileWebViewInterceptor.RepairDocumentRequest` (Android only) answers a fragment-carrying root
+  request with `HybridRoot/DefaultFile` — the bytes the platform serves for the fragment-free URL — so the
+  page boots normally and its router reads the fragment off `location`. It runs AFTER app middleware
+  decline and ALSO when the pipeline is empty (the defect is the platform's, not the pipeline's), and it
+  DECLINES rather than 404s when the bundle cannot be read, so an app serving its own document is
+  untouched. Predicate: `WebViewResourceRequest.IsRootWithFragment(Uri)`, public because a middleware
+  answering the root needs the same shape. `PageProbe.CheckReloadAsync` now runs TWO arms (`/` as control,
+  then `#/probe-route`) so a failure is attributable. iOS deliberately NOT repaired — same trigger,
+  different machinery, and the adopter measured this repair making it worse there.
+- **Verify:** sabotage-verified BOTH ways on a device (MuMu, WebView **110** — the adopter's exact
+  version). Repair off → `RELOAD: FAIL`, `title=网页无法打开|nodes=11|text=… net::ERR_INVALID_RESPONSE`,
+  **the reported symptom reproduced in this repo for the first time**. Repair on → `RELOAD: PASS` on both
+  arms, `hash=#/probe-route|title=Shenora mobile sample|nodes=56`, with the shell's own
+  `Served 'wwwroot/index.html' for a fragment document request`. Predicate unit-tested over 11 measured
+  URL shapes, sabotage-verified in both directions. `verify` PASSED (1073 dotnet + 115 vitest).
+- 🔴 **The sabotage caught a second bug — in the new gate.** Its first run reported `RELOAD: PASS` while
+  staring at Chromium's error document, because the recovery check was a BLOCKLIST ("empty title, or
+  `ERR_` in the body") and **both signals failed at once**: the error page's title is LOCALIZED and
+  non-empty (`title=网页无法打开` on this CJK-locale device), and the body text was truncated to 60 chars
+  ONE CHARACTER before the underscore (`net::ERR`). Fixed by inverting the shape — recognise OUR document
+  by a title read from the live page, never the platform's error page — plus a 120-char slice, a `hash=`
+  snapshot field and a `Misaimed` outcome so an arm must prove it was aimed. ⚠ **The hole was in the
+  ORIGINAL probe too**; it never fired because the arm it guarded never failed. Rule: `mobile-shells.md`.
+- **Commit:** _pending_
+
 ## 2026-08-05
 
 ### Launcher: the POSIX half had never been compiled by anything, and the first release build failed on it

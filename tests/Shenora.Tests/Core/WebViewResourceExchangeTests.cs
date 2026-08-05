@@ -118,6 +118,47 @@ public class WebViewResourceExchangeTests
         Assert.Equal("text/plain", WebViewResourceResponse.Bytes([], "text/plain").Headers["CONTENT-TYPE"]);
     }
 
+    /// <summary>
+    /// The shape <c>Shenora.Android</c> repairs, pinned here because the shell's own copy of this decision
+    /// can only be exercised on a device. Every row is a URL the first adopter actually measured
+    /// (2026-08-06): a QUERY is stripped correctly by the platform, a FRAGMENT is not.
+    /// </summary>
+    [Theory]
+    // The two reported failures — a bare fragment and a hash route.
+    [InlineData("https://0.0.0.1/#zzz", true)]
+    [InlineData("https://0.0.0.1/#/library", true)]
+    // No trailing slash: `Uri` normalises the path to "/" and this must see it the same way, because the
+    // page's own `location.href` is where the reload URL comes from and it is not always spelled the same.
+    [InlineData("https://0.0.0.1#/library", true)]
+    // A fragment on the iOS origin — same shape, and the predicate is shell-agnostic even though only one
+    // shell acts on it.
+    [InlineData("app://0.0.0.1/#/library", true)]
+    // A bare '#' repairs too. Serving the document for a request the platform would have answered anyway
+    // costs a correct page; NOT repairing one costs the whole app, so this errs toward repairing.
+    [InlineData("https://0.0.0.1/#", true)]
+    // The three shapes measured as WORKING: they must be left to the platform, or the kit is claiming the
+    // main document on every single load.
+    [InlineData("https://0.0.0.1/", false)]
+    [InlineData("https://0.0.0.1/?x=1", false)]
+    [InlineData("https://0.0.0.1/index.html", false)]
+    // Deliberately NOT claimed: a fragment on a path other than the root was never measured, and a hash
+    // router reloads at the root. Widening this without a device run is how a gate starts lying.
+    [InlineData("https://0.0.0.1/index.html#/library", false)]
+    [InlineData("https://0.0.0.1/media/clip.mp4#t=10", false)]
+    // A sub-resource with a query is the overwhelmingly common case and must stay untouched.
+    [InlineData("https://0.0.0.1/media?eyJzcmMiOiJhLm1wNCJ9", false)]
+    public void IsRootWithFragment_matches_only_the_measured_broken_shape(string url, bool expected)
+        => Assert.Equal(expected, WebViewResourceRequest.IsRootWithFragment(new Uri(url)));
+
+    [Fact]
+    public void IsRootWithFragment_answers_false_for_a_relative_uri_rather_than_throwing()
+    {
+        // `Uri.Fragment` and `Uri.AbsolutePath` both THROW on a relative Uri. No shell hands one over, but
+        // an app's own test might, and an exception out of a predicate reads as a kit defect.
+        Assert.False(WebViewResourceRequest.IsRootWithFragment(new Uri("/#/library", UriKind.Relative)));
+        Assert.Throws<ArgumentNullException>(() => WebViewResourceRequest.IsRootWithFragment(null!));
+    }
+
     [Fact]
     public void NotFound_carries_the_one_fixed_body_and_no_diagnosis()
     {

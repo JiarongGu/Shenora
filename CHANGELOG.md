@@ -12,6 +12,41 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+- **`Shenora.Android` now repairs a MAUI defect that broke RELOADING any hash-routed page.** A top-level
+  navigation to `https://host/#/library` reached MAUI's request→asset mapping with the fragment still
+  attached; it strips a query string and not a fragment, so it looked for an asset literally named
+  `#/library`, answered 404 with no body and no MIME type, and Chromium turned that into
+  `net::ERR_INVALID_RESPONSE` — the webview's error page instead of the app. **An adopting app writes
+  nothing**: `MobileWebViewInterceptor` answers the request with `HybridRoot/DefaultFile`, the same bytes
+  the platform serves for the fragment-free URL, so the page boots exactly as it does on a first load and
+  its router reads the fragment off `location` as usual.
+  - It runs **after** the app's own middleware (an app that serves its own document is untouched) and
+    **also when no middleware is registered at all** — the defect is the platform's, and it reproduces with
+    the kit entirely absent.
+  - It **declines rather than 404s** when the bundle cannot be read, so an app that serves its document
+    some other way is left exactly as it was.
+  - ⚠ **Android only, and iOS is deliberately NOT repaired.** iOS has the same trigger and different
+    machinery: the reload simply never produces a second document, and WKWebView keeps the previous page on
+    screen — so the failure is invisible in a screenshot. Applying this repair there was measured to make it
+    worse, so nothing speculative ships; the mobile sample measures it instead.
+  - Reported by the first adopter, who also did the attribution that cleared the kit: an A/B on one binary
+    showed the failure with the interceptor absent entirely, and a fragment/query comparison isolated the
+    trigger to a single character.
+
+### Added
+
+- **`WebViewResourceRequest.IsRootWithFragment(Uri)`** — true when a request is for the site root and
+  carries a `#fragment`. It is what the Android repair above keys on, and it is public because a middleware
+  that answers the root itself needs to recognise the same shape.
+- **`WebViewResourceRequest.Uri` now documents that it CARRIES A FRAGMENT**, and which readings survive it.
+  `AbsolutePath` is safe, `ToString()` and `PathAndQuery` mis-resolve — and the trap is that the safe
+  reading also HIDES the fragment, which is precisely how this defect was first attributed to the wrong
+  component.
+
 ## 0.10.0 — 2026-08-05
 
 ### Breaking

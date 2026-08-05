@@ -30,7 +30,22 @@ namespace Shenora.Core;
 /// </summary>
 public sealed class WebViewResourceRequest
 {
-    /// <summary>The requested URI.</summary>
+    /// <summary>
+    /// The requested URI.
+    /// <para>
+    /// ⚠ <b>It can carry a <c>#fragment</c>, and reading it wrong is a real reported bug rather than a
+    /// theoretical one.</b> A top-level navigation to <c>https://host/#/library</c> reaches a handler as
+    /// <c>Uri = https://host/#/library</c> with <c>Fragment = "#/library"</c> and
+    /// <c>AbsolutePath = "/"</c> — so a resolver written against <see cref="System.Uri.AbsolutePath"/> is
+    /// fine, and one written against <c>ToString()</c> or <c>PathAndQuery</c> mis-resolves. The trap is
+    /// that the SAFE reading also hides the fragment: the first adopter logged <c>AbsolutePath</c>, saw
+    /// <c>/</c>, concluded the URL was fragment-free, and filed a defect against the wrong component
+    /// (2026-08-06). Log the whole <see cref="System.Uri"/> when a document request surprises you.
+    /// </para>
+    /// <para>
+    /// See <see cref="IsRootWithFragment"/> for what that shape means to a platform.
+    /// </para>
+    /// </summary>
     public required Uri Uri { get; init; }
 
     /// <summary>HTTP method, uppercase (<c>GET</c>, <c>HEAD</c>, …).</summary>
@@ -44,6 +59,61 @@ public sealed class WebViewResourceRequest
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         return Headers.TryGetValue(name, out var value) ? value : null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="uri"/> asks for the site ROOT <b>and</b> carries a <c>#fragment</c> — the
+    /// shape a hash-routed page reloads at (<c>https://host/#/library</c>).
+    /// <para>
+    /// ⚠ <b>This shape is BROKEN on Android and it is the platform's doing, not this kit's.</b> Measured by
+    /// the first adopter on MAUI 10.0.20 / WebView 110, by A/B against a build with no interceptor
+    /// constructed at all — so it reproduces with the kit entirely absent:
+    /// </para>
+    /// <code>
+    /// reload at                     MAUI's own shouldInterceptRequest answered
+    /// ─────────                     ─────────────────────────────────────────
+    /// https://host/                 200 text/html
+    /// https://host/?x=1             200 text/html   ← a QUERY is stripped correctly
+    /// https://host/index.html       200 text/html
+    /// https://host/#zzz             404  → ERR_INVALID_RESPONSE
+    /// https://host/#/library        404
+    /// </code>
+    /// <para>
+    /// Its request→asset mapping removes a query string and not a fragment, so <c>/#zzz</c> looks for an
+    /// asset literally named <c>#zzz</c>; Chromium turns a 404 with no body and no MIME type into
+    /// <c>ERR_INVALID_RESPONSE</c>. <c>Shenora.Android</c> repairs it — an app writes nothing — and the
+    /// repair is why this predicate is public rather than private to the shell: a middleware that answers
+    /// the root itself needs to recognise the same shape.
+    /// </para>
+    /// <para>
+    /// A static over a bare <see cref="System.Uri"/> rather than an instance member, because the shells ask
+    /// it BEFORE building a request — with no middleware registered there is nothing to build one for, and
+    /// the repair still has to run.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>iOS has the same TRIGGER and different machinery, and is NOT repaired this way.</b> There the
+    /// reload simply never produces a second document, and WKWebView keeps the previous page on screen, so
+    /// the failure is invisible in a screenshot. The adopter's Android repair made it worse rather than
+    /// better (no document request at all, and native evaluation stopped answering), so nothing is
+    /// speculatively applied there — the mobile sample MEASURES it instead.
+    /// </para>
+    /// <para>
+    /// Scoped to the root path because that is what was measured and what a hash router reloads at.
+    /// <c>/index.html#x</c> was never tested and is deliberately not claimed.
+    /// </para>
+    /// </summary>
+    /// <param name="uri">The request URI. A relative URI is never one of these, and answers false.</param>
+    public static bool IsRootWithFragment(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        // Fragment/AbsolutePath THROW on a relative Uri. Every shell hands over an absolute one; this is
+        // here so a hand-built Uri in an app's own test is a false rather than an exception.
+        if (!uri.IsAbsoluteUri) return false;
+        // Any '#' at all, including a bare one. Repairing a request the platform would have served anyway
+        // costs a correct document; failing to repair one costs the whole page — so this errs toward
+        // repairing, deliberately.
+        if (uri.Fragment.Length == 0) return false;
+        return uri.AbsolutePath is "/" or "";
     }
 }
 

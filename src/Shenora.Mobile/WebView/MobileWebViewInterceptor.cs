@@ -64,8 +64,15 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 
     private void OnWebResourceRequested(object? sender, WebViewWebResourceRequestedEventArgs e)
     {
-        // Null = no routes registered, so this shell costs nothing beyond the event itself.
-        if (_pipeline.Build() is not { } handler) return;
+        // Null = no routes registered, so this shell costs nothing beyond the event itself — except the
+        // platform repair, which must still run. ⚠ The defect it repairs belongs to the PLATFORM, and the
+        // adopter's A/B proved it fires with no interceptor constructed at all: gating it on the pipeline
+        // being non-empty would leave it working only for apps that happen to serve something.
+        if (_pipeline.Build() is not { } handler)
+        {
+            Answer(e, RepairDocumentRequest(e.Uri));
+            return;
+        }
 
         WebViewResourceResponse? response;
         try
@@ -76,7 +83,9 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
                 Method = e.Method,
                 Headers = e.Headers,
             };
-            response = Run(handler, request);
+            // The app's middleware get first refusal — the repair is a LAST resort, so an app that serves
+            // its own document keeps doing so and never meets this at all.
+            response = Run(handler, request) ?? RepairDocumentRequest(e.Uri);
         }
         catch (Exception ex)
         {
@@ -94,6 +103,14 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
             return;
         }
 
+        Answer(e, response);
+    }
+
+    /// <summary>
+    /// Hand a response to the platform, or leave the event untouched so it serves the request itself.
+    /// </summary>
+    private static void Answer(WebViewWebResourceRequestedEventArgs e, WebViewResourceResponse? response)
+    {
         // Nothing claimed it — leave `Handled` alone so the platform serves it normally (the bundle).
         if (response is null) return;
 
@@ -102,6 +119,79 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
         // session believing otherwise (D44).
         e.SetResponse(response.StatusCode, response.ReasonPhrase, PlatformHeaders(response.Headers), response.Content);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// The kit's repair for a platform that cannot serve its own bundle for a given request shape. Null —
+    /// "nothing to repair" — for every request on every platform except the one measured case below.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠ <b>Android maps a top-level <c>#fragment</c> URL onto an asset name and answers 404</b>, so every
+    /// hash-routed page dies on RELOAD with <c>net::ERR_INVALID_RESPONSE</c>. The measurement, the table and
+    /// the reason iOS is excluded are on <see cref="WebViewResourceRequest.IsRootWithFragment"/>; what
+    /// matters here is that this is the ONE place that can fix it. The request fails before any script runs,
+    /// so a page cannot; abandoning hash routing is not a fix; and the interceptor is the only seam that
+    /// sees the document request while it can still be answered.
+    /// </para>
+    /// <para>
+    /// It answers the SAME bytes the platform would have served for the fragment-free URL —
+    /// <c>HybridRoot/DefaultFile</c>, read from the app package — so the repair is invisible: the page boots
+    /// exactly as it does on a first load, and its router reads the fragment off <c>location</c> as usual.
+    /// </para>
+    /// <para>
+    /// <b>It declines rather than 404s when the bundle cannot be read.</b> An app that serves its document
+    /// some other way must be left exactly as it was; turning a working page into a fixed 404 to repair a
+    /// defect it does not have would be the worse failure by far.
+    /// </para>
+    /// </remarks>
+    private WebViewResourceResponse? RepairDocumentRequest(Uri uri)
+    {
+#if ANDROID
+        if (!WebViewResourceRequest.IsRootWithFragment(uri)) return null;
+
+        // 🔴 THE PATH IS BUILT ENTIRELY FROM APP CONFIGURATION — the URI decides only WHETHER to act, never
+        // WHAT to serve, and it must stay that way. `uri` here is page-controlled (a page can navigate
+        // itself to any fragment it likes), so deriving any part of the asset name from it — the fragment
+        // as a route, say — would put page input straight into an app-package path with no containment
+        // check anywhere on this path. There is deliberately none, because there is deliberately no input.
+        //
+        // Read from the WEBVIEW, not from constants: both are settable, and a kit that assumed the defaults
+        // would silently stop repairing the apps that changed them.
+        var root = (_webView.HybridRoot ?? string.Empty).Trim('/');
+        var file = string.IsNullOrWhiteSpace(_webView.DefaultFile) ? "index.html" : _webView.DefaultFile.Trim('/');
+        var asset = root.Length == 0 ? file : $"{root}/{file}";
+
+        try
+        {
+            // Blocking, and it has to be: both platforms need the status line at the moment this event
+            // returns (see Run). The app package is local and this is one small document, which is the only
+            // reason that is acceptable here and would not be for a route.
+            using var source = Microsoft.Maui.Storage.FileSystem.OpenAppPackageFileAsync(asset)
+                .GetAwaiter().GetResult();
+            var body = new MemoryStream();
+            source.CopyTo(body);
+            body.Position = 0;
+
+            Log(() => $"[Shenora.Mobile] Served '{asset}' for a fragment document request — the platform "
+                    + $"maps the fragment into the asset name and answers 404 (fragment '{uri.Fragment}').");
+            return WebViewResourceResponse.Ok(body, WebViewContentTypes.FromPath(file));
+        }
+        catch (Exception ex)
+        {
+            // No bundle to serve. Decline — see the remarks.
+            Log(() => $"[Shenora.Mobile] Fragment document repair declined, '{asset}' is not in the app "
+                    + $"package: {ex.Message}");
+            return null;
+        }
+#else
+        // iOS reaches the shell with the fragment too, and the same repair MAKES IT WORSE there (measured by
+        // the adopter: no document request at all afterwards, and native evaluation stopped answering).
+        // A change to main-frame fall-through with no reproduction is verifiable in neither direction, so
+        // nothing is applied — the sample's reload gate measures the platform instead.
+        _ = uri;
+        return null;
+#endif
     }
 
     /// <summary>

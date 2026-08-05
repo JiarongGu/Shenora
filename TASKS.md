@@ -15,13 +15,15 @@ after they shipped.
 **Status: 0.10.0 is PUBLISHED (2026-08-05)** — nine NuGet packages + `@shenora/react`, all nine confirmed
 on the feed. It added three packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
 safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
-`## Unreleased` is empty again. Release history and its incidents live in `CHANGELOG.md`; the current
-package set is the table at the top of `docs/DECISIONS.md`; the closed backlog is `docs/archive/tasks.md`.
+`## Unreleased` carries the Android fragment-reload repair (2026-08-06). Release history and its incidents
+live in `CHANGELOG.md`; the current package set is the table at the top of `docs/DECISIONS.md`; the closed
+backlog is `docs/archive/tasks.md`.
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
 > SHIPPED is `CHANGELOG.md` and `docs/ROADMAP.md`. The three items below are honest about what is not
-> done: one is blocked on an adopter's answers, one on a release step, and one on a physical device.
+> done: one is a KNOWN unrepaired defect whose next step is a measurement, one is deliberately WAITING on
+> an adopter's harvest (D15 working as intended, not a stall), and one needs a physical device.
 
 ### Release mechanics that still steer
 
@@ -92,48 +94,78 @@ package set is the table at the top of `docs/DECISIONS.md`; the closed backlog i
 > Read that doc's "THE DESIGN, in one place" section before its trail — the trail contains intermediate
 > positions that were later corrected.
 
-### From the first adopter — defects found on the 0.9.1 adoption (2026-08-04/05)
+### The iOS half of the fragment-reload defect — KNOWN BROKEN, unrepaired, and SILENT (2026-08-06)
 
-- [ ] **🟡 Android navigation — NOT REPRODUCIBLE here, and the gate that looked for it now exists.** Filed as
-  a 🔴 blocker: with a route registered, a page RELOAD dies with `net::ERR_INVALID_RESPONSE` and the webview
-  shows its error page, while sub-resource requests and hash routing stay fine. **The sample now does exactly
-  the filed reproduction and passes** (2026-08-05, MAUI 10.0.20, Android WebView, emulator): a route
-  registered, `location.reload()`, and the bundle comes back — `stamp=fresh|title=Shenora mobile
-  sample|nodes=55`. `PageProbe.CheckReloadAsync` is the permanent gate.
-  - ⚠ **The gate is sabotage-verified, so the PASS means something.** Claiming `/` and answering it with a
-    404 produces `title=|nodes=5|text=Not Found` and a FAIL. Recorded because the FIRST sabotage was
-    ineffective and looked like a working gate: `e.Handled = true` without `SetResponse` leaves MAUI
-    returning a null response, which Android reads as "not intercepted, serve it yourself" — a no-op, not a
-    breakage. See `.claude/knowledge/mobile-shells.md`.
-  - **So the reported mechanism is wrong, at least on this version.** "MAUI's `HybridWebView` does not
-    re-serve the main document once a `WebResourceRequested` subscriber exists" is not what happens:
-    `MauiHybridWebViewClient.ShouldInterceptRequest` raises the event FIRST and, when the app does not claim
-    the request, falls through to its own asset serving. Subscribing costs the main document nothing.
-  - ✅ **RE-PROVEN ON A CURRENT WEBVIEW (2026-08-05). The Chromium-version hypothesis is DISPROVEN.**
-    A raised concern — that the original pass came from MuMu's AOSP **Chromium 110**, ~20 major versions
-    behind any real user, and that `net::ERR_INVALID_RESPONSE` is exactly the area Chromium tightened —
-    was worth testing and turned out to be wrong. Built an API 36 AVD carrying
-    **`com.google.android.webview` 133.0.6943.137** and re-ran the whole probe set there:
-    - `RELOAD: PASS` — `href=/|ready=complete|stamp=fresh|title=Shenora mobile sample|nodes=52`.
-      **`stamp=fresh` is the load-bearing field**: the pre-reload marker is gone, so the document really
-      did navigate away and come back rather than never leaving.
-    - `HEADERS: PASS` and `MEDIA: PASS` (both clips, duration 60.00, seeked 48.00) on the same run.
-    - So it does not reproduce on Chromium 110 **or** 133. The remaining explanations are on the
-      adopter's side, which makes questions 3 and 4 below the live ones.
-    - ⚠ MuMu's limitation is still real and still recorded in `.claude/knowledge/mobile-shells.md` — it
-      just is not the explanation *here*. Use `shenora-a36` for anything Chromium decides.
-  - **What to ask the adopter before doing anything else**, since a fix cannot be designed against a defect
-    that will not reproduce:
-    1. **Their WebView version** (`adb shell dumpsys webviewupdate`) — cheapest question, newly added, and
-       the one that tests the hypothesis above. If they are on 13x and we are on 110, that gap is the story.
-    2. Their MAUI version (this ran 10.0.20).
-    3. Whether their middleware ever returns NON-null for `/` — the kit's file middleware answers a 404 for
-       a path it resolves but cannot find, which would produce exactly this symptom and is the likeliest
-       candidate.
-    4. Whether it ever THROWS on the main-frame request — `MobileWebViewInterceptor` converts a throwing
-       middleware into a 404, deliberately, which for the DOCUMENT is indistinguishable from the report.
-  - Do not "fix" this speculatively. A change to main-frame fall-through with no reproduction is a change
-    that cannot be verified in either direction.
+- [ ] **Reloading at a hash route does not come back on iOS, and nothing on screen says so.** The Android
+  half is fixed and shipped (`## Unreleased`); this is the other half of the same report and it is the
+  worse one. Measured by the first adopter, not by us: the reload's document request reaches the shell
+  carrying the fragment (`uri='app://0.0.0.1/#/library' frag='#/library' path='/'`), and across five runs
+  a reload at a hash route **never produced a second page boot** — no second bundle request burst, no
+  second IPC handshake.
+  - 🔴 **The failure is INVISIBLE.** WKWebView keeps the PREVIOUS document on screen when a provisional
+    navigation fails, so a screenshot afterwards shows a perfectly healthy app. "It rendered" is not
+    evidence here, and this is why the item is worth keeping open rather than closing as low-impact: an
+    adopter can ship it without ever seeing it.
+  - **Do NOT apply the Android repair.** The adopter tried exactly that: with it registered the reload
+    produced no document request at all, and `EvaluateJavaScriptAsync` stopped answering. `Shenora.iOS` is
+    deliberately unchanged (`MobileWebViewInterceptor.RepairDocumentRequest`'s `#else` records why).
+  - **The next step is a MEASUREMENT, not a fix** — `PageProbe.CheckReloadAsync`'s fragment arm now exists
+    and runs on both shells, so this needs one simulator run to say whether it reproduces HERE. On iOS
+    `stamp` and `nodes` are the load-bearing fields (there is no error document to notice), and the arm
+    reports `NeverNavigated` for exactly this shape. ⚠ A fix designed against a defect that has not been
+    reproduced locally is verifiable in neither direction — that rule is what kept the Android half honest
+    for three sessions and it applies here unchanged.
+  - ⚠ Costs a commit: `mac push` refuses a dirty tree and force-updates the Mac's `main`.
+
+### From the first adopter — mobile media conversion has no engine (2026-08-06)
+
+- [ ] **🎧 `UseMediaConversion` has no engine under it on MOBILE, and every adopter will write the same
+  several hundred lines of native interop to supply one.** Not a challenge to D42 — "the right encoder
+  differs per app and a bundled one is tens of megabytes every consumer pays for" is right, and a codec
+  baked into `Shenora.Media` would be wrong. The gap is one layer below that decision.
+
+  **What the adopter hits.** `UseMediaConversion` composes beautifully — mission scheduling, `PathClaims`
+  so a source converts once, `MissionKey` dedup, `BeginReplace` for atomic output, `DerivedCacheKey` for
+  invalidation. All the hard *plumbing* is there. Then `Convert` needs an engine, and on mobile that is not
+  "call the app's ffmpeg": **iOS forbids `fork`/`exec` entirely**, so a CLI binary is not an option at all
+  and the only route is linking `libav*` and calling it in-process. Android can exec from
+  `nativeLibraryDir`, so the two platforms want *different shapes* — which means the adopter writes a
+  per-platform abstraction that has nothing to do with their app.
+
+  **Measured, on Android 12 / AOSP codecs, which is why this matters rather than being theoretical:**
+  the platform's own decoders are `aac flac mp3 opus pcm vorbis` (+ telephony) with an AAC encoder —
+  **barely wider than the WebView's own set**, and missing `alac`, the single codec that drives transcodes
+  for our app on that platform. So `MediaCodec`/`AVAssetExportSession` cannot be the engine: a conversion
+  route built on platform codecs has an **empty benefit window**. Anyone reaching for `UseMediaConversion`
+  on mobile ends up needing ffmpeg, and therefore ends up writing the same interop.
+
+  **The ask, shaped to keep D42 intact:** an **optional companion package** — `Shenora.Media.FFmpeg` or
+  just a documented recipe — so the size cost is opt-in rather than baked into `Shenora.Media`. Even the
+  recipe alone would be worth it: the per-platform invocation reality above (exec vs in-process link) is
+  the part that costs an adopter a day to discover, and it is a property of the platforms, not of any app.
+
+  ⚠ **This is squarely your own stated measure** — *"not 'does the kit expose the API' but 'how much native
+  code does the adopting app still have to write'"*. Today the answer for mobile media conversion is "all
+  of it".
+
+  **We are building it in Sonora first**, per the harvest-driven growth direction — if it generalises, it
+  is yours to take. Expect a report either way, including the LGPL packaging duties (dynamic linking to
+  keep relinking possible, no `--enable-gpl`, attribution), which are also per-platform and also not
+  app-specific.
+
+  > **KIT-SIDE POSITION (2026-08-06): deliberately NOT started, and this is D15 working rather than a
+  > stall.** The adopter is building it in their own repo first and has offered the harvest; building a
+  > `Shenora.Media.FFmpeg` here *before* that report would be inventing the abstraction instead of lifting a
+  > proven one, which is the extraction-first rule the whole kit is built on. Their measurement — AOSP
+  > decoders being `aac flac mp3 opus pcm vorbis`, barely wider than the WebView's own set, so a
+  > platform-codec engine has an **empty benefit window** — is the load-bearing finding and is worth
+  > re-reading before anyone designs against `MediaCodec`/`AVAssetExportSession`.
+  >
+  > **What to decide when the report lands** (owner's call, and worth deciding deliberately rather than by
+  > momentum): a package vs a documented recipe. The recipe is the cheaper half and carries most of the
+  > value they name — *exec on Android, in-process link on iOS* is a property of the PLATFORMS, not of any
+  > app, and it is the day an adopter loses. A package additionally owns binary size, per-platform build and
+  > the LGPL duties, which is a materially bigger commitment than anything the kit ships today.
 
 ### Platform integration — OS-level logic, measured by how little native code an app writes
 

@@ -5,6 +5,41 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-06 — the adopter's Android navigation report closes, and the gate that missed it for three sessions gets aimed
+
+**The kit was innocent and the trigger was one character.** A 🔴 blocker filed against 0.9.1 — a page RELOAD
+dying with `net::ERR_INVALID_RESPONSE` — refused to reproduce here across three sessions, on Chromium 110
+*and* on a purpose-built API 36 AVD running Chromium 133, which killed the repo's own version-gap
+hypothesis. The adopter's A/B on one binary settled it: the failure occurs **with no interceptor
+constructed at all**, so `WebResourceRequested` costs the main document nothing. What varies is a
+`#fragment` — MAUI's request→asset mapping strips a query and not a fragment, so `/#/library` looks for an
+asset named `#/library` and 404s with no body and no MIME.
+
+**Why every gate here was green: the reload probe reloaded at `/`.** It was aimed one character short of
+the defect. Nothing was wrong with its machinery. The general form is now a rule: *when a report will not
+reproduce, suspect the SHAPE of your reproduction before you suspect the report.*
+
+**What shipped.** `MobileWebViewInterceptor.RepairDocumentRequest` (Android) answers a fragment-carrying
+root request with `HybridRoot/DefaultFile` — an adopting app writes nothing. It runs after app middleware
+decline and *also* when no middleware is registered, because the defect is the platform's; it declines
+rather than 404s when there is no bundle to serve. `WebViewResourceRequest.IsRootWithFragment(Uri)` is the
+public predicate. `PageProbe.CheckReloadAsync` now runs two arms (`/` as control, then `#/probe-route`) so
+a failure is attributable rather than merely observed.
+
+**Verified** by sabotage in both directions on a device at the adopter's exact WebView version (110):
+repair off → `RELOAD: FAIL` with `net::ERR_INVALID_RESPONSE`, **the reported symptom reproduced in this
+repo for the first time**; repair on → `RELOAD: PASS` on both arms.
+
+🔴 **And the sabotage caught a second bug — in the new gate**, which is the part worth carrying. Its first
+run reported PASS while staring at Chromium's error document, because the recovery check was a BLOCKLIST
+and both its signals failed at once: the error page's title is *localized* and non-empty, and the body text
+was truncated one character before the underscore in `net::ERR`. Fixed by inverting the shape — **recognise
+OUR document, never the platform's error page**. The hole was in the original probe too; it had simply
+never been exercised, because the arm it guarded never failed.
+
+**iOS is deliberately NOT repaired** — same trigger, different machinery, and its failure is SILENT
+(WKWebView keeps the previous document on screen). Tracked as open work rather than guessed at.
+
 ### 2026-08-05 — 0.10.0 ships: a NINTH package that carries no managed code, and a mobile shell that knows where the screen is
 
 **`Shenora.Launcher` (D50).** The staged-update design's native half, built as a **C++ library + a

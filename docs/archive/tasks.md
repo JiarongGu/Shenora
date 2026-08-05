@@ -17,6 +17,76 @@
 
 ---
 
+### The adopter's Android navigation report — CLOSED 2026-08-06, and the kit was innocent
+
+Filed as a 🔴 blocker against 0.9.1: with a route registered, a page RELOAD died with
+`net::ERR_INVALID_RESPONSE` while sub-resources and hash routing stayed fine. It was investigated across
+three sessions and **would not reproduce** — the sample did exactly the filed reproduction and passed on
+MuMu's Chromium 110 and again on a purpose-built API 36 AVD running Chromium 133, which killed the
+version-gap hypothesis the repo had raised itself.
+
+**The adopter re-tested and produced the attribution (2026-08-06). It is a MAUI bug and the trigger is a
+`#fragment`.** An A/B on ONE binary (a runtime flag chose the arm) showed the failure with an interceptor +
+route, with an interceptor and no route, and **with no interceptor constructed at all** — identical every
+time, so `WebResourceRequested` costs the main document nothing, exactly as this repo had argued. What
+varied was the fragment: `/` and `/?x=1` and `/index.html` all answered 200, `/#zzz` and `/#/library`
+answered 404. MAUI's request→asset mapping strips a QUERY and not a FRAGMENT, so `/#zzz` looks for an asset
+literally named `#zzz`; Chromium turns a 404 with no body and no MIME into `ERR_INVALID_RESPONSE`.
+
+**Why three sessions of green gates said nothing: the probe reloaded at `/`.** It was aimed one character
+short of the defect. Nothing was wrong with the gate's machinery — only with the shape of its reproduction.
+The reusable form of that: *when a report will not reproduce, suspect the SHAPE of your reproduction before
+you suspect the report.*
+
+**Also worth recording: the misattribution's mechanism.** The adopter logged `uri.AbsolutePath`, saw `/`,
+and concluded the URL reaching the shell was fragment-free. It is not — `AbsolutePath` is the SAFE reading
+and it is also the one that HIDES the fragment. That is now documented on `WebViewResourceRequest.Uri`.
+
+#### What shipped, all three of their requests
+
+1. **`PageProbe.CheckReloadAsync` reloads at a fragment URL** — as TWO arms in one gate (`/` as the
+   control, then `#/probe-route`), because a lone failing arm is not attributable: plain-pass +
+   fragment-fail is the platform defect and nothing else, while both failing means the harness proved
+   nothing. Plus a `Misaimed` outcome and a `hash=` field in the snapshot, so an arm has to prove it was
+   AIMED — a hash arm that silently lost its hash would otherwise re-run the plain arm and pass.
+2. **`MobileWebViewInterceptor.RepairDocumentRequest`** — Android-only, answers a fragment-carrying root
+   request with `HybridRoot/DefaultFile`. Runs AFTER app middleware decline and ALSO when the pipeline is
+   empty (the defect is the platform's). **Declines rather than 404s** when the bundle cannot be read, so an
+   app serving its own document is untouched. `WebViewResourceRequest.IsRootWithFragment(Uri)` is the
+   public predicate it keys on — public because a middleware answering the root needs the same shape.
+3. **The fragment documented** on `WebViewResourceRequest.Uri`, in `ADOPTION.md` and in `mobile-shells.md`.
+
+**iOS deliberately NOT repaired.** Same trigger, different machinery: the reload never produces a second
+document, and WKWebView keeps the PREVIOUS page on screen, so the failure is silent and a screenshot shows
+a healthy app. The adopter measured that this repair makes it WORSE there (no document request at all, and
+`EvaluateJavaScriptAsync` stopped answering). A main-frame change with no reproduction is verifiable in
+neither direction, so the gate MEASURES iOS instead of the kit guessing at it.
+
+#### Device evidence — sabotage-verified BOTH ways on MuMu (WebView 110, the adopter's exact version)
+
+| repair | verdict |
+|---|---|
+| off | `RELOAD: FAIL` — `title=网页无法打开｜nodes=11｜text=… net::ERR_INVALID_RESPONSE`. **The reported symptom, reproduced in this repo for the first time.** |
+| on | `RELOAD: PASS` — both arms, `hash=#/probe-route｜title=Shenora mobile sample｜nodes=56`, plus the shell's own `Served 'wwwroot/index.html' for a fragment document request`. |
+
+🔴 **The sabotage also caught a hole in the new gate, and this is the part most worth re-reading.** The
+first sabotaged run reported **`RELOAD: PASS` while staring at Chromium's error document**. The recovery
+check was a BLOCKLIST — "an empty title, or `ERR_` in the body text" — and **both signals failed at once,
+independently**: the error page's title is LOCALIZED and non-empty (`title=网页无法打开` on this CJK-locale
+device, so `title=|` matched nothing), and the body text was truncated to 60 characters ONE CHARACTER
+before the underscore (`net::ERR`, so `ERR_` matched nothing either). Fixed by inverting the shape —
+**recognise OUR document by its title, read as a baseline from the live page, never try to recognise the
+platform's error page** — and by widening the slice to 120 so a diagnostic is not cut mid-token.
+⚠ **That hole was in the ORIGINAL probe too**; it never fired because the arm it guarded never failed. A
+gate is only verified on the paths its sabotage actually exercised.
+
+**Two method notes from the adopter, kept because they generalise:** a page-side probe cannot report its
+own death (a failed reload and a bridge that never came back are the same silence — only a native-side
+witness survives the event it measures), and there IS an eval on iOS (`EvaluateJavaScriptAsync` from native
+code, no `ios-webkit-debug-proxy` and no bridge) — the seam if the kit ever wants an observable iOS shell.
+
+---
+
 ### Safe-area insets — a configurable shell capability (2026-08-05) — DONE, proven on device
 
 `SafeAreaOptions`/`SafeAreaInsets`/`SafeAreaScript` in `Shenora.Core`, `MobileSafeArea` in the mobile
