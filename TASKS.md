@@ -80,6 +80,27 @@ lives in `docs/archive/tasks.md`.
 
 Everything `DM3` needs already exists; the item is a composition, not a build.
 
+  **DESIGN SETTLED 2026-08-05 (not yet built) — read this before writing any of it.** Two constraints
+  found by checking the seam rather than the doc, and each one SHRANK the surface:
+  - 🔴 **The mobile interceptor resolves SYNCHRONOUSLY** (`MobileWebViewInterceptor.Run` does
+    `.GetAwaiter().GetResult()` — both platforms need the status line and headers when the event returns).
+    So the middleware **cannot await a conversion**, and must not probe on the request path either: a
+    process launch per request is a webview callback blocked on `ffprobe`. Everything slow goes in the
+    MISSION. The request path is then only: resolve → contain → cache key → hit? serve : start-and-answer.
+  - **On a cache MISS it answers `503` + `Retry-After` and starts the mission** — the page is event-driven
+    by design (`SOURCE_PROGRESS`/`READY`/`FAILED` over the existing pipe, design §5), so it sets
+    `<video src>` when READY arrives rather than blocking on the first request.
+  - **The middleware does NOT decide whether conversion is needed — the APP does, before it builds the
+    URL**, using the `MediaPlaybackPlanner` the kit already ships. That deletes `Probe` and `Policy` from
+    the options entirely and keeps the ownership line the design's own table draws: the app owns the
+    engine, the codec policy and the decision; the kit owns the composition. A source that plays directly
+    is simply pointed at `UseFiles`.
+  - **Surface, minimal:** `MediaConversionOptions { Resolve, Convert, CacheRoot, AllowedRoots,
+    CacheExtension, ContentType?, Module, Log }` + `MediaConversionRequest(SourcePath, DestinationPath,
+    Progress)` + `interceptor.UseMediaConversion(scheduler, events, options)`. `Convert` is the app's —
+    the kit ships no engine and never vendors one (D42).
+  - ⚠ `Conversion` is a NEW word for the surface lexicon and will fail the gate until argued there.
+
 - [ ] **DM3 — the conversion, COMPOSED not built.** `IMissionScheduler` (the long run) +
   `PathClaims.Exclusive` (convert once, never twice) + `Files.BeginReplace` (atomic output) +
   `Core.DerivedCacheKey` (identity + length + mtime — the piece DM3 used to say was missing, and it now
@@ -203,7 +224,7 @@ release-source seam) are done — `docs/archive/tasks.md`.
     backend 103/102, frontend 21/21, zero would-be-intrusions, the extras exactly the exempt ones). Make
     that a documented step for the kit's verifier, not a habit one adopter happened to have.
 
-### Greenfield-shape sweep of the public surface (2026-08-05, under D47) — four findings, none started
+### Greenfield-shape sweep of the public surface (2026-08-05, under D47) — ALL FOUR CLOSED
 
 Swept all four API baselines (~1,840 lines) for shapes that exist only because changing them used to be
 expensive. **Each was checked against the SOURCE, not the signature** — several plausible-looking candidates
