@@ -89,10 +89,39 @@ public sealed class MobileSafeArea : IDisposable
 #if ANDROID
         if (_webView.Handler?.PlatformView is not global::Android.Views.View view) return;
 
-        // WindowInsetsCompat, not the raw WindowInsets: it is the one that reports consistently across
-        // API levels, and it carries systemBars() — the half Android does NOT expose to CSS at all.
-        AndroidX.Core.View.ViewCompat.SetOnApplyWindowInsetsListener(view, new InsetListener(this));
-        view.RequestApplyInsets();
+        // 🔴 READ the insets; do NOT install an OnApplyWindowInsetsListener on the webview.
+        //
+        // Measured, after shipping the listener version and watching it break the very thing it exists
+        // to fix: setting a listener REPLACES the view's own inset handling rather than observing it, so
+        // the WebView stopped applying insets internally and `env(safe-area-inset-top)` in the page went
+        // from 49 to 0. Delegating via ViewCompat.OnApplyWindowInsets did not rescue it. An A/B settled
+        // it — with this capability removed from the sample, env() reported 49 again on the next load.
+        //
+        // GetRootWindowInsets is purely observational: it asks what the window currently has and cannot
+        // consume, reorder or suppress anything. A capability must not be able to damage the platform
+        // behaviour it supplements — that failure is invisible unless someone thinks to check env().
+        void Read()
+        {
+            var insets = AndroidX.Core.View.ViewCompat.GetRootWindowInsets(view);
+            if (insets is null) return;
+
+            // systemBars() | displayCutout() — the UNION is the point. CSS gets the cutout only, which is
+            // why bottom came back 0 on a device whose navigation bar is genuinely 24 CSS px tall.
+            var i = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars()
+                                   | AndroidX.Core.View.WindowInsetsCompat.Type.DisplayCutout());
+            if (i is null) return;
+
+            // Android reports DEVICE pixels; CSS wants CSS pixels. Dividing by the display density is the
+            // whole conversion, and getting it wrong is invisible on a 1x screen and wrong everywhere else.
+            var density = view.Context?.Resources?.DisplayMetrics?.Density ?? 1f;
+            if (density <= 0) density = 1f;
+            Report(new SafeAreaInsets(i.Top / density, i.Right / density, i.Bottom / density, i.Left / density));
+        }
+
+        // Layout is when the window's insets become known and when they change (rotation, keyboard, a
+        // resized window). Report() skips an unchanged value, so this stays cheap.
+        view.LayoutChange += (_, _) => Read();
+        Read();
 #elif IOS || MACCATALYST
         if (_webView.Handler?.PlatformView is not UIKit.UIView view) return;
         // iOS reports both bars and the cutout, so a single read after layout is enough; the scene's
@@ -102,34 +131,6 @@ public sealed class MobileSafeArea : IDisposable
 #endif
     }
 
-#if ANDROID
-    // The interface is declared without nullable annotations (it is a Java binding), so the override's
-    // parameters must match it exactly — nullable-annotated ones are CS8767, not a warning.
-    private sealed class InsetListener(MobileSafeArea owner)
-        : Java.Lang.Object, AndroidX.Core.View.IOnApplyWindowInsetsListener
-    {
-        public AndroidX.Core.View.WindowInsetsCompat? OnApplyWindowInsets(
-            global::Android.Views.View? v, AndroidX.Core.View.WindowInsetsCompat? insets)
-        {
-            if (v is null || insets is null) return insets;
-            // systemBars() | displayCutout() — the UNION is the point. CSS gets the cutout only, which is
-            // why bottom came back 0 on a device whose navigation bar is genuinely 24 CSS px tall.
-            var type = AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars()
-                     | AndroidX.Core.View.WindowInsetsCompat.Type.DisplayCutout();
-            var i = insets.GetInsets(type);
-            if (i is null) return insets;
-
-            // Android reports DEVICE pixels; CSS wants CSS pixels. Dividing by the display density is the
-            // whole conversion, and getting it wrong is invisible on a 1x screen and wrong everywhere else.
-            var density = v.Context?.Resources?.DisplayMetrics?.Density ?? 1f;
-            if (density <= 0) density = 1f;
-
-            owner.Report(new SafeAreaInsets(i.Top / density, i.Right / density,
-                                            i.Bottom / density, i.Left / density));
-            return insets;
-        }
-    }
-#endif
 
     private void Log(string message)
     {
