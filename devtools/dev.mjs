@@ -505,6 +505,46 @@ function resolveCmake() {
   return null;
 }
 
+// Build the launcher's POSIX half with gcc, in a container, so a Windows box can prove the platform it
+// cannot compile. This exists because the alternative was learning it from a failed release: MSVC drags
+// most of the standard library in through other headers and gcc does not, so `platform_posix.cpp` built
+// clean here for days while missing two includes it used.
+//
+// It runs the REAL CMakeLists rather than a hand-rolled g++ line, because a check with its own copy of
+// the compiler flags is a check that drifts away from the thing it is checking. Cost: the image pull
+// once, then ~20s per run for cmake (gcc:13 has no cmake, and --rm means it is installed each time).
+// The conformance harness is NOT run here — it drives the binary through the C# update-probe, and there
+// is no .NET in the container. Cross-compilation checks the code; conformance is the release's job.
+function runPosixLauncherBuild() {
+  const docker = spawnSync('docker', ['version', '--format', '{{.Server.Os}}'], { encoding: 'utf8', shell: false });
+  if (docker.status !== 0) {
+    console.error('docker not found (or the daemon is not running). `launcher --posix` cross-builds the\n'
+      + 'POSIX half in a gcc container so a Windows box can prove it; without Docker the only thing that\n'
+      + 'compiles that half is the release workflow, which is a slow place to find a missing #include.');
+    process.exitCode = 1;
+    return;
+  }
+  // Forward slashes: Docker Desktop parses `-v` on the colon, and a bare `D:\...` host path is ambiguous.
+  const mount = `${repo.replace(/\\/g, '/')}:/src`;
+  const script = [
+    'set -e',
+    'command -v cmake >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq cmake >/dev/null; }',
+    // Build OUT of the mount: build artefacts written back through the bind mount would land in the
+    // working tree, and CMake caches absolute container paths that mean nothing on the host.
+    'cmake -S src/Shenora.Launcher -B /tmp/launcher-build -DCMAKE_BUILD_TYPE=Release >/dev/null',
+    'cmake --build /tmp/launcher-build',
+    // Prove it RUNS, not just links: with no stage pending it must report nothing applied and exit 0.
+    'cd /tmp && /tmp/launcher-build/shenora-launcher --apply-and-exit',
+    'stat -c "%n %s" /tmp/launcher-build/shenora-launcher',
+  ].join('\n');
+
+  const ok = step('gcc:13 cross-build (POSIX half)', () => run('docker',
+    ['run', '--rm', '-v', mount, '-w', '/src', 'gcc:13', 'bash', '-c', script]));
+  if (!ok) { process.exitCode = 1; return; }
+  console.log('\nlauncher --posix: the POSIX half compiles, links and runs under gcc.\n'
+    + 'Conformance is Windows-only locally — run `dev.mjs launcher` for that.');
+}
+
 function ensureTool(toolName) {
   const exe = path.join(repo, 'devtools', toolName, 'bin', 'Release', TOOL_TFM[toolName], `${toolName}.exe`);
   if (!fs.existsSync(exe)) {
@@ -839,15 +879,22 @@ switch (cmd) {
   }
 
   // Build the native launcher and run the conformance harness against the BINARY. Not in `verify`:
-  // this repo has no C++ toolchain and deliberately does not require one (design doc §5) — CI's
-  // `launcher.yml` matrix is what proves both targets on every change. Run it locally when you touch
-  // either half of the protocol.
+  // this repo has no C++ toolchain and deliberately does not require one (design doc §5), and `verify`
+  // must run on a clone that has neither CMake nor Docker. Run it when you touch either half of the
+  // protocol — and `--posix` too if you touched the POSIX half.
+  //
+  // ⚠ THE DEFAULT RUN PROVES ONE PLATFORM. Both platform .cpp files compile here, but only the branch
+  // your compiler takes is actually checked, so a POSIX-only break sails through green (it did: see the
+  // include note at the top of src/platform_posix.cpp). D5 keeps this repo on ONE manual release
+  // workflow with no push CI, so `--posix` is not a convenience — it is the only thing between a broken
+  // POSIX half and a failed release.
   case 'launcher': {
+    if (args.includes('--posix')) { runPosixLauncherBuild(); break; }
     const cmake = resolveCmake();
     if (!cmake) {
       console.error('cmake not found. Install CMake, or use the one bundled with Visual Studio '
-        + '(Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin). CI builds this on both targets '
-        + 'regardless — see .github/workflows/launcher.yml.');
+        + '(Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin). The release workflow builds both '
+        + 'targets regardless — see .github/workflows/release.yml.');
       process.exitCode = 1;
       break;
     }
@@ -967,6 +1014,6 @@ switch (cmd) {
     break;
 
   default:
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|nuget-retire|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|install-hooks>');
     process.exitCode = cmd ? 1 : 0;
 }

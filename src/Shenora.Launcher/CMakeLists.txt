@@ -30,6 +30,15 @@ add_library(shenora_launcher STATIC
 # deliberate rather than a CMake conditional: a source file excluded by the build system is one nobody
 # notices has stopped compiling, and the Linux half existing-but-broken is the exact failure D50's
 # "Linux for a future need" is meant to prevent.
+#
+# ⚠ COMPILING BOTH FILES IS NOT THE SAME AS COMPILING BOTH TARGETS, which the first release run proved:
+# platform_posix.cpp compiled clean under MSVC and failed under gcc with "'all_of' is not a member of
+# 'std'", because MSVC drags most of the standard library in through other headers and gcc does not.
+# `#ifdef`-guarded bodies are only checked by the compiler that takes that branch.
+#
+# `node devtools/dev.mjs launcher --posix` builds this file with gcc in a container, so a Windows box can
+# prove the platform it cannot compile. Run it whenever you touch the POSIX half — D5 means there is no
+# push CI, so a release is otherwise the first thing that compiles it.
 target_include_directories(shenora_launcher PUBLIC include)
 
 if(MSVC)

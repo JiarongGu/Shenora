@@ -2,9 +2,14 @@
 
 #ifndef _WIN32
 
+// ⚠ INCLUDE WHAT YOU USE — MSVC does not make you, and gcc does. This file compiled clean on Windows
+// (where <thread> and friends drag in most of the standard library through their own headers) and failed
+// on the first Linux build with "'all_of' is not a member of 'std'". <algorithm> and <chrono> are both
+// used below and neither was included; the Windows build had been hiding it.
+#include <algorithm>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
-#include <fstream>
 #include <system_error>
 #include <thread>
 

@@ -14,6 +14,33 @@ entry template:
 
 ## 2026-08-05
 
+### Launcher: the POSIX half had never been compiled by anything, and the first release build failed on it
+
+- **Symptom:** the `launcher` matrix leg for `linux-x64` failed the moment a release was dispatched —
+  `src/Shenora.Launcher/src/platform_posix.cpp:40:35: error: 'all_of' is not a member of 'std'`. The
+  Windows leg was green, as it had been for every local run since the library was built.
+- **Root cause:** two missing includes, `<algorithm>` (`std::all_of`) and `<chrono>`
+  (`std::chrono::milliseconds`), in a file that only ever met MSVC — which supplies both transitively
+  through other headers, where gcc does not. The deeper cause is the gap between two things that sound
+  identical: `CMakeLists.txt` deliberately compiles BOTH platform `.cpp` files on every build so neither
+  can rot, and that comment was read as "both platforms are proven". It is not — an `#ifdef`-guarded body
+  is only checked by the compiler that takes the branch, so `platform_posix.cpp` was compiled constantly
+  and never actually parsed past its `#ifndef _WIN32`. D5 (no push CI, one manual release) meant nothing
+  else would ever compile it either.
+- **Fix:** the two includes, with a note at the top of the file naming the trap
+  (`src/Shenora.Launcher/src/platform_posix.cpp`). The gap itself closed with
+  **`node devtools/dev.mjs launcher --posix`** — a `gcc:13` container build that a Windows box can run,
+  driving the REAL `CMakeLists.txt` rather than its own g++ line so the check cannot drift from the build
+  it checks, and running the binary afterwards to prove it links and starts. Docs: `devtools/README.md`,
+  the `CMakeLists.txt` header, D50.
+- **Verify:** sabotage-verified both ways — with `<algorithm>` removed the command exits non-zero and
+  names `platform_posix.cpp:44` and the symbol; restored (via the same Edit tool, per
+  `windows-dev-gotchas`) it compiles, links, runs `--apply-and-exit` → `applied=0 attempted=0`, exit 0.
+  Windows unaffected: `dev.mjs launcher` still builds at 322 KB with 6/6 conformance cases, `verify`
+  green. Also measured the figure D50 had only ever guessed for Linux: **46.8 KB** vs 322 KB on Windows,
+  the whole gap being the statically linked CRT.
+- **Commit:** _(pending)_
+
 ### Windows dialogs: `OpenFolderAsync(AllowFileSelection: true)` returned the PARENT FOLDER for a file named `Folder Selection.txt`
 
 - **Symptom:** with `AllowFileSelection` set, picking an existing file whose name matches the internal

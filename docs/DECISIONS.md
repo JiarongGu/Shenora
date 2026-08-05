@@ -1528,12 +1528,20 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     including the two comparison rules already sabotage-verified on the C# side: paths normalise separators
     AND case, hashes compare case-insensitively. A second implementation is a second place to get those
     wrong, and getting either wrong makes a release look either fully changed or fully unchanged.
-  - **~~⚠ Sizes are BANDS, not measurements~~ — MEASURED 2026-08-05 when it was built: 322 KB**, MSVC
-    Release with `/O1 /GL` and `/LTCG /OPT:REF /OPT:ICF`. That is **above** this entry's own 150–300 KB
-    guess, and the difference is the **statically linked CRT** — a deliberate trade, because a launcher
-    that needs a VC++ redistributable installed has the same bootstrap problem it exists to solve.
-    Recorded rather than quietly re-banded: the estimate was wrong in the direction estimates usually
-    are. The Rust figure remains unmeasured and now has no reason to be measured.
+  - **~~⚠ Sizes are BANDS, not measurements~~ — MEASURED 2026-08-05 when it was built: 322 KB on
+    Windows, 46.8 KB on Linux.** MSVC Release with `/O1 /GL` and `/LTCG /OPT:REF /OPT:ICF`; gcc 13 with
+    `-Os` and `--gc-sections`. Windows is **above** this entry's own 150–300 KB guess and Linux is far
+    below it, and the whole difference is the **statically linked CRT** on Windows — a deliberate trade,
+    because a launcher that needs a VC++ redistributable installed has the same bootstrap problem it
+    exists to solve. Recorded rather than quietly re-banded: the estimate was wrong in the direction
+    estimates usually are, and wrong by 7× in the other direction on the platform nobody had built. The
+    Rust figure remains unmeasured and now has no reason to be measured.
+  - **⚠ "Both platform files always compile" did NOT mean both TARGETS compiled**, and the first release
+    run is what taught it: `platform_posix.cpp` built clean under MSVC for days and failed instantly
+    under gcc (`'all_of' is not a member of 'std'` — MSVC drags most of the standard library in through
+    other headers). An `#ifdef`-guarded body is only checked by the compiler that takes that branch, so
+    a one-platform build proves one platform. Reproduce Linux locally with the `gcc:13` container line in
+    `src/Shenora.Launcher/CMakeLists.txt` rather than round-tripping a release.
   - **§5's verification problem is UNCHANGED, and calling it a library makes it sharper, not softer.** A
     library implies the kit owns its correctness while `dev.mjs verify` compiles none of it. The answer stays
     the sibling's: ship the Node harness that drives a PREBUILT launcher with `--apply-and-exit` over sandbox
