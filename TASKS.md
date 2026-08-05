@@ -94,18 +94,19 @@ is the table at the top of `docs/DECISIONS.md`; the closed backlog is `docs/arch
     re-serve the main document once a `WebResourceRequested` subscriber exists" is not what happens:
     `MauiHybridWebViewClient.ShouldInterceptRequest` raises the event FIRST and, when the app does not claim
     the request, falls through to its own asset serving. Subscribing costs the main document nothing.
-  - 🔴 **THE NON-REPRODUCTION IS WEAKER THAN IT READS, measured 2026-08-05 — and this is now the leading
-    hypothesis for the whole disagreement.** The emulator's WebView is **`com.android.webview`
-    110.0.5481.154.1** — the AOSP build, not Google's, roughly **20 major Chromium versions behind** what a
-    real user runs. The reported error is `net::ERR_INVALID_RESPONSE`, and what counts as an *invalid
-    response* is precisely what Chromium tightened across those releases; `shouldInterceptRequest`'s
-    fall-through contract, by contrast, has been stable for years. So "passes here" means **"does not
-    reproduce on Chromium 110"**, which is not the same claim.
-    - **MuMu cannot be upgraded to test this:** the image ships no `config-webview.xml` and
-      `com.android.webview` is its ONLY allowed provider — there is no Chrome and no Google WebView to
-      switch to. A current WebView needs a different emulator image (an SDK AVD) or a real device.
-    - Applies to every Chromium-decided Android claim from this box, not just this one — recorded in
-      `.claude/knowledge/mobile-shells.md` with the split between what MuMu IS and is not evidence for.
+  - ✅ **RE-PROVEN ON A CURRENT WEBVIEW (2026-08-05). The Chromium-version hypothesis is DISPROVEN.**
+    A raised concern — that the original pass came from MuMu's AOSP **Chromium 110**, ~20 major versions
+    behind any real user, and that `net::ERR_INVALID_RESPONSE` is exactly the area Chromium tightened —
+    was worth testing and turned out to be wrong. Built an API 36 AVD carrying
+    **`com.google.android.webview` 133.0.6943.137** and re-ran the whole probe set there:
+    - `RELOAD: PASS` — `href=/|ready=complete|stamp=fresh|title=Shenora mobile sample|nodes=52`.
+      **`stamp=fresh` is the load-bearing field**: the pre-reload marker is gone, so the document really
+      did navigate away and come back rather than never leaving.
+    - `HEADERS: PASS` and `MEDIA: PASS` (both clips, duration 60.00, seeked 48.00) on the same run.
+    - So it does not reproduce on Chromium 110 **or** 133. The remaining explanations are on the
+      adopter's side, which makes questions 3 and 4 below the live ones.
+    - ⚠ MuMu's limitation is still real and still recorded in `.claude/knowledge/mobile-shells.md` — it
+      just is not the explanation *here*. Use `shenora-a36` for anything Chromium decides.
   - **What to ask the adopter before doing anything else**, since a fix cannot be designed against a defect
     that will not reproduce:
     1. **Their WebView version** (`adb shell dumpsys webviewupdate`) — cheapest question, newly added, and

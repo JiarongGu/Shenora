@@ -38,6 +38,18 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   - **So ask an adopter for their WebView version** (`adb shell dumpsys webviewupdate`) before treating
     a non-reproduction as evidence. It is the cheapest question on any Android web report and it was
     missing from ours.
+  - **The fix, and it is a one-off: an SDK AVD carries a REAL WebView.** `shenora-a36` (API 36,
+    `google_apis;x86_64`) reports `com.google.android.webview` **133.0.6943.137** and also has Chrome as
+    an alternative provider. Recipe and its three traps are in `local/PROJECT_NOTES.md`; the one that
+    matters most is that with MuMu AND an AVD attached, **unqualified `adb` picks MuMu** — always
+    `adb -s <serial>`, and note the AVD is not always `emulator-5554`.
+  - ⚠ **Run the emulator with `-gpu host`.** Under `swiftshader_indirect` this AVD died after a few
+    minutes, repeatedly, with nothing fatal in its log — which reads as a flaky harness rather than a
+    software-rendering limit and cost an hour before the GPU was suspected.
+  - **And the honest coda: the version gap did NOT explain the one report it was raised for.** The
+    Android navigation defect fails to reproduce on Chromium 110 *and* on 133. A good hypothesis that
+    dies to a measurement is still worth the measurement — but record which way it went, or the next
+    session re-argues it.
 - **A webview on both shells does NOT mean the auxiliary-SESSION stack ports (D39).** `StreamingSession`
   and friends rest on CDP (screencast, device metrics, OS-level input replay), which neither shell
   exposes in-process — iOS has no CDP at all. The trap is that a port IS buildable behind the same
