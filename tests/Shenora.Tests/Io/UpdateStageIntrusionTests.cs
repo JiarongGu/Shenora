@@ -45,6 +45,22 @@ public class UpdateStageIntrusionTests
         File.WriteAllText(full, content);
     }
 
+    /// <summary>
+    /// What <c>FetchAsync</c> writes into the stage for the applier: the FULL release manifest, which is
+    /// where removals come from. <c>CommitAsync</c> refuses to publish a marker without it.
+    /// <para>
+    /// ⚠ Every POSITIVE test here has to call this, and that is the point rather than boilerplate. Six
+    /// tests in this area asserted <c>Pending == true</c> for a stage `ApplyAsync` would have refused,
+    /// because each one built its own world and the missing file was missing on both sides. A real
+    /// publish tree found it on the first run (`devtools/update-probe`, 2026-08-05).
+    /// </para>
+    /// </summary>
+    private static void PublishReleaseManifest(UpdateStage stage, params (string Path, string Content)[] files)
+    {
+        Directory.CreateDirectory(stage.StagedDirectory);
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "manifest.json"), Manifest(files).ToJson());
+    }
+
     // ── The hole ──────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -86,6 +102,7 @@ public class UpdateStageIntrusionTests
         stage.Begin();
         Stage(stage, "app.exe", "binary");
         Stage(stage, "libs/x.dll", "lib");
+        PublishReleaseManifest(stage, ("app.exe", "binary"), ("libs/x.dll", "lib"));
 
         Assert.True((await stage.CommitAsync(Manifest(("app.exe", "binary"), ("libs/x.dll", "lib")))).Pending);
     }
@@ -100,6 +117,7 @@ public class UpdateStageIntrusionTests
         var stage = StageIn(dir);
         stage.Begin();
         Stage(stage, "libs/x.dll", "lib");
+        PublishReleaseManifest(stage, ("libs/x.dll", "lib"));
 
         Assert.True((await stage.CommitAsync(Manifest((@"Libs\X.DLL", "lib")))).Pending);
     }
@@ -116,6 +134,7 @@ public class UpdateStageIntrusionTests
         Stage(stage, "app.exe", "binary");
         Stage(stage, "data/seed.db", "rows");        // bundled, deliberately not indexed
         Stage(stage, "app-version.txt", "2.0");      // changes every release
+        PublishReleaseManifest(stage, ("app.exe", "binary"));
 
         Assert.True((await stage.CommitAsync(Manifest(("app.exe", "binary")))).Pending);
     }
@@ -162,7 +181,10 @@ public class UpdateStageIntrusionTests
         var stage = StageIn(dir);
         stage.Begin();
         Stage(stage, "app.exe", "binary");
-        Stage(stage, "manifest.json", "{}"); // what FetchAsync writes for the applier's removals
+        // A REAL release manifest, not `{}`. It used to be the latter, and that passed only because
+        // nothing yet required the file to be usable — `ApplyAsync` reads removals from it and treats
+        // an empty one as "the release removed everything", so `{}` was a stage the applier would refuse.
+        PublishReleaseManifest(stage, ("app.exe", "binary")); // what FetchAsync writes for the applier
 
         Assert.True((await stage.CommitAsync(Manifest(("app.exe", "binary")))).Pending);
     }

@@ -13,6 +13,7 @@
 //   node devtools/dev.mjs input <args…>    - raw win-input passthrough (list | click | rclick | move | drag)
 //   node devtools/dev.mjs responsiveness <fx> <fy> [--label name] [--duration|--interval|--timeout ms]
 //                                           - click + SendMessageTimeout(WM_NULL) UI-thread stall probe
+//   node devtools/dev.mjs update-probe [dir] - drive the staged updater over a REAL tree (default: publish the desktop sample)
 //   node devtools/dev.mjs knowledge <…>    - rule-base + skills doctor (check | footprint | new <name> [--core])
 //   node devtools/dev.mjs clean [--all]     - drop devtools/_* build output (--all: sources + publish/ too)
 //   node devtools/dev.mjs check-sensitive [--tree|--history] - leak scan (--history = one-off audit)
@@ -479,6 +480,9 @@ const TOOL_TFM = {
   'win-input': 'net10.0-windows',
   'wgc-shot': 'net10.0-windows10.0.22621.0',
   'ui-responsiveness': 'net10.0-windows',
+  // net10.0, not -windows: Shenora.IO is portable and a probe that could only run on Windows could
+  // not check the Linux half of a claim this kit intends to keep making.
+  'update-probe': 'net10.0',
 };
 function ensureTool(toolName) {
   const exe = path.join(repo, 'devtools', toolName, 'bin', 'Release', TOOL_TFM[toolName], `${toolName}.exe`);
@@ -764,6 +768,30 @@ switch (cmd) {
     if (!winInput || !probe) { process.exitCode = 1; break; }
     const env = { ...process.env, DEVTOOL_PROC: config.processName };
     run(probe, [args[0], args[1], '--win-input', winInput, '--proc', config.processName, ...args.slice(2)], { env });
+    break;
+  }
+
+  // Drive Shenora.IO's staged updater over a REAL directory tree. NOT part of `verify`: it publishes
+  // the sample (slow) and the point is a tree with real build shape, which `verify` has no reason to
+  // produce on every run. Run it before trusting an update-stage change, and hand the command to an
+  // adopter so they can point it at their OWN release — that is what turns one app's manual habit into
+  // a step anyone can repeat.
+  case 'update-probe': {
+    const exe = ensureTool('update-probe');
+    if (!exe) { process.exitCode = 1; break; }
+
+    let target = args.find((a) => !a.startsWith('--'));
+    if (!target) {
+      // No directory given: publish the desktop sample and probe THAT. A publish output — not bin/ —
+      // because bin/ accumulates runtime droppings (the WebView2 user-data folder alone is ~150 MB of
+      // files no release ever contains), which would measure the wrong thing.
+      target = path.join(repo, 'devtools', '_probe-release');
+      console.log('no directory given — publishing the desktop sample to probe against…');
+      const p = spawnSync('dotnet', ['publish', path.join(repo, config.sampleProject), '-c', 'Release',
+        '-o', target, '-v', 'quiet', '--nologo'], { stdio: 'inherit', cwd: repo });
+      if (p.status !== 0) { process.exitCode = p.status ?? 1; break; }
+    }
+    run(exe, [target, ...args.filter((a) => a.startsWith('--'))]);
     break;
   }
 

@@ -268,6 +268,26 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
 
 ### Fixed
 
+- **`UpdateStage.CommitAsync` no longer publishes a marker for a stage `ApplyAsync` would refuse.** It now
+  requires `staged/manifest.json` — the full release manifest — to be present, readable and non-empty,
+  which is exactly what `ApplyAsync` requires to compute removals. `FetchAsync` writes that file; an app
+  that stages by its own means had no way to know it must, and nothing checked.
+
+  The marker's documented meaning is "an applier can act without re-checking", so it was promising more
+  than it verified. **Where that failed is why it is now a guard:** `ApplyAsync` runs in the applier —
+  typically a launcher, after the app has exited — so the refusal surfaced on next start with nothing
+  running to report it. It is a CHECK and never a write: the manifest passed to `CommitAsync` is the staged
+  *changeset*, while the file must be the *full release* manifest, so writing one into the other would tell
+  the applier that every unchanged file had been removed from the release.
+  - Found by `node devtools/dev.mjs update-probe`, new in this release: it drives the staged updater over a
+    REAL directory tree (a `dotnet publish` output, or an adopter's own release) instead of a fixture. Six
+    existing tests had asserted this stage was valid, each having built both sides of its own world.
+  - Real-tree result, which is the other half of what the probe is for: **36 files, 0 would-be intrusions
+    under the default policy** — `runtimes/*/native/` subtrees, `.pdb`s, `.xml` docs and `.deps.json`
+    included. The default is not too strict.
+- Twelve log messages in `Shenora.IO` still identified themselves as `[Shenora.Core]` after the package
+  split.
+
 _From a full review of the kit's non-code surface (2026-08-05). The correctness hot spots were clean; every
 finding was in what a gate is structurally blind to — shipped package metadata, the npm barrel, and prose._
 

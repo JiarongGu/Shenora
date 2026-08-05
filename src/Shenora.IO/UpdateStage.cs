@@ -191,14 +191,14 @@ public sealed class UpdateStage
             var marker = JsonSerializer.Deserialize<UpdateStageStatus>(File.ReadAllText(MarkerPath), Json);
             if (marker is null || string.IsNullOrWhiteSpace(marker.Version))
             {
-                Log($"[Shenora.Core] Ignoring an unreadable staging marker at '{MarkerPath}'.");
+                Log($"[Shenora.IO] Ignoring an unreadable staging marker at '{MarkerPath}'.");
                 return new UpdateStageStatus { Pending = false };
             }
             return marker;
         }
         catch (Exception ex)
         {
-            Log($"[Shenora.Core] Could not read the staging marker: {ex.GetType().Name}");
+            Log($"[Shenora.IO] Could not read the staging marker: {ex.GetType().Name}");
             return new UpdateStageStatus { Pending = false };
         }
     }
@@ -251,7 +251,7 @@ public sealed class UpdateStage
             var path = Path.Combine(StagedDirectory, Relative(file.Path));
             if (!File.Exists(path))
             {
-                Log($"[Shenora.Core] Stage incomplete: '{file.Path}' is missing.");
+                Log($"[Shenora.IO] Stage incomplete: '{file.Path}' is missing.");
                 return new UpdateStageStatus { Pending = false };
             }
 
@@ -262,7 +262,7 @@ public sealed class UpdateStage
                 // match a size and never matches a hash. The message names the file and NOT the
                 // hashes: a mismatch is a corrupt download, and dumping 128 hex characters into a log
                 // buries that.
-                Log($"[Shenora.Core] Stage corrupt: '{file.Path}' does not match its manifest hash.");
+                Log($"[Shenora.IO] Stage corrupt: '{file.Path}' does not match its manifest hash.");
                 return new UpdateStageStatus { Pending = false };
             }
         }
@@ -279,6 +279,24 @@ public sealed class UpdateStage
         if (!VerifyNothingUnlisted(manifest, cancellationToken))
             return new UpdateStageStatus { Pending = false };
 
+        // THE FOURTH THING THE MARKER PROMISES, and it was missing until a real-tree probe hit it
+        // (2026-08-05, `devtools/update-probe`). ApplyAsync REFUSES without a readable, non-empty
+        // `staged/manifest.json` — it is what removals are computed from. FetchAsync writes it; an app
+        // that stages by its own means has no reason to know that, and nothing said so. So a manually
+        // staged tree passed every check above, got the marker, and then failed at apply time.
+        //
+        // ⚠ WHERE that failed is the reason this is a guard and not a doc note: ApplyAsync runs in the
+        // APPLIER — typically a launcher, after the app has exited. A stage that verifies clean and then
+        // refuses on next start reports its failure with no app running to show it, which is the worst
+        // possible moment to discover a contract nobody stated.
+        //
+        // ⚠ It is a CHECK, never a write. The manifest passed here is the STAGED changeset; the file is
+        // the FULL release manifest, and a differential update makes them genuinely different. Writing
+        // the changeset there would tell the applier that every file NOT in the changeset was removed
+        // from the release — a data-destroying "fix" that looks obvious.
+        if (!StagedManifestIsUsable())
+            return new UpdateStageStatus { Pending = false };
+
         // LAST, and only now. Everything above verified, so the marker's existence is the promise
         // that an applier can act without re-checking.
         var status = new UpdateStageStatus
@@ -289,7 +307,7 @@ public sealed class UpdateStage
         };
         Directory.CreateDirectory(_options.Root);
         File.WriteAllText(MarkerPath, JsonSerializer.Serialize(status, Json));
-        Log($"[Shenora.Core] Staged {manifest.Files.Count} file(s) for version {manifest.Version}.");
+        Log($"[Shenora.IO] Staged {manifest.Files.Count} file(s) for version {manifest.Version}.");
         return status;
     }
 
@@ -333,7 +351,7 @@ public sealed class UpdateStage
             // Removals alone still need an apply pass, but nothing to DOWNLOAD means nothing to
             // verify, and staging an empty directory would trip CommitAsync's own guard. Report
             // honestly rather than manufacturing a stage.
-            Log($"[Shenora.Core] Nothing to download for version {release.Version}" +
+            Log($"[Shenora.IO] Nothing to download for version {release.Version}" +
                 (diff.Removed.Count > 0 ? $" ({diff.Removed.Count} removal(s) only)." : "."));
             return new UpdateStageStatus { Pending = false };
         }
@@ -396,7 +414,7 @@ public sealed class UpdateStage
         }
         catch (Exception ex)
         {
-            Log($"[Shenora.Core] The staged manifest could not be read: {ex.GetType().Name}");
+            Log($"[Shenora.IO] The staged manifest could not be read: {ex.GetType().Name}");
         }
 
         // THE GUARD ONE DONOR HAS AND THE OTHER DOES NOT. Removals are driven by "installed minus
@@ -423,7 +441,7 @@ public sealed class UpdateStage
         {
             // A first install, or a corrupt baseline. Either way: overlay, remove NOTHING. Guessing
             // at removals without a trustworthy baseline is the destructive direction.
-            Log($"[Shenora.Core] No usable installed manifest ({ex.GetType().Name}) — applying without removals.");
+            Log($"[Shenora.IO] No usable installed manifest ({ex.GetType().Name}) — applying without removals.");
         }
 
         var written = new List<string>();
@@ -461,7 +479,7 @@ public sealed class UpdateStage
             // The payload is already overlaid, so the install IS the new version — abandoning here would
             // report a failure that has already half-happened. A missing baseline degrades to "remove
             // nothing next time", the safe direction, and is worth a loud log rather than a throw.
-            Log($"[Shenora.Core] The payload applied but the baseline could not be written to " +
+            Log($"[Shenora.IO] The payload applied but the baseline could not be written to " +
                 $"'{baselinePath}' ({ex.GetType().Name}) — the next apply will compute no removals.");
         }
 
@@ -480,12 +498,12 @@ public sealed class UpdateStage
             {
                 // A file that will not delete is not a reason to abandon a completed overlay — the
                 // install is already the new version. Report and continue.
-                Log($"[Shenora.Core] Could not remove '{path}': {ex.GetType().Name}");
+                Log($"[Shenora.IO] Could not remove '{path}': {ex.GetType().Name}");
             }
         }
 
         Clear();
-        Log($"[Shenora.Core] Applied version {release.Version}: {written.Count} written, {removed.Count} removed.");
+        Log($"[Shenora.IO] Applied version {release.Version}: {written.Count} written, {removed.Count} removed.");
         return new UpdateOutcome
         {
             Applied = true,
@@ -546,6 +564,37 @@ public sealed class UpdateStage
     /// exists, and two copies of it would be one rule that can drift.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Is the full release manifest present in the stage, readable, and non-empty? This mirrors exactly
+    /// what <see cref="ApplyAsync"/> requires, so the marker cannot promise more than the applier can use.
+    /// Empty counts as unusable for the same reason it does there: an empty release manifest means
+    /// "everything was removed", which would delete every tracked path including what was just overlaid.
+    /// </summary>
+    private bool StagedManifestIsUsable()
+    {
+        var path = Path.Combine(StagedDirectory, StagedManifestName);
+        if (!File.Exists(path))
+        {
+            Log($"[Shenora.IO] Stage incomplete: '{StagedManifestName}' is not in the stage. It is the full " +
+                "release manifest, and ApplyAsync computes REMOVALS from it. FetchAsync writes it for you; " +
+                "an app staging by other means must write it itself.");
+            return false;
+        }
+
+        try
+        {
+            var release = UpdateManifest.Parse(File.ReadAllText(path));
+            if (release.Files.Count != 0) return true;
+            Log($"[Shenora.IO] Stage rejected: '{StagedManifestName}' lists no files, which an applier reads " +
+                "as 'the release removed everything'.");
+        }
+        catch (Exception ex)
+        {
+            Log($"[Shenora.IO] Stage rejected: '{StagedManifestName}' could not be read ({ex.GetType().Name}).");
+        }
+        return false;
+    }
+
     private bool VerifyNothingUnlisted(UpdateManifest manifest, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(StagedDirectory)) return true;
@@ -565,7 +614,7 @@ public sealed class UpdateStage
             // Named, and phrased as what it IS: a file the release did not describe, about to be
             // copied into the install root by the overlay. The path is the only useful detail; there
             // is no hash to report because nothing claimed one.
-            Log($"[Shenora.Core] Stage rejected: '{relative}' is present but the manifest does not " +
+            Log($"[Shenora.IO] Stage rejected: '{relative}' is present but the manifest does not " +
                 "list it. If a clean release legitimately carries it, exempt it with " +
                 $"{nameof(UpdateStageOptions)}.{nameof(UpdateStageOptions.IsUnindexed)}.");
             return false;

@@ -131,24 +131,8 @@ release-source seam) are done — `docs/archive/tasks.md`.
     bands nobody has built. And the Node conformance harness is not optional — without it "library" is a
     promotion in name only.
 
-- [ ] **⚠ Still owed, and it survives `ZipUpdateSource` shipping: validate the update stage against a REAL
-  release, not fixtures.** The stage verifier's
-    third failure mode (intrusion) is closed — `UpdateStage.CommitAsync` rejects a staged file the manifest
-    does not list, exempted by the caller-supplied `UpdateStageOptions.IsUnindexed` predicate. But **the
-    failure mode of getting the exclusion list wrong is inverted**: too LOOSE lets an injected file through;
-    too STRICT rejects every honest download — and the second is worse, because it breaks for every user at
-    once rather than for an attacker, and synthetic fixtures pass it happily since the tester writes both
-    sides. That adopter validated against its actual published release (management 106 files/104 indexed,
-    backend 103/102, frontend 21/21, zero would-be-intrusions, the extras exactly the exempt ones). Make
-    that a documented step for the kit's verifier, not a habit one adopter happened to have.
-
-### Open questions — decide these deliberately, not by momentum
-
-- [ ] **Should the kit SHIP a page-diagnostic facade?** Two repos have now built the same three lines for
-  the same reason (WebKit does not forward page `console.*`), which is the two-consumer signal — but the
-  adopter filed it as an observation and explicitly doubted it earns a public type.
-  `generic-library.md`'s bar is that every public type earns its keep, so the honest question is whether a
-  documented PATTERN (now in `ADOPTION.md`) is the right shape instead of an API.
+_**DONE 2026-08-05 — the real-release validation is now `node devtools/dev.mjs update-probe`**, and it
+found a defect on its first run. Record in `docs/archive/tasks.md`; surface in `CHANGELOG.md`._
 
 ### Platform integration — OS-level logic, measured by how little native code an app writes
 
@@ -200,16 +184,21 @@ is not a reason.
 - **Android's live-activity analogue** — for media it is already `IPlaybackSession`, and a progress
   notification means choosing icons and channels (D15/D13). It waits for a real non-media consumer.
 
-### Standing (habits, not a queue)
+### Standing habits — NOT checkboxes, deliberately
 
-- [ ] Keep `docs/ARCHITECTURE.md` + `docs/README.md` inventory in sync as pieces land.
-- [ ] Add `.claude/knowledge/` rules as invariants are earned during extraction (UI-thread
-  marshalling discipline, WebView2 gotchas, IPC batching numbers) — don't let them live only in
-  code comments.
-- [ ] **Keep naming the concrete bug each ADOPTION stage removes.** The first adopter's Stage-0
-  feedback (2026-07-31), recorded here as the habit it is rather than as work: what made the adoption
-  decision easy was "Stage 1 carries no IPC dependency, so it deletes the most duplicated code for the
-  least risk; the IPC substrate comes last because it is the only stage that touches every module" —
-  and what justified adopting a kit at all was naming the specific bugs a hand-rolled shell tends to
-  have (the DPI-mis-scaled `Screen.WorkingArea` restore; `CloseReason.UserClosing` firing for a
-  programmatic `Close()`). Write new stages the same way.
+⚠ **These used to be three `- [ ]` items and that was the bug.** A box that can never be ticked is
+permanent noise in a file whose only signal is the box — the same defect the header complains about,
+committed by the file itself. They are prose now, and they never "complete":
+
+- **Keep `docs/ARCHITECTURE.md` + `docs/README.md` in sync as pieces land.** Partly gated since
+  2026-08-05: `doc-drift` fails if a packable project is named in neither. Everything below package
+  granularity — a new type, a moved folder — is still yours to keep honest.
+- **Add a `.claude/knowledge/` rule the moment an invariant is EARNED**, via
+  `node devtools/dev.mjs knowledge new <name>` — don't let it live only in a code comment. UI-thread
+  marshalling, WebView2 gotchas, IPC batching numbers and the mobile header table all got here that way.
+- **Keep naming the concrete bug each ADOPTION stage removes.** From the first adopter's Stage-0
+  feedback (2026-07-31): what made the decision easy was *"Stage 1 carries no IPC dependency, so it
+  deletes the most duplicated code for the least risk; the IPC substrate comes last because it is the
+  only stage that touches every module"* — and what justified adopting a kit at all was naming the
+  specific bugs a hand-rolled shell tends to have (the DPI-mis-scaled `Screen.WorkingArea` restore;
+  `CloseReason.UserClosing` firing for a programmatic `Close()`). Write new stages the same way.

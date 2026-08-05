@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Drives Shenora.IO's staged updater over a REAL directory tree, end to end.
+
+       WHY THIS EXISTS. `UpdateStage` had good unit tests and all of them used FIXTURES the test author
+       wrote — which is precisely the shape that cannot catch the failure this probe is for. The stage's
+       intrusion check rejects any staged file the manifest does not list, and getting that exclusion set
+       wrong is INVERTED in cost: too loose lets an injected file through, too STRICT rejects every honest
+       download and breaks for every user at once. A synthetic fixture passes happily either way, because
+       the same person writes both sides. Only a real build tree — with its .deps.json, .pdb, runtimes/
+       subfolders, satellite assemblies and wwwroot assets — can tell you whether the DEFAULT is livable.
+
+       The first adopter validated this by hand against their own published release (106 files / 104
+       indexed, and so on) and that is the habit this turns into a re-runnable step, for THEM as much as
+       for us: point it at any directory and it reports the same numbers. `dev.mjs update-probe`.
+
+       net10.0, not -windows: everything here is portable and the whole point of Shenora.IO is that the
+       same code runs on every shell. A probe that could only run on Windows would be unable to check the
+       Linux half of a claim this kit intends to keep making. Dev tool — never shipped. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- BOM-less UTF-8 sources on a CJK-locale machine mojibake without this (csc reads them as ANSI) —
+         matches every other devtools csproj. -->
+    <CodePage>65001</CodePage>
+    <AssemblyName>update-probe</AssemblyName>
+    <!-- Not packable, and it must never be swept up by the API-baseline coverage gate, which finds
+         shipped projects by text-matching <IsPackable>true</IsPackable> under src/. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
+  </ItemGroup>
+</Project>

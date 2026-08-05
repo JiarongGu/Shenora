@@ -30,6 +30,68 @@ public class UpdateStageTests
     private static UpdateStage StageIn(TempDir dir) =>
         new(new UpdateStageOptions { Root = dir.Combine(".update") });
 
+    /// <summary>
+    /// The FULL release manifest, written into the stage the way <c>FetchAsync</c> writes it. Removals
+    /// are computed from this file, so <c>CommitAsync</c> refuses to publish a marker without it.
+    /// </summary>
+    private static void PublishReleaseManifest(UpdateStage stage, params (string Path, string Content)[] files)
+    {
+        Directory.CreateDirectory(stage.StagedDirectory);
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "manifest.json"), Manifest(files).ToJson());
+    }
+
+    // ── The marker must not promise more than the applier can use ─────────────────────────────────
+
+    [Fact]
+    public async Task A_stage_with_NO_release_manifest_is_refused_and_leaves_no_marker()
+    {
+        // THE GAP A REAL TREE FOUND (2026-08-05, `devtools/update-probe` on a `dotnet publish` output).
+        // Every file verified, nothing unlisted — and `ApplyAsync` would still refuse, because removals
+        // come from `staged/manifest.json` and only `FetchAsync` writes it. An app that stages by its own
+        // means got a marker whose whole documented meaning is "an applier can act without re-checking".
+        //
+        // ⚠ Where that failed is why it is a guard: the applier is typically a LAUNCHER running after the
+        // app exited, so the refusal surfaced on next start with nothing left to report it.
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+
+        var status = await stage.CommitAsync(Manifest(("app.exe", "binary")));
+
+        Assert.False(status.Pending);
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task A_release_manifest_that_lists_NOTHING_is_refused_too()
+    {
+        // Present but empty is the dangerous variant, not the harmless one: an applier reads an empty
+        // release manifest as "every tracked path was removed" and deletes the files it just overlaid.
+        // `ApplyAsync` already refuses it; this stops the marker from being written in the first place.
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "manifest.json"),
+            new UpdateManifest { Version = "2.0", Files = [] }.ToJson());
+
+        Assert.False((await stage.CommitAsync(Manifest(("app.exe", "binary")))).Pending);
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task An_UNREADABLE_release_manifest_is_refused()
+    {
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "manifest.json"), "{ not json");
+
+        Assert.False((await stage.CommitAsync(Manifest(("app.exe", "binary")))).Pending);
+    }
+
     [Fact]
     public async Task A_fully_verified_stage_publishes_the_marker()
     {
@@ -39,6 +101,7 @@ public class UpdateStageTests
         File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
         Directory.CreateDirectory(Path.Combine(stage.StagedDirectory, "libs"));
         File.WriteAllText(Path.Combine(stage.StagedDirectory, "libs", "x.dll"), "lib");
+        PublishReleaseManifest(stage, ("app.exe", "binary"), ("libs/x.dll", "lib"));
 
         var status = await stage.CommitAsync(Manifest(("app.exe", "binary"), ("libs/x.dll", "lib")));
 
@@ -128,6 +191,7 @@ public class UpdateStageTests
         var stage = StageIn(dir);
         stage.Begin();
         File.WriteAllText(Path.Combine(stage.StagedDirectory, "app.exe"), "binary");
+        PublishReleaseManifest(stage, ("app.exe", "binary"));
         Assert.True((await stage.CommitAsync(Manifest(("app.exe", "binary")))).Pending);
 
         stage.Clear();

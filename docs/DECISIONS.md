@@ -1541,3 +1541,28 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     `UpdateStage.ApplyAsync` already overlays, removes and clears in portable .NET, gate-covered and
     sabotage-verified. This whole capability serves framework-dependent apps, where the runtime may be
     absent and files may be held open. Harvest-driven (D15): build it when an app needs it.
+
+- **D51 — the kit ships NO page-diagnostic facade. The two-consumer signal is real and the generalisation
+  is still not worth making.** (2026-08-05, closing the open question in `TASKS.md`.) The pattern stays
+  documented in `docs/ADOPTION.md`; `PageDiagFacade` stays sample-local in `samples/Shenora.Sample.Maui/`.
+
+  - **The signal that made this a question.** Two repos independently built the same tiny facade for the
+    same measured reason: **WebKit does not forward a page's `console.*` to the unified log** (checked on
+    the simulator with a tagged line and zero hits), and a screenshot cannot report a number, a header or an
+    array. That is normally the harvest bar (D15).
+  - **What fails the bar is the SHAPE, not the count.** D15 promotes something that *proves nice and pays
+    to generalise*. This is a `switch` with one case and a log call — and the parts that differ per app are
+    the parts that matter: the module name, the log sink, and whether page text is redacted before it is
+    written. A kit version would either hard-code those or take three delegates, at which point the adopter
+    has written more configuration than the twenty lines it replaces.
+  - **⚠ And a kit-shipped version would be a PRIVACY hazard the app cannot see.** It writes page-supplied
+    text to the device log — readable by anything with log access on the device. Shipped as kit surface and
+    registered by default, that is the kit making a data-handling decision on a consumer's behalf. **This is
+    the same reasoning that killed D10's loopback-gate helper**: a generic security-shaped helper is worse
+    than shipping nothing, because the consumer stops thinking about it.
+  - **It is also a DEVELOPMENT workaround, not a product capability.** It exists because a diagnostic route
+    is closed on one platform. Baking a dev-loop workaround into a public, SemVer-frozen surface is exactly
+    the "ship the consumer's shape" failure `generic-library.md` warns about — and unlike a real capability,
+    it gets *less* useful the moment the platform fixes its logging.
+  - **Revisit trigger:** an adopter that cannot express what it needs over the existing IPC pipe. Wanting a
+    ready-made twenty lines is not that — the same bar every other deferred capability is held to (D10).

@@ -17,6 +17,42 @@
 
 ---
 
+### Validating the update stage against a REAL release (2026-08-05) — DONE, and it found a defect
+
+`node devtools/dev.mjs update-probe` — the adopter's manual habit turned into a step anyone can repeat,
+including them: point it at any directory and it runs manifest → stage → `CommitAsync` → `ApplyAsync` and
+reports the numbers. With no argument it publishes the desktop sample and probes that.
+
+**The headline number the task asked for: 36 real files, 0 would-be intrusions under the DEFAULT policy.**
+A `dotnet publish` tree carries what fixtures never do — `runtimes/win-x64|win-arm64|win-x86/native/`
+subtrees, `.pdb`s, `.xml` doc files, `.deps.json`, `.runtimeconfig.json` — and none of it trips the
+intrusion check. That is the answer to the inverted-cost worry: the default is not too strict.
+
+**⚠ THE DEFECT, found on the probe's FIRST run, and no fixture could have found it.** `CommitAsync`
+verified every hash, rejected nothing unlisted, and published the marker — and `ApplyAsync` then refused
+the stage, because removals are computed from `staged/manifest.json` and only `FetchAsync` writes it. An
+app staging by its own means had no way to know that, and nothing said so.
+
+- **The marker's whole documented meaning is "an applier can act without re-checking."** It was promising
+  more than it had verified — the same class of gap `VerifyNothingUnlisted` was added to close, at a
+  different spot in the same method.
+- **Where it failed is why it is a guard rather than a doc note:** `ApplyAsync` runs in the APPLIER,
+  typically a launcher, after the app has exited. The refusal surfaced on next start with nothing running
+  to report it.
+- **Fixed as a CHECK, never a write** — `StagedManifestIsUsable()` requires the file to exist, parse, and
+  list at least one file. Writing it would have been the obvious "fix" and is data-destroying: the manifest
+  `CommitAsync` receives is the staged CHANGESET, while the file must be the FULL release manifest, so
+  writing the changeset there tells the applier every unchanged file was removed from the release.
+- **Six existing tests asserted `Pending == true` for stages `ApplyAsync` would have refused**, because
+  each built its own world and the missing file was missing on both sides. They now publish a real release
+  manifest. The one test that already drove the real `FetchAsync` flow was the only one that still passed —
+  which is exactly the argument for testing against reality.
+- Three new tests pin the guard (absent / empty / unparseable), sabotage-verified: removing the guard fails
+  exactly those three and nothing else.
+
+**Also fixed here:** twelve log messages in `Shenora.IO` still said `[Shenora.Core]` after the D48 move.
+The probe's own output is what surfaced them.
+
 ### DM3 — the media conversion, COMPOSED not built (2026-08-05) — DONE
 
 `interceptor.UseMediaConversion(scheduler, events, options)` in `Shenora.Media`. It builds nothing:
