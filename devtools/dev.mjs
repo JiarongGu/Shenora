@@ -646,9 +646,13 @@ switch (cmd) {
     // ordinary dev-box run — and packed normally once a release workflow has staged them. It is NOT
     // silently skipped when present, and it FAILS LOUD rather than shipping an empty runtimes/ folder;
     // both halves of that matter, because an empty native package restores fine and breaks the consumer.
+    // Skipped only when there is NOTHING to pack — neither a committed `runtimes/` nor a downloaded
+    // `artifacts/runtimes/`. Since win-x64 is committed, this no longer skips in practice; it still
+    // catches the case where someone removes the committed binaries and has not staged CI's.
     const needsArtifacts = (config.artifactPackableProjects ?? []);
-    const artifactless = needsArtifacts.filter(
-      (p) => !fs.existsSync(path.join(repo, p, 'artifacts', 'runtimes')));
+    const artifactless = needsArtifacts.filter((p) =>
+      !fs.existsSync(path.join(repo, p, 'runtimes'))
+      && !fs.existsSync(path.join(repo, p, 'artifacts', 'runtimes')));
 
     const selected = config.packableProjects
       .filter((p) => macOnly.has(p) === macPass)

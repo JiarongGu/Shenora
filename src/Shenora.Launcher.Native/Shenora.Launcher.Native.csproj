@@ -52,14 +52,23 @@
   -->
   <Target Name="RequireLauncherArtifacts" BeforeTargets="GenerateNuspec">
     <ItemGroup>
+      <_FoundLaunchers Include="$(MSBuildThisFileDirectory)runtimes/**/native/*" />
       <_FoundLaunchers Include="$(LauncherArtifacts)/runtimes/**/native/*" />
     </ItemGroup>
     <Error Condition="'@(_FoundLaunchers)' == ''"
-           Text="Shenora.Launcher.Native has no binaries under $(LauncherArtifacts)/runtimes/**/native/. They are produced by the `launcher` CI matrix (win-x64 + linux-x64); download those artifacts into that folder before packing. Packing an empty runtimes/ would produce a package that restores fine and fails at the consumer's build." />
+           Text="Shenora.Launcher.Native has no binaries under runtimes/**/native/ (committed) or $(LauncherArtifacts)/runtimes/**/native/ (downloaded from the `launcher` CI matrix). Packing an empty runtimes/ would produce a package that restores fine and fails at the consumer's build." />
   </Target>
 
   <ItemGroup>
-    <!-- The prebuilt launchers, laid out so MSBuild's RID resolution copies the right one. -->
+    <!--
+      The prebuilt launchers, laid out so MSBuild's RID resolution copies the right one. They are BUILT
+      BY CI and downloaded here, never committed.
+      ⚠ Committing them was tried and reverted. The reasoning was "a release might forget the download
+      step, and a missing package announces itself to nobody" — which solved that in the wrong place: it
+      put a build output in git, could only ever carry the ONE rid this machine builds, and would go
+      stale against the C++ the moment someone edited it without rebuilding. The release workflow now
+      DEPENDS on a matrix job that builds both, so a missing launcher stops the release instead.
+    -->
     <None Include="$(LauncherArtifacts)/runtimes/**/native/*" Pack="true" PackagePath="runtimes/" />
 
     <!--

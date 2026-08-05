@@ -153,10 +153,14 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
   applies a staged update. It is the one part of staged updating that cannot be done in .NET: it runs
   when the runtime may be absent and must replace files the app holds open. **A self-contained app needs
   none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET.
-  - Ships **per-RID binaries** (`runtimes/win-x64|linux-x64/native/`) plus the **C++17 library sources
-    and `main.cpp` template** under `launcher-src/`, so you can use the stock launcher — rename, re-icon
-    and sign it — or build your own from the same library. What stays yours either way is small: the exe
-    name, icon and version resources, the signature, four constants, and the wording of failure UI.
+  - Ships **prebuilt per-RID binaries** (`runtimes/win-x64|linux-x64/native/`) plus the **C++17 library
+    sources and `main.cpp` template** under `launcher-src/`, so you can use the stock launcher — rename,
+    re-icon and sign it — or build your own from the same library. What stays yours either way is small:
+    the exe name, icon and version resources, the signature, four constants, and the failure-UI wording.
+  - **Both binaries are built by the release itself**, on their own runners (MSVC and gcc), and each is
+    conformance-tested against the real C# staging implementation before it can be packed. The publish
+    job depends on that matrix, so a launcher that fails its tests stops the release rather than
+    shipping.
   - **322 KB**, statically linked against the CRT so it needs no VC++ redistributable — a launcher that
     required one would have the bootstrap problem it exists to solve.
   - **It re-hashes nothing.** `ready.json` exists only when the staging side verified the whole stage,

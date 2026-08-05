@@ -132,14 +132,16 @@ release-source seam) are done — `docs/archive/tasks.md`.
 **B4 (the native launcher), B4b (its package) and the real-release validation of the update stage all
 closed on 2026-08-05** — records in `docs/archive/tasks.md`, shape in **D50**, surface in `CHANGELOG.md`.
 
-- [ ] **A release must STAGE the launcher artifacts before packing them.** `src/Shenora.Launcher.Native`
-  packs `artifacts/runtimes/**`, and nothing fills that folder yet: the binaries come from the `launcher`
-  workflow's two runners, so a release has to download both `launcher-win-x64` and `launcher-linux-x64`
-  into it first. Procedure is in `docs/RELEASING.md`; wiring it into `release.yml` is the owner's, since
-  that workflow is theirs.
-  - ⚠ **The failure mode is a MISSING package, not a broken one** — `dev.mjs pack` skips that project and
-    says why, and `dotnet pack` on it errors rather than emitting an empty `runtimes/`. That is the safe
-    direction, and it also means a release would ship without the launcher and look entirely normal.
+**The launcher binaries are BUILT BY THE RELEASE, both RIDs, and never committed.** `release.yml` has a
+matrix job (win-x64 + MSVC, linux-x64 + gcc) that builds and conformance-tests each one, and `publish`
+`needs:` it — so a launcher that fails conformance, or a missing RID, stops the release before anything
+is published rather than silently shipping a package short.
+
+⚠ Committing the binaries was tried and reverted the same day, and the history was rewritten so the blob
+never existed. The reasoning had been "a release might forget the download step, and a missing package
+announces itself to nobody" — true, but it solved that in the wrong place: it put a build output in git,
+could only ever carry the ONE rid this machine builds, and would go stale against the C++ the moment
+someone edited it without rebuilding. A job dependency fixes the same failure and gets both RIDs.
 
 ### Safe-area insets
 

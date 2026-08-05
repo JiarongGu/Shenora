@@ -54,7 +54,65 @@ permissions:
   id-token: write   # OIDC token for NuGet/npm Trusted Publishing (short-lived — no stored secret)
 
 jobs:
+  # The native launcher, built HERE rather than committed. It is the one artifact this repo's own
+  # toolchain cannot produce for every target: win-x64 needs MSVC and linux-x64 needs gcc, on two
+  # different runners, so no single machine packs both.
+  #
+  # ⚠ `publish` DEPENDS on this job, which is what makes the failure loud. The earlier shape had the
+  # release download artifacts and `pack` merely SKIP the project when they were missing — so a release
+  # that forgot the step shipped without the launcher and looked entirely normal. Now the release cannot
+  # start until both binaries exist, and a broken launcher stops it before anything is published.
+  launcher:
+    strategy:
+      fail-fast: true   # unlike the standalone `launcher` workflow: a release must not publish half of it
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64,   exe: shenora-launcher.exe }
+          - { os: ubuntu-latest,  rid: linux-x64, exe: shenora-launcher }
+    runs-on: ${{ matrix.os }}
+    name: launcher (${{ matrix.rid }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The C# half of the update protocol — the conformance harness stages with the REAL
+      # implementation, so this is not optional scaffolding.
+      - name: Build update-probe
+        run: dotnet build devtools/update-probe/update-probe.csproj -c Release --nologo
+
+      - name: Build the launcher
+        run: |
+          cmake -S src/Shenora.Launcher -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      # A launcher that fails conformance must never reach a package. This is the same harness the
+      # standalone workflow runs, against the binary about to be shipped.
+      - name: Conformance
+        shell: bash
+        run: |
+          exe=$(find build -name '${{ matrix.exe }}' -type f | head -n1)
+          probe=$(find devtools/update-probe/bin/Release -name 'update-probe*' -type f \
+                  \( -name '*.exe' -o ! -name '*.*' \) | head -n1)
+          ls -l "$exe" | awk '{ printf "size: %d bytes (%.1f KB)\n", $5, $5/1024 }'
+          node devtools/scripts/launcher-conformance.mjs "$exe" "$probe"
+
+      - name: Stage the per-RID artifact
+        shell: bash
+        run: |
+          mkdir -p "artifact/runtimes/${{ matrix.rid }}/native"
+          cp "$(find build -name '${{ matrix.exe }}' -type f | head -n1)" \
+             "artifact/runtimes/${{ matrix.rid }}/native/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-launcher-${{ matrix.rid }}
+          path: artifact/
+          if-no-files-found: error
+
   publish:
+    needs: launcher
     runs-on: windows-latest   # net10.0-windows targets need Windows to build
     env:
       # This job IS the release, so the bump it makes is authorised. `doctor`'s version-authorship
@@ -165,6 +223,29 @@ jobs:
         env:
           SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY: '1'
         run: node devtools/dev.mjs verify --release
+
+      # Both launcher RIDs, from the matrix job above, merged into the one folder the packaging project
+      # reads. `merge-multiple` is what lets two artifacts land in the same runtimes/ tree.
+      - name: Download the launcher binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-launcher-*
+          merge-multiple: true
+          path: src/Shenora.Launcher.Native/artifacts
+
+      # A release must not publish a package set that silently lost one. `pack` SKIPS the launcher
+      # project when its binaries are absent — the right behaviour on a dev box, and exactly the wrong
+      # thing to discover after publishing — so the presence of both RIDs is asserted here, before
+      # anything is pushed anywhere.
+      - name: Assert both launcher RIDs are present
+        shell: pwsh
+        run: |
+          $root = 'src/Shenora.Launcher.Native/artifacts/runtimes'
+          foreach ($rid in @('win-x64', 'linux-x64')) {
+            $found = Get-ChildItem "$root/$rid/native" -File -ErrorAction SilentlyContinue
+            if (-not $found) { throw "launcher binary missing for $rid — the matrix job did not deliver it" }
+            Write-Host ("  ok  {0}: {1} ({2:N0} bytes)" -f $rid, $found[0].Name, $found[0].Length)
+          }
 
       - name: Pack
         run: node devtools/dev.mjs pack
