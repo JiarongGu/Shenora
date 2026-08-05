@@ -420,3 +420,23 @@ Save
 # files where you asked and refuses the ones that would land elsewhere. Extraction names that mechanism,
 # Limits names the bounds a caller sets on it.
 # Watch: a Downloader, Installer or Patcher here would be exactly the growth the older note forbids.
+# -- Safe area (2026-08-05) -------------------------------------------------------------------------
+# The window insets a page must not draw under. These three are admitted as PLATFORM vocabulary, not
+# kit invention, and that is the whole argument: the words are the ones every platform already uses for
+# this exact thing — CSS says `env(safe-area-inset-*)`, UIKit says `safeAreaInsets`, Android says
+# `WindowInsets` — so an adopter meets them before they meet Shenora. A kit-invented synonym
+# (`ChromeMargin`, `EdgeReserve`) would be a name only this library uses for a concept the platform
+# already named, which is the opposite of what D22 asks for.
+# `Insets` is the measurement, `Safe`+`Area` the region; `Script` was already here.
+# ⚠ Watch: this is a LAYOUT word, and layout is where a headless kit is most tempted to grow opinions
+# (D13). Insets are a fact the platform reports and the kit relays. A `Theme`, `Layout`, `Margin` or
+# `Padding` on this surface would be the kit deciding how a page LOOKS, and must be argued on its own
+# merits rather than waved past because these three are here.
+# `Script` joins them for `SafeAreaScript`, the pure builder that produces the snippet a shell injects.
+# Web-hosting vocabulary the kit already speaks everywhere else (injected scripts, script injection on
+# the desktop host); it names the ARTIFACT produced, which is what makes the type testable without a
+# webview at all.
+Safe
+Area
+Insets
+Script

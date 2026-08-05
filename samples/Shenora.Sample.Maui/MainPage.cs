@@ -19,6 +19,7 @@ public sealed class MainPage : ContentPage
 	private readonly HybridWebView _webView;
 	private readonly MediaRangeProbe _media = new(MauiProgram.Log);
 	private MobileIpcBridge? _bridge;
+	private readonly MobileSafeArea _safeArea;
 
 	/// <summary>The page's background, matched by the splash colour — see the csproj's comment.</summary>
 	private static readonly Color Shell = Color.FromArgb("#14161A");
@@ -43,6 +44,29 @@ public sealed class MainPage : ContentPage
 			DefaultFile = "index.html",
 		};
 		Content = _webView;
+
+		// The safe-area capability, opt-in like every other kit cluster and configured here rather than
+		// assumed. Everything in the options is individually declinable — this sample takes all four so
+		// the whole thing is exercised on a device; an app that wants only the default takes only that.
+		//
+		// ⚠ It is constructed with the WEBVIEW, before Loaded, on purpose: the default and the splash go
+		// out at document start, and the entire reason they exist is that the platform's real numbers do
+		// not arrive until after the first paint.
+		_safeArea = new MobileSafeArea(_webView, new SafeAreaOptions
+		{
+			// A guess that is right on most phones, replaced by the platform's real numbers the moment
+			// they arrive. Without it the first screen lays out against zero and renders under the status
+			// bar — measured on Android, where env() reports 0 for the whole first page load.
+			Default = new SafeAreaInsets(24, 0, 24, 0),
+			// Painted behind the inset strips so they match the page instead of showing whatever is
+			// behind the webview.
+			Color = "#14161a",
+			// The correction from default to measured EASES rather than snaps.
+			Settle = TimeSpan.FromMilliseconds(180),
+			// And the belt-and-braces answer: cover the page until the real numbers land. It dismisses
+			// itself after SplashTimeout whether or not they ever do.
+			Splash = true,
+		}, MauiProgram.Log);
 
 		Loaded += OnLoaded;
 		Unloaded += OnUnloaded;
@@ -149,6 +173,7 @@ public sealed class MainPage : ContentPage
 	{
 		MauiProgram.Log("page unloaded — disposing the bridge");
 		_media.Dispose();
+		_safeArea.Dispose();
 		_bridge?.Dispose();
 		_bridge = null;
 	}

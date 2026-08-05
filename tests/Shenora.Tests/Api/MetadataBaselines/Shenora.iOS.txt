@@ -43,6 +43,10 @@ Shenora.Mobile.MobilePlaybackSession
   method Report
   property SkipInterval
   property Supported
+Shenora.Mobile.MobileSafeArea
+  method .ctor
+  method Dispose
+  method Report
 Shenora.Mobile.MobileUiDispatcher
   method .ctor
   method InvokeAsync

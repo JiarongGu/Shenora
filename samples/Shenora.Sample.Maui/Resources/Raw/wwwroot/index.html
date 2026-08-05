@@ -25,13 +25,27 @@
       24px is the ordinary Android status-bar / iOS home-indicator height in CSS px. It is deliberately
       a VARIABLE rather than a literal so an app that knows its device class can set it once, before
       first paint, and never see the correction at all.
+
+      ⚠ THESE ARE NOW A FALLBACK, NOT THE MECHANISM. The SHELL publishes `--sa-*` at document start
+      (`MobileSafeArea` + `SafeAreaOptions` in MainPage.cs), which is the only thing that can work:
+      Android reports the display cutout to CSS but never the system bars, and reports nothing at all
+      for the whole first page load. The values below are what this page falls back to when it is
+      opened by something that does NOT publish them — a browser, or a shell that declined the option.
     */
     --sa-top: 24px;
     --sa-right: 0px;
     --sa-bottom: 24px;
     --sa-left: 0px;
     --sa-settle: 180ms;
+    --sa-color: transparent;
   }
+  /* The inset strips, painted with whatever the shell published. Fixed, so they never scroll away. */
+  body::before, body::after {
+    content: ""; position: fixed; left: 0; right: 0; background: var(--sa-color);
+    pointer-events: none; z-index: 1;
+  }
+  body::before { top: 0; height: var(--sa-top); }
+  body::after { bottom: 0; height: var(--sa-bottom); }
   /*
     The safe-area insets are NOT optional once a page ships to more than one mobile shell, and this
     is what proves it: the identical markup looked correct on an Android emulator for a whole session
@@ -442,7 +456,15 @@ const readInsets = (announce) => {
     for (const side of ['top', 'right', 'bottom', 'left']) root.setProperty(`--sa-${side}`, `${v[side]}px`);
   }
   if (announce) {
-    log('t', `insets: top=${v.top} right=${v.right} bottom=${v.bottom} left=${v.left} (css px) · `
+    // BOTH numbers, because they answer different questions and confusing them wasted a session.
+    // `env` is what the web platform reports — 0 on Android for the whole first load, and cutout-only
+    // after that. `var` is what the SHELL published and therefore what the page actually laid out
+    // with. A gate that only printed env() would have shown zeros while the layout was correct.
+    const rs = getComputedStyle(document.documentElement);
+    const rv = (n) => (rs.getPropertyValue(n).trim() || '(unset)');
+    log('t', `insets env: top=${v.top} right=${v.right} bottom=${v.bottom} left=${v.left} · `
+      + `laid out with var: top=${rv('--sa-top')} bottom=${rv('--sa-bottom')} `
+      + `color=${rv('--sa-color')} settle=${rv('--sa-settle')} · `
       + `viewport=${innerWidth}x${innerHeight} dpr=${devicePixelRatio}`);
   }
   return v;

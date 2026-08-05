@@ -442,6 +442,32 @@ sealed class Shenora.Core.RetryPolicy
   public System.TimeSpan Delay { get; init; }
   public int Attempts { get; init; }
   public static Shenora.Core.RetryPolicy None { get; }
+struct Shenora.Core.SafeAreaInsets : System.IEquatable<Shenora.Core.SafeAreaInsets>
+  public .ctor(double Top, double Right, double Bottom, double Left)
+  public bool Equals(Shenora.Core.SafeAreaInsets other)
+  public bool IsEmpty { get; }
+  public double Bottom { get; init; }
+  public double Left { get; init; }
+  public double Right { get; init; }
+  public double Top { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static Shenora.Core.SafeAreaInsets None { get; }
+  public static bool op_Equality(Shenora.Core.SafeAreaInsets left, Shenora.Core.SafeAreaInsets right)
+  public static bool op_Inequality(Shenora.Core.SafeAreaInsets left, Shenora.Core.SafeAreaInsets right)
+  public void Deconstruct(out double Top, out double Right, out double Bottom, out double Left)
+sealed class Shenora.Core.SafeAreaOptions
+  public .ctor()
+  public Shenora.Core.SafeAreaInsets? Default { get; init; }
+  public System.TimeSpan Settle { get; init; }
+  public System.TimeSpan SplashTimeout { get; init; }
+  public bool Splash { get; init; }
+  public string VariablePrefix { get; init; }
+  public string? Color { get; init; }
+  public string? SplashColor { get; init; }
+static class Shenora.Core.SafeAreaScript
+  public static string Build(Shenora.Core.SafeAreaOptions options, Shenora.Core.SafeAreaInsets? insets = null)
 sealed class Shenora.Core.SaveFileOptions : Shenora.Core.FileDialogOptions
   public .ctor()
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileDialogFilter>? Filters { get; init; }
