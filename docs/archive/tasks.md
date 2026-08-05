@@ -203,8 +203,17 @@ this repo had done that independently.
 ### The greenfield-shape sweep, findings 1–3 (2026-08-05) — DONE, and one of them was wrong
 
 Swept all four API baselines (~1,840 lines) under **D47** for shapes surviving only because changing them
-used to be expensive. Three were taken; the fourth (`FileDialogOptions` serving three dialogs) is still open
-in `TASKS.md`.
+used to be expensive. **All four were taken** — 1–3 below; finding 4 (`FileDialogOptions` serving four
+methods) shipped as part of the file-dialog work above, and `4a` — a real defect the split surfaced — is
+recorded at the end of this entry.
+
+**Recorded so they are not re-swept: what the sweep checked and found FINE.** Half of a sweep's value is the
+part that came back clean, and that half is normally lost. No `Dto` suffixes anywhere. No boolean flag
+parameter standing in for a seam (`ApplyChromeTheme(…, bool immersiveDarkMode)` is a real platform toggle;
+`SetLoading(bool)` is a state setter). Every other option default is a real value validated with a throw
+(`LeaseTimeout` 30 s, `PollInterval` 50 ms, `MaxQueuedNotifications` 10 000 — the IPC options throw on
+out-of-range rather than reinterpreting). `Shenora.Media`'s surface is clean. `ShellCapability`'s stringly
+typed constants are justified, because they cross the wire to JS in the ready handshake.
 
 **1 — `IEventBus` now returns `IDisposable`; `Unsubscribe` is gone.** The kit was disagreeing with itself:
 `IWebViewInterceptor.Use` and `WebViewResourcePipeline.Use` already returned a disposable that removes the
@@ -249,6 +258,27 @@ not something the app should be handed back to reopen later. The implementations
 - Fixed by stating all three outcomes on the type, and by adding `FileDialogResult.Completed()` so the
   mobile shells construct that outcome BY NAME instead of open-coding `new() { Success = true }`, which read
   like a forgotten field rather than a decision.
+
+**4a — 🔴 a real file named `Folder Selection.txt` silently resolved to its PARENT FOLDER.** Surfaced by
+finding 4's split, fixed the same day, and it is the wrong-ANSWER class rather than the refusal class, which
+is why it was worth code rather than a doc note.
+
+- **The mechanism.** Windows' Common Item Dialog has a folders-only mode (`IFileOpenDialog` +
+  `FOS_PICKFOLDERS`, which the other branch already uses via `FolderBrowserDialog`) and **no "either" mode**
+  — so `ShowFileOrFolderDialog` fakes it with an `OpenFileDialog` whose `FileName` is the literal placeholder
+  `"Folder Selection"`, then recovers the intent by string-matching it back out. The recovery included
+  `Path.GetFileNameWithoutExtension(selected) == placeholder`, which a REAL file of that name also satisfies.
+  **The hack exists because the OS lacks the concept, not because nobody looked** — worth knowing before
+  anyone "cleans it up".
+- **Fix is one reordering:** test `File.Exists(selected)` FIRST, so a real file wins and the placeholder can
+  only mean "this folder" when nothing by that name exists. Extracted as an `internal static` pure function
+  so it is testable with no dialog, alongside `BuildFilterString`/`ResolveInitialPathAsync`, which are
+  already internal seams for exactly that reason.
+- ⚠ **The placeholder is a hardcoded ENGLISH string**, so the recovery is locale-fragile in a second way.
+  The fix above makes that harmless in practice — the real file wins regardless — but the fragility is still
+  there and is stated here rather than rediscovered.
+- **Found by READING, not reported.** Unlikely input, and nobody would have filed it; the sweep found it
+  because the split forced every field to be attributed to a method.
 
 ### `ILane.Capacity` "can only narrow a lane" (2026-08-05) — CLOSED, but not as filed
 
