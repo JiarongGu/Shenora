@@ -484,6 +484,27 @@ const TOOL_TFM = {
   // not check the Linux half of a claim this kit intends to keep making.
   'update-probe': 'net10.0',
 };
+// CMake is not on PATH on a stock Visual Studio box — VS bundles its own and never adds it. Looking
+// there before giving up is the difference between "works" and "install CMake first" for anyone whose
+// C++ toolchain came with VS, which on this family's machines is everyone.
+function resolveCmake() {
+  const onPath = spawnSync('cmake', ['--version'], { stdio: 'ignore', shell: false });
+  if (onPath.status === 0) return 'cmake';
+  const roots = [process.env['ProgramFiles'], process.env['ProgramFiles(x86)']].filter(Boolean);
+  for (const root of roots) {
+    const vs = path.join(root, 'Microsoft Visual Studio');
+    if (!fs.existsSync(vs)) continue;
+    for (const year of fs.readdirSync(vs)) {
+      for (const edition of ['Community', 'Professional', 'Enterprise', 'BuildTools']) {
+        const candidate = path.join(vs, year, edition,
+          'Common7', 'IDE', 'CommonExtensions', 'Microsoft', 'CMake', 'CMake', 'bin', 'cmake.exe');
+        if (fs.existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return null;
+}
+
 function ensureTool(toolName) {
   const exe = path.join(repo, 'devtools', toolName, 'bin', 'Release', TOOL_TFM[toolName], `${toolName}.exe`);
   if (!fs.existsSync(exe)) {
@@ -792,6 +813,39 @@ switch (cmd) {
       if (p.status !== 0) { process.exitCode = p.status ?? 1; break; }
     }
     run(exe, [target, ...args.filter((a) => a.startsWith('--'))]);
+    break;
+  }
+
+  // Build the native launcher and run the conformance harness against the BINARY. Not in `verify`:
+  // this repo has no C++ toolchain and deliberately does not require one (design doc §5) — CI's
+  // `launcher.yml` matrix is what proves both targets on every change. Run it locally when you touch
+  // either half of the protocol.
+  case 'launcher': {
+    const cmake = resolveCmake();
+    if (!cmake) {
+      console.error('cmake not found. Install CMake, or use the one bundled with Visual Studio '
+        + '(Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin). CI builds this on both targets '
+        + 'regardless — see .github/workflows/launcher.yml.');
+      process.exitCode = 1;
+      break;
+    }
+    const build = path.join(repo, 'devtools', '_launcher-build');
+    const src = path.join(repo, 'src', 'Shenora.Launcher');
+    const ok = step('cmake configure', () => run(cmake, ['-S', src, '-B', build, '-DCMAKE_BUILD_TYPE=Release']))
+      && step('cmake build', () => run(cmake, ['--build', build, '--config', 'Release']));
+    if (!ok) { process.exitCode = 1; break; }
+
+    const exe = ['Release/shenora-launcher.exe', 'shenora-launcher.exe', 'shenora-launcher']
+      .map((p) => path.join(build, p)).find((p) => fs.existsSync(p));
+    if (!exe) { console.error('the launcher built but was not found in the build tree'); process.exitCode = 1; break; }
+
+    // D50 asked for a MEASUREMENT before anything else, because its size figures were bands nobody
+    // had built. Printing it every run is what keeps them measurements.
+    console.log(`\nlauncher size: ${(fs.statSync(exe).size / 1024).toFixed(1)} KB  (${exe})\n`);
+
+    const probe = ensureTool('update-probe');
+    if (!probe) { process.exitCode = 1; break; }
+    run('node', [path.join(repo, 'devtools', 'scripts', 'launcher-conformance.mjs'), exe, probe]);
     break;
   }
 

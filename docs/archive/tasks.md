@@ -17,6 +17,43 @@
 
 ---
 
+### B4 — the native launcher: C++ library + template, CMake, CI matrix, conformance harness (2026-08-05)
+
+Built to D50's settled shape. `src/Shenora.Launcher/` — 994 lines across 9 files.
+
+**THE MEASUREMENT D50 ASKED FOR, and it came out above the guess: 322 KB** (MSVC Release, `/O1 /GL`,
+`/LTCG /OPT:REF /OPT:ICF`), against the entry's 150–300 KB band. The difference is the **static CRT**,
+which is a deliberate trade rather than an overrun: a launcher that needs a VC++ redistributable
+installed has the same bootstrap problem it exists to solve. Recorded rather than quietly re-banded.
+
+**What it does and — more usefully — what it does NOT.** It re-hashes nothing. `ready.json` exists only
+when the C# side verified the whole stage, and the marker's documented meaning is that an applier need
+not re-check; re-verifying here would duplicate a rule that can drift and slow every start for nothing.
+So the library is manifest parse → close holders → overlay → write baseline → tracked removals → clear.
+
+**Two bugs found while building it, both by the harness rather than by reading:**
+1. 🔴 **The stage was never cleared, so the launcher re-applied on every start.** Cause worth
+   remembering: the log file was inside `.update/`, so the process held an open handle in the directory
+   it was deleting, `remove_all` failed, and the error was swallowed. Fixed twice over — the log moved
+   beside the launcher, AND the marker is now removed FIRST and separately, because the marker is the
+   only thing that makes a stage pending. A failed clear is now survivable instead of a boot loop.
+2. **C4819 on the first build** — BOM-less UTF-8 sources read as codepage 936 on this CJK-locale
+   machine, fatal under `/WX`. `/utf-8` is the C++ half of the trap `<CodePage>65001</CodePage>` already
+   fixes for C#. Same machine, same cause, different compiler flag.
+
+**The harness is the part that makes "library" honest** (§5). It drives the PREBUILT binary with
+`--apply-and-exit` over sandbox directories, so it needs no compiler at the moment it runs — and every
+stage it applies is written by the REAL C# implementation via a new `update-probe --stage-only`, never
+by a fixture written on the C++ side. Six cases, sabotage-verified: replacing tracked removals with a
+directory sweep fails exactly the case that names user data, and nothing else.
+
+**Portability is proven, not asserted.** Both platform implementations compile on every build (each is a
+no-op on the other OS via its own `#ifdef`, rather than being excluded by CMake — a file the build system
+skips is one nobody notices has stopped compiling), and `.github/workflows/launcher.yml` builds and runs
+conformance on win-x64 AND linux-x64 with `fail-fast: false`.
+
+**Still open as B4b:** nothing packs the per-RID artifacts into a nupkg yet.
+
 ### Validating the update stage against a REAL release (2026-08-05) — DONE, and it found a defect
 
 `node devtools/dev.mjs update-probe` — the adopter's manual habit turned into a step anyone can repeat,

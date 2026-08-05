@@ -1,0 +1,91 @@
+# Builds the native launcher on BOTH targets and runs the conformance harness against each binary.
+#
+# WHY A SEPARATE WORKFLOW, and not a step in `verify`: `dev.mjs verify` has no C++ toolchain and should
+# not grow one (design doc §5). The kit's answer is to test the BINARY rather than the source, which
+# needs a compiler only where the binary is produced — here. So this is where the Linux half of D50's
+# "Linux and Windows" requirement is actually proven, on every change, instead of being a claim that
+# nothing compiles.
+#
+# It also produces the per-RID artifacts D50's packaging shape expects
+# (`runtimes/win-x64/native/`, `runtimes/linux-x64/native/`), which is why the matrix names RIDs rather
+# than operating systems.
+name: launcher
+
+on:
+  push:
+    paths:
+      - 'src/Shenora.Launcher/**'
+      - 'devtools/scripts/launcher-conformance.mjs'
+      - 'devtools/update-probe/**'
+      - 'src/Shenora.IO/**'          # the other half of the protocol — a change there can break conformance
+      - '.github/workflows/launcher.yml'
+  pull_request:
+    paths:
+      - 'src/Shenora.Launcher/**'
+      - 'devtools/scripts/launcher-conformance.mjs'
+      - 'devtools/update-probe/**'
+      - 'src/Shenora.IO/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false          # a Linux-only break must not hide behind a Windows-only one
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64,   exe: shenora-launcher.exe }
+          - { os: ubuntu-latest,  rid: linux-x64, exe: shenora-launcher }
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.rid }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The C# half of the protocol. The harness stages with the REAL implementation, so this is not
+      # optional scaffolding — without it the C++ side would only ever be tested against fixtures
+      # written on its own side, which is the drift D50 warns about.
+      - name: Build update-probe
+        run: dotnet build devtools/update-probe/update-probe.csproj -c Release --nologo
+
+      - name: Configure
+        run: cmake -S src/Shenora.Launcher -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      # D50 recorded the expected size as a BAND nobody had measured. Printing it on every run is what
+      # keeps it a measurement: a change that doubles the binary shows up here rather than at adoption.
+      - name: Measure
+        shell: bash
+        run: |
+          exe=$(find build -name '${{ matrix.exe }}' -type f | head -n1)
+          echo "binary: $exe"
+          ls -l "$exe" | awk '{ printf "size: %d bytes (%.1f KB)\n", $5, $5/1024 }'
+
+      - name: Conformance
+        shell: bash
+        run: |
+          exe=$(find build -name '${{ matrix.exe }}' -type f | head -n1)
+          probe=$(find devtools/update-probe/bin/Release -name 'update-probe*' -type f \
+                  \( -name '*.exe' -o ! -name '*.*' \) | head -n1)
+          node devtools/scripts/launcher-conformance.mjs "$exe" "$probe"
+
+      - name: Stage the per-RID artifact
+        shell: bash
+        run: |
+          mkdir -p "artifact/runtimes/${{ matrix.rid }}/native"
+          exe=$(find build -name '${{ matrix.exe }}' -type f | head -n1)
+          cp "$exe" "artifact/runtimes/${{ matrix.rid }}/native/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.rid }}
+          path: artifact/
+          if-no-files-found: error

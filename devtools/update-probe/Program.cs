@@ -23,15 +23,35 @@ internal static class Program
         {
             Console.WriteLine("""
                 update-probe <release-dir> [--install <dir>] [--keep]
+                update-probe <release-dir> --stage-only <root>
 
                   <release-dir>   a REAL build/publish output, or an adopter's unpacked release.
                   --install       an existing install tree to update IN PLACE (default: a fresh temp one).
                   --keep          leave the sandbox behind for inspection.
+                  --stage-only    stage into <root>/.update and STOP after CommitAsync, leaving a
+                                  pending, fully verified stage for another applier to pick up.
 
                 Runs manifest -> stage -> CommitAsync -> ApplyAsync and reports the numbers. Exit 0 only
                 if every phase passed AND the user-data check below held.
                 """);
             return 2;
+        }
+
+        // --stage-only exists for the C++ launcher's conformance harness, and it is what makes that
+        // harness worth running: the staged tree, the marker and `manifest.json` are all written by the
+        // REAL C# implementation, so the C++ side is tested against the other half of the contract
+        // rather than against a fixture this repo wrote for it. The design doc's §0 records that both
+        // donor apps implemented this protocol twice, once per language — this is how the two copies
+        // are held to each other.
+        var stageOnlyIndex = Array.IndexOf(args, "--stage-only");
+        if (stageOnlyIndex >= 0)
+        {
+            if (stageOnlyIndex + 1 >= args.Length)
+            {
+                Console.Error.WriteLine("update-probe: --stage-only needs a root directory.");
+                return 2;
+            }
+            return StageOnly(Path.GetFullPath(args[0]), Path.GetFullPath(args[stageOnlyIndex + 1]));
         }
 
         var releaseDir = Path.GetFullPath(args[0]);
@@ -175,6 +195,38 @@ internal static class Program
                 Console.WriteLine($"sandbox kept: {sandbox}");
             }
         }
+    }
+
+    /// <summary>
+    /// Stage <paramref name="releaseDir"/> into <c>{root}/.update</c> and commit, then stop. Leaves a
+    /// pending stage exactly as an app would hand one to its launcher.
+    /// </summary>
+    private static int StageOnly(string releaseDir, string root)
+    {
+        var manifest = BuildManifest(releaseDir, "conformance-2.0.0");
+        if (manifest.Files.Count == 0)
+        {
+            Console.Error.WriteLine($"update-probe: '{releaseDir}' produced no files.");
+            return 1;
+        }
+
+        var stage = new UpdateStage(new UpdateStageOptions
+        {
+            Root = Path.Combine(root, ".update"),
+            Log = Console.Error.WriteLine,
+        });
+        stage.Begin();
+        CopyTree(releaseDir, stage.StagedDirectory);
+        File.WriteAllText(Path.Combine(stage.StagedDirectory, "manifest.json"), manifest.ToJson());
+
+        var status = stage.CommitAsync(manifest).GetAwaiter().GetResult();
+        if (!status.Pending)
+        {
+            Console.Error.WriteLine("update-probe: the stage did not become pending.");
+            return 1;
+        }
+        Console.WriteLine($"staged={manifest.Files.Count} version={status.Version}");
+        return 0;
     }
 
     /// <summary>

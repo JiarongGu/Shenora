@@ -100,6 +100,24 @@ Shenora.slnx
 │   │                                          over one or more ZIPs. Its own package because zip is ONE
 │   │                                          format and the next (7-Zip, rar) needs a native engine
 │   │                                          that must not reach an app using neither.
+│   ├── Shenora.Launcher/   (C++17, CMake — NOT a NuGet package yet)
+│   │                                          The native APPLY step, which is the one part of staged
+│   │                                          updates that cannot be done in .NET: it runs when the
+│   │                                          runtime may be absent and must replace files the app
+│   │                                          holds open. A LIBRARY (manifest parse, overlay, tracked
+│   │                                          removals, the platform seam) plus a TEMPLATE `main.cpp`
+│   │                                          an app copies and edits four constants in — the split
+│   │                                          D50 took from §0's measurement of two donor launchers.
+│   │                                          One tree for Windows + Linux: std::filesystem everywhere,
+│   │                                          Win32/POSIX behind include/shenora/platform.hpp, and BOTH
+│   │                                          compiled on every build so neither can rot.
+│   │                                          It re-hashes NOTHING — `ready.json` exists only when the
+│   │                                          C# side verified the whole stage, and re-verifying would
+│   │                                          duplicate a rule that can drift.
+│   │                                          Gated by `.github/workflows/launcher.yml` (win-x64 +
+│   │                                          linux-x64) running the conformance harness against the
+│   │                                          built binary, NOT by `dev.mjs verify`, which has no C++
+│   │                                          toolchain and deliberately does not grow one.
 │   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders

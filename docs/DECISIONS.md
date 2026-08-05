@@ -1528,9 +1528,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     including the two comparison rules already sabotage-verified on the C# side: paths normalise separators
     AND case, hashes compare case-insensitively. A second implementation is a second place to get those
     wrong, and getting either wrong makes a release look either fully changed or fully unchanged.
-  - **⚠ Sizes are BANDS, not measurements: ~150–300 KB (C++) against ~300 KB–1 MB (Rust, size-optimised).**
-    Nobody has built either. If this is ever revisited on size, build a hello-world of each and put real
-    numbers here first — the standard D40 and D46 were held to.
+  - **~~⚠ Sizes are BANDS, not measurements~~ — MEASURED 2026-08-05 when it was built: 322 KB**, MSVC
+    Release with `/O1 /GL` and `/LTCG /OPT:REF /OPT:ICF`. That is **above** this entry's own 150–300 KB
+    guess, and the difference is the **statically linked CRT** — a deliberate trade, because a launcher
+    that needs a VC++ redistributable installed has the same bootstrap problem it exists to solve.
+    Recorded rather than quietly re-banded: the estimate was wrong in the direction estimates usually
+    are. The Rust figure remains unmeasured and now has no reason to be measured.
   - **§5's verification problem is UNCHANGED, and calling it a library makes it sharper, not softer.** A
     library implies the kit owns its correctness while `dev.mjs verify` compiles none of it. The answer stays
     the sibling's: ship the Node harness that drives a PREBUILT launcher with `--apply-and-exit` over sandbox

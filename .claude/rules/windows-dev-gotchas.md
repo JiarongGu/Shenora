@@ -25,7 +25,9 @@
 - PS 5.1 quirks in scripts: no `&&`/`||` chains; `-Encoding utf8` writes a BOM (fine for
   PowerShell, poison for JSONL/BOM-sensitive consumers). BOM-less UTF-8 C# sources on this
   CJK-locale machine need `<CodePage>65001</CodePage>` or csc reads them as ANSI (set in
-  `src/Directory.Build.props`).
+  `src/Directory.Build.props`). **The C++ half is `/utf-8`** — MSVC otherwise reads the same sources
+  as codepage 936 and every file with an em-dash in a comment fails C4819, fatal under `/WX`. Set in
+  `src/Shenora.Launcher/CMakeLists.txt`; hit on that library's first build.
 - Git Bash path mangling: set `MSYS_NO_PATHCONV=1` when an argument like `/p:...` or a
   device-style path must reach a native tool untouched.
 - **Never build this repo from the session scratchpad path** — it is deep enough that `aapt2` fails

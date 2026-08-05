@@ -110,7 +110,17 @@ implementations, same two-phase model, same `{path, size, sha256}` manifest). Th
 against: **only the apply step is native.** B1 (manifest + diff), B2 (the staging area) and B3 (the
 release-source seam) are done — `docs/archive/tasks.md`.
 
-- [ ] **B4 — the NATIVE launcher, and it is now much smaller than the design assumed.** Owner's call
+_**B4 IS BUILT (2026-08-05)** — `src/Shenora.Launcher/`: the C++17 library + template, CMake, a
+win-x64/linux-x64 CI matrix, and a conformance harness that drives the PREBUILT binary against stages the
+real C# side produced. **Measured: 322 KB**, above D50's 150–300 KB band — the static CRT is the
+difference, and it is a deliberate trade (no VC++ redistributable to bootstrap). Six conformance cases,
+sabotage-verified. It found two bugs while being built. Record in `docs/archive/tasks.md`.
+**What is NOT done and is the next step: the `runtimes/{rid}/native/` nupkg** — CI produces the per-RID
+artifacts, nothing packs them yet._
+
+<details><summary>the original filing, kept for the port notes</summary>
+
+- [x] **B4 — the NATIVE launcher, and it is now much smaller than the design assumed.** Owner's call
   (2026-08-02): ship the apply logic as portable .NET first. Done — `UpdateStage.ApplyAsync` overlays,
   removes and clears, gate-covered and sabotage-verified, so **a self-contained app needs no native
   code at all.** What is left for the launcher is only what genuinely cannot be done in .NET: detect
@@ -130,6 +140,19 @@ release-source seam) are done — `docs/archive/tasks.md`.
   - **First step when this is picked up is a MEASUREMENT, not code:** the binary-size figures in D50 are
     bands nobody has built. And the Node conformance harness is not optional — without it "library" is a
     promotion in name only.
+
+</details>
+
+- [ ] **B4b — pack the launcher as `runtimes/{rid}/native/`.** CI already produces the per-RID artifacts
+  (`.github/workflows/launcher.yml` uploads `launcher-win-x64` / `launcher-linux-x64`); nothing consumes
+  them yet. The remaining work is a packaging project that pulls both artifacts into one nupkg so a
+  consumer's `PackageReference` drops the right binary into their output by RID — D50's stated shape.
+  - ⚠ **It cannot be a normal `src/` csproj that builds the binary**, because the binary comes from a
+    different toolchain on a different runner. The pack step consumes downloaded artifacts, which means
+    it belongs in a release workflow rather than in `dotnet pack` on a dev box.
+  - Decide at that point whether the **template** ships in the same package (as `contentFiles`) or stays
+    a file an adopter copies out of the repo. Shipping it means versioning it; copying it means it can
+    rot. Neither is obviously right and neither is urgent.
 
 _**DONE 2026-08-05 — the real-release validation is now `node devtools/dev.mjs update-probe`**, and it
 found a defect on its first run. Record in `docs/archive/tasks.md`; surface in `CHANGELOG.md`._
