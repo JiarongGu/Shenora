@@ -86,7 +86,16 @@
   /* min-height:0 is load-bearing: without it a flex child refuses to shrink below its content and
      the scrollbar never appears — the classic flexbox overflow trap. */
   #scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  h1 { font-size: 15px; margin: 0 0 2px; color: #7fd1ff; }
+  /*
+    ⚠ line-height 1.15, not the inherited 1.45, and it is a SAFE-AREA fix rather than typography.
+    Measured on a punch-hole device: the padding puts the content BOX exactly at the status-bar edge
+    (128 device px, symmetric — 31px above the camera hole, 31px below it), but the first visible GLYPH
+    landed ~14px lower because a 1.45 line box adds half its leading above the text. So the gap under
+    the cutout read as noticeably larger than the gap above it, and it looked like too much padding
+    when the padding was already exact. Tightening the FIRST line box is what makes the visible text
+    start where the box does. Body copy keeps the readable 1.45.
+  */
+  h1 { font-size: 15px; line-height: 1.15; margin: 0 0 2px; color: #7fd1ff; }
   .sub { color: #8b93a1; margin-bottom: 10px; font-size: 11px; }
   .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   button { flex: 1 1 auto; min-width: 90px; padding: 10px 8px; border-radius: 8px;
