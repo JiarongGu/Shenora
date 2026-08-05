@@ -163,6 +163,29 @@ closed on 2026-08-05** — records in `docs/archive/tasks.md`, shape in **D50**,
     two of the four defects are invisible without a device.
   - Full measurements and the three traps: `.claude/knowledge/mobile-shells.md`.
 
+  > **DIRECTION (owner, 2026-08-05):** *"we better have some pre configured default height for this hole
+  > area, and when it changes we do an animation … a splash screen is also the solution"*, then:
+  > *"we should be able to let consumer choose to use or not use the splash, and use or not use the
+  > default size, we should be provide enough freedom for cusomer but prove all our solution works"*.
+
+  - **The shape this asks for is THREE independent, individually declinable mechanisms** — D21's
+    primitives-and-hooks rule applied to a UX problem rather than a feature:
+    1. **A pre-configured default inset**, so the first paint is right rather than zero. Opt-out (an app
+       that would rather render flush takes nothing) and configurable (an app that knows its device
+       class sets the number and never sees a correction).
+    2. **An animated settle** when the real value replaces the default, so the unavoidable reflow reads
+       as intentional. Opt-out — an app with its own motion language will want its own curve, and one
+       that dislikes motion wants none.
+    3. **A splash that spans the gap.** ⚠ Evidence this is real: on this emulator the MAUI splash is
+       STILL UP at 2 s while the page's first paint has already happened behind it — so whether an
+       adopter ever sees the wrong first screen is a RACE they are currently winning or losing by luck.
+       The kit already ships `SplashPanel` on desktop; the mobile equivalent is the hook.
+  - ⚠ **"Prove all our solution works" is the load-bearing half of that direction.** Each of the three
+    needs its own device evidence, and two of them are invisible in a screenshot taken at the wrong
+    moment — the default is only observable BEFORE the real inset lands, and the animation only in the
+    ~180 ms between. Timed captures, or a probe that reports the value it laid out with, not a photo of
+    the settled state. The measurement probe already in the sample page is the starting point.
+
 ### Platform integration — OS-level logic, measured by how little native code an app writes
 
 > DIRECTION (user, 2026-08-04): *"we are doing a library, for multiple platform, so if the library can

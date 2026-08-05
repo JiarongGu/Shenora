@@ -13,7 +13,25 @@
 -->
 <script src="_framework/hybridwebview.js"></script>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    /*
+      PRE-CONFIGURED DEFAULTS, and they exist because the platform will not tell us in time. Android
+      reports env(safe-area-inset-*) as 0 for the whole first page load (measured), so a page that
+      starts from the real value starts from zero and renders its first screen under the status bar.
+      Starting from a sensible guess and CORRECTING is the better trade: the common case is right
+      immediately, and the uncommon case moves once.
+
+      24px is the ordinary Android status-bar / iOS home-indicator height in CSS px. It is deliberately
+      a VARIABLE rather than a literal so an app that knows its device class can set it once, before
+      first paint, and never see the correction at all.
+    */
+    --sa-top: 24px;
+    --sa-right: 0px;
+    --sa-bottom: 24px;
+    --sa-left: 0px;
+    --sa-settle: 180ms;
+  }
   /*
     The safe-area insets are NOT optional once a page ships to more than one mobile shell, and this
     is what proves it: the identical markup looked correct on an Android emulator for a whole session
@@ -52,14 +70,17 @@
            collapses to a plain 12px on a shell with no insets.
          */
          /*
-           The vars are what the JS re-read below keeps current; env() is the fallback for the first
-           frame and for any shell where the script does not run. See that block for why a static env()
-           is not enough on Android.
+           The vars carry the pre-configured default until a real measurement replaces them (see
+           :root and the JS). env() is not read directly here on purpose: it is 0 for the whole first
+           load on Android, so using it as the fallback would defeat the default.
+
+           The transition is what makes the correction acceptable rather than a jolt — when the real
+           inset arrives a frame or two in, the layout EASES to it instead of snapping. Cheap, and it
+           turns an unavoidable reflow into something that reads as intentional.
          */
-         padding: max(12px, var(--sa-top,  env(safe-area-inset-top)))
-                  max(12px, var(--sa-right, env(safe-area-inset-right)))
-                  max(12px, var(--sa-bottom, env(safe-area-inset-bottom)))
-                  max(12px, var(--sa-left,  env(safe-area-inset-left)));
+         transition: padding var(--sa-settle) ease-out;
+         padding: max(12px, var(--sa-top)) max(12px, var(--sa-right))
+                  max(12px, var(--sa-bottom)) max(12px, var(--sa-left));
          background: #14161a; color: #e6e6e6;
          font: 13px/1.45 ui-monospace, "Cascadia Mono", Menlo, monospace; }
   /* min-height:0 is load-bearing: without it a flex child refuses to shrink below its content and
@@ -400,8 +421,17 @@ const readInsets = (announce) => {
               bottom: px(s.paddingBottom), left: px(s.paddingLeft) };
   probe.remove();
 
-  const root = document.documentElement.style;
-  for (const side of ['top', 'right', 'bottom', 'left']) root.setProperty(`--sa-${side}`, `${v[side]}px`);
+  // ⚠ ONLY overwrite the pre-configured defaults once the platform has said something real. On Android
+  // every reading is 0 for the whole first load, and writing those zeros back would replace a sensible
+  // default with a wrong measurement — the exact regression this default exists to prevent. A shell
+  // that genuinely has no insets is therefore left at the default until it reports; that is the right
+  // way round, because over-reserving is a cosmetic 24px and under-reserving hides content behind the
+  // status bar.
+  const real = v.top || v.right || v.bottom || v.left;
+  if (real) {
+    const root = document.documentElement.style;
+    for (const side of ['top', 'right', 'bottom', 'left']) root.setProperty(`--sa-${side}`, `${v[side]}px`);
+  }
   if (announce) {
     log('t', `insets: top=${v.top} right=${v.right} bottom=${v.bottom} left=${v.left} (css px) · `
       + `viewport=${innerWidth}x${innerHeight} dpr=${devicePixelRatio}`);
