@@ -73,7 +73,7 @@ trade. The page's CSS fallback covers that frame. Revisit if the shell needs tha
 ### B4b — packing the launcher as `runtimes/{rid}/native/` (2026-08-05) — DONE
 
 `src/Shenora.Launcher`: a packaging-only project that compiles nothing. It puts the per-RID
-binaries the `launcher` CI matrix builds into `runtimes/{rid}/native/`, so a consumer's
+binaries the release's launcher matrix builds into `runtimes/{rid}/native/`, so a consumer's
 `PackageReference` drops the right one into their output by RID — D50's stated shape.
 
 **The open question is decided: the TEMPLATE ships**, alongside the library sources, under
@@ -98,7 +98,7 @@ served: use the stock binary (rename, re-icon, sign), or build your own from the
   having written a perfectly good main package**, which is why the error reads as a mystery rather than
   as "symbols".
 
-### B4 — the native launcher: C++ library + template, CMake, CI matrix, conformance harness (2026-08-05)
+### B4 — the native launcher: C++ library + template, CMake, release matrix, conformance harness (2026-08-05)
 
 Built to D50's settled shape. `src/Shenora.Launcher/` — 994 lines across 9 files.
 
@@ -130,7 +130,7 @@ directory sweep fails exactly the case that names user data, and nothing else.
 
 **Portability is proven, not asserted.** Both platform implementations compile on every build (each is a
 no-op on the other OS via its own `#ifdef`, rather than being excluded by CMake — a file the build system
-skips is one nobody notices has stopped compiling), and `.github/workflows/launcher.yml` builds and runs
+skips is one nobody notices has stopped compiling), and the release workflow builds and runs
 conformance on win-x64 AND linux-x64 with `fail-fast: false`.
 
 **Still open as B4b:** nothing packs the per-RID artifacts into a nupkg yet.

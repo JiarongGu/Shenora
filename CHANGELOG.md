@@ -165,7 +165,7 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
     required one would have the bootstrap problem it exists to solve.
   - **It re-hashes nothing.** `ready.json` exists only when the staging side verified the whole stage,
     and the marker's meaning is that an applier need not re-check.
-  - Gated by a CI matrix on win-x64 AND linux-x64 running a conformance harness against the built
+  - Gated by the release workflow's matrix on win-x64 AND linux-x64, running a conformance harness against the built
     binary, where every stage it applies is produced by the real C# implementation rather than a fixture.
     ⚠ `dev.mjs verify` does NOT compile it — this repo has no C++ toolchain and deliberately does not
     require one.

@@ -114,13 +114,13 @@ Shenora.slnx
 │   │                                          It re-hashes NOTHING — `ready.json` exists only when the
 │   │                                          C# side verified the whole stage, and re-verifying would
 │   │                                          duplicate a rule that can drift.
-│   │                                          Gated by `.github/workflows/launcher.yml` (win-x64 +
+│   │                                          Gated by the RELEASE workflow's launcher matrix (win-x64 +
 │   │                                          linux-x64) running the conformance harness against the
 │   │                                          built binary, NOT by `dev.mjs verify`, which has no C++
 │   │                                          toolchain and deliberately does not grow one.
 │   ├── Shenora.Launcher/    (C++17 + CMake, plus the packaging csproj)
 │   │                                          B4b: puts the per-RID launcher binaries the `launcher`
-│   │                                          CI matrix builds (win-x64 + linux-x64) into one nupkg
+│   │                                          release matrix builds (win-x64 + linux-x64) into one nupkg
 │   │                                          under runtimes/{rid}/native/, alongside the C++ library
 │   │                                          sources and template under launcher-src/ so an adopter
 │   │                                          can either use the stock binary or build their own.

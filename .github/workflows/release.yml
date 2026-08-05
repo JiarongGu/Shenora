@@ -54,26 +54,78 @@ permissions:
   id-token: write   # OIDC token for NuGet/npm Trusted Publishing (short-lived — no stored secret)
 
 jobs:
-  # The native launcher — REUSING `launcher.yml` rather than restating its matrix here.
+  # The native launcher. It is the one artifact this repo's own toolchain cannot produce for every
+  # target: win-x64 needs MSVC and linux-x64 needs gcc, on two different runners, so no single machine
+  # packs both — and `dev.mjs verify` has no C++ toolchain and deliberately does not grow one (design
+  # doc §5).
   #
-  # It is the one artifact this repo's own toolchain cannot produce for every target: win-x64 needs
-  # MSVC and linux-x64 needs gcc, on two different runners, so no single machine packs both. The
-  # workflow that gates every push already knows how to build and conformance-test it, and calling that
-  # workflow means the binary a release PUBLISHES is produced by the identical job that proved it on the
-  # way in. A copy of the matrix lived here for one commit; two definitions of the same thing drift, and
-  # the one that drifts is the one nobody reads until a release fails.
+  # ⚠ IT LIVES HERE, IN THE ONE MANUAL RELEASE WORKFLOW, and that is D5 rather than convenience. This
+  # briefly had its own `launcher.yml` firing on push and pull_request — which is push CI, the exact
+  # thing D5 forbids and that the family already added and removed once (Lyntai's D20). Verification is
+  # LOCAL (`dev.mjs launcher` builds and conformance-tests it on Windows); the release is the gate that
+  # matters, because it is the only moment a bad launcher could reach a consumer.
   #
-  # `fail-fast: true` is the one difference a release wants: ordinary CI keeps both legs running so a
-  # Linux-only break cannot hide behind a Windows-only one, while a release must not publish half a
-  # launcher. That is an input, not a fork of the workflow.
+  # The accepted cost, stated so nobody rediscovers it as a bug: linux-x64 is compiled only during a
+  # release, so a break in the POSIX half surfaces there rather than on the commit that caused it. The
+  # blast radius is contained — `publish` DEPENDS on this job, so a failure stops the release with
+  # nothing published — and a launcher that changes rarely does not earn a permanent CI trigger.
   #
-  # ⚠ `publish` DEPENDS on this, which is what makes the failure loud. The earlier shape had the release
-  # download artifacts while `pack` merely SKIPPED the project when they were missing — so a release
-  # that forgot the step shipped without the launcher and looked entirely normal.
+  # That dependency is also what makes the failure loud. An earlier shape had `pack` merely SKIP the
+  # launcher project when its binaries were missing, so a release that lost this step shipped without
+  # the launcher and looked entirely normal.
   launcher:
-    uses: ./.github/workflows/launcher.yml
-    with:
+    strategy:
+      # TRUE, unlike a CI matrix that would keep both legs running to show every break at once:
+      # publishing half a launcher is worse than publishing none, so the first failure stops the run.
       fail-fast: true
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64,   exe: shenora-launcher.exe }
+          - { os: ubuntu-latest,  rid: linux-x64, exe: shenora-launcher }
+    runs-on: ${{ matrix.os }}
+    name: launcher (${{ matrix.rid }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The C# half of the update protocol. The conformance harness stages with the REAL implementation
+      # rather than a fixture, which is the only reason it proves anything — so this is not scaffolding.
+      - name: Build update-probe
+        run: dotnet build devtools/update-probe/update-probe.csproj -c Release --nologo
+
+      - name: Build the launcher
+        run: |
+          cmake -S src/Shenora.Launcher -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      # A launcher that fails conformance must never reach a package. Same harness as `dev.mjs launcher`
+      # runs locally, against the binary about to be shipped. The size is printed because D50 recorded it
+      # as a band nobody had measured, and a change that doubles it should be visible here.
+      - name: Conformance
+        shell: bash
+        run: |
+          exe=$(find build -name '${{ matrix.exe }}' -type f | head -n1)
+          probe=$(find devtools/update-probe/bin/Release -name 'update-probe*' -type f \
+                  \( -name '*.exe' -o ! -name '*.*' \) | head -n1)
+          ls -l "$exe" | awk '{ printf "size: %d bytes (%.1f KB)\n", $5, $5/1024 }'
+          node devtools/scripts/launcher-conformance.mjs "$exe" "$probe"
+
+      - name: Stage the per-RID artifact
+        shell: bash
+        run: |
+          mkdir -p "artifact/runtimes/${{ matrix.rid }}/native"
+          cp "$(find build -name '${{ matrix.exe }}' -type f | head -n1)" \
+             "artifact/runtimes/${{ matrix.rid }}/native/"
+
+      # if-no-files-found: error, not the default warn. An empty native package restores fine and fails
+      # at the CONSUMER's build, so the moment to notice is here.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.rid }}
+          path: artifact/
+          if-no-files-found: error
 
   publish:
     needs: launcher
@@ -189,9 +241,8 @@ jobs:
         run: node devtools/dev.mjs verify --release
 
       # Both launcher RIDs, merged into the one folder the packaging project reads. `launcher-*` is what
-      # launcher.yml names them: a CALLED workflow's artifacts land in the same run, so the caller's jobs
-      # download them exactly as if it had built them itself. `merge-multiple` is what lets two artifacts
-      # unpack into a single runtimes/ tree.
+      # the matrix job above names them. `merge-multiple` is what lets two artifacts unpack into a
+      # single runtimes/ tree.
       - name: Download the launcher binaries
         uses: actions/download-artifact@v4
         with:
