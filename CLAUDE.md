@@ -6,7 +6,8 @@ Auto-loaded every session. Keep short — details live in `docs/` and `.claude/r
 
 Shenora (神阙) is a **reusable library**, not an app: the desktop "body" (WinForms + WebView2 +
 React hosting, typed IPC, modules, window management, native services) for the family's Windows
-applications, shipped as NuGet packages (`Shenora.Core|Ipc|Media|Windows|Android|iOS` — ONE shell per platform, D37) + npm
+applications, shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 —
+plus the optional `Media|IO|IO.Compression` hanging off Core, D48) + npm
 (`@shenora/react`), all versioned in lockstep. Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
@@ -18,12 +19,12 @@ relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design d
 `docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the
 code cites its `§` numbers.
 
-**Status: v0.9.1 published (2026-08-04)** — six NuGet packages (`Core` · `Ipc` · `Media` · `Windows` ·
-`Android` · `iOS`) + `@shenora/react` on npm, repo public, verified against the FEED rather than the tree.
-0.5.0 reorganised the set BY PLATFORM (D37); the kit runs on all three shells, proven on a device and a
-simulator. P1–P7 are complete. `TASKS.md` has the open work — media's `DM3` (the conversion) is the live
-item, plus three defects from the first adopter's 0.9.1 round. Growth is harvest-driven (D15) and
-adoption-driven. **Every public change is SemVer surface**; 1.0 is a separate deliberate freeze, not yet cut.
+**Status: v0.9.1 published (2026-08-04)**, six packages; `## Unreleased` adds two (`IO`, `IO.Compression`)
+and carries **five breaking changes** — read `CHANGELOG.md` before touching the surface. Repo public, verified
+against the FEED rather than the tree; 0.5.0 reorganised the set BY PLATFORM (D37); the kit runs on all three
+shells, proven on a device and a simulator. P1–P7 are complete. `TASKS.md` has the open work. Growth is
+harvest-driven (D15) and adoption-driven. **Every public change is SemVer surface**; 1.0 is a separate
+deliberate freeze, not yet cut.
 
 **Read first:** `docs/README.md` — the memory map that routes any task to the right doc or rule.
 **Private companion:** also read `local/CLAUDE.local.md` + `local/PROJECT_NOTES.md` at session

@@ -46,6 +46,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
+    <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
     <ProjectReference Include="..\..\src\Shenora.IO.Compression\Shenora.IO.Compression.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Media\Shenora.Media.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />

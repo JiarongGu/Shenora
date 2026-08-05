@@ -1,6 +1,8 @@
 using System.Text.Json;
 
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.IO;
 
 /// <summary>What an interrupted update needs done to it when the process comes back.</summary>
 public enum FileUpdateStage

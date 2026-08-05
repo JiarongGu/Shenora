@@ -236,8 +236,12 @@ from ever being picked up. Record in `docs/archive/tasks.md`._
       and random access by entry fails; download to a file (or a `MemoryStream`) first.
     - The adopter publishes **one ZIP per part**, not one per release, so the source must map
       manifest path → (archive, entry). A single-archive implementation would only serve half of them.
-    - It belongs where `IUpdateSource` already lives (`Shenora.Core`, no new package per D2) and needs
+    - ~~It belongs where `IUpdateSource` already lives (`Shenora.Core`, no new package per D2)~~ and needs
       no dependency: `System.IO.Compression` is in the shared framework.
+      **This one note was OVERRULED when it shipped** (owner, 2026-08-05 — *"because this include file
+      operation so we should have a sperated library/package for this"*): it went to a new
+      `Shenora.IO.Compression`, and `IUpdateSource` itself then followed the rest of the update engine out
+      of `Shenora.Core` into `Shenora.IO`. See D48. The other three notes were honoured as written.
   - **Recorded honestly:** the adopter declined partly on a BAD metric — adapter lines ≈ deleted lines —
     which misses that the tricky, worth-inheriting logic (staging, verification, journal, resume) is all on
     the kit's side and the bridge is boring. With the source shipped, this becomes a straight adoption.

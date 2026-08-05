@@ -87,11 +87,43 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
   exists to prevent. A compile error that names the new property is a better outcome than a warning nobody
   reads — the fix is one word, at every site, found by the compiler rather than by a measurement.
 
+- **The file-operation engine LEFT `Shenora.Core` for a new package, `Shenora.IO` (D48).** Thirty public
+  types change namespace `Shenora.Core` → `Shenora.IO`: `IFileUpdateQueue`/`FileUpdateQueue(+Options)`,
+  `FileUpdate`/`FileChange`/`FileAtomicity`/`FileUpdateResult`, the journal set
+  (`IFileUpdateJournal`/`FileUpdateJournal(+Options)`/`FileUpdateJournalEntry`/`FileUpdateStage`/
+  `FileUndoStep`/`FileUndoKind`), the lease set (`IPathLocker`/`IPathLease`/`FilePathLocker(+Options)`),
+  the manifest set (`UpdateManifest`/`ManifestFile`/`ManifestDiff`) and the updater
+  (`UpdateStage(+Options,+Status)`/`UpdateOutcome`/`IUpdateSource`).
+
+  ```xml
+  <PackageReference Include="Shenora.IO" Version="…" />   <!-- add -->
+  ```
+  ```csharp
+  using Shenora.IO;   // add to each file that names one of the types above
+  ```
+
+  **Nothing else changes** — no member was added, removed or resigned, which the API baselines show
+  exactly: `Shenora.Core.txt` lost 206 lines and gained none. An app that never mutates a file tree simply
+  does not reference the package, which is the point: `Io/` was **34% of `Shenora.Core`** (2,244 lines) and
+  `Shenora.Core` is what every other package references, so a phone app that hosts a page and plays a file
+  was carrying a self-updater it will never call.
+  - ⚠ **Three things deliberately did NOT move**, and the `using` you need depends on which you touch.
+    `Files`/`FileReplacement` stay in `Shenora.Core` (`IFileDialogs.SaveAsync`'s default calls
+    `Files.BeginReplace`, so moving them would invert the package edge); `PathClaims` stays (it is a claim
+    SCOPE built on the mission types — scheduling vocabulary that happens to be about paths); and
+    **`IFileLockInspector`/`FileLockHolder` stay**, because "who holds this file open?" is answered
+    per-platform and is therefore a portable contract with a shell implementation, exactly like
+    `IFileDialogs`. A shell must be able to implement a Core contract without referencing an optional
+    feature package.
+  - `Shenora.IO.Compression` now depends on `Shenora.IO` rather than on `Shenora.Core`, so
+    `ZipUpdateSource`'s signatures name `Shenora.IO.UpdateManifest`/`ManifestFile`. A consumer that
+    references `Shenora.IO.Compression` gets `Shenora.IO` transitively and needs no second reference.
+
 ### Added
 
 - **NEW PACKAGE `Shenora.IO.Compression`** — getting files into and out of an archive SAFELY. `net10.0`,
-  no native engine, and the first member of a `Shenora.IO.*` family for file-operation work that does not
-  belong in every consumer's `Shenora.Core`.
+  no native engine, and the first member of the `Shenora.IO.*` family (D48) — file-operation work that does
+  not belong in every consumer's `Shenora.Core`. It depends on `Shenora.IO`, which arrives with it.
   - **`ZipExtraction.ExtractTo` refuses any entry that would land outside the destination.** An archive is
     a list of paths chosen by whoever built it, and nothing stops one being `../../autoexec.bat` — the
     "zip slip" family. `ZipFile.ExtractToDirectory` has guarded this for years, but the hand-rolled

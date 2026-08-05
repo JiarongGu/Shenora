@@ -5,6 +5,30 @@ verified). `## Remaining` is the phase plan; items graduate here from `TASKS.md`
 
 ## Done
 
+### 2026-08-05 — the package set grows a THIRD kind: optional feature packages hanging off Core (D48)
+
+**`Shenora.IO` and `Shenora.IO.Compression`, so eight packable projects.** Until now the set was five shells
+(D37) plus `Shenora.Media`; the file-operation engine — the journalled update queue, cross-process path
+leases, the manifest pair and the staged updater — lived in `Shenora.Core`, which every other package
+references. That was **2,244 lines, 34% of `Shenora.Core`**, carried by a phone app that hosts a page and
+plays a file and will never self-update.
+
+Thirty public types moved to `Shenora.IO` and nothing else changed, which the API baselines prove exactly:
+`Shenora.Core.txt` lost 206 lines and gained none. Three types deliberately stayed behind and the reasons are
+the durable part — `Files`/`FileReplacement` because `Core`'s own `IFileDialogs.SaveAsync` calls
+`Files.BeginReplace` (moving it inverts the package edge), `PathClaims` because it is scheduling vocabulary,
+and `IFileLockInspector`/`FileLockHolder` because a shell must be able to implement a `Core` contract without
+referencing an optional feature package. `Shenora.IO.Compression` (shipped the day before) now sits on
+`Shenora.IO` rather than on `Core`, and declares no `Core` edge at all — it crosses none.
+
+**Verified:** 1043 tests, `dev.mjs verify` PASSED, `pack` produced all 8 nupkgs + 8 snupkgs and the nuspecs
+were read back to confirm the real graph (`IO → Core`, `IO.Compression → IO`, `Core →` only the two
+`Microsoft.Extensions.*`). The split also exposed a gate gap and closed it: `Shenora.IO.Compression` had
+shipped with **no `ARCHITECTURE.md` entry at all** while every gate stayed green, so `doc-drift` gained a
+fourth check — every packable project must be named in `README.md` and `ARCHITECTURE.md` — sabotage-verified
+on both arms, on the fail-closed path, and against the two name confusions (`Shenora.IO` is satisfied by
+neither `Shenora.iOS` nor `Shenora.IO.Compression`).
+
 ### 2026-08-03 — DM1: media plays AND seeks on both mobile shells (D44), and 0.8.0 ships the contracts
 
 **The media backlog's critical path is cleared.** A real 60 s H.264+AAC file plays and seeks through the

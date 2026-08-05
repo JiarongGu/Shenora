@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.IO;
 
 /// <summary>
 /// One tracked file in an <see cref="UpdateManifest"/>: where it lives, how big it is, and what it

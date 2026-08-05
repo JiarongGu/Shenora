@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.IO;
 
 /// <summary>Inputs for <see cref="FileUpdateQueue"/>.</summary>
 public sealed class FileUpdateQueueOptions

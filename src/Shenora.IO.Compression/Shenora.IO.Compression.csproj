@@ -23,7 +23,7 @@
       Shenora.Core, and the edge is REAL rather than declared: ZipUpdateSource implements Core's
       IUpdateSource and speaks UpdateManifest/ManifestFile. Added because something crosses it.
     -->
-    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\Shenora.IO\Shenora.IO.csproj" />
   </ItemGroup>
 
 </Project>

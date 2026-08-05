@@ -1276,3 +1276,71 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     already used, and the metaphor is what carries weighted permits — `MissionLane("gpu", Permits: 2)` reads
     as "occupies 2 of the lane's width") stand on their own. A cheaper break is not an argument for a change
     that was rejected on merit.
+
+- **D48 — file operations are a `Shenora.IO.*` FAMILY hanging off `Core`, not part of it. `Shenora.IO` is the
+  portable engine; a format or a platform that needs its own dependency gets its own package**
+  (owner, 2026-08-05).
+
+  > *"because this include file operation so we should have a sperated library/package for this"* …
+  > *"so IO becomes like a contract and logic library just like core media, and compression is one of the
+  > option"*
+
+  - **The measurement that decided it.** `Shenora.Core/Io/` was 2,244 lines — **34% of `Shenora.Core`** — and
+    all but ~500 of it is the update ENGINE: the journalled queue, path leases, the manifest pair, the staged
+    updater. `Shenora.Core` is the package *every other package references*, so a phone app that hosts a page
+    and plays a file was carrying a self-updater it will never call. That is the same argument D40 made for
+    `Shenora.Media` and it lands the same way.
+  - **This APPLIES D37's test rather than overturning it.** D37 asks whether a boundary corresponds to
+    something a CONSUMER experiences, and killed the platform-suffix split because "I am on Windows" is not a
+    choice you make per feature. "I am building an app that mutates a file tree or self-updates" IS one — some
+    apps do it and most do not, and the ones that do not can now say so by not referencing it.
+  - **The edge points `IO → Core`, checked rather than assumed.** Every type in the engine logs through
+    `AppCallback`, Core's one guarded-callback helper. That direction is what decided the LEFTOVERS, and they
+    are the interesting part of this decision:
+    - `Files`/`FileReplacement` stay in `Core` — `Core`'s own `IFileDialogs.SaveAsync` default calls
+      `Files.BeginReplace`, so moving them would invert the edge.
+    - `PathClaims` stays — it is a claim SCOPE built on the mission types. Scheduling vocabulary that happens
+      to be about paths, not a file operation.
+    - `IFileLockInspector`/`FileLockHolder` were SPLIT BACK OUT of the move (they were in `Io/` and went with
+      it in the first pass). "Who is holding this file open?" has a genuinely different answer per platform —
+      Windows asks the Restart Manager — so it is a portable contract with a shell implementation, exactly
+      like `IFileDialogs` and `IPlaybackSession`. **A shell package must be able to implement a Core contract
+      without referencing an optional feature package**; leaving it in `Shenora.IO` would have forced
+      `Shenora.Windows → Shenora.IO` for one interface. Its sibling `IPathLocker` went the other way for the
+      opposite reason: advisory lock files are portable, so contract and implementation ship together with
+      the engine that uses them.
+  - **`Shenora.IO.Compression` is the first member, and the family is why it is named that way.** Zip needs no
+    native engine and rides on `System.IO.Compression`; 7-Zip or rar would each drag real shipped bytes, so
+    each earns its own package rather than a flag. Naming the package after the framework's own area also made
+    the TYPES smaller — `ExtractionResult`, not `ArchiveExtractionResult` — because the namespace already says
+    what they operate on. It shipped for a few hours as `Shenora.Archives` with `Archive…` type names, which
+    over-claimed (everything in it is zip-only) and contradicted the kit's lexicon note written the same day.
+    **A package name that has to be explained by its type names is the wrong package name.**
+  - **`Shenora.IO.Windows` / `Shenora.IO.Android` are NOT being created yet, and that is deliberate.** The
+    naming leaves room for them, and today they would contain one class and zero classes respectively —
+    `RestartManagerFileLockInspector` already lives in `Shenora.Windows`, where it is a shell contract's shell
+    implementation and belongs. **Reserve the name, ship the package only when it has contents** (D15). The
+    trigger to create one: a platform file API that is not a Core contract — Android's SAF tree, macOS
+    security-scoped bookmarks.
+  - **⚠ The strongest objection, raised in this batch's review and REJECTED — `Shenora.IO` holds TWO clusters
+    that do not touch each other.** Checked rather than assumed: `UpdateStage` references no
+    `IFileUpdateQueue`, no `FileUpdate`, no `FileChange` and no `IPathLocker`. So the package is "land a file
+    change safely" *plus* "update an installed tree", sharing only `Files` and `AppCallback` — both from
+    `Core`. By the letter of D37 those could be two packages. They are not, for three reasons: the consumer
+    story is ONE ("my app owns a file tree on disk and must change it without corrupting it"), which is how
+    `ADOPTION.md` already teaches them; the cost of unused code inside a package you CHOSE to add is close to
+    nothing, unlike the same code in `Core`, which every package drags — that asymmetry is the whole of this
+    decision and it does not repeat one level down; and two ~850-line packages is the over-splitting D37 was
+    written to stop. **If this is ever revisited, the trigger is a real adopter that wants one and refuses the
+    other**, not the observation that the call graph has two components.
+  - **Cost, stated because a break needs one:** every moved type changes namespace `Shenora.Core` →
+    `Shenora.IO`, which is a `using` line per consuming file plus one `PackageReference`. Thirty public types
+    moved, nothing was added or removed, and the API baselines show exactly that — `Shenora.Core.txt` lost 206
+    lines and gained none. Cheap under D47, and it will not be cheap for long.
+  - **⚠ The gate that did NOT catch the gap this created.** `Shenora.IO.Compression` shipped a day earlier with
+    no `docs/ARCHITECTURE.md` entry at all, and every gate stayed green: `doc-drift` checked documented
+    dependency ARROWS, retired names and dangling doc links — never "is this shipped package described
+    anywhere". A fourth check now requires every packable project to be named in `README.md`'s package table
+    and in `ARCHITECTURE.md`. It is exact rather than heuristic (a name either appears or it does not), which
+    is the bar `doc-drift`'s own header sets, and it is case-sensitive with a trailing-identifier fence so
+    `Shenora.IO` cannot be satisfied by `Shenora.iOS` or by `Shenora.IO.Compression` — both verified.

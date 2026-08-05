@@ -1,5 +1,5 @@
 using System.IO.Compression;
-using Shenora.Core;
+using Shenora.IO;
 
 namespace Shenora.IO.Compression;
 

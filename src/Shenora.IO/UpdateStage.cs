@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.IO;
 
 /// <summary>
 /// Where releases come from — the SEAM, and the kit ships no implementation of it.

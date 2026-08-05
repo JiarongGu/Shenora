@@ -37,6 +37,7 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
 | `Shenora.Media` | NuGet | `net10.0` | Media LOGIC only: a per-stream playability planner and the probe-result shape it reads. Ships no codec list and no engine — and **is not needed to play a file** (see below). |
+| `Shenora.IO` | NuGet | `net10.0` | Mutating a file tree without corrupting it: a journalled update queue with rollback, cross-process path locks, and a staged self-updater with per-file verification. |
 | `Shenora.IO.Compression` | NuGet | `net10.0` | Getting files into and out of an archive SAFELY: extraction that refuses any entry escaping its destination, bounded size and count, and a ZIP-backed update source. No native engine — zip works on the framework alone. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
@@ -68,9 +69,16 @@ Dependencies — the graph is a **diamond, not a chain**:
 
         Shenora.Core
               ↑
-        Shenora.Media                                   net10.0    optional, media LOGIC only
-        Shenora.IO.Compression                          net10.0    optional, safe archive extraction
+              ├──── Shenora.Media                       net10.0    optional, media LOGIC only
+              └──── Shenora.IO                          net10.0    optional, the file-operation engine
+                          ↑
+                    Shenora.IO.Compression              net10.0    optional, safe archive extraction
 ```
+
+**The optional feature packages hang off `Shenora.Core`, they do not sit under it.** Media logic and
+file-operation machinery are things *some* apps do; a phone app that hosts a page and plays a file needs
+neither, and it used to carry the whole update engine anyway because that engine lived in `Shenora.Core`,
+which every package references. Reference the leaf you actually use (D48).
 
 **`<video>`, `<audio>` and `<img>` over local files need NO media package.** Serving bytes to a page is
 resource interception, and that is a SHELL capability (D45): `Shenora.Core` declares

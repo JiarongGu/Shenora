@@ -11,10 +11,12 @@ records only what EXISTS.)
      file dates its claims instead of versioning them, for the same reason. -->
 ## Current state — **v0.9.1 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
-Five NuGet packages + `@shenora/react` on npm — since 0.5.0 organised BY PLATFORM (D37): `Core`,
-`Ipc`, `Windows` (the three old Windows ids merged), `Android` and `iOS`. All five ship from ONE
-Windows runner — 0.5.0 published only the first four because `pack` skipped iOS on the mistaken
-belief that it needed a Mac, and 0.5.1 corrected that. Since the summary below was written, P5.5
+Eight packable NuGet packages + `@shenora/react` on npm. **Five are the SHELL set, organised BY
+PLATFORM since 0.5.0 (D37)**: `Core`, `Ipc`, `Windows` (the three old Windows ids merged), `Android`
+and `iOS`. All five ship from ONE Windows runner — 0.5.0 published only the first four because `pack`
+skipped iOS on the mistaken belief that it needed a Mac, and 0.5.1 corrected that. **Three are
+OPTIONAL feature packages hanging off `Core`, not layers under it**: `Media` (v0.9.0), and — new since
+2026-08-05, so not in v0.9.1 — `IO` and `IO.Compression` (D48). Since the summary below was written, P5.5
 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
 a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 added native caption
@@ -78,6 +80,26 @@ Shenora.slnx
 │   │                                          <img> over local files need no media package at all, and
 │   │                                          this one is what an app adds to DECIDE about a file the
 │   │                                          platform cannot decode.
+│   ├── Shenora.IO          net10.0          — deps: Shenora.Core
+│   │                                          The file-operation ENGINE: the journalled update queue,
+│   │                                          cross-process path leases, the manifest/diff pair and the
+│   │                                          staged updater. Left Core on 2026-08-05 (D48) — 1,700
+│   │                                          lines of machinery that only an app which MUTATES a file
+│   │                                          tree needs, sitting in the one package everything
+│   │                                          references. The edge points at Core (not the reverse)
+│   │                                          because every type here logs through Core's AppCallback;
+│   │                                          that is also what decided the leftovers — Files/
+│   │                                          FileReplacement stayed because Core's own
+│   │                                          IFileDialogs.SaveAsync default calls Files.BeginReplace,
+│   │                                          PathClaims because it is scheduling vocabulary, and
+│   │                                          IFileLockInspector because it is a portable CONTRACT with
+│   │                                          a per-platform implementation, like IFileDialogs (D19/D20).
+│   ├── Shenora.IO.Compression net10.0       — deps: Shenora.IO
+│   │                                          Archives, safely: containment-checked extraction with
+│   │                                          size/count limits, and ZipUpdateSource — the IUpdateSource
+│   │                                          over one or more ZIPs. Its own package because zip is ONE
+│   │                                          format and the next (7-Zip, rar) needs a native engine
+│   │                                          that must not reach an app using neither.
 │   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders
@@ -275,7 +297,32 @@ changes, noting them in `CHANGELOG.md`).
   exclusively), and the retry repeats only that step, never the ones before it. A failing step fails
   the chain; cancelling cancels the chain. The context is IN-MEMORY only: a durable chain carries
   state in `Payload`, because an arbitrary object graph is what the kit cannot serialize for an app.
-  **`Io/` — the file-update queue (2026-08-02), independent of the scheduler.**
+  **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
+  case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
+  `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
+  `IsContained(root, candidate)` (the containment guard for anything mapping caller input to a file —
+  resolves `..` first, boundary-tested, so `C:\data-old` is not inside `C:\data`).
+  Naming is `Mission*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary,
+  and reusing the word would blur the one distinction the design rests on. It was `Work*` until
+  2026-08-02 — too common a word to own or grep, while `Task*` would collide with the BCL.
+  **Three as-built facts worth recording, because a reader of the design doc or the XML would expect
+  otherwise:** (1) an unknown LANE does NOT throw — it is created at the default capacity on first
+  mention, so only an unregistered claim SCOPE is a submit-time error (the trap is a misspelled name
+  silently costing the exclusivity that was configured; two XML remarks used to claim the lane threw,
+  corrected and pinned by `An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing`);
+  (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
+  whole of the scheduler's `Io/` half, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit`
+  models; (3) nothing
+  in `Shenora.Ipc` implements `IMissionObserver`, so wiring execution to the operation registry is the
+  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionOperationObserver.cs` is the worked
+  example — and `Shenora.Core` stays free of any reporting dependency either way (D19/D20). That
+  adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
+  cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
+  work observes the one handed to `SubmitAsync`.
+- **`Shenora.IO` — the file-operation engine (its own package since 2026-08-05, D48; all of it shipped
+  in `Shenora.Core` before that).** Portable `net10.0`, and it pairs with the scheduler above without
+  depending on it: missions compute in parallel, this lands their results one at a time.
+  **The file-update queue (2026-08-02), independent of the scheduler.**
   `IFileUpdateQueue`/`FileUpdateQueue(+Options)` serializes filesystem MUTATIONS so missions can
   compute in parallel and land one at a time: `ApplyAsync(FileUpdate)` completes when that update has
   landed. A `FileUpdate` is an ordered `FileChange` list (`Replace`, `Move`, `Delete`,
@@ -295,8 +342,9 @@ changes, noting them in `CHANGELOG.md`).
   applied. Without a journal the same `AllOrNothing` covers a failed change only. The internal `IFileOperations` seam exists so serialization and rollback
   ORDER are provable with a probe instead of with sleeps; the kit still ships no public filesystem
   abstraction.
-  **`Io/` — cross-process locking, the two halves of a problem claims cannot reach.** A
-  `MissionClaim` excludes missions inside one process; these cover the rest. `IPathLocker`/`IPathLease`
+  **Cross-process locking, the two halves of a problem claims cannot reach — and they live in
+  DIFFERENT packages.** A `MissionClaim` excludes missions inside one process; these cover the rest.
+  `IPathLocker`/`IPathLease`
   + `FilePathLocker(+Options)` are advisory leases as lock FILES in a directory of the app's own
   (never the managed tree — an app frequently does not own the folder it manages), opened
   `FileShare.Read` + `DeleteOnClose` so the OS releases them when a process dies, keyed by a hash of
@@ -309,12 +357,13 @@ changes, noting them in `CHANGELOG.md`).
   `IOException` becomes a name. Empty means "cannot tell", never "nobody". Over a share, leases work
   provided the lock directory is ON the share, and a crash-released lease returns when the SMB session
   times out rather than instantly.
-  **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
-  case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
-  `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
-  `IsContained(root, candidate)` (the containment guard for anything mapping caller input to a file —
-  resolves `..` first, boundary-tested, so `C:\data-old` is not inside `C:\data`).
-  **`Io/UpdateManifest`, `ManifestFile`, `ManifestDiff` (2026-08-02)** — the staged-update
+  ⚠ **`IFileLockInspector` + `FileLockHolder` stayed in `Shenora.Core`** when the rest moved out (D48),
+  and the asymmetry is the layering rule rather than an oversight: "who holds this file open?" has a
+  genuinely different answer per platform (Windows asks the Restart Manager), so it is a portable
+  CONTRACT with a shell implementation — exactly like `IFileDialogs` — and a shell must be able to
+  implement it without referencing an optional feature package. Advisory leases went the other way for
+  the opposite reason: lock files are portable, so contract and implementation ship together.
+  **`UpdateManifest`, `ManifestFile`, `ManifestDiff` (2026-08-02)** — the staged-update
   changeset, and the FIRST piece of `docs/2026-08-02-shenora-app-update-design.md` to ship.
   `ManifestFile` is `{Path, Size, Sha256}` (the triple two sibling apps arrived at independently);
   `UpdateManifest` is `{Version, GeneratedAt?, Files}` with camelCase `Parse`/`ToJson` matching what
@@ -327,7 +376,7 @@ changes, noting them in `CHANGELOG.md`).
   the same tree.
   ⚠ An empty RELEASE manifest legitimately removes everything, so a manifest that failed to load must
   never reach `Compute`; validating it is the caller's job — and that caller is `UpdateStage`, below.
-  **`Io/UpdateStage` (+`Options`, `+Status`)** — the staging half of the two-phase update. The app
+  **`UpdateStage` (+`Options`, `+Status`)** — the staging half of the two-phase update. The app
   writes downloaded files into `StagedDirectory`; `CommitAsync` hashes every file the manifest lists,
   rejects anything staged that the manifest does NOT list, and writes `ready.json` **last**, so the
   marker's existence IS the promise that the stage is complete and verified and an applier need not
@@ -361,22 +410,16 @@ changes, noting them in `CHANGELOG.md`).
   "installed minus release" and a manifest that failed to load would delete everything just written.
   A self-contained app needs no native code; a framework-dependent one still wants a launcher to
   bootstrap the runtime and call this.
-  Naming is `Mission*` and deliberately not `Operation*`: `Shenora.Ipc` owns the reporting vocabulary,
-  and reusing the word would blur the one distinction the design rests on. It was `Work*` until
-  2026-08-02 — too common a word to own or grep, while `Task*` would collide with the BCL.
-  **Three as-built facts worth recording, because a reader of the design doc or the XML would expect
-  otherwise:** (1) an unknown LANE does NOT throw — it is created at the default capacity on first
-  mention, so only an unregistered claim SCOPE is a submit-time error (the trap is a misspelled name
-  silently costing the exclusivity that was configured; two XML remarks used to claim the lane threw,
-  corrected and pinned by `An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing`);
-  (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
-  whole of `Io/`, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit` models; (3) nothing
-  in `Shenora.Ipc` implements `IMissionObserver`, so wiring execution to the operation registry is the
-  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionOperationObserver.cs` is the worked
-  example — and `Shenora.Core` stays free of any reporting dependency either way (D19/D20). That
-  adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
-  cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
-  work observes the one handed to `SubmitAsync`.
+- **`Shenora.IO.Compression` — archives, safely (2026-08-05).** `ZipExtraction.ExtractTo` +
+  `ExtractionLimits`/`ExtractionResult`: every entry is containment-checked against the destination
+  **plus a separator** (so `data-evil` is not a child of `data`), a refused entry is SKIPPED and NAMED
+  rather than throwing, and total-bytes / entry-count limits (1 GiB / 100k) throw — the zip-bomb bound,
+  fatal because a partial extraction that stopped quietly would leave the caller believing it had
+  everything. `ZipUpdateSource` implements `Shenora.IO`'s `IUpdateSource` over one or MORE archives
+  (a release is commonly one zip per part under a single manifest), indexed at construction, refusing a
+  path carried by two archives rather than last-wins. ⚠ Non-seekable streams are refused up front
+  (`ZipArchive` reads the central directory from the END), and it is not thread-safe because
+  `ZipArchive` is not.
 - `Shenora.Windows` — `DpiHelper` (BaseDpi, `SystemScale`, `ScaleFromDeviceDpi`, pure `Scale` +
   internal-element helpers); `WindowState`/`WindowStateOptions`/`IWindowStateStore`/
   `JsonFileWindowStateStore`/`WindowStateManager` (logical-px persistence, physical restore,

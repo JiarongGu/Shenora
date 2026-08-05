@@ -66,10 +66,21 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
               ├──── Shenora.Windows ──────┘             net10.0-windows
               ├──── Shenora.Android                     net10.0-android
               └──── Shenora.iOS                         net10.0-ios
+
+                    Shenora.Core
+                      ↑
+                      ├──── Shenora.Media               net10.0   optional, media LOGIC only
+                      └──── Shenora.IO                  net10.0   optional, file-operation engine
+                                  ↑
+                            Shenora.IO.Compression      net10.0   optional, safe archive extraction
 ```
 
 **One shell package per platform.** Reference the one you are building for. Pin exact versions — see
 `docs/RELEASING.md` for the pre-release feed recipe.
+
+**The three optional packages hang OFF `Shenora.Core`, they are not layers under it** (D48) — a shell
+reference does not bring them, and you add one only when you want what it does. `Shenora.IO` is what
+Stage 4's file-landing section below needs.
 
 > ⚠ **Coming from 0.4.0? Three package ids were renamed** (D37). `Shenora.WinForms`,
 > `Shenora.WebView2` and `Shenora.WebView2.Sessions` are now the single `Shenora.Windows`.
@@ -951,8 +962,20 @@ What to know before you reach for it:
 
 ## The file-update queue — for when claims are too coarse
 
-Also `Shenora.Core`, also no shell/IPC/Windows, and **independent of the scheduler** — usable with it,
-without it, or before you adopt it.
+This one is **`Shenora.IO`**, an optional package you add (it used to be part of `Shenora.Core`, and
+moved out under D48 because most apps never mutate a file tree). Still no shell/IPC/Windows, and
+**independent of the scheduler** — usable with it, without it, or before you adopt it.
+
+```xml
+<PackageReference Include="Shenora.IO" Version="…" />
+```
+```csharp
+using Shenora.IO;   // FileUpdate*, FileChange, IPathLocker, UpdateManifest, UpdateStage
+```
+
+Everything from here to the end of this section lives in that package, with three exceptions that stay
+in `Shenora.Core` because other Core code or a shell needs them: `Files`/`FileReplacement`,
+`PathClaims`, and `IFileLockInspector`/`FileLockHolder`.
 
 **The problem it solves.** A path claim excludes two missions for their WHOLE duration. But the
 expensive phase usually does not touch the destination at all — it writes a temp file. Only the final

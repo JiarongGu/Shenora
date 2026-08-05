@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.IO;
 
 /// <summary>How much of a <see cref="FileUpdate"/> has to survive together.</summary>
 public enum FileAtomicity

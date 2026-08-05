@@ -40,7 +40,9 @@ public enum FileWriteMode
 /// existing <c>File.</c> call in the file, which is a hostile thing to do to an adopter.
 /// </para>
 ///
-/// <para><b>Why this exists separately from <see cref="IFileUpdateQueue"/>.</b> The queue is for
+/// <para><b>Why this exists separately from the update queue</b> (<c>IFileUpdateQueue</c>, in the
+/// optional <c>Shenora.IO</c> package — named as text rather than a cref because Core cannot see it,
+/// which is the point: this primitive is available to every consumer, the queue is not). The queue is for
 /// MULTI-change, cross-process, rollback-able work: N files that must land together, partitioned so two
 /// processes cannot interleave. Most file writing is not that. A config store is one file, synchronous
 /// and best-effort, and at least one of them saves from a window-closing path where awaiting a queue is

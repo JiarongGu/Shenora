@@ -18,9 +18,9 @@ sealed class Shenora.IO.Compression.ExtractionResult : System.IEquatable<Shenora
 static class Shenora.IO.Compression.ZipExtraction
   public static Shenora.IO.Compression.ExtractionResult ExtractTo(System.IO.Compression.ZipArchive archive, string destinationDirectory, Shenora.IO.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.IO.Compression.ExtractionResult ExtractTo(string archivePath, string destinationDirectory, Shenora.IO.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
-sealed class Shenora.IO.Compression.ZipUpdateSource : Shenora.Core.IUpdateSource, System.IDisposable
-  public .ctor(Shenora.Core.UpdateManifest manifest, System.Collections.Generic.IEnumerable<System.IO.Stream> archives, bool leaveOpen = false)
-  public System.Threading.Tasks.Task<Shenora.Core.UpdateManifest> GetManifestAsync(System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.Core.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
-  public static Shenora.IO.Compression.ZipUpdateSource Open(Shenora.Core.UpdateManifest manifest, params string[] archivePaths)
+sealed class Shenora.IO.Compression.ZipUpdateSource : Shenora.IO.IUpdateSource, System.IDisposable
+  public .ctor(Shenora.IO.UpdateManifest manifest, System.Collections.Generic.IEnumerable<System.IO.Stream> archives, bool leaveOpen = false)
+  public System.Threading.Tasks.Task<Shenora.IO.UpdateManifest> GetManifestAsync(System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.IO.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.IO.Compression.ZipUpdateSource Open(Shenora.IO.UpdateManifest manifest, params string[] archivePaths)
   public void Dispose()

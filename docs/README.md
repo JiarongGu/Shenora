@@ -39,7 +39,7 @@ update the relevant entry HERE — this file is the durable index.
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Running the same app logic on MOBILE (a MAUI shell) | `docs/ADOPTION.md` Stage 5 (what transfers, what does not, and the traps already paid for) + `docs/DECISIONS.md` **D32**–**D34** (a second shell is a PEER; absent vs differently-satisfied capabilities; why its API baseline is weaker) + **D36** (the host advertises capabilities in the handshake, so ONE web bundle serves both shells) + **D39** (why the auxiliary-session stack does NOT port, even though both shells host a webview) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/2026-08-02-shenora-mission-scheduling-design.md` (the one-scheduler-two-key-kinds claim + what is deliberately not built) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
-| Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + `docs/ARCHITECTURE.md` for the surface + the file-queue section of `docs/ADOPTION.md` |
+| Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + **D48** (it is the `Shenora.IO` package now, and which three types stayed in Core) + `docs/ARCHITECTURE.md` for the surface + the file-queue section of `docs/ADOPTION.md` |
 | Multi-step missions, or where the pending queue lives | `docs/DECISIONS.md` **D28**+**D29** (a chain is ONE queue entry; the queue's store, and the pluggable async queue that was rejected) |
 | Shipping app updates: a staged/two-phase updater, an update manifest, or a native launcher | `docs/2026-08-02-shenora-app-update-design.md` (the evidence from two independent sibling implementations, the topology that deletes a bug class, and what is deliberately not built) |
 | Media: thumbnails, probing, or **playing a file the webview cannot decode** | `docs/2026-08-03-shenora-media-design.md` (the harvest from three siblings: what they share, where they disagree, the measured engine sizes, and why a "transcode layer" is a composition of primitives the kit already ships) |
@@ -51,7 +51,8 @@ update the relevant entry HERE — this file is the durable index.
 ## Where things live (fast map)
 
 - `src/` — the packable projects, ONE shell per platform since 0.5.0 (D37):
-  `Shenora.Core|Ipc|Windows|Android|iOS`, with `Shenora.Mobile/` as the SOURCE (no csproj) compiled into
+  `Shenora.Core|Ipc|Windows|Android|iOS` plus the optional `Media|IO|IO.Compression` hanging off Core
+  (D48), with `Shenora.Mobile/` as the SOURCE (no csproj) compiled into
   both mobile packages — plus `Shenora.React/` (the `@shenora/react` npm package) and
   `Directory.Build.props` (the ONLY version source).
 - `tests/Shenora.Tests` — the single test project (folders mirror src).

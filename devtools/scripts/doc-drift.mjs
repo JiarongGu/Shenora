@@ -24,6 +24,12 @@
 //      "RequestResume keys on ResumePayload" (a lie) from "keyed on ResumePayload for one release"
 //      (history), which is exactly the line the review had to walk by hand.
 //
+//   4. UNDOCUMENTED PACKAGES. Added 2026-08-05, earned the day before: `Shenora.IO.Compression` shipped
+//      as a new nupkg with NO entry in docs/ARCHITECTURE.md and no gate said a word — every check here
+//      looked at claims that WERE made, none at a shipped thing nobody described. So each packable
+//      project must be named in README.md's package table and in ARCHITECTURE.md. Exact, not heuristic:
+//      the name either appears or it does not, which is the bar the header above sets.
+//
 // Usage: node devtools/scripts/doc-drift.mjs [--list]
 import fs from 'node:fs';
 import path from 'node:path';
@@ -204,10 +210,58 @@ function checkDocLinks() {
   }
 }
 
+// ── 4. Every shipped package is described somewhere a consumer reads ──────────────────────────────
+
+/** The packable projects, by the same text match the metadata-baseline test uses. */
+function packableProjects() {
+  const srcDir = path.join(repo, 'src');
+  return fs.readdirSync(srcDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) => {
+      const csproj = path.join(srcDir, name, `${name}.csproj`);
+      return fs.existsSync(csproj)
+        && fs.readFileSync(csproj, 'utf8').includes('<IsPackable>true</IsPackable>');
+    });
+}
+
+// Case-SENSITIVE, and fenced against a longer identifier on the right. Both matter here and both are
+// verified: `Shenora.IO` must not be satisfied by `Shenora.iOS` (a different package that differs only
+// in case) nor by `Shenora.IO.Compression` (a different package that merely starts with it).
+function namesPackage(text, name) {
+  return new RegExp(`${name.replace(/\./g, '\\.')}(?![A-Za-z0-9_.])`).test(text);
+}
+
+function checkPackagesAreDocumented() {
+  const packable = packableProjects();
+  if (packable.length === 0) {
+    problems.push('no packable project found under src/ — this check would pass for the wrong reason.');
+    return;
+  }
+  for (const rel of ['README.md', path.join('docs', 'ARCHITECTURE.md')]) {
+    const file = path.join(repo, rel);
+    // FAIL CLOSED. `checkDependencyGraph` above skips a missing file because it checks claims that
+    // may or may not be made; this one checks that a REQUIRED document exists and says something, so
+    // a missing file is the loudest possible version of the failure, not a reason to pass.
+    if (!fs.existsSync(file)) {
+      problems.push(`${rel.replace(/\\/g, '/')} does not exist, so no package can be documented in it.`);
+      continue;
+    }
+    const text = fs.readFileSync(file, 'utf8');
+    for (const name of packable) {
+      if (namesPackage(text, name)) continue;
+      problems.push(
+        `${rel.replace(/\\/g, '/')}: never names the shipped package "${name}".\n` +
+        '      A package nobody describes is one an adopter cannot find, and no other gate looks for it.');
+    }
+  }
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────────────────────────
 
 if (listOnly) {
   console.log('retired names watched:', retiredNames().join(', ') || '(none)');
+  console.log('packable projects:', packableProjects().join(', ') || '(none)');
   const actual = actualGraph();
   for (const [from, refs] of actual) console.log(`  ${from} -> ${[...refs].join(', ') || '(none)'}`);
   process.exit(0);
@@ -216,10 +270,11 @@ if (listOnly) {
 checkDependencyGraph();
 checkRetiredNames();
 checkDocLinks();
+checkPackagesAreDocumented();
 
 if (problems.length === 0) {
   console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as ' +
-              'current; every docs/ pointer resolves');
+              'current; every docs/ pointer resolves; every packable project is documented');
   process.exit(0);
 }
 console.error(`\n\x1b[31m✖ doc-drift: ${problems.length} stale claim(s) in prose:\x1b[0m`);

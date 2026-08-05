@@ -28,6 +28,9 @@ export default {
     'src/Shenora.Ipc',
     // net10.0 and portable, so it packs and gates exactly like Core/Ipc — no platform host needed.
     // Compression: net10.0, no native engine, packs and gates exactly like Core/Ipc/Media.
+    // The file-operation engine, split out of Core (D48): 1,700 lines an app that never mutates
+    // a file tree should not carry.
+    'src/Shenora.IO',
     'src/Shenora.IO.Compression',
     'src/Shenora.Media',
     'src/Shenora.Windows',

@@ -30,81 +30,6 @@ sealed class Shenora.Core.EventMessage
   public required string Type { get; init; }
   public string Id { get; init; }
   public string? Scope { get; init; }
-enum Shenora.Core.FileAtomicity (int)
-  public const Shenora.Core.FileAtomicity AllOrNothing = 1
-  public const Shenora.Core.FileAtomicity PerChange = 0
-  public int value__
-abstract class Shenora.Core.FileChange : System.IEquatable<Shenora.Core.FileChange>
-  protected .ctor(Shenora.Core.FileChange original)
-  protected virtual System.Type EqualityContract { get; }
-  protected virtual bool PrintMembers(System.Text.StringBuilder builder)
-  public abstract Shenora.Core.FileChange <Clone>$()
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileChange? left, Shenora.Core.FileChange? right)
-  public static bool op_Inequality(Shenora.Core.FileChange? left, Shenora.Core.FileChange? right)
-  public virtual bool Equals(Shenora.Core.FileChange? other)
-sealed class Shenora.Core.FileChange+CreateDirectory : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+CreateDirectory>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(string Path)
-  public bool Equals(Shenora.Core.FileChange+CreateDirectory? other)
-  public override bool Equals(Shenora.Core.FileChange? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileChange+CreateDirectory? left, Shenora.Core.FileChange+CreateDirectory? right)
-  public static bool op_Inequality(Shenora.Core.FileChange+CreateDirectory? left, Shenora.Core.FileChange+CreateDirectory? right)
-  public string Path { get; init; }
-  public virtual Shenora.Core.FileChange+CreateDirectory <Clone>$()
-  public void Deconstruct(out string Path)
-sealed class Shenora.Core.FileChange+Delete : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+Delete>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(string Path, bool Recursive = false)
-  public bool Equals(Shenora.Core.FileChange+Delete? other)
-  public bool Recursive { get; init; }
-  public override bool Equals(Shenora.Core.FileChange? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileChange+Delete? left, Shenora.Core.FileChange+Delete? right)
-  public static bool op_Inequality(Shenora.Core.FileChange+Delete? left, Shenora.Core.FileChange+Delete? right)
-  public string Path { get; init; }
-  public virtual Shenora.Core.FileChange+Delete <Clone>$()
-  public void Deconstruct(out string Path, out bool Recursive)
-sealed class Shenora.Core.FileChange+Move : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+Move>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(string From, string To, bool Overwrite = false)
-  public bool Equals(Shenora.Core.FileChange+Move? other)
-  public bool Overwrite { get; init; }
-  public override bool Equals(Shenora.Core.FileChange? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileChange+Move? left, Shenora.Core.FileChange+Move? right)
-  public static bool op_Inequality(Shenora.Core.FileChange+Move? left, Shenora.Core.FileChange+Move? right)
-  public string From { get; init; }
-  public string To { get; init; }
-  public virtual Shenora.Core.FileChange+Move <Clone>$()
-  public void Deconstruct(out string From, out string To, out bool Overwrite)
-sealed class Shenora.Core.FileChange+Replace : Shenora.Core.FileChange, System.IEquatable<Shenora.Core.FileChange+Replace>
-  protected override System.Type EqualityContract { get; }
-  protected override bool PrintMembers(System.Text.StringBuilder builder)
-  public .ctor(string TempPath, string TargetPath)
-  public bool Equals(Shenora.Core.FileChange+Replace? other)
-  public override bool Equals(Shenora.Core.FileChange? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileChange+Replace? left, Shenora.Core.FileChange+Replace? right)
-  public static bool op_Inequality(Shenora.Core.FileChange+Replace? left, Shenora.Core.FileChange+Replace? right)
-  public string TargetPath { get; init; }
-  public string TempPath { get; init; }
-  public virtual Shenora.Core.FileChange+Replace <Clone>$()
-  public void Deconstruct(out string TempPath, out string TargetPath)
 sealed class Shenora.Core.FileDialogFilter
   public required System.Collections.Generic.IReadOnlyList<string> Extensions { get; init; }
   public required string Name { get; init; }
@@ -130,88 +55,11 @@ struct Shenora.Core.FileLockHolder : System.IEquatable<Shenora.Core.FileLockHold
   public static bool op_Inequality(Shenora.Core.FileLockHolder left, Shenora.Core.FileLockHolder right)
   public string ProcessName { get; init; }
   public void Deconstruct(out int ProcessId, out string ProcessName)
-sealed class Shenora.Core.FilePathLocker : Shenora.Core.IPathLocker
-  public .ctor(Shenora.Core.FilePathLockerOptions options)
-  public System.Threading.Tasks.Task<Shenora.Core.IPathLease> TryAcquireAsync(string path, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default)
-sealed class Shenora.Core.FilePathLockerOptions
-  public System.Action<string>? Log { get; init; }
-  public System.TimeSpan PollInterval { get; init; }
-  public required string LockDirectory { get; init; }
 sealed class Shenora.Core.FileReplacement : System.IDisposable
   public string TargetPath { get; }
   public string TempPath { get; }
   public void Commit()
   public void Dispose()
-enum Shenora.Core.FileUndoKind (int)
-  public const Shenora.Core.FileUndoKind DeleteCreatedFile = 0
-  public const Shenora.Core.FileUndoKind MoveBack = 2
-  public const Shenora.Core.FileUndoKind RemoveCreatedDirectory = 3
-  public const Shenora.Core.FileUndoKind RestoreBackup = 1
-  public int value__
-sealed class Shenora.Core.FileUndoStep : System.IEquatable<Shenora.Core.FileUndoStep>
-  public .ctor(Shenora.Core.FileUndoKind Kind, string Target, string? Source = null)
-  public Shenora.Core.FileUndoKind Kind { get; init; }
-  public Shenora.Core.FileUndoStep <Clone>$()
-  public bool Equals(Shenora.Core.FileUndoStep? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileUndoStep? left, Shenora.Core.FileUndoStep? right)
-  public static bool op_Inequality(Shenora.Core.FileUndoStep? left, Shenora.Core.FileUndoStep? right)
-  public string Target { get; init; }
-  public string? Source { get; init; }
-  public void Deconstruct(out Shenora.Core.FileUndoKind Kind, out string Target, out string? Source)
-sealed class Shenora.Core.FileUpdate
-  public Shenora.Core.FileAtomicity Atomicity { get; init; }
-  public Shenora.Core.RetryPolicy? Retry { get; init; }
-  public required System.Collections.Generic.IReadOnlyList<Shenora.Core.FileChange> Changes { get; init; }
-  public string? Partition { get; init; }
-sealed class Shenora.Core.FileUpdateJournal : Shenora.Core.IFileUpdateJournal
-  public .ctor(Shenora.Core.FileUpdateJournalOptions options)
-  public System.Threading.Tasks.Task RemoveAsync(string updateId, System.Threading.CancellationToken cancellationToken)
-  public System.Threading.Tasks.Task WriteAsync(Shenora.Core.FileUpdateJournalEntry entry, System.Threading.CancellationToken cancellationToken)
-  public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUpdateJournalEntry>> LoadAsync(System.Threading.CancellationToken cancellationToken)
-sealed class Shenora.Core.FileUpdateJournalEntry : System.IEquatable<Shenora.Core.FileUpdateJournalEntry>
-  public .ctor(string UpdateId, Shenora.Core.FileUpdateStage Stage, System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Undo, System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Staged, System.DateTimeOffset StartedUtc)
-  public Shenora.Core.FileUpdateJournalEntry <Clone>$()
-  public Shenora.Core.FileUpdateStage Stage { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Staged { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Undo { get; init; }
-  public System.DateTimeOffset StartedUtc { get; init; }
-  public bool Equals(Shenora.Core.FileUpdateJournalEntry? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.FileUpdateJournalEntry? left, Shenora.Core.FileUpdateJournalEntry? right)
-  public static bool op_Inequality(Shenora.Core.FileUpdateJournalEntry? left, Shenora.Core.FileUpdateJournalEntry? right)
-  public string UpdateId { get; init; }
-  public void Deconstruct(out string UpdateId, out Shenora.Core.FileUpdateStage Stage, out System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Undo, out System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUndoStep> Staged, out System.DateTimeOffset StartedUtc)
-sealed class Shenora.Core.FileUpdateJournalOptions
-  public System.Action<string>? Log { get; init; }
-  public required string Directory { get; init; }
-sealed class Shenora.Core.FileUpdateQueue : Shenora.Core.IFileUpdateQueue
-  public .ctor(Shenora.Core.FileUpdateQueueOptions? options = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<int> RecoverAsync(System.Threading.CancellationToken cancellationToken = default)
-sealed class Shenora.Core.FileUpdateQueueOptions
-  public .ctor()
-  public Shenora.Core.IFileLockInspector? LockInspector { get; init; }
-  public Shenora.Core.IFileUpdateJournal? Journal { get; init; }
-  public Shenora.Core.IPathLocker? Locker { get; init; }
-  public System.Action<string>? Log { get; init; }
-  public System.TimeSpan LeaseTimeout { get; init; }
-sealed class Shenora.Core.FileUpdateResult
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> Holders { get; }
-  public System.Exception? Error { get; }
-  public bool RolledBack { get; }
-  public bool Succeeded { get; }
-  public int Applied { get; }
-  public int? FailedIndex { get; }
-  public void ThrowIfFailed()
-enum Shenora.Core.FileUpdateStage (int)
-  public const Shenora.Core.FileUpdateStage Applying = 0
-  public const Shenora.Core.FileUpdateStage Committing = 1
-  public int value__
 enum Shenora.Core.FileWriteMode (int)
   public const Shenora.Core.FileWriteMode Atomic = 0
   public const Shenora.Core.FileWriteMode Direct = 1
@@ -265,12 +113,6 @@ interface Shenora.Core.IFileDialogs
   public virtual System.Threading.Tasks.Task<System.IO.Stream> OpenReadAsync(string handle, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IFileLockInspector
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
-interface Shenora.Core.IFileUpdateJournal
-  public abstract System.Threading.Tasks.Task RemoveAsync(string updateId, System.Threading.CancellationToken cancellationToken)
-  public abstract System.Threading.Tasks.Task WriteAsync(Shenora.Core.FileUpdateJournalEntry entry, System.Threading.CancellationToken cancellationToken)
-  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.FileUpdateJournalEntry>> LoadAsync(System.Threading.CancellationToken cancellationToken)
-interface Shenora.Core.IFileUpdateQueue
-  public abstract System.Threading.Tasks.Task<Shenora.Core.FileUpdateResult> ApplyAsync(Shenora.Core.FileUpdate update, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.ILane
   public abstract bool IsHeld { get; }
   public abstract int Capacity { get; set; }
@@ -310,10 +152,6 @@ interface Shenora.Core.IMissionScheduler : System.IAsyncDisposable
   public abstract int PendingCount { get; }
   public abstract int RunningCount { get; }
   public abstract void Reevaluate()
-interface Shenora.Core.IPathLease : System.IAsyncDisposable
-  public abstract string Path { get; }
-interface Shenora.Core.IPathLocker
-  public abstract System.Threading.Tasks.Task<Shenora.Core.IPathLease> TryAcquireAsync(string path, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IPlaybackSession
   public abstract Shenora.Core.PlaybackCommands Supported { get; set; }
   public abstract System.TimeSpan SkipInterval { get; set; }
@@ -340,9 +178,6 @@ interface Shenora.Core.IUiDispatcher
 interface Shenora.Core.IUiInteraction
   public abstract void BlockInteraction()
   public abstract void UnblockInteraction()
-interface Shenora.Core.IUpdateSource
-  public abstract System.Threading.Tasks.Task<Shenora.Core.UpdateManifest> GetManifestAsync(System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task<System.IO.Stream> OpenAsync(Shenora.Core.ManifestFile file, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IUrlLauncher
   public abstract void OpenUrl(string url)
 interface Shenora.Core.IWebViewInterceptor
@@ -360,17 +195,6 @@ sealed class Shenora.Core.LiveActivityState : System.IEquatable<Shenora.Core.Liv
   public static bool op_Inequality(Shenora.Core.LiveActivityState? left, Shenora.Core.LiveActivityState? right)
   public string? Subtitle { get; init; }
   public string? Title { get; init; }
-sealed class Shenora.Core.ManifestDiff
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Added { get; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Updated { get; }
-  public System.Collections.Generic.IReadOnlyList<string> Removed { get; }
-  public bool IsEmpty { get; }
-  public long DownloadBytes { get; }
-  public static Shenora.Core.ManifestDiff Compute(Shenora.Core.UpdateManifest installed, Shenora.Core.UpdateManifest release)
-sealed class Shenora.Core.ManifestFile
-  public required long Size { get; init; }
-  public required string Path { get; init; }
-  public required string Sha256 { get; init; }
 static class Shenora.Core.MissionChain
   public static Shenora.Core.MissionDefinition Sequence(string kind, params Shenora.Core.MissionStep[] steps)
 struct Shenora.Core.MissionClaim : System.IEquatable<Shenora.Core.MissionClaim>
@@ -696,36 +520,6 @@ enum Shenora.Core.UiTargetState (int)
   public const Shenora.Core.UiTargetState NotReady = 0
   public const Shenora.Core.UiTargetState Ready = 1
   public int value__
-sealed class Shenora.Core.UpdateManifest
-  public System.DateTimeOffset? GeneratedAt { get; init; }
-  public required System.Collections.Generic.IReadOnlyList<Shenora.Core.ManifestFile> Files { get; init; }
-  public required string Version { get; init; }
-  public static Shenora.Core.UpdateManifest Parse(string json)
-  public string ToJson()
-sealed class Shenora.Core.UpdateOutcome
-  public System.Collections.Generic.IReadOnlyList<string> Removed { get; init; }
-  public System.Collections.Generic.IReadOnlyList<string> Written { get; init; }
-  public required bool Applied { get; init; }
-  public string? Failure { get; init; }
-  public string? Version { get; init; }
-sealed class Shenora.Core.UpdateStage
-  public .ctor(Shenora.Core.UpdateStageOptions options)
-  public Shenora.Core.UpdateStageStatus GetStatus()
-  public System.Threading.Tasks.Task<Shenora.Core.UpdateOutcome> ApplyAsync(string installRoot, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> CommitAsync(Shenora.Core.UpdateManifest manifest, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<Shenora.Core.UpdateStageStatus> FetchAsync(Shenora.Core.IUpdateSource source, Shenora.Core.UpdateManifest installed, System.Threading.CancellationToken cancellationToken = default)
-  public string StagedDirectory { get; }
-  public void Begin()
-  public void Clear()
-sealed class Shenora.Core.UpdateStageOptions
-  public System.Action<string>? Log { get; init; }
-  public System.Func<string, bool>? IsUnindexed { get; init; }
-  public required string Root { get; init; }
-  public string? BaselinePath { get; init; }
-sealed class Shenora.Core.UpdateStageStatus
-  public System.DateTimeOffset? StagedAt { get; init; }
-  public required bool Pending { get; init; }
-  public string? Version { get; init; }
 struct Shenora.Core.WebViewByteRange : System.IEquatable<Shenora.Core.WebViewByteRange>
   public .ctor(long From, long To)
   public bool Equals(Shenora.Core.WebViewByteRange other)
