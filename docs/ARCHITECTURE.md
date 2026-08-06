@@ -62,24 +62,40 @@ Shenora.slnx
 ├── src/
 │   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
 │   ├── Shenora.Ipc         net10.0          — deps: Shenora.Core
-│   ├── Shenora.Media       net10.0          — deps: NONE, and that is the design. A LEAF: it holds
-│   │                                          decisions, not plumbing, so every type is a pure function
-│   │                                          over its own data — the per-stream playability planner
-│   │                                          (D42) and the best-effort probe-result shape it reads.
-│   │                                          Its own package because a demuxer or image codec is real
-│   │                                          shipped bytes and EVERYTHING references Core, so an app
-│   │                                          that never touches media must not pay for one (D40).
-│   │                                          net10.0, so app logic compiles against it on any shell —
-│   │                                          enforced by the Sample.Logic tripwire (D41).
-│   │                                          Ships no codec list and no engine: policy is the app's.
-│   │                                          ⚠ It holds NO serving code, and there are no
-│   │                                          Media.Android/.iOS packages any more (D45). Serving bytes
-│   │                                          to a page is interception, which configures a WEBVIEW and
-│   │                                          is therefore a shell capability — see IWebViewInterceptor
-│   │                                          in Core, implemented once per shell. So <video>/<audio>/
-│   │                                          <img> over local files need no media package at all, and
-│   │                                          this one is what an app adds to DECIDE about a file the
-│   │                                          platform cannot decode.
+│   ├── Shenora.Media       net10.0          — deps: Shenora.Core
+│   │                                          The TRANSLATION LAYER for the web (D52): the minimum
+│   │                                          transformation that makes a file the user already has
+│   │                                          playable in a webview, and never more. Not a media
+│   │                                          toolkit, not a codec library, not ffmpeg. It is a
+│   │                                          PIPELINE, and the folders are that pipeline:
+│   │                                            Probe/  what is inside the file — MatroskaProbe reads
+│   │                                                    an EBML header with no external tool, so
+│   │                                                    "can this play?" costs a few hundred bytes
+│   │                                                    rather than a shipped toolchain.
+│   │                                            Plan/   the minimum move, per STREAM not per file —
+│   │                                                    Direct | Remux | Transcode | Unsupported. A
+│   │                                                    pure function, which is why it is the part a
+│   │                                                    test pins exactly (D42).
+│   │                                            Serve/  handing the result to the page:
+│   │                                                    UseMediaConversion (one finished file) and
+│   │                                                    UseSegmentStream (an HLS window, playable
+│   │                                                    seconds in). Both are MIDDLEWARE registered on
+│   │                                                    the shell's IWebViewInterceptor.
+│   │                                            Engine/ the transform stage — the ISegmentEngine seam.
+│   │                                          ⚠ It still implements NO interception. Serving bytes to a
+│   │                                          page configures a WEBVIEW and is a shell capability, so
+│   │                                          IWebViewInterceptor lives in Core and each shell
+│   │                                          implements it (D45); Serve/ COMPOSES on that contract and
+│   │                                          there are no Media.Android/.iOS packages. <video>/<audio>/
+│   │                                          <img> over ordinary local files still need no media
+│   │                                          package at all — this one is what an app adds when the
+│   │                                          platform cannot decode what it was handed.
+│   │                                          Its own package because a demuxer is real shipped bytes
+│   │                                          and EVERYTHING references Core, so an app that never
+│   │                                          touches media must not pay for one (D40). net10.0, so app
+│   │                                          logic compiles against it on any shell — enforced by the
+│   │                                          Sample.Logic tripwire (D41). Ships no codec LIST: the
+│   │                                          mechanism is the kit's, the policy the app's (D42).
 │   ├── Shenora.IO          net10.0          — deps: Shenora.Core
 │   │                                          The file-operation ENGINE: the journalled update queue,
 │   │                                          cross-process path leases, the manifest/diff pair and the
@@ -352,6 +368,47 @@ changes, noting them in `CHANGELOG.md`).
   adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
   cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
   work observes the one handed to `SubmitAsync`.
+- **`Shenora.Media` — the translation layer for the web (D52), read as a PIPELINE.** The folders are the
+  stages, and the surface is grouped the same way. The scope test the whole package answers to: *would a
+  normal file the user already has fail to play, and is this the least we can do about it?*
+  **`Probe/` — what is inside the file.** `MatroskaProbe.Read(path)` / `Read(stream, container)` walks an
+  EBML header in managed code and returns a `MediaProbeResult`, or **null** for "I could not tell" — which
+  is an ordinary answer, not a failure, and the planner already handles it. It reads the HEADER only, never
+  a cluster, under an 8 MiB budget, because the file is one a PAGE can point at. Matroska CodecIDs are
+  translated to the lowercase names every policy speaks (`V_MPEG4/ISO/AVC` → `h264`) so a policy needs one
+  vocabulary, not two. `MediaProbeResult`/`MediaStreamInfo`/`MediaStreamKind` are the shape, and **every
+  field but `Kind` is best-effort and may be null** — an app's own probe (ffprobe, a platform reader) fills
+  the same record. ⚠ There is deliberately no `IMediaProbe` seam: `Plan` takes the record, so a probe is a
+  helper an app may or may not call (D52).
+  **`Plan/` — the minimum move, per STREAM.** `MediaPlaybackPlanner.Plan(probe, policy)` is a pure function
+  → `MediaPlaybackPlan` (`MediaPlaybackAction` = `Direct`/`Remux`/`Transcode`/`Unsupported`, per-stream
+  `MediaStreamPlan`, `ContainerOpens`, and a log-only `Reason`). The order is load-bearing: the CONTAINER is
+  decided first and separately (an `.mkv` of ordinary AAC opens nowhere), an UNPROBED file gets the benefit
+  of the doubt rather than a needless transcode, an unknown codec counts as decodable while the container
+  opens, and subtitles never vote. `MediaPlaybackPolicy` (containers + video/audio codec sets +
+  `CanEncodeVideo`/`CanEncodeAudio`) is the APP's — **the kit ships no default set**, because Android's
+  codec support is vendor-declared per device and a baked-in list is one app's guess frozen into everyone's
+  planner (D42).
+  **`Serve/` — handing the result to the page.** Both are middleware over `Shenora.Core`'s
+  `IWebViewInterceptor`, returning an `IDisposable` registration, and neither implements interception
+  itself (D45). `interceptor.UseMediaConversion(MediaConversionOptions)` converts a source to ONE finished
+  file: `Resolve` maps a URL to a source, the app's `Convert` delegate does the work inside an
+  `IMissionScheduler` mission (never on the request path), `PathClaims` makes a source convert once however
+  many requests arrive, `Files.BeginReplace` means a failed or cancelled run can never leave a half-written
+  file to be served as a cache hit, `DerivedCacheKey` invalidates on identity+length+mtime, and the page
+  hears `MediaConversionEvents.SourceProgress`/`Ready`/`Failed` (`Failed` carries a TYPE name, never
+  exception text). `interceptor.UseSegmentStream(SegmentStreamOptions)` is the other shape and the reason
+  both exist: it publishes an HLS manifest computed from DURATION ALONE — so the scrub bar is the right
+  length and a seek anywhere is expressible before a single segment exists — then keeps a rolling window of
+  `seg{k}.ts` alive around the playhead. An hour-long source is an hour-long wait through conversion and a
+  few seconds through this.
+  **`Engine/` — the transform stage.** `ISegmentEngine` (+ `SegmentRunRequest`, `ISegmentRun`) is the seam
+  the segment route produces through. 🔴 Its most valuable member is `HasRenderedPicture`, and it is
+  separate from `HasPicture` because **exit 0 is not evidence**: a hardware H.264 encoder advertised by both
+  the tool's own list and the platform's codec list has been measured opening cleanly, taking every frame,
+  writing `video:0KiB` and exiting 0. "Has a video stream" is the wrong test too — MPEG-TS names streams in
+  the PMT, so a picture-less segment still declares one; what is missing is the SIZE. ⚠ `Dispose` on a run
+  must KILL it: a rolling window that leaks a process leaks a CPU and a file handle, on a phone, invisibly.
 - **`Shenora.IO` — the file-operation engine (its own package since 2026-08-05, D48; all of it shipped
   in `Shenora.Core` before that).** Portable `net10.0`, and it pairs with the scheduler above without
   depending on it: missions compute in parallel, this lands their results one at a time.

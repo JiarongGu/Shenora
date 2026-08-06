@@ -9,7 +9,7 @@
     -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Media</PackageId>
-    <Description>Shenora media: the portable half of playing media a webview cannot decode — a pure, per-stream playability planner (direct / remux / transcode / unsupported), a best-effort probe-result shape, and the content-keyed cache key. Ships NO codec list and NO engine: the mechanism is the kit's, the codec policy is the application's.</Description>
+    <Description>Shenora media: the TRANSLATION LAYER that makes a file a webview cannot decode playable, and never more than that. A pipeline — PROBE a Matroska header with no external tool, PLAN the minimum move per stream (direct / remux / transcode / unsupported), SERVE the result as a converted file or an HLS segment stream over the shell's interceptor, and TRANSFORM behind a seam. Ships NO codec list: the mechanism is the kit's, the codec policy is the application's.</Description>
   </PropertyGroup>
 
   <!--
@@ -21,10 +21,17 @@
   -->
   <ItemGroup>
     <!--
-      Shenora.Core, and the edge is REAL rather than declared: `MediaRangeServer` speaks
-      `WebViewResourceRequest`/`Response`/`ByteRange`, which live in Core precisely because they describe a
-      host↔page resource exchange and nothing about that is platform-specific (D2a). Added when something
-      actually crossed it — the planner needed nothing, the serving does.
+      Shenora.Core, and the edge is REAL rather than declared — it is the SERVE stage that draws it, and
+      nothing else. `Probe/` and `Plan/` are pure functions over their own data and would compile against
+      no reference at all; `Serve/` registers middleware on `IWebViewInterceptor`, answers with
+      `WebViewResourceRequest`/`WebViewResourceResponse`, runs the slow work through `IMissionScheduler` +
+      `PathClaims`/`MissionKey`, publishes its output atomically through `Files.BeginReplace`, keys the
+      cache with `DerivedCacheKey`, and logs through `AppCallback`. All of those describe a host↔page
+      resource exchange or portable machinery, which is why they live in Core (D2a) — this package adds the
+      media DECISIONS on top and owns none of that plumbing.
+
+      ⚠ The direction is one-way and must stay so: Core never references this package, so an app that
+      never touches media pays for none of it (D40).
     -->
     <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
   </ItemGroup>
