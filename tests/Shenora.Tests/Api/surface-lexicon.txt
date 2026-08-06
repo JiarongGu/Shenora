@@ -355,6 +355,23 @@ Kind
 # would be the kit growing an engine, which the design puts explicitly out of scope (§2) — argue those
 # afresh rather than waving them past because this line exists.
 Conversion
+# `Segment` + `Run` + `Engine` (2026-08-06) — the segment-stream route, harvested from a consuming app that
+# proved it on a device. All three name MECHANISM and none names a product:
+#   · `Segment` is a piece of a stream produced on a fixed grid. Streaming-protocol vocabulary (HLS and DASH
+#     both use it), not ours and not any app's.
+#   · `Run` is one live production — started, writes numbered output, can be killed. Deliberately not `Job`
+#     or `Task`: `Task` collides with the BCL, and `Job` is the app's word for work it schedules, which is
+#     the noun the mission layer refused for the same reason.
+#   · `Engine` names the SEAM for the thing the kit does NOT ship, and that is precisely what makes it
+#     admissible — `ISegmentEngine` is where an app plugs its own encoder in, and the kit ships no
+#     implementation and never will (D42, D51). A word naming the hole is not the kit growing what fills it.
+# ⚠ Watch `Engine` the way `Media` and `Download` are watched, and closer: the moment a type here DECIDES
+# how to encode rather than asking the app, the kit has grown an engine, which D42 puts out of scope. A
+# `SegmentEncoder`, `SegmentTranscoder`, or a codec ladder in `src/` would be that — argue those afresh
+# rather than waving them past because this line exists.
+Segment
+Run
+Engine
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher

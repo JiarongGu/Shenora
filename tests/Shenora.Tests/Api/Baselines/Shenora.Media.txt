@@ -1,3 +1,12 @@
+interface Shenora.Media.ISegmentEngine
+  public abstract Shenora.Media.ISegmentRun? Start(Shenora.Media.SegmentRunRequest request)
+  public abstract System.TimeSpan? DurationOf(string source)
+  public abstract bool HasPicture(string source)
+  public abstract bool HasRenderedPicture(string segment)
+  public abstract bool IsAvailable { get; }
+  public abstract string Describe()
+interface Shenora.Media.ISegmentRun : System.IDisposable
+  public abstract bool HasExited { get; }
 static class Shenora.Media.MediaConversionEvents
   public const string Failed = "FAILED"
   public const string Ready = "READY"
@@ -110,3 +119,32 @@ sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.Med
   public static bool op_Equality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)
+sealed class Shenora.Media.SegmentRunRequest : System.IEquatable<Shenora.Media.SegmentRunRequest>
+  public .ctor(string SourcePath, string Directory, bool HasPicture, int FirstSegment, double SegmentSeconds, int Attempt)
+  public Shenora.Media.SegmentRunRequest <Clone>$()
+  public bool Equals(Shenora.Media.SegmentRunRequest? other)
+  public bool HasPicture { get; init; }
+  public double SegmentSeconds { get; init; }
+  public int Attempt { get; init; }
+  public int FirstSegment { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.SegmentRunRequest? left, Shenora.Media.SegmentRunRequest? right)
+  public static bool op_Inequality(Shenora.Media.SegmentRunRequest? left, Shenora.Media.SegmentRunRequest? right)
+  public string Directory { get; init; }
+  public string SourcePath { get; init; }
+  public void Deconstruct(out string SourcePath, out string Directory, out bool HasPicture, out int FirstSegment, out double SegmentSeconds, out int Attempt)
+static class Shenora.Media.SegmentStreamExtensions
+  public static System.IDisposable UseSegmentStream(Shenora.Core.IWebViewInterceptor interceptor, Shenora.Media.ISegmentEngine engine, Shenora.Media.SegmentStreamOptions options, System.Action<string>? log = null)
+sealed class Shenora.Media.SegmentStreamOptions
+  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, string> Resolve { get; init; }
+  public System.TimeSpan PictureGrace { get; init; }
+  public System.TimeSpan WaitBudget { get; init; }
+  public double SegmentSeconds { get; init; }
+  public int Lookahead { get; init; }
+  public long CacheCapBytes { get; init; }
+  public required string CacheRoot { get; init; }
+  public string ManifestName { get; init; }
+  public string RoutePath { get; init; }
