@@ -325,30 +325,24 @@ writes `interceptor.UseFiles(...)` and no platform code at all).
 **`IPlaybackSession` shipped and is verified on all three shells** (0.9.0/0.9.1). Records in
 `docs/archive/tasks.md`; recipes in `docs/ADOPTION.md`; mechanics in `.claude/knowledge/mobile-shells.md`.
 
-### 🔴 iOS: webview media CANNOT play in the background — the kit has no native playback seam (2026-08-07)
+### iOS background playback — UNRESOLVED, and my first answer was WRONG (2026-08-07)
 
-**Measured on an iPhone 17 Pro, and it is a platform limit rather than a defect.** Since iOS 13, WKWebView
-media stops the moment the app is backgrounded, **even with `UIBackgroundModes: [audio]` and an active
-`AVAudioSession(.Playback)`** (both now set in the sample, and both still required). The entitlements that
-would permit it — `com.apple.multitasking.systemappassertions`, `…unlimitedassertions` — need an
-Apple-issued profile and cannot be obtained. Confirmed against WebKit's tracker and Apple's forums.
-
-⚠ **The symptom is indistinguishable from simply forgetting the two settings** — plays in the foreground,
-dies on the swipe — which is exactly why this cost a device round-trip to pin down.
-
-- [ ] **DECIDE whether the kit ships a NATIVE playback seam for iOS.** The consequence of the limit is
-  concrete: a React+C# app that wants backgrounded playback cannot put the audio in a `<video>`/`<audio>`
-  element at all — it needs `AVPlayer`/`AVAudioPlayer` driven by the app, with the page as UI only.
-  `IPlaybackSession` is already the right surface for that shape (it publishes Now Playing and receives the
-  transport commands back), so what is missing is the PLAYER, not the presentation.
-  - **This is squarely D52's own scope test** — *does a React+C# app fail without it?* For a media app on
-    iOS the answer is yes, and it fails in the way users notice most.
-  - ⚠ But it is also a big surface: a player means formats, buffering, seeking, interruption handling and
-    route changes. The narrow version worth costing first is a seam the app implements (like
-    `ISegmentEngine`), not a player the kit owns.
-  - Android does NOT share the limit (foreground service + audio focus keeps webview media alive), so this
-    would be one of the few genuinely per-platform capabilities. Say so honestly rather than pretending
-    parity.
+- [ ] **Establish what actually survives backgrounding, with an `<audio>` element.** The sample now sets
+  both required halves — `UIBackgroundModes: [audio]` and an active `AVAudioSession(.Playback)` — and
+  playback still stopped on a swipe. **But the test used a `<video>` element, which iOS pauses on
+  backgrounding by design** (the video track cannot render). So that run measured the pause behaviour and
+  says nothing about whether the host is configured correctly.
+  - The reported behaviour for `<audio>` is that playback already in progress CONTINUES, and what is
+    restricted is STARTING new playback while backgrounded or locked. **Untested here** — the sample has no
+    `<audio>` element, which is the gap to close before anything is concluded.
+  - ⚠⚠ **I first recorded this as "iOS blocks webview background audio, needs Apple-internal entitlements".
+    That was FALSE** — generalised from one Apple-forum thread about an iOS 13 regression, on the strength
+    of a single failing test that used the one element type which legitimately pauses. Corrected in
+    `.claude/knowledge/mobile-shells.md`, where the lesson is kept: a single negative on a device is not a
+    platform limit, and a search result about an old OS version is not a statement about the current one.
+  - Only if `<audio>` also fails does the question of a NATIVE playback seam arise — and that is a big
+    surface (formats, buffering, seeking, interruption, route changes), so the narrow version worth costing
+    first would be a seam the app implements, like `ISegmentEngine`, not a player the kit owns.
 
 ### 🔴 THE iOS LIVE ACTIVITY DEVKIT DOES NOT WORK ON A DEVICE (2026-08-07) — decision needed
 

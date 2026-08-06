@@ -182,6 +182,18 @@
 </div>
 <video id="vid" controls playsinline preload="none"
        style="width:100%; max-height:34vh; background:#000; border-radius:8px; margin-bottom:10px;"></video>
+<!-- 🔴 AN AUDIO ELEMENT, because <video> and <audio> background DIFFERENTLY on iOS and only one of them
+     can demonstrate the host is configured correctly.
+     iOS PAUSES a <video> when the app is backgrounded — the video track cannot render — so testing
+     background playback with the element above measures that pause and says nothing about the shell.
+     An <audio> already playing CONTINUES, given UIBackgroundModes=audio plus an active
+     AVAudioSession(.playback), which is the pair a public sibling proved on a device for its player.
+     It plays the SAME clip: those files carry an AAC track, so this is the same bytes over the same
+     route, differing only in the element that consumes them. -->
+<div class="row">
+  <button id="maud">♪ audio only (background test)</button>
+</div>
+<audio id="aud" controls preload="none" style="width:100%; margin-bottom:10px;"></audio>
 <div id="log"></div>
 </div><!-- /#scroll -->
 
@@ -399,6 +411,23 @@ if (mediaUrl) {
   vid.src = clipUrl('clip-faststart.mp4');
   log('t', 'video preloaded with clip-faststart.mp4 — the native ▶ works, or use the buttons above');
 }
+
+// The AUDIO path — the one that can actually be backgrounded on iOS. Same clip, same route, different
+// element. Errors are surfaced rather than swallowed, for the same reason loadClip() surfaces them.
+const aud = document.getElementById('aud');
+aud.addEventListener('error', () => {
+  const e = aud.error;
+  log('err', `audio ERROR code=${e ? e.code : '?'} ${e && e.message ? e.message : ''}`);
+});
+aud.addEventListener('playing', () => log('in', `audio playing — t=${aud.currentTime.toFixed(2)}s`));
+aud.addEventListener('pause',   () => log('in', `audio PAUSED — t=${aud.currentTime.toFixed(2)}s`));
+document.getElementById('maud').onclick = () => {
+  aud.src = clipUrl('clip-faststart.mp4');
+  aud.load();
+  log('out', 'audio: play — now background the app; it should keep going');
+  aud.play().then(() => log('in', 'audio play() resolved')).catch(err => log('err', `audio play() REJECTED: ${err}`));
+};
+if (mediaUrl) aud.src = clipUrl('clip-faststart.mp4');
 document.getElementById('mseek').onclick  = () => {
   log('out', `seeking to 48s (from ${vid.currentTime.toFixed(2)}s, duration=${vid.duration})`);
   vid.currentTime = 48;

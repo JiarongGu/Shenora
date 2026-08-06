@@ -162,23 +162,24 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   probably not use a Live Activity for playback at all: it duplicates a presentation the system already
   gives media apps, which is the sort of duplication App Review pushes back on.
 
-- 🔴 **iOS: media playing INSIDE the webview cannot continue in the BACKGROUND, and no amount of
-  configuration changes that.** Measured on an iPhone 17 Pro (2026-08-07) and confirmed against WebKit's own
-  bug tracker and Apple's forums: since iOS 13, WKWebView media stops when the app leaves the foreground
-  **even with `UIBackgroundModes: [audio]` and an active `AVAudioSession(.Playback)`**. The entitlements
-  that would allow it — `com.apple.multitasking.systemappassertions` and
-  `…unlimitedassertions` — need an Apple-issued profile and are not obtainable.
-  - **Both settings are still REQUIRED, just not sufficient**, and they are a pair: without the Info.plist
-    key iOS suspends the process; without the active session the system does not believe the app is playing.
-    The symptom of missing either is identical to the symptom of this platform limit — plays in the
-    foreground, dies on the swipe — which is what makes it so expensive to diagnose.
-  - 🔴 **The architectural consequence for a React+C# app, and it is load-bearing:** if backgrounded
-    playback matters, the audio cannot be a `<video>`/`<audio>` element. It has to be a NATIVE player
-    (`AVPlayer`/`AVAudioPlayer`) driven by the app, with the page as UI only. `IPlaybackSession` is already
-    the right surface for that shape — it publishes to Now Playing and receives the transport commands back
-    — but **the kit ships no native playback seam**, so today an adopting app writes that itself.
-  - ⚠ Android does not share this limit (a foreground service + audio focus keeps webview media alive), so
-    this is one of the few places where the two mobile shells genuinely cannot offer the same capability.
+- **iOS background playback from a webview: `<video>` and `<audio>` behave DIFFERENTLY, and conflating them
+  wastes a device cycle.** Two settings are required for either, and they are a pair — without
+  `UIBackgroundModes: [audio]` iOS suspends the process; without an active `AVAudioSession(.Playback)` the
+  system does not believe the app is playing. Then:
+  - **`<audio>` already playing CONTINUES** when the app is backgrounded. What is restricted is STARTING
+    new playback while backgrounded or locked.
+  - **`<video>` is PAUSED on backgrounding** — the video track cannot render — and does not resume by
+    itself on return. That is expected iOS behaviour, not a fault in the host.
+  - ⚠ **So test background playback with an `<audio>` element.** Testing it with `<video>` measures the
+    pause behaviour and tells you nothing about whether the host is configured correctly, because the two
+    failures look identical from outside: plays in the foreground, silent after the swipe.
+  - ⚠⚠ **A CORRECTION WORTH KEEPING (2026-08-07):** this entry first claimed webview background audio was
+    impossible without Apple-internal entitlements (`com.apple.multitasking.*assertions`). **That is
+    false.** It came from ONE Apple-forum thread about a specific iOS 13 regression, generalised into a
+    platform law after a single failing test — which was a `<video>` element, i.e. the one case that
+    legitimately pauses. Two lessons, and the second is the one that matters: a single negative result on a
+    device is not a platform limit, and **a search result describing an old OS-version bug is not a
+    statement about the current OS.**
 
 ## Gotchas / traps
 

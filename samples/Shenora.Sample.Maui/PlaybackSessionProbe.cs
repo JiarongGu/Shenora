@@ -112,9 +112,14 @@ internal static class PlaybackSessionProbe
         try
         {
             var session = AVFoundation.AVAudioSession.SharedInstance();
-            // Playback, not Ambient: Ambient is silenced by the ring switch and stops on background, which
-            // is the exact failure this call exists to prevent.
-            var error = session.SetCategory(AVFoundation.AVAudioSessionCategory.Playback);
+            // Playback + Default, matching a public sibling's AppDelegate line for line — it runs this on a
+            // shipped player and its own comment records the measurement: "WKWebView audio keeps playing
+            // with the screen off only when the session is .playback (paired with UIBackgroundModes=audio
+            // in Info.plist)". Ambient would be wrong twice over: silenced by the ring switch, and stopped
+            // on background, which is the exact failure this exists to prevent.
+            var error = session.SetCategory(AVFoundation.AVAudioSessionCategory.Playback,
+                                            AVFoundation.AVAudioSessionMode.Default,
+                                            default);
             if (error is not null) { log($"[PLAYBACK] audio session category REFUSED: {error.LocalizedDescription}"); return; }
             error = session.SetActive(true);
             if (error is not null) { log($"[PLAYBACK] audio session activate REFUSED: {error.LocalizedDescription}"); return; }
