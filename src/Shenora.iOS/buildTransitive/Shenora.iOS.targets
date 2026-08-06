@@ -210,6 +210,70 @@
     Inputs/Outputs are computed early. The FILES only have to exist by the time those run, which the
     BeforeTargets above guarantees.
   -->
+  <!--
+    🔴 PROVISION AND SIGN THE EXTENSION ITSELF, on a DEVICE build. Without this the Dynamic Island renders
+    an EMPTY BLACK CAPSULE while every ActivityKit call reports success — the activity starts, accepts
+    updates and returns an id, the system reserves Island space, and the widget never runs. Measured on an
+    iPhone 17 Pro (2026-08-07); it had been shipping that way since the devkit landed.
+
+    An app extension is **provisioned separately from its container** — the container's profile does not
+    cover it. Apple requires the extension's own profile at `…app/PlugIns/NAME.appex/embedded.mobileprovision`,
+    and an extension whose signature carries no `application-identifier` entitlement is simply not launched.
+    `AdditionalAppExtensions` embeds and re-signs the bundle but supplies NEITHER, because it expects a
+    bundle Xcode already provisioned.
+
+    ⚠ **A SIMULATOR CANNOT CATCH THIS**, ever: it does not enforce code signing, so the widget loads there
+    whatever the signature says. This is the 0.9.0 lesson repeated exactly — the only configuration anyone
+    exercised was the one that worked. `node devtools/dev.mjs mac appex-check` is the device-shaped gate, and
+    it reads the build output rather than needing a device.
+
+    The entitlements are taken from the PROFILE rather than hand-written, because the profile is what
+    actually authorises them — writing a set the profile does not grant produces a signature the installer
+    rejects, which is a different and more confusing failure.
+  -->
+  <Target Name="ShenoraProvisionLiveActivity"
+          Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true' And '$(_SdkIsSimulator)' != 'true'"
+          AfterTargets="ShenoraWriteLiveActivityPlist"
+          BeforeTargets="_CompileToNative">
+
+    <PropertyGroup>
+      <_ShenoraLaAppexId>$(ApplicationId).shenoraliveactivity</_ShenoraLaAppexId>
+      <_ShenoraLaEnts>$(_ShenoraLiveActivityOut)/shenoraliveactivity.entitlements</_ShenoraLaEnts>
+    </PropertyGroup>
+
+    <!--
+      Both profile locations are searched: Xcode 16 MOVED them from ~/Library/MobileDevice/Provisioning
+      Profiles to ~/Library/Developer/Xcode/UserData/Provisioning Profiles, and looking in only the classic
+      one reports "no profile" on a machine that has several.
+    -->
+    <Exec Command="&#xA;
+      set -e&#xA;
+      appex=&quot;$(_ShenoraLiveActivityAppex)&quot;&#xA;
+      want=&quot;$(_ShenoraLaAppexId)&quot;&#xA;
+      match=''&#xA;
+      for dir in &quot;$HOME/Library/MobileDevice/Provisioning Profiles&quot; &quot;$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles&quot;; do&#xA;
+        [ -d &quot;$dir&quot; ] || continue&#xA;
+        for f in &quot;$dir&quot;/*.mobileprovision; do&#xA;
+          [ -e &quot;$f&quot; ] || continue&#xA;
+          appid=%24(security cms -D -i &quot;$f&quot; 2>/dev/null | plutil -extract Entitlements.application-identifier raw - 2>/dev/null || true)&#xA;
+          case &quot;$appid&quot; in *.&quot;$want&quot;) match=&quot;$f&quot;; break 2;; esac&#xA;
+        done&#xA;
+      done&#xA;
+      if [ -z &quot;$match&quot; ]; then&#xA;
+        echo &quot;Shenora: no provisioning profile for $want.&quot; >&amp;2&#xA;
+        echo &quot;  An app EXTENSION needs its own profile - the app's does not cover it.&quot; >&amp;2&#xA;
+        echo &quot;  Mint one with: node devtools/dev.mjs mac provision $want&quot; >&amp;2&#xA;
+        exit 1&#xA;
+      fi&#xA;
+      cp &quot;$match&quot; &quot;$appex/embedded.mobileprovision&quot;&#xA;
+      security cms -D -i &quot;$match&quot; | plutil -extract Entitlements xml1 -o &quot;$(_ShenoraLaEnts)&quot; -&#xA;
+      ident=&quot;$(CodesignKey)&quot;&#xA;
+      case &quot;$ident&quot; in ''|'Apple Development') ident=%24(security find-identity -v -p codesigning | head -1 | sed -n 's/.*&quot;\(.*\)&quot;.*/\1/p');; esac&#xA;
+      codesign --force --sign &quot;$ident&quot; --entitlements &quot;$(_ShenoraLaEnts)&quot; --timestamp=none &quot;$appex&quot;&#xA;
+      echo &quot;Shenora: signed ShenoraLiveActivity.appex as $want&quot;&#xA;
+    " />
+  </Target>
+
   <!-- The WIDGET is opt-in: it needs the app's own SwiftUI views. -->
   <ItemGroup Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'">
     <AdditionalAppExtensions Include="$(_ShenoraLiveActivityOut)">

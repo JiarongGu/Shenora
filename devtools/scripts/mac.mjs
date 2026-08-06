@@ -1250,6 +1250,58 @@ function pickDevice(cfg, wanted) {
   return found[0];
 }
 
+/**
+ * Is every embedded app EXTENSION actually installable-and-launchable on a device?
+ *
+ * 🔴 **This exists because the Dynamic Island rendered an empty black capsule for a whole release band and
+ * nothing anywhere said why** (2026-08-07). ActivityKit reported success at every step — the activity
+ * started, took three updates and returned an id — the system reserved Island space for it, and the widget
+ * simply never rendered. The cause was that the `.appex` was signed with **no entitlements and no
+ * `embedded.mobileprovision`**, so iOS would not launch the extension process. Apple's rule is explicit:
+ * an extension is provisioned separately from its container and needs its own profile at
+ * `…app/PlugIns/NAME.appex/embedded.mobileprovision`, and an extension missing required entitlements is
+ * not launched.
+ *
+ * ⚠ **A SIMULATOR CANNOT CATCH THIS AND NEVER WILL** — it does not enforce code signing, so the extension
+ * loads there regardless. That is the 0.9.0 lesson repeated exactly: the one configuration that was ever
+ * exercised was the one that worked. This check is the device-shaped half, and it needs no device: it reads
+ * the BUILD OUTPUT, so it runs in seconds on the Mac and fails before anything is installed.
+ *
+ * It asserts what the OS asserts, in the OS's own terms — never "did the build step run".
+ */
+function checkAppExtensions(cfg, app) {
+  const plugins = `${app}/PlugIns`;
+  const listing = ssh(cfg, `ls -1 ${q(plugins)} 2>/dev/null | grep '\\.appex$' || true`);
+  const found = (listing.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (found.length === 0) return { ok: true, checked: 0, problems: [] };
+
+  const problems = [];
+  for (const name of found) {
+    const appex = `${plugins}/${name}`;
+    const r = ssh(cfg, `set -e
+      id=$(plutil -extract CFBundleIdentifier raw ${q(`${appex}/Info.plist`)} 2>/dev/null || echo '')
+      ents=$(codesign -d --entitlements - ${q(appex)} 2>/dev/null | tr -d '\\0' || true)
+      appid=$(printf %s "$ents" | grep -A2 'application-identifier' | grep -o '[A-Z0-9]\\{10\\}\\.[A-Za-z0-9._-]*' | head -1)
+      prof=no; [ -f ${q(`${appex}/embedded.mobileprovision`)} ] && prof=yes
+      echo "id=$id"; echo "appid=$appid"; echo "profile=$prof"`);
+
+    const read = (key) => ((r.stdout ?? '').match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').trim();
+    const bundleId = read('id');
+    const appId = read('appid');
+    const hasProfile = read('profile') === 'yes';
+
+    // An extension is provisioned SEPARATELY from its container; the container's profile does not cover it.
+    if (!hasProfile) problems.push(`${name}: no embedded.mobileprovision — iOS will not launch it on a device`);
+    if (!appId) problems.push(`${name}: signed with NO entitlements — an extension without application-identifier is not launched`);
+    // A prefix mismatch is the other half of the same rule, and it is what the installer rejects outright.
+    else if (bundleId && !appId.endsWith(`.${bundleId}`)) {
+      problems.push(`${name}: entitlement application-identifier "${appId}" does not match CFBundleIdentifier "${bundleId}"`);
+    }
+  }
+
+  return { ok: problems.length === 0, checked: found.length, problems };
+}
+
 /** The built .app, found rather than composed — the MAUI output layout has moved between SDK versions. */
 function findApp(cfg, rid) {
   const sampleDir = cfg.project.replace(/\/[^/]+\.csproj$/, '');
@@ -1308,6 +1360,21 @@ dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${
     process.exit(1);
   }
   console.log(`mac: ${app.replace(/^.*\//, '')}`);
+
+  // Before installing, not after: an extension that cannot launch installs perfectly happily and then does
+  // nothing, which is the hardest possible thing to notice.
+  const extensions = checkAppExtensions(cfg, app);
+  if (extensions.checked > 0 && extensions.ok) {
+    console.log(`mac: app extensions ok (${extensions.checked}) — entitlements + embedded profile present`);
+  }
+  if (!extensions.ok) {
+    console.error('\nmac: APP EXTENSION NOT DEVICE-LAUNCHABLE:');
+    for (const problem of extensions.problems) console.error(`  ${problem}`);
+    console.error('\n  The app will install and run, and the extension will silently do NOTHING — a Live\n'
+      + '  Activity shows as an empty black capsule while every ActivityKit call reports success.\n'
+      + '  A simulator cannot catch this: it does not enforce code signing.');
+    process.exit(1);
+  }
 
   // Install and launch need NO keychain, so they go over plain ssh — much faster and easier to read.
   //
@@ -1376,6 +1443,19 @@ switch (cmd) {
   }
   case 'activity': activities(cfg); break;
   case 'device': await device(cfg, rest); break;
+  case 'appex-check': {
+    // Standalone so the check can be run against an EXISTING build without rebuilding or installing.
+    const built = findApp(cfg, 'ios-arm64');
+    if (!built) { console.error('mac: no ios-arm64 .app built yet — run `mac device` first.'); process.exit(1); }
+    const result = checkAppExtensions(cfg, built);
+    if (result.checked === 0) { console.log('mac: no app extensions embedded.'); break; }
+    for (const problem of result.problems) console.error(`  ${problem}`);
+    console.log(result.ok
+      ? `mac: app extensions ok (${result.checked}) — entitlements + embedded profile present`
+      : `mac: ${result.problems.length} problem(s) — the extension will NOT launch on a device`);
+    if (!result.ok) process.exit(1);
+    break;
+  }
   case 'devices': {
     const found = devices(cfg);
     if (found.length === 0) console.log('mac: no devices connected.');
