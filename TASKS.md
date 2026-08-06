@@ -98,10 +98,19 @@ backlog is `docs/archive/tasks.md`.
 
 - [ ] **Reloading at a hash route does not come back on iOS, and nothing on screen says so.** The Android
   half is fixed and shipped (`## Unreleased`); this is the other half of the same report and it is the
-  worse one. Measured by the first adopter, not by us: the reload's document request reaches the shell
-  carrying the fragment (`uri='app://0.0.0.1/#/library' frag='#/library' path='/'`), and across five runs
-  a reload at a hash route **never produced a second page boot** — no second bundle request burst, no
-  second IPC handshake.
+  worse one. Filed by the first adopter and **now REPRODUCED HERE** (2026-08-06, simulator) — so the
+  "cannot design a fix against a defect that will not reproduce" blocker is GONE, and a fix is verifiable
+  in both directions the moment someone writes one.
+
+  ```
+  plain    after reload: stamp=fresh|nodes=56|title=Shenora mobile sample   ← navigated, came back
+  fragment after reload: stamp=STALE|nodes=74|title=Shenora mobile sample   ← never left, after 10s
+  RELOAD: FAIL — the document never navigated away at all, SILENTLY
+  ```
+
+  Matching what they measured: the reload's document request reaches the shell carrying the fragment
+  (`uri='app://0.0.0.1/#/library' frag='#/library' path='/'`), and a reload at a hash route **never
+  produces a second page boot** — no second bundle burst, no second IPC handshake.
   - 🔴 **The failure is INVISIBLE.** WKWebView keeps the PREVIOUS document on screen when a provisional
     navigation fails, so a screenshot afterwards shows a perfectly healthy app. "It rendered" is not
     evidence here, and this is why the item is worth keeping open rather than closing as low-impact: an
@@ -109,13 +118,20 @@ backlog is `docs/archive/tasks.md`.
   - **Do NOT apply the Android repair.** The adopter tried exactly that: with it registered the reload
     produced no document request at all, and `EvaluateJavaScriptAsync` stopped answering. `Shenora.iOS` is
     deliberately unchanged (`MobileWebViewInterceptor.RepairDocumentRequest`'s `#else` records why).
-  - **The next step is a MEASUREMENT, not a fix** — `PageProbe.CheckReloadAsync`'s fragment arm now exists
-    and runs on both shells, so this needs one simulator run to say whether it reproduces HERE. On iOS
-    `stamp` and `nodes` are the load-bearing fields (there is no error document to notice), and the arm
-    reports `NeverNavigated` for exactly this shape. ⚠ A fix designed against a defect that has not been
-    reproduced locally is verifiable in neither direction — that rule is what kept the Android half honest
-    for three sessions and it applies here unchanged.
+  - **The STAMP is the only discriminator, and that is the finding.** Everything else in the snapshot says
+    the app is healthy — right title, body text intact, and a DOM *larger* than a fresh document's (74 vs
+    56, because it is the fully-interacted original). A screenshot cannot catch this and neither can a
+    node count; only a marker that a real navigation would have destroyed.
+  - **What the next session actually has to decide**, now that it reproduces: whether the kit should own an
+    iOS repair at all. The interceptor cannot be it — the adopter measured that claiming the request there
+    stops the document request happening at all. The candidates worth costing are a `WKNavigationDelegate`
+    hook that catches the failed provisional navigation and re-drives it, or accepting it and documenting
+    hash routing as unsupported-on-reload for iOS. **Neither is obviously right, which is why this is a
+    task and not a patch.**
   - ⚠ Costs a commit: `mac push` refuses a dirty tree and force-updates the Mac's `main`.
+  - ⚠ **Getting a verdict out of iOS at all took two fixes to the probe first** (both shipped): a failing
+    JS evaluation aborts the whole app there, and the flattening/backslash rules in
+    `.claude/knowledge/mobile-shells.md`. Read those before touching `PageProbe`.
 
 ### From the first adopter — mobile media conversion has no engine (2026-08-06)
 

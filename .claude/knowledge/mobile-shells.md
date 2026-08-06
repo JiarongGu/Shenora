@@ -262,12 +262,45 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   - **This is why the gate was green for a real bug for two days.** The reload probe passed on Chromium
     110 *and* 133 because it reloaded at `/`. It was aimed one character short of the defect. **When a
     report will not reproduce, suspect the SHAPE of your reproduction before you suspect the report.**
-  - ⚠ **iOS has the same trigger and different machinery, and is NOT repaired.** The reload never produces
-    a second document at all, and WKWebView keeps the PREVIOUS page on screen when a provisional navigation
-    fails — so the app looks perfectly healthy and "it rendered" is not evidence. `nodes` and the
-    pre-reload stamp are load-bearing there in a way they are not on Android. Applying the Android repair
-    there was measured (by the adopter) to make it worse: no document request at all, and
-    `EvaluateJavaScriptAsync` stopped answering.
+  - 🔴 **iOS has the same trigger and different machinery, is NOT repaired, and REPRODUCES HERE** (measured
+    2026-08-06 on the simulator, after the probe was made survivable — see the two traps below). The reload
+    never produces a second document at all, and WKWebView keeps the PREVIOUS page on screen when a
+    provisional navigation fails. The evidence is one field:
+
+    ```
+    plain    after reload: stamp=fresh|nodes=56|title=Shenora mobile sample   ← navigated, came back
+    fragment after reload: stamp=STALE|nodes=74|title=Shenora mobile sample   ← never left
+    ```
+
+    **Everything except `stamp` says the app is fine** — right title, a bigger DOM than the fresh document
+    (it is the fully-interacted original), body text intact. So the PRE-NAVIGATION STAMP is the only
+    discriminator on this shell; `nodes` and `title` are there to show you what a healthy-looking corpse
+    looks like, not to detect it. "It rendered" is not evidence, and neither is a screenshot.
+    Applying the Android repair here was measured (by the adopter) to make it worse: no document request at
+    all, and `EvaluateJavaScriptAsync` stopped answering.
+
+- 🔴 **A FAILING `EvaluateJavaScriptAsync` KILLS THE APP on iOS, and your `try/catch` around the `await`
+  cannot catch it.** MAUI's `HybridWebViewHandler.MapEvaluateJavaScriptAsync` runs the evaluation as a
+  fire-and-forget task and rethrows the failure onto the SYNCHRONIZATION CONTEXT (`Task.ThrowAsync` →
+  `NSAsyncSynchronizationContextDispatcher.Apply`) — a different stack from the one awaiting it. It lands
+  on the UI thread with nothing above it, becomes an unhandled managed exception, and aborts the process
+  with SIGABRT. Measured 2026-08-06: the sample died ~7 s after launch, before one verdict was logged, and
+  the guard in the probe's own `EvaluateAsync` never saw it. Two things are needed together:
+  - **Flatten every script to ONE LINE.** WKWebView rejected the multi-line ones outright —
+    `SyntaxError: Unexpected EOF` at line 1 — and a parse failure happens before any JS runs, so no in-page
+    guard can help. ⚠ Consequence: a `//` comment inside a script then swallows the rest of the program.
+    Keep script commentary in C#, outside the string.
+  - **Wrap the script in a JS `try/catch`** so a RUNTIME error returns a value instead of throwing. Every
+    probe script is an expression, so an IIFE wrapper preserves its value.
+  - ⚠ **Attribute before you fix**: the pre-change commit was run on the same simulator and crashed
+    identically, which is what proved the crash was latent rather than caused by the change in flight.
+
+- **iOS loses BACKSLASHES on the way to WKWebView.** `.replace(/\s+/g, ' ')` arrived as `/s+/g` and
+  replaced every letter "s" in the page text with a space — `"shell"` read `" hell"`, `"desktop"` read
+  `"de ktop"`. Cosmetic, but it reads as a corrupted PAGE rather than a corrupted probe, which is the
+  expensive kind of wrong. Android is unaffected, so a script proven there can still be mangled here. Write
+  probe JS with no backslash at all: `String.fromCharCode(10)` instead of `'\n'`, and prefer
+  `split().join()` over a regex.
 
 - **`WebViewResourceRequest.Uri` CARRIES A FRAGMENT, and the safe reading hides it.** `AbsolutePath` is
   correct (`/`) where `ToString()`/`PathAndQuery` mis-resolve — but because `AbsolutePath` reports `/` for

@@ -14,6 +14,33 @@ entry template:
 
 ## 2026-08-06
 
+### iOS sample: the MAUI probes aborted the app before a single verdict was logged
+
+- **Symptom:** found while trying to MEASURE the iOS half of the fragment-reload report. The sample dies
+  with SIGABRT ~7 s after launch on the simulator — the page loads and handshakes, one tick is logged, then
+  nothing. No probe verdict, no exception text, and a screenshot would show a launched app.
+- **Root cause:** two defects stacked, and the second is the general one.
+  1. WKWebView rejects the multi-line probe scripts outright with `SyntaxError: Unexpected EOF` at line 1.
+     The parse fails before any JS runs, so no in-page guard can help.
+  2. **A failing evaluation KILLS THE APP, and `EvaluateAsync`'s `try/catch` cannot catch it.** MAUI's
+     `HybridWebViewHandler.MapEvaluateJavaScriptAsync` runs the evaluation as a fire-and-forget task and
+     rethrows the failure onto the SYNCHRONIZATION CONTEXT (`Task.ThrowAsync` →
+     `NSAsyncSynchronizationContextDispatcher.Apply`) — a different stack from the one awaiting it. It
+     arrives on the UI thread with nothing above it and becomes an unhandled managed exception.
+- **Fix:** `PageProbe.Safe()` — flatten every script to one line (the parse half) and wrap it in a JS
+  `try/catch` (the runtime half). Consequence recorded at the site: a `//` comment inside a script now
+  swallows the rest of the program, so script commentary lives in C# outside the string.
+- **Verify:** attributed by A/B on the same simulator — **the pre-change commit crashes identically**, so
+  the crash was latent since the probes were written and is not the two-arm rewrite's doing. The probes had
+  only ever been run on Android. After the fix the app survives and all three probes report. Android
+  re-verified on a device, since `EvaluateAsync` is shared: HEADERS/MEDIA PASS, RELOAD PASS on both arms.
+- **Follow-on, same session:** the first fix silently dropped the snapshot's `nodes` field on BOTH shells
+  (an edit moving a comment out of the JS took the line with it) — caught by reading the device output
+  rather than the verdict, which is the only reason it did not ship. Also found that **iOS loses
+  backslashes** on the way to WKWebView, so `/\s+/g` arrived as `/s+/g` and replaced every letter "s" in
+  the reported page text with a space. Both fixed and re-verified on both shells.
+- **Commits:** `b6e9465`, `8a3a80d`
+
 ### Android: reloading any hash-routed page died with `net::ERR_INVALID_RESPONSE`
 
 - **Symptom:** filed by the first adopter against 0.9.1 — with a route registered, a page RELOAD showed
@@ -50,7 +77,7 @@ entry template:
   by a title read from the live page, never the platform's error page — plus a 120-char slice, a `hash=`
   snapshot field and a `Misaimed` outcome so an arm must prove it was aimed. ⚠ **The hole was in the
   ORIGINAL probe too**; it never fired because the arm it guarded never failed. Rule: `mobile-shells.md`.
-- **Commit:** _pending_
+- **Commit:** `e5a3870`
 
 ## 2026-08-05
 
