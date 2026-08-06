@@ -46,6 +46,19 @@ internal static class PlaybackSessionProbe
                 | PlaybackCommands.Previous | PlaybackCommands.Seek
                 | PlaybackCommands.SkipForward | PlaybackCommands.SkipBackward;
 
+            // 🔴 THE AUDIO SESSION, which is the APP's job and not the kit's — and is the difference
+            // between playback that survives a swipe and playback that dies on it.
+            //
+            // `UIBackgroundModes: [audio]` in Info.plist and an ACTIVE AVAudioSession are a PAIR: neither
+            // half does anything alone, and the symptom of missing either is identical — plays fine in the
+            // foreground, stops the instant the app is backgrounded. Measured on a device, 2026-08-07.
+            //
+            // The kit deliberately stays out of this (see MobilePlaybackSession's remarks): the CATEGORY,
+            // whether it mixes with other audio, and what happens on an interruption are product decisions
+            // — `.Playback` here means "this is the point of the app, stop the music app". A sample has to
+            // make that choice like any other app, which is exactly why it is shown rather than hidden.
+            ConfigureAudioSession(log);
+
             // 🔴 ARTWORK IS WHAT MAKES THE DYNAMIC ISLAND SHOW ANYTHING, and leaving it out is why this
             // probe produced "a long bar with nothing in it" on an iPhone 17 Pro (2026-08-07). With title
             // and duration but no image, iOS knows something is playing, falls back to the app icon, and
@@ -83,6 +96,37 @@ internal static class PlaybackSessionProbe
         {
             log($"[PLAYBACK] FAIL — {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Tell iOS this app is a playback app, so it keeps running when backgrounded.
+    /// <para>
+    /// Paired with <c>UIBackgroundModes: [audio]</c> in <c>Platforms/iOS/Info.plist</c> — see the comment
+    /// there. On Android the equivalent is a foreground service plus audio focus, which the sample does not
+    /// need because it is not the platform under test here; the call is a no-op off iOS.
+    /// </para>
+    /// </summary>
+    private static void ConfigureAudioSession(Action<string> log)
+    {
+#if IOS || MACCATALYST
+        try
+        {
+            var session = AVFoundation.AVAudioSession.SharedInstance();
+            // Playback, not Ambient: Ambient is silenced by the ring switch and stops on background, which
+            // is the exact failure this call exists to prevent.
+            var error = session.SetCategory(AVFoundation.AVAudioSessionCategory.Playback);
+            if (error is not null) { log($"[PLAYBACK] audio session category REFUSED: {error.LocalizedDescription}"); return; }
+            error = session.SetActive(true);
+            if (error is not null) { log($"[PLAYBACK] audio session activate REFUSED: {error.LocalizedDescription}"); return; }
+            log("[PLAYBACK] audio session active (category=Playback) — playback survives backgrounding");
+        }
+        catch (Exception ex)
+        {
+            log($"[PLAYBACK] audio session FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
+#else
+        log("[PLAYBACK] audio session: not iOS — nothing to configure");
+#endif
     }
 
     /// <summary>
