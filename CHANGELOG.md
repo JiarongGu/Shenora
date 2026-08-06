@@ -16,6 +16,22 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- 🔴 **`Shenora.iOS`: the Live Activity shim was written to the wrong place and built once per APP instead of
+  once per ARCHITECTURE — so a DEVICE build linked the simulator's `x86_64` archive into an `arm64` app.**
+  Two bugs in one line of the `buildTransitive` targets, both invisible until an actual device build:
+  - The path used `IntermediateOutputPath`, which is **not yet defined** where a consumer imports this file
+    (the SDK targets that define it are imported after the project body). It was empty, so the shim landed
+    in the consumer's project ROOT as `./shenora-liveactivity/` rather than under `obj/`.
+  - With no RID in the path, one architecture's `.a` satisfied another's incremental check — the build
+    logged *"Skipping target ShenoraBuildLiveActivityShim because all output files are up-to-date"* and
+    linked the wrong slice.
+
+  ⚠ **The symptom is a decoy**: `Undefined symbols for architecture arm64: _shenora_activity_end …` is
+  character-for-character the 0.9.0 packaging defect that was fixed by building the shim unconditionally, so
+  it invites re-fixing something that is already correct. It is not that — the shim target is right and
+  simply never ran. **If you hit this, delete any `shenora-liveactivity/` folder in your project root**; it
+  is litter from the old path and nothing reads it any more.
+
 - **Safe-area insets are now re-read when the device ROTATES.** Rotation moves an inset to a different
   EDGE rather than resizing it — a cutout that is `top` in portrait becomes `left` or `right` in landscape
   — so a shell that reads once publishes the wrong SHAPE for the rest of the session and the page reserves

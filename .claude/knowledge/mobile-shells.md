@@ -151,7 +151,28 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   around it.
 - **Signing does not work over ssh** — an ssh login is a different AUDIT SESSION, so a login-keychain
   key fails `errSecInternalComponent`. Simulator builds sign ad-hoc and are unaffected; a device build
-  needs the Terminal.app hand-off.
+  needs the Terminal.app hand-off. **Confirmed 2026-08-06 by reaching it**: a device build now gets all the
+  way through compile, link and bundling and dies only at `/usr/bin/codesign … errSecInternalComponent`.
+
+- 🔴 **A DEVICE build is a different world from a simulator build, and this repo had never done one.** Three
+  walls in a row on the first attempt (2026-08-06), each hiding the next:
+  1. **The Xcode/workload pairing is FATAL on device where the simulator workaround is not.**
+     `ValidateXcodeVersion=false` + `MtouchLink=SdkOnly` clears the up-front gate, but a device build runs
+     the full linker over the SDK bindings — and bindings newer than the installed Xcode's SDK produce a
+     wall of `MT4162` ("not available in iOS 26.2, introduced in 26.4"). **No flag bypasses it**: the
+     bindings themselves reference APIs the SDK lacks.
+     - **Fix without touching Xcode** (which may be capped by the macOS version): roll the iOS workload
+       manifest back to one matching the installed SDK. `dotnet workload update --print-rollback` captures
+       the current state; edit ONLY `microsoft.net.sdk.ios`; apply with `--from-rollback-file`. ⚠ It is
+       MACHINE-WIDE — it changes every project on that Mac, so ask first. Both manifests were already on
+       disk here, so nothing downloaded.
+     - ⚠ **`DOTNET_SDK_WORKLOAD_MANIFEST_ROOTS` does NOT scope it** — tried; a Mac in workload-sets mode
+       ignores it. There is no per-invocation override, so do not spend time hunting for one.
+  2. **The live-activity shim path bug** (CHANGELOG, same day) — only a device build can expose it, because
+     it needs a SECOND architecture to collide with the first.
+  3. **Signing**, the wall above, which is the human's to clear.
+  - **The meta-lesson is the launcher's POSIX lesson again:** "iOS builds and runs" had always meant "the
+    SIMULATOR builds and runs". All three had been latent for months behind a green gate.
 - **A capability probe must run in the SAME SHELL as the command it gates.** `mac.mjs`'s one-shot `ssh()`
   uses `bash -lc` — a LOGIN shell, so Homebrew is on PATH — while its persistent worker originally used a
   plain `bash -s`, which is not. So `command -v cliclick` answered NO over the worker and YES over ssh, for
