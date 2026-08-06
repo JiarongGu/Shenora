@@ -92,14 +92,49 @@
     -->
     <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
 
-    <!--
-      The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
-      the whole app at install; PackageType is XPC!; a WidgetKit extension declares only the point
-      identifier because the @main WidgetBundle is the entry point.
-    -->
+    <Message Importance="high" Text="Shenora: built ShenoraLiveActivity.appex ($(_ShenoraLaTriple)) from $(ShenoraLiveActivityViews)" />
+  </Target>
+
+  <!--
+    The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
+    the whole app at install; PackageType is XPC!; a WidgetKit extension declares only the point identifier
+    because the @main WidgetBundle is the entry point.
+
+    🔴 ITS OWN TARGET, WITH NO INCREMENTAL CHECK, AND THAT IS A FIX — found on the first real DEVICE install
+    (2026-08-07), which failed with:
+
+        Appex bundle … with identifier "<another app>.shenoraliveactivity" does not have expected
+        identifier prefix "com.shenora.sample.maui."   (MIInstallerErrorDomain error 37)
+
+    The plist used to be written inside ShenoraBuildLiveActivity, whose check is
+    Inputs = the two Swift files, Outputs = the EXECUTABLE. The plist is neither, and `$(ApplicationId)` —
+    the thing its content depends on — cannot be an Input at all, because MSBuild's up-to-date check
+    compares FILES and not property values. So whenever swiftc was up to date the whole target was skipped
+    and a stale plist survived, still naming whatever bundle id was current when it was last generated.
+
+    ⚠ **The consequence for an ADOPTER is worse than for us**: rename your app, or reuse an obj/ directory,
+    and the extension keeps the old identifier. The build succeeds, the simulator is perfectly happy — an
+    install to a simulator does not enforce the prefix — and only a real DEVICE rejects it, wearing an
+    error that names a bundle id the project no longer contains anywhere.
+
+    This is the SECOND bug of exactly this shape in this one target: the first was one architecture's `.a`
+    satisfying another's up-to-date check (see the RID in `_ShenoraLiveActivityOut` above). The lesson both
+    times is the same — **an incremental check must cover everything the target WRITES, and a target whose
+    output depends on a PROPERTY cannot be made incremental on files at all.** Splitting it out is the fix:
+    swiftc keeps its check because compiling is expensive, and writing ~15 lines of plist does not need one.
+    `WriteOnlyWhenDifferent` keeps the file's timestamp stable when nothing changed, so nothing downstream
+    rebuilds needlessly.
+  -->
+  <Target Name="ShenoraWriteLiveActivityPlist"
+          Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'"
+          BeforeTargets="_ExpandNativeReferences;_ExtendAppExtensionReferences;_CompileToNative">
+
+    <MakeDir Directories="$(_ShenoraLiveActivityAppex)" />
     <PropertyGroup>
       <_ShenoraLaPlist>$(_ShenoraLiveActivityAppex)/Info.plist</_ShenoraLaPlist>
     </PropertyGroup>
+    <Error Condition="'$(ApplicationId)' == ''"
+           Text="Shenora: the Live Activity extension needs the app's ApplicationId to derive its own bundle identifier, and it is empty. iOS requires the extension's id to be prefixed by the app's." />
     <WriteLinesToFile File="$(_ShenoraLaPlist)" Overwrite="true" WriteOnlyWhenDifferent="true" Lines="
 &lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;;
 &lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;;
@@ -116,7 +151,7 @@
   &lt;/dict&gt;;
 &lt;/dict&gt;&lt;/plist&gt;" />
 
-    <Message Importance="high" Text="Shenora: built ShenoraLiveActivity.appex ($(_ShenoraLaTriple)) from $(ShenoraLiveActivityViews)" />
+    <Message Importance="high" Text="Shenora: ShenoraLiveActivity.appex declares $(ApplicationId).shenoraliveactivity" />
   </Target>
 
   <!--
