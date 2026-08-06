@@ -1203,9 +1203,25 @@ xcodebuild -project ShenoraProvision.xcodeproj -target ShenoraProvision \\
 //   · INSTALLING and LAUNCHING need no keychain at all, so plain ssh + `xcrun devicectl` is enough.
 // Getting that backwards is what makes people reach for a GUI on the Mac.
 
-/** Connected devices, from devicectl's own JSON rather than its column layout. */
+/**
+ * Connected devices, from devicectl's own JSON rather than its column layout.
+ *
+ * 🔴 <b>An unreachable MAC must not report as "no devices".</b> This returned <c>[]</c> for any failure,
+ * so when the Mac's mDNS name stopped resolving the harness said "no iPhone connected to the Mac" — and
+ * sent two people to check a phone that was fine, over the LAN, the whole time. It is the same defect
+ * `CodecProbe` had (a failed query indistinguishable from a negative result), committed again in the same
+ * session, which is why it is worth the comment: **the two states are not the same answer and must never
+ * print the same sentence.**
+ */
 function devices(cfg) {
   const r = ssh(cfg, `f=$(mktemp) && xcrun devicectl list devices --json-output "$f" >/dev/null 2>&1 && cat "$f" && rm -f "$f"`);
+  const failure = (r.stderr ?? '') + (r.stdout ?? '');
+  if (/Could not resolve hostname|Connection refused|Operation timed out|No route to host|Connection closed/i.test(failure)) {
+    console.error(`mac: CANNOT REACH THE MAC (${cfg.host}) — this is not a statement about the phone.\n`
+      + `  ${failure.trim().split('\n')[0]}\n`
+      + '  Wake it, check the LAN, or set "host" to its IP in local/mac.json if mDNS is flapping.');
+    process.exit(1);
+  }
   if (r.status !== 0 || !(r.stdout ?? '').trim()) return [];
   try {
     const parsed = JSON.parse(r.stdout);
