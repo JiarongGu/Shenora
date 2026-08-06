@@ -322,14 +322,45 @@ the useful part — **not "does the kit expose the API" but "how much native cod
 have to write"** — which is the same test D45 passed by moving interception into the shells (an adopting app
 writes `interceptor.UseFiles(...)` and no platform code at all).
 
-**Both named examples have now shipped** — `IPlaybackSession` on all three shells (0.9.0/0.9.1) and the iOS
-Live Activity devkit, whose whole adoption is one MSBuild property plus four SwiftUI view bodies. Records in
+**`IPlaybackSession` shipped and is verified on all three shells** (0.9.0/0.9.1). Records in
 `docs/archive/tasks.md`; recipes in `docs/ADOPTION.md`; mechanics in `.claude/knowledge/mobile-shells.md`.
-Two things carry forward from them:
 
-- [ ] **The one unverified claim: the Dynamic Island's VISUAL rendering, which needs a real device.** A
-  simulator gives an activity only a lock-screen scene target. Everything else about the devkit is
-  measured — start, update, end, and the automatic `buildTransitive` import from a real package reference.
+### 🔴 THE iOS LIVE ACTIVITY DEVKIT DOES NOT WORK ON A DEVICE (2026-08-07) — decision needed
+
+**The widget never renders on real hardware, and the cause is structural rather than a bug to patch.**
+Verified on an iPhone 17 Pro: ActivityKit starts the activity and returns an id, updates are accepted, the
+system reserves Island space — and the widget process never runs. Its binary has `LC_MAIN` pointing at
+Swift's `main`, so `WidgetBundle.main()` runs, **returns**, and the process exits before serving anything.
+
+**An app extension does not start at `main`.** Xcode's Widget Extension target links with
+`-e _NSExtensionMain`, so the process begins in Foundation's extension entry point, reads the `NSExtension`
+dict and enters the XPC run loop its host talks to. A bare `swiftc` has no notion of an extension target and
+applies none of that; passing `-Xlinker -e -Xlinker _NSExtensionMain` was tried and **silently dropped**
+(the built binary still has a normal `LC_MAIN`). Others building widgets outside Xcode hit the same wall and
+the documented answer is a real Xcode target of product type `com.apple.product-type.app-extension`.
+
+⚠ **So the devkit's headline claim — "one MSBuild property plus four SwiftUI view bodies, no `.xcodeproj`" —
+is FALSE on a device.** It was "verified" on a simulator since 0.9.0, and a simulator loads the bundle
+regardless. This is the 0.9.0 lesson for the third time in one file's history.
+
+- [ ] **DECIDE, and neither option is obviously right.**
+  - **(a) The kit owns a real widget `.xcodeproj`**, generated or templated the way `devtools/ios-provision`
+    already is for profiles, driven from the same MSBuild property so the adopter still writes only Swift
+    views. Keeps the promise; costs a generated Xcode target in the build, and `xcodebuild` on every iOS
+    build that opts in.
+  - **(b) Document the devkit as requiring the adopter's own widget extension target**, and ship only the
+    Swift shim + `ILiveActivities`. Honest and cheap; abandons the "no `.xcodeproj`" promise, which was the
+    whole selling point.
+  - ⚠ Also worth settling: a sibling's iOS notes argue **a media app should not use a Live Activity for
+    playback at all** — it duplicates the presentation the system already gives media apps, and App Review
+    pushes back. `IPlaybackSession` is the right answer for a player, which shrinks how much this matters.
+
+**Fixed along the way, all real and all still needed** (they were masking each other): a stale appex bundle
+id from an incremental check that did not cover the plist · no entitlements and no `embedded.mobileprovision`
+on the extension · missing `CFBundleSupportedPlatforms`/`DTPlatformName`/`DTSDKName`/`UIDeviceFamily` ·
+the sample claiming the Island twice (Now Playing **and** a Live Activity — they are mutually exclusive).
+**`node devtools/dev.mjs mac appex-check`** now gates the signing and platform-key classes off the build
+output, needing no device.
 - **The rule both of them earned: a platform capability ships with the tooling that drives and observes
   it, or it ships as an assertion.** Every platform capability so far became trustworthy the moment it had
   a HARNESS: `dev.mjs android`/`mac` for the device loops, `InterceptorProbe` and `MediaRangeProbe` for the

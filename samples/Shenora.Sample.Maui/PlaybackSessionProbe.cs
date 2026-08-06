@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.IO.Compression;
 using Shenora.Core;
 
 namespace Shenora.Sample.Maui;
@@ -44,11 +46,19 @@ internal static class PlaybackSessionProbe
                 | PlaybackCommands.Previous | PlaybackCommands.Seek
                 | PlaybackCommands.SkipForward | PlaybackCommands.SkipBackward;
 
+            // 🔴 ARTWORK IS WHAT MAKES THE DYNAMIC ISLAND SHOW ANYTHING, and leaving it out is why this
+            // probe produced "a long bar with nothing in it" on an iPhone 17 Pro (2026-08-07). With title
+            // and duration but no image, iOS knows something is playing, falls back to the app icon, and
+            // the Island has nothing to draw — a public sibling's iOS notes describe the identical symptom
+            // and name the identical cause. It is the one field a probe is most likely to skip, because it
+            // is the only one that is not a string.
+            var artwork = LoadArtwork();
             session.Publish(new PlaybackInfo
             {
                 Title = Title,
                 Subtitle = Subtitle,
                 GroupName = GroupName,
+                Artwork = artwork,
                 Duration = TimeSpan.FromSeconds(240),
             });
             session.Report(new PlaybackProgress
@@ -59,7 +69,12 @@ internal static class PlaybackSessionProbe
             });
 
             log($"[PLAYBACK] published title='{Title}' subtitle='{Subtitle}' group='{GroupName}' "
-                + "duration=240s state=Playing position=42s");
+                + $"artwork={artwork.Length}B duration=240s state=Playing position=42s");
+            if (artwork.IsEmpty)
+            {
+                log("[PLAYBACK] ⚠ NO ARTWORK — the Island will fall back to the app icon and look empty. "
+                    + "That is a probe problem, not a kit one.");
+            }
             log($"[PLAYBACK] session type={session.GetType().Name}");
             log("[PLAYBACK] PUBLISHED — now read the OS back: Android `adb shell dumpsys media_session`, "
                 + "iOS the mediaremoted log. Press a transport control to exercise the return path.");
@@ -68,5 +83,88 @@ internal static class PlaybackSessionProbe
         {
             log($"[PLAYBACK] FAIL — {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// A 300×300 cover, drawn in code.
+    /// <para>
+    /// Generated rather than shipped as a file on purpose: a MAUI image resource goes through the platform
+    /// asset pipeline and comes out under a name that differs per platform, so reading one back at runtime
+    /// is its own small research project — and this probe exists to test the SESSION, not the asset
+    /// pipeline. Bytes with no dependencies keep the thing under test the thing under test.
+    /// </para>
+    /// </summary>
+    private static ReadOnlyMemory<byte> LoadArtwork()
+    {
+        const int size = 300;
+        var pixels = new byte[size * (size * 3 + 1)];          // one filter byte per scanline, then RGB
+
+        for (var y = 0; y < size; y++)
+        {
+            var row = y * (size * 3 + 1);
+            pixels[row] = 0;                                   // filter: none
+            for (var x = 0; x < size; x++)
+            {
+                // A soft diagonal so the image is obviously OURS rather than a flat block — a flat colour
+                // is hard to tell apart from "the system drew nothing".
+                var t = (x + y) / (2.0 * size);
+                var i = row + 1 + x * 3;
+                pixels[i] = (byte)(40 + 60 * t);               // R
+                pixels[i + 1] = (byte)(90 + 90 * t);           // G
+                pixels[i + 2] = (byte)(160 + 80 * t);          // B
+
+                // A centred bar, so there is a shape at Island size rather than only a gradient.
+                if (y > size * 0.42 && y < size * 0.58 && x > size * 0.18 && x < size * 0.82)
+                {
+                    pixels[i] = 245;
+                    pixels[i + 1] = 247;
+                    pixels[i + 2] = 250;
+                }
+            }
+        }
+
+        using var png = new MemoryStream();
+        png.Write([0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+
+        Span<byte> header = stackalloc byte[13];
+        BinaryPrimitives.WriteInt32BigEndian(header[..4], size);
+        BinaryPrimitives.WriteInt32BigEndian(header[4..8], size);
+        header[8] = 8;                                          // bit depth
+        header[9] = 2;                                          // colour type: truecolour
+        Chunk(png, "IHDR", header);
+
+        using var deflated = new MemoryStream();
+        using (var zlib = new ZLibStream(deflated, CompressionLevel.Fastest, leaveOpen: true)) zlib.Write(pixels);
+        Chunk(png, "IDAT", deflated.ToArray());
+        Chunk(png, "IEND", []);
+
+        return png.ToArray();
+    }
+
+    /// <summary>One PNG chunk: length, type, payload, CRC32 over type+payload.</summary>
+    private static void Chunk(Stream target, string type, ReadOnlySpan<byte> payload)
+    {
+        Span<byte> length = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(length, payload.Length);
+        target.Write(length);
+
+        var typed = System.Text.Encoding.ASCII.GetBytes(type);
+        target.Write(typed);
+        target.Write(payload);
+
+        Span<byte> crc = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(crc, Crc32([.. typed, .. payload]));
+        target.Write(crc);
+    }
+
+    private static uint Crc32(ReadOnlySpan<byte> data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var i = 0; i < 8; i++) crc = (crc >> 1) ^ (0xEDB88320u & (uint)(-(int)(crc & 1)));
+        }
+        return crc ^ 0xFFFFFFFFu;
     }
 }

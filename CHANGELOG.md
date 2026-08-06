@@ -14,6 +14,27 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Known broken
+
+- 🔴 **The iOS Live Activity devkit does NOT render on a real device, and the cause is structural.** It has
+  only ever been exercised on a simulator, which loads the widget bundle regardless of how it was built.
+  On hardware: ActivityKit starts the activity and returns an id, updates are accepted, the system reserves
+  Dynamic Island space — and the widget process never runs.
+
+  **An app extension does not start at `main`.** Xcode links one with `-e _NSExtensionMain` so it enters
+  Foundation's extension entry point and then the XPC run loop; the kit builds the `.appex` with a bare
+  `swiftc`, which has no notion of an extension target, so `WidgetBundle.main()` runs, returns, and the
+  process exits. Passing the flag through `-Xlinker` is silently dropped.
+
+  ⚠ **The devkit's stated adoption — "one MSBuild property plus four SwiftUI view bodies, no `.xcodeproj`" —
+  therefore does not hold on a device.** `ILiveActivities` starts and updates activities correctly; what
+  does not work is the widget that draws them. **`IPlaybackSession` is unaffected** and is verified on all
+  three shells — and for a media app it is the right surface anyway, since a Live Activity duplicates the
+  presentation the system already gives media apps.
+
+  Tracked in `TASKS.md` with the two options (the kit owns a generated widget target, or adopters own
+  theirs). Several real defects were fixed underneath it — see `### Fixed` — but none of them was the cause.
+
 ### Breaking
 
 - 🔴 **`Shenora.Media` is no longer a package. Its whole surface moved into `Shenora.Core`, and the

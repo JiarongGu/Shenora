@@ -29,10 +29,14 @@ public sealed class MainPage : ContentPage
 	private enum IslandSurface { NowPlaying, LiveActivity }
 
 	/// <summary>
-	/// The sample's choice. <b>LiveActivity while the widget devkit is being verified on a device</b>;
-	/// NowPlaying is what a media app would pick, and is the one Apple intends for playback.
+	/// The sample's choice: <b>NowPlaying</b>, which is the one that actually reaches the Dynamic Island.
+	/// <para>
+	/// 🔴 Not a preference — the Live Activity path cannot render on a device at all (the widget `.appex`
+	/// built by `swiftc` exits before serving; see `TASKS.md`). Now Playing needs no extension, and a
+	/// public sibling proved it on the Island for a player. It is also what Apple intends for playback.
+	/// </para>
 	/// </summary>
-	private const IslandSurface IslandClaimant = IslandSurface.LiveActivity;
+	private const IslandSurface IslandClaimant = IslandSurface.NowPlaying;
 
 	public MainPage()
 	{

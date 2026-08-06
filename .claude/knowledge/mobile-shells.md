@@ -133,6 +133,35 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   - Ask a multi-channel codec at BOTH 5.1 and stereo: a downmix-only decoder makes the difference between
     "no decoder" and "no 5.1 decoder", which are different design conclusions.
 
+- 🔴 **An iOS APP EXTENSION cannot be produced by `swiftc` alone, and the failure is invisible.** An
+  extension does not start at `main`: Xcode links one with **`-e _NSExtensionMain`**, so the process begins
+  in Foundation's extension entry point, reads the `NSExtension` dict from `Info.plist` and enters the XPC
+  run loop its host talks to. Link it as an ordinary executable and SwiftUI's `@main` runs
+  `WidgetBundle.main()`, **that returns**, and the process exits before serving anything.
+  - **What that looks like from outside is SUCCESS everywhere.** ActivityKit starts the activity and returns
+    an id, updates are accepted, the system reserves Dynamic Island space — and the widget simply never
+    loads. Nothing logs an error. Measured on an iPhone 17 Pro, 2026-08-07.
+  - ⚠ **`-Xlinker -e -Xlinker _NSExtensionMain` was tried and is SILENTLY DROPPED** — the built binary still
+    carries a normal `LC_MAIN`. Check it, do not assume: `otool -l <binary> | grep -A3 LC_MAIN`.
+  - **A SIMULATOR CANNOT CATCH ANY OF THIS.** It loads the bundle regardless, which is how the devkit was
+    "verified" for a whole release band while being broken on every real device.
+  - **A hand-written `.appex` `Info.plist` must also carry the PLATFORM keys** Xcode writes and nobody
+    otherwise learns exist — `CFBundleSupportedPlatforms`, `DTPlatformName`, `DTSDKName`, `UIDeviceFamily`.
+    Without them the bundle installs, signs, validates and is **never registered as an extension**.
+  - **And an extension is PROVISIONED SEPARATELY from its container**: its own `embedded.mobileprovision`
+    inside the `.appex`, and its own entitlements (`application-identifier` matching its `CFBundleIdentifier`).
+    The container's profile does not cover it.
+  - `node devtools/dev.mjs mac appex-check` asserts the last two classes off the BUILD OUTPUT — no device,
+    no install, seconds. The entry-point one it cannot yet see.
+
+- ⚠ **iOS has TWO mechanisms that reach the Dynamic Island and they are MUTUALLY EXCLUSIVE.** **Now Playing**
+  (`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`) is the system's MEDIA presentation, Apple's own look,
+  and what a player is supposed to use. A **Live Activity** is a custom app-drawn card, for deliveries,
+  timers and scores. An app publishing a Now Playing session takes the Island, and a Live Activity started
+  beside it has nowhere to render — the tell is *"a long bar that only opens the app"*. A media app should
+  probably not use a Live Activity for playback at all: it duplicates a presentation the system already
+  gives media apps, which is the sort of duplication App Review pushes back on.
+
 ## Gotchas / traps
 
 - **A device-log command must FILTER BEFORE IT TAILS.** Written down for Android (`logcat -t N`
