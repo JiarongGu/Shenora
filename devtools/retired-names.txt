@@ -96,3 +96,13 @@ Shenora.WebView2.Sessions # -> Shenora.Windows
 Shenora.Archives         # -> Shenora.IO.Compression (2026-08-05, never released under this name)
 Shenora.Media.Android    # -> deleted by D45; serving is a SHELL capability, not a media package
 Shenora.Media.iOS        # -> deleted by D45
+# D45 deleted five TYPES along with those two package ids, and until 2026-08-07 only the ids were listed
+# here — so the types were retired with nothing watching them. That is not hypothetical: the shipped
+# Shenora.Media.csproj justified its Core reference with "`MediaRangeServer` speaks
+# `WebViewResourceRequest`" for days. Registering an id and forgetting the types it carried is the easy
+# half to miss, because the id is what the CHANGELOG talks about.
+MediaWebViewRoute        # -> MobileWebViewInterceptor (Android/iOS) + WebViewHost.Interceptor (Windows)
+MediaRangeServer         # -> Core.WebViewFiles.Serve + interceptor.UseFiles(…)
+MediaBodyMode            # -> Core.WebViewRangeDelivery, read off the interceptor
+MediaAccess              # -> Core.WebViewFiles.ResolveContained; the IsRemoteAllowed half was dropped
+MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived artefact, not a media one

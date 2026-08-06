@@ -166,13 +166,26 @@ function suppressedLines(lines, isMarkdown) {
 // that must FAIL went quiet. A skip rule wider than the ignore rule it mirrors is a gate hole.
 const SCRATCH = /^devtools[\\/]_/;
 
+// ⚠ MSBuild files are in this set, and that was a HOLE until 2026-08-07. The walk read `.md|.cs|.ts|.tsx`,
+// which meant a csproj could state a retired name as current forever with every gate green — and one did:
+// `Shenora.Media.csproj` justified its Core reference with "`MediaRangeServer` speaks
+// `WebViewResourceRequest`", a type D45 moved to Core and RENAMED, so the sentence described a kit that had
+// not existed for days. This is the same class the 2026-08-05 review found in
+// `Shenora.IO.Compression`'s `<Description>` (which opened with the retired "Shenora archives") and only
+// half-closed: that pass taught `retired-names.txt` about package IDS, and left the FILE TYPE gap open, so
+// the very next csproj drift was invisible again.
+//
+// A csproj is the highest-stakes prose in the repo after the README, because `<Description>` is SHIPPED —
+// it is what nuget.org renders on the package page, where an adopter reads it and this repo never does.
+// `.props`/`.targets` join for the same reason: `src/Directory.Build.props` carries the version and enough
+// prose to go stale the same way.
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (/^(node_modules|bin|obj|dist|\.git|publish|local)$/.test(entry.name)) continue;
     if (SCRATCH.test(path.relative(repo, path.join(dir, entry.name)))) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
-    else if (/\.(md|cs|ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.actual')) out.push(full);
+    else if (/\.(md|cs|ts|tsx|csproj|props|targets)$/.test(entry.name) && !entry.name.endsWith('.actual')) out.push(full);
   }
   return out;
 }
