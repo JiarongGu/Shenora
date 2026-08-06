@@ -261,6 +261,12 @@ internal static class PageProbe
 				var b = document.getElementById('mfast');
 				var v = document.getElementById('vid');
 				if (!b || !v) { window.{{Slot}} = 'NO-BUTTON-OR-VIDEO'; return 'missing'; }
+				// ⚠ CLEAR THE EARLIER PROBE'S HANDLERS FIRST. CheckMediaAsync assigns onloadedmetadata /
+				// onseeked / onerror on this same element and never removes them, so loading a clip here
+				// re-fires ITS handlers, which overwrite the result slot with their own format — this probe
+				// then reports the previous probe's answer and never measures the button at all. Seen once
+				// before this line existed, and it looks exactly like a real result.
+				v.onloadedmetadata = null; v.onseeked = null; v.onerror = null;
 				try { v.pause(); } catch (e) {}
 				v.removeAttribute('src'); v.load();
 				v.muted = false;
