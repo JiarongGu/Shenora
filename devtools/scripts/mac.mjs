@@ -1310,8 +1310,14 @@ dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${
   console.log(`mac: ${app.replace(/^.*\//, '')}`);
 
   // Install and launch need NO keychain, so they go over plain ssh — much faster and easier to read.
+  //
+  // 🔴 `set -o pipefail` on BOTH, and it is not decoration. Without it a pipeline reports TAIL's exit
+  // status, which is always 0 — so a failed install sails through, the launch is attempted against an app
+  // that was never installed, and the command finishes by printing "running on the device". Measured on
+  // the first real device run, which reported success while the install had been REJECTED. This file
+  // already documents the identical trap on the build step; it was reintroduced here the same day.
   console.log('\nmac: installing…');
-  const install = ssh(cfg, `xcrun devicectl device install app --device ${q(target.id)} ${q(app)} 2>&1 | tail -20`);
+  const install = ssh(cfg, `set -o pipefail; xcrun devicectl device install app --device ${q(target.id)} ${q(app)} 2>&1 | tail -20`);
   console.log((install.stdout ?? '').trim());
   if (install.status !== 0) {
     console.error('\nmac: INSTALL FAILED.');
@@ -1321,7 +1327,7 @@ dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${
   }
 
   console.log('\nmac: launching…');
-  const launch = ssh(cfg, `xcrun devicectl device process launch --device ${q(target.id)} ${q(cfg.bundleId)} 2>&1 | tail -20`);
+  const launch = ssh(cfg, `set -o pipefail; xcrun devicectl device process launch --device ${q(target.id)} ${q(cfg.bundleId)} 2>&1 | tail -20`);
   console.log((launch.stdout ?? '').trim());
   if (launch.status !== 0) { console.error('\nmac: LAUNCH FAILED.'); process.exit(launch.status ?? 1); }
 
