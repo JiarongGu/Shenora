@@ -39,13 +39,22 @@
     --sa-settle: 180ms;
     --sa-color: transparent;
   }
-  /* The inset strips, painted with whatever the shell published. Fixed, so they never scroll away. */
-  body::before, body::after {
-    content: ""; position: fixed; left: 0; right: 0; background: var(--sa-color);
-    pointer-events: none; z-index: 1;
+  /*
+    The inset strips, painted with whatever the shell published. Fixed, so they never scroll away.
+
+    ⚠ FOUR edges, not two. The first version painted only top and bottom, which is the portrait shape
+    mistaken for the general one: rotate the device and the cutout moves to a SIDE, so the page padded
+    itself correctly and left an unpainted band exactly where the notch is. Four BORDERS on one
+    full-viewport element draw all four edges at independent thicknesses, which is why this needs
+    neither a second pseudo-element nor any JS.
+  */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    border-top: var(--sa-top) solid var(--sa-color);
+    border-right: var(--sa-right) solid var(--sa-color);
+    border-bottom: var(--sa-bottom) solid var(--sa-color);
+    border-left: var(--sa-left) solid var(--sa-color);
   }
-  body::before { top: 0; height: var(--sa-top); }
-  body::after { bottom: 0; height: var(--sa-bottom); }
   /*
     The safe-area insets are NOT optional once a page ships to more than one mobile shell, and this
     is what proves it: the identical markup looked correct on an Android emulator for a whole session
@@ -462,9 +471,15 @@ const readInsets = (announce) => {
     // with. A gate that only printed env() would have shown zeros while the layout was correct.
     const rs = getComputedStyle(document.documentElement);
     const rv = (n) => (rs.getPropertyValue(n).trim() || '(unset)');
+    // ⚠ ALL FOUR of the published values, not just top/bottom. Rotation moves an inset to a different
+    // EDGE, so a line that prints only the vertical pair cannot tell a correct landscape layout from a
+    // stale portrait one — which is exactly the bug this page was used to find (2026-08-06).
+    // `orientation` is here for the same reason: the numbers are only interpretable next to it.
     log('t', `insets env: top=${v.top} right=${v.right} bottom=${v.bottom} left=${v.left} · `
-      + `laid out with var: top=${rv('--sa-top')} bottom=${rv('--sa-bottom')} `
+      + `laid out with var: top=${rv('--sa-top')} right=${rv('--sa-right')} `
+      + `bottom=${rv('--sa-bottom')} left=${rv('--sa-left')} `
       + `color=${rv('--sa-color')} settle=${rv('--sa-settle')} · `
+      + `orientation=${innerWidth > innerHeight ? 'landscape' : 'portrait'} `
       + `viewport=${innerWidth}x${innerHeight} dpr=${devicePixelRatio}`);
   }
   return v;

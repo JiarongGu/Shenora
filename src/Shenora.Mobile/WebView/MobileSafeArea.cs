@@ -35,6 +35,15 @@ public sealed class MobileSafeArea : IDisposable
         // the entire point of having one. Waiting for the platform here would reproduce the bug.
         Publish(null);
 
+        // 🔴 ROTATION MOVES AN INSET TO A DIFFERENT EDGE — it does not merely change its size. A cutout
+        // that is `top` in portrait becomes `left` or `right` in landscape, and the home indicator's
+        // `bottom` shrinks. So "read the insets once and publish them" is not a smaller version of the
+        // right behaviour, it is the wrong SHAPE forever: the page goes on reserving a strip along the top
+        // while the notch is down the side. Reported against the iOS shell, which read exactly once.
+        //
+        // `SizeChanged` is MAUI's own signal and fires on both platforms, so the fix is not per-platform
+        // even though the bug only showed on one of them.
+        _webView.SizeChanged += OnSizeChanged;
         _webView.HandlerChanged += OnHandlerChanged;
         if (_webView.Handler is not null) Attach();
     }
@@ -55,6 +64,15 @@ public sealed class MobileSafeArea : IDisposable
         //
         // Publishing on every layout is cheap (one idempotent script) and the generation counter in
         // Publish collapses overlapping attempts, so a rotation storm still only lands once.
+        //
+        // Log the NUMBERS when they change — not every publish, which fires on every layout pass. Without
+        // this the capability is unobservable from the host side: "delivered" is logged once and the page's
+        // own diagnostic reports what the PAGE ended up with, which on a shell whose page also reads
+        // `env()` is not proof of what the shell published. Rotation is the case that needs the
+        // distinction, because it is the one where the two can disagree.
+        if (_last != insets)
+            Log($"safe-area measured: top={insets.Top:0.#} right={insets.Right:0.#} "
+              + $"bottom={insets.Bottom:0.#} left={insets.Left:0.#}");
         _last = insets;
         Publish(insets);
     }
@@ -141,6 +159,68 @@ public sealed class MobileSafeArea : IDisposable
     {
 #if ANDROID
         if (_webView.Handler?.PlatformView is not global::Android.Views.View view) return;
+        // A handler change means a NEW platform view, so this subscribes per view rather than once —
+        // but guard against the same view arriving twice (the constructor and HandlerChanged can both
+        // reach here), which would double every read.
+        if (ReferenceEquals(view, _attachedTo)) return;
+        _attachedTo = view;
+
+        // Layout is when the window's insets become known and when they change (rotation, keyboard, a
+        // resized window). Cheap to repeat: Publish's generation counter collapses a storm of these into
+        // one delivery. (It is NOT deduplicated by value — see Report for why that had to be removed.)
+        view.LayoutChange += (_, _) => ReadPlatformInsets();
+#endif
+        ReadPlatformInsets();
+    }
+
+#if ANDROID
+    // Android-only: the double-subscribe guard above. Scoped by #if because an unused private field is a
+    // build ERROR here (warnings-as-errors), and the iOS half has no per-view subscription to guard.
+    private object? _attachedTo;
+#endif
+
+    private void OnSizeChanged(object? sender, EventArgs e) => ReadWhileSettling();
+
+    /// <summary>
+    /// Re-read the platform's insets now, and again while the rotation settles.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ The follow-up reads are not belt-and-braces. A rotation is ANIMATED, and the size change is
+    /// reported at the START of it: on iOS <c>SafeAreaInsets</c> is still the OLD orientation's at that
+    /// moment, so a single read on <c>SizeChanged</c> publishes the very values the rotation invalidated.
+    /// Reading again across the animation is what makes the final published value the new orientation's.
+    /// Cheap to repeat — <see cref="Publish"/> is idempotent and its generation counter collapses the
+    /// overlapping attempts into one delivery.
+    /// </remarks>
+    private async void ReadWhileSettling()
+    {
+        try
+        {
+            ReadPlatformInsets();
+            foreach (var delay in RotationSettleDelays)
+            {
+                await Task.Delay(delay).ConfigureAwait(true);
+                if (_disposed) return;
+                ReadPlatformInsets();
+            }
+        }
+        catch (Exception ex)
+        {
+            // `async void`: nothing is awaiting this, so an escape here is an unhandled exception on the
+            // UI thread rather than a failed read. A missed inset update must never take the app down.
+            Log($"safe-area re-read after a size change failed ({ex.GetType().Name})");
+        }
+    }
+
+    // Across a rotation animation (~300 ms) and a little past it, so the last word belongs to the new
+    // orientation even on a slow device.
+    private static readonly int[] RotationSettleDelays = [50, 150, 300, 500];
+
+    /// <summary>Ask the platform what its insets are right now, and publish them.</summary>
+    private void ReadPlatformInsets()
+    {
+#if ANDROID
+        if (_webView.Handler?.PlatformView is not global::Android.Views.View view) return;
 
         // 🔴 READ the insets; do NOT install an OnApplyWindowInsetsListener on the webview.
         //
@@ -153,32 +233,26 @@ public sealed class MobileSafeArea : IDisposable
         // GetRootWindowInsets is purely observational: it asks what the window currently has and cannot
         // consume, reorder or suppress anything. A capability must not be able to damage the platform
         // behaviour it supplements — that failure is invisible unless someone thinks to check env().
-        void Read()
-        {
-            var insets = AndroidX.Core.View.ViewCompat.GetRootWindowInsets(view);
-            if (insets is null) return;
+        var insets = AndroidX.Core.View.ViewCompat.GetRootWindowInsets(view);
+        if (insets is null) return;
 
-            // systemBars() | displayCutout() — the UNION is the point. CSS gets the cutout only, which is
-            // why bottom came back 0 on a device whose navigation bar is genuinely 24 CSS px tall.
-            var i = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars()
-                                   | AndroidX.Core.View.WindowInsetsCompat.Type.DisplayCutout());
-            if (i is null) return;
+        // systemBars() | displayCutout() — the UNION is the point. CSS gets the cutout only, which is
+        // why bottom came back 0 on a device whose navigation bar is genuinely 24 CSS px tall.
+        var i = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars()
+                               | AndroidX.Core.View.WindowInsetsCompat.Type.DisplayCutout());
+        if (i is null) return;
 
-            // Android reports DEVICE pixels; CSS wants CSS pixels. Dividing by the display density is the
-            // whole conversion, and getting it wrong is invisible on a 1x screen and wrong everywhere else.
-            var density = view.Context?.Resources?.DisplayMetrics?.Density ?? 1f;
-            if (density <= 0) density = 1f;
-            Report(new SafeAreaInsets(i.Top / density, i.Right / density, i.Bottom / density, i.Left / density));
-        }
-
-        // Layout is when the window's insets become known and when they change (rotation, keyboard, a
-        // resized window). Report() skips an unchanged value, so this stays cheap.
-        view.LayoutChange += (_, _) => Read();
-        Read();
+        // Android reports DEVICE pixels; CSS wants CSS pixels. Dividing by the display density is the
+        // whole conversion, and getting it wrong is invisible on a 1x screen and wrong everywhere else.
+        var density = view.Context?.Resources?.DisplayMetrics?.Density ?? 1f;
+        if (density <= 0) density = 1f;
+        Report(new SafeAreaInsets(i.Top / density, i.Right / density, i.Bottom / density, i.Left / density));
 #elif IOS || MACCATALYST
         if (_webView.Handler?.PlatformView is not UIKit.UIView view) return;
-        // iOS reports both bars and the cutout, so a single read after layout is enough; the scene's
-        // safeAreaInsets are already in points, which are CSS pixels.
+        // The scene's safeAreaInsets are already in points, which are CSS pixels, and iOS reports both the
+        // bars and the cutout — so unlike Android there is no union to take and no conversion to do.
+        // ⚠ What this must NOT go back to is being read ONCE: see the constructor. In landscape the same
+        // device reports the cutout on `left` or `right` and a much smaller `bottom`.
         var insets = view.SafeAreaInsets;
         Report(new SafeAreaInsets(insets.Top, insets.Right, insets.Bottom, insets.Left));
 #endif
@@ -197,5 +271,6 @@ public sealed class MobileSafeArea : IDisposable
         if (_disposed) return;
         _disposed = true;
         _webView.HandlerChanged -= OnHandlerChanged;
+        _webView.SizeChanged -= OnSizeChanged;
     }
 }
