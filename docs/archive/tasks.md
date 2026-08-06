@@ -17,6 +17,51 @@
 
 ---
 
+### The kit's own iPhone deploy loop — CLOSED 2026-08-07, running on an iPhone 17 Pro
+
+Owner, 2026-08-07: *"even deploy to phone kit is missing we need to do something like capacitor did"*. Two
+of that section's three items are done; only shipping it to ADOPTERS stays open.
+
+**`dev.mjs mac provision`** mints profiles from `devtools/ios-provision/` — a minimal, generic, kit-owned
+Xcode project with no bundle id and no team id in it (both are passed as `xcodebuild` build settings, which
+keeps the file generic AND keeps a team id out of a public repo per `sensitive-info.md`).
+**`dev.mjs mac device`** builds, SIGNS, installs and launches. The split that makes it work over ssh:
+BUILDING needs the login keychain → `guiRun`; INSTALLING and LAUNCHING need no keychain → plain ssh +
+`xcrun devicectl`. Getting that backwards is what makes people reach for a GUI on the Mac.
+
+**Four findings, every one of them from actually running it rather than from writing it:**
+
+1. 🔴 **Xcode 16 MOVED where provisioning profiles live** — classic
+   `~/Library/MobileDevice/Provisioning Profiles/`, current
+   `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`. On Xcode 26.3 minting wrote all three to
+   the NEW path and never created the old directory at all. **This is why 2026-08-06 recorded "zero
+   provisioning profiles on disk"** — a true statement about the wrong directory, which reads as
+   "provisioning has never worked here". `mac profiles` reads both.
+2. 🔴 **`xcodebuild` exits 0 without necessarily minting what you asked for** — it succeeds against a
+   profile it already had. So `provision` verifies by reading profiles OFF DISK and matching their
+   `application-identifier`. That check is what caught finding 1: the first run printed "minted ok" twice
+   and then correctly refused to claim success. Trusting exit status would have reported success and left
+   device builds failing for a reason nothing pointed at.
+3. 🔴 **The Live Activity extension kept a STALE bundle identifier, and only a DEVICE says so.** The first
+   install was rejected with `AppexBundleIDNotPrefixed`, naming a bundle id the project does not contain.
+   The extension's `Info.plist` was written inside a target whose incremental check is Inputs = the Swift
+   files, Outputs = the EXECUTABLE — and `$(ApplicationId)`, which its content depends on, cannot be an
+   Input at all, because MSBuild compares FILES and not property values. So a skipped target left a stale
+   plist. ⚠ **Worse for an adopter than for us:** rename your app or reuse an `obj/`, and the build
+   succeeds and the SIMULATOR is happy (it does not enforce the prefix) — only a real device rejects it.
+   **Second bug of this exact shape in that one target** (the first was one architecture's `.a` satisfying
+   another's check). The lesson both times: an incremental check must cover everything the target WRITES,
+   and a target whose output depends on a PROPERTY cannot be made incremental on files at all.
+4. 🔴 **`mac device` reported "running on the device" after the install AND the launch had failed** —
+   `xcrun … | tail` makes the pipeline report TAIL's status, always 0. `mac.mjs` already documents this
+   trap on its build step, and it was reintroduced directly beneath that comment the same day. Worth
+   naming as a pattern: a harness that pipes a tool through `tail` to keep output readable silently
+   converts every failure into a success.
+
+**Verified:** `App installed: com.shenora.sample.maui` → `Launched application`. Finding 3 was proven with
+the sabotage already planted by reality — the stale plist was on the Mac and the Swift files were
+unchanged, so only the fix could have rewritten the identifier, and it did.
+
 ### Media slices 1 + 2 — the pipeline reshape and the remuxer — CLOSED 2026-08-07
 
 The first two of D52's four slices. `verify` PASSED at **1161 tests** (from 1125), and neither slice needed

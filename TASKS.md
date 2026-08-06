@@ -102,23 +102,12 @@ backlog is `docs/archive/tasks.md`.
 > one"*. **Right on all three.** A kit whose measure is *how little native code an adopting app writes*
 > cannot require the adopter to own an Xcode project just to reach a device.
 
-**The wall is beaten and PROVEN, which is what makes the rest worth building.** `codesign` cannot use a
-login-keychain key from an ssh session (`errSecInternalComponent` — proven on a copy of `/bin/echo`, nothing
-to do with this repo), but the SAME command through the GUI session succeeds (`exit 0`). `guiRun` in
-`devtools/scripts/mac.mjs` is that technique, harvested from the sibling that solved it first (D15):
-`osascript` → Terminal.app → poll a `.done` file for the exit code.
+**✅ THE LOOP WORKS END TO END — the sample builds, signs, installs and LAUNCHES on an iPhone 17 Pro**
+(2026-08-07). `dev.mjs mac provision` + `dev.mjs mac device` are the kit's own, with no Capacitor and no
+app-owned Xcode project anywhere in it. Record and the four findings: `docs/archive/tasks.md`; mechanics:
+`devtools/README.md`. What remains open is only the third item — shipping it to ADOPTERS.
 
-- [ ] **`dev.mjs mac device` — build, install and launch on a real iPhone**, the peer of `dev.mjs android`.
-  Build through `guiRun` (signing), then `xcrun devicectl device install app` + `process launch`, which need
-  no keychain and work over plain ssh. The install/launch half is already written in the sibling and is a
-  straight lift.
-- [ ] **A provisioning stub the KIT owns.** `.NET` cannot mint a profile — only `xcodebuild
-  -allowProvisioningUpdates` can, and it needs *an* Xcode project. ⚠ **Do NOT use an app's project for
-  this** (tried; it is slow, it drags in that app's SPM checkouts, and it makes the kit depend on a consumer
-  having Capacitor). Ship a minimal `.xcodeproj` under `devtools/` whose only job is to mint a profile for a
-  given bundle id: `dev.mjs mac provision <bundle-id>`. Small, generic, and it makes the whole loop the
-  kit's own.
-- [ ] **Then ship it to adopters, per the second direction** — the helper belongs with the package, not only
+- [ ] **Ship it to adopters, per the second direction** — the helper belongs with the package, not only
   in this repo's devtools. Decide the shape deliberately (a `buildTransitive` target? a documented recipe in
   `ADOPTION.md`?) against `generic-library.md`, since "ships a build helper" is new surface area.
 - ⚠ **Known, and it must be honest in the docs:** a free/personal team profile expires after **7 days**, and
