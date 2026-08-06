@@ -3,17 +3,23 @@
 Numbered rationale log so a future session doesn't relitigate them. Amend an entry by appending
 a dated note (or a later entry that supersedes it) — never silently rewrite.
 
-> **The package set lives HERE, once** (2026-08-05). Five entries have moved it — D2 drew it, D37
-> reorganised it by platform, D40 added an optional feature package, D48 added a family of them and D50
-> added the native launcher — and reconstructing it from that chain is how three of them ended up stating
-> a set that no longer existed. **As of v0.10.0 (2026-08-05) there are nine packable projects + npm:**
+> **The package set lives HERE, once** (2026-08-05). Six entries have moved it — D2 drew it, D37
+> reorganised it by platform, D40 added an optional feature package, D48 added a family of them, D50
+> added the native launcher and **D53 folded media back into Core** — and reconstructing it from that
+> chain is how three of them ended up stating a set that no longer existed.
+> **As of 2026-08-07 there are EIGHT packable projects + npm:**
 >
 > | | | |
 > |---|---|---|
 > | **shells** (D37) | `Shenora.Core` · `Shenora.Ipc` · `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform |
-> | **optional features** (D40, D48) | `Shenora.Media` · `Shenora.IO` · `Shenora.IO.Compression` | hang OFF Core; no shell reference brings them |
+> | **optional features** (D48) | `Shenora.IO` · `Shenora.IO.Compression` | hang OFF Core; no shell reference brings them |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
 > | **npm** | `@shenora/react` | |
+>
+> ⚠ **`Shenora.Media` is no longer a package (D53, 2026-08-07) — but `Shenora.Media` is still a live
+> NAMESPACE, inside `Shenora.Core`.** The id is retired and the namespace is current, which is why the
+> name is deliberately NOT in `devtools/retired-names.txt`: the gate matches names and cannot tell a
+> package id from a namespace, so registering it would fire on every correct sentence in the repo.
 >
 > `docs/ARCHITECTURE.md` is the as-built map and `doc-drift` gates it against the csproj files. **When an
 > entry below names a package set, read it as the set AT ITS DATE.**
@@ -959,109 +965,28 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     version of each intent". Revisit only if a platform gains a real in-process automation surface —
     not because a webview exists.
 
-- **D40 — media is its OWN package, `Shenora.Media`. Amends D2's "no new package" and D37's set.**
-  (Owner, 2026-08-03: *"because I know this package is not going to be small thats why I call this need to
-  be Shenora.Media"*, then sharpened when this entry first got the shape wrong: *"we need a Media and
-  Media.Windows Media.Android Media.iOS packages, so what should be stay in core is generic connection
-  functions and the rest should be stay at Media"*.) The set becomes **`Core` · `Ipc` · `Windows` ·
-  `Android` · `iOS` · `Media` · `Media.Windows` · `Media.Android` · `Media.iOS`** — nine.
+- **D40 · D41 — media as its own package family. RETIRED 2026-08-07, and the bodies are gone rather than
+  banner-stacked.** Both entries governed **`Shenora.Media` + `Shenora.Media.{Windows,Android,iOS}`** — a
+  nine-package set. None of it exists:
+  - The three `Media.{Platform}` packages were **deleted by D45 (2026-08-04) before any of them shipped**.
+    Serving bytes to a page turned out to be resource INTERCEPTION, which configures a webview and is
+    therefore a shell capability, so they had nothing left to hold.
+  - **`Shenora.Media` itself was folded into `Shenora.Core` by D53 (2026-08-07)**, because D40's premise —
+    "a demuxer or image codec is real shipped bytes" — was made permanently false by D51, and D52 framed
+    media repair as shell work.
 
-  > **⚠ THAT NINE-PACKAGE SET NEVER EXISTED. `Shenora.Media.Windows`, `.Android` and `.iOS` were
-  > deleted by D45 (2026-08-04) before any of them shipped** — serving bytes to a page turned out to be
-  > resource INTERCEPTION, which configures a webview and is therefore a shell capability, so the
-  > per-platform media packages had nothing left to hold. `Shenora.Media` alone shipped, in v0.9.0.
-  > A 2026-08-05 review found this entry still declaring the nine, with no pointer to what replaced it;
-  > flagged rather than rewritten, per this file's amend-in-place rule. **`Shenora.Media` is the only
-  > `Media*` package there has ever been** — see the header table for the current set, D45 for the
-  > re-layer, and D42 for the correction to this entry's engine reasoning.
-  - **The argument is DEPENDENCIES, not size — and it passes D37's own test where the Windows split
-    failed it.** D37 asks whether a boundary corresponds to something a CONSUMER experiences. It rejected
-    the WinForms/WebView2 split because the measured cost was 52.6 MB of DEV-TIME restore for a runtime
-    that is an Evergreen SYSTEM COMPONENT, and because the consumer it protected (WinForms without a
-    webview) cannot exist in a React-in-a-webview kit. Media inverts every clause: an image codec or a
-    container parser is **real shipped bytes**, it is **not** a system component, and the consumer it
-    protects **does** exist — every app that never touches media. `Shenora.Core` today costs a consumer
-    exactly two abstraction packages (`M.E.DependencyInjection`, `M.E.Logging.Abstractions`), and since
-    EVERYTHING references Core, a media stack behind it would tax the whole kit. Same test, opposite
-    answer, because the facts differ — which is what an amendment should look like rather than a reversal.
-  - **THE SAME ARGUMENT APPLIES TWICE, and this entry first missed the second application.** The draft
-    put the per-platform implementations into the existing SHELL packages, reasoning that the platform
-    types live there anyway. Owner corrected it, and the correction is right: **`Shenora.Windows` is not
-    optional for a desktop app on this kit, so media dependencies placed there tax every consumer** — a
-    tray utility that never plays a file would still restore a media engine binding. `Shenora.Media.Windows`
-    IS optional. The reason Media splits from Core is the reason Media.Windows splits from Windows; the
-    draft applied it once and stopped.
-  - **This does NOT undo D37, and the test still passes.** D37's rule is ONE SHELL package per platform.
-    These are not shells — they are one FEATURE's platform implementations, and D37's question ("does a
-    consumer experience this boundary?") answers yes: a desktop app declines `Shenora.Media.Windows` while
-    still taking `Shenora.Windows`. Nine packages is the honest count of that, not scope creep.
-  - **What goes in `Shenora.Media`:** the playability decision (a pure function), the probe RESULT shape,
-    the content+mtime cache key, the cache inventory/cap seam, and the surface + thumbnail CONTRACTS.
-    See `docs/2026-08-03-shenora-media-design.md` §1.
-  - **What goes in `Shenora.Media.{Windows,Android,iOS}`:** the native surface, the pixel production, and
-    the platform's own playability answer (`MediaCodecList`, `AVAsset.Playable`, a codec table on Windows).
-    Each is the natural home for the engine binding a consumer opts into.
-  - **What stays in `Shenora.Core` — the owner's "generic connection functions":** the resource-serving
-    primitives (`WebViewResourceRequest`/`Response`/`ByteRange`, moved out of `Shenora.Windows`). They are
-    not media-specific — the packaged-bundle seam and app schemes use them — and they carry no
-    dependencies. Media builds on them, which is why the D2a move can go FIRST and independently.
-  - ⚠ **One edge to determine when building, not now:** whether `Shenora.Media.{Platform}` references its
-    shell package or only `Shenora.Core` + the platform SDK. A native surface needs UI-thread marshalling
-    (`IUiDispatcher`, portable) and a parent control (platform). If it needs nothing from the shell, the
-    edge should not exist — an unused dependency edge is the "declared but nothing crosses it" smell the
-    review checklist hunts for.
-  - **Cost, stated plainly** (the checklist a sixth package inherits): a lockstep version entry, an API
-    baseline plus a `packableProjects` entry, a package description, `IsPackable` kept INLINE in the
-    csproj (hoisting it into shared props makes the project invisible to the baseline-coverage gate —
-    the trap the mobile packages already documented), a README package-table row, a `doc-drift`
-    dependency-graph row, and `Media` added to the surface lexicon for type names. Plus a new dependency
-    edge from all three shells, which `ARCHITECTURE.md` must state.
-  - **Still no `*.Abstractions` package.** D2 rejected that and it stays rejected: this is a FEATURE
-    boundary a consumer can decline, not a layering artefact.
+  **The one rule that outlived both, and it still holds:** app logic names the media types and compiles on
+  `net10.0` with no platform reference, enforced by `samples/Shenora.Sample.Logic` turning RED if a platform
+  type reaches it. That tripwire is unchanged — only the reference carrying it moved to Core.
 
-- **D41 — media is CONSUMED from `Shenora.Media` only, and the package family publishes in LOCKSTEP while
-  DEPENDING by range.** (Owner, 2026-08-03: *"when using the media we more focus on using interfaces from
-  media library instead from platform library so we keep the interface unified"*, plus *"we should not
-  update platform dependency package that often (because its big binary files) so we might need a
-  different release pipeline… only the major version catches the main library if needed"*.)
-
-  > **⚠ THE "PACKAGE FAMILY" THIS ENTRY GOVERNS WAS NEVER BUILT.** `Shenora.Media.{Windows,Android,iOS}`
-  > were deleted by D45 (2026-08-04) before shipping, so there is one `Shenora.Media` and no range-versioned
-  > family under it. Everything below about range-vs-lockstep is **unexercised design**, kept because the
-  > question returns the moment any package carries a large binary. **The half that DID survive and is
-  > live today is the consumption rule:** app logic names `Shenora.Media` and never a platform package —
-  > which is now trivially true, and is still the rule if a `Media.{Platform}` ever appears.
-  - **App logic names `Shenora.Media` and NEVER `Shenora.Media.{Windows,Android,iOS}`.** The platform
-    packages exist to be REGISTERED at composition, in the app's platform head, and to be invisible
-    everywhere else. This is D19/D20's law restated for a feature family rather than a new rule, and it is
-    what makes one media call site work on three shells.
-  - **It is enforced by the tripwire the kit already owns, not by this paragraph.**
-    `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED when a platform type reaches app
-    logic — the same mechanism that proves `Shenora.Core`'s portability. `Shenora.Media` must therefore be
-    `net10.0`.
-    ⚠ **The tripwire only bites once that project actually USES media**, so wiring it is part of landing
-    Media rather than a follow-up. A tripwire that cannot fail is worth nothing (`phase-workflow.md`), and
-    this one is currently in that state for media specifically.
-  - **PUBLISHING stays lockstep — one `VersionPrefix`, one CHANGELOG, one workflow.** The owner's concern
-    was big binaries being republished, and the measurements say that concern does not apply to the kit's
-    own packages: all five current ones total **459 KB**, and `Media.Android`/`.iOS` must ship ~26 KB
-    because they take **no engine dependency** (§4a of the media design doc). The engine binaries belong to
-    the APP, and bumping a Shenora version does not re-download them — NuGet caches by package plus
-    version.
-  - **CONSUMPTION stops being lockstep, which is the half that was actually wrong.**
-    `Shenora.Media.{Platform}` declares a RANGE dependency on `Shenora.Media` (`[x.y.z, <next major>)`)
-    rather than an exact pin, so a consumer MAY take a newer main library without being forced to move the
-    platform package. That is the owner's "only the major version catches it", it costs one attribute per
-    csproj, and it separates two things worth keeping separate: how often we publish versus what we oblige
-    a consumer to move.
-  - **A separate release pipeline was considered and REJECTED, and the cost is why.** `doctor` enforces
-    `VersionPrefix == newest tag`, so independent versions need per-package version state — a new
-    mechanism, a second workflow and a second version stream inside a single CHANGELOG. This repo has
-    burned **two** version numbers on release-process mistakes in three days (0.2.0 consumed by a
-    hand-bump; 0.6.0 published from a stale tree), so doubling that surface to save 26 KB per release is
-    the wrong trade. **Revisit only if a platform package genuinely grows native binaries** — and note that
-    the answer then is probably still not a pipeline, it is §2's rule that the kit does not ship engines.
-
+  ⚠ **Deleted rather than amended, deliberately, and this is a note about how to read this FILE.** The
+  amend-in-place rule exists so a reader can follow why a real thing changed. It does not earn its keep for
+  a decision whose subject NEVER EXISTED: D41's own banner already said "the package family this entry
+  governs was never built", and forty lines of range-versioning rules for packages nobody can install is
+  noise that makes the surrounding stack harder to read, not safer. Owner, 2026-08-07: *"we should do a
+  cleanup, remove everything thats irrelevant anymore which is clearer than keep adding."* Git history has
+  both entries in full. **The test applied: does this describe something that shipped? If not, delete it and
+  say what replaced it.** D42–D45, D51 and D52 are all still live and are untouched.
 - **D42 — an ENGINE is the primary playback path on every platform, including mobile. Corrects D40/§0c's
   "mobile uses the platform".** (Owner, 2026-08-03: *"I prefer to use engine, because mobile library is not
   stable to support different type of media but if we use engine we have the control"*.)
@@ -1179,8 +1104,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 
 - **D44 — the media URL names NO origin, and the two mobile shells get OPPOSITE response BODIES. Measured
   on devices, and it corrects three things this repo had already written down.** (DM1, 2026-08-03. Full
-  measurements: `docs/2026-08-03-shenora-media-design.md` §0j/§0k; the probe is
-  `samples/Shenora.Sample.Maui/MediaRangeProbe.cs`.)
+  the probe is `samples/Shenora.Sample.Maui/MediaRangeProbe.cs`, which is what re-measures it.)
   - **The URL is a RESERVED PATH on the page's own origin, reached by a RELATIVE url**
     (`/<reserved>/?src=…`), not a custom scheme and not a virtual host. Neither of the obvious answers
     works on both shells: Android intercepts `app://` and then its media pipeline **refuses** it
@@ -1727,3 +1651,43 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     encodes H.264 in hardware, so the translation is two platform calls and a container. Zero bytes, zero
     licence, no codec written. If a proposal here cannot be described that way — as a translation between
     what the user HAS and what the web ACCEPTS, using what the device already does — it is out of scope.
+
+- **D53 — `Shenora.Media` is folded back into `Shenora.Core`. Media repair is SHELL WORK, not an optional
+  feature, and the package's own justification had become false.** (Owner, 2026-08-07, on being shown the
+  weight numbers: *"since we dont really have any binary? and its mostly just our code should we just
+  remove Media package merge to core"*, then *"98 kb on app still small?"* — both right.)
+  - **What changed on the ground.** D40 created the package because media "is not going to be small": a
+    demuxer or image codec is *real shipped bytes*. **D51 then guaranteed the kit ships no engine byte,
+    ever** — not ffmpeg, not a vendored codec, nothing. So the premise the package rested on can never
+    come true. What exists is managed code the kit wrote itself.
+  - **The numbers, because "it is small" deserved measuring rather than asserting** (Release IL):
+    `Shenora.Core` 125 KB · `Shenora.Media` 98 KB · `Shenora.IO` 82 KB · `Shenora.IO.Compression` 24 KB.
+    Merging costs Core +98 KB — and iOS mandates trimming (`PublishTrimmed=true`), so an app that never
+    calls a media type does not carry it either way. ⚠ **The size argument was the weak one and it was
+    argued first; the owner was right to push back on it.**
+  - **The argument that actually decides it is D52's own framing:** *"A React+C# app whose user's video
+    will not play is a BROKEN APP, and repairing that is shell work — the same category as serving a local
+    file or honouring a safe-area inset."* Serving a local file is `IWebViewInterceptor` + `WebViewFiles`,
+    in **Core**. Media repair belongs beside the thing it is the same category as.
+  - 🔴 **This SHARPENS D48 rather than contradicting it.** D48's bar was read as *weight*; weight alone
+    would have merged `Shenora.IO` too (also pure managed, also no binary). The line that survives both
+    decisions is about the CONSUMER, which is what D37 and D48 were really testing all along:
+    | | |
+    |---|---|
+    | **shell work** — making the page host, serve and play what it was handed | **Core** (interception, safe area, media) |
+    | **something only SOME apps do** | its own package (`IO` = my app mutates a file tree; `IO.Compression` = …from archives) |
+    Every app that hosts a page can be handed a file it cannot play. Not every app mutates a file tree.
+  - **A documented BREAK, and a cheap one (D47).** The namespace stays `Shenora.Media`, so an adopter
+    changes a `PackageReference` and **not one line of code**. Proof it was a pure move: the API baselines
+    went `Shenora.Media.txt` −180 lines (deleted) and `Shenora.Core.txt` **+180, −0**.
+  - ⚠ **`Shenora.Media` is deliberately NOT in `devtools/retired-names.txt`.** The package id is retired
+    while the NAMESPACE is current, and that gate matches names — it cannot tell the two apart, so
+    registering it would fire on every correct sentence in the repo. This bullet is the record instead.
+  - **It also dissolves a design problem that had made slice 4 unbuildable.** `ISegmentEngine` sat in a
+    portable `net10.0` package that cannot call `MediaCodec` or AudioToolbox, and no shell references an
+    optional feature package — so a default engine using platform codecs had nowhere to live short of
+    resurrecting the `Shenora.Media.{Platform}` family D45 deleted. With the contracts in Core, which
+    every shell already references, a per-platform engine is an ordinary shell capability.
+  - **What is NOT claimed:** that fewer packages is better in general. `Shenora.IO` stays split, and the
+    next feature is judged on the same question — *is this shell work, or is it something only some apps
+    do?* — rather than on package count.

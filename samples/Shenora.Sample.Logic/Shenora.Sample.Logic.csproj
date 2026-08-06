@@ -31,14 +31,13 @@
     <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
     <!--
-      Shenora.Media, referenced from PORTABLE logic on purpose — this is the D41 tripwire being ARMED.
-      This project is net10.0, so it turns RED the moment a platform type reaches app logic; that is what
-      enforces "app logic names Shenora.Media and never Shenora.Media.{Platform}". Until this reference
-      existed the tripwire was green for reasons unrelated to media, i.e. a tripwire that could not fail —
-      the state `phase-workflow.md` forbids. Its facade USES the planner, so removing the portability
-      would break the build rather than a comment.
+      ⚠ The media half arrives through Shenora.Core now — `Shenora.Media` stopped being a package on
+      2026-08-07 and its pipeline moved into Core as shell work. The D41 tripwire this reference used to
+      ARM is unchanged and still armed: this project is net10.0, its facade USES the planner, so a platform
+      type reaching app logic turns it RED at build time rather than in a comment. What changed is only
+      which reference carries it — and Core was already referenced above, which is why nothing was added
+      here to replace it.
     -->
-    <ProjectReference Include="..\..\src\Shenora.Media\Shenora.Media.csproj" />
   </ItemGroup>
 
 </Project>

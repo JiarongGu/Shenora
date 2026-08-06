@@ -617,3 +617,183 @@ sealed class Shenora.Core.WebViewResourceResponse
   public static Shenora.Core.WebViewResourceResponse PartialContent(System.IO.Stream content, string contentType, Shenora.Core.WebViewByteRange range, long totalLength, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
   public static Shenora.Core.WebViewResourceResponse RangeNotSatisfiable(long totalLength)
   public string ReasonPhrase { get; init; }
+interface Shenora.Media.ISegmentEngine
+  public abstract Shenora.Media.ISegmentRun? Start(Shenora.Media.SegmentRunRequest request)
+  public abstract System.TimeSpan? DurationOf(string source)
+  public abstract bool HasPicture(string source)
+  public abstract bool HasRenderedPicture(string segment)
+  public abstract bool IsAvailable { get; }
+  public abstract string Describe()
+interface Shenora.Media.ISegmentRun : System.IDisposable
+  public abstract bool HasExited { get; }
+static class Shenora.Media.MatroskaProbe
+  public static Shenora.Media.MediaProbeResult? Read(System.IO.Stream stream, string container = ".mkv")
+  public static Shenora.Media.MediaProbeResult? Read(string path)
+static class Shenora.Media.MediaConversionEvents
+  public const string Failed = "FAILED"
+  public const string Ready = "READY"
+  public const string SourceProgress = "SOURCE_PROGRESS"
+static class Shenora.Media.MediaConversionExtensions
+  public static System.IDisposable UseMediaConversion(Shenora.Core.IWebViewInterceptor interceptor, Shenora.Core.IMissionScheduler scheduler, Shenora.Core.IEventBus events, Shenora.Media.MediaConversionOptions options)
+sealed class Shenora.Media.MediaConversionOptions
+  public System.Action<string>? Log { get; init; }
+  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, bool>? AllowRemoteSource { get; init; }
+  public System.Func<string, string>? ContentType { get; init; }
+  public required System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> Convert { get; init; }
+  public required System.Func<System.Uri, string> Resolve { get; init; }
+  public required string CacheRoot { get; init; }
+  public string CacheExtension { get; init; }
+  public string Module { get; init; }
+sealed class Shenora.Media.MediaConversionRequest : System.IEquatable<Shenora.Media.MediaConversionRequest>
+  public .ctor(string SourcePath, string DestinationPath, System.IProgress<double> Progress)
+  public Shenora.Media.MediaConversionRequest <Clone>$()
+  public System.IProgress<double> Progress { get; init; }
+  public bool Equals(Shenora.Media.MediaConversionRequest? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaConversionRequest? left, Shenora.Media.MediaConversionRequest? right)
+  public static bool op_Inequality(Shenora.Media.MediaConversionRequest? left, Shenora.Media.MediaConversionRequest? right)
+  public string DestinationPath { get; init; }
+  public string SourcePath { get; init; }
+  public void Deconstruct(out string SourcePath, out string DestinationPath, out System.IProgress<double> Progress)
+enum Shenora.Media.MediaPlaybackAction (int)
+  public const Shenora.Media.MediaPlaybackAction Direct = 0
+  public const Shenora.Media.MediaPlaybackAction Remux = 1
+  public const Shenora.Media.MediaPlaybackAction Transcode = 2
+  public const Shenora.Media.MediaPlaybackAction Unsupported = 3
+  public int value__
+sealed class Shenora.Media.MediaPlaybackPlan : System.IEquatable<Shenora.Media.MediaPlaybackPlan>
+  public .ctor(Shenora.Media.MediaPlaybackAction Action, System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamPlan> Streams, bool ContainerOpens, string Reason)
+  public Shenora.Media.MediaPlaybackAction Action { get; init; }
+  public Shenora.Media.MediaPlaybackPlan <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamPlan> Streams { get; init; }
+  public bool ContainerOpens { get; init; }
+  public bool Equals(Shenora.Media.MediaPlaybackPlan? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaPlaybackPlan? left, Shenora.Media.MediaPlaybackPlan? right)
+  public static bool op_Inequality(Shenora.Media.MediaPlaybackPlan? left, Shenora.Media.MediaPlaybackPlan? right)
+  public string Reason { get; init; }
+  public void Deconstruct(out Shenora.Media.MediaPlaybackAction Action, out System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamPlan> Streams, out bool ContainerOpens, out string Reason)
+static class Shenora.Media.MediaPlaybackPlanner
+  public static Shenora.Media.MediaPlaybackPlan Plan(Shenora.Media.MediaProbeResult probe, Shenora.Media.MediaPlaybackPolicy policy)
+sealed class Shenora.Media.MediaPlaybackPolicy : System.IEquatable<Shenora.Media.MediaPlaybackPolicy>
+  public .ctor()
+  public Shenora.Media.MediaPlaybackPolicy <Clone>$()
+  public System.Collections.Generic.IReadOnlySet<string> AudioCodecs { get; init; }
+  public System.Collections.Generic.IReadOnlySet<string> Containers { get; init; }
+  public System.Collections.Generic.IReadOnlySet<string> VideoCodecs { get; init; }
+  public bool CanEncodeAudio { get; init; }
+  public bool CanEncodeVideo { get; init; }
+  public bool Equals(Shenora.Media.MediaPlaybackPolicy? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
+  public static bool op_Inequality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
+sealed class Shenora.Media.MediaProbeResult : System.IEquatable<Shenora.Media.MediaProbeResult>
+  public .ctor()
+  public Shenora.Media.MediaProbeResult <Clone>$()
+  public System.Collections.Generic.IReadOnlyList<Shenora.Media.MediaStreamInfo> Streams { get; init; }
+  public System.TimeSpan? Duration { get; init; }
+  public bool Equals(Shenora.Media.MediaProbeResult? other)
+  public int? Height { get; init; }
+  public int? Width { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
+  public static bool op_Inequality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
+  public string? Container { get; init; }
+sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.MediaStreamInfo>
+  public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null)
+  public Shenora.Media.MediaStreamInfo <Clone>$()
+  public Shenora.Media.MediaStreamKind Kind { get; init; }
+  public bool Equals(Shenora.Media.MediaStreamInfo? other)
+  public int? Channels { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaStreamInfo? left, Shenora.Media.MediaStreamInfo? right)
+  public static bool op_Inequality(Shenora.Media.MediaStreamInfo? left, Shenora.Media.MediaStreamInfo? right)
+  public string? Codec { get; init; }
+  public string? Profile { get; init; }
+  public void Deconstruct(out Shenora.Media.MediaStreamKind Kind, out string? Codec, out string? Profile, out int? Channels)
+enum Shenora.Media.MediaStreamKind (int)
+  public const Shenora.Media.MediaStreamKind Audio = 2
+  public const Shenora.Media.MediaStreamKind Subtitle = 3
+  public const Shenora.Media.MediaStreamKind Unknown = 0
+  public const Shenora.Media.MediaStreamKind Video = 1
+  public int value__
+sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.MediaStreamPlan>
+  public .ctor(Shenora.Media.MediaStreamInfo Stream, bool DecodesNatively, bool NeedsReEncode)
+  public Shenora.Media.MediaStreamInfo Stream { get; init; }
+  public Shenora.Media.MediaStreamPlan <Clone>$()
+  public bool DecodesNatively { get; init; }
+  public bool Equals(Shenora.Media.MediaStreamPlan? other)
+  public bool NeedsReEncode { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
+  public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
+  public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)
+static class Shenora.Media.Mp4Remuxer
+  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination)
+  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath)
+enum Shenora.Media.Mp4RemuxerOutcome (int)
+  public const Shenora.Media.Mp4RemuxerOutcome DestinationUnwritable = 5
+  public const Shenora.Media.Mp4RemuxerOutcome MissingDecoderConfig = 3
+  public const Shenora.Media.Mp4RemuxerOutcome NoCarriableStream = 2
+  public const Shenora.Media.Mp4RemuxerOutcome NotMatroska = 1
+  public const Shenora.Media.Mp4RemuxerOutcome SourceUnreadable = 4
+  public const Shenora.Media.Mp4RemuxerOutcome Succeeded = 0
+  public int value__
+sealed class Shenora.Media.Mp4RemuxerResult : System.IEquatable<Shenora.Media.Mp4RemuxerResult>
+  public .ctor(Shenora.Media.Mp4RemuxerOutcome Outcome, string Reason, int VideoSamples = 0, int AudioSamples = 0, System.TimeSpan Duration = default)
+  public Shenora.Media.Mp4RemuxerOutcome Outcome { get; init; }
+  public Shenora.Media.Mp4RemuxerResult <Clone>$()
+  public System.TimeSpan Duration { get; init; }
+  public bool Equals(Shenora.Media.Mp4RemuxerResult? other)
+  public bool Succeeded { get; }
+  public int AudioSamples { get; init; }
+  public int VideoSamples { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.Mp4RemuxerResult? left, Shenora.Media.Mp4RemuxerResult? right)
+  public static bool op_Inequality(Shenora.Media.Mp4RemuxerResult? left, Shenora.Media.Mp4RemuxerResult? right)
+  public string Reason { get; init; }
+  public void Deconstruct(out Shenora.Media.Mp4RemuxerOutcome Outcome, out string Reason, out int VideoSamples, out int AudioSamples, out System.TimeSpan Duration)
+sealed class Shenora.Media.SegmentRunRequest : System.IEquatable<Shenora.Media.SegmentRunRequest>
+  public .ctor(string SourcePath, string Directory, bool HasPicture, int FirstSegment, double SegmentSeconds, int Attempt)
+  public Shenora.Media.SegmentRunRequest <Clone>$()
+  public bool Equals(Shenora.Media.SegmentRunRequest? other)
+  public bool HasPicture { get; init; }
+  public double SegmentSeconds { get; init; }
+  public int Attempt { get; init; }
+  public int FirstSegment { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.SegmentRunRequest? left, Shenora.Media.SegmentRunRequest? right)
+  public static bool op_Inequality(Shenora.Media.SegmentRunRequest? left, Shenora.Media.SegmentRunRequest? right)
+  public string Directory { get; init; }
+  public string SourcePath { get; init; }
+  public void Deconstruct(out string SourcePath, out string Directory, out bool HasPicture, out int FirstSegment, out double SegmentSeconds, out int Attempt)
+static class Shenora.Media.SegmentStreamExtensions
+  public static System.IDisposable UseSegmentStream(Shenora.Core.IWebViewInterceptor interceptor, Shenora.Media.ISegmentEngine engine, Shenora.Media.SegmentStreamOptions options, System.Action<string>? log = null)
+sealed class Shenora.Media.SegmentStreamOptions
+  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, string> Resolve { get; init; }
+  public System.TimeSpan PictureGrace { get; init; }
+  public System.TimeSpan WaitBudget { get; init; }
+  public double SegmentSeconds { get; init; }
+  public int Lookahead { get; init; }
+  public long CacheCapBytes { get; init; }
+  public required string CacheRoot { get; init; }
+  public string ManifestName { get; init; }
+  public string RoutePath { get; init; }

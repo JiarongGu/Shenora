@@ -62,7 +62,8 @@ Shenora.slnx
 ├── src/
 │   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
 │   ├── Shenora.Ipc         net10.0          — deps: Shenora.Core
-│   ├── Shenora.Media       net10.0          — deps: Shenora.Core
+│   │                                        ── Media/ (namespace Shenora.Media; a PACKAGE until D53,
+│   │                                          2026-08-07, now shell work inside Core)
 │   │                                          The TRANSLATION LAYER for the web (D52): the minimum
 │   │                                          transformation that makes a file the user already has
 │   │                                          playable in a webview, and never more. Not a media
@@ -88,17 +89,17 @@ Shenora.slnx
 │   │                                          ⚠ It still implements NO interception. Serving bytes to a
 │   │                                          page configures a WEBVIEW and is a shell capability, so
 │   │                                          IWebViewInterceptor lives in Core and each shell
-│   │                                          implements it (D45); Serve/ COMPOSES on that contract and
-│   │                                          there are no Media.Android/.iOS packages. <video>/<audio>/
-│   │                                          <img> over ordinary local files still need no media
-│   │                                          package at all — this one is what an app adds when the
-│   │                                          platform cannot decode what it was handed.
-│   │                                          Its own package because a demuxer is real shipped bytes
-│   │                                          and EVERYTHING references Core, so an app that never
-│   │                                          touches media must not pay for one (D40). net10.0, so app
-│   │                                          logic compiles against it on any shell — enforced by the
-│   │                                          Sample.Logic tripwire (D41). Ships no codec LIST: the
-│   │                                          mechanism is the kit's, the policy the app's (D42).
+│   │                                          implements it (D45); Serve/ COMPOSES on that contract.
+│   │                                          <video>/<audio>/<img> over ordinary local files need none
+│   │                                          of this — it is what answers a file the platform CANNOT
+│   │                                          decode.
+│   │                                          ⚠ In Core because that is where the thing it is "the same
+│   │                                          category as" already lives (D53): serving a local file.
+│   │                                          It was its own package until 2026-08-07, on a premise D51
+│   │                                          made permanently false — that a demuxer means real shipped
+│   │                                          BYTES. No engine byte ever ships, so what remained was
+│   │                                          98 KB of the kit's own managed IL. Ships no codec LIST:
+│   │                                          the mechanism is the kit's, the policy the app's (D42).
 │   ├── Shenora.IO          net10.0          — deps: Shenora.Core
 │   │                                          The file-operation ENGINE: the journalled update queue,
 │   │                                          cross-process path leases, the manifest/diff pair and the
@@ -371,7 +372,8 @@ changes, noting them in `CHANGELOG.md`).
   adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
   cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
   work observes the one handed to `SubmitAsync`.
-- **`Shenora.Media` — the translation layer for the web (D52), read as a PIPELINE.** The folders are the
+- **`Shenora.Core`'s media layer — the translation layer for the web (`Shenora.Media` namespace, D52/D53),
+  read as a PIPELINE.** The folders are the
   stages, and the surface is grouped the same way. The scope test the whole package answers to: *would a
   normal file the user already has fail to play, and is this the least we can do about it?*
   **`Probe/` — what is inside the file.** `MatroskaProbe.Read(path)` / `Read(stream, container)` walks an

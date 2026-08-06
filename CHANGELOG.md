@@ -14,6 +14,30 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Breaking
+
+- 🔴 **`Shenora.Media` is no longer a package. Its whole surface moved into `Shenora.Core`, and the
+  NAMESPACE is unchanged.**
+
+  **Migration: delete the `PackageReference` and change nothing else.** Every type keeps its
+  `Shenora.Media` namespace, so no `using`, no type name and no call site changes.
+
+  ```diff
+  - <PackageReference Include="Shenora.Media" Version="…" />
+    <PackageReference Include="Shenora.Core" Version="…" />
+  ```
+
+  Proof it was a pure move rather than a rewrite: the API baselines went `Shenora.Media.txt` **−180 lines
+  (retired)** and `Shenora.Core.txt` **+180, −0**.
+
+  **Why (D53).** The package existed because media was going to be *"real shipped bytes"* — a demuxer or a
+  codec. **D51 then guaranteed the kit ships no engine byte, ever**, so that premise can never come true;
+  what remained was 98 KB of the kit's own managed IL beside Core's 125 KB, on platforms that trim what an
+  app does not call. And D52 had already framed media repair as *"shell work — the same category as serving
+  a local file"*, which has always lived in Core. ⚠ The size argument is the weak one: the line that decides
+  is **is this shell work, or is it something only SOME apps do?** Every app that hosts a page can be handed
+  a file it cannot play; not every app rewrites a directory tree — which is why `Shenora.IO` stays split.
+
 ### Fixed
 
 - 🔴 **`Shenora.iOS`: the Live Activity shim was written to the wrong place and built once per APP instead of

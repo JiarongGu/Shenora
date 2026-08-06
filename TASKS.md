@@ -84,15 +84,10 @@ backlog is `docs/archive/tasks.md`.
 
 ## Open
 
-> **The 2026-08-03 work order (E1 → C → D) is fully DISCHARGED.** All of media closed on 2026-08-05 with
-> `DM3` and `DM4`; the record is `docs/archive/tasks.md`. Kept only for the reading warning below, which
-> still steers.
->
-> ⚠ **Read `D44` AND `D45` before designing anything in media.** D44 carries the three rules the device
-> runs produced and contradicts two things the design doc asserts; D45 moves interception out of media
-> entirely, which the design doc (`docs/2026-08-03-shenora-media-design.md`) predates and does not reflect.
-> Read that doc's "THE DESIGN, in one place" section before its trail — the trail contains intermediate
-> positions that were later corrected.
+> ⚠ **Designing anything in media? Read `D52` (the scope), `D51` (no engine byte ever ships), `D53` (why
+> it lives in `Shenora.Core`), then `D44` + `D45`.** That is the whole reading list; the 2026-08-03 design
+> doc was RETIRED on 2026-08-07 once the pipeline was built, because it described a package family
+> (`Shenora.Media.{Platform}`) that never existed and a placement that D53 reversed. Git history has it.
 
 ### Device deployment must be the KIT's, not borrowed from an app (2026-08-06)
 

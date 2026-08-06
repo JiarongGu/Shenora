@@ -69,7 +69,6 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
 
                     Shenora.Core
                       ↑
-                      ├──── Shenora.Media               net10.0   optional, media LOGIC only
                       └──── Shenora.IO                  net10.0   optional, file-operation engine
                                   ↑
                             Shenora.IO.Compression      net10.0   optional, safe archive extraction

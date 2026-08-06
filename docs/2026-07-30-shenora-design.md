@@ -34,9 +34,9 @@ Goals (initial releases):
 - Extraction-first: prefer lifting proven sibling code (with its hard-won comments) over new
   abstractions. The framework's opinions are the family's measured lessons.
 - Ship as `Shenora.Core`, `Shenora.Ipc`, `Shenora.WebView2`, `Shenora.WinForms` (NuGet) and
-  `@shenora/react` (npm), versioned in lockstep. *(The original set. The two Windows ids were merged
-  into `Shenora.Windows` by D37, and three optional feature packages were added since — `Shenora.Media`
-  (D40) and `Shenora.IO`/`Shenora.IO.Compression` (D48). Lockstep versioning is unchanged.)*
+  `@shenora/react` (npm), versioned in lockstep. *(The original set. **The current one lives in
+  `docs/DECISIONS.md`'s header table, once** — reconstructing it from a chain of entries is exactly how
+  three of them ended up stating a set that no longer existed. Lockstep versioning is unchanged.)*
 
 Non-goals (per the brief, unchanged): domain entities, business workflows, AI/LLM orchestration,
 app screens/branding, plugin marketplaces, contract codegen, cross-platform shells, alternative

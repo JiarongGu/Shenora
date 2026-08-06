@@ -37,7 +37,6 @@ export default {
     // artifacts, not anything built on this machine, so `pack` skips it unless they are staged. See
     // artifactPackableProjects below.
     'src/Shenora.Launcher',
-    'src/Shenora.Media',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
     // as the definition of "shipped", so a project claiming it while the tooling skips it is the two

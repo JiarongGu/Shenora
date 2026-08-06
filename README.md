@@ -34,9 +34,8 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
-| `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
+| `Shenora.Core` | NuGet | `net10.0` | The application host, the platform-neutral contracts your logic compiles against, and the media translation layer (`Shenora.Media` namespace — probe, plan, serve, remux). |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.Media` | NuGet | `net10.0` | The translation layer for a file the webview cannot decode: probe it without an external tool, plan the minimum move per stream, serve the result as a converted file or an HLS stream. Ships no codec list — and **is not needed to play a file** (see below). |
 | `Shenora.IO` | NuGet | `net10.0` | Mutating a file tree without corrupting it: a journalled update queue with rollback, cross-process path locks, and a staged self-updater with per-file verification. |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.IO.Compression` | NuGet | `net10.0` | Getting files into and out of an archive SAFELY: extraction that refuses any entry escaping its destination, bounded size and count, and a ZIP-backed update source. No native engine — zip works on the framework alone. |
@@ -70,19 +69,23 @@ Dependencies — the graph is a **diamond, not a chain**:
 
         Shenora.Core
               ↑
-              ├──── Shenora.Media                       net10.0    optional, media LOGIC only
               └──── Shenora.IO                          net10.0    optional, the file-operation engine
                           ↑
                     Shenora.IO.Compression              net10.0    optional, safe archive extraction
 ```
 
-**The optional feature packages hang off `Shenora.Core`, they do not sit under it.** Media logic and
-file-operation machinery are things *some* apps do; a phone app that hosts a page and plays a file needs
-neither, and it used to carry the whole update engine anyway because that engine lived in `Shenora.Core`,
-which every package references. Reference the leaf you actually use (D48).
+**The optional feature packages hang off `Shenora.Core`, they do not sit under it.** Mutating a file tree
+safely is something only *some* apps do — a phone app that hosts a page and plays a file does not, and it
+used to carry the whole update engine anyway because that engine lived in `Shenora.Core`, which every
+package references. Reference the leaf you actually use (D48).
 
-**`<video>`, `<audio>` and `<img>` over local files need NO media package.** Serving bytes to a page is
-resource interception, and that is a SHELL capability (D45): `Shenora.Core` declares
+**The line is what a CONSUMER experiences, not size** (D53): *making the page host, serve and play what it
+was handed* is shell work and lives in `Shenora.Core`; *something only some apps do* earns its own package.
+That is why media is in Core and file operations are not — every app that hosts a page can be handed a file
+it cannot play; not every app rewrites a directory tree.
+
+**`<video>`, `<audio>` and `<img>` over local files need nothing beyond the shell.** Serving bytes to a
+page is resource interception, and that is a SHELL capability (D45): `Shenora.Core` declares
 `IWebViewInterceptor` plus a file middleware that does path containment, HTTP ranges and content types,
 and each shell implements the contract over its own webview — `WebViewHost.Interceptor` on Windows,
 `MobileWebViewInterceptor` on Android and iOS. One route, and the same three lines compile on all three:
@@ -92,8 +95,9 @@ host.Interceptor.UseFiles(new WebViewFileOptions { AllowedRoots = [libraryDir], 
 ```
 
 A file the platform cannot decode simply errors in the element, which is the honest outcome. **Deciding
-what to do about that** — probe it, remux it, transcode it — is what `Shenora.Media` adds, as a further
-middleware. That is why it is optional: an app that serves ordinary files never references it.
+what to do about that** — probe it, plan it, remux it — is the `Shenora.Media` namespace, also in
+`Shenora.Core`, composed on the same interceptor as a further middleware. An app that only ever serves
+ordinary files simply never calls it.
 
 ⚠ **One measured platform fact rides on the interceptor, not on media.** Android's webview applies the
 `Range` start to whatever body it is handed; WebView2's and iOS's send the body verbatim. So the same

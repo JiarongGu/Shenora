@@ -109,9 +109,17 @@ keeps the library reusable (adopted from the family's other library, where it's 
   packages that exist. Read it as it was meant: a `*.Abstractions` package for interfaces earns nothing
   (Core already holds them), but an optional FEATURE package earns its place when **(a)** it is
   something only SOME apps do and **(b)** it is real shipped weight sitting in a package everything
-  references. `Shenora.Media` (D40) and `Shenora.IO` + `Shenora.IO.Compression` (D48) each passed both;
+  references. `Shenora.IO` + `Shenora.IO.Compression` (D48) pass both;
   `Io/` was 34% of `Shenora.Core` and a phone app that hosts a page carried a self-updater. These hang
   OFF Core — they are not layers under it, and no shell reference brings them.
+  🔴 **(a) is the test that decides; (b) alone will mislead you (D53, 2026-08-07).** `Shenora.Media` was
+  its own package on a weight argument and was folded BACK into Core, because weight alone would equally
+  have justified splitting out anything of a similar size. The question that survives is the CONSUMER's:
+  **is this shell work — making the page host, serve and play what it was handed — or is it something only
+  some apps do?** Every app that hosts a page can be handed a file it cannot play, so media is Core; not
+  every app rewrites a directory tree, so `IO` is its own. ⚠ And check whether the *reason* still holds:
+  D40 justified the media package with "a demuxer is real shipped BYTES", and D51 later guaranteed no
+  engine byte would ever ship — the premise died and nobody noticed for two days.
 - **One shell package per PLATFORM, named for the platform (2026-08-02).** Not per framework, and not
   per sub-area. Windows merged three packages into one because the seam they preserved protected a
   consumer this kit cannot have; mobile SPLIT into two because Android and iOS ship, build and get
