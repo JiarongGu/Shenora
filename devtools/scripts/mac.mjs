@@ -13,6 +13,9 @@
 //   node devtools/dev.mjs mac safari-eval <js…>           run JS in the page and print the VALUE
 //   node devtools/dev.mjs mac mirror [port]  live view on the LAN; click to tap, scroll to swipe
 //   node devtools/dev.mjs mac log [-n N]     the sample's own log lines from the simulator
+//   node devtools/dev.mjs mac devices        iPhones connected to the Mac
+//   node devtools/dev.mjs mac device         build, SIGN, install and launch on a real iPhone
+//   node devtools/dev.mjs mac device-log     the app's log lines from the device
 //   node devtools/dev.mjs mac provision [<bundle-id>…]  mint provisioning profiles the kit owns (see below)
 //   node devtools/dev.mjs mac profiles       what profiles this Mac has, and when they expire
 //   node devtools/dev.mjs mac awake [on|off] stop the Mac sleeping/locking while it is a build machine
@@ -1188,6 +1191,158 @@ xcodebuild -project ShenoraProvision.xcodeproj -target ShenoraProvision \\
   if (failures.length > 0) console.log(`  (xcodebuild reported failures for ${failures.join(', ')}, but the profiles exist.)`);
 }
 
+// ---------------------------------------------------------------- device
+//
+// Build, install and launch on a REAL iPhone — the peer of `dev.mjs android`, and the half the kit was
+// missing entirely. Everything above this line is the SIMULATOR loop; a simulator cannot answer whether a
+// Dynamic Island renders, whether a hardware decoder exists, or whether the app signs.
+//
+// The split that makes it work, and it is not obvious:
+//   · BUILDING needs the login keychain, so it goes through `guiRun` (an ssh session is a different audit
+//     session and codesign dies with errSecInternalComponent — proven on a copy of /bin/echo).
+//   · INSTALLING and LAUNCHING need no keychain at all, so plain ssh + `xcrun devicectl` is enough.
+// Getting that backwards is what makes people reach for a GUI on the Mac.
+
+/** Connected devices, from devicectl's own JSON rather than its column layout. */
+function devices(cfg) {
+  const r = ssh(cfg, `f=$(mktemp) && xcrun devicectl list devices --json-output "$f" >/dev/null 2>&1 && cat "$f" && rm -f "$f"`);
+  if (r.status !== 0 || !(r.stdout ?? '').trim()) return [];
+  try {
+    const parsed = JSON.parse(r.stdout);
+    return (parsed?.result?.devices ?? []).map((d) => ({
+      id: d?.identifier,
+      name: d?.deviceProperties?.name ?? '(unnamed)',
+      model: d?.hardwareProperties?.marketingName ?? d?.hardwareProperties?.productType ?? '?',
+      os: d?.deviceProperties?.osVersionNumber ?? '?',
+      state: d?.connectionProperties?.pairingState ?? '?',
+      available: (d?.connectionProperties?.tunnelState ?? '') !== 'unavailable',
+    })).filter((d) => d.id);
+  } catch { return []; }
+}
+
+/**
+ * Pick the device to work with.
+ * ⚠ Refuses when several are connected rather than guessing. `dev.mjs android` already learned this the
+ * expensive way: with two targets attached an unqualified command silently picked the wrong one and a whole
+ * deploy/launch/log cycle was read as the other device's.
+ */
+function pickDevice(cfg, wanted) {
+  const found = devices(cfg).filter((d) => d.available);
+  if (found.length === 0) {
+    console.error('mac: no iPhone connected to the Mac.\n'
+      + '  Plug it in (or pair over Wi-Fi), unlock it, and trust the computer if asked.\n'
+      + '  Check with: node devtools/dev.mjs mac devices');
+    process.exit(1);
+  }
+  if (wanted) {
+    const match = found.find((d) => d.id === wanted || d.name === wanted);
+    if (!match) {
+      console.error(`mac: no connected device matches ${wanted}. Connected: ${found.map((d) => d.name).join(', ')}`);
+      process.exit(1);
+    }
+    return match;
+  }
+  if (found.length > 1) {
+    console.error(`mac: ${found.length} devices connected — name one with --device <name|id>:`);
+    for (const d of found) console.error(`  ${d.name}  (${d.model}, iOS ${d.os})  ${d.id}`);
+    process.exit(1);
+  }
+  return found[0];
+}
+
+/** The built .app, found rather than composed — the MAUI output layout has moved between SDK versions. */
+function findApp(cfg, rid) {
+  const sampleDir = cfg.project.replace(/\/[^/]+\.csproj$/, '');
+  const r = ssh(cfg, `find ~/${cfg.work}/${sampleDir}/bin/Debug/${cfg.tfm}/${rid} -maxdepth 2 -name '*.app' -type d 2>/dev/null | head -1`);
+  return (r.stdout ?? '').trim();
+}
+
+async function device(cfg, args) {
+  const wanted = args.includes('--device') ? args[args.indexOf('--device') + 1] : null;
+  const target = pickDevice(cfg, wanted);
+  console.log(`mac: target — ${target.name} (${target.model}, iOS ${target.os})`);
+
+  // A profile must exist BEFORE the build, or the failure arrives 90 seconds later wearing a signing
+  // error that reads like a certificate problem.
+  const profiles = installedProfiles(cfg);
+  const missing = [cfg.bundleId].filter((id) => !profiles.some((p) => p.bundleId === id));
+  if (missing.length > 0) {
+    console.error(`mac: no provisioning profile for ${missing.join(', ')}.\n`
+      + '  Run: node devtools/dev.mjs mac provision');
+    process.exit(1);
+  }
+  const expiring = profiles.filter((p) => p.bundleId.startsWith(cfg.bundleId) && Date.parse(p.expires) - Date.now() < 24 * 3600_000);
+  for (const p of expiring) console.log(`mac: ⚠ ${p.bundleId} expires ${p.expires} — re-run \`mac provision\` soon.`);
+
+  if (!args.includes('--no-push')) push(cfg);
+  fs.mkdirSync(OUT, { recursive: true });
+  buildClientPackage(cfg);
+
+  const rid = 'ios-arm64';
+  const skipXcode = cfg.skipXcodeVersionCheck ? ' -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly' : '';
+  if (skipXcode) {
+    console.log('mac: ⚠ skipXcodeVersionCheck is on, and on a DEVICE build that matters more than on a\n'
+      + '     simulator one: full trimming is off and the Xcode/workload pair is mismatched. Fine for a\n'
+      + '     dev loop and a measurement; NOT a shipping configuration.');
+  }
+
+  // 🔴 Through guiRun, because this is the step that SIGNS. An ssh session cannot use a login-keychain key.
+  console.log(`\nmac: dotnet build ${cfg.tfm} (${rid}), signing in the GUI session…`);
+  const build = await guiRun(cfg, `set -o pipefail
+cd ~/${cfg.work}
+dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode} \\
+  -p:CodesignProvision=Automatic -p:CodesignKey=${q('Apple Development')} 2>&1 | tail -60`,
+    { tag: 'device-build', timeoutMs: 30 * 60_000 });
+
+  fs.writeFileSync(path.join(OUT, 'device-build.log'), build.log);
+  if (build.status !== 0) {
+    console.error(build.log.split('\n').slice(-30).join('\n'));
+    console.error('\nmac: DEVICE BUILD FAILED — full output: devtools/_mac/device-build.log');
+    process.exit(build.status || 1);
+  }
+  console.log('mac: build + sign ok');
+
+  const app = findApp(cfg, rid);
+  if (!app) {
+    console.error(`mac: the build succeeded but no .app was found under bin/Debug/${cfg.tfm}/${rid}.`);
+    process.exit(1);
+  }
+  console.log(`mac: ${app.replace(/^.*\//, '')}`);
+
+  // Install and launch need NO keychain, so they go over plain ssh — much faster and easier to read.
+  console.log('\nmac: installing…');
+  const install = ssh(cfg, `xcrun devicectl device install app --device ${q(target.id)} ${q(app)} 2>&1 | tail -20`);
+  console.log((install.stdout ?? '').trim());
+  if (install.status !== 0) {
+    console.error('\nmac: INSTALL FAILED.');
+    console.error('  If it says the app could not be verified, the certificate is not TRUSTED on the phone yet:');
+    console.error('  Settings → General → VPN & Device Management → the developer account → Trust.');
+    process.exit(install.status ?? 1);
+  }
+
+  console.log('\nmac: launching…');
+  const launch = ssh(cfg, `xcrun devicectl device process launch --device ${q(target.id)} ${q(cfg.bundleId)} 2>&1 | tail -20`);
+  console.log((launch.stdout ?? '').trim());
+  if (launch.status !== 0) { console.error('\nmac: LAUNCH FAILED.'); process.exit(launch.status ?? 1); }
+
+  console.log('\nmac: running on the device. Logs: node devtools/dev.mjs mac device-log');
+}
+
+/**
+ * The app's own log lines, from the DEVICE.
+ * ⚠ Filtered at the source, not tailed and grepped here. `android.mjs` already records why: an unfiltered
+ * device log is a firehose that rotates the interesting lines out while you are reading them.
+ */
+function deviceLog(cfg, count, wanted) {
+  const target = pickDevice(cfg, wanted);
+  const r = ssh(cfg, `xcrun devicectl device console --device ${q(target.id)} 2>/dev/null | head -${Number(count) || 200}`,
+    { inherit: true });
+  if (r.status !== 0) {
+    console.log('mac: devicectl console is not available on this Xcode; use Console.app on the Mac,\n'
+      + '     or `mac ssh "log stream --device"` if the device is paired for logging.');
+  }
+}
+
 // ---------------------------------------------------------------- dispatch
 const [cmd, ...rest] = process.argv.slice(2);
 const cfg = cmd ? config() : null;
@@ -1214,6 +1369,19 @@ switch (cmd) {
     break;
   }
   case 'activity': activities(cfg); break;
+  case 'device': await device(cfg, rest); break;
+  case 'devices': {
+    const found = devices(cfg);
+    if (found.length === 0) console.log('mac: no devices connected.');
+    for (const d of found) console.log(`${d.name}  (${d.model}, iOS ${d.os})  ${d.state}  ${d.id}`);
+    break;
+  }
+  case 'device-log': {
+    const i = rest.indexOf('-n');
+    deviceLog(cfg, i >= 0 ? rest[i + 1] : 200,
+      rest.includes('--device') ? rest[rest.indexOf('--device') + 1] : null);
+    break;
+  }
   case 'provision': await provision(cfg, rest.filter((a) => !a.startsWith('-'))); break;
   case 'profiles': {
     const found = installedProfiles(cfg);
@@ -1225,6 +1393,6 @@ switch (cmd) {
   case 'ssh': ssh(cfg, rest.join(' '), { inherit: true, check: true }); break;
   default:
     console.log('usage: node devtools/dev.mjs mac <doctor|setup|push|build|run|shot|tap|type|swipe|'
-      + 'safari-eval|mirror|log|activity|provision|profiles|awake|ssh>');
+      + 'safari-eval|mirror|log|activity|devices|device|device-log|provision|profiles|awake|ssh>');
     process.exit(cmd ? 1 : 0);
 }

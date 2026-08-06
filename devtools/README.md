@@ -26,7 +26,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `responsiveness <fx> <fy> [--label n] [--duration\|--interval\|--timeout ms]` | click a control, then sample `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` sub-100ms to measure whether the UI thread keeps pumping — the probe behind the one-way-IPC UI-thread claim (see below) |
 | `android <devices\|connect\|deploy\|run\|log\|shot>` | the MAUI sample's device loop — see the section below |
-| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|swipe\|safari-eval\|mirror\|log\|provision\|profiles\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
+| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|swipe\|safari-eval\|mirror\|log\|devices\|device\|device-log\|provision\|profiles\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule. `check` covers SKILLS the same way — a `.claude/skills/*/SKILL.md` missing from `skill-loader`'s table is never picked, and that was guarded only by a sentence asking the next session to remember |
 | `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
 | `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
@@ -106,6 +106,9 @@ post-mortems — only the build step differs (that project builds an Xcode proje
 | `mac safari-eval <js…>` | run JavaScript in the page and print the VALUE. The difference between reading state and guessing at it |
 | `mac mirror [port]` | live view of the simulator on the LAN (default **7674**); click to tap, scroll to swipe |
 | `mac log [-n N] [--all]` | the sample's own lines from the simulator's unified log; `--all` for the whole process |
+| `mac devices` | iPhones connected to the Mac. Refuses to guess when several are — the same rule `android` learned expensively |
+| `mac device [--device <name\|id>] [--no-push]` | build, **SIGN**, install and launch on a real iPhone. The peer of `dev.mjs android` |
+| `mac device-log [-n N]` | the app's log lines from the device |
 | `mac provision [<bundle-id>…]` | mint provisioning profiles using an Xcode project **the kit owns** (`devtools/ios-provision/`). Defaults to the sample's app + its Live Activity extension |
 | `mac profiles` | what profiles this Mac has and when they expire — **checks BOTH locations** (see the trap below) |
 | `mac awake [on\|off]` | stop the Mac sleeping while it is a build machine |
