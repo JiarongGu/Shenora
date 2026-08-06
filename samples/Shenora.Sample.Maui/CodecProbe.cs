@@ -84,77 +84,109 @@ internal static class CodecProbe
         Verdict(log, "aac", decoders.Contains("audio/mp4a-latm"), encoders.Contains("audio/mp4a-latm"));
     }
 #elif IOS
-    // AudioToolbox answers both questions directly, which is why no AVFoundation session has to be built
-    // just to ask. The property ids are FourCCs: 'acdi' decode, 'acei' encode.
-    private const uint DecodeFormatIds = 0x61636469;
-    private const uint EncodeFormatIds = 0x61636569;
+    private const string AudioToolbox = "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox";
 
-    [DllImport("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox")]
-    private static extern int AudioFormatGetPropertyInfo(uint propertyId, uint specifierSize, IntPtr specifier, out uint dataSize);
+    // FourCCs. 'aac ' really does carry a trailing space — it is kAudioFormatMPEG4AAC.
+    private const uint FormatAc3 = 0x61632D33;      // 'ac-3'
+    private const uint FormatEac3 = 0x65632D33;     // 'ec-3'
+    private const uint FormatAac = 0x61616320;      // 'aac '
+    private const uint FormatPcm = 0x6C70636D;      // 'lpcm'
 
-    [DllImport("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox")]
-    private static extern int AudioFormatGetProperty(uint propertyId, uint specifierSize, IntPtr specifier, ref uint dataSize, [Out] uint[] data);
+    /// <summary>Signed integer + packed — the plain interleaved PCM every decoder can produce.</summary>
+    private const uint PcmFlags = 0x4 | 0x8;
 
-    /// <summary>
-    /// The format ids for a property, and the OSStatus if asking failed.
-    /// <para>
-    /// 🔴 <b>The status is REPORTED, not swallowed, and that is the whole lesson from the first device
-    /// run.</b> The first version returned an empty set on any error, so the device printed
-    /// <c>aac: decode=no</c> — obviously false, since iOS decodes AAC everywhere. Had the probe only asked
-    /// about AC-3, "no" would have looked exactly like a real answer and settled a design decision on a
-    /// broken measurement. Two habits saved it and both are worth keeping: ask about a codec you KNOW the
-    /// answer to as a control, and never let a failed query be indistinguishable from a negative result.
-    /// </para>
-    /// </summary>
-    private static (SortedSet<string> Ids, int Status) FormatIds(uint propertyId)
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StreamDescription
     {
-        var found = new SortedSet<string>(StringComparer.Ordinal);
-
-        var status = AudioFormatGetPropertyInfo(propertyId, 0, IntPtr.Zero, out var size);
-        if (status != 0) return (found, status);
-        if (size == 0) return (found, 0);
-
-        var values = new uint[size / sizeof(uint)];
-        status = AudioFormatGetProperty(propertyId, 0, IntPtr.Zero, ref size, values);
-        if (status != 0) return (found, status);
-
-        // The returned size may be smaller than the info call promised; trust the OUT value.
-        foreach (var value in values.Take((int)(size / sizeof(uint)))) found.Add(FourCc(value));
-        return (found, 0);
+        public double SampleRate;
+        public uint FormatId;
+        public uint FormatFlags;
+        public uint BytesPerPacket;
+        public uint FramesPerPacket;
+        public uint BytesPerFrame;
+        public uint ChannelsPerFrame;
+        public uint BitsPerChannel;
+        public uint Reserved;
     }
 
-    /// <summary>A FourCC is four ASCII bytes packed big-endian — 'ac-3' and friends.</summary>
-    private static string FourCc(uint value) => new(
-    [
-        (char)((value >> 24) & 0xFF), (char)((value >> 16) & 0xFF),
-        (char)((value >> 8) & 0xFF), (char)(value & 0xFF),
-    ]);
+    [DllImport(AudioToolbox)]
+    private static extern int AudioConverterNew(ref StreamDescription source, ref StreamDescription destination, out IntPtr converter);
+
+    [DllImport(AudioToolbox)]
+    private static extern int AudioConverterDispose(IntPtr converter);
+
+    private static StreamDescription Compressed(uint formatId, int channels) => new()
+    {
+        SampleRate = 48000,
+        FormatId = formatId,
+        ChannelsPerFrame = (uint)channels,
+        FramesPerPacket = formatId == FormatAac ? 1024u : 1536u,
+    };
+
+    private static StreamDescription Pcm(int channels) => new()
+    {
+        SampleRate = 48000,
+        FormatId = FormatPcm,
+        FormatFlags = PcmFlags,
+        ChannelsPerFrame = (uint)channels,
+        FramesPerPacket = 1,
+        BitsPerChannel = 16,
+        BytesPerFrame = (uint)(channels * 2),
+        BytesPerPacket = (uint)(channels * 2),
+    };
+
+    /// <summary>
+    /// Can this device build a converter between these two formats? Constructing one is the DIRECT test —
+    /// AudioToolbox only succeeds when a codec for the pair actually exists on the machine.
+    /// <para>
+    /// ⚠ <b>Why not the format-id list.</b> The obvious API is
+    /// <c>kAudioFormatProperty_DecodeFormatIDs</c>, and on the device it returns OSStatus <c>'prop'</c>
+    /// (<c>kAudioFormatUnsupportedPropertyError</c>) — measured on an iPhone 17 Pro, iOS 26.5.2. That
+    /// property is macOS-only. Asking the converter is both the portable question and the honest one,
+    /// because it is exactly what an engine would have to do anyway.
+    /// </para>
+    /// </summary>
+    private static (bool Ok, int Status) CanConvert(StreamDescription source, StreamDescription destination)
+    {
+        var status = AudioConverterNew(ref source, ref destination, out var converter);
+        if (status == 0 && converter != IntPtr.Zero) AudioConverterDispose(converter);
+        return (status == 0, status);
+    }
 
     private static void RunCore(Action<string> log)
     {
-        var (decoders, decodeStatus) = FormatIds(DecodeFormatIds);
-        var (encoders, encodeStatus) = FormatIds(EncodeFormatIds);
-
         // MAUI's own device API rather than ObjCRuntime.Runtime.Arch — it reads the same on both platforms
         // and does not depend on a binding that has moved between iOS workload bands.
         var virtualDevice = DeviceInfo.Current.DeviceType == DeviceType.Virtual;
         log($"[CODEC] platform=iOS {UIKit.UIDevice.CurrentDevice.SystemVersion} "
             + $"model={DeviceInfo.Current.Model} sim={(virtualDevice ? "yes" : "no")}");
-        log($"[CODEC] decode({decoders.Count}, status={decodeStatus}): {string.Join(' ', decoders)}");
-        log($"[CODEC] encode({encoders.Count}, status={encodeStatus}): {string.Join(' ', encoders)}");
 
-        // An empty list is NOT an answer — it means the query failed and every verdict below is worthless.
-        if (decoders.Count == 0)
+        // 🔴 AAC is asked FIRST and is a CONTROL, not a result. iOS decodes AAC everywhere, so a "no" here
+        // means the probe is broken and every other line is worthless. The first version of this file had
+        // no control and reported `aac: decode=no` from an iPhone — which is how a broken measurement gets
+        // mistaken for a finding.
+        var (aacDecode, _) = CanConvert(Compressed(FormatAac, 2), Pcm(2));
+        var (aacEncode, _) = CanConvert(Pcm(2), Compressed(FormatAac, 2));
+        Verdict(log, "aac", aacDecode, aacEncode);
+        if (!aacDecode)
         {
-            log("[CODEC] ⚠ INCONCLUSIVE — AudioToolbox returned no decode formats at all, which cannot be "
-                + "true on iOS. Treat the verdicts below as unmeasured, not as negatives.");
+            log("[CODEC] ⚠ INCONCLUSIVE — the AAC control FAILED, which cannot be true on iOS. "
+                + "Treat every line here as unmeasured, not as a negative.");
+            return;
         }
 
-        // 'ac-3' is AC-3; 'ec-3' is Enhanced AC-3. 'cac3' is AC-3 carried over S/PDIF, which is a TRANSPORT
-        // and not a decoder — counting it would report a decode capability that does not exist.
-        Verdict(log, "ac3", decoders.Contains("ac-3"), encoders.Contains("ac-3"));
-        Verdict(log, "eac3", decoders.Contains("ec-3"), encoders.Contains("ec-3"));
-        Verdict(log, "aac", decoders.Contains("aac "), encoders.Contains("aac "));
+        // AC-3 is 5.1 in practice, and channel count is part of what a codec is asked to support — so it is
+        // asked for six, which is the case that actually turns up inside an .mkv.
+        var (ac3Decode, ac3Status) = CanConvert(Compressed(FormatAc3, 6), Pcm(6));
+        var (eac3Decode, eac3Status) = CanConvert(Compressed(FormatEac3, 6), Pcm(6));
+        Verdict(log, "ac3", ac3Decode, CanConvert(Pcm(6), Compressed(FormatAc3, 6)).Ok);
+        Verdict(log, "eac3", eac3Decode, CanConvert(Pcm(6), Compressed(FormatEac3, 6)).Ok);
+        log($"[CODEC] status ac3={ac3Status} eac3={eac3Status} (0 = a converter was built)");
+
+        // Stereo too: a device may carry a downmixing decoder and refuse 5.1, which would change the answer
+        // from "no decoder" to "no 5.1 decoder" — a completely different design conclusion.
+        var (ac3Stereo, _) = CanConvert(Compressed(FormatAc3, 2), Pcm(2));
+        log($"[CODEC] ac3 stereo: decode={(ac3Stereo ? "YES" : "no")}");
     }
 #else
     private static void RunCore(Action<string> log)
