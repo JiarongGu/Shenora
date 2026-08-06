@@ -385,6 +385,20 @@ vid.addEventListener('error', () => {
 // failure mode iOS's two-byte `bytes=0-1` probe walks into when Content-Range does not come back.
 document.getElementById('mfast').onclick  = () => loadClip('clip-faststart.mp4');
 document.getElementById('mtail').onclick  = () => loadClip('clip-tailmoov.mp4');
+
+// Give the element a SOURCE at startup, without playing it.
+//
+// The element renders `controls`, so it shows a play button from the moment the page loads — and with no
+// src that button does nothing at all. Tapping it is the first thing anyone tries, and "the sample's video
+// does not play" is exactly what a dead native control looks like, even though every button beside it
+// works. Measured on a device: the ▶ buttons decoded and played fine the whole time.
+//
+// preload stays 'none', so this costs no bytes until something actually asks for them — it only means the
+// native control has a source to start.
+if (mediaUrl) {
+  vid.src = clipUrl('clip-faststart.mp4');
+  log('t', 'video preloaded with clip-faststart.mp4 — the native ▶ works, or use the buttons above');
+}
 document.getElementById('mseek').onclick  = () => {
   log('out', `seeking to 48s (from ${vid.currentTime.toFixed(2)}s, duration=${vid.duration})`);
   vid.currentTime = 48;
