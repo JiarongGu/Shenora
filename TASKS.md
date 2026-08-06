@@ -325,6 +325,31 @@ writes `interceptor.UseFiles(...)` and no platform code at all).
 **`IPlaybackSession` shipped and is verified on all three shells** (0.9.0/0.9.1). Records in
 `docs/archive/tasks.md`; recipes in `docs/ADOPTION.md`; mechanics in `.claude/knowledge/mobile-shells.md`.
 
+### 🔴 iOS: webview media CANNOT play in the background — the kit has no native playback seam (2026-08-07)
+
+**Measured on an iPhone 17 Pro, and it is a platform limit rather than a defect.** Since iOS 13, WKWebView
+media stops the moment the app is backgrounded, **even with `UIBackgroundModes: [audio]` and an active
+`AVAudioSession(.Playback)`** (both now set in the sample, and both still required). The entitlements that
+would permit it — `com.apple.multitasking.systemappassertions`, `…unlimitedassertions` — need an
+Apple-issued profile and cannot be obtained. Confirmed against WebKit's tracker and Apple's forums.
+
+⚠ **The symptom is indistinguishable from simply forgetting the two settings** — plays in the foreground,
+dies on the swipe — which is exactly why this cost a device round-trip to pin down.
+
+- [ ] **DECIDE whether the kit ships a NATIVE playback seam for iOS.** The consequence of the limit is
+  concrete: a React+C# app that wants backgrounded playback cannot put the audio in a `<video>`/`<audio>`
+  element at all — it needs `AVPlayer`/`AVAudioPlayer` driven by the app, with the page as UI only.
+  `IPlaybackSession` is already the right surface for that shape (it publishes Now Playing and receives the
+  transport commands back), so what is missing is the PLAYER, not the presentation.
+  - **This is squarely D52's own scope test** — *does a React+C# app fail without it?* For a media app on
+    iOS the answer is yes, and it fails in the way users notice most.
+  - ⚠ But it is also a big surface: a player means formats, buffering, seeking, interruption handling and
+    route changes. The narrow version worth costing first is a seam the app implements (like
+    `ISegmentEngine`), not a player the kit owns.
+  - Android does NOT share the limit (foreground service + audio focus keeps webview media alive), so this
+    would be one of the few genuinely per-platform capabilities. Say so honestly rather than pretending
+    parity.
+
 ### 🔴 THE iOS LIVE ACTIVITY DEVKIT DOES NOT WORK ON A DEVICE (2026-08-07) — decision needed
 
 **The widget never renders on real hardware, and the cause is structural rather than a bug to patch.**

@@ -162,6 +162,24 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   probably not use a Live Activity for playback at all: it duplicates a presentation the system already
   gives media apps, which is the sort of duplication App Review pushes back on.
 
+- 🔴 **iOS: media playing INSIDE the webview cannot continue in the BACKGROUND, and no amount of
+  configuration changes that.** Measured on an iPhone 17 Pro (2026-08-07) and confirmed against WebKit's own
+  bug tracker and Apple's forums: since iOS 13, WKWebView media stops when the app leaves the foreground
+  **even with `UIBackgroundModes: [audio]` and an active `AVAudioSession(.Playback)`**. The entitlements
+  that would allow it — `com.apple.multitasking.systemappassertions` and
+  `…unlimitedassertions` — need an Apple-issued profile and are not obtainable.
+  - **Both settings are still REQUIRED, just not sufficient**, and they are a pair: without the Info.plist
+    key iOS suspends the process; without the active session the system does not believe the app is playing.
+    The symptom of missing either is identical to the symptom of this platform limit — plays in the
+    foreground, dies on the swipe — which is what makes it so expensive to diagnose.
+  - 🔴 **The architectural consequence for a React+C# app, and it is load-bearing:** if backgrounded
+    playback matters, the audio cannot be a `<video>`/`<audio>` element. It has to be a NATIVE player
+    (`AVPlayer`/`AVAudioPlayer`) driven by the app, with the page as UI only. `IPlaybackSession` is already
+    the right surface for that shape — it publishes to Now Playing and receives the transport commands back
+    — but **the kit ships no native playback seam**, so today an adopting app writes that itself.
+  - ⚠ Android does not share this limit (a foreground service + audio focus keeps webview media alive), so
+    this is one of the few places where the two mobile shells genuinely cannot offer the same capability.
+
 ## Gotchas / traps
 
 - **A device-log command must FILTER BEFORE IT TAILS.** Written down for Android (`logcat -t N`
