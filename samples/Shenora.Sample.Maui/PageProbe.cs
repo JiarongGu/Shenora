@@ -274,7 +274,13 @@ internal static class PageProbe
 				b.click();
 				setTimeout(function () {
 					var el = document.getElementById('log');
-					var tail = el ? (el.innerText || '').slice(-700).replace(/\s+/g, ' ') : '(no log element)';
+					// ⚠ NO REGEX AND NO BACKSLASH. iOS eats backslashes on the way into evaluateJavaScript,
+					// so `/\s+/g` arrives as `/s+/g` — and here it did not even get that far: the whole
+					// evaluation failed and the probe reported "could not evaluate". `mobile-shells.md`
+					// records this trap; it caught this file anyway. Split on the characters directly.
+					var raw = el ? (el.innerText || '') : '(no log element)';
+					var tail = raw.slice(-700).split(String.fromCharCode(10)).join(' ')
+						.split(String.fromCharCode(9)).join(' ');
 					window.{{Slot}} = 'src=' + (v.currentSrc ? 'set' : 'EMPTY')
 						+ '|err=' + (v.error ? v.error.code : '-')
 						+ '|size=' + v.videoWidth + 'x' + v.videoHeight
