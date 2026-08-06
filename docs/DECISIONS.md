@@ -1655,3 +1655,18 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     class this decision exists to stop. Guard BOTH flags in any build script, as the source app's already does.
     **None of the three changes the kit's answer:** LGPL and GPL are both non-MIT, so none may ship from
     Shenora. Which one an APP builds is the app's call, and the sane one is the default LGPL build.
+  - **AMENDED 2026-08-06 — the operational test is DISTRIBUTION, not "is it in the code base".** Asked:
+    *"if the ffmpeg is not in the code base then everything is okay?"* Right conclusion for the kit, but the
+    test has to be applied to what is PUBLISHED, because the obligation attaches to conveying bytes. Three
+    ways it leaks without ever being in the repo, and all three are worth checking before a release:
+    a NuGet package that **fetches and embeds** it during build or install (repo clean, artifact not); a
+    **sample or test fixture** that vendors a binary for convenience; **release assets** attached to a tag.
+    Keep those clear and the kit owes nothing and its `MIT` expression is honest.
+  - **What is entirely free, so this does not get over-applied:** calling ffmpeg as a separate PROCESS,
+    defining an interface an app implements with it, documenting the wiring, and staging an app-supplied
+    archive through `ResourcePack`. None of that is distribution, and there is no copyleft-by-association —
+    an interface written specifically for an LGPL implementation is fine when no implementation ships.
+  - ⚠ **And it changes nothing for the APP.** An app shipping ffmpeg inside its own binary still owes
+    attribution, licence text and the relink provision. "Not in the kit" makes the KIT clean and does
+    nothing for the consumer — the only case where the app owes nothing too is when it ships no ffmpeg
+    either (the user installs it, or the platform already has it).
