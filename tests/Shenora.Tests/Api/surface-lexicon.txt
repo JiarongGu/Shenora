@@ -372,6 +372,15 @@ Conversion
 Segment
 Run
 Engine
+# `Matroska` (2026-08-06) — the CONTAINER FORMAT, in MatroskaProbe. Admitted on exactly the terms `Zip` was,
+# and the parallel is close enough to be worth stating: it is a published format name rather than a product
+# concept, the type reads its header and does nothing else, and naming the format is the SMALLER commitment.
+# `MediaContainerProbe` would over-claim — it reads Matroska and not MP4 — and the Archives lesson above is
+# that a name which has to be explained by its contents is the wrong name.
+# ⚠ The watch here is scope, not vocabulary: this may only ever READ a header. A `MatroskaWriter`,
+# `MatroskaMuxer` or anything that produces one is a different argument (it is the translation layer's
+# output side) and must be made on its own, not waved past because the format is already named.
+Matroska
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher

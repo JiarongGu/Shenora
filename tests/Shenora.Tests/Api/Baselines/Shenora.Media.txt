@@ -7,6 +7,9 @@ interface Shenora.Media.ISegmentEngine
   public abstract string Describe()
 interface Shenora.Media.ISegmentRun : System.IDisposable
   public abstract bool HasExited { get; }
+static class Shenora.Media.MatroskaProbe
+  public static Shenora.Media.MediaProbeResult? Read(System.IO.Stream stream, string container = ".mkv")
+  public static Shenora.Media.MediaProbeResult? Read(string path)
 static class Shenora.Media.MediaConversionEvents
   public const string Failed = "FAILED"
   public const string Ready = "READY"
