@@ -68,6 +68,10 @@ at the first list and missed five more breaking changes.
   **The kit owns the mechanism; the app owns the bytes.** Where a version lives, whether it is complete,
   how a path resolves inside it and when the old one is collected are not app decisions — but which binary,
   where it came from, and its LICENCE are, per build (D42). The kit never fetches anything.
+  - ⚠ **This is also how you use a copyleft payload with an MIT kit (D51).** Shenora ships no engine and
+    will never redistribute a GPL or LGPL binary from an MIT package — that would hand attribution and
+    relinking duties to every consumer. Supply it yourself through a pack and the obligation stays with
+    your app, where the choice was made.
   - Versions coexist: staging 2.0.0 does not touch 1.0.0, because the old one is usually still mapped or
     running when the new one is staged. Collection is a separate call the app makes when it knows it has
     restarted.

@@ -168,22 +168,26 @@ designing any of this** — every ⚠ in it is a bug that was actually hit, not 
     policy (⚠ `alac` is listed only under `#if IOS`, because WebKit decodes Apple Lossless and Chromium
     does not — a kit-side list could not express that), or the build script.
 
-- [ ] **Ship an engine for adoption — packaging + licence, and this is the item with real-world risk.**
-  Owner's call is that the kit ships it. Planned as an OPT-IN package so a desktop app that never converts
-  media pays neither the megabytes nor the obligations; `generic-library.md` sanctions exactly this shape
-  (*"a package for optional WEIGHT"* — only some apps do it, and it is real shipped weight).
-  - **Sizes, measured:** 22 MB (android arm64-v8a) + 27 MB (x86_64), and 110 MB for the Windows
-    `ffmpeg.exe`. All gitignored in the source app on purpose.
-  - ⚠ **The build is LGPL-only BY DESIGN and that must not be lost in the move.** No `--enable-gpl` /
-    `--enable-nonfree`, because linking libx264 is GPL and **relicenses the consuming app**; the
-    licence-clean H.264 encoder is the platform's, via `--enable-mediacodec --enable-jni`, and openh264 is
-    Cisco's under 2-clause BSD. **Whoever ships the binary inherits the LGPL duties** — attribution, and
-    preserving the ability to relink — on behalf of every consumer of that package. That is the whole
-    reason the source app kept the script rather than the binaries.
-  - **Decide before publishing anything:** whether the kit REBUILDS from a tracked script (reproducible,
-    and the licence claim is ours to make) or republishes a binary it did not build (cheaper, and the
-    provenance claim is someone else's). nuget.org's 250 MB package limit also argues for per-RID packages
-    rather than one.
+- [ ] **Ship an MIT-COMPATIBLE engine for adoption.** Owner, 2026-08-06: *"sonora currently is close
+  sourced, but we are on MIT so we should build one compatible with MIT"*. **Settled as D51 — read it
+  first.** The source app's LGPL ffmpeg is fine *for that app* and must NOT be redistributed from an MIT
+  package: it would make the kit the redistributor and hand attribution + relinking duties to every
+  consumer. **So lifting its 22/27/110 MB binaries is now OFF the table** — what remains is building or
+  selecting an engine whose bytes are MIT/BSD/Apache-2.0.
+  - **Preference order (D51):** the PLATFORM's own codecs first (`MediaCodec` / VideoToolbox / Media
+    Foundation — zero bytes, zero licence weight), then permissive libraries only where the platform
+    genuinely lacks something (openh264 BSD-2, dav1d BSD-2, libvpx BSD-3, Opus BSD-3, libFLAC BSD-3, Apple
+    ALAC Apache-2.0). Never x264/x265 (GPL), fdk-aac or LAME.
+  - ⚠ **Be honest about the platform tier's ceiling.** The source app measured AOSP's set as
+    `aac flac mp3 opus pcm vorbis` + an AAC encoder — *barely wider than the WebView's own*, and missing
+    `alac`. So a platform-only engine has a small benefit window on Android; ALAC specifically is
+    answerable permissively (Apache-2.0 reference implementation) rather than by reaching for ffmpeg.
+  - ⚠ **Licence ≠ patents.** A BSD licence on openh264 does not grant H.264 patent rights, and Cisco's
+    royalty coverage attaches to THEIR prebuilt binary fetched at runtime, not to one built from source.
+    Owner's call per codec; do not let a green licence check read as a settled patent position.
+  - **What is already unblocked:** an app that wants LGPL ffmpeg needs nothing from this item — it supplies
+    its own archive through `ResourcePack` and keeps the obligation, which is where the source app had
+    already put it.
 
 ### From the first adopter — mobile media conversion has no engine (2026-08-06)
 

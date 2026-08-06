@@ -1583,3 +1583,37 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     it gets *less* useful the moment the platform fixes its logging.
   - **Revisit trigger:** an adopter that cannot express what it needs over the existing IPC pipe. Wanting a
     ready-made twenty lines is not that — the same bar every other deferred capability is held to (D10).
+
+- **D51 — anything the kit SHIPS AS BYTES must be MIT-compatible. The kit never redistributes a copyleft
+  binary; an app that wants one supplies it through a `ResourcePack`.** (owner, 2026-08-06:
+  *"we are on MIT so we should build one compatible with MIT"*.)
+  - **The asymmetry that forced this.** The first media engine came from a CLOSED-SOURCE app, where an
+    LGPL ffmpeg is perfectly fine: dynamically link it, attribute it, keep relinking possible, done. Shenora
+    is **MIT** and is consumed as a package. Shipping the same binary from here does not "infect" any MIT
+    source — LGPL does not work that way — but it does make the KIT the redistributor, and it hands the
+    attribution and relinking duties to every consumer of that package, and to anyone who redistributes
+    theirs. A package whose licence expression reads `MIT` while its payload is LGPL is a surprise that an
+    adopter's own compliance review finds later, at the worst time. **The obligation belongs where the
+    choice is made.**
+  - **The rule.** Bytes the kit ships (a NuGet payload, a build output, a vendored source tree) must be
+    MIT / BSD / Apache-2.0 / ISC / public-domain. **GPL never** — `--enable-gpl`, x264 and x265 relicense
+    the consuming APP, which is the one outcome a devkit must never cause. **LGPL binaries not from a kit
+    package** either; the licence is fine, the redistribution is what is wrong here.
+  - **What an engine should therefore be, in order of preference:**
+    1. **The PLATFORM's own codecs** — `MediaCodec` on Android, VideoToolbox/AVFoundation on iOS, Media
+       Foundation on Windows. Zero bytes, zero licence weight, and it is the OS's patent problem, not ours.
+       ⚠ Measured limit, carried from the source app: AOSP's set is narrow (`aac flac mp3 opus pcm vorbis`
+       plus an AAC encoder) — *barely wider than the WebView's own* — so a platform-only engine has a small
+       benefit window on Android and must be honest about it rather than presented as complete.
+    2. **Permissively-licensed libraries** where the platform genuinely lacks something: openh264
+       (BSD-2), dav1d (BSD-2), libvpx (BSD-3), Opus (BSD-3), libFLAC (BSD-3 — the FLAC *tools* are GPL,
+       the library is not), Apple's ALAC reference (Apache-2.0).
+    3. **Never**: x264/x265 (GPL), fdk-aac (Fraunhofer's own terms, not OSI-free), LAME (LGPL).
+  - ⚠ **PATENTS ARE NOT COPYRIGHT, and a permissive licence does not settle them.** openh264 being BSD does
+    not grant H.264 patent rights; Cisco's royalty coverage attaches to *their* prebuilt binaries fetched at
+    runtime, not to one built from source. So "MIT-compatible" answers the licence question and leaves the
+    patent question open — it is the owner's call per shipped codec, and this entry is not legal advice.
+  - **This is why `ResourcePack` exists and is the good outcome, not a workaround.** An app that wants LGPL
+    ffmpeg still gets it: it supplies its own archive, the kit stages it, and the duty stays with the app —
+    exactly where the source app had already put it by gitignoring its binaries and tracking the build
+    script instead. The kit owns the mechanism; the app owns the bytes and their licence (D42).
