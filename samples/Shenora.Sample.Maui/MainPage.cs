@@ -24,6 +24,16 @@ public sealed class MainPage : ContentPage
 	/// <summary>The page's background, matched by the splash colour — see the csproj's comment.</summary>
 	private static readonly Color Shell = Color.FromArgb("#14161A");
 
+	/// <summary>Which of iOS's two Island mechanisms this run claims. They cannot both be used — see the
+	/// comment at the call site, which records the three deploys that cost us.</summary>
+	private enum IslandSurface { NowPlaying, LiveActivity }
+
+	/// <summary>
+	/// The sample's choice. <b>LiveActivity while the widget devkit is being verified on a device</b>;
+	/// NowPlaying is what a media app would pick, and is the one Apple intends for playback.
+	/// </summary>
+	private const IslandSurface IslandClaimant = IslandSurface.LiveActivity;
+
 	public MainPage()
 	{
 		Title = "Shenora MAUI sample";
@@ -140,10 +150,35 @@ public sealed class MainPage : ContentPage
 			catch (Exception ex) { MauiProgram.Log($"[NAV] probe threw — {ex}"); }
 		});
 
-		// The system media transport surface. Resolved from DI rather than constructed, because that is
-		// what an adopting app does and it also proves the registration in UseMobile picked the right
-		// implementation for this platform.
-		PlaybackSessionProbe.Run(services.GetRequiredService<IPlaybackSession>(), MauiProgram.Log);
+		// 🔴 THE TWO ISLAND CLAIMANTS ARE MUTUALLY EXCLUSIVE, and running both is why the Dynamic Island
+		// showed "a long bar that only opens the app" on a device for three deploys (2026-08-07).
+		//
+		// iOS has TWO mechanisms that reach the Island and they are easy to confuse:
+		//   · NOW PLAYING (MPNowPlayingInfoCenter + MPRemoteCommandCenter) — the system's MEDIA
+		//     presentation. Apple's own look, and what a player is SUPPOSED to use.
+		//   · LIVE ACTIVITY (ActivityKit + a widget extension) — a custom, app-drawn card, intended for
+		//     deliveries, timers, scores.
+		//
+		// An app publishing a Now Playing session takes the Island for the media presentation, and a Live
+		// Activity started alongside it has nowhere to render. The tell is exact and was documented by a
+		// sibling before we hit it: *"the island falls back to the app icon, and tapping it can only open
+		// the app"*. This sample published BOTH at startup, so the Island it showed was never the widget's.
+		//
+		// So the sample picks one, deliberately, and says which. It is a SAMPLE — an adopting app has the
+		// same choice to make, and the kit ships both capabilities precisely because different apps want
+		// different ones.
+		if (IslandClaimant == IslandSurface.NowPlaying)
+		{
+			// The system media transport surface. Resolved from DI rather than constructed, because that is
+			// what an adopting app does and it also proves the registration in UseMobile picked the right
+			// implementation for this platform.
+			PlaybackSessionProbe.Run(services.GetRequiredService<IPlaybackSession>(), MauiProgram.Log);
+		}
+		else
+		{
+			MauiProgram.Log("[PLAYBACK] SKIPPED — this run claims the Island with a Live Activity instead; "
+				+ "publishing a Now Playing session too would take the Island and leave the widget unrendered.");
+		}
 
 		// What this DEVICE can decode and encode. Nothing in the kit depends on it — it is a MEASUREMENT,
 		// and it is here rather than in a one-off script because the answer is per-device (Android's codec
@@ -153,14 +188,17 @@ public sealed class MainPage : ContentPage
 
 		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
 		// the media staging above.
-		_ = Task.Run(async () =>
+		if (IslandClaimant == IslandSurface.LiveActivity)
 		{
-			try
+			_ = Task.Run(async () =>
 			{
-				await LiveActivityProbe.RunAsync(services.GetRequiredService<ILiveActivities>(), MauiProgram.Log);
-			}
-			catch (Exception ex) { MauiProgram.Log($"[ACTIVITY] probe threw: {ex}"); }
-		});
+				try
+				{
+					await LiveActivityProbe.RunAsync(services.GetRequiredService<ILiveActivities>(), MauiProgram.Log);
+				}
+				catch (Exception ex) { MauiProgram.Log($"[ACTIVITY] probe threw: {ex}"); }
+			});
+		}
 
 		// A heartbeat on the bus, so the NOTIFICATION direction is visible on screen rather than
 		// merely wired: the desktop sample proves the same path with its 1 Hz tick source.
