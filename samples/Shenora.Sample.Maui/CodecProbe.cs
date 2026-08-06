@@ -119,8 +119,11 @@ internal static class CodecProbe
         var decoders = FormatIds(DecodeFormatIds);
         var encoders = FormatIds(EncodeFormatIds);
 
+        // MAUI's own device API rather than ObjCRuntime.Runtime.Arch — it reads the same on both platforms
+        // and does not depend on a binding that has moved between iOS workload bands.
+        var virtualDevice = DeviceInfo.Current.DeviceType == DeviceType.Virtual;
         log($"[CODEC] platform=iOS {UIKit.UIDevice.CurrentDevice.SystemVersion} "
-            + $"model={UIKit.UIDevice.CurrentDevice.Model} sim={(Runtime.Arch == Arch.SIMULATOR ? "yes" : "no")}");
+            + $"model={DeviceInfo.Current.Model} sim={(virtualDevice ? "yes" : "no")}");
         log($"[CODEC] decode: {string.Join(' ', decoders)}");
         log($"[CODEC] encode: {string.Join(' ', encoders)}");
 
