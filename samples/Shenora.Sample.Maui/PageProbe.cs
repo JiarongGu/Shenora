@@ -237,6 +237,62 @@ internal static class PageProbe
 			System.Globalization.CultureInfo.InvariantCulture, out var seconds) ? seconds : 0;
 	}
 
+	/// <summary>
+	/// Drive the page's OWN play button and report what the page saw.
+	///
+	/// <para>
+	/// 🔴 <b>The synthetic probe and the USER's path are different code, and only one of them was ever
+	/// tested.</b> <see cref="CheckMediaAsync"/> sets <c>src</c> itself, mutes the element and plays it —
+	/// and passed on a device where the owner reported the clips would not play (2026-08-07). The page's
+	/// button does something else: it sets <c>src</c>, calls <c>load()</c>, then <c>play()</c> UNMUTED, and
+	/// writes any rejection to a <c>&lt;div&gt;</c> nobody outside the phone can read.
+	/// </para>
+	/// <para>
+	/// So this clicks the real button and lifts the page's own log into the DEVICE log, where a harness can
+	/// read it. ⚠ A scripted <c>click()</c> is not a trusted gesture, so a rejection here may be autoplay
+	/// policy rather than a real fault — which is why the page's message is reported verbatim instead of
+	/// being turned into a verdict.
+	/// </para>
+	/// </summary>
+	public static async Task<string> CheckUiPlaybackAsync(HybridWebView webView, Action<string> log)
+	{
+		var started = await EvaluateAsync(webView, $$"""
+			(function(){
+				var b = document.getElementById('mfast');
+				var v = document.getElementById('vid');
+				if (!b || !v) { window.{{Slot}} = 'NO-BUTTON-OR-VIDEO'; return 'missing'; }
+				try { v.pause(); } catch (e) {}
+				v.removeAttribute('src'); v.load();
+				v.muted = false;
+				window.{{Slot}} = 'pending';
+				b.click();
+				setTimeout(function () {
+					var el = document.getElementById('log');
+					var tail = el ? (el.innerText || '').slice(-700).replace(/\s+/g, ' ') : '(no log element)';
+					window.{{Slot}} = 'src=' + (v.currentSrc ? 'set' : 'EMPTY')
+						+ '|err=' + (v.error ? v.error.code : '-')
+						+ '|size=' + v.videoWidth + 'x' + v.videoHeight
+						+ '|ready=' + v.readyState + '|paused=' + v.paused
+						+ '|t=' + v.currentTime.toFixed(2)
+						+ '|PAGELOG ' + tail;
+				}, 2500);
+				return 'clicked';
+			})()
+			""").ConfigureAwait(false);
+
+		if (started is null) return "UI-PLAY: FAIL — could not evaluate";
+		var result = await PollAsync(webView).ConfigureAwait(false);
+		if (result is null) return "UI-PLAY: FAIL — no answer";
+
+		log($"[NAV] ui-play -> {result}");
+		var played = result.Contains("|paused=False", StringComparison.OrdinalIgnoreCase)
+			|| result.Contains("|paused=false", StringComparison.Ordinal);
+		var decoded = !result.Contains("|size=0x0", StringComparison.Ordinal);
+		return played && decoded
+			? "UI-PLAY: PASS — the page's own button decoded and started playback"
+			: $"UI-PLAY: FAIL — {result}";
+	}
+
 	/// <summary>Fetch a url from inside the page and report status, byte count and every header, in order.</summary>
 	private static async Task<string?> FetchHeadersAsync(HybridWebView webView, string url)
 	{

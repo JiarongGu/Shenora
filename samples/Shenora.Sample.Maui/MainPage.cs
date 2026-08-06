@@ -146,6 +146,9 @@ public sealed class MainPage : ContentPage
 				// Media BEFORE the reload probe: the reload replaces the document, so anything asserted
 				// about the page's <video> has to happen while that document is still the one under test.
 				MauiProgram.Log(await PageProbe.CheckMediaAsync(_webView, MauiProgram.Log));
+				// And the same thing through the page's OWN button, because the two are different code and
+				// only the synthetic one was ever exercised — see CheckUiPlaybackAsync.
+				MauiProgram.Log(await PageProbe.CheckUiPlaybackAsync(_webView, MauiProgram.Log));
 				// To sabotage-verify the gate below, wrap it in:
 				//     using var s = PageProbe.SabotageMainDocument(_media.Interceptor!, MauiProgram.Log);
 				// Done 2026-08-05: FAIL with `title=|nodes=5|text=Not Found`, PASS without.
