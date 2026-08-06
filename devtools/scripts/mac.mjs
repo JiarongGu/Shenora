@@ -13,6 +13,8 @@
 //   node devtools/dev.mjs mac safari-eval <js…>           run JS in the page and print the VALUE
 //   node devtools/dev.mjs mac mirror [port]  live view on the LAN; click to tap, scroll to swipe
 //   node devtools/dev.mjs mac log [-n N]     the sample's own log lines from the simulator
+//   node devtools/dev.mjs mac provision [<bundle-id>…]  mint provisioning profiles the kit owns (see below)
+//   node devtools/dev.mjs mac profiles       what profiles this Mac has, and when they expire
 //   node devtools/dev.mjs mac awake [on|off] stop the Mac sleeping/locking while it is a build machine
 //   node devtools/dev.mjs mac ssh <command…> run anything on the Mac (escape hatch)
 //
@@ -1049,6 +1051,143 @@ function awake(cfg, mode = 'on') {
   console.log('  Sleep on BATTERY is untouched (that needs sudo); the caffeinate assertion covers it while loaded.');
 }
 
+// ---------------------------------------------------------------- provision
+//
+// Mint a provisioning profile for a bundle id, using an Xcode project THIS KIT owns.
+//
+// 🔴 Why any of this is needed: **.NET cannot mint a profile.** It consumes them —
+// `-p:CodesignProvision=Automatic` picks one that already exists and fails with "Could not find any
+// available provisioning profiles" when none does. Only `xcodebuild -allowProvisioningUpdates` creates
+// one, and it needs *an* Xcode project to point at. So without this, reaching a device at all required
+// owning an Xcode project — in a kit whose stated measure is how little native code an adopter writes.
+//
+// ⚠ The wrong fix, tried and rejected (2026-08-06): borrow a sibling app's Capacitor project. It works and
+// it is wrong three ways — slow, drags that app's SPM checkouts into an unrelated build, and makes the kit
+// depend on a consumer having Capacitor. Owner: *"why you rely on capacitor instead create your own one"*.
+//
+// ⚠ It does NOT call `push`, deliberately. A provisioning profile is state of the MACHINE, not of the
+// repo, and `push` refuses a dirty tree — so tying the two would make "I cannot sign" depend on whether
+// some unrelated edit happened to be committed. The stub is three small text files, uploaded directly.
+
+const PROVISION_FILES = ['README.md', 'ShenoraProvision/main.swift', 'ShenoraProvision.xcodeproj/project.pbxproj'];
+const PROVISION_DIR = 'shenora-provision';
+
+/** Upload the stub project, so provisioning works from any tree state. */
+function uploadProvisionStub(cfg) {
+  const local = path.join(repo, 'devtools', 'ios-provision');
+  ssh(cfg, `rm -rf ~/${PROVISION_DIR} && mkdir -p ~/${PROVISION_DIR}/ShenoraProvision ~/${PROVISION_DIR}/ShenoraProvision.xcodeproj`, { check: true });
+  for (const rel of PROVISION_FILES) {
+    const encoded = fs.readFileSync(path.join(local, rel)).toString('base64');
+    // Through base64 for the same reason guiRun encodes its script: the content crosses ssh's own shell
+    // before anything else sees it, and a pbxproj is full of quotes, braces and dollar signs.
+    ssh(cfg, `printf %s ${q(encoded)} | base64 -d > ~/${PROVISION_DIR}/${rel}`, { check: true });
+  }
+}
+
+/**
+ * The Apple Developer team, from local/mac.json or derived from the signing certificate.
+ *
+ * ⚠ Derived rather than hardcoded because a team id is a PERSONAL identifier — `sensitive-info.md` keeps
+ * those out of tracked files, and this file is public. The certificate already on the machine knows it.
+ */
+function teamId(cfg) {
+  if (cfg.team) return cfg.team;
+  const r = ssh(cfg, `set -e
+    name=$(security find-identity -v -p codesigning | head -1 | sed -n 's/.*"\\(.*\\)".*/\\1/p')
+    [ -n "$name" ] || exit 3
+    security find-certificate -c "$name" -p | openssl x509 -noout -subject | tr ',' '\\n' | sed -n 's/.*OU=//p' | head -1`);
+  const derived = (r.stdout ?? '').trim();
+  if (r.status !== 0 || !derived) {
+    console.error('mac: no codesigning identity on the Mac, so there is no team to provision against.\n'
+      + '     Sign in to Xcode → Settings → Accounts with the Apple ID that owns the device, then retry.\n'
+      + '     Or set "team" in local/mac.json if you know the id.');
+    process.exit(1);
+  }
+  return derived;
+}
+
+/**
+ * Every profile on the Mac, with the bundle id it is FOR — the only thing that proves one was minted.
+ *
+ * 🔴 <b>TWO locations, and looking in only the classic one is a trap that has already cost a session.</b>
+ * Xcode wrote profiles to `~/Library/MobileDevice/Provisioning Profiles/` for a decade; **Xcode 16 moved
+ * them to `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`**. A check against the old path on a
+ * current Xcode reports "zero provisioning profiles on disk" about a machine that has several — which reads
+ * as "provisioning has never worked here" and sends the next session off to mint profiles that already
+ * exist. Measured on Xcode 26.3, where minting put all three in the NEW path and left the old one absent.
+ */
+function installedProfiles(cfg) {
+  const r = ssh(cfg, `for dir in ~/Library/MobileDevice/Provisioning\\ Profiles ~/Library/Developer/Xcode/UserData/Provisioning\\ Profiles; do
+    [ -d "$dir" ] || continue
+    for f in "$dir"/*.mobileprovision; do
+      [ -e "$f" ] || continue
+      plist=$(security cms -D -i "$f" 2>/dev/null)
+      app=$(printf %s "$plist" | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)
+      exp=$(printf %s "$plist" | plutil -extract ExpirationDate raw - 2>/dev/null)
+      echo "$app|$exp|$dir"
+    done
+  done`);
+  return (r.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+    .map((line) => {
+      const [app, expires, dir] = line.split('|');
+      // The application-identifier is prefixed with the team id; the bundle id is what follows it.
+      return { app, bundleId: app.includes('.') ? app.slice(app.indexOf('.') + 1) : app, expires, dir };
+    });
+}
+
+async function provision(cfg, bundleIds) {
+  // The sample's two ids by default: the app, and the Live Activity extension it embeds. An extension
+  // needs its OWN profile, and forgetting the second one fails at the very end of a device install with
+  // an error that names the app.
+  const ids = bundleIds.length > 0 ? bundleIds : [cfg.bundleId, `${cfg.bundleId}.shenoraliveactivity`];
+  const team = teamId(cfg);
+  console.log(`mac: provisioning ${ids.length} bundle id(s) for team ${team}…`);
+
+  uploadProvisionStub(cfg);
+
+  const failures = [];
+  for (const id of ids) {
+    console.log(`\nmac: ${id}`);
+    // 🔴 Through guiRun, NOT ssh, and this is the whole reason guiRun exists: codesign cannot use a
+    // login-keychain key from an ssh session (errSecInternalComponent — proven on a copy of /bin/echo, so
+    // it is nothing to do with this repo). Xcode's stored Apple ID session has the same problem. The GUI
+    // login session has both.
+    const script = `set -o pipefail
+cd ~/${PROVISION_DIR}
+xcodebuild -project ShenoraProvision.xcodeproj -target ShenoraProvision \\
+  -sdk iphoneos -configuration Debug -allowProvisioningUpdates \\
+  SYMROOT=~/${PROVISION_DIR}/build OBJROOT=~/${PROVISION_DIR}/build/obj \\
+  PRODUCT_BUNDLE_IDENTIFIER=${q(id)} DEVELOPMENT_TEAM=${q(team)} CODE_SIGN_STYLE=Automatic 2>&1 | tail -40`;
+    const { status, log } = await guiRun(cfg, script, { tag: `provision`, timeoutMs: 10 * 60_000 });
+    if (status !== 0) {
+      failures.push(id);
+      console.log(log.split('\n').slice(-20).join('\n'));
+    } else {
+      console.log('  minted ok');
+    }
+  }
+
+  // Report what is actually ON DISK rather than what xcodebuild said. A build can succeed against a
+  // profile it already had, so "exit 0" does not mean a profile now exists for the id that was asked for.
+  const profiles = installedProfiles(cfg);
+  console.log('\nmac: provisioning profiles now on the Mac:');
+  if (profiles.length === 0) console.log('  (none)');
+  for (const p of profiles) console.log(`  ${p.bundleId}   expires ${p.expires ?? '?'}`);
+
+  const missing = ids.filter((id) => !profiles.some((p) => p.bundleId === id));
+  if (missing.length > 0) {
+    console.error(`\nmac: NO PROFILE for: ${missing.join(', ')}`);
+    console.error('  If xcodebuild asked to sign in, do it once in Xcode on the Mac and re-run.');
+    process.exit(1);
+  }
+
+  console.log('\nmac: all requested ids have a profile.');
+  console.log('  ⚠ A free / personal-team profile expires after 7 DAYS — re-run this when signing starts failing.');
+  console.log('  ⚠ A FIRST install also needs the certificate trusted ON THE PHONE:');
+  console.log('    Settings → General → VPN & Device Management → the developer account → Trust.');
+  if (failures.length > 0) console.log(`  (xcodebuild reported failures for ${failures.join(', ')}, but the profiles exist.)`);
+}
+
 // ---------------------------------------------------------------- dispatch
 const [cmd, ...rest] = process.argv.slice(2);
 const cfg = cmd ? config() : null;
@@ -1075,10 +1214,17 @@ switch (cmd) {
     break;
   }
   case 'activity': activities(cfg); break;
+  case 'provision': await provision(cfg, rest.filter((a) => !a.startsWith('-'))); break;
+  case 'profiles': {
+    const found = installedProfiles(cfg);
+    if (found.length === 0) console.log('mac: no provisioning profiles on this Mac — run `mac provision`.');
+    for (const p of found) console.log(`${p.bundleId}   expires ${p.expires ?? '?'}`);
+    break;
+  }
   case 'awake': awake(cfg, rest[0]); break;
   case 'ssh': ssh(cfg, rest.join(' '), { inherit: true, check: true }); break;
   default:
     console.log('usage: node devtools/dev.mjs mac <doctor|setup|push|build|run|shot|tap|type|swipe|'
-      + 'safari-eval|mirror|log|activity|awake|ssh>');
+      + 'safari-eval|mirror|log|activity|provision|profiles|awake|ssh>');
     process.exit(cmd ? 1 : 0);
 }

@@ -26,7 +26,7 @@ reuse this toolkit on another repo). The library version is parsed there from
 | `input <args…>` | raw `win-input` passthrough (`list`, `click x y`, `rclick x y`, `move x y`, `drag x1 y1 x2 y2`) |
 | `responsiveness <fx> <fy> [--label n] [--duration\|--interval\|--timeout ms]` | click a control, then sample `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` sub-100ms to measure whether the UI thread keeps pumping — the probe behind the one-way-IPC UI-thread claim (see below) |
 | `android <devices\|connect\|deploy\|run\|log\|shot>` | the MAUI sample's device loop — see the section below |
-| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|swipe\|safari-eval\|mirror\|log\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
+| `mac <doctor\|setup\|push\|build\|run\|shot\|tap\|type\|swipe\|safari-eval\|mirror\|log\|provision\|profiles\|awake\|ssh>` | the same loop on iOS, driven over SSH on a Mac — see the section below |
 | `knowledge <check\|footprint\|new <name> [--core]>` | two-tier rule-base doctor: index↔files consistency, always-loaded byte budget, scaffold a rule. `check` covers SKILLS the same way — a `.claude/skills/*/SKILL.md` missing from `skill-loader`'s table is never picked, and that was guarded only by a sentence asking the next session to remember |
 | `clean [--all]` | drop `_*` scratch BUILD OUTPUT (bin/obj/node_modules/out/dist); `--all` also drops probe sources + `publish/` |
 | `check-sensitive [--tree|--history]` | scan for dev paths / private names. `--tree` = checkout; `--history` = ONE-OFF audit of every blob, path and commit message |
@@ -106,8 +106,35 @@ post-mortems — only the build step differs (that project builds an Xcode proje
 | `mac safari-eval <js…>` | run JavaScript in the page and print the VALUE. The difference between reading state and guessing at it |
 | `mac mirror [port]` | live view of the simulator on the LAN (default **7674**); click to tap, scroll to swipe |
 | `mac log [-n N] [--all]` | the sample's own lines from the simulator's unified log; `--all` for the whole process |
+| `mac provision [<bundle-id>…]` | mint provisioning profiles using an Xcode project **the kit owns** (`devtools/ios-provision/`). Defaults to the sample's app + its Live Activity extension |
+| `mac profiles` | what profiles this Mac has and when they expire — **checks BOTH locations** (see the trap below) |
 | `mac awake [on\|off]` | stop the Mac sleeping while it is a build machine |
 | `mac ssh <cmd>` | escape hatch |
+
+### Reaching a real device — what the kit owns now, and the two traps
+
+**`.NET cannot mint a provisioning profile.** It only CONSUMES them, so a device build fails with *"Could
+not find any available provisioning profiles"* until something else has created one — and the only thing
+that does is `xcodebuild -allowProvisioningUpdates`, which needs *an* Xcode project. That is why
+`devtools/ios-provision/` exists: a minimal, generic, kit-owned stub whose only product is the profile.
+⚠ Borrowing a consumer's Capacitor/Xcode project was tried and rejected — slow, drags that app's SPM
+checkouts in, and makes the kit depend on the consumer having Capacitor.
+
+- 🔴 **Xcode 16 MOVED where profiles live**, and checking the old path is how a machine that has profiles
+  reports having none. Classic: `~/Library/MobileDevice/Provisioning Profiles/`. Current:
+  `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`. Measured on Xcode 26.3, where minting wrote
+  all three profiles to the NEW path and never created the old directory at all. `mac profiles` reads both.
+- 🔴 **`xcodebuild` exits 0 without necessarily having produced the profile you asked for** — it will
+  happily succeed against one it already had. So `mac provision` verifies by reading the profiles OFF DISK
+  and matching their `application-identifier`, never by trusting the exit code. That check is what caught
+  the path change above; a version trusting exit status would have reported success and left the device
+  build failing for a reason nothing pointed at.
+- ⚠ **Signing must run in the GUI login session** (`guiRun`), because `codesign` cannot use a login-keychain
+  key over ssh (`errSecInternalComponent`). INSTALL and LAUNCH need no keychain, so those go over plain ssh
+  via `xcrun devicectl` — getting that split backwards is what makes people reach for a GUI on the Mac.
+- ⚠ **Two things can never be automated**, and both belong in any recipe that ships: a free/personal-team
+  profile **expires after 7 days**, and a first install needs the certificate trusted ON THE PHONE
+  (Settings → General → VPN & Device Management → the account → Trust).
 
 **The Mac's address, user and key live in `local/mac.json`** — gitignored, because the harness is
 tracked and this repo is public. `mac doctor` prints the file to create if it is missing.
