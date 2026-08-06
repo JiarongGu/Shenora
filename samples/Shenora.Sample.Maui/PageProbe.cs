@@ -154,11 +154,28 @@ internal static class PageProbe
 
 		foreach (var clip in new[] { "clip-faststart.mp4", "clip-tailmoov.mp4" })
 		{
+			// 🔴 THIS ASSERTS A DECODED PICTURE AND ADVANCING TIME, not just metadata — because
+			// "duration resolved and the seek landed" is a claim about BYTES AND RANGES, and a <video> can
+			// satisfy both while never decoding a single frame. That gap shipped: the probe reported
+			// `MEDIA: PASS` on a device where the owner could not play a video (2026-08-07). It is the same
+			// mistake `ISegmentEngine` already names one layer down — "has a video stream" is the wrong
+			// test, because a stream can be declared and carry no picture.
+			//
+			// The three signals, and each catches something the others do not:
+			//   · videoWidth/videoHeight  — non-zero only once the DECODER has produced a frame's geometry.
+			//                               An unsupported codec leaves them 0 with metadata intact.
+			//   · readyState >= 2         — HAVE_CURRENT_DATA: there is decoded data AT the playhead.
+			//   · currentTime ADVANCES    — the only proof it is actually playing rather than merely ready.
+			//
+			// ⚠ muted + playsInline are required, not cosmetic: iOS refuses programmatic play() without a
+			// user gesture unless the element is muted and inline, and the refusal looks exactly like a
+			// decode failure.
 			var started = await EvaluateAsync(webView, $$"""
 				(function(){
 					var v = document.getElementById('vid');
 					if (!v) { window.{{Slot}} = 'NO-VIDEO-ELEMENT'; return 'no element'; }
 					window.{{Slot}} = 'pending';
+					v.muted = true; v.playsInline = true; v.setAttribute('playsinline','');
 					v.onerror = function () {
 						window.{{Slot}} = 'MEDIA-ERROR code=' + (v.error ? v.error.code : '?');
 					};
@@ -166,7 +183,16 @@ internal static class PageProbe
 						window.{{Slot}} = 'SEEK-THREW ' + e;
 					} };
 					v.onseeked = function () {
-						window.{{Slot}} = 'duration=' + v.duration.toFixed(2) + '|seeked=' + v.currentTime.toFixed(2);
+						var at = v.currentTime;
+						var p = v.play();
+						if (p && p.catch) { p.catch(function (e) { window.{{Slot}} = 'PLAY-REJECTED ' + e; }); }
+						setTimeout(function () {
+							window.{{Slot}} = 'duration=' + v.duration.toFixed(2)
+								+ '|seeked=' + at.toFixed(2)
+								+ '|size=' + v.videoWidth + 'x' + v.videoHeight
+								+ '|ready=' + v.readyState
+								+ '|advanced=' + (v.currentTime - at).toFixed(2);
+						}, 1200);
 					};
 					v.src = '{{MediaUrl(clip)}}';
 					v.load();
@@ -185,11 +211,30 @@ internal static class PageProbe
 			// event fired) is what distinguishes a served tail range from a player that gave up and clamped.
 			if (!result.Contains("seeked=48", StringComparison.Ordinal))
 				failures.Add($"{clip}: seek did not land — {result}");
+
+			// A picture, and time moving. Both are reported in the same line either way, so a failure says
+			// WHICH half is missing rather than only that something is wrong.
+			if (result.Contains("|size=0x0", StringComparison.Ordinal))
+				failures.Add($"{clip}: NO DECODED PICTURE (size=0x0) — bytes served, nothing decoded — {result}");
+			else if (Advanced(result) <= 0)
+				failures.Add($"{clip}: decoded but NOT PLAYING (time did not advance) — {result}");
 		}
 
 		return failures.Count == 0
-			? "MEDIA: PASS — both clips resolved a duration and seeked to 48 s"
+			? "MEDIA: PASS — both clips decoded a picture, seeked to 48 s, and played on"
 			: $"MEDIA: FAIL — {string.Join("  |  ", failures)}";
+	}
+
+	/// <summary>How far the playhead moved during the probe's watch window. Negative/absent reads as zero.</summary>
+	private static double Advanced(string result)
+	{
+		var at = result.IndexOf("|advanced=", StringComparison.Ordinal);
+		if (at < 0) return 0;
+		var value = result[(at + "|advanced=".Length)..];
+		var end = value.IndexOf('|');
+		if (end >= 0) value = value[..end];
+		return double.TryParse(value, System.Globalization.NumberStyles.Float,
+			System.Globalization.CultureInfo.InvariantCulture, out var seconds) ? seconds : 0;
 	}
 
 	/// <summary>Fetch a url from inside the page and report status, byte count and every header, in order.</summary>
