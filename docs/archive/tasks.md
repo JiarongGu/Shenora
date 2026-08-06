@@ -14,6 +14,12 @@
 > written for a future session ("DONE, but the fix had to be ADAPTED — read this before finishing
 > it", the deliberate NOT-built list, the two `InternalsVisibleTo`/`Microsoft.Web.WebView2` keeps).
 > Those are the entries most likely to be re-litigated by someone who only sees the code.
+>
+> ⚠ **One package-set change affects how EVERY older entry below reads, so it is stated once here rather
+> than annotated per entry: `Shenora.Media` stopped being a package on 2026-08-07 (D53).** Its pipeline
+> lives in `Shenora.Core/Media/` and the `Shenora.Media` NAMESPACE is unchanged, so an entry naming a
+> media type is still accurate — only the `PackageReference` is gone. Entries predating that date
+> describe the package as current because it was.
 
 ---
 
@@ -1418,25 +1424,10 @@ see. The handshake answers only *"can you serve local files?"*.
 file access too", serving is kind-agnostic. Only the PLANNER is playable-media-specific; an image needs
 serving and no plan. The sample currently says `/video?…` and must be renamed.
 
-_**DM5 is DONE for the shipping platforms** — `Shenora.Media` + `Shenora.Media.Android` +
-`Shenora.Media.iOS`, all three packing at 0.8.0, all three with the full checklist (inline `IsPackable`,
-`packableProjects`, description, solution entry, API baseline, README row + graph, `ARCHITECTURE.md`,
-lexicon). The mobile pair is ONE shared source (`src/Shenora.Media.Mobile/`) differing by one compile
-symbol, and a package built with neither fails **`#error` at compile time** — sabotage-verified, so a third
-platform cannot inherit a guess. They reference `Shenora.Media` and the MAUI SDK but **NOT the shell
-packages**: D40 left that edge "to determine when building", and built, it does not exist. The D41 tripwire
-is armed and sabotage-verified (`NU1201`, cascading to the MAUI sample)._
-
-_**The mobile media packages were VERIFIED WORKING on both devices** (2026-08-04, owner asked): served
-through `MediaWebViewRoute.TryServe`, `[Unsliced]` on Android and `[Sliced]` on iOS chosen by the PACKAGE —
-there is no `mode=` in either URL, so the app does not choose. Android: 3 requests, no loop,
-`duration=60.00s`, `seeked -> 48.00s`. iOS: many small exact windows, `seeked -> 48.04s`. The gap that check
-found was real — the packages packed while their entry point had never run._
-
-⚠ **THE TWO PARAGRAPHS ABOVE ARE SUPERSEDED — read them as history, not as the shipped shape.** They
-describe the intermediate 8-package layout, which was **deleted the same day and never published**.
-`Shenora.Media.Android`, `Shenora.Media.iOS`, `MediaWebViewRoute`, `MediaRangeServer`, `MediaBodyMode`,
-`MediaAccess` and `MediaCacheKey` **do not exist**. What shipped instead:
+**DM5 shipped as the 8-package layout — `Shenora.Media` + `Shenora.Media.Android` + `Shenora.Media.iOS`,
+verified on both devices — and that layout was DELETED THE SAME DAY and never published.** The two
+paragraphs of build detail that stood here have been removed (2026-08-07): they described packages and
+types nobody can install, which is noise rather than history. What replaced each one:
 
 | Was | Is |
 |---|---|
