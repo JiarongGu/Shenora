@@ -90,7 +90,25 @@
       MacOSX sysroot; the binary happened to work anyway, which is exactly why it is worth fixing rather
       than tolerating.
     -->
-    <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
+    <!--
+      🔴 `-e _NSExtensionMain` AND `-application_extension` ARE THE WHOLE THING, and without them this
+      produces a binary that starts and immediately exits (2026-08-07, after four device deploys chasing
+      other causes).
+
+      An app extension does NOT start at `main`. Xcode's Widget Extension template links with
+      `-e _NSExtensionMain`, so the process begins in Foundation's extension entry point, which reads the
+      `NSExtension` dict from Info.plist and enters the XPC run loop the host talks to. Link it as an
+      ordinary executable instead and SwiftUI's `@main` runs `WidgetBundle.main()`, **that returns**, and
+      the process exits without ever serving anything. Every layer still reports success: ActivityKit
+      starts the activity and hands back an id, the system reserves Island space, and the widget that
+      would draw it died instantly.
+
+      ⚠ This is the structural reason a hand-rolled `.appex` is hard: SwiftPM and a bare `swiftc` have no
+      notion of an extension target, so none of the extension-specific linker setup is applied and the
+      output looks like a perfectly good executable. `-application_extension` is the matching half — it
+      marks the binary as extension-safe, which is what the linker checks API availability against.
+    -->
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -Xlinker -e -Xlinker _NSExtensionMain -Xlinker -application_extension -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
 
     <Message Importance="high" Text="Shenora: built ShenoraLiveActivity.appex ($(_ShenoraLaTriple)) from $(ShenoraLiveActivityViews)" />
   </Target>
