@@ -1294,12 +1294,17 @@ function checkAppExtensions(cfg, app) {
   const problems = [];
   for (const name of found) {
     const appex = `${plugins}/${name}`;
+    const plist = `${appex}/Info.plist`;
     const r = ssh(cfg, `set -e
-      id=$(plutil -extract CFBundleIdentifier raw ${q(`${appex}/Info.plist`)} 2>/dev/null || echo '')
+      id=$(plutil -extract CFBundleIdentifier raw ${q(plist)} 2>/dev/null || echo '')
       ents=$(codesign -d --entitlements - ${q(appex)} 2>/dev/null | tr -d '\\0' || true)
       appid=$(printf %s "$ents" | grep -A2 'application-identifier' | grep -o '[A-Z0-9]\\{10\\}\\.[A-Za-z0-9._-]*' | head -1)
       prof=no; [ -f ${q(`${appex}/embedded.mobileprovision`)} ] && prof=yes
-      echo "id=$id"; echo "appid=$appid"; echo "profile=$prof"`);
+      echo "id=$id"; echo "appid=$appid"; echo "profile=$prof"
+      for k in CFBundleSupportedPlatforms DTPlatformName DTSDKName UIDeviceFamily; do
+        v=$(plutil -extract $k xml1 -o - ${q(plist)} 2>/dev/null | grep -c '<' || echo 0)
+        echo "key_$k=$v"
+      done`);
 
     const read = (key) => ((r.stdout ?? '').match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').trim();
     const bundleId = read('id');
@@ -1312,6 +1317,16 @@ function checkAppExtensions(cfg, app) {
     // A prefix mismatch is the other half of the same rule, and it is what the installer rejects outright.
     else if (bundleId && !appId.endsWith(`.${bundleId}`)) {
       problems.push(`${name}: entitlement application-identifier "${appId}" does not match CFBundleIdentifier "${bundleId}"`);
+    }
+
+    // 🔴 The PLATFORM keys. Xcode writes these into everything it builds, so nobody building extensions the
+    // normal way learns they exist — and a hand-written Info.plist that omits them yields an .appex that
+    // installs, signs, validates, and is then NEVER REGISTERED as an extension. Every layer reports success
+    // and the widget simply never loads, which is the hardest shape of failure there is.
+    for (const key of ['CFBundleSupportedPlatforms', 'DTPlatformName', 'DTSDKName', 'UIDeviceFamily']) {
+      if (read(`key_${key}`) === '0') {
+        problems.push(`${name}: Info.plist has no ${key} — the system will not register it as an extension`);
+      }
     }
   }
 

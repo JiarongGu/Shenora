@@ -132,26 +132,63 @@
     <MakeDir Directories="$(_ShenoraLiveActivityAppex)" />
     <PropertyGroup>
       <_ShenoraLaPlist>$(_ShenoraLiveActivityAppex)/Info.plist</_ShenoraLaPlist>
+      <!-- Recomputed here rather than shared with the build target: this target must stand alone, because
+           it deliberately has no incremental check (see the remarks above). -->
+      <_ShenoraLaPlistSdk Condition="'$(_SdkIsSimulator)' == 'true'">iphonesimulator</_ShenoraLaPlistSdk>
+      <_ShenoraLaPlistSdk Condition="'$(_ShenoraLaPlistSdk)' == ''">iphoneos</_ShenoraLaPlistSdk>
+      <_ShenoraLaPlatform Condition="'$(_SdkIsSimulator)' == 'true'">iPhoneSimulator</_ShenoraLaPlatform>
+      <_ShenoraLaPlatform Condition="'$(_ShenoraLaPlatform)' == ''">iPhoneOS</_ShenoraLaPlatform>
     </PropertyGroup>
     <Error Condition="'$(ApplicationId)' == ''"
            Text="Shenora: the Live Activity extension needs the app's ApplicationId to derive its own bundle identifier, and it is empty. iOS requires the extension's id to be prefixed by the app's." />
+
+    <!-- The SDK's real version, so DTSDKName names the SDK this was actually built against. -->
+    <Exec Command="xcrun --sdk $(_ShenoraLaPlistSdk) --show-sdk-version" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_ShenoraLaSdkVersion" />
+    </Exec>
+
+    <!--
+      🔴 THE PLATFORM KEYS ARE NOT OPTIONAL, and leaving them out is why the Dynamic Island stayed empty
+      through four device deploys (2026-08-07). Xcode writes them into every bundle it produces, so nobody
+      building extensions the normal way ever learns they exist — and a HAND-WRITTEN Info.plist that omits
+      them produces an .appex which installs, signs, validates and is then **never registered as an
+      extension by the system**. Measured: `devicectl device info apps` listed only the container app, and
+      the extension process never appeared in `device info processes` while `chronod` ran happily.
+
+      That failure mode is brutal to diagnose because every layer reports success — ActivityKit starts the
+      activity and returns an id, the system reserves Island space for it, and the widget that would draw it
+      was never loaded. Apple's guidance for building bundles outside Xcode names exactly these four:
+      CFBundleSupportedPlatforms, DTPlatformName, DTSDKName and UIDeviceFamily.
+
+      ⚠ They are per-SDK, so they are read from the SDK rather than hardcoded: a simulator build must say
+      iPhoneSimulator, and a device build iPhoneOS. Hardcoding either makes the bundle silently wrong on the
+      other, which is the same class of bug as the arch and the bundle-id ones this file already records.
+    -->
     <WriteLinesToFile File="$(_ShenoraLaPlist)" Overwrite="true" WriteOnlyWhenDifferent="true" Lines="
 &lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;;
 &lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;;
 &lt;plist version=&quot;1.0&quot;&gt;&lt;dict&gt;;
+  &lt;key&gt;CFBundleDevelopmentRegion&lt;/key&gt;&lt;string&gt;en&lt;/string&gt;;
   &lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
   &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;$(ApplicationId).shenoraliveactivity&lt;/string&gt;;
+  &lt;key&gt;CFBundleInfoDictionaryVersion&lt;/key&gt;&lt;string&gt;6.0&lt;/string&gt;;
   &lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
+  &lt;key&gt;CFBundleDisplayName&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
   &lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;XPC!&lt;/string&gt;;
   &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;1.0&lt;/string&gt;;
   &lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;1&lt;/string&gt;;
+  &lt;key&gt;CFBundleSupportedPlatforms&lt;/key&gt;&lt;array&gt;&lt;string&gt;$(_ShenoraLaPlatform)&lt;/string&gt;&lt;/array&gt;;
+  &lt;key&gt;DTPlatformName&lt;/key&gt;&lt;string&gt;$(_ShenoraLaPlistSdk)&lt;/string&gt;;
+  &lt;key&gt;DTPlatformVersion&lt;/key&gt;&lt;string&gt;$(_ShenoraLaSdkVersion)&lt;/string&gt;;
+  &lt;key&gt;DTSDKName&lt;/key&gt;&lt;string&gt;$(_ShenoraLaPlistSdk)$(_ShenoraLaSdkVersion)&lt;/string&gt;;
+  &lt;key&gt;UIDeviceFamily&lt;/key&gt;&lt;array&gt;&lt;integer&gt;1&lt;/integer&gt;&lt;integer&gt;2&lt;/integer&gt;&lt;/array&gt;;
   &lt;key&gt;MinimumOSVersion&lt;/key&gt;&lt;string&gt;$(ShenoraLiveActivityMinimumOS)&lt;/string&gt;;
   &lt;key&gt;NSExtension&lt;/key&gt;&lt;dict&gt;;
     &lt;key&gt;NSExtensionPointIdentifier&lt;/key&gt;&lt;string&gt;com.apple.widgetkit-extension&lt;/string&gt;;
   &lt;/dict&gt;;
 &lt;/dict&gt;&lt;/plist&gt;" />
 
-    <Message Importance="high" Text="Shenora: ShenoraLiveActivity.appex declares $(ApplicationId).shenoraliveactivity" />
+    <Message Importance="high" Text="Shenora: ShenoraLiveActivity.appex declares $(ApplicationId).shenoraliveactivity for $(_ShenoraLaPlatform) $(_ShenoraLaSdkVersion)" />
   </Target>
 
   <!--
