@@ -53,6 +53,29 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`ResourcePack` + `ResourcePackOptions` (`Shenora.IO.Compression`)** — a named, versioned set of files an
+  app needs ON DISK at runtime: a native binary for the current ABI, a model, a font set, a fixture tree.
+  Delivered as one archive, extracted under the kit's existing containment and limits, and marked ready
+  **last** so a half-extracted pack is never used.
+
+  ```csharp
+  var pack = new ResourcePack("engine", "7.1.2", new ResourcePackOptions { Root = ShenoraPaths.Data });
+  await pack.StageAsync(File.OpenRead(archivePath));   // no-op once ready
+  var exe = pack.PathOf("arm64-v8a/libengine.so");     // null if absent, escaping, or not ready
+  pack.PruneOthers();                                  // at STARTUP — the old one is still loaded at stage time
+  ```
+
+  **The kit owns the mechanism; the app owns the bytes.** Where a version lives, whether it is complete,
+  how a path resolves inside it and when the old one is collected are not app decisions — but which binary,
+  where it came from, and its LICENCE are, per build (D42). The kit never fetches anything.
+  - Versions coexist: staging 2.0.0 does not touch 1.0.0, because the old one is usually still mapped or
+    running when the new one is staged. Collection is a separate call the app makes when it knows it has
+    restarted.
+  - An archive with a refused entry fails the WHOLE stage rather than leaving a smaller pack — a binary
+    whose sibling library was refused is broken, and it fails much later and somewhere else.
+  - `PathOf` refuses absent, escaping and not-ready **identically**, so it cannot be used to probe what
+    exists on the device.
+
 - **`WebViewResourceRequest.IsRootWithFragment(Uri)`** — true when a request is for the site root and
   carries a `#fragment`. It is what the Android repair above keys on, and it is public because a middleware
   that answers the root itself needs to recognise the same shape.

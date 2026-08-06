@@ -232,6 +232,17 @@ Manifest
 Zip
 Extraction
 Limits
+# `Pack` (2026-08-06) — a NAMED, VERSIONED SET OF FILES an app needs on disk at runtime, delivered as one
+# archive. Admitted because it names the unit, not its contents: the first consumer's pack holds a media
+# engine, but a model, a font set, a voice pack or a fixture tree are the same mechanism, and nothing on
+# `ResourcePack`'s surface knows which it is holding.
+# It also passes the harder test in `generic-library.md` — *would a second app disagree with this?* The
+# four things it decides (where a version lives, whether it is complete, how a path resolves inside it,
+# when the old one is collected) are not app decisions; the BYTES are, and the kit never supplies them.
+# ⚠ Watch it the way `Media` and `Download` are watched. `Pack` must keep meaning the container. A
+# `PackDownloader`, `PackRegistry` or `PackStore` would be the kit growing delivery — deciding where packs
+# come from — which is precisely the half D42 leaves with the app, and must be argued afresh.
+Pack
 Delete
 Directory
 Entry

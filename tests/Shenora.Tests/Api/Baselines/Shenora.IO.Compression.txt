@@ -15,6 +15,17 @@ sealed class Shenora.IO.Compression.ExtractionResult : System.IEquatable<Shenora
   public static bool op_Equality(Shenora.IO.Compression.ExtractionResult? left, Shenora.IO.Compression.ExtractionResult? right)
   public static bool op_Inequality(Shenora.IO.Compression.ExtractionResult? left, Shenora.IO.Compression.ExtractionResult? right)
   public void Deconstruct(out System.Collections.Generic.IReadOnlyList<string> Files, out long Bytes, out System.Collections.Generic.IReadOnlyList<string> Refused)
+sealed class Shenora.IO.Compression.ResourcePack
+  public .ctor(string name, string version, Shenora.IO.Compression.ResourcePackOptions options)
+  public System.Threading.Tasks.Task<bool> StageAsync(System.IO.Stream archive, Shenora.IO.Compression.ExtractionLimits? limits = null, System.Threading.CancellationToken cancellationToken = default)
+  public bool IsReady { get; }
+  public int PruneOthers()
+  public string Directory { get; }
+  public string Name { get; }
+  public string Version { get; }
+  public string? PathOf(string relativePath)
+sealed class Shenora.IO.Compression.ResourcePackOptions
+  public required string Root { get; init; }
 static class Shenora.IO.Compression.ZipExtraction
   public static Shenora.IO.Compression.ExtractionResult ExtractTo(System.IO.Compression.ZipArchive archive, string destinationDirectory, Shenora.IO.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.IO.Compression.ExtractionResult ExtractTo(string archivePath, string destinationDirectory, Shenora.IO.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)

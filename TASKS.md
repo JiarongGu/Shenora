@@ -133,6 +133,58 @@ backlog is `docs/archive/tasks.md`.
     JS evaluation aborts the whole app there, and the flattening/backslash rules in
     `.claude/knowledge/mobile-shells.md`. Read those before touching `PageProbe`.
 
+### Harvesting Sonora's on-device media — the reusable half (2026-08-06)
+
+> DIRECTION (user, 2026-08-06): *"sonora actually got proper solution for media play and you can get its
+> binary you can create resource pack to store them"* and, on where the bytes live, *"because this is a
+> library so we need to ship this for adoption"*. So the kit SHIPS an engine for adopters — the open
+> question was only which package carries it, not whether.
+
+Sonora built on-device conversion + an HLS segment stream, proved both on a device, and wrote a hand-off
+spec naming exactly what should and should not move — `2026-08-06-shenora-media-handoff.md`, in THAT repo
+under its superpowers specs (not a doc of this repo). This entry tracks taking it. **Read that spec before
+designing any of this** — every ⚠ in it is a bug that was actually hit, not a guess.
+
+- [x] ~~**The resource pack.**~~ DONE — `ResourcePack` in `Shenora.IO.Compression`. Moved to the archive
+  once the rest of this entry lands; kept here only because the two items below build on it.
+
+- [ ] **Lift the segment stream.** `SegmentStream.cs` (719 lines, **8 app-specific references** — it was
+  written portable and is the bulk of the value), `ISegmentEngine` (122, already kit-shaped and its own doc
+  references `Shenora.Media`), `ConvertedMedia` (51). Suggested shape from the spec:
+  `interceptor.UseSegmentStream(options)` beside the existing `UseMediaConversion`, taking an app-supplied
+  engine and a `Resolve` — the app then keeps only its engine implementation.
+  - 🔴 **The contract to carry above all: EXIT 0 IS NOT EVIDENCE.** An encoder can accept every frame,
+    write nothing, and exit 0 — measured (`h264_mediacodec` on the emulator: advertised by `-encoders` AND
+    `MediaCodecList`, opens, maps `hevc→h264`, writes `video:0KiB`, exits 0). So the route must verify the
+    OUTPUT before publishing to its cache. And **"has a video stream" is the wrong test** — MPEG-TS names
+    streams in the PMT, so a picture-less segment still declares one; the right question is whether it has
+    a SIZE. One bug, two predicates, which is why `ISegmentEngine` splits `HasPicture` from
+    `HasRenderedPicture`. A kit that offers the verification hook saves every consumer the same day.
+  - Five traps the spec records, all paid for once: the CALLER owns the output filename and therefore the
+    muxer (`.m4a.tmp` → exit 234, nothing written); cache tenancy is two things and iOS purges one of them;
+    a purged cache dir 503s forever; `-c copy` cannot hit a fixed grid; the last `#EXTINF` is not
+    full-length.
+  - **Do NOT lift**: the four `Ffmpeg*.cs` files (749 lines of decisions about THAT build), the codec
+    policy (⚠ `alac` is listed only under `#if IOS`, because WebKit decodes Apple Lossless and Chromium
+    does not — a kit-side list could not express that), or the build script.
+
+- [ ] **Ship an engine for adoption — packaging + licence, and this is the item with real-world risk.**
+  Owner's call is that the kit ships it. Planned as an OPT-IN package so a desktop app that never converts
+  media pays neither the megabytes nor the obligations; `generic-library.md` sanctions exactly this shape
+  (*"a package for optional WEIGHT"* — only some apps do it, and it is real shipped weight).
+  - **Sizes, measured:** 22 MB (android arm64-v8a) + 27 MB (x86_64), and 110 MB for the Windows
+    `ffmpeg.exe`. All gitignored in the source app on purpose.
+  - ⚠ **The build is LGPL-only BY DESIGN and that must not be lost in the move.** No `--enable-gpl` /
+    `--enable-nonfree`, because linking libx264 is GPL and **relicenses the consuming app**; the
+    licence-clean H.264 encoder is the platform's, via `--enable-mediacodec --enable-jni`, and openh264 is
+    Cisco's under 2-clause BSD. **Whoever ships the binary inherits the LGPL duties** — attribution, and
+    preserving the ability to relink — on behalf of every consumer of that package. That is the whole
+    reason the source app kept the script rather than the binaries.
+  - **Decide before publishing anything:** whether the kit REBUILDS from a tracked script (reproducible,
+    and the licence claim is ours to make) or republishes a binary it did not build (cheaper, and the
+    provenance claim is someone else's). nuget.org's 250 MB package limit also argues for per-RID packages
+    rather than one.
+
 ### From the first adopter — mobile media conversion has no engine (2026-08-06)
 
 - [ ] **🎧 `UseMediaConversion` has no engine under it on MOBILE, and every adopter will write the same
