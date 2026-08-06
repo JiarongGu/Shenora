@@ -104,6 +104,58 @@ Then: node devtools/dev.mjs mac doctor`);
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;   // single-quote for the remote shell
 
 /** Run something on the Mac. Returns {status, stdout, stderr}; `inherit` streams instead of capturing. */
+/**
+ * Run a script in the Mac's GUI LOGIN SESSION rather than over ssh, and wait for it.
+ *
+ * 🔴 This exists for exactly one reason and it is not convenience: **codesign cannot use a login-keychain
+ * key from an ssh session.** An ssh login is a different AUDIT SESSION, so any signing attempt dies with
+ * `errSecInternalComponent` — proven here 2026-08-06 by signing a copy of `/bin/echo`, which has nothing to
+ * do with this repo and failed identically. That wall is what stopped every device build; a simulator build
+ * signs ad-hoc and never meets it.
+ *
+ * The way through is to ask the GUI session to run the command: `osascript` tells Terminal.app to run a
+ * script, Terminal is already in the user's session, and the keychain opens. Ported from the sibling repo
+ * that solved this first (D15) — the technique is theirs, and the comment above is the part worth carrying.
+ *
+ * ⚠ Its output CANNOT be streamed back: the script is detached in another session, so it writes a log and an
+ * exit-code file and this polls for them. A script that never finishes leaves no `.done` and hits the
+ * timeout — which is why the timeout is generous and the log is returned either way.
+ *
+ * ⚠ The script is shipped base64-encoded. It crosses ssh's own shell, then a login shell, then AppleScript's
+ * string parser, and every one of those would otherwise eat a quote or expand a `$`.
+ */
+async function guiRun(cfg, script, { tag = 'run', timeoutMs = 20 * 60_000 } = {}) {
+  const sh = `/tmp/shenora-gui-${tag}.sh`;
+  const log = `/tmp/shenora-gui-${tag}.log`;
+  const done = `/tmp/shenora-gui-${tag}.done`;
+
+  // `exit` at the end so the Terminal window closes itself; without it they accumulate one per run.
+  const body = `#!/bin/bash\n{\n${script}\n} > ${log} 2>&1\necho $? > ${done}\nexit\n`;
+  const encoded = Buffer.from(body, 'utf8').toString('base64');
+
+  ssh(cfg, `rm -f ${done} ${log}`, { check: true });
+  ssh(cfg, `printf %s ${q(encoded)} | base64 -d > ${sh} && chmod +x ${sh}`, { check: true });
+  ssh(cfg, `osascript -e ${q(`tell application "Terminal" to do script "bash ${sh}"`)} >/dev/null`,
+    { check: true });
+
+  const started = Date.now();
+  let ticks = 0;
+  while (Date.now() - started < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const code = (ssh(cfg, `cat ${done} 2>/dev/null`).stdout ?? '').trim();
+    if (code !== '') {
+      process.stdout.write('\n');
+      return { status: Number(code), log: (ssh(cfg, `cat ${log} 2>/dev/null`).stdout ?? '') };
+    }
+    if (++ticks % 6 === 0) process.stdout.write(`  …${Math.round((Date.now() - started) / 1000)}s\n`);
+    else process.stdout.write('.');
+  }
+  return {
+    status: 1,
+    log: (ssh(cfg, `cat ${log} 2>/dev/null`).stdout ?? '') + `\n\n(timed out after ${timeoutMs / 1000}s)`,
+  };
+}
+
 function ssh(cfg, command, { inherit = false, check = false } = {}) {
   const args = [
     '-i', cfg.key,
