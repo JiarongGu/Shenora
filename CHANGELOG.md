@@ -16,6 +16,20 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- **Safe-area insets are now re-read when the device ROTATES.** Rotation moves an inset to a different
+  EDGE rather than resizing it — a cutout that is `top` in portrait becomes `left` or `right` in landscape
+  — so a shell that reads once publishes the wrong SHAPE for the rest of the session and the page reserves
+  a strip along the top while the notch is down the side. `MobileSafeArea` now re-reads on MAUI's
+  `SizeChanged` and again across the rotation animation (the size change is reported when the animation
+  BEGINS, and iOS still reports the old orientation's insets at that moment).
+  - ⚠ **iOS was affected worse than the symptom suggested: it had never published a real inset at all.**
+    Its single read happened before layout and returned zeros, which are correctly declined in favour of
+    `SafeAreaOptions.Default` — so an iOS app was laying out against its own default guess in every
+    orientation. Android was already correct. **If you set a `Default` that looked right, this is the fix
+    that makes the real numbers arrive.**
+  - The shell now logs its measured insets when they change, so the capability can be observed from the
+    host rather than inferred from what the page ended up with.
+
 - **`Shenora.Android` now repairs a MAUI defect that broke RELOADING any hash-routed page.** A top-level
   navigation to `https://host/#/library` reached MAUI's request→asset mapping with the fragment still
   attached; it strips a query string and not a fragment, so it looked for an asset literally named

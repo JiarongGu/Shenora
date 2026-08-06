@@ -14,6 +14,38 @@ entry template:
 
 ## 2026-08-06
 
+### Mobile: safe-area insets were never re-read on rotation, so landscape kept the portrait shape
+
+- **Symptom:** reported by the owner from a device — in landscape the page still reserves a strip along
+  the TOP, when the cutout is down the side.
+- **Root cause:** rotation moves an inset to a different EDGE rather than resizing it (measured, same
+  device, one rotation apart: `top=62 right=0 bottom=34 left=0` → `top=0 right=62 bottom=20 left=62`).
+  The iOS branch read `view.SafeAreaInsets` exactly once at attach and never again — its comment claimed
+  "a single read after layout is enough", true only of the first orientation. Android already re-read on
+  `LayoutChange`, so this only ever showed on one shell.
+  - 🔴 **Worse than stale: the iOS host had never published a real inset at all.** That single read
+    happened BEFORE layout and returned `0,0,0,0`, which `SafeAreaScript` correctly refuses to write over
+    a good default — so every iOS app was laying out against the app's DEFAULT guess for the whole
+    session, in every orientation.
+- **Fix:** subscribe to MAUI's `SizeChanged` (fires on both platforms, so the fix is not per-platform even
+  though the bug was) and re-read ACROSS the rotation animation, not just at its start — the size change
+  is reported when the animation begins, and iOS still reports the old orientation's insets then. The host
+  also logs its measured numbers on change, without which the capability is unobservable from the shell
+  side. Sample: the painted strips were top/bottom only, so a landscape cutout got correct padding and an
+  unpainted band; four borders on one element now cover all four edges, and its diagnostic prints all four
+  published values plus the orientation.
+- **Verify:** sabotage-verified BOTH ways on the simulator, with the sabotage applied **only to the Mac's
+  working copy** — never committed, because resurrected `SABOTAGE` commits are what forced a history
+  rewrite on 2026-08-04. Fixed build: rotating publishes `top=0 right=62 bottom=20 left=62` and rotating
+  back publishes `top=62 right=0 bottom=34 left=0`. Sabotaged build: **no host measurement at all** on
+  rotation, and its only reading was the startup `0,0,0,0`. Restored, rebuilt, green.
+- 🔴 **Why no gate caught it, and this is the part worth carrying:** the sample page reads `env()` itself,
+  and iOS reports env() correctly and updates it on rotation — so the PAGE looked right while the kit's
+  own published variables were wrong. **A sample that can answer the question a second way cannot detect
+  that the kit stopped answering it.** An adopting app trusting `--sa-*` — which is what the kit tells it
+  to do, since env() is insufficient on Android — would have been stuck in portrait.
+- **Commit:** `da032d2`
+
 ### iOS sample: the MAUI probes aborted the app before a single verdict was logged
 
 - **Symptom:** found while trying to MEASURE the iOS half of the fragment-reload report. The sample dies

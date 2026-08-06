@@ -31,6 +31,35 @@ Earned across the Android port and the iOS port (both 2026-08-02).
      come from the host**, which knows it from `WindowInsetsCompat`.
   - **And they are 0 at FIRST PAINT.** The same probe logged `top=0 right=0 bottom=0 left=0` on the
     initial load and `top=49` only after a reload — so even the cutout is unprotected on first render.
+  4. 🔴 **ROTATION MOVES AN INSET TO A DIFFERENT EDGE — it does not merely resize it.** Measured on the
+     iOS simulator 2026-08-06, same device, one rotation apart:
+
+     ```
+     portrait   top=62 right=0  bottom=34 left=0
+     landscape  top=0  right=62 bottom=20 left=62
+     ```
+
+     So a shell that reads the insets ONCE does not publish a slightly stale value — it publishes the
+     wrong SHAPE forever, and the page reserves a strip along the top while the cutout is down the side.
+     The iOS branch did exactly that (`view.SafeAreaInsets` read once at attach, commented "a single read
+     after layout is enough", which is true of the first orientation only). Android was already correct
+     because it re-read on `LayoutChange`. **Subscribe to MAUI's `SizeChanged`** — it fires on both
+     platforms, so the fix is not per-platform even though the bug was.
+     - ⚠ **Re-read ACROSS the rotation animation, not just at its start.** The size change is reported
+       when the animation begins and iOS still reports the OLD orientation's insets at that moment, so a
+       single read on `SizeChanged` republishes exactly the values the rotation invalidated.
+     - 🔴 **And it was worse than stale: pre-fix, the iOS host never published a real inset AT ALL.** Its
+       one read happened before layout and returned `0,0,0,0`, which `SafeAreaScript` correctly declines
+       to write over a good default — so every iOS app got the DEFAULT guess for the whole session.
+     - 🔴 **The sample MASKED this, and that is the transferable lesson.** Its page also reads `env()`
+       itself, and iOS reports env() correctly and updates it on rotation — so the page looked right while
+       the kit's own published `--sa-*` variables were wrong. An adopting app that trusts those variables
+       (which is what the kit TELLS it to do, because env() is insufficient on Android) would have been
+       stuck in portrait. **A sample that can answer the question a second way cannot detect that the kit
+       stopped answering it.** The fix was only observable once the host logged its own numbers.
+     - Painting the inset strips needs FOUR edges, not two. Top+bottom is the portrait shape mistaken for
+       the general one: in landscape the padding is right and the strip is missing exactly where the notch
+       is. Four borders on one full-viewport element do it with no JS.
   - **Measure, do not squint at a screenshot.** The sample logs its four insets plus viewport and dpr at
     startup (`samples/Shenora.Sample.Maui/.../index.html`); that one line turned three guesses into
     three numbers, one of which contradicted what the screenshot appeared to show.
