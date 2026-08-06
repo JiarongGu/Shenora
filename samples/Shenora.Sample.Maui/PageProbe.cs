@@ -407,20 +407,20 @@ internal static class PageProbe
 		(function(){
 			var b = document.body;
 			return 'href=' + location.pathname
-				// ⚠ Load-bearing for the fragment arm, and it was missing from the first version: without
-				// it NOTHING in a passing verdict says the reload URL carried a fragment at all, so a
-				// hash arm that silently lost its hash would read as a clean pass.
 				+ '|hash=' + (location.hash || '-')
 				+ '|ready=' + document.readyState
 				+ '|stamp=' + (window.{{StaleMark}} ? 'STALE' : 'fresh')
 				+ '|title=' + (document.title || '')
-				+ '|nodes=' + document.querySelectorAll('*').length
-				// 120, not 60. At 60 the platform's own error text came back as `net::ERR` — cut one
-				// character before the underscore, which silently defeated a check looking for `ERR_`.
-				// A diagnostic truncated mid-token is worse than no diagnostic: it reads as evidence.
 				+ '|text=' + ((b && b.innerText) || '').replace(/\s+/g, ' ').slice(0, 120);
 		})()
 		""";
+	// Two notes that belong to the script above but must NOT live INSIDE it — see EvaluateAsync, which
+	// flattens every script to one line, so a `//` comment would swallow the rest of the program:
+	//  · `hash` is load-bearing for the fragment arm. Without it NOTHING in a passing verdict says the
+	//    reload URL carried a fragment at all, so an arm that silently lost its hash reads as a clean pass.
+	//  · the text slice is 120, not 60. At 60 the platform's own error text came back as `net::ERR` — cut
+	//    one character before the underscore, which silently defeated a check looking for `ERR_`. A
+	//    diagnostic truncated mid-token is worse than no diagnostic: it reads as evidence.
 
 	/// <summary>
 	/// One <c>name=value</c> field out of a <see cref="Snapshot"/> line, or the empty string when absent.
@@ -464,7 +464,7 @@ internal static class PageProbe
 	{
 		try
 		{
-			var raw = await MainThread.InvokeOnMainThreadAsync(() => webView.EvaluateJavaScriptAsync(script))
+			var raw = await MainThread.InvokeOnMainThreadAsync(() => webView.EvaluateJavaScriptAsync(Safe(script)))
 				.ConfigureAwait(false);
 			if (raw is null) return null;
 			if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
@@ -479,8 +479,43 @@ internal static class PageProbe
 		{
 			// A failed evaluation is a RESULT here, not an error to propagate: it is one of the ways a
 			// broken navigation shows up, and the caller decides what it means.
+			// ⚠ And on iOS this catch is NOT the safety net it looks like — see Safe().
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// A script WKWebView will accept, wrapped so that a runtime error inside it becomes a returned value
+	/// instead of a thrown one.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// 🔴 <b>Both halves of this are load-bearing, and the reason is that on iOS a failing evaluation KILLS
+	/// THE APP — the <c>try/catch</c> in <see cref="EvaluateAsync"/> cannot catch it.</b> MAUI's
+	/// <c>HybridWebViewHandler.MapEvaluateJavaScriptAsync</c> runs the evaluation as a fire-and-forget task
+	/// and rethrows its failure onto the SYNCHRONIZATION CONTEXT
+	/// (<c>Task.ThrowAsync</c> → <c>NSAsyncSynchronizationContextDispatcher.Apply</c>), which is a different
+	/// stack from the one awaiting it. So the exception arrives on the UI thread with nothing above it,
+	/// becomes an unhandled managed exception, and aborts the process with SIGABRT. Measured 2026-08-06 on
+	/// the simulator: the whole probe suite took the app down ~7 s after launch, before a single verdict
+	/// was logged, and the crash predates this file's two-arm rewrite.
+	/// </para>
+	/// <list type="number">
+	/// <item><b>Flattened to ONE LINE.</b> WKWebView rejected the multi-line scripts outright with
+	/// <c>SyntaxError: Unexpected EOF</c> at line 1 — the parse fails before any JS runs, so no in-page
+	/// guard can help. ⚠ Consequence: a <c>//</c> comment inside a script would swallow the rest of the
+	/// program. Keep script commentary in C#, outside the string.</item>
+	/// <item><b>Wrapped in a JS try/catch.</b> That covers the other half — a RUNTIME error (a missing
+	/// element, a revoked context mid-navigation) would otherwise take the same fatal path. Every script
+	/// here is an EXPRESSION, so wrapping it in an IIFE preserves its value.</item>
+	/// </list>
+	/// </remarks>
+	private static string Safe(string script)
+	{
+		// Newlines and tabs only, NOT every space: `.replace(/\s+/g, ' ')` in the snapshot contains a
+		// single-space string LITERAL, and deleting whitespace rather than replacing it would corrupt it.
+		var flat = script.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
+		return $"(function(){{try{{return ({flat});}}catch(e){{return 'PROBE-THREW ' + e;}}}})()";
 	}
 
 	/// <summary>
