@@ -1640,3 +1640,18 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     with extra steps.
   - **Shenora being MIT imposes nothing on any consumer.** A closed-source app references it and stays
     closed; that is what MIT is for, and it is why the kit's own licence is not the thing under discussion.
+  - **AMENDED again 2026-08-06 — ffmpeg has THREE licence states, not two, and the third is the trap.**
+    Asked: *"so ffmpeg can either go GPL or LGPL?"* Nearly — the licence is not chosen, it is DETERMINED by
+    what is compiled in, and it follows the most restrictive component:
+    | build | licence | distributable |
+    |---|---|---|
+    | default | LGPL 2.1+ | yes — a closed-source app may link it |
+    | `--enable-gpl` | GPL 2+ | yes, but it **relicenses the consuming app** (x264, x265, libxvid, libpostproc, some filters) |
+    | `--enable-nonfree` | non-free | **NO — may be built and used, may never be distributed** |
+    (`--enable-version3` additionally bumps affected components to the v3 variants.)
+    ⚠ **`--enable-nonfree` is the one to watch**, because it is what someone reaches for to get **fdk-aac**
+    for better AAC, and the result works perfectly, passes every functional gate, and cannot legally be
+    shipped — nothing in the build output says so. A licence failure that no test can see is exactly the
+    class this decision exists to stop. Guard BOTH flags in any build script, as the source app's already does.
+    **None of the three changes the kit's answer:** LGPL and GPL are both non-MIT, so none may ship from
+    Shenora. Which one an APP builds is the app's call, and the sane one is the default LGPL build.
