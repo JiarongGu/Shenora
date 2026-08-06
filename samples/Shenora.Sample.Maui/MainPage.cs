@@ -145,6 +145,12 @@ public sealed class MainPage : ContentPage
 		// implementation for this platform.
 		PlaybackSessionProbe.Run(services.GetRequiredService<IPlaybackSession>(), MauiProgram.Log);
 
+		// What this DEVICE can decode and encode. Nothing in the kit depends on it — it is a MEASUREMENT,
+		// and it is here rather than in a one-off script because the answer is per-device (Android's codec
+		// support is vendor-declared) and therefore has to be re-askable on whatever hardware turns up.
+		MauiProgram.Log(CodecProbe.Question);
+		CodecProbe.Run(MauiProgram.Log);
+
 		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
 		// the media staging above.
 		_ = Task.Run(async () =>
