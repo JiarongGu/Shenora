@@ -1720,3 +1720,10 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     local file or honouring a safe-area inset. It is emphatically not a licence to grow media features that
     do not end in "…and now the page can play it". **The test for anything proposed here: does a React+C#
     app fail without it?**
+  - **The worked example, and the clearest one-line statement of this whole decision** (owner, 2026-08-06):
+    *"we're not remaking ffmpeg, neither any complex encoder/decoder — our goal is to support web playback;
+    it's like if H.265 is not supported on the web we translate it."* **H.265 is the flagship case precisely
+    because it needs no software codec anywhere:** the device already decodes HEVC in hardware and already
+    encodes H.264 in hardware, so the translation is two platform calls and a container. Zero bytes, zero
+    licence, no codec written. If a proposal here cannot be described that way — as a translation between
+    what the user HAS and what the web ACCEPTS, using what the device already does — it is out of scope.
