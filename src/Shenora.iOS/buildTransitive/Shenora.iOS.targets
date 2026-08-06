@@ -19,7 +19,26 @@
   <PropertyGroup>
     <!-- The kit's own Swift, beside this file inside the package. -->
     <_ShenoraLiveActivitySwift>$(MSBuildThisFileDirectory)swift/ShenoraLiveActivity.swift</_ShenoraLiveActivitySwift>
-    <_ShenoraLiveActivityOut>$(IntermediateOutputPath)shenora-liveactivity</_ShenoraLiveActivityOut>
+    <!--
+      🔴 `BaseIntermediateOutputPath`, NOT `IntermediateOutputPath`, and the path carries the RID — two bugs
+      in one line, both found by the first DEVICE build (2026-08-06) and both invisible to a simulator-only
+      repo.
+
+      1. This PropertyGroup evaluates at IMPORT time, and a consumer imports this file from its project
+         BODY. `IntermediateOutputPath` is defined by the SDK targets imported AFTER the body, so it was
+         EMPTY here — the shim landed in the consumer's project ROOT (`./shenora-liveactivity/`) rather than
+         under `obj/`. `BaseIntermediateOutputPath` comes from Microsoft.Common.props at the TOP, so it is
+         genuinely available.
+      2. With no RID in the path, one architecture's `.a` satisfies another's incremental check. A simulator
+         build left an x86_64 archive; the device build then reported *"Skipping target
+         ShenoraBuildLiveActivityShim because all output files are up-to-date"* and linked x86_64 objects
+         into an arm64 app — `Undefined symbols for architecture arm64: _shenora_activity_end …`, which
+         reads exactly like the 0.9.0 packaging defect and is not it.
+
+      ⚠ It has to be computed HERE rather than inside a target, because the NativeReference and
+      AdditionalAppExtensions items below are deliberately static (see their comment).
+    -->
+    <_ShenoraLiveActivityOut>$(BaseIntermediateOutputPath)shenora-liveactivity/$(Configuration)/$(TargetFramework)/$(RuntimeIdentifier)</_ShenoraLiveActivityOut>
     <_ShenoraLiveActivityAppex>$(_ShenoraLiveActivityOut)/ShenoraLiveActivity.appex</_ShenoraLiveActivityAppex>
     <_ShenoraLiveActivityLib>$(_ShenoraLiveActivityOut)/libshenoraliveactivity.a</_ShenoraLiveActivityLib>
     <!--
