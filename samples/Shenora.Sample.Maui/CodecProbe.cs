@@ -95,16 +95,32 @@ internal static class CodecProbe
     [DllImport("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox")]
     private static extern int AudioFormatGetProperty(uint propertyId, uint specifierSize, IntPtr specifier, ref uint dataSize, [Out] uint[] data);
 
-    private static SortedSet<string> FormatIds(uint propertyId)
+    /// <summary>
+    /// The format ids for a property, and the OSStatus if asking failed.
+    /// <para>
+    /// 🔴 <b>The status is REPORTED, not swallowed, and that is the whole lesson from the first device
+    /// run.</b> The first version returned an empty set on any error, so the device printed
+    /// <c>aac: decode=no</c> — obviously false, since iOS decodes AAC everywhere. Had the probe only asked
+    /// about AC-3, "no" would have looked exactly like a real answer and settled a design decision on a
+    /// broken measurement. Two habits saved it and both are worth keeping: ask about a codec you KNOW the
+    /// answer to as a control, and never let a failed query be indistinguishable from a negative result.
+    /// </para>
+    /// </summary>
+    private static (SortedSet<string> Ids, int Status) FormatIds(uint propertyId)
     {
         var found = new SortedSet<string>(StringComparer.Ordinal);
-        if (AudioFormatGetPropertyInfo(propertyId, 0, IntPtr.Zero, out var size) != 0 || size == 0) return found;
+
+        var status = AudioFormatGetPropertyInfo(propertyId, 0, IntPtr.Zero, out var size);
+        if (status != 0) return (found, status);
+        if (size == 0) return (found, 0);
 
         var values = new uint[size / sizeof(uint)];
-        if (AudioFormatGetProperty(propertyId, 0, IntPtr.Zero, ref size, values) != 0) return found;
+        status = AudioFormatGetProperty(propertyId, 0, IntPtr.Zero, ref size, values);
+        if (status != 0) return (found, status);
 
-        foreach (var value in values) found.Add(FourCc(value));
-        return found;
+        // The returned size may be smaller than the info call promised; trust the OUT value.
+        foreach (var value in values.Take((int)(size / sizeof(uint)))) found.Add(FourCc(value));
+        return (found, 0);
     }
 
     /// <summary>A FourCC is four ASCII bytes packed big-endian — 'ac-3' and friends.</summary>
@@ -116,16 +132,23 @@ internal static class CodecProbe
 
     private static void RunCore(Action<string> log)
     {
-        var decoders = FormatIds(DecodeFormatIds);
-        var encoders = FormatIds(EncodeFormatIds);
+        var (decoders, decodeStatus) = FormatIds(DecodeFormatIds);
+        var (encoders, encodeStatus) = FormatIds(EncodeFormatIds);
 
         // MAUI's own device API rather than ObjCRuntime.Runtime.Arch — it reads the same on both platforms
         // and does not depend on a binding that has moved between iOS workload bands.
         var virtualDevice = DeviceInfo.Current.DeviceType == DeviceType.Virtual;
         log($"[CODEC] platform=iOS {UIKit.UIDevice.CurrentDevice.SystemVersion} "
             + $"model={DeviceInfo.Current.Model} sim={(virtualDevice ? "yes" : "no")}");
-        log($"[CODEC] decode: {string.Join(' ', decoders)}");
-        log($"[CODEC] encode: {string.Join(' ', encoders)}");
+        log($"[CODEC] decode({decoders.Count}, status={decodeStatus}): {string.Join(' ', decoders)}");
+        log($"[CODEC] encode({encoders.Count}, status={encodeStatus}): {string.Join(' ', encoders)}");
+
+        // An empty list is NOT an answer — it means the query failed and every verdict below is worthless.
+        if (decoders.Count == 0)
+        {
+            log("[CODEC] ⚠ INCONCLUSIVE — AudioToolbox returned no decode formats at all, which cannot be "
+                + "true on iOS. Treat the verdicts below as unmeasured, not as negatives.");
+        }
 
         // 'ac-3' is AC-3; 'ec-3' is Enhanced AC-3. 'cac3' is AC-3 carried over S/PDIF, which is a TRANSPORT
         // and not a decoder — counting it would report a decode capability that does not exist.
