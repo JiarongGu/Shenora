@@ -81,7 +81,10 @@ Shenora.slnx
 │   │                                                    UseSegmentStream (an HLS window, playable
 │   │                                                    seconds in). Both are MIDDLEWARE registered on
 │   │                                                    the shell's IWebViewInterceptor.
-│   │                                            Engine/ the transform stage — the ISegmentEngine seam.
+│   │                                            Engine/ the transform stage — Mp4Remuxer (Matroska → MP4,
+│   │                                                    every frame copied untouched, no codec at all)
+│   │                                                    plus the ISegmentEngine seam for what the kit
+│   │                                                    does not do itself.
 │   │                                          ⚠ It still implements NO interception. Serving bytes to a
 │   │                                          page configures a WEBVIEW and is a shell capability, so
 │   │                                          IWebViewInterceptor lives in Core and each shell
@@ -402,8 +405,21 @@ changes, noting them in `CHANGELOG.md`).
   length and a seek anywhere is expressible before a single segment exists — then keeps a rolling window of
   `seg{k}.ts` alive around the playhead. An hour-long source is an hour-long wait through conversion and a
   few seconds through this.
-  **`Engine/` — the transform stage.** `ISegmentEngine` (+ `SegmentRunRequest`, `ISegmentRun`) is the seam
-  the segment route produces through. 🔴 Its most valuable member is `HasRenderedPicture`, and it is
+  **`Engine/` — the transform stage.** Two things: what the kit DOES, and the seam for what it does not.
+  `Mp4Remuxer.Remux(source, destination)` → `Mp4RemuxerResult`/`Mp4RemuxerOutcome` rewrites Matroska as MP4
+  with every frame copied untouched — tier 1 of D52's engine tiers, and the highest-value piece because it
+  needs no codec at all: the picture is already H.264 or HEVC and the device already decodes both, so only
+  the BOX is wrong. Carries H.264/HEVC video and AAC audio; anything MP4 cannot hold without re-encoding is
+  reported (`NoCarriableStream`), never half-converted — though an unplayable soundtrack does not cost the
+  picture. ⚠ Necessarily **TWO-PASS**: `moov` must precede `mdat` for seeking, and the sample table cannot
+  be written until every frame's size and position are known. Two things it handles that a remuxer usually
+  does not, each invisible until real content: **B-frames** (Matroska stores presentation time, MP4 stores
+  decode time — identical without B-frames, which is why a remuxer can look correct and mangle most real
+  H.264; `SampleTiming` derives the decode timeline, writes composition offsets and an edit list for the
+  shift) and **lacing** (several AAC frames per block header — ignore it and most of the soundtrack silently
+  disappears while every box validates).
+  `ISegmentEngine` (+ `SegmentRunRequest`, `ISegmentRun`) is the seam the segment route produces through.
+  🔴 Its most valuable member is `HasRenderedPicture`, and it is
   separate from `HasPicture` because **exit 0 is not evidence**: a hardware H.264 encoder advertised by both
   the tool's own list and the platform's codec list has been measured opening cleanly, taking every frame,
   writing `video:0KiB` and exiting 0. "Has a video stream" is the wrong test too — MPEG-TS names streams in

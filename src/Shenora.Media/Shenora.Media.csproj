@@ -9,7 +9,7 @@
     -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Media</PackageId>
-    <Description>Shenora media: the TRANSLATION LAYER that makes a file a webview cannot decode playable, and never more than that. A pipeline — PROBE a Matroska header with no external tool, PLAN the minimum move per stream (direct / remux / transcode / unsupported), SERVE the result as a converted file or an HLS segment stream over the shell's interceptor, and TRANSFORM behind a seam. Ships NO codec list: the mechanism is the kit's, the codec policy is the application's.</Description>
+    <Description>Shenora media: the TRANSLATION LAYER that makes a file a webview cannot decode playable, and never more than that. A pipeline — PROBE a Matroska header with no external tool, PLAN the minimum move per stream (direct / remux / transcode / unsupported), SERVE the result as a converted file or an HLS segment stream over the shell's interceptor, and TRANSFORM it — a managed Matroska-to-MP4 remuxer that copies every frame untouched, plus a seam for anything needing a real encoder. Ships NO codec list and vendors NO engine binary: the mechanism is the kit's, the codec policy is the application's.</Description>
   </PropertyGroup>
 
   <!--

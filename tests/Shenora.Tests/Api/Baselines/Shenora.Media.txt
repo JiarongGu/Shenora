@@ -122,6 +122,33 @@ sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.Med
   public static bool op_Equality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)
+static class Shenora.Media.Mp4Remuxer
+  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination)
+  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath)
+enum Shenora.Media.Mp4RemuxerOutcome (int)
+  public const Shenora.Media.Mp4RemuxerOutcome DestinationUnwritable = 5
+  public const Shenora.Media.Mp4RemuxerOutcome MissingDecoderConfig = 3
+  public const Shenora.Media.Mp4RemuxerOutcome NoCarriableStream = 2
+  public const Shenora.Media.Mp4RemuxerOutcome NotMatroska = 1
+  public const Shenora.Media.Mp4RemuxerOutcome SourceUnreadable = 4
+  public const Shenora.Media.Mp4RemuxerOutcome Succeeded = 0
+  public int value__
+sealed class Shenora.Media.Mp4RemuxerResult : System.IEquatable<Shenora.Media.Mp4RemuxerResult>
+  public .ctor(Shenora.Media.Mp4RemuxerOutcome Outcome, string Reason, int VideoSamples = 0, int AudioSamples = 0, System.TimeSpan Duration = default)
+  public Shenora.Media.Mp4RemuxerOutcome Outcome { get; init; }
+  public Shenora.Media.Mp4RemuxerResult <Clone>$()
+  public System.TimeSpan Duration { get; init; }
+  public bool Equals(Shenora.Media.Mp4RemuxerResult? other)
+  public bool Succeeded { get; }
+  public int AudioSamples { get; init; }
+  public int VideoSamples { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.Mp4RemuxerResult? left, Shenora.Media.Mp4RemuxerResult? right)
+  public static bool op_Inequality(Shenora.Media.Mp4RemuxerResult? left, Shenora.Media.Mp4RemuxerResult? right)
+  public string Reason { get; init; }
+  public void Deconstruct(out Shenora.Media.Mp4RemuxerOutcome Outcome, out string Reason, out int VideoSamples, out int AudioSamples, out System.TimeSpan Duration)
 sealed class Shenora.Media.SegmentRunRequest : System.IEquatable<Shenora.Media.SegmentRunRequest>
   public .ctor(string SourcePath, string Directory, bool HasPicture, int FirstSegment, double SegmentSeconds, int Attempt)
   public Shenora.Media.SegmentRunRequest <Clone>$()

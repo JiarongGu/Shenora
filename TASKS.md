@@ -181,24 +181,11 @@ designing any of this** — every ⚠ in it is a bug that was actually hit, not 
 > toolkit, and the kit ships NO ffmpeg bytes (D51). The build order below replaces what this entry
 > originally proposed.
 
-**Shipped this session:** `ResourcePack` (`Shenora.IO.Compression`) · `UseSegmentStream` + `ISegmentEngine`
-(the route and the seam) · `MatroskaProbe` (answers "can this play?" with no external tool). The pipeline is
-**probe → plan → serve**, and the gap is **transform**.
-
-- [ ] **Slice 1 — reshape the package into its pipeline.** Folders (`Probe/`, `Plan/`, `Serve/`, `Engine/`)
-  plus the `ARCHITECTURE.md` narrative, so it reads as a pipeline rather than a bag of media types.
-  ⚠ **NOT a package split** — none of this is real weight, and weight is D48's bar. Cheap, and worth doing
-  before more lands on top of it.
-
-- [ ] **Slice 2 — the remuxer: MKV → MP4, H.264 passed through untouched.** The highest-value piece, and it
-  needs no codec work at all: walk the Matroska clusters for frame positions, write an ISO-BMFF `moov` +
-  `mdat`, copy the samples. No decoding, no patents, pure managed code.
-  - Start from `MatroskaProbe`'s EBML reader — it already parses the header; the remuxer needs the
-    cluster/`SimpleBlock` walk it deliberately skips.
-  - ⚠ `moov` must come FIRST for seeking (faststart), so the sample table has to be known before any bytes
-    are written — a two-pass job over the source, not a stream copy.
-  - Testable with no device: build an MKV fixture the way `MatroskaProbeTests` does, remux it, assert the
-    boxes. The unit tests prove the bytes; a device proves PLAYBACK.
+**Built so far:** `ResourcePack` (`Shenora.IO.Compression`) · `MatroskaProbe` (`Probe/`) ·
+`MediaPlaybackPlanner` (`Plan/`) · `UseMediaConversion` + `UseSegmentStream` (`Serve/`) · `Mp4Remuxer` +
+the `ISegmentEngine` seam (`Engine/`). **Slices 1 and 2 are CLOSED** (2026-08-07 — the pipeline reshape and
+the remuxer; record in `docs/archive/tasks.md`). The pipeline is **probe → plan → serve → transform**, and
+what remains of transform is the AUDIO, which is the half that needs a codec.
 
 - [ ] **Slice 3 — audio transcode (AC-3/DTS → AAC), and ONE MEASUREMENT decides its shape.** Does
   `MediaCodec` (Android) / AudioToolbox (iOS) expose **AC-3 DECODE** on the three targets? Yes → a platform

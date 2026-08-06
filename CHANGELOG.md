@@ -104,6 +104,70 @@ at the first list and missed five more breaking changes.
   reading also HIDES the fragment, which is precisely how this defect was first attributed to the wrong
   component.
 
+- **`Shenora.Media` is now a PIPELINE, and reads as one: `Probe/` → `Plan/` → `Serve/` → `Engine/`.** The
+  package is the TRANSLATION LAYER for the web (D52) — the minimum transformation that makes a file the user
+  already has playable in a webview, and never more. Folders and an `ARCHITECTURE.md` narrative only:
+  **no public type moved, no namespace changed, nothing to migrate.**
+
+- **`MatroskaProbe` (`Shenora.Media`)** — answers "what is inside this file?" in managed code, with no
+  external tool. `Read(path)` / `Read(stream, container)` walk an EBML header and return the same
+  `MediaProbeResult` the planner already takes, or **null** for "I could not tell", which is an ordinary
+  answer rather than a failure. Until now the only thing that could produce that record was an external
+  probe, so "can this play?" meant shipping a media toolchain to answer a question that costs a few hundred
+  bytes of header.
+  - It reads the HEADER only — never a cluster, never a frame — under a bounded budget, because the file is
+    one a PAGE can point at.
+  - Matroska's own codec ids are translated to the lowercase names every policy speaks (`V_MPEG4/ISO/AVC` →
+    `h264`), so a policy needs one vocabulary instead of two. An id nothing recognises comes back
+    lowercased rather than null, which a policy correctly reads as unplayable — the safe direction.
+
+- **`interceptor.UseSegmentStream(SegmentStreamOptions)` + `ISegmentEngine`/`ISegmentRun`/`SegmentRunRequest`
+  (`Shenora.Media`)** — play a source the webview cannot decode WITHOUT converting it first. The route
+  publishes an HLS manifest computed from the duration alone, so the scrub bar is the right length and a seek
+  anywhere is expressible before a single segment exists, then keeps a rolling window alive around the
+  playhead. An hour-long source is an hour-long wait through whole-file conversion and a few seconds
+  through this. Harvested from a consuming app that proved it on a device (D15).
+  - 🔴 **`ISegmentEngine` splits `HasPicture` from `HasRenderedPicture`, and that split is the most valuable
+    thing in the feature: EXIT 0 IS NOT EVIDENCE.** A hardware H.264 encoder advertised by both the tool's
+    own encoder list and the platform's codec list was measured opening cleanly, accepting every frame,
+    writing `video:0KiB`, and exiting 0. And "has a video stream" is the wrong test too — MPEG-TS names its
+    streams in the PMT, so a picture-less segment still declares one. What is missing is the SIZE.
+
+- **`Mp4Remuxer` + `Mp4RemuxerResult`/`Mp4RemuxerOutcome` (`Shenora.Media`)** — rewrites a Matroska file as
+  MP4 with **every frame copied untouched**. The video inside an ordinary `.mkv` is almost always H.264 or
+  HEVC and the device already decodes both in hardware; what the webview refuses is the BOX. So the repair
+  is to write a different box around the same bytes: no decoding, no encoding, **no shipped binary and no
+  licence weight** — the tier-1 engine of D52, and the reason a remuxer is worth writing in managed code
+  while a codec library is not.
+
+  ```csharp
+  var result = Mp4Remuxer.Remux(sourcePath, destinationPath);
+  if (!result.Succeeded) Log(result.Reason);   // a code to branch on, and a reason for the LOG only
+  ```
+
+  - **It is a TWO-PASS job over the source, forced by the format rather than chosen.** A player needs the
+    sample table before it can seek, and that table cannot be written until every frame's size and position
+    are known — so `moov` precedes `mdat` and the source is walked for positions before a byte is written.
+    Streaming the output as it reads would put the table at the END: a file that plays from the start and
+    cannot be scrubbed until it has been fetched whole.
+  - **Carries H.264 and HEVC video and AAC audio.** A stream MP4 cannot carry without re-encoding — AC-3,
+    DTS, VP9 — is REPORTED (`NoCarriableStream`) rather than converted; that is the transcode tier's job and
+    this refuses instead of half-doing it. ⚠ But an unplayable soundtrack does not cost the picture: a file
+    whose H.264 is fine still remuxes, carrying the video and leaving the audio behind.
+  - ⚠ **B-frames are handled, and this is the part a remuxer usually gets wrong.** Matroska stores when a
+    frame is SHOWN; MP4 stores when it is DECODED. For a stream without B-frames the two are identical —
+    which is exactly why a remuxer can be built, tested against simple content, and ship looking correct
+    while mangling most real H.264. The decode timeline is derived, composition offsets are written, and an
+    edit list takes back the shift they require.
+  - ⚠ **Laced blocks are handled** (all three schemes). Several AAC frames routinely share one block header,
+    so a remuxer that ignores lacing silently drops most of the soundtrack while every box still validates.
+    Frames left sharing a timestamp are spread, because a duration of zero plays as a fraction of a second.
+  - It writes where it is pointed and owns no atomicity — through `UseMediaConversion` that is already
+    handled, since the destination is a temporary path swapped into place only on success.
+  - **What the unit tests prove is the BYTES** — box order, frames recovered byte-identically *through* the
+    sample table the way a player addresses them, sync tables, composition tables. They cannot prove
+    PLAYBACK on a real decoder; that needs a device and is tracked as open.
+
 ## 0.10.0 — 2026-08-05
 
 ### Breaking

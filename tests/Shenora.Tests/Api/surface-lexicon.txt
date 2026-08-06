@@ -362,9 +362,13 @@ Conversion
 #   · `Run` is one live production — started, writes numbered output, can be killed. Deliberately not `Job`
 #     or `Task`: `Task` collides with the BCL, and `Job` is the app's word for work it schedules, which is
 #     the noun the mission layer refused for the same reason.
-#   · `Engine` names the SEAM for the thing the kit does NOT ship, and that is precisely what makes it
-#     admissible — `ISegmentEngine` is where an app plugs its own encoder in, and the kit ships no
-#     implementation and never will (D42, D51). A word naming the hole is not the kit growing what fills it.
+#   · `Engine` names the SEAM an app plugs its own encoder into — `ISegmentEngine`. ⚠ This entry used to
+#     say the kit "ships no implementation and never will (D42, D51)", which D52 corrected LATER THE SAME
+#     DAY: the kit does ship a DEFAULT, assembled from a managed remux and the platform's own codecs. That
+#     narrows D42 rather than reversing it — D42's objection was always VENDORING (megabytes every consumer
+#     pays for, a licence every consumer inherits), and a default costing zero bytes and zero obligations
+#     is neither. The word is still admissible for the better reason: it names a MECHANISM, and the seam
+#     remains the escape hatch for reach the default lacks rather than the only door.
 # ⚠ Watch `Engine` the way `Media` and `Download` are watched, and closer: the moment a type here DECIDES
 # how to encode rather than asking the app, the kit has grown an engine, which D42 puts out of scope. A
 # `SegmentEncoder`, `SegmentTranscoder`, or a codec ladder in `src/` would be that — argue those afresh
@@ -381,6 +385,25 @@ Engine
 # `MatroskaMuxer` or anything that produces one is a different argument (it is the translation layer's
 # output side) and must be made on its own, not waved past because the format is already named.
 Matroska
+# `Mp4` + `Remuxer` (2026-08-07) — THE ARGUMENT THE LINE ABOVE ASKED FOR, made on its own terms.
+# `Mp4Remuxer` reads Matroska and writes MP4. Note first what it is NOT: not a `MatroskaWriter`, which is
+# what that warning was actually guarding against — nothing here produces a Matroska file, and the kit
+# still owns exactly one direction.
+#   · `Mp4` is a published container format name, admitted on precisely the terms `Zip` and `Matroska`
+#     were: it names the format the type emits and nothing about a product. A `MediaRemuxer` or
+#     `ContainerRewriter` would OVER-CLAIM in the way `MediaContainerProbe` would have — this reads one
+#     container and writes one other, and the Archives lesson is that a name needing its contents
+#     explained is the wrong name.
+#   · `Remuxer` is the kit's OWN decided vocabulary already: `MediaPlaybackAction.Remux` has been the
+#     planner's verdict since 2026-08-03. This type is the thing that performs the verdict the planner
+#     already names, so the word is not new to the surface — only to the part of it this gate sweeps
+#     (D22 is types; enum members are not swept).
+# ⚠ And the scope test it has to keep passing (D52): a remux DECODES NOTHING. It copies frames and their
+# decoder configuration verbatim into a different box — zero bytes shipped, zero licence weight, no codec
+# written. The moment something here decodes or encodes a frame, the kit has grown the engine D42 puts out
+# of scope, and `Mp4Transcoder` or a `Decoder` would be that — argue those afresh.
+Mp4
+Remuxer
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher

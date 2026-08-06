@@ -17,6 +17,104 @@
 
 ---
 
+### Media slices 1 + 2 — the pipeline reshape and the remuxer — CLOSED 2026-08-07
+
+The first two of D52's four slices. `verify` PASSED at **1161 tests** (from 1125), and neither slice needed
+a decision the owner had not already made — D52 sanctioned the reshape explicitly and named the remuxer as
+tier 1 of the engine tiers.
+
+**Slice 1 — the package reads as its pipeline.** Six files moved with `git mv` (all six recorded as pure
+renames): `Probe/` MatroskaProbe + MediaProbeResult · `Plan/` MediaPlaybackPlanner · `Serve/`
+MediaConversion + SegmentStream · `Engine/` SegmentEngine. **Not a package split** and **zero API impact** —
+every file declares `namespace Shenora.Media;` explicitly, so folders change nothing on the surface.
+
+⚠ **`Engine/` is the TRANSFORM stage, and the two source documents name it differently** — D52's clusters
+are probe → plan → serve → *transform*; `TASKS.md`'s folder list says `Engine/`. Same cluster, two names.
+Resolved by using TASKS.md's word for the folder and saying "the transform stage" in the narrative, rather
+than inventing a fifth folder nobody sanctioned.
+
+**Three stale claims fixed while writing the narrative, none of them gate-visible:**
+1. `ARCHITECTURE.md` said `Shenora.Media` has **`deps: NONE` … A LEAF**. It has referenced `Shenora.Core`
+   since `UseSegmentStream` landed.
+2. The same entry said **"⚠ It holds NO serving code"**. `Serve/` is two middlewares. The nuance worth
+   keeping, and kept: it still implements no INTERCEPTION (that is the shell's, D45) — it COMPOSES on
+   `IWebViewInterceptor`.
+3. The csproj `<Description>` claimed **"the content-keyed cache key"**; `DerivedCacheKey` lives in
+   `Shenora.Core`. Same class as the 2026-08-05 `Shenora.IO.Compression` finding, in metadata that SHIPS to
+   nuget.org.
+
+Also added a `Shenora.Media` **public-surface bullet** to `ARCHITECTURE.md` — there was none, and
+`doc-drift` check 4 was satisfied by the tree line alone.
+
+**🔴 The slice exposed a two-part gate hole, and closing either half alone would have left it invisible.**
+The stale csproj comment cited `MediaRangeServer`, a type D45 deleted, and it had survived for days in
+shipped metadata:
+- **`doc-drift`'s walk read `.md|.cs|.ts|.tsx` — never `.csproj`.** Widened to `csproj|props|targets`. A
+  csproj is the highest-stakes prose in the repo after the README, because `<Description>` is what
+  nuget.org renders — where an adopter reads it and this repo never does.
+- **None of D45's five retired TYPE names were in `retired-names.txt`** — only the two package ids. The
+  2026-08-05 review taught that file about package ids and left the types out, which is the easy half to
+  miss because the id is what the CHANGELOG talks about. All five added.
+
+Sabotage-verified in both directions and on both file types: a retired name stated as current in
+`Shenora.Media.csproj` **FAILED** naming file+line+symbol; the same line in past tense went **QUIET**
+(attributable, since the current-tense version had just fired there); a retired name in
+`src/Directory.Build.props` **FAILED**, proving the props half really executes; restored via the Edit tool,
+**GREEN**, and `git diff` on the props file empty.
+
+🔴 **The widened walk found a second real defect on its first run** — `devtools/ui-responsiveness/
+ui-responsiveness.csproj` pointed at `docs/2026-07-31-shenora-oneway-ipc-design.md`, retired in the 0.2.0
+cleanup. Redirected to **D23**, which is the standing lesson restated: a `D<n>` citation survives a doc
+being retired and a dated-doc `§` does not.
+
+**Slice 2 — `Mp4Remuxer`.** Matroska → MP4, every frame copied untouched. `MatroskaSampleReader` (the
+cluster/block walk), `Mp4Builder` (the boxes), `SampleTiming` (the decode-timeline derivation, pure and
+separately tested), `Mp4Remuxer` (public, two-pass orchestration). Carries H.264/HEVC video and AAC audio;
+36 new tests.
+
+- ⚠ **A SECOND EBML reader, deliberately, and the reasoning is at both sites.** The probe's is bounded to
+  8 MiB, never seeks, and BUFFERS each nested element so a child cannot advance its parent (the 🔴 note on
+  `EbmlReader.Nested` records the bug that forced that). The remuxer must walk to the end of a
+  multi-gigabyte file, must SEEK, and must record absolute positions — which a buffering reader cannot
+  express. Widening the proven parser to serve a new caller was the riskier option. The one invariant that
+  must never diverge (an ID keeps its length marker, a SIZE drops it) is stated in both files.
+- 🔴 **B-frames are the thing a remuxer usually gets wrong, and the trap is that it is INVISIBLE without
+  them.** Matroska stores when a frame is SHOWN, MP4 stores when it is DECODED; without B-frames the two
+  are identical, so a remuxer can be built, tested against simple content, and ship looking correct while
+  mangling most real H.264. `SampleTiming.Derive` sorts the presentation times into a decode timeline,
+  shifts by the worst overshoot so no composition offset is negative, and the shift is cancelled with an
+  edit list. Tested as a pure function precisely because the container gets in the way of seeing it.
+- ⚠ **Lacing, all three schemes.** Several AAC frames routinely share one block header, so ignoring it
+  silently drops most of the soundtrack while every box still validates. Frames left sharing a timestamp
+  are spread, because a duration of zero plays as a fraction of a second.
+- **The refusal is per STREAM, matching the planner.** AC-3/DTS/VP9 → `NoCarriableStream` rather than a
+  half-conversion; but an unplayable soundtrack does not cost the picture — an H.264 + AC-3 file still
+  remuxes its video.
+- **The most valuable test reads the frames back THROUGH the sample table** (`stsz` + `stsc` + `co64`), the
+  way a player addresses them. Every other check can pass while the table addresses the wrong bytes, and a
+  mis-addressed table looks like a corrupt codec rather than a corrupt muxer.
+- **A test-navigator bug worth keeping:** the first version read only the 4-byte box header, so a `mdat`
+  written in the 64-bit form vanished and the output looked truncated. It also prompted a better decision
+  in the writer — the media header is now conditional (8 bytes normally, 16 only when the size needs it),
+  since the total is known before the table is built, so an ordinary file gets exactly the header every
+  other muxer writes. The boundary is pinned by `MediaHeaderBytesFor`, because no test will reach 4 GiB
+  with a real file.
+- **Two new lexicon words, argued at the site**: `Mp4` (a published format name, on the terms `Zip` and
+  `Matroska` were admitted) and `Remuxer` (already the kit's decided vocabulary — `MediaPlaybackAction.Remux`
+  since 2026-08-03; only new to the part of the surface the gate sweeps, since D22 covers types and enum
+  members are not swept). The `Matroska` entry had explicitly demanded that a writer be argued on its own;
+  it is, including the point that nothing here writes Matroska.
+- **Corrected while in the lexicon:** the `Engine` entry still said the kit "ships no implementation and
+  never will (D42, D51)", which D52 superseded LATER THE SAME DAY it was written.
+- ⚠ **What the tests prove is the BYTES, not PLAYBACK.** Box order, frames recovered byte-identically
+  through the sample table, sync and composition tables. That a real decoder opens the result needs a
+  device and is not claimed.
+
+**Three feature additions had shipped with no CHANGELOG entry** (`MatroskaProbe`, `UseSegmentStream` +
+`ISegmentEngine`) — both commits updated the API baseline and the lexicon and skipped the release log. All
+three are now recorded under `## Unreleased`. ⚠ Worth noting as a gap nothing catches: `dev.mjs changelog`
+fails a release whose `## Unreleased` is EMPTY, but nothing checks that everything which landed is in it.
+
 ### The adopter's Android navigation report — CLOSED 2026-08-06, and the kit was innocent
 
 Filed as a 🔴 blocker against 0.9.1: with a route registered, a page RELOAD died with
