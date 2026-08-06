@@ -176,11 +176,25 @@ the `ISegmentEngine` seam (`Engine/`). **Slices 1 and 2 are CLOSED** (2026-08-07
 the remuxer; record in `docs/archive/tasks.md`). The pipeline is **probe → plan → serve → transform**, and
 what remains of transform is the AUDIO, which is the half that needs a codec.
 
-- [ ] **Slice 3 — audio transcode (AC-3/DTS → AAC), and ONE MEASUREMENT decides its shape.** Does
-  `MediaCodec` (Android) / AudioToolbox (iOS) expose **AC-3 DECODE** on the three targets? Yes → a platform
-  call costing almost nothing. No → a clean-room decoder from the ATSC A/52 spec, which is freely published
-  so legally viable, but a real project. ⚠ **Measure before designing** — this is the one open fact in the
-  whole plan.
+**✅ SLICE 3 IS MEASURED (2026-08-07) — and the answer is SPLIT PER PLATFORM, which is the finding.**
+`CodecProbe` in the MAUI sample asks each platform directly; run on an iPhone 17 Pro (iOS 26.5.2, a real
+device) and an API 36 AOSP emulator:
+
+| | AC-3 decode | E-AC-3 decode | AAC decode | AAC encode |
+|---|---|---|---|---|
+| **iOS 26.5.2, iPhone 17 Pro** | **YES** (5.1 *and* stereo) | **YES** | YES | YES |
+| **Android API 36, AOSP** | no | no | YES | YES |
+
+- **So D52's "yes → a platform call" holds on iOS and fails on Android.** There is no single answer, and a
+  design that assumes either one is wrong half the time.
+- 🔴 **The ENCODE half is free EVERYWHERE** — both platforms encode AAC. That is a much narrower gap than
+  "there is no engine": what is missing is one DECODER, on one platform.
+- ⚠ **"AOSP does not" is not "Android does not."** Codec support is vendor-declared per device, which is
+  exactly why `MediaCodecList` is a runtime query. A handset may well carry AC-3; this measures the
+  emulator. **Never bake either answer in — ask the device.**
+- ⚠ Two probe defects had to be fixed before the number meant anything, both recorded in
+  `docs/archive/tasks.md`: `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** (`'prop'` on iOS), and
+  a failed query was reporting as a NEGATIVE. The AAC control is what caught it.
 
 - [ ] **Slice 4 — ship the DEFAULT engine** behind `ISegmentEngine`, assembled from slices 2–3 (managed
   remux + platform codecs). Owner, 2026-08-06: *"we still support for consumer use their own
@@ -188,6 +202,15 @@ what remains of transform is the AUDIO, which is the half that needs a codec.
   working playback with NOTHING supplied, and implements the seam only for reach the default lacks.
   ⚠ This narrows D42 rather than reversing it: the objection was always VENDORING (megabytes + a licence
   every consumer inherits). A default costing zero bytes and zero obligations contradicts neither.
+  - **What slice 3 changed about its shape.** Reach is now known to be per-device, so the engine must not
+    declare a fixed capability — it must ASK the platform and report what it actually got, which is the
+    same discipline `HasRenderedPicture` already enforces one level down. The natural first piece is
+    therefore a **platform-derived `MediaPlaybackPolicy`**: today every adopter hand-writes those codec
+    sets as a guess, while the device can be asked. That keeps D42 intact — the kit still ships no codec
+    LIST, it ships the query — and it makes the planner's verdicts true on the hardware in hand.
+  - ⚠ **Then be honest about the hole:** on a device without an AC-3 decoder the default cannot repair an
+    AC-3 soundtrack at all, and must say `Unsupported` rather than start a transcode it cannot finish.
+    That is the planner's existing `CanEncodeAudio == false` path, and it is already the right answer.
 
 ⚠ **Not planned, and needs a reason before it is:** software video decoders (MPEG-2, VC-1, Xvid, ProRes) —
 per-codec projects, built only for codecs a real library is SHOWN to contain (D52 tier 4).

@@ -17,6 +17,42 @@
 
 ---
 
+### Media slice 3 — the AC-3 measurement — CLOSED 2026-08-07, and the answer is SPLIT
+
+D52 said one measurement decides the shape of audio transcode: *does the platform expose AC-3 DECODE?*
+Yes → a platform call costing almost nothing. No → a clean-room ATSC A/52 decoder, a real project.
+`CodecProbe` in the MAUI sample asks each platform directly and was run on both targets.
+
+| | AC-3 decode | E-AC-3 decode | AAC decode | AAC encode |
+|---|---|---|---|---|
+| iOS 26.5.2, iPhone 17 Pro (a real device) | **YES** (5.1 *and* stereo) | **YES** | YES | YES |
+| Android API 36, AOSP emulator | no | no | YES | YES |
+
+**There is no single answer, and that is the result.** A design assuming either one is wrong half the time.
+Two consequences worth keeping:
+
+- 🔴 **The ENCODE half is free on both platforms.** So the gap is not "there is no engine" — it is exactly
+  ONE DECODER on ONE platform. That is much narrower than the framing this slice started with, and it is
+  what makes a default engine worth shipping at all.
+- ⚠ **"AOSP does not" is not "Android does not."** Codec support is vendor-declared per device, which is
+  precisely why `MediaCodecList` is a runtime query. Neither answer may be baked in; the device is asked.
+
+**Two probe defects had to be fixed before the number meant anything, and both are the same lesson:**
+
+1. **`kAudioFormatProperty_DecodeFormatIDs` is macOS-only.** On the device it returns OSStatus `'prop'`
+   (`kAudioFormatUnsupportedPropertyError`), so the first run found no formats at all. The working question
+   is to construct an `AudioConverter` between the two formats — AudioToolbox only succeeds when a codec for
+   the pair exists, and it is what an engine would have to do anyway.
+2. 🔴 **A failed query was reporting as a NEGATIVE.** The first device run printed `aac: decode=no` from an
+   iPhone. **The AAC control is the only reason that was caught** — had the probe asked only about AC-3,
+   "no" would have looked exactly like a finding and settled the design on a broken measurement. Generalises
+   past media: *ask about something you already know the answer to, and never let a failed query be
+   indistinguishable from a negative result.* The probe now says INCONCLUSIVE and stops when the control
+   fails.
+
+AC-3 is also asked at BOTH 5.1 and stereo, because a downmix-only decoder would change the answer from "no
+decoder" to "no 5.1 decoder" — a completely different design conclusion. iOS answered YES to both.
+
 ### The kit's own iPhone deploy loop — CLOSED 2026-08-07, running on an iPhone 17 Pro
 
 Owner, 2026-08-07: *"even deploy to phone kit is missing we need to do something like capacitor did"*. Two

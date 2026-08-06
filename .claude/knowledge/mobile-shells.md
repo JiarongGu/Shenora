@@ -107,6 +107,32 @@ Earned across the Android port and the iOS port (both 2026-08-02).
   needs stubbing, because the stack is in `Shenora.Windows` and portable logic cannot name it. Read D39
   before writing any of it — the sanctioned mobile answer per intent is there.
 
+- **A platform CAPABILITY is asked at runtime, never assumed — and the answer differs per platform AND per
+  device.** Measured 2026-08-07 with `CodecProbe` in the MAUI sample, on an iPhone 17 Pro (iOS 26.5.2) and
+  an API 36 AOSP emulator:
+
+  | | AC-3 decode | E-AC-3 decode | AAC decode | AAC encode |
+  |---|---|---|---|---|
+  | iOS 26.5.2, iPhone 17 Pro | **YES** (5.1 and stereo) | **YES** | YES | YES |
+  | Android API 36, AOSP | no | no | YES | YES |
+
+  ⚠ **"AOSP does not" is not "Android does not."** Codec support is vendor-declared per device, which is
+  exactly why `MediaCodecList` is a runtime query — a handset may carry AC-3 where the emulator does not.
+  Neither answer may be baked into the kit.
+  - **The working question on iOS is `AudioConverterNew`, not a format list.**
+    `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** and returns OSStatus `'prop'`
+    (`kAudioFormatUnsupportedPropertyError`) on a device. Constructing a converter between the two formats
+    succeeds only when a codec for the pair exists, and it is what an engine has to do anyway.
+  - **On Android use `MediaCodecList(RegularCodecs)`** — it excludes vendor-hidden codecs a capability
+    check would otherwise count and then fail to instantiate.
+  - 🔴 **Ask about a codec you already KNOW the answer to, as a control.** The first device run reported
+    `aac: decode=no` from an iPhone, because a failed query returned an empty set and "empty" was read as
+    "unsupported". With AC-3 alone in the probe, that "no" would have looked exactly like a finding and
+    settled a design decision on a broken measurement. **A failed query must never be indistinguishable
+    from a negative result** — report the status, and say INCONCLUSIVE.
+  - Ask a multi-channel codec at BOTH 5.1 and stereo: a downmix-only decoder makes the difference between
+    "no decoder" and "no 5.1 decoder", which are different design conclusions.
+
 ## Gotchas / traps
 
 - **A device-log command must FILTER BEFORE IT TAILS.** Written down for Android (`logcat -t N`
