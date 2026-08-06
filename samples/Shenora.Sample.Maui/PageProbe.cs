@@ -411,9 +411,13 @@ internal static class PageProbe
 				+ '|ready=' + document.readyState
 				+ '|stamp=' + (window.{{StaleMark}} ? 'STALE' : 'fresh')
 				+ '|title=' + (document.title || '')
-				+ '|text=' + ((b && b.innerText) || '').replace(/\s+/g, ' ').slice(0, 120);
-		})()
-		""";
+				+ '|nodes=' + document.querySelectorAll('*').length
+			+ '|text=' + ((b && b.innerText) || '')
+				.split(String.fromCharCode(10)).join(' ')
+				.split(String.fromCharCode(9)).join(' ')
+				.slice(0, 120);
+	})()
+	""";
 	// Two notes that belong to the script above but must NOT live INSIDE it — see EvaluateAsync, which
 	// flattens every script to one line, so a `//` comment would swallow the rest of the program:
 	//  · `hash` is load-bearing for the fragment arm. Without it NOTHING in a passing verdict says the
