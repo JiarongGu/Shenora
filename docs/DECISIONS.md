@@ -1617,3 +1617,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     ffmpeg still gets it: it supplies its own archive, the kit stages it, and the duty stays with the app —
     exactly where the source app had already put it by gitignoring its binaries and tracking the build
     script instead. The kit owns the mechanism; the app owns the bytes and their licence (D42).
+  - **AMENDED 2026-08-06 (same day), because the question behind it was asked with a wrong premise and the
+    premise matters more than the answer.** Asked: *"we should be making a MIT if possible, so when sonora
+    reference it can still stay close source?"* — **a closed-source app is NOT at risk from LGPL, and that
+    is the entire difference between LGPL and GPL.** A proprietary app may link an LGPL library and stay
+    proprietary, provided it attributes it and preserves the user's ability to RELINK. So neither the source
+    app's current ffmpeg nor an LGPL dependency of any consumer forces anything open, and no decision should
+    ever be made in the belief that it does. **GPL is the one that would** (x264/x265, `--enable-gpl`), and
+    it stays banned for exactly that reason.
+  - **The real reasons to prefer permissive are narrower and worth keeping straight:**
+    1. **iOS static linking.** The relinking condition is cheap with a shared `.so` on Android and awkward
+       on iOS, where the engine effectively links into the app binary — satisfying it means shipping object
+       files or an equivalent relink path, every release. A permissive licence removes the condition, not
+       just the paperwork.
+    2. **Per-release compliance work** — attribution and a source-or-written-offer for the LGPL parts, kept
+       accurate on every build, buying nothing when a BSD/Apache component would have done the job.
+    3. **For the KIT it is not a preference at all but a requirement**, because the kit REDISTRIBUTES;
+       that is the body of this decision and it is unchanged.
+  - ⚠ **And the thing no design can engineer around: ffmpeg cannot be relicensed by us.** "An MIT engine"
+    therefore means *not ffmpeg* — the platform's codecs first, permissive libraries where the platform
+    genuinely falls short. Anyone proposing "just ship a small ffmpeg" has proposed an LGPL redistribution
+    with extra steps.
+  - **Shenora being MIT imposes nothing on any consumer.** A closed-source app references it and stays
+    closed; that is what MIT is for, and it is why the kit's own licence is not the thing under discussion.
