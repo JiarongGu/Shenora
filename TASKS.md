@@ -145,10 +145,51 @@ spec naming exactly what should and should not move — `2026-08-06-shenora-medi
 under its superpowers specs (not a doc of this repo). This entry tracks taking it. **Read that spec before
 designing any of this** — every ⚠ in it is a bug that was actually hit, not a guess.
 
-- [x] ~~**The resource pack.**~~ DONE — `ResourcePack` in `Shenora.IO.Compression`. Moved to the archive
-  once the rest of this entry lands; kept here only because the two items below build on it.
+> **SUPERSEDED BY D52 — read that first.** The scope settled while this was being built: the package is a
+> TRANSLATION LAYER (the minimum transformation that makes a file playable in a webview), not a media
+> toolkit, and the kit ships NO ffmpeg bytes (D51). The build order below replaces what this entry
+> originally proposed.
 
-- [ ] **Lift the segment stream.** `SegmentStream.cs` (719 lines, **8 app-specific references** — it was
+**Shipped this session:** `ResourcePack` (`Shenora.IO.Compression`) · `UseSegmentStream` + `ISegmentEngine`
+(the route and the seam) · `MatroskaProbe` (answers "can this play?" with no external tool). The pipeline is
+**probe → plan → serve**, and the gap is **transform**.
+
+- [ ] **Slice 1 — reshape the package into its pipeline.** Folders (`Probe/`, `Plan/`, `Serve/`, `Engine/`)
+  plus the `ARCHITECTURE.md` narrative, so it reads as a pipeline rather than a bag of media types.
+  ⚠ **NOT a package split** — none of this is real weight, and weight is D48's bar. Cheap, and worth doing
+  before more lands on top of it.
+
+- [ ] **Slice 2 — the remuxer: MKV → MP4, H.264 passed through untouched.** The highest-value piece, and it
+  needs no codec work at all: walk the Matroska clusters for frame positions, write an ISO-BMFF `moov` +
+  `mdat`, copy the samples. No decoding, no patents, pure managed code.
+  - Start from `MatroskaProbe`'s EBML reader — it already parses the header; the remuxer needs the
+    cluster/`SimpleBlock` walk it deliberately skips.
+  - ⚠ `moov` must come FIRST for seeking (faststart), so the sample table has to be known before any bytes
+    are written — a two-pass job over the source, not a stream copy.
+  - Testable with no device: build an MKV fixture the way `MatroskaProbeTests` does, remux it, assert the
+    boxes. The unit tests prove the bytes; a device proves PLAYBACK.
+
+- [ ] **Slice 3 — audio transcode (AC-3/DTS → AAC), and ONE MEASUREMENT decides its shape.** Does
+  `MediaCodec` (Android) / AudioToolbox (iOS) expose **AC-3 DECODE** on the three targets? Yes → a platform
+  call costing almost nothing. No → a clean-room decoder from the ATSC A/52 spec, which is freely published
+  so legally viable, but a real project. ⚠ **Measure before designing** — this is the one open fact in the
+  whole plan.
+
+- [ ] **Slice 4 — ship the DEFAULT engine** behind `ISegmentEngine`, assembled from slices 2–3 (managed
+  remux + platform codecs). Owner, 2026-08-06: *"we still support for consumer use their own
+  decoder/encoder just if they needed, and we built something that can work by default"* — so an app gets
+  working playback with NOTHING supplied, and implements the seam only for reach the default lacks.
+  ⚠ This narrows D42 rather than reversing it: the objection was always VENDORING (megabytes + a licence
+  every consumer inherits). A default costing zero bytes and zero obligations contradicts neither.
+
+⚠ **Not planned, and needs a reason before it is:** software video decoders (MPEG-2, VC-1, Xvid, ProRes) —
+per-codec projects, built only for codecs a real library is SHOWN to contain (D52 tier 4).
+
+<details><summary>The original hand-off entry (kept — its "what not to lift" reasoning still holds)</summary>
+
+- [x] ~~**The resource pack.**~~ DONE — `ResourcePack` in `Shenora.IO.Compression`.
+
+- [x] ~~**Lift the segment stream.**~~ DONE. `SegmentStream.cs` (719 lines, **8 app-specific references** — it was
   written portable and is the bulk of the value), `ISegmentEngine` (122, already kit-shaped and its own doc
   references `Shenora.Media`), `ConvertedMedia` (51). Suggested shape from the spec:
   `interceptor.UseSegmentStream(options)` beside the existing `UseMediaConversion`, taking an app-supplied
@@ -168,7 +209,8 @@ designing any of this** — every ⚠ in it is a bug that was actually hit, not 
     policy (⚠ `alac` is listed only under `#if IOS`, because WebKit decodes Apple Lossless and Chromium
     does not — a kit-side list could not express that), or the build script.
 
-- [ ] **Ship an MIT-COMPATIBLE engine for adoption.** Owner, 2026-08-06: *"sonora currently is close
+- [x] ~~**Ship an MIT-COMPATIBLE engine for adoption.**~~ SETTLED as **D51** + **D52**; the build order is
+  the slice list above. Owner, 2026-08-06: *"sonora currently is close
   sourced, but we are on MIT so we should build one compatible with MIT"*. **Settled as D51 — read it
   first.** The source app's LGPL ffmpeg is fine *for that app* and must NOT be redistributed from an MIT
   package: it would make the kit the redistributor and hand attribution + relinking duties to every
@@ -188,6 +230,8 @@ designing any of this** — every ⚠ in it is a bug that was actually hit, not 
   - **What is already unblocked:** an app that wants LGPL ffmpeg needs nothing from this item — it supplies
     its own archive through `ResourcePack` and keeps the obligation, which is where the source app had
     already put it.
+
+</details>
 
 ### From the first adopter — mobile media conversion has no engine (2026-08-06)
 

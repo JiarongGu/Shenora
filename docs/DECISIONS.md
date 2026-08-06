@@ -1670,3 +1670,53 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     attribution, licence text and the relink provision. "Not in the kit" makes the KIT clean and does
     nothing for the consumer — the only case where the app owes nothing too is when it ships no ffmpeg
     either (the user installs it, or the platform already has it).
+
+- **D52 — `Shenora.Media` is a TRANSLATION LAYER FOR THE WEB, not a media toolkit. It does the MINIMUM
+  transformation that makes a file playable in a webview, and never more.** (owner, 2026-08-06: *"the issue
+  is not I want to recreate ffmpeg because it's capable of any kind of video/audio type and adjust them,
+  what I'm building is a translation layer for web"*.)
+  - **The scope test, and it is narrow on purpose:** *would a normal file the user already has fail to play,
+    and is this the least we can do about it?* Not "can we convert anything to anything" — that is ffmpeg's
+    job and it is explicitly not ours (D42, D51).
+  - **The four moves were already the planner's enum before this was written down**, which is the strongest
+    evidence the shape is right: `Direct` (serve it) → `Remux` (right codecs, wrong box) → `Transcode`
+    (one stream, usually the AUDIO) → `Unsupported` (say so honestly).
+  - 🔴 **What actually breaks for ordinary video, which is NOT what it looks like from the outside.** The
+    video stream is nearly always H.264 or HEVC and hardware decodes both. The two real failures are the
+    **container** (`.mkv`/`.avi` holding perfectly playable H.264) and the **soundtrack** (`AC-3`, `E-AC-3`,
+    `DTS` — routine in MKV, playable in no browser). So the common repair touches the PICTURE not at all.
+    That is why a remuxer is worth writing in managed code and a codec library is not.
+  - **Engine tiers, in order (D51 decides the licence, this decides the reach):**
+    1. **remux** — container rewrite, no decode, no patents, pure managed code.
+    2. **platform codecs** for transcode — `MediaCodec`, VideoToolbox, Media Foundation. They ENCODE as well
+       as decode, which is the part that is easy to miss. ⚠ And note what this means: an LGPL ffmpeg has NO
+       H.264 encoder either (libx264 is GPL), so the platform encoder was always the only licence-clean
+       option — dropping ffmpeg costs nothing on the encode side.
+    3. **permissive managed decoders** where a platform genuinely lacks one (ALAC is Apache-2.0; WavPack and
+       Theora references are BSD; DSD→PCM is a filter). ⚠ `WMA` and `APE` are the awkward ones — LGPL source
+       and a non-OSI licence respectively — and are deliberately unanswered rather than assumed.
+    4. **software video decoders** (MPEG-2, VC-1, Xvid, ProRes) — a per-codec project each, built ONLY for
+       codecs a real library is shown to contain. A decoder nobody needs is waste.
+  - **Reach is bounded by what can be TESTED** (owner, same day): the Android emulator, the Mac simulator,
+    and an iPhone 17 Pro. Scope widens when something real needs it, not in anticipation.
+  - ⚠ **Reshaping the package is sanctioned but is NOT a package split.** The clusters are probe → plan →
+    serve → transform; the first three exist and the fourth is the gap. None of it is real WEIGHT, and
+    weight is D48's bar for a new package — so this is folders and an ARCHITECTURE narrative, nothing more.
+  - **Deliberately NOT done: an `IMediaProbe` seam.** `MediaPlaybackPlanner.Plan` already takes a
+    `MediaProbeResult` the app supplies, so `MatroskaProbe` is a helper an app may or may not call. An
+    interface would be shipping flexibility nobody asked for.
+  - **AMENDED 2026-08-06 — the kit ships a DEFAULT that works; the seam is the escape hatch, not the only
+    door.** (owner: *"we still support for consumer use their own decoder/encoder just if they needed, and
+    we built something that can work by default, main job is to make web play support"*.) This narrows D42
+    rather than reversing it: D42's objection was **vendoring** — tens of megabytes every consumer pays for,
+    and a licence every consumer inherits (D51). A default assembled from a managed REMUX (no decoding at
+    all) and the PLATFORM's own codecs costs zero bytes and zero obligations, so it contradicts neither.
+    ⚠ Consequence for the code: "the kit ships no implementation and never will" was written on
+    `ISegmentEngine` earlier the same day and is now WRONG — corrected there. An app implements the seam
+    when it needs reach the default lacks, not to get off the ground.
+  - **And the sentence that explains why media is in scope at all** (owner, same message): *"the entire
+    framework is about to make react+c# application development support"*. A React+C# app whose user's
+    video will not play is a BROKEN APP, and repairing that is shell work — the same category as serving a
+    local file or honouring a safe-area inset. It is emphatically not a licence to grow media features that
+    do not end in "…and now the page can play it". **The test for anything proposed here: does a React+C#
+    app fail without it?**

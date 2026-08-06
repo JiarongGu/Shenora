@@ -20,8 +20,15 @@ namespace Shenora.Media;
 /// </para>
 ///
 /// <para>
-/// <b>The kit ships no implementation and never will</b> — the right encoder differs per app, a bundled one
-/// is tens of megabytes every consumer pays for, and its LICENCE is the app's to choose (D42, D51).
+/// <b>The kit ships a DEFAULT that works, and this seam is the escape hatch — not the only door</b> (D52).
+/// The default is built from things that cost nothing: a managed remux (no decoding at all) and the
+/// PLATFORM's own codecs, which encode as well as decode. So an app gets working playback without
+/// supplying anything, and implements this only when it needs reach the default does not have.
+/// </para>
+/// <para>
+/// ⚠ What the kit still never does is VENDOR a third-party engine — that is D42's actual objection
+/// (megabytes every consumer pays for) and D51's (a licence every consumer inherits). A default costing
+/// zero bytes and zero obligations contradicts neither.
 /// </para>
 /// </summary>
 public interface ISegmentEngine
