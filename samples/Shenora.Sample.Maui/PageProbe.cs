@@ -253,6 +253,19 @@ internal static class PageProbe
 	/// policy rather than a real fault — which is why the page's message is reported verbatim instead of
 	/// being turned into a verdict.
 	/// </para>
+	/// <para>
+	/// 🔴 <b>Two rules the script below obeys, both learned by breaking them here:</b> it carries NO
+	/// <c>//</c> comment and NO backslash. <see cref="Safe"/> flattens the whole script onto ONE line before
+	/// evaluating (WKWebView rejects multi-line), so a single <c>//</c> comments out everything after it and
+	/// the probe reports "could not evaluate"; and iOS strips backslashes on the way in, so a regex like
+	/// <c>/\s+/g</c> silently becomes <c>/s+/g</c>. Explanations belong out here, in C#.
+	/// </para>
+	/// <para>
+	/// It also clears the earlier probe's handlers first: <see cref="CheckMediaAsync"/> assigns
+	/// <c>onloadedmetadata</c>/<c>onseeked</c>/<c>onerror</c> on this same element and never removes them,
+	/// so loading a clip re-fires ITS handlers, which overwrite the result slot with their own format —
+	/// this probe then reports the previous probe's answer, in a well-formed line with plausible numbers.
+	/// </para>
 	/// </summary>
 	public static async Task<string> CheckUiPlaybackAsync(HybridWebView webView, Action<string> log)
 	{
@@ -261,11 +274,6 @@ internal static class PageProbe
 				var b = document.getElementById('mfast');
 				var v = document.getElementById('vid');
 				if (!b || !v) { window.{{Slot}} = 'NO-BUTTON-OR-VIDEO'; return 'missing'; }
-				// ⚠ CLEAR THE EARLIER PROBE'S HANDLERS FIRST. CheckMediaAsync assigns onloadedmetadata /
-				// onseeked / onerror on this same element and never removes them, so loading a clip here
-				// re-fires ITS handlers, which overwrite the result slot with their own format — this probe
-				// then reports the previous probe's answer and never measures the button at all. Seen once
-				// before this line existed, and it looks exactly like a real result.
 				v.onloadedmetadata = null; v.onseeked = null; v.onerror = null;
 				try { v.pause(); } catch (e) {}
 				v.removeAttribute('src'); v.load();
@@ -274,10 +282,6 @@ internal static class PageProbe
 				b.click();
 				setTimeout(function () {
 					var el = document.getElementById('log');
-					// ⚠ NO REGEX AND NO BACKSLASH. iOS eats backslashes on the way into evaluateJavaScript,
-					// so `/\s+/g` arrives as `/s+/g` — and here it did not even get that far: the whole
-					// evaluation failed and the probe reported "could not evaluate". `mobile-shells.md`
-					// records this trap; it caught this file anyway. Split on the characters directly.
 					var raw = el ? (el.innerText || '') : '(no log element)';
 					var tail = raw.slice(-700).split(String.fromCharCode(10)).join(' ')
 						.split(String.fromCharCode(9)).join(' ');
