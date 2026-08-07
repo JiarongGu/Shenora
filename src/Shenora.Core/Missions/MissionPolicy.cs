@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// A lane and how many of its permits one mission needs.

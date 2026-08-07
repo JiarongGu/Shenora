@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>Inputs for <see cref="MissionScheduler"/>.</summary>
 public sealed class MissionSchedulerOptions

@@ -2,6 +2,7 @@ using Shenora.Core;
 using Shenora.IO;
 using Shenora.Ipc;
 using Shenora.Media;
+using Shenora.Missions;
 
 namespace Shenora.Sample.Logic;
 

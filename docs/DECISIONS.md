@@ -2141,6 +2141,32 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     same argument as D53/D55 (one whole, no feature tier) and D61 (one call per capability), applied to
     composition instead of to packaging.
 
+  ### 🔴 THE CORE IS THE FIXED MESSAGE PIPELINES. Everything else is an interceptor on one of them.
+
+  (Owner, 2026-08-07: *"those media file mission should be like interceptors to the proper app route ipc
+  and events"* · *"so those 'fixed' message pipelines are the cores"*.) **This is the architectural
+  statement the rest of D64 follows from, and it should be read first.**
+
+  The framework is not a bag of capabilities. It is **three fixed pipelines**, and they are the product:
+
+  | Pipeline | Contract | What flows |
+  |---|---|---|
+  | **Routes / resources** | `IWebViewInterceptor` (`.Use`) | the page asking for BYTES — a file, a media URL, a segment |
+  | **IPC** | `IMessageDispatcher` (`UseModule`/`UseRoute`/`UseLogging`/`UseErrorHandler`) | the page asking for an ACTION, correlated |
+  | **Events** | `IEventBus` | the host TELLING the page, batched and one-way (D23) |
+
+  **Media, files and missions are interceptors plugged into those pipelines — not services sitting beside
+  them.** That reframing answers three questions this entry was otherwise arguing separately:
+  - **Why `Use*` and not `Add*`.** You `Use` a middleware. The kit already spoke this way for its own
+    chains (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`); the capabilities were the
+    inconsistent ones. ⚠ **An earlier draft of this entry renamed them all to `Add*` on the ASP.NET
+    analogy and that was WRONG** — the analogy's lesson is about WHICH OBJECT owns the call, not about
+    the prefix. Reverted the same session.
+  - **Why on by default is safe.** An interceptor that nothing routes to is inert *by construction*. It is
+    not "cheap", it is genuinely nothing until a request reaches it.
+  - **Why the capability namespaces are peers.** `Shenora.Media`, `Shenora.IO` and `Shenora.Missions` sit
+    beside each other because they are three interceptors on the same cores, not three layers of Core.
+
   ### The MODEL is ASP.NET Core's minimal hosting, and copying it settles the naming (owner, 2026-08-07)
 
   *"think about this should be like how .net webapp build setup style"* — and the analogy is not decoration,
@@ -2150,18 +2176,18 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   | ASP.NET Core | Shenora today | Under D64 |
   |---|---|---|
   | `WebApplication.CreateBuilder(args)` brings Kestrel, logging, config, DI — you never call `AddKestrel()` | `CreateBuilder` brings a paths object and an event bus | brings **the framework**: the engines, the kit's modules, the dispatcher |
-  | `builder.Services.Add*()` = DI registration | `AddShenoraOperations()` ✅ **but also** `builder.UseMissions()` ❌ | every registration is `builder.Services.Add*` |
   | `var app = builder.Build()` | same ✅ | same |
   | `app.Use*()` = the request PIPELINE, on the built app, order significant | `interceptor.UseFiles(…)` / `interceptor.UseMediaPlayer(services)` — on an inner object, with the provider handed BACK in | `app.Use*()` — the app already holds the provider |
   | `app.MapControllers()` = endpoints | `builder.Services.AddModuleFacade<T>()` — a route registered as a service | `app.MapModule<T>()` |
   | `app.Run()` | same ✅ | same |
 
-  - 🔴 **`Use*` on the BUILDER is a category error, and it is the one this kit made most.**
-    `UseMissions`/`UseFileSystem`/`UseMediaPlayer`/`UseWinForms` all register services; none of them adds
-    middleware. Under D64 most of them stop existing (the framework is already on) and what remains is a
-    CONFIGURE overload, which belongs on `Services` as `Add*` — leaving `Use*` to mean what it means
-    everywhere else in .NET.
-  - 🔴 **It also fixes the two-phase call this repo apologises for.** `interceptor.UseMediaPlayer(services)`
+  - ⚠ **What the analogy does NOT settle is the PREFIX**, and reading it that way was a wrong turn worth
+    recording. ASP.NET's `Add*`/`Use*` split maps DI-registration against pipeline-stage; on that reading
+    `UseMissions` looked like a category error and this entry briefly renamed all three to
+    `Services.AddShenora*`. **The owner reverted it, correctly** — these behave like middleware, so
+    `Use*` is the honest prefix and it is already the kit's vocabulary for a pipeline stage. **The real
+    lesson of the analogy is about WHICH OBJECT owns the call**, below.
+  - 🔴 **It fixes the two-phase call this repo apologises for.** `interceptor.UseMediaPlayer(services)`
     exists because the interceptor is created WITH the webview and cannot exist at registration time —
     which is a real constraint and exactly the split ASP.NET draws. But ASP.NET's second phase is
     `app.Use*()`, where the app carries the provider; ours makes the CALLER fetch the interceptor and hand
@@ -2172,6 +2198,25 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       every request. That is better than today (secondary windows and session browsers currently get
       nothing unless wired again by hand) and it is a real change in meaning. The per-interceptor call
       stays for the case that genuinely wants one pipeline to differ.
+  - **The capability NAMESPACES are peers now, and that was three conventions until 2026-08-07.**
+    `Shenora.Media` and `Shenora.IO` had top-level namespaces because they used to be PACKAGES (D40/D48),
+    and D53/D55 deliberately kept them so folding cost adopters no code. Missions never was a package, so
+    twelve of its thirteen files sat flat in `Shenora.Core` while `MissionExtensions` alone declared
+    `Shenora.Core.Missions` — a third convention nobody chose. All thirteen are now **`Shenora.Missions`**.
+    The layout stopped being a fossil of the package era and started saying what the pipelines model says:
+    three peers, one core. Proven a PURE move — the API baseline diff, normalised for the namespace, is
+    empty in both directions apart from the `IDisposable` fix below.
+  - 🔴 **The default registration immediately found a real crash, which is the argument for tripwiring a
+    default at all.** `MissionScheduler` implemented only `IAsyncDisposable`, and Microsoft DI's
+    synchronous `ServiceProvider.Dispose()` THROWS when it holds an async-only singleton. **This kit had
+    already paid for that exact bug once** (P5.5 H2 — `RenderSession`/`StreamingSession` crashed the
+    documented `using var app = builder.Build(); app.Run();` shutdown, "a crash dialog on every clean quit
+    with no way for a consumer to work around it"), and defaulting the scheduler would have handed the
+    same crash to *every* adopter. Fixed by giving `MissionScheduler` a synchronous `Dispose()` that
+    cancels pending work and signals shutdown WITHOUT awaiting in-flight bodies — a deliberately weaker
+    guarantee than `DisposeAsync`, because awaiting there would be a blocking wait on whatever thread
+    disposes, routinely the UI thread. **The rule this leaves: the kit must never register a singleton it
+    would be unsafe to dispose the documented way.**
   - **The evidence that the current shape is wrong is the kit's OWN sample.** `Shenora.Sample.Desktop`
     hand-constructs `MissionScheduler` and `FileUpdateQueue` inside `AddSingleton` lambdas, with a comment
     claiming *"Shenora.Core ships no DI extension for it, and it needs none"* — untrue since `UseMissions`

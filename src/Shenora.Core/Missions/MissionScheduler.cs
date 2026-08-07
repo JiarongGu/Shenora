@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// The default <see cref="IMissionScheduler"/> — an event-driven, claim-aware dispatcher.
@@ -25,7 +27,7 @@ namespace Shenora.Core;
 /// eventually does.
 /// </para>
 /// </summary>
-public sealed class MissionScheduler : IMissionScheduler
+public sealed class MissionScheduler : IMissionScheduler, IDisposable
 {
     private readonly object _gate = new();
     private readonly LinkedList<Entry> _pending = new();
@@ -228,6 +230,45 @@ public sealed class MissionScheduler : IMissionScheduler
             if (task is null) continue;
             try { await task.ConfigureAwait(false); } catch { /* reported through the entry */ }
         }
+        _shutdown.Dispose();
+    }
+
+    /// <summary>
+    /// Stop accepting and cancel everything queued — <b>without waiting for work already running</b>.
+    /// <para>
+    /// 🔴 <b>This exists because the framework registers a scheduler in EVERY app (D64), and a singleton
+    /// that is <see cref="IAsyncDisposable"/>-only makes Microsoft DI's synchronous
+    /// <c>ServiceProvider.Dispose()</c> THROW.</b> That is not theoretical and not new: the kit already
+    /// paid for it once (P5.5 H2, <c>RenderSession</c>/<c>StreamingSession</c>), where it crashed the
+    /// documented <c>using var app = builder.Build(); app.Run();</c> shutdown — a crash dialog on every
+    /// clean quit, with nothing a consumer could do about it. Defaulting the scheduler would have handed
+    /// that same crash to every adopter, so the kit must not ship an async-only singleton it registers
+    /// itself.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It is a WEAKER guarantee than <see cref="DisposeAsync"/>, and the difference is the whole
+    /// reason both exist.</b> <c>DisposeAsync</c> AWAITS in-flight bodies, so a caller cannot race a
+    /// mission still writing to disk. This one cannot: awaiting here would be a blocking wait on whatever
+    /// thread disposes — routinely the UI thread — which is the measured AppHang shape the family's
+    /// marshalling rules exist to prevent. <b>Prefer <c>await using var app = …</c></b> whenever a mission
+    /// may be mid-write; reach for this when the alternative is a crash.
+    /// </para>
+    /// </summary>
+    public void Dispose()
+    {
+        List<Entry> pending;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            pending = [.. _pending];
+            _pending.Clear();
+        }
+
+        foreach (var entry in pending) entry.TryComplete(MissionOutcome.Cancelled, 0, null);
+        // Running bodies are SIGNALLED and not awaited — see the remarks. They observe the token and
+        // unwind on their own threads; what this guarantees is that nothing new starts.
+        _shutdown.Cancel();
         _shutdown.Dispose();
     }
 

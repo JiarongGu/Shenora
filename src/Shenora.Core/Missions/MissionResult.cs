@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>How a submitted <see cref="MissionDefinition"/> ended.</summary>
 public enum MissionOutcome

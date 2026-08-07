@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// A named key space plus its conflict rule — the seam that lets ONE scheduler serve resource kinds

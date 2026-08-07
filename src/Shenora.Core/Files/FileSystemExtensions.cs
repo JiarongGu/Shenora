@@ -47,11 +47,14 @@ public static class FileSystemExtensions
 
         var options = new FileUpdateQueueOptions();
         configure?.Invoke(options);
-        var paths = builder.Paths;
 
         builder.Services.TryAddSingleton(options);
-        builder.Services.TryAddSingleton<IFileUpdateQueue>(services =>
+        builder.Services.TryAddSingleton<IFileUpdateQueue>(provider =>
         {
+            // ⚠ Paths from DI rather than the captured builder: the app's storage layout is a registered
+            // service (the builder adds it in its CONSTRUCTOR), so the factory needs nothing closed over
+            // and this reads the same whether it was called by an app or by the D64 default in Build().
+            var paths = provider.GetRequiredService<ShenoraPaths>();
             // 🔴 PULL THE PER-PLATFORM PIECE OUT OF DI, at build time rather than at Use time — the shell's
             // `UseWinForms`/`UseMobile` may run after this. This is the file system's version of what
             // `IMediaCapability` and `IMediaAudioConversion` are for media: the ENGINE is portable, the
@@ -66,8 +69,8 @@ public static class FileSystemExtensions
             // no-ops when the app registered its own `FileUpdateQueueOptions`, and then the captured
             // instance is one nothing will ever read. Defaulting onto it would build a journal for the
             // wrong object and hand the queue one with none.
-            var resolved = services.GetRequiredService<FileUpdateQueueOptions>();
-            resolved.LockInspector ??= services.GetService<IFileLockInspector>();
+            var resolved = provider.GetRequiredService<FileUpdateQueueOptions>();
+            resolved.LockInspector ??= provider.GetService<IFileLockInspector>();
 
             // 🔴 THE JOURNAL AND LOCKER ARE BUILT HERE, NOT AT `Use…` TIME, and that is what lets this
             // engine be registered by DEFAULT (D64). `Paths.DataArea` CREATES the directory it names, so
@@ -91,5 +94,6 @@ public static class FileSystemExtensions
         });
 
         return builder;
+
     }
 }

@@ -4,6 +4,7 @@ using Shenora.IO;
 using Shenora.Ipc;
 using Shenora.Mobile;
 using Shenora.Sample.Logic;
+using Shenora.Missions;
 
 namespace Shenora.Sample.Maui;
 

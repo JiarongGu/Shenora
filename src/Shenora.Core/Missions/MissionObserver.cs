@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// Lifecycle notifications for every item a scheduler handles — the seam for metrics, tracing, and

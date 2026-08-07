@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// A capacity-limited pool of permits. Work draws one per named lane before running.

@@ -138,9 +138,58 @@ at the first list and missed five more breaking changes.
   app does not call. And D52 had already framed media repair as *"shell work — the same category as serving
   a local file"*, which has always lived in Core. ⚠ The size argument is the weak one: the line that decides
   is **is this shell work, or is it something only SOME apps do?** Every app that hosts a page can be handed
-  a file it cannot play; not every app rewrites a directory tree — which is why `Shenora.IO` stays split.
+  a file it cannot play; not every app rewrites a directory tree.
+  - ⚠ **That last test did not survive the day it was written.** It ended *"which is why `Shenora.IO` stays
+    split"* — and **D55 folded `Shenora.IO` in too**, a few entries below. "Only SOME apps do it" is a fine
+    LAYERING test that answers a question nobody was asking; what decides a package boundary is what the
+    package SET says the product is. Corrected here rather than deleted, because the reasoning being
+    falsified while the conclusion still reads as grammatical is the exact trap worth seeing.
+
+- 🔴 **THE FRAMEWORK IS NOW ON BY DEFAULT (D64). You no longer call `UseMissions`, `UseFileSystem` or
+  `UseMediaPlayer` to GET those capabilities — only to CONFIGURE them.** `Build()` registers all three, the
+  way `WebApplication.CreateBuilder` brings Kestrel without anyone calling `AddKestrel()`.
+  - **Migration: delete the bare calls; keep the ones passing a `configure` lambda.** An explicit call
+    still wins — it registers first, and the defaults are `TryAdd`.
+  - **Why it is safe, and this is the load-bearing argument:** none of these does anything until the
+    frontend asks over IPC or requests a URL. They are interceptors on the kit's three fixed pipelines
+    (routes, IPC, events), so one nothing routes to is inert by construction. Containment
+    (`AllowedRoots`, `WebViewFileOptions`) is unchanged and still fails closed — `UseMediaPlayer()` still
+    refuses to guess a root, which is why conversion remains something you opt into.
+  - ⚠ **Registration now touches NO disk.** `UseFileSystem` used to build its journal and locker
+    immediately, and `Paths.DataArea` CREATES the directory it names — so as a default it would have given
+    every app a `journal/` and a `locks/` folder it never asked for. Both now construct inside the DI
+    factory. Pinned by a test asserting the directory does not exist until `IFileUpdateQueue` is resolved.
+
+- **The mission namespace is now `Shenora.Missions`, a peer of `Shenora.Media` and `Shenora.IO`.**
+  **Migration: add `using Shenora.Missions;`** wherever you name a mission type; nothing else changed.
+  - There were THREE conventions and nobody chose the third: twelve of the thirteen mission files sat flat
+    in `Shenora.Core`, while `MissionExtensions` alone declared `Shenora.Core.Missions`. Media and IO had
+    top-level namespaces only because they used to be PACKAGES — so the layout was a fossil of a package
+    set that no longer exists (D53/D55) rather than anything anyone decided.
+  - Proven a pure move: normalised for the namespace, the API-baseline diff is EMPTY in both directions
+    apart from the `IDisposable` addition below.
+
+- **`MissionScheduler` now implements `IDisposable` as well as `IAsyncDisposable`.** Additive for callers,
+  listed here because it changes what `using var app = …` does. See `### Fixed` — it was a crash.
 
 ### Fixed
+
+- 🔴 **`ServiceProvider.Dispose()` threw on any app holding a `MissionScheduler` — and D64 was about to make
+  that every app.** Microsoft DI's SYNCHRONOUS dispose refuses a captured singleton that implements only
+  `IAsyncDisposable`, and the scheduler was exactly that shape, so the documented
+  `using var app = builder.Build(); app.Run();` shutdown threw `InvalidOperationException` once anything had
+  resolved `IMissionScheduler`.
+  - ⚠ **This kit had already paid for this bug once**, in P5.5 H2, where `RenderSession`/`StreamingSession`
+    produced "a crash dialog on every clean quit with no way for a consumer to work around it". The hazard
+    was even documented on `ShenoraApplication.Dispose` — as advice to *prefer* `DisposeAsync`, which is not
+    protection once the KIT is the one registering the async-only singleton.
+  - **Fix:** a synchronous `Dispose()` that cancels queued missions and signals shutdown **without awaiting
+    in-flight bodies** — deliberately a weaker guarantee than `DisposeAsync`, which still awaits them.
+    Awaiting here would be a blocking wait on whatever thread disposes, routinely the UI thread.
+    **Prefer `await using var app = …` when a mission may be mid-write.**
+  - **Found by writing a tripwire for the new default**, not by the existing suite: 1226 tests passed
+    identically before and after the defaults landed, because every one of them either called `Use…`
+    explicitly or never asked for an engine. A default with no test is indistinguishable from no default.
 
 - 🔴 **`Shenora.iOS`: the Live Activity shim was written to the wrong place and built once per APP instead of
   once per ARCHITECTURE — so a DEVICE build linked the simulator's `x86_64` archive into an `arm64` app.**

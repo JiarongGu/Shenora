@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>Where a queued mission had got to when its record was last written.</summary>
 public enum MissionState

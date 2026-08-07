@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// ONE specific run of a <see cref="MissionDefinition"/> — its identity, its place in the queue, and

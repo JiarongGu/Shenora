@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// Shared state flowing along ONE chain, plus where that chain has got to. Handed to every step of

@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>How a <see cref="MissionClaim"/> excludes other work on a conflicting key.</summary>
 public enum ClaimMode

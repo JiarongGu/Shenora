@@ -5,10 +5,6 @@ static class Shenora.Core.AppCallback
 static class Shenora.Core.AppRootArgument
   public const string Flag = "--app-root"
   public static string Resolve(string[]? args, string fallback)
-enum Shenora.Core.ClaimMode (int)
-  public const Shenora.Core.ClaimMode Exclusive = 0
-  public const Shenora.Core.ClaimMode Shared = 1
-  public int value__
 static class Shenora.Core.DerivedCacheKey
   public static string For(string path, long length, System.DateTime lastWriteUtc, string variant = "")
 sealed class Shenora.Core.EventBus : Shenora.Core.IEventBus
@@ -71,11 +67,6 @@ static class Shenora.Core.Files
   public static void Write(string path, System.Action<System.IO.Stream> write, Shenora.Core.FileWriteMode mode = 0)
   public static void WriteAllBytes(string path, byte[] contents, Shenora.Core.FileWriteMode mode = 0)
   public static void WriteAllText(string path, string contents, System.Text.Encoding? encoding = null, Shenora.Core.FileWriteMode mode = 0)
-sealed class Shenora.Core.FlatClaimScope : Shenora.Core.IClaimScope
-  public .ctor(string name, bool ignoreCase = false)
-  public bool Conflicts(string normalizedA, string normalizedB)
-  public string Name { get; }
-  public string Normalize(string key)
 static class Shenora.Core.HeadlessHostExtensions
   public static Shenora.Core.ShenoraApplicationBuilder UseHeadless(Shenora.Core.ShenoraApplicationBuilder builder, Shenora.Core.HeadlessRunnerOptions? options = null)
 sealed class Shenora.Core.HeadlessRunnerOptions
@@ -83,10 +74,6 @@ sealed class Shenora.Core.HeadlessRunnerOptions
   public System.Action<string>? Log { get; init; }
   public System.Threading.CancellationToken StopToken { get; init; }
   public bool StopOnProcessSignals { get; init; }
-interface Shenora.Core.IClaimScope
-  public abstract bool Conflicts(string normalizedA, string normalizedB)
-  public abstract string Name { get; }
-  public abstract string Normalize(string key)
 interface Shenora.Core.IClipboardService
   public abstract System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
   public abstract System.Threading.Tasks.Task SetTextAsync(string text)
@@ -113,45 +100,11 @@ interface Shenora.Core.IFileDialogs
   public virtual System.Threading.Tasks.Task<System.IO.Stream> OpenReadAsync(string handle, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.IFileLockInspector
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
-interface Shenora.Core.ILane
-  public abstract bool IsHeld { get; }
-  public abstract int Capacity { get; set; }
-  public abstract int EffectiveCapacity { get; }
-  public abstract string Name { get; }
-  public abstract void Hold()
-  public abstract void Release()
 interface Shenora.Core.ILiveActivities
   public abstract string? Start(Shenora.Core.LiveActivityState state)
   public abstract string? Unavailable { get; }
   public abstract void End(string handle)
   public abstract void Update(string handle, Shenora.Core.LiveActivityState state)
-interface Shenora.Core.IMissionChainContext
-  public abstract T Get<T>(string key)
-  public abstract int StepCount { get; }
-  public abstract int StepIndex { get; }
-  public abstract string StepName { get; }
-  public abstract void Set<T>(string key, T value)
-interface Shenora.Core.IMissionObserver
-  public virtual void OnFinished(in Shenora.Core.MissionExecution mission, Shenora.Core.MissionResult result)
-  public virtual void OnQueued(in Shenora.Core.MissionExecution mission)
-  public virtual void OnStarted(in Shenora.Core.MissionExecution mission)
-interface Shenora.Core.IMissionPolicy
-  public abstract bool ShouldStart(in Shenora.Core.MissionExecution mission, in Shenora.Core.MissionSchedulerState state)
-  public abstract int Compare(in Shenora.Core.MissionExecution a, in Shenora.Core.MissionExecution b)
-interface Shenora.Core.IMissionQueueStore
-  public abstract System.Threading.Tasks.Task AppendAsync(Shenora.Core.MissionRecord record, System.Threading.CancellationToken cancellationToken)
-  public abstract System.Threading.Tasks.Task RemoveAsync(string missionId, System.Threading.CancellationToken cancellationToken)
-  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionRecord>> LoadAsync(System.Threading.CancellationToken cancellationToken)
-interface Shenora.Core.IMissionScheduler : System.IAsyncDisposable
-  public abstract Shenora.Core.ILane GlobalLane { get; }
-  public abstract Shenora.Core.ILane Lane(string name)
-  public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionExecution> Snapshot()
-  public abstract System.Threading.Tasks.Task<Shenora.Core.MissionResult> SubmitAsync(Shenora.Core.MissionDefinition definition, System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task<int> RecoverAsync(System.Func<Shenora.Core.MissionRecord, Shenora.Core.MissionDefinition> rehydrate, System.Threading.CancellationToken cancellationToken = default)
-  public abstract bool IsActive(Shenora.Core.MissionKey key)
-  public abstract int PendingCount { get; }
-  public abstract int RunningCount { get; }
-  public abstract void Reevaluate()
 interface Shenora.Core.IPlaybackSession
   public abstract Shenora.Core.PlaybackCommands Supported { get; set; }
   public abstract System.TimeSpan SkipInterval { get; set; }
@@ -195,156 +148,6 @@ sealed class Shenora.Core.LiveActivityState : System.IEquatable<Shenora.Core.Liv
   public static bool op_Inequality(Shenora.Core.LiveActivityState? left, Shenora.Core.LiveActivityState? right)
   public string? Subtitle { get; init; }
   public string? Title { get; init; }
-static class Shenora.Core.MissionChain
-  public static Shenora.Core.MissionDefinition Sequence(string kind, params Shenora.Core.MissionStep[] steps)
-struct Shenora.Core.MissionClaim : System.IEquatable<Shenora.Core.MissionClaim>
-  public .ctor(string Scope, string Key, Shenora.Core.ClaimMode Mode)
-  public Shenora.Core.ClaimMode Mode { get; init; }
-  public bool Equals(Shenora.Core.MissionClaim other)
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static Shenora.Core.MissionClaim Exclusive(string scope, string key)
-  public static Shenora.Core.MissionClaim Shared(string scope, string key)
-  public static bool op_Equality(Shenora.Core.MissionClaim left, Shenora.Core.MissionClaim right)
-  public static bool op_Inequality(Shenora.Core.MissionClaim left, Shenora.Core.MissionClaim right)
-  public string Key { get; init; }
-  public string Scope { get; init; }
-  public void Deconstruct(out string Scope, out string Key, out Shenora.Core.ClaimMode Mode)
-sealed class Shenora.Core.MissionDefinition
-  public Shenora.Core.MissionKey? Key { get; init; }
-  public Shenora.Core.RetryPolicy? Retry { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim> Claims { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionLane> Lanes { get; init; }
-  public System.Func<Shenora.Core.MissionExecution, System.Threading.CancellationToken, System.Threading.Tasks.Task>? Commit { get; init; }
-  public bool Durable { get; init; }
-  public int Priority { get; init; }
-  public required System.Func<Shenora.Core.MissionExecution, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run { get; init; }
-  public string? Kind { get; init; }
-  public string? Payload { get; init; }
-struct Shenora.Core.MissionExecution : System.IEquatable<Shenora.Core.MissionExecution>
-  public .ctor(string MissionId, string? Kind, int Priority, System.DateTimeOffset QueuedUtc, long Sequence, int Attempt = 0, bool IsRunning = false)
-  public System.DateTimeOffset QueuedUtc { get; init; }
-  public bool Equals(Shenora.Core.MissionExecution other)
-  public bool IsRunning { get; init; }
-  public int Attempt { get; init; }
-  public int Priority { get; init; }
-  public long Sequence { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.MissionExecution left, Shenora.Core.MissionExecution right)
-  public static bool op_Inequality(Shenora.Core.MissionExecution left, Shenora.Core.MissionExecution right)
-  public string MissionId { get; init; }
-  public string? Kind { get; init; }
-  public void Deconstruct(out string MissionId, out string? Kind, out int Priority, out System.DateTimeOffset QueuedUtc, out long Sequence, out int Attempt, out bool IsRunning)
-struct Shenora.Core.MissionKey : System.IEquatable<Shenora.Core.MissionKey>
-  public .ctor(string Value)
-  public bool Equals(Shenora.Core.MissionKey other)
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.MissionKey left, Shenora.Core.MissionKey right)
-  public static bool op_Inequality(Shenora.Core.MissionKey left, Shenora.Core.MissionKey right)
-  public string Value { get; init; }
-  public void Deconstruct(out string Value)
-struct Shenora.Core.MissionLane : System.IEquatable<Shenora.Core.MissionLane>
-  public .ctor(string Name, int Permits = 1)
-  public bool Equals(Shenora.Core.MissionLane other)
-  public int Permits { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.MissionLane left, Shenora.Core.MissionLane right)
-  public static bool op_Inequality(Shenora.Core.MissionLane left, Shenora.Core.MissionLane right)
-  public string Name { get; init; }
-  public void Deconstruct(out string Name, out int Permits)
-enum Shenora.Core.MissionOutcome (int)
-  public const Shenora.Core.MissionOutcome Cancelled = 2
-  public const Shenora.Core.MissionOutcome Completed = 0
-  public const Shenora.Core.MissionOutcome Deduplicated = 3
-  public const Shenora.Core.MissionOutcome Failed = 1
-  public int value__
-sealed class Shenora.Core.MissionRecord : System.IEquatable<Shenora.Core.MissionRecord>
-  public .ctor(string MissionId, string? Kind, string? Payload, Shenora.Core.MissionState State, System.DateTimeOffset CreatedUtc)
-  public Shenora.Core.MissionRecord <Clone>$()
-  public Shenora.Core.MissionState State { get; init; }
-  public System.DateTimeOffset CreatedUtc { get; init; }
-  public bool Equals(Shenora.Core.MissionRecord? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.MissionRecord? left, Shenora.Core.MissionRecord? right)
-  public static bool op_Inequality(Shenora.Core.MissionRecord? left, Shenora.Core.MissionRecord? right)
-  public string MissionId { get; init; }
-  public string? Kind { get; init; }
-  public string? Payload { get; init; }
-  public void Deconstruct(out string MissionId, out string? Kind, out string? Payload, out Shenora.Core.MissionState State, out System.DateTimeOffset CreatedUtc)
-sealed class Shenora.Core.MissionResult
-  public Shenora.Core.MissionOutcome Outcome { get; }
-  public System.Exception? Error { get; }
-  public bool Succeeded { get; }
-  public int Attempts { get; }
-  public string MissionId { get; }
-  public void ThrowIfFailed()
-sealed class Shenora.Core.MissionScheduler : Shenora.Core.IMissionScheduler, System.IAsyncDisposable
-  public .ctor(Shenora.Core.MissionSchedulerOptions? options = null)
-  public Shenora.Core.ILane GlobalLane { get; }
-  public Shenora.Core.ILane Lane(string name)
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionExecution> Snapshot()
-  public System.Threading.Tasks.Task<Shenora.Core.MissionResult> SubmitAsync(Shenora.Core.MissionDefinition definition, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task<int> RecoverAsync(System.Func<Shenora.Core.MissionRecord, Shenora.Core.MissionDefinition> rehydrate, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.ValueTask DisposeAsync()
-  public bool IsActive(Shenora.Core.MissionKey key)
-  public const string GlobalLaneName = "(global)"
-  public int PendingCount { get; }
-  public int RunningCount { get; }
-  public void Reevaluate()
-sealed class Shenora.Core.MissionSchedulerOptions
-  public .ctor()
-  public Shenora.Core.IMissionPolicy? Policy { get; set; }
-  public Shenora.Core.IMissionQueueStore? QueueStore { get; set; }
-  public System.Action<string>? Log { get; set; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IClaimScope> Scopes { get; set; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IMissionObserver> Observers { get; set; }
-  public System.Func<Shenora.Core.MissionRecord, Shenora.Core.RecoveryPolicy>? RecoveryPolicyFor { get; set; }
-  public int? GlobalLaneCapacity { get; set; }
-struct Shenora.Core.MissionSchedulerState : System.IEquatable<Shenora.Core.MissionSchedulerState>
-  public .ctor(int Pending, int Running)
-  public bool Equals(Shenora.Core.MissionSchedulerState other)
-  public int Pending { get; init; }
-  public int Running { get; init; }
-  public override bool Equals(object obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.MissionSchedulerState left, Shenora.Core.MissionSchedulerState right)
-  public static bool op_Inequality(Shenora.Core.MissionSchedulerState left, Shenora.Core.MissionSchedulerState right)
-  public void Deconstruct(out int Pending, out int Running)
-enum Shenora.Core.MissionState (int)
-  public const Shenora.Core.MissionState Queued = 0
-  public const Shenora.Core.MissionState Running = 1
-  public int value__
-sealed class Shenora.Core.MissionStep : System.IEquatable<Shenora.Core.MissionStep>
-  public .ctor(string Name, System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims = null, Shenora.Core.RetryPolicy? Retry = null)
-  public Shenora.Core.MissionStep <Clone>$()
-  public Shenora.Core.RetryPolicy? Retry { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims { get; init; }
-  public System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run { get; init; }
-  public bool Equals(Shenora.Core.MissionStep? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.MissionStep? left, Shenora.Core.MissionStep? right)
-  public static bool op_Inequality(Shenora.Core.MissionStep? left, Shenora.Core.MissionStep? right)
-  public string Name { get; init; }
-  public void Deconstruct(out string Name, out System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, out System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims, out Shenora.Core.RetryPolicy? Retry)
-static class Shenora.Core.Missions.MissionExtensions
-  public static Shenora.Core.ShenoraApplicationBuilder UseMissions(Shenora.Core.ShenoraApplicationBuilder builder, System.Action<Shenora.Core.MissionSchedulerOptions>? configure = null)
-sealed class Shenora.Core.NestedClaimScope : Shenora.Core.IClaimScope
-  public .ctor(string name, char separator, bool ignoreCase = false)
-  public bool Conflicts(string normalizedA, string normalizedB)
-  public string Name { get; }
-  public string Normalize(string key)
 sealed class Shenora.Core.OpenFileOptions : Shenora.Core.FileDialogOptions
   public .ctor()
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileDialogFilter>? Filters { get; init; }
@@ -358,9 +161,9 @@ sealed class Shenora.Core.OpenFolderOptions : Shenora.Core.FileDialogOptions
   public bool AllowFileSelection { get; init; }
 static class Shenora.Core.PathClaims
   public const string ScopeName = "path"
-  public static Shenora.Core.MissionClaim Exclusive(string path)
-  public static Shenora.Core.MissionClaim Shared(string path)
-  public static Shenora.Core.NestedClaimScope Scope { get; }
+  public static Shenora.Missions.MissionClaim Exclusive(string path)
+  public static Shenora.Missions.MissionClaim Shared(string path)
+  public static Shenora.Missions.NestedClaimScope Scope { get; }
   public static bool IsContained(string root, string candidate)
   public static string Canonical(string path)
 enum Shenora.Core.PlaybackCommand (int)
@@ -428,22 +231,6 @@ enum Shenora.Core.PlaybackState (int)
   public const Shenora.Core.PlaybackState Playing = 1
   public const Shenora.Core.PlaybackState Stopped = 0
   public int value__
-sealed class Shenora.Core.PriorityMissionPolicy : Shenora.Core.IMissionPolicy
-  public .ctor()
-  public bool ShouldStart(in Shenora.Core.MissionExecution mission, in Shenora.Core.MissionSchedulerState state)
-  public int Compare(in Shenora.Core.MissionExecution a, in Shenora.Core.MissionExecution b)
-  public static Shenora.Core.PriorityMissionPolicy Instance { get; }
-enum Shenora.Core.RecoveryPolicy (int)
-  public const Shenora.Core.RecoveryPolicy Discard = 2
-  public const Shenora.Core.RecoveryPolicy Fail = 1
-  public const Shenora.Core.RecoveryPolicy Requeue = 0
-  public int value__
-sealed class Shenora.Core.RetryPolicy
-  public .ctor()
-  public System.Func<System.Exception, bool> IsTransient { get; init; }
-  public System.TimeSpan Delay { get; init; }
-  public int Attempts { get; init; }
-  public static Shenora.Core.RetryPolicy None { get; }
 struct Shenora.Core.SafeAreaInsets : System.IEquatable<Shenora.Core.SafeAreaInsets>
   public .ctor(double Top, double Right, double Bottom, double Left)
   public bool Equals(Shenora.Core.SafeAreaInsets other)
@@ -760,8 +547,8 @@ sealed class Shenora.IO.FileUndoStep : System.IEquatable<Shenora.IO.FileUndoStep
   public string? Source { get; init; }
   public void Deconstruct(out Shenora.IO.FileUndoKind Kind, out string Target, out string? Source)
 sealed class Shenora.IO.FileUpdate
-  public Shenora.Core.RetryPolicy? Retry { get; init; }
   public Shenora.IO.FileAtomicity Atomicity { get; init; }
+  public Shenora.Missions.RetryPolicy? Retry { get; init; }
   public required System.Collections.Generic.IReadOnlyList<Shenora.IO.FileChange> Changes { get; init; }
   public string? Partition { get; init; }
 sealed class Shenora.IO.FileUpdateJournal : Shenora.IO.IFileUpdateJournal
@@ -927,7 +714,7 @@ static class Shenora.Media.MediaConversionEvents
   public const string Ready = "READY"
   public const string SourceProgress = "SOURCE_PROGRESS"
 static class Shenora.Media.MediaConversionExtensions
-  public static System.IDisposable UseMediaConversion(Shenora.Core.IWebViewInterceptor interceptor, Shenora.Core.IMissionScheduler scheduler, Shenora.Core.IEventBus events, Shenora.Media.MediaConversionOptions options)
+  public static System.IDisposable UseMediaConversion(Shenora.Core.IWebViewInterceptor interceptor, Shenora.Missions.IMissionScheduler scheduler, Shenora.Core.IEventBus events, Shenora.Media.MediaConversionOptions options)
 sealed class Shenora.Media.MediaConversionOptions
   public System.Action<string>? Log { get; init; }
   public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
@@ -1169,3 +956,217 @@ sealed class Shenora.Media.SegmentStreamOptions
   public required string CacheRoot { get; init; }
   public string ManifestName { get; init; }
   public string RoutePath { get; init; }
+enum Shenora.Missions.ClaimMode (int)
+  public const Shenora.Missions.ClaimMode Exclusive = 0
+  public const Shenora.Missions.ClaimMode Shared = 1
+  public int value__
+sealed class Shenora.Missions.FlatClaimScope : Shenora.Missions.IClaimScope
+  public .ctor(string name, bool ignoreCase = false)
+  public bool Conflicts(string normalizedA, string normalizedB)
+  public string Name { get; }
+  public string Normalize(string key)
+interface Shenora.Missions.IClaimScope
+  public abstract bool Conflicts(string normalizedA, string normalizedB)
+  public abstract string Name { get; }
+  public abstract string Normalize(string key)
+interface Shenora.Missions.ILane
+  public abstract bool IsHeld { get; }
+  public abstract int Capacity { get; set; }
+  public abstract int EffectiveCapacity { get; }
+  public abstract string Name { get; }
+  public abstract void Hold()
+  public abstract void Release()
+interface Shenora.Missions.IMissionChainContext
+  public abstract T Get<T>(string key)
+  public abstract int StepCount { get; }
+  public abstract int StepIndex { get; }
+  public abstract string StepName { get; }
+  public abstract void Set<T>(string key, T value)
+interface Shenora.Missions.IMissionObserver
+  public virtual void OnFinished(in Shenora.Missions.MissionExecution mission, Shenora.Missions.MissionResult result)
+  public virtual void OnQueued(in Shenora.Missions.MissionExecution mission)
+  public virtual void OnStarted(in Shenora.Missions.MissionExecution mission)
+interface Shenora.Missions.IMissionPolicy
+  public abstract bool ShouldStart(in Shenora.Missions.MissionExecution mission, in Shenora.Missions.MissionSchedulerState state)
+  public abstract int Compare(in Shenora.Missions.MissionExecution a, in Shenora.Missions.MissionExecution b)
+interface Shenora.Missions.IMissionQueueStore
+  public abstract System.Threading.Tasks.Task AppendAsync(Shenora.Missions.MissionRecord record, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task RemoveAsync(string missionId, System.Threading.CancellationToken cancellationToken)
+  public abstract System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionRecord>> LoadAsync(System.Threading.CancellationToken cancellationToken)
+interface Shenora.Missions.IMissionScheduler : System.IAsyncDisposable
+  public abstract Shenora.Missions.ILane GlobalLane { get; }
+  public abstract Shenora.Missions.ILane Lane(string name)
+  public abstract System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionExecution> Snapshot()
+  public abstract System.Threading.Tasks.Task<Shenora.Missions.MissionResult> SubmitAsync(Shenora.Missions.MissionDefinition definition, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task<int> RecoverAsync(System.Func<Shenora.Missions.MissionRecord, Shenora.Missions.MissionDefinition> rehydrate, System.Threading.CancellationToken cancellationToken = default)
+  public abstract bool IsActive(Shenora.Missions.MissionKey key)
+  public abstract int PendingCount { get; }
+  public abstract int RunningCount { get; }
+  public abstract void Reevaluate()
+static class Shenora.Missions.MissionChain
+  public static Shenora.Missions.MissionDefinition Sequence(string kind, params Shenora.Missions.MissionStep[] steps)
+struct Shenora.Missions.MissionClaim : System.IEquatable<Shenora.Missions.MissionClaim>
+  public .ctor(string Scope, string Key, Shenora.Missions.ClaimMode Mode)
+  public Shenora.Missions.ClaimMode Mode { get; init; }
+  public bool Equals(Shenora.Missions.MissionClaim other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static Shenora.Missions.MissionClaim Exclusive(string scope, string key)
+  public static Shenora.Missions.MissionClaim Shared(string scope, string key)
+  public static bool op_Equality(Shenora.Missions.MissionClaim left, Shenora.Missions.MissionClaim right)
+  public static bool op_Inequality(Shenora.Missions.MissionClaim left, Shenora.Missions.MissionClaim right)
+  public string Key { get; init; }
+  public string Scope { get; init; }
+  public void Deconstruct(out string Scope, out string Key, out Shenora.Missions.ClaimMode Mode)
+sealed class Shenora.Missions.MissionDefinition
+  public Shenora.Missions.MissionKey? Key { get; init; }
+  public Shenora.Missions.RetryPolicy? Retry { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionClaim> Claims { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionLane> Lanes { get; init; }
+  public System.Func<Shenora.Missions.MissionExecution, System.Threading.CancellationToken, System.Threading.Tasks.Task>? Commit { get; init; }
+  public bool Durable { get; init; }
+  public int Priority { get; init; }
+  public required System.Func<Shenora.Missions.MissionExecution, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run { get; init; }
+  public string? Kind { get; init; }
+  public string? Payload { get; init; }
+struct Shenora.Missions.MissionExecution : System.IEquatable<Shenora.Missions.MissionExecution>
+  public .ctor(string MissionId, string? Kind, int Priority, System.DateTimeOffset QueuedUtc, long Sequence, int Attempt = 0, bool IsRunning = false)
+  public System.DateTimeOffset QueuedUtc { get; init; }
+  public bool Equals(Shenora.Missions.MissionExecution other)
+  public bool IsRunning { get; init; }
+  public int Attempt { get; init; }
+  public int Priority { get; init; }
+  public long Sequence { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Missions.MissionExecution left, Shenora.Missions.MissionExecution right)
+  public static bool op_Inequality(Shenora.Missions.MissionExecution left, Shenora.Missions.MissionExecution right)
+  public string MissionId { get; init; }
+  public string? Kind { get; init; }
+  public void Deconstruct(out string MissionId, out string? Kind, out int Priority, out System.DateTimeOffset QueuedUtc, out long Sequence, out int Attempt, out bool IsRunning)
+static class Shenora.Missions.MissionExtensions
+  public static Shenora.Core.ShenoraApplicationBuilder UseMissions(Shenora.Core.ShenoraApplicationBuilder builder, System.Action<Shenora.Missions.MissionSchedulerOptions>? configure = null)
+struct Shenora.Missions.MissionKey : System.IEquatable<Shenora.Missions.MissionKey>
+  public .ctor(string Value)
+  public bool Equals(Shenora.Missions.MissionKey other)
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Missions.MissionKey left, Shenora.Missions.MissionKey right)
+  public static bool op_Inequality(Shenora.Missions.MissionKey left, Shenora.Missions.MissionKey right)
+  public string Value { get; init; }
+  public void Deconstruct(out string Value)
+struct Shenora.Missions.MissionLane : System.IEquatable<Shenora.Missions.MissionLane>
+  public .ctor(string Name, int Permits = 1)
+  public bool Equals(Shenora.Missions.MissionLane other)
+  public int Permits { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Missions.MissionLane left, Shenora.Missions.MissionLane right)
+  public static bool op_Inequality(Shenora.Missions.MissionLane left, Shenora.Missions.MissionLane right)
+  public string Name { get; init; }
+  public void Deconstruct(out string Name, out int Permits)
+enum Shenora.Missions.MissionOutcome (int)
+  public const Shenora.Missions.MissionOutcome Cancelled = 2
+  public const Shenora.Missions.MissionOutcome Completed = 0
+  public const Shenora.Missions.MissionOutcome Deduplicated = 3
+  public const Shenora.Missions.MissionOutcome Failed = 1
+  public int value__
+sealed class Shenora.Missions.MissionRecord : System.IEquatable<Shenora.Missions.MissionRecord>
+  public .ctor(string MissionId, string? Kind, string? Payload, Shenora.Missions.MissionState State, System.DateTimeOffset CreatedUtc)
+  public Shenora.Missions.MissionRecord <Clone>$()
+  public Shenora.Missions.MissionState State { get; init; }
+  public System.DateTimeOffset CreatedUtc { get; init; }
+  public bool Equals(Shenora.Missions.MissionRecord? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Missions.MissionRecord? left, Shenora.Missions.MissionRecord? right)
+  public static bool op_Inequality(Shenora.Missions.MissionRecord? left, Shenora.Missions.MissionRecord? right)
+  public string MissionId { get; init; }
+  public string? Kind { get; init; }
+  public string? Payload { get; init; }
+  public void Deconstruct(out string MissionId, out string? Kind, out string? Payload, out Shenora.Missions.MissionState State, out System.DateTimeOffset CreatedUtc)
+sealed class Shenora.Missions.MissionResult
+  public Shenora.Missions.MissionOutcome Outcome { get; }
+  public System.Exception? Error { get; }
+  public bool Succeeded { get; }
+  public int Attempts { get; }
+  public string MissionId { get; }
+  public void ThrowIfFailed()
+sealed class Shenora.Missions.MissionScheduler : Shenora.Missions.IMissionScheduler, System.IAsyncDisposable, System.IDisposable
+  public .ctor(Shenora.Missions.MissionSchedulerOptions? options = null)
+  public Shenora.Missions.ILane GlobalLane { get; }
+  public Shenora.Missions.ILane Lane(string name)
+  public System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionExecution> Snapshot()
+  public System.Threading.Tasks.Task<Shenora.Missions.MissionResult> SubmitAsync(Shenora.Missions.MissionDefinition definition, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task<int> RecoverAsync(System.Func<Shenora.Missions.MissionRecord, Shenora.Missions.MissionDefinition> rehydrate, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.ValueTask DisposeAsync()
+  public bool IsActive(Shenora.Missions.MissionKey key)
+  public const string GlobalLaneName = "(global)"
+  public int PendingCount { get; }
+  public int RunningCount { get; }
+  public void Dispose()
+  public void Reevaluate()
+sealed class Shenora.Missions.MissionSchedulerOptions
+  public .ctor()
+  public Shenora.Missions.IMissionPolicy? Policy { get; set; }
+  public Shenora.Missions.IMissionQueueStore? QueueStore { get; set; }
+  public System.Action<string>? Log { get; set; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Missions.IClaimScope> Scopes { get; set; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Missions.IMissionObserver> Observers { get; set; }
+  public System.Func<Shenora.Missions.MissionRecord, Shenora.Missions.RecoveryPolicy>? RecoveryPolicyFor { get; set; }
+  public int? GlobalLaneCapacity { get; set; }
+struct Shenora.Missions.MissionSchedulerState : System.IEquatable<Shenora.Missions.MissionSchedulerState>
+  public .ctor(int Pending, int Running)
+  public bool Equals(Shenora.Missions.MissionSchedulerState other)
+  public int Pending { get; init; }
+  public int Running { get; init; }
+  public override bool Equals(object obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Missions.MissionSchedulerState left, Shenora.Missions.MissionSchedulerState right)
+  public static bool op_Inequality(Shenora.Missions.MissionSchedulerState left, Shenora.Missions.MissionSchedulerState right)
+  public void Deconstruct(out int Pending, out int Running)
+enum Shenora.Missions.MissionState (int)
+  public const Shenora.Missions.MissionState Queued = 0
+  public const Shenora.Missions.MissionState Running = 1
+  public int value__
+sealed class Shenora.Missions.MissionStep : System.IEquatable<Shenora.Missions.MissionStep>
+  public .ctor(string Name, System.Func<Shenora.Missions.MissionExecution, Shenora.Missions.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionClaim>? Claims = null, Shenora.Missions.RetryPolicy? Retry = null)
+  public Shenora.Missions.MissionStep <Clone>$()
+  public Shenora.Missions.RetryPolicy? Retry { get; init; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionClaim>? Claims { get; init; }
+  public System.Func<Shenora.Missions.MissionExecution, Shenora.Missions.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run { get; init; }
+  public bool Equals(Shenora.Missions.MissionStep? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Missions.MissionStep? left, Shenora.Missions.MissionStep? right)
+  public static bool op_Inequality(Shenora.Missions.MissionStep? left, Shenora.Missions.MissionStep? right)
+  public string Name { get; init; }
+  public void Deconstruct(out string Name, out System.Func<Shenora.Missions.MissionExecution, Shenora.Missions.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, out System.Collections.Generic.IReadOnlyList<Shenora.Missions.MissionClaim>? Claims, out Shenora.Missions.RetryPolicy? Retry)
+sealed class Shenora.Missions.NestedClaimScope : Shenora.Missions.IClaimScope
+  public .ctor(string name, char separator, bool ignoreCase = false)
+  public bool Conflicts(string normalizedA, string normalizedB)
+  public string Name { get; }
+  public string Normalize(string key)
+sealed class Shenora.Missions.PriorityMissionPolicy : Shenora.Missions.IMissionPolicy
+  public .ctor()
+  public bool ShouldStart(in Shenora.Missions.MissionExecution mission, in Shenora.Missions.MissionSchedulerState state)
+  public int Compare(in Shenora.Missions.MissionExecution a, in Shenora.Missions.MissionExecution b)
+  public static Shenora.Missions.PriorityMissionPolicy Instance { get; }
+enum Shenora.Missions.RecoveryPolicy (int)
+  public const Shenora.Missions.RecoveryPolicy Discard = 2
+  public const Shenora.Missions.RecoveryPolicy Fail = 1
+  public const Shenora.Missions.RecoveryPolicy Requeue = 0
+  public int value__
+sealed class Shenora.Missions.RetryPolicy
+  public .ctor()
+  public System.Func<System.Exception, bool> IsTransient { get; init; }
+  public System.TimeSpan Delay { get; init; }
+  public int Attempts { get; init; }
+  public static Shenora.Missions.RetryPolicy None { get; }

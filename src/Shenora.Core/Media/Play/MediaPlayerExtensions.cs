@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shenora.Core;
+using Shenora.Missions;
 
 namespace Shenora.Media;
 

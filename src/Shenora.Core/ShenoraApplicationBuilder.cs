@@ -1,5 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+// The framework's own engines, defaulted in Build() (D64). ⚠ Core reaching into its own capability
+// NAMESPACES is the shape D55 created deliberately — they are folders inside this package, not
+// dependencies, so there is no layering edge here to be uncomfortable about.
+using Shenora.IO;
+using Shenora.Media;
+using Shenora.Missions;
 
 namespace Shenora.Core;
 
@@ -23,6 +29,15 @@ public sealed class ShenoraApplicationBuilder
         Args = args;
         Environment = environment;
         Paths = paths;
+
+        // 🔴 REGISTERED HERE, not in Build(), and that is what lets a capability be an ordinary
+        // `IServiceCollection` extension (D64). `AddShenoraFileSystem()` and friends need the app's
+        // storage layout to default a directory; with paths available from the moment the builder
+        // exists, they resolve it from DI inside their factory instead of needing a `builder` argument.
+        // That is the difference between `builder.Services.AddX()` — ASP.NET's shape — and a bespoke
+        // `builder.UseX()` that exists only because the extension could not reach `Paths`.
+        Services.AddSingleton(environment);
+        Services.AddSingleton(paths);
     }
 
     /// <summary>Stable app identifier (crash-dialog titles, single-instance channel names…).</summary>
@@ -75,13 +90,30 @@ public sealed class ShenoraApplicationBuilder
         if (_built) throw new InvalidOperationException("Build() can only be called once per builder.");
         _built = true;
 
-        Services.AddSingleton(Environment);
-        Services.AddSingleton(Paths);
         foreach (var module in _modules) module.ConfigureServices(Services);
+
         // Framework plumbing every app gets — the in-process pub/sub bus that modules, services,
         // and the transport bridges share (design §4). TryAdd LAST so an app or module
         // registration wins.
         Services.TryAddSingleton<IEventBus, EventBus>();
+
+        // 🔴 THE FRAMEWORK ITSELF, defaulted LAST (D64) — the same thing
+        // `WebApplication.CreateBuilder` does when it brings Kestrel without anyone calling
+        // `AddKestrel()`. Each engine is registered by calling the SAME public method an app calls to
+        // configure it, so the default path and the explicit path are literally one piece of code and
+        // cannot drift — the property that stops a default from quietly meaning something else.
+        //
+        // ⚠ ORDER IS THE WHOLE MECHANISM: these run AFTER the app's own registrations and every one of
+        // them is `TryAdd`, so an app that called `UseMissions(x => …)` earlier has already registered
+        // its options and the call below no-ops. Defaulting in the CONSTRUCTOR instead would invert
+        // that and silently ignore every configuration call the app makes.
+        //
+        // ⚠ And none of it touches a disk, a thread or a handle: each engine constructs inside its DI
+        // factory, so registration is free and nothing is provisioned until something asks for it.
+        // That is the precondition that makes defaulting safe at all, not an optimisation.
+        this.UseMissions();
+        this.UseFileSystem();
+        this.UseMediaPlayer();
 
         return new ShenoraApplication(ApplicationName, Args, Environment, Paths,
             Services.BuildServiceProvider());

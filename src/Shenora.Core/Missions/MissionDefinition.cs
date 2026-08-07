@@ -1,4 +1,6 @@
-namespace Shenora.Core;
+using Shenora.Core;
+
+namespace Shenora.Missions;
 
 /// <summary>
 /// Caller-chosen identity used to DEDUPLICATE submissions: a request whose key matches one already
