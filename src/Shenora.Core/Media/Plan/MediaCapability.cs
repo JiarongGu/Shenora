@@ -18,7 +18,7 @@ namespace Shenora.Media;
 /// </para>
 /// <list type="bullet">
 /// <item><b>What the PLAYER can open</b> — <see cref="MediaPlaybackPolicy.Containers"/>,
-/// <see cref="MediaPlaybackPolicy.VideoCodecs"/>, <see cref="MediaPlaybackPolicy.AudioCodecs"/>. That is
+/// <see cref="MediaPlaybackPolicy.Codecs"/>. That is
 /// the WEBVIEW, and only the page can answer it (<c>canPlayType</c>). It decides Direct vs Remux.</item>
 /// <item><b>What a TRANSCODE could read and write</b> — this interface. It decides whether Transcode is
 /// possible at all.</item>
@@ -84,7 +84,7 @@ public static class MediaCapabilityExtensions
     }
 
     /// <summary>
-    /// Answer <see cref="MediaPlaybackPolicy.CanEncodeAudio"/>/<see cref="MediaPlaybackPolicy.CanEncodeVideo"/>
+    /// Answer <see cref="MediaPlaybackPolicy.Encodable"/>
     /// from what the DEVICE can actually do, leaving every other field alone.
     ///
     /// <para>
@@ -104,10 +104,12 @@ public static class MediaCapabilityExtensions
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(device);
 
+        // ⚠ Every kind, not the two that exist today. Keyed on both sides means a kind added later is
+        // picked up here with no edit — which is the point of keying rather than naming.
         return policy with
         {
-            CanEncodeAudio = device.Encodable(MediaStreamKind.Audio).Count > 0,
-            CanEncodeVideo = device.Encodable(MediaStreamKind.Video).Count > 0,
+            Encodable = new HashSet<MediaStreamKind>(
+                Enum.GetValues<MediaStreamKind>().Where(kind => device.Encodable(kind).Count > 0)),
         };
     }
 

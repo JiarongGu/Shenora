@@ -797,8 +797,11 @@ public class Mp4RemuxerTests
         var plan = MediaPlaybackPlanner.Plan(probe, new MediaPlaybackPolicy
         {
             Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4" },
-            VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264" },
-            AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac" },
+            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+            {
+                [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264" },
+                [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac" },
+            },
         });
         Assert.Equal(MediaPlaybackAction.Remux, plan.Action);
 

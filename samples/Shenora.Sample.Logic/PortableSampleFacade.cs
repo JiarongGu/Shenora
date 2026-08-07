@@ -154,12 +154,14 @@ public sealed class PortableSampleFacade(
     private static readonly MediaPlaybackPolicy BrowserPolicy = new()
     {
         Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".mov", ".webm" },
-        VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp8", "vp9", "av1" },
-        AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "mp3", "opus", "vorbis", "flac" },
-        // This sample ships no engine, so it can convert nothing — and saying so honestly is the point:
-        // the planner then answers `Unsupported` instead of promising a transcode nobody can perform.
-        CanEncodeVideo = false,
-        CanEncodeAudio = false,
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        {
+            [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp8", "vp9", "av1" },
+            [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "mp3", "opus", "vorbis", "flac" },
+        },
+        // Encodable is left EMPTY: this sample ships no engine, so it can convert nothing — and saying so
+        // honestly is the point. The planner then answers `Unsupported` instead of promising a transcode
+        // nobody can perform. `WithDeviceEncoders(capability)` is how a real app fills it in.
     };
 
     /// <summary>

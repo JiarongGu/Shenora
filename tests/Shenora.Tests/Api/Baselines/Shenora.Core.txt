@@ -978,11 +978,11 @@ static class Shenora.Media.MediaPlaybackPlanner
 sealed class Shenora.Media.MediaPlaybackPolicy : System.IEquatable<Shenora.Media.MediaPlaybackPolicy>
   public .ctor()
   public Shenora.Media.MediaPlaybackPolicy <Clone>$()
-  public System.Collections.Generic.IReadOnlySet<string> AudioCodecs { get; init; }
+  public System.Collections.Generic.IReadOnlyDictionary<Shenora.Media.MediaStreamKind, System.Collections.Generic.IReadOnlySet<string>> Codecs { get; init; }
+  public System.Collections.Generic.IReadOnlySet<Shenora.Media.MediaStreamKind> Encodable { get; init; }
+  public System.Collections.Generic.IReadOnlySet<string> CodecsFor(Shenora.Media.MediaStreamKind kind)
   public System.Collections.Generic.IReadOnlySet<string> Containers { get; init; }
-  public System.Collections.Generic.IReadOnlySet<string> VideoCodecs { get; init; }
-  public bool CanEncodeAudio { get; init; }
-  public bool CanEncodeVideo { get; init; }
+  public bool CanEncode(Shenora.Media.MediaStreamKind kind)
   public bool Equals(Shenora.Media.MediaPlaybackPolicy? other)
   public override bool Equals(object? obj)
   public override int GetHashCode()

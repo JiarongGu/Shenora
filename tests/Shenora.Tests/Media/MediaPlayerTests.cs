@@ -27,7 +27,10 @@ public class MediaPlayerTests
             Policy = new MediaPlaybackPolicy
             {
                 Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4" },
-                AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac" },
+                Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+                {
+                    [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac" },
+                },
             },
             ResolveUri = (source, plan) => { seen = plan; return $"app://convert?src={source}"; },
         });

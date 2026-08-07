@@ -107,3 +107,7 @@ MediaBodyMode            # -> Core.WebViewRangeDelivery, read off the intercepto
 MediaAccess              # -> Core.WebViewFiles.ResolveContained; the IsRemoteAllowed half was dropped
 MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived artefact, not a media one
 MediaAudioConversion   # 2026-08-07 -> MediaAudioPipeline (the class; IMediaAudioConversion the INTERFACE is current)
+VideoCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Video]
+AudioCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Audio]
+CanEncodeVideo   # 2026-08-07 -> MediaPlaybackPolicy.CanEncode(MediaStreamKind.Video)
+CanEncodeAudio   # 2026-08-07 -> MediaPlaybackPolicy.CanEncode(MediaStreamKind.Audio)

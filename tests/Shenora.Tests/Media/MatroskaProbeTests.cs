@@ -224,8 +224,11 @@ public class MatroskaProbeTests
         var policy = new MediaPlaybackPolicy
         {
             Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4a", ".webm" },
-            VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9", "av1" },
-            AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus", "flac" },
+            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+            {
+                [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9", "av1" },
+                [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus", "flac" },
+            },
         };
 
         // ⚠ WITHOUT an encoder the honest answer is Unsupported, not Transcode — the planner refuses to
@@ -237,7 +240,7 @@ public class MatroskaProbeTests
         // external tool: the PICTURE is fine and needs nothing done to it, the SOUNDTRACK cannot play, so
         // the answer is Transcode rather than Direct (it cannot just be served) or Remux (a new box would
         // still carry AC-3). This is the whole thesis in one assertion.
-        var withEncoder = policy with { CanEncodeAudio = true };
+        var withEncoder = policy with { Encodable = new HashSet<MediaStreamKind> { MediaStreamKind.Audio } };
         Assert.Equal(MediaPlaybackAction.Transcode, MediaPlaybackPlanner.Plan(probe, withEncoder).Action);
     }
 
@@ -253,8 +256,11 @@ public class MatroskaProbeTests
         var plan = MediaPlaybackPlanner.Plan(MatroskaProbe.Read(file)!, new MediaPlaybackPolicy
         {
             Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4a", ".webm" },
-            VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9", "av1" },
-            AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus", "flac" },
+            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+            {
+                [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9", "av1" },
+                [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus", "flac" },
+            },
         });
 
         Assert.Equal(MediaPlaybackAction.Remux, plan.Action);

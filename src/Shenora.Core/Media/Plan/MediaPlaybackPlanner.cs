@@ -52,28 +52,44 @@ public sealed record MediaPlaybackPolicy
     /// </summary>
     public IReadOnlySet<string> Containers { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Video codec names the player can decode, as a probe reports them (<c>h264</c>, <c>vp9</c>).</summary>
-    public IReadOnlySet<string> VideoCodecs { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
     /// <summary>
-    /// Audio codec names the player can decode (<c>aac</c>, <c>opus</c>, <c>flac</c>).
+    /// Codec names the player can DECODE, keyed by stream kind, as a probe reports them (<c>h264</c>,
+    /// <c>aac</c>). A kind that is absent decodes nothing.
     /// <para>
-    /// ⚠ The set most likely to be the reason a file fails. Licensed audio — AC-3, E-AC-3, DTS — is not in
-    /// Android's mandatory set, so a file whose picture decodes perfectly plays with NO SOUND. That is why
-    /// this planner is per-stream: a single boolean for the file would have called that case "unsupported"
-    /// and thrown away a remux that fixes it.
+    /// <b>Keyed by <see cref="MediaStreamKind"/> rather than split into <c>VideoCodecs</c>/<c>AudioCodecs</c>
+    /// properties, to match <see cref="IMediaCapability"/> — which asks the DEVICE the same question.</b>
+    /// The two are compared constantly (the gap between them IS the converter's job, D59), and a comparison
+    /// between a keyed lookup and a pair of named properties is written by hand every time. A kind the kit
+    /// does not act on today needs no new member here, which is the same reason the capability is keyed.
+    /// </para>
+    /// <para>
+    /// ⚠ AUDIO is the set most likely to be the reason a file fails. Licensed audio — AC-3, E-AC-3, DTS —
+    /// is not in Android's mandatory set, so a file whose picture decodes perfectly plays with NO SOUND.
+    /// That is why this planner is per-stream: a single verdict for the file would have called that case
+    /// unsupported and thrown away a remux that fixes it.
     /// </para>
     /// </summary>
-    public IReadOnlySet<string> AudioCodecs { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<MediaStreamKind, IReadOnlySet<string>> Codecs { get; init; } =
+        new Dictionary<MediaStreamKind, IReadOnlySet<string>>();
 
     /// <summary>
-    /// True when the app can re-encode video. False turns an undecodable picture into
+    /// Kinds the app can RE-ENCODE. A kind that is absent turns an undecodable stream into
     /// <see cref="MediaPlaybackAction.Unsupported"/> instead of a transcode it cannot perform.
+    /// <para>
+    /// A set rather than <c>CanEncodeVideo</c>/<c>CanEncodeAudio</c> booleans, for the reason above: it is
+    /// the same question keyed the same way, so growing a kind adds no member.
+    /// </para>
     /// </summary>
-    public bool CanEncodeVideo { get; init; }
+    public IReadOnlySet<MediaStreamKind> Encodable { get; init; } = new HashSet<MediaStreamKind>();
 
-    /// <summary>True when the app can re-encode audio — the cheap and frequent fix (see <see cref="AudioCodecs"/>).</summary>
-    public bool CanEncodeAudio { get; init; }
+    /// <summary>Codecs this player decodes for <paramref name="kind"/>; empty when it decodes none.</summary>
+    public IReadOnlySet<string> CodecsFor(MediaStreamKind kind) =>
+        Codecs.TryGetValue(kind, out var set) ? set : EmptyCodecs;
+
+    /// <summary>Can the app re-encode <paramref name="kind"/>?</summary>
+    public bool CanEncode(MediaStreamKind kind) => Encodable.Contains(kind);
+
+    private static readonly IReadOnlySet<string> EmptyCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>One stream's verdict, and why.</summary>
@@ -184,11 +200,12 @@ public static class MediaPlaybackPlanner
                 continue;
             }
 
-            // Step 3 — an unnamed codec is given the benefit of the doubt.
+            // Step 3 — an unnamed codec is given the benefit of the doubt. ⚠ ONE lookup for every kind:
+            // this used to branch `Kind is Video ? VideoCodecs : AudioCodecs`, which silently treated
+            // subtitles (and anything added later) as AUDIO. Keying the policy removed the branch and the
+            // bug with it.
             var decodes = stream.Codec is not { Length: > 0 } codec
-                          || (stream.Kind is MediaStreamKind.Video
-                              ? policy.VideoCodecs.Contains(codec)
-                              : policy.AudioCodecs.Contains(codec));
+                          || policy.CodecsFor(stream.Kind).Contains(codec);
 
             var needsReEncode = !decodes;
             plans.Add(new MediaStreamPlan(stream, decodes, needsReEncode));
@@ -198,14 +215,9 @@ public static class MediaPlaybackPlanner
             // Can the policy actually perform the re-encode this stream needs? If not, the honest answer
             // is Unsupported — the app can then hand the file to an external player, which is a better
             // outcome than starting a conversion that cannot finish.
-            if (stream.Kind is MediaStreamKind.Video)
-            {
-                if (policy.CanEncodeVideo) reEncodeVideo = true; else blocked = true;
-            }
-            else
-            {
-                if (policy.CanEncodeAudio) reEncodeAudio = true; else blocked = true;
-            }
+            if (!policy.CanEncode(stream.Kind)) blocked = true;
+            else if (stream.Kind is MediaStreamKind.Video) reEncodeVideo = true;
+            else reEncodeAudio = true;
         }
 
         if (blocked)

@@ -13,10 +13,14 @@ public class MediaPlaybackPlannerTests
     private static MediaPlaybackPolicy Browser(bool canEncodeVideo = true, bool canEncodeAudio = true) => new()
     {
         Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm" },
-        VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9" },
-        AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus" },
-        CanEncodeVideo = canEncodeVideo,
-        CanEncodeAudio = canEncodeAudio,
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        {
+            [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9" },
+            [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus" },
+        },
+        Encodable = new HashSet<MediaStreamKind>(
+            (canEncodeVideo ? [MediaStreamKind.Video] : Array.Empty<MediaStreamKind>())
+            .Concat(canEncodeAudio ? [MediaStreamKind.Audio] : Array.Empty<MediaStreamKind>())),
     };
 
     private static MediaProbeResult Probe(string? container, params MediaStreamInfo[] streams) =>

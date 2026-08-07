@@ -57,8 +57,11 @@ public class MediaCapabilityTests
     private static MediaPlaybackPolicy WebviewPolicy => new()
     {
         Containers = Set(".mp4", ".m4a", ".webm"),
-        VideoCodecs = Set("h264", "vp9"),
-        AudioCodecs = Set("aac", "opus"),
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        {
+            [MediaStreamKind.Video] = Set("h264", "vp9"),
+            [MediaStreamKind.Audio] = Set("aac", "opus"),
+        },
     };
 
     [Fact]
@@ -66,8 +69,8 @@ public class MediaCapabilityTests
     {
         var policy = WebviewPolicy.WithDeviceEncoders(Iphone);
 
-        Assert.True(policy.CanEncodeAudio);
-        Assert.True(policy.CanEncodeVideo);
+        Assert.True(policy.CanEncode(MediaStreamKind.Audio));
+        Assert.True(policy.CanEncode(MediaStreamKind.Video));
     }
 
     [Fact]
@@ -77,8 +80,8 @@ public class MediaCapabilityTests
 
         var policy = WebviewPolicy.WithDeviceEncoders(mute);
 
-        Assert.False(policy.CanEncodeAudio);
-        Assert.False(policy.CanEncodeVideo);
+        Assert.False(policy.CanEncode(MediaStreamKind.Audio));
+        Assert.False(policy.CanEncode(MediaStreamKind.Video));
     }
 
     /// <summary>
@@ -93,10 +96,10 @@ public class MediaCapabilityTests
         var policy = WebviewPolicy.WithDeviceEncoders(Iphone);
 
         Assert.Contains("ac3", Iphone.Decodable(MediaStreamKind.Audio));
-        Assert.DoesNotContain("ac3", policy.AudioCodecs);
-        Assert.Equal(WebviewPolicy.AudioCodecs, policy.AudioCodecs);
+        Assert.DoesNotContain("ac3", policy.CodecsFor(MediaStreamKind.Audio));
+        Assert.Equal(WebviewPolicy.CodecsFor(MediaStreamKind.Audio), policy.CodecsFor(MediaStreamKind.Audio));
         Assert.Equal(WebviewPolicy.Containers, policy.Containers);
-        Assert.Equal(WebviewPolicy.VideoCodecs, policy.VideoCodecs);
+        Assert.Equal(WebviewPolicy.CodecsFor(MediaStreamKind.Video), policy.CodecsFor(MediaStreamKind.Video));
     }
 
     /// <summary>
@@ -119,10 +122,10 @@ public class MediaCapabilityTests
             ],
         };
 
-        // The policy's CanEncodeAudio is only half the question — the device must also be able to DECODE
+        // The policy's encodable set is only half the question — the device must also be able to DECODE
         // what the file holds, which is per-codec and is what CanRepairAudio asks.
         var policy = WebviewPolicy.WithDeviceEncoders(device);
-        if (!device.CanRepairAudio("ac3")) policy = policy with { CanEncodeAudio = false };
+        if (!device.CanRepairAudio("ac3")) policy = policy with { Encodable = new HashSet<MediaStreamKind>() };
 
         Assert.Equal(expected, MediaPlaybackPlanner.Plan(probe, policy).Action);
     }
