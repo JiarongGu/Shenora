@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 // NAMESPACES is the shape D55 created deliberately — they are folders inside this package, not
 // dependencies, so there is no layering edge here to be uncomfortable about.
 using Shenora.IO;
+using Shenora.Ipc;
 using Shenora.Media;
 using Shenora.Missions;
 
@@ -114,6 +115,14 @@ public sealed class ShenoraApplicationBuilder
         this.UseMissions();
         this.UseFileSystem();
         this.UseMediaPlayer();
+        // The IPC core and the operations feature. Both are portable — the dispatcher is a core, and
+        // `OperationRegistry` needs only `IEventBus`, registered a few lines up — so neither needs a
+        // platform and neither waits to be asked. ⚠ Anything that DOES need a platform is registered by
+        // that platform's shell instead (`UseWindows`/`UseAndroid`/`UseIOS`), because only a shell knows
+        // whether it can satisfy it; a platform that cannot registers nothing and the page learns that
+        // from the ready handshake's capability list (D36) rather than from silence.
+        Services.AddShenoraOperations();
+        Services.AddMessageDispatcher();
 
         return new ShenoraApplication(ApplicationName, Args, Environment, Paths,
             Services.BuildServiceProvider());

@@ -85,19 +85,22 @@ public static class MauiProgram
 		shenora.UseIOS(dispatcher, ex => Log($"UI work failed: {ex}"));
 #endif
 
-		// Opt-in, exactly as the desktop sample does.
-		shenora.Services.AddShenoraOperations();
 
-		shenora.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
+		// The scheduler and the file queue are ALREADY REGISTERED (D64); this only says where the sample
+		// disagrees with a default. The file queue is left entirely alone — its defaults are right.
+		shenora.UseMissions(options =>
 		{
-			GlobalLaneCapacity = 4,
-			Scopes = [PathClaims.Scope],
-			Observers = [new MissionOperationObserver(
-				sp.GetRequiredService<IOperationRegistry>(), PortableSampleFacade.Module)],
-			Log = Log,
-		}));
-		shenora.Services.AddSingleton<IFileUpdateQueue>(_ =>
-			new FileUpdateQueue(new FileUpdateQueueOptions { Log = Log }));
+			options.GlobalLaneCapacity = 4;
+			options.Scopes = [PathClaims.Scope];
+			options.Log = Log;
+		});
+		// ⚠ The observer needs a SERVICE, so it attaches once a provider exists rather than in the
+		// options above. Shenora must never learn what an operation is (D19/D20), so this mapping stays
+		// the app's — it is the whole cost of the pairing, and it is the same on both samples.
+		shenora.OnStarting(app =>
+			app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
+				[new MissionOperationObserver(
+					app.Services.GetRequiredService<IOperationRegistry>(), PortableSampleFacade.Module)]);
 
 		// THE POINT OF THIS SAMPLE: the same facade the desktop sample hosts, from the same net10.0
 		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,
@@ -107,11 +110,9 @@ public static class MauiProgram
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagFacade.
 		shenora.Services.AddModuleFacade<PageDiagFacade>();
-		// The SAME line the desktop sample writes, over the SAME routes — the mobile shell's IFileDialogs
-		// is what differs, and the page never learns which. What the page DOES learn is which of the four
-		// routes this shell will honour, from the capabilities advertised in MainPage's handshake.
-		shenora.Services.AddShenoraFileDialogs();
-		shenora.Services.AddMessageDispatcher();
+		// ⚠ NOTHING here registers the kit's dialog routes, the dispatcher or the operations registry —
+		// Build() and UseAndroid/UseIOS do (D64/D65). What the page still learns from the handshake is
+		// which of the four dialog routes THIS shell will honour; two of them are desktop-only (D35).
 
 		// The on-device probe for Start's idempotency. It must appear exactly ONCE per process.
 		// What that measurement actually found, kept because it corrects a claim rather than

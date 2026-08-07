@@ -147,7 +147,11 @@ public static class IpcServiceCollectionExtensions
         // because `OperationRegistry` needs `IEventBus` and composing IPC over a bare
         // `ServiceCollection` is a legitimate shape with no builder behind it. The fix was never
         // "resolve that optionally too" — it was to stop a core reaching downward at all.
-        services.AddSingleton<IMessageDispatcher>(sp =>
+        // TryAdd, so this is IDEMPOTENT: `Build()` calls it for every app (D64 — IPC is a core, and a
+        // framework that needs to be asked for its own wire is not on by default), and an app calling it
+        // explicitly to pass `configure` must WIN rather than register a second dispatcher.
+        // ⚠ The explicit call has to come FIRST for that, which it does: `Build()` defaults last.
+        services.TryAddSingleton<IMessageDispatcher>(sp =>
         {
             IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>());
             dispatcher.UseErrorHandler();
