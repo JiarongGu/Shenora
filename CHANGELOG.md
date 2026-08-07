@@ -223,6 +223,24 @@ at the first list and missed five more breaking changes.
   if (!result.Succeeded) Log(result.Reason);   // a code to branch on, and a reason for the LOG only
   ```
 
+  - 🔴 **`Mp4Remuxer.ConvertAsync` is the kit's DEFAULT `MediaConversionOptions.Convert`** — this is what
+    *"an app gets working playback with NOTHING supplied"* means (D52). Wire it and an `.mkv` of ordinary
+    H.264 + AAC becomes a playable `.mp4` with no engine, no binary and no licence weight:
+
+    ```csharp
+    interceptor.UseMediaConversion(new MediaConversionOptions
+    {
+        Resolve = MyRoute, CacheRoot = cacheDir, AllowedRoots = [libraryDir],
+        Convert = Mp4Remuxer.ConvertAsync,   // the kit's default
+    });
+    ```
+
+    ⚠ **It THROWS when it cannot help, and that is required rather than unfriendly.** The route runs the
+    delegate inside `Files.BeginReplace`, which publishes the output only if it returns without throwing —
+    so a refusal that returned quietly would promote an empty file into the cache and serve it forever,
+    giving the page a 200 and silence. The exception carries the `Mp4RemuxerOutcome` name, not prose.
+    Cancellation is honoured between frames, so shutdown is prompt without leaving a torn frame.
+
   - **It is a TWO-PASS job over the source, forced by the format rather than chosen.** A player needs the
     sample table before it can seek, and that table cannot be written until every frame's size and position
     are known — so `moov` precedes `mdat` and the source is walked for positions before a byte is written.

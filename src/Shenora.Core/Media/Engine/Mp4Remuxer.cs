@@ -107,9 +107,57 @@ public static class Mp4Remuxer
         mediaBytes + 8 <= uint.MaxValue ? 8 : 16;
 
     /// <summary>
+    /// The kit's DEFAULT <see cref="MediaConversionOptions.Convert"/> — container repair, no codecs.
+    ///
+    /// <para>
+    /// <b>This is what "an app gets working playback with NOTHING supplied" means</b> (D52). Wire it and an
+    /// <c>.mkv</c> of ordinary H.264 + AAC becomes a playable <c>.mp4</c> with no engine, no binary and no
+    /// licence weight:
+    /// </para>
+    /// <code>
+    /// interceptor.UseMediaConversion(new MediaConversionOptions
+    /// {
+    ///     Resolve = MyRoute, CacheRoot = cacheDir, AllowedRoots = [libraryDir],
+    ///     Convert = Mp4Remuxer.ConvertAsync,   // the kit's default
+    /// });
+    /// </code>
+    /// <para>
+    /// ⚠ <b>It THROWS when it cannot help, and that is required rather than unfriendly.</b> The route runs
+    /// this inside <c>Files.BeginReplace</c>, which publishes the output only if the delegate returns
+    /// without throwing — so a refusal that returned quietly would promote a truncated or empty file into
+    /// the cache and serve it forever. A stream MP4 cannot carry (AC-3, DTS, VP9) is exactly such a
+    /// refusal, and the page hears <c>FAILED</c> with a reason instead of playing silence.
+    /// </para>
+    /// <para>
+    /// Runs on a worker thread because the remux is synchronous and file-bound, and the caller is a mission
+    /// that expects to await.
+    /// </para>
+    /// </summary>
+    public static Task ConvertAsync(MediaConversionRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return Task.Run(() =>
+        {
+            request.Progress.Report(0);
+            var result = Remux(request.SourcePath, request.DestinationPath, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!result.Succeeded)
+            {
+                // The OUTCOME, not free text: the route turns this into a FAILED event whose reason is a
+                // type name, and this kit's error contract is a code plus parameters (`ipc-contracts`).
+                throw new InvalidOperationException($"{result.Outcome}: {result.Reason}");
+            }
+
+            request.Progress.Report(1);
+        }, cancellationToken);
+    }
+
+    /// <summary>
     /// Remux <paramref name="sourcePath"/> into <paramref name="destinationPath"/>, overwriting it.
     /// </summary>
-    public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath)
+    public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
@@ -118,7 +166,7 @@ public static class Mp4Remuxer
         {
             using var source = File.OpenRead(sourcePath);
             using var destination = File.Create(destinationPath);
-            return Remux(source, destination);
+            return Remux(source, destination, cancellationToken);
         }
         catch (Exception)
         {
@@ -132,14 +180,14 @@ public static class Mp4Remuxer
     /// Remux one open stream into another. <paramref name="source"/> must be seekable — the sample table has
     /// to be built before the media is copied, so the frames are visited twice.
     /// </summary>
-    public static Mp4RemuxerResult Remux(Stream source, Stream destination)
+    public static Mp4RemuxerResult Remux(Stream source, Stream destination, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
 
         try
         {
-            return Run(source, destination);
+            return Run(source, destination, cancellationToken);
         }
         catch (Exception)
         {
@@ -147,7 +195,7 @@ public static class Mp4Remuxer
         }
     }
 
-    private static Mp4RemuxerResult Run(Stream source, Stream destination)
+    private static Mp4RemuxerResult Run(Stream source, Stream destination, CancellationToken cancellationToken)
     {
         if (!source.CanSeek) return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "source is not seekable");
 
@@ -209,7 +257,7 @@ public static class Mp4Remuxer
         // ── write ─────────────────────────────────────────────────────────────────────────────────────
         try
         {
-            return Write(source, destination, resolved, writeOrder);
+            return Write(source, destination, resolved, writeOrder, cancellationToken);
         }
         catch (Exception)
         {
@@ -345,7 +393,8 @@ public static class Mp4Remuxer
     }
 
     private static Mp4RemuxerResult Write(Stream source, Stream destination,
-                                          List<Mp4TrackPlan> tracks, MatroskaSample[] writeOrder)
+                                          List<Mp4TrackPlan> tracks, MatroskaSample[] writeOrder,
+                                          CancellationToken cancellationToken)
     {
         var ftyp = Mp4Builder.Ftyp();
         var mediaBytes = writeOrder.Sum(s => (long)s.Length);
@@ -384,7 +433,7 @@ public static class Mp4Remuxer
         }
         destination.Write(header[..headerBytes]);
 
-        CopySamples(source, destination, writeOrder);
+        CopySamples(source, destination, writeOrder, cancellationToken);
 
         var duration = tracks.Max(t => t.Timescale == 0 ? 0d : (double)t.Duration / t.Timescale);
         return new Mp4RemuxerResult(
@@ -404,11 +453,15 @@ public static class Mp4Remuxer
     /// that keeps up with playback and one that does not.
     /// </para>
     /// </summary>
-    private static void CopySamples(Stream source, Stream destination, MatroskaSample[] writeOrder)
+    private static void CopySamples(Stream source, Stream destination, MatroskaSample[] writeOrder,
+                                    CancellationToken cancellationToken)
     {
         var buffer = new byte[64 * 1024];
         foreach (var sample in writeOrder)
         {
+            // Between frames, not mid-frame: a partial frame would leave the output inconsistent with the
+            // sample table already written, and the caller discards the whole file on cancellation anyway.
+            cancellationToken.ThrowIfCancellationRequested();
             source.Position = sample.Offset;
             var left = sample.Length;
             while (left > 0)

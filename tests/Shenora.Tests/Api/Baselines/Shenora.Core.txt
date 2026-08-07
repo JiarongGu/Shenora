@@ -750,8 +750,9 @@ sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.Med
   public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)
 static class Shenora.Media.Mp4Remuxer
-  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination)
-  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath)
+  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath, System.Threading.CancellationToken cancellationToken = default)
+  public static System.Threading.Tasks.Task ConvertAsync(Shenora.Media.MediaConversionRequest request, System.Threading.CancellationToken cancellationToken)
 enum Shenora.Media.Mp4RemuxerOutcome (int)
   public const Shenora.Media.Mp4RemuxerOutcome DestinationUnwritable = 5
   public const Shenora.Media.Mp4RemuxerOutcome MissingDecoderConfig = 3

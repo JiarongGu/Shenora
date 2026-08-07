@@ -526,6 +526,90 @@ public class Mp4RemuxerTests
         Assert.Equal(40u, U32(elst!, 12));   // media_time
     }
 
+    // ── the kit's DEFAULT converter ───────────────────────────────────────────────────────────────────
+
+    private static MediaConversionRequest Request(string source, string destination, List<double>? progress = null)
+        => new(source, destination, new Progress<double>(p => progress?.Add(p)));
+
+    /// <summary>
+    /// The point of the default: an app wires one delegate and an unplayable container becomes a playable
+    /// one, with no engine supplied.
+    /// </summary>
+    [Fact]
+    public async Task The_default_converter_turns_an_mkv_into_a_playable_mp4()
+    {
+        var dir = Directory.CreateTempSubdirectory("shenora-remux");
+        try
+        {
+            var source = Path.Combine(dir.FullName, "in.mkv");
+            var destination = Path.Combine(dir.FullName, "out.mp4");
+            using (var mkv = Mkv(Info(1000), [VideoTrack(config: AvcConfig), AudioTrack(config: AacConfig)],
+                       Cluster(0, SimpleBlock(1, 0, true, Frame(0, 256)), SimpleBlock(2, 0, true, Frame(9, 64)))))
+            {
+                File.WriteAllBytes(source, mkv.ToArray());
+            }
+
+            var progress = new List<double>();
+            await Mp4Remuxer.ConvertAsync(Request(source, destination, progress), CancellationToken.None);
+
+            var top = Children(File.ReadAllBytes(destination)).Select(b => b.Type).ToArray();
+            Assert.Equal(["ftyp", "moov", "mdat"], top);
+        }
+        finally { dir.Delete(recursive: true); }
+    }
+
+    /// <summary>
+    /// 🔴 <b>It must THROW when it cannot help, and this is the assertion that keeps the cache honest.</b>
+    /// The route runs the delegate inside <c>Files.BeginReplace</c>, which publishes the output only if it
+    /// returns without throwing. A refusal that returned quietly would promote an empty file into the cache
+    /// and serve it forever — the page would get a 200 and silence, which is worse than a failure.
+    /// </summary>
+    [Fact]
+    public async Task The_default_converter_THROWS_on_a_file_it_cannot_carry()
+    {
+        var dir = Directory.CreateTempSubdirectory("shenora-remux");
+        try
+        {
+            var source = Path.Combine(dir.FullName, "in.mkv");
+            var destination = Path.Combine(dir.FullName, "out.mp4");
+            // AC-3 only: MP4 cannot carry it without re-encoding, which this tier does not do.
+            using (var mkv = Mkv(Info(1000), [AudioTrack(codec: "A_AC3", config: AacConfig)],
+                       Cluster(0, SimpleBlock(2, 0, true, Frame(0, 64)))))
+            {
+                File.WriteAllBytes(source, mkv.ToArray());
+            }
+
+            var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => Mp4Remuxer.ConvertAsync(Request(source, destination), CancellationToken.None));
+
+            // The OUTCOME name travels, not free prose — the route turns it into a FAILED reason.
+            Assert.Contains(nameof(Mp4RemuxerOutcome.NoCarriableStream), thrown.Message, StringComparison.Ordinal);
+        }
+        finally { dir.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task The_default_converter_honours_cancellation()
+    {
+        var dir = Directory.CreateTempSubdirectory("shenora-remux");
+        try
+        {
+            var source = Path.Combine(dir.FullName, "in.mkv");
+            using (var mkv = Mkv(Info(1000), [VideoTrack(config: AvcConfig)],
+                       Cluster(0, SimpleBlock(1, 0, true, Frame(0, 256)))))
+            {
+                File.WriteAllBytes(source, mkv.ToArray());
+            }
+
+            using var cancelled = new CancellationTokenSource();
+            await cancelled.CancelAsync();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => Mp4Remuxer.ConvertAsync(Request(source, Path.Combine(dir.FullName, "out.mp4")), cancelled.Token));
+        }
+        finally { dir.Delete(recursive: true); }
+    }
+
     [Fact]
     public void Anything_that_is_not_matroska_is_refused_rather_than_throwing()
     {
