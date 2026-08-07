@@ -4,9 +4,21 @@ Auto-loaded every session. Keep short — details live in `docs/` and `.claude/r
 
 ## What this is
 
-Shenora (神阙) is a **reusable library**, not an app: the desktop "body" (WinForms + WebView2 +
-React hosting, typed IPC, modules, window management, native services) for the family's Windows
-applications, shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 —
+Shenora (神阙) is a **hybrid app development framework — .NET + React**, not an app: the "body"
+(shell hosting, typed IPC, modules, window management, native services) that React apps boot their
+logic on, across Windows, Android and iOS. ⚠ **It is not a media library, a file library, or any other
+single-domain library** — those are capabilities it happens to carry, and a package boundary that
+suggests otherwise is making a claim about the product (D53).
+
+🔴 **The thesis, which decides what is worth building (D54):** the differentiator against Capacitor and
+Electron is **native .NET capability**. They give you a webview and a JS bridge, so their ceiling is the
+web platform plus plugins; this kit's ceiling is .NET's — real threads, real handles, the platform SDKs,
+background execution — with React for the interface. **The kit's job is the translation layer between
+them: what .NET can do and React cannot.** So the question for any feature is not *"is this useful?"* but
+*"can React already do this?"* — if it can, the kit is competing with the web platform and loses.
+`.NET does the platform work · React does the interface · the kit owns the seam and the IPC.`
+
+Shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 —
 plus the optional `IO|IO.Compression` hanging off Core, D48; media is IN Core since D53) + npm
 (`@shenora/react`), all versioned in lockstep. Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI

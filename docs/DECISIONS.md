@@ -1665,6 +1665,17 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     Merging costs Core +98 KB — and iOS mandates trimming (`PublishTrimmed=true`), so an app that never
     calls a media type does not carry it either way. ⚠ **The size argument was the weak one and it was
     argued first; the owner was right to push back on it.**
+  - 🔴 **AMENDED 2026-08-07, same day — the OWNER'S actual reason, which is better than the one first
+    recorded here and is about IDENTITY rather than layering.** (*"my previous description for the goal of
+    this library is not that clear, thats why I removed the entire media library and move[d] into core,
+    because we are not making a video convertor library we are making a hybrid app development
+    framework."*) A separate `Shenora.Media` package **advertised the wrong thing**: it made the kit look
+    like it ships a media library with a hybrid shell attached, when it is a hybrid app framework in which
+    media is one capability among windows, dialogs, IPC and the rest. Package boundaries are a public
+    statement about what a thing IS, and that one was making a claim nobody meant.
+    ⚠ Worth keeping because it generalises past media: the weight numbers and the shell-work test below
+    are both true and both were downstream of this. **When a package boundary has to be justified by an
+    argument, check first whether it is saying something about the product you did not intend to say.**
   - **The argument that actually decides it is D52's own framing:** *"A React+C# app whose user's video
     will not play is a BROKEN APP, and repairing that is shell work — the same category as serving a local
     file or honouring a safe-area inset."* Serving a local file is `IWebViewInterceptor` + `WebViewFiles`,
@@ -1744,3 +1755,19 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     ⚠ **The test to apply to the NEXT capability, before designing it:** *is this the page trying to do
     something the platform is better at?* If yes, the kit's job is a lifecycle contract, not a workaround —
     the translation layer was the workaround, and this decision is what bounds it.
+  - 🔴 **THE THESIS, and it renames what "translation layer" means** (owner, same day): *"this
+    differenti[ates] our platform compared to capacitor or electron — native .net capability. And what we
+    [are] mostly trying to solve is not a media convertor, its something that .net can do but react
+    d[oes]nt. We build that translation layer."*
+    - **The layer this kit builds translates .NET CAPABILITY into something a React page can use.** Not
+      container A into container B — that was one instance, and naming the media package after it was
+      close enough to be misleading. `Shenora.Media`'s job is a special case of the kit's job.
+    - **It is also the competitive answer, and worth stating because it decides what is worth building.**
+      Capacitor and Electron give you a webview and a JS bridge; the capability ceiling is whatever the web
+      platform plus a plugin ecosystem offers. This kit's ceiling is **.NET's** — the whole BCL, real
+      threads, real handles, the platform SDKs, background execution — with React on top for the interface.
+      Anything a plugin ecosystem already does well is not where the value is.
+    - **So the question for any proposed feature is not "is this useful?" but "can React already do this?"**
+      If it can, the kit is competing with the web platform and will lose. If it cannot — and .NET can —
+      that is exactly the gap this framework exists to close, and the kit owes a lifecycle contract plus one
+      implementation per shell.
