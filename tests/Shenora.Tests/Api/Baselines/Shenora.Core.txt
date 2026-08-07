@@ -902,16 +902,16 @@ interface Shenora.Media.ISegmentRun : System.IDisposable
 static class Shenora.Media.MatroskaProbe
   public static Shenora.Media.MediaProbeResult? Read(System.IO.Stream stream, string container = ".mkv")
   public static Shenora.Media.MediaProbeResult? Read(string path)
-sealed class Shenora.Media.MediaAudioConversion : Shenora.Media.IMediaAudioConversion
-  public .ctor()
-  public Shenora.Media.IMediaAudioConversionRun? Begin(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
-  public System.IDisposable Use(Shenora.Media.MediaAudioMiddleware converter)
-  public bool CanConvert(string codec)
 delegate Shenora.Media.MediaAudioMiddleware
   public .ctor(object object, System.IntPtr method)
   public virtual Shenora.Media.IMediaAudioConversionRun? EndInvoke(System.IAsyncResult result)
   public virtual Shenora.Media.IMediaAudioConversionRun? Invoke(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
   public virtual System.IAsyncResult BeginInvoke(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate, System.AsyncCallback callback, object object)
+sealed class Shenora.Media.MediaAudioPipeline : Shenora.Media.IMediaAudioConversion
+  public .ctor()
+  public Shenora.Media.IMediaAudioConversionRun? Begin(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
+  public System.IDisposable Use(Shenora.Media.MediaAudioMiddleware converter)
+  public bool CanConvert(string codec)
 static class Shenora.Media.MediaCapabilityExtensions
   public static Shenora.Media.MediaPlaybackPolicy WithDeviceEncoders(Shenora.Media.MediaPlaybackPolicy policy, Shenora.Media.IMediaCapability device)
   public static System.Collections.Generic.IReadOnlySet<string> DecodableAudio(Shenora.Media.IMediaCapability device)
@@ -920,6 +920,8 @@ static class Shenora.Media.MediaCapabilityExtensions
   public static System.Collections.Generic.IReadOnlySet<string> EncodableVideo(Shenora.Media.IMediaCapability device)
   public static bool CanRepair(Shenora.Media.IMediaCapability device, Shenora.Media.MediaStreamKind kind, string codec)
   public static bool CanRepairAudio(Shenora.Media.IMediaCapability device, string codec)
+static class Shenora.Media.MediaContainerWriterExtensions
+  public static System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> ToConverter(Shenora.Media.IMediaContainerWriter writer, Shenora.Media.IMediaAudioConversion? conversion = null)
 static class Shenora.Media.MediaConversionEvents
   public const string Failed = "FAILED"
   public const string Ready = "READY"
@@ -1135,8 +1137,6 @@ sealed class Shenora.Media.Mp4Remuxer : Shenora.Media.IMediaContainerWriter
   public static Shenora.Media.MediaRemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, System.Threading.CancellationToken cancellationToken = default)
-  public static System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> ConvertWith(Shenora.Media.IMediaAudioConversion? conversion, Shenora.Media.IMediaContainerWriter? writer = null)
-  public static System.Threading.Tasks.Task ConvertAsync(Shenora.Media.MediaConversionRequest request, System.Threading.CancellationToken cancellationToken)
   public string Container { get; }
 sealed class Shenora.Media.SegmentRunRequest : System.IEquatable<Shenora.Media.SegmentRunRequest>
   public .ctor(string SourcePath, string Directory, bool HasPicture, int FirstSegment, double SegmentSeconds, int Attempt)

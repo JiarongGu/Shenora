@@ -54,7 +54,7 @@ public delegate IMediaAudioConversionRun? MediaAudioMiddleware(MediaStreamInfo s
 /// means to override, not to be consulted after the default has already said yes.
 /// </para>
 /// </summary>
-public sealed class MediaAudioConversion : IMediaAudioConversion
+public sealed class MediaAudioPipeline : IMediaAudioConversion
 {
     private readonly List<MediaAudioMiddleware> _chain = [];
     private readonly Lock _gate = new();
@@ -101,7 +101,7 @@ public sealed class MediaAudioConversion : IMediaAudioConversion
         return null;
     }
 
-    private sealed class Registration(MediaAudioConversion owner, MediaAudioMiddleware converter) : IDisposable
+    private sealed class Registration(MediaAudioPipeline owner, MediaAudioMiddleware converter) : IDisposable
     {
         public void Dispose()
         {
@@ -114,7 +114,7 @@ public sealed class MediaAudioConversion : IMediaAudioConversion
 /// What a CONSUMER of conversion sees: ask whether a codec can be handled, and begin one.
 ///
 /// <para>
-/// Deliberately smaller than <see cref="MediaAudioConversion"/>, which additionally lets converters be
+/// Deliberately smaller than <see cref="MediaAudioPipeline"/>, which additionally lets converters be
 /// ADDED. The remuxer and the planner only ever ask, so they take this; an app composing the chain takes
 /// the pipeline. Splitting them means a caller cannot accidentally mutate a pipeline it was only meant to
 /// consult.

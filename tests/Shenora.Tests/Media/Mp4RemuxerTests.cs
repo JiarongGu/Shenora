@@ -699,7 +699,7 @@ public class Mp4RemuxerTests
             }
 
             var progress = new List<double>();
-            await Mp4Remuxer.ConvertAsync(Request(source, destination, progress), CancellationToken.None);
+            await new Mp4Remuxer().ToConverter()(Request(source, destination, progress), CancellationToken.None);
 
             var top = Children(File.ReadAllBytes(destination)).Select(b => b.Type).ToArray();
             Assert.Equal(["ftyp", "moov", "mdat"], top);
@@ -729,7 +729,7 @@ public class Mp4RemuxerTests
             }
 
             var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => Mp4Remuxer.ConvertAsync(Request(source, destination), CancellationToken.None));
+                () => new Mp4Remuxer().ToConverter()(Request(source, destination), CancellationToken.None));
 
             // The OUTCOME name travels, not free prose — the route turns it into a FAILED reason.
             Assert.Contains(nameof(MediaRemuxerOutcome.NoCarriableStream), thrown.Message, StringComparison.Ordinal);
@@ -754,7 +754,7 @@ public class Mp4RemuxerTests
             await cancelled.CancelAsync();
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => Mp4Remuxer.ConvertAsync(Request(source, Path.Combine(dir.FullName, "out.mp4")), cancelled.Token));
+                () => new Mp4Remuxer().ToConverter()(Request(source, Path.Combine(dir.FullName, "out.mp4")), cancelled.Token));
         }
         finally { dir.Delete(recursive: true); }
     }
@@ -821,7 +821,7 @@ public class Mp4RemuxerTests
     /// </para>
     /// </summary>
     [Fact]
-    public async Task ConvertWith_lets_a_supplied_codec_rescue_a_soundtrack_MP4_cannot_carry()
+    public async Task ToConverter_lets_a_supplied_codec_rescue_a_soundtrack_MP4_cannot_carry()
     {
         var frames = new[] { Frame(1, 32), Frame(2, 48), Frame(3, 40) };
         var sourcePath = Path.Combine(Path.GetTempPath(), $"shenora-convert-{Guid.NewGuid():N}.mkv");
@@ -839,11 +839,11 @@ public class Mp4RemuxerTests
             // ⚠ Without a conversion the default SUCCEEDS and drops the soundtrack — it does not refuse.
             // So the user-visible symptom of the missing capability is a SILENT FILM, not an error, which
             // is the worse failure mode and the reason this test asserts track COUNT rather than a throw.
-            await Mp4Remuxer.ConvertAsync(request, CancellationToken.None);
+            await new Mp4Remuxer().ToConverter()(request, CancellationToken.None);
             Assert.Single(Children(Find(File.ReadAllBytes(destinationPath), "moov")!), b => b.Type == "trak");
 
             // With one — an adopter's, or the shell's — the same call on the same file keeps the audio.
-            await Mp4Remuxer.ConvertWith(new FakeConversion())(request, CancellationToken.None);
+            await new Mp4Remuxer().ToConverter(new FakeConversion())(request, CancellationToken.None);
 
             var mp4 = File.ReadAllBytes(destinationPath);
             Assert.Equal(2, Children(Find(mp4, "moov")!).Count(b => b.Type == "trak"));
@@ -896,7 +896,7 @@ public class Mp4RemuxerTests
     /// consulted" — the same defect class as D59 and the unregistered lock inspector, and the third of them.
     /// </summary>
     [Fact]
-    public async Task ConvertWith_uses_a_supplied_container_writer_instead_of_the_built_in_one()
+    public async Task ToConverter_uses_a_supplied_container_writer_instead_of_the_built_in_one()
     {
         var sourcePath = Path.Combine(Path.GetTempPath(), $"shenora-writer-{Guid.NewGuid():N}.mkv");
         var destinationPath = Path.Combine(Path.GetTempPath(), $"shenora-writer-{Guid.NewGuid():N}.mp4");
@@ -911,7 +911,7 @@ public class Mp4RemuxerTests
             var writer = new RecordingWriter();
             var request = new MediaConversionRequest(sourcePath, destinationPath, new Progress<double>());
 
-            await Mp4Remuxer.ConvertWith(conversion: null, writer)(request, CancellationToken.None);
+            await writer.ToConverter()(request, CancellationToken.None);
 
             Assert.True(writer.Called);
             // The kit still owns the FILES — a consumer's muxer thinks about frames, not about whether a
@@ -946,9 +946,9 @@ public class Mp4RemuxerTests
     /// additional code" actually rests on. A converter registered with <c>Use(...)</c> reaches the default.
     /// </summary>
     [Fact]
-    public void ConvertWith_accepts_a_pipeline_so_a_registered_converter_is_consulted()
+    public void ToConverter_accepts_a_pipeline_so_a_registered_converter_is_consulted()
     {
-        var pipeline = new MediaAudioConversion();
+        var pipeline = new MediaAudioPipeline();
         pipeline.Use((source, _) => source.Codec is "ac3" ? new FakeConversion() : null);
 
         using var film = Ac3Film(Frame(1, 32), Frame(2, 48));

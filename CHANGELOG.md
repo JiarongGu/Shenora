@@ -52,6 +52,19 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- **The conversion types were tidied by RESPONSIBILITY, not by taste** (owner: *"tidy update naming and
+  responsibility of those conversion classes"*). Two changes, each fixing a type that was doing or claiming
+  the wrong thing:
+  - **`MediaAudioConversion` → `MediaAudioPipeline`.** The class is a middleware CHAIN with `Use(...)`,
+    last-registered-first — it is not "a conversion", it is what composes them. The kit already had the
+    vocabulary (`WebViewResourcePipeline`). ⚠ `IMediaAudioConversion` the INTERFACE keeps its name: that
+    one really is a conversion, and the pipeline implements it.
+  - **`Mp4Remuxer.ConvertWith(conversion, writer)` → `writer.ToConverter(conversion)`**, an extension on
+    `IMediaContainerWriter`. The old shape had a class named "Remuxer" minting a route delegate that might
+    run a *different* muxer entirely. Wrapping a writer is the INTERFACE's job, not one implementation's —
+    and it now reads as what it is: take a muxer, make it a converter. `Mp4Remuxer.ConvertAsync` retires
+    with it; `new Mp4Remuxer().ToConverter()` is the same thing and says which muxer it means.
+
 - 🔴 **`Shenora.IO` and `Shenora.IO.Compression` are no longer packages.** Both folded into
   `Shenora.Core` (D55), following `Shenora.Media` (D53). **Delete the `PackageReference` lines; change no
   code** — the namespaces are unchanged and now live inside Core. The package set is now five managed

@@ -172,7 +172,7 @@ public class MediaCapabilityTests
     [Fact]
     public void A_consumers_converter_is_ADDED_to_the_chain_not_a_replacement()
     {
-        var pipeline = new MediaAudioConversion();
+        var pipeline = new MediaAudioPipeline();
         pipeline.Use(Handles("ac3", "built-in"));      // the kit's platform converter
         pipeline.Use(Handles("dts", "the app's"));     // what a consumer adds
 
@@ -188,7 +188,7 @@ public class MediaCapabilityTests
     [Fact]
     public void A_later_converter_overrides_an_earlier_one_for_the_same_codec()
     {
-        var pipeline = new MediaAudioConversion();
+        var pipeline = new MediaAudioPipeline();
         pipeline.Use(Handles("ac3", "built-in"));
         pipeline.Use(Handles("ac3", "the app's"));
 
@@ -203,7 +203,7 @@ public class MediaCapabilityTests
     [Fact]
     public void Disposing_a_registration_removes_that_converter_and_leaves_the_rest()
     {
-        var pipeline = new MediaAudioConversion();
+        var pipeline = new MediaAudioPipeline();
         pipeline.Use(Handles("ac3", "built-in"));
         var extra = pipeline.Use(Handles("dts", "the app's"));
 
@@ -217,7 +217,7 @@ public class MediaCapabilityTests
     [Fact]
     public void An_empty_pipeline_declines_everything_rather_than_throwing()
     {
-        var pipeline = new MediaAudioConversion();
+        var pipeline = new MediaAudioPipeline();
         Assert.False(pipeline.CanConvert("ac3"));
         Assert.Null(pipeline.Begin(new MediaStreamInfo(MediaStreamKind.Audio, "ac3"), default));
     }

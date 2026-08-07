@@ -44,7 +44,7 @@ namespace Shenora.Media;
 ///   <term><c>MediaConversionOptions.Convert</c></term>
 ///   <description>ONE FINISHED FILE. A delegate, so an app that wants a native muxer
 ///   (<c>AVAssetWriter</c>, <c>MediaMuxer</c>) simply supplies its own.
-///   <c>Mp4Remuxer.ConvertAsync</c> is the kit's DEFAULT for it, built on the primitive above.</description>
+///   <c>new Mp4Remuxer().ToConverter()</c> is the kit's DEFAULT for it, built on the primitive above.</description>
 /// </item>
 /// <item>
 ///   <term><see cref="ISegmentEngine"/> (this)</term>

@@ -96,7 +96,7 @@ public static class MobileHostExtensions
         {
             // The PIPELINE is registered, with this platform is converter already in it. An app adds its
             // own with pipeline.Use(...) and keeps this one behind it, rather than replacing the lot.
-            var pipeline = new Shenora.Media.MediaAudioConversion();
+            var pipeline = new Shenora.Media.MediaAudioPipeline();
             MobileMediaAudioConversion.Use(pipeline);
             return pipeline;
         });

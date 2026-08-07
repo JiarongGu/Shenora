@@ -32,7 +32,7 @@ public static class MobileMediaAudioConversion
     /// keeps this one behind it, so it only has to handle what it actually wants to improve on.
     /// </para>
     /// </summary>
-    public static IDisposable Use(MediaAudioConversion pipeline)
+    public static IDisposable Use(MediaAudioPipeline pipeline)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         return pipeline.Use(Begin);

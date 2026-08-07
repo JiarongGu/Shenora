@@ -93,7 +93,7 @@ public static class MediaPlayerExtensions
     /// is safe to call unconditionally — an app that never turns conversion on pays one dictionary lookup.
     /// </para>
     /// <para>
-    /// It uses the kit's defaults throughout — <see cref="Mp4Remuxer.ConvertWith"/> fed by whatever
+    /// It uses the kit's defaults throughout — <see cref="MediaContainerWriterExtensions.ToConverter"/> fed by whatever
     /// <see cref="IMediaAudioConversion"/> the shell registered (D59), the cache root
     /// <c>UseMediaPlayer</c> chose, and a URL convention the player and the route agree on **because both
     /// read the same options object**, so the emitter and the matcher cannot drift apart.
@@ -129,10 +129,10 @@ public static class MediaPlayerExtensions
                     : null,
                 // BOTH seams resolved from DI, so registering one is enough to have it used — the rule
                 // D59 and the lock-inspector defect were both about. A consumer's native muxer replaces
-                // only the muxing stage; their codec replaces only the codec.
-                Convert = Mp4Remuxer.ConvertWith(
-                    services.GetService<IMediaAudioConversion>(),
-                    services.GetService<IMediaContainerWriter>()),
+                // only the muxing stage; their codec replaces only the codec. Reads as what it is now that
+                // wrapping a writer lives on the INTERFACE: take a muxer, make it a converter.
+                Convert = (services.GetService<IMediaContainerWriter>() ?? new Mp4Remuxer())
+                    .ToConverter(services.GetService<IMediaAudioConversion>()),
                 CacheRoot = options.CacheRoot!,
                 AllowedRoots = options.AllowedRoots,
                 Module = options.Module,

@@ -57,3 +57,82 @@ public interface IMediaContainerWriter
     MediaRemuxerResult Write(Stream source, Stream destination, IMediaAudioConversion? conversion,
                              CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Turning a container writer into the delegate the conversion route runs.
+/// </summary>
+public static class MediaContainerWriterExtensions
+{
+    /// <summary>
+    /// Wrap this writer as a <see cref="MediaConversionOptions.Convert"/> delegate.
+    /// <code>
+    /// Convert = new Mp4Remuxer().ToConverter(audioConversion),   // the kit's muxer
+    /// Convert = myNativeMuxer.ToConverter(audioConversion),      // yours
+    /// </code>
+    /// <para>
+    /// <b>⚠ This exists to fix a RESPONSIBILITY, not to add a feature.</b> The factory used to live on
+    /// <see cref="Mp4Remuxer"/> as <c>ConvertWith(conversion, writer)</c> — so a class named "Remuxer" was
+    /// minting a route delegate that might run a completely different muxer. Any
+    /// <see cref="IMediaContainerWriter"/> can become a converter; that belongs here, on the interface,
+    /// rather than on one implementation of it.
+    /// </para>
+    /// <para>
+    /// <b>The kit keeps the FILE handling</b> — opening, disposing, and swallowing the path on failure — so
+    /// a consumer implementing a muxer thinks about frames, not about whether a media path can reach a page.
+    /// It also forwards <see cref="MediaRemuxerResult.Dropped"/> onto the request, which is what lets the
+    /// route tell a page WHY a film is silent.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It THROWS on refusal, and that is required rather than unfriendly.</b> The route runs this inside
+    /// <c>Files.BeginReplace</c>, which publishes the output only if the delegate returns without throwing —
+    /// so a refusal that returned quietly would promote a truncated file into the cache and serve it forever.
+    /// </para>
+    /// </summary>
+    /// <param name="writer">The muxer.</param>
+    /// <param name="conversion">The codec seam, or null for container repair only.</param>
+    public static Func<MediaConversionRequest, CancellationToken, Task> ToConverter(
+        this IMediaContainerWriter writer, IMediaAudioConversion? conversion = null)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        return (request, cancellationToken) =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            return Task.Run(() =>
+            {
+                request.Progress.Report(0);
+
+                MediaRemuxerResult result;
+                try
+                {
+                    using var source = File.OpenRead(request.SourcePath);
+                    using var destination = File.Create(request.DestinationPath);
+                    result = writer.Write(source, destination, conversion, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // No exception text travels from here — a media path is exactly what must not reach a
+                    // page, and the caller already knows which file it asked about.
+                    result = new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "source or destination unusable");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!result.Succeeded)
+                {
+                    // The OUTCOME, not free text: the route turns this into a FAILED event whose reason is a
+                    // type name, and this kit's error contract is a code plus parameters (`ipc-contracts`).
+                    throw new InvalidOperationException($"{result.Outcome}: {result.Reason}");
+                }
+
+                foreach (var codec in result.Dropped) request.Dropped.Add(codec);
+                request.Progress.Report(1);
+            }, cancellationToken);
+        };
+    }
+}
