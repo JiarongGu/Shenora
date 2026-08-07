@@ -526,6 +526,155 @@ public class Mp4RemuxerTests
         Assert.Equal(40u, U32(elst!, 12));   // media_time
     }
 
+    // ── the transcode tier ────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A stand-in for a device codec. It converts AC-3 to "AAC" by relabelling each frame, which is all this
+    /// test needs — what is under test is the MUXING of a converted stream, not any real encoder.
+    /// <para>
+    /// It deliberately BUFFERS one frame and releases it on the next push, because that is what real codecs
+    /// do: a run that emits one output per input would never exercise the drain, and the tail-loss bug is
+    /// exactly the one that produces a well-formed file whose audio stops early.
+    /// </para>
+    /// </summary>
+    private sealed class FakeConversion(int framesPerPacket = 1024, int sampleRate = 48000, int channels = 2)
+        : IMediaStreamConversion, IMediaStreamConversionRun
+    {
+        private ReadOnlyMemory<byte>? _held;
+        public bool Disposed { get; private set; }
+        public ReadOnlyMemory<byte> OutputConfig => AacConfig;
+        public int OutputFramesPerPacket => framesPerPacket;
+        public int OutputSampleRate => sampleRate;
+        public int OutputChannels => channels;
+
+        public bool CanConvert(string codec) => codec is "ac3" or "eac3" or "dts";
+        public IMediaStreamConversionRun? Begin(MediaStreamInfo source) => this;
+
+        public IReadOnlyList<ReadOnlyMemory<byte>> Push(ReadOnlyMemory<byte> frame)
+        {
+            var previous = _held;
+            _held = frame.ToArray();
+            return previous is null ? [] : [previous.Value];
+        }
+
+        public IReadOnlyList<ReadOnlyMemory<byte>> Drain()
+        {
+            var last = _held;
+            _held = null;
+            return last is null ? [] : [last.Value];
+        }
+
+        public void Dispose() => Disposed = true;
+    }
+
+    private static MemoryStream Ac3Film(params byte[][] audioFrames)
+        => Mkv(Info(1000),
+            [VideoTrack(config: AvcConfig), AudioTrack(codec: "A_AC3", config: null)],
+            Cluster(0, [.. new[] { SimpleBlock(1, 0, true, Frame(0, 128)) }
+                .Concat(audioFrames.Select((f, i) => SimpleBlock(2, (short)(i * 20), true, f)))]));
+
+    /// <summary>
+    /// 🔴 The case the whole transcode tier exists for: an H.264 + AC-3 film that the remuxer alone REFUSES
+    /// becomes fully playable once a device codec is supplied. Same file, same call, different device.
+    /// </summary>
+    [Fact]
+    public void An_ac3_soundtrack_is_TRANSCODED_when_the_device_can_do_it()
+    {
+        var frames = new[] { Frame(40, 60), Frame(41, 62), Frame(42, 58) };
+
+        using (var refused = Ac3Film(frames))
+        {
+            // Without a conversion the audio is dropped and only the picture survives.
+            var (videoOnly, plain) = Remux(refused);
+            Assert.True(plain.Succeeded);
+            Assert.Equal(0, plain.AudioSamples);
+            Assert.Single(Children(Find(videoOnly, "moov")!), b => b.Type == "trak");
+        }
+
+        using var source = Ac3Film(frames);
+        using var output = new MemoryStream();
+        var conversion = new FakeConversion();
+        var result = Mp4Remuxer.Remux(source, output, conversion);
+
+        Assert.True(result.Succeeded, result.Reason);
+        Assert.Equal(3, result.AudioSamples);          // every frame survived, including the drained tail
+        Assert.Equal(1, result.VideoSamples);
+
+        var mp4 = output.ToArray();
+        Assert.Equal(2, Children(Find(mp4, "moov")!).Count(b => b.Type == "trak"));
+
+        // The converted bytes came from the SPOOL, not from the source file — reading them back through the
+        // sample table is what proves the per-track byte source is wired correctly.
+        Assert.Equal(frames, SamplesOf(mp4, trackIndex: 1));
+        Assert.True(conversion.Disposed, "the platform codec must be released");
+    }
+
+    /// <summary>
+    /// ⚠ The converted track's timing comes from the ENCODER, not from the source timestamps — a decoder may
+    /// resample, so the input's ticks no longer describe the output. Each output frame lasts exactly one
+    /// packet at the output rate, which is exact by construction.
+    /// </summary>
+    [Fact]
+    public void A_converted_track_is_timed_by_the_encoders_own_frame_size()
+    {
+        using var source = Ac3Film(Frame(40, 60), Frame(41, 62), Frame(42, 58));
+        using var output = new MemoryStream();
+        Assert.True(Mp4Remuxer.Remux(source, output, new FakeConversion(framesPerPacket: 1024, sampleRate: 44100)).Succeeded);
+
+        var mp4 = output.ToArray();
+        var mdhd = Find(mp4, "moov/trak/mdia/mdhd", trackIndex: 1)!;
+        Assert.Equal(44100u, U32(mdhd, 12));           // timescale is the OUTPUT rate
+
+        var stts = Find(mp4, "moov/trak/mdia/minf/stbl/stts", trackIndex: 1)!;
+        Assert.Equal(1u, U32(stts, 4));                // one run: every frame the same length
+        Assert.Equal(3u, U32(stts, 8));                // three samples
+        Assert.Equal(1024u, U32(stts, 12));            // each lasting one packet
+    }
+
+    /// <summary>
+    /// A device that cannot do the codec is not asked, and the file is not half-converted — the refusal is
+    /// the same one the remuxer gives on its own.
+    /// </summary>
+    [Fact]
+    public void A_device_that_cannot_convert_the_codec_leaves_the_verdict_unchanged()
+    {
+        using var source = Mkv(Info(1000), [AudioTrack(codec: "A_DTS", config: null)],
+            Cluster(0, SimpleBlock(2, 0, true, Frame(0, 64))));
+        using var output = new MemoryStream();
+
+        // CanConvert says no for everything here.
+        var result = Mp4Remuxer.Remux(source, output, new RefusingConversion());
+
+        Assert.Equal(Mp4RemuxerOutcome.NoCarriableStream, result.Outcome);
+    }
+
+    private sealed class RefusingConversion : IMediaStreamConversion
+    {
+        public bool CanConvert(string codec) => false;
+        public IMediaStreamConversionRun? Begin(MediaStreamInfo source) => null;
+    }
+
+    /// <summary>
+    /// Copying beats converting when both are possible — it is faster, lossless, and cannot fail halfway.
+    /// A device offered an AAC track must not transcode it.
+    /// </summary>
+    [Fact]
+    public void A_carriable_soundtrack_is_COPIED_even_when_a_converter_is_available()
+    {
+        var audio = Frame(9, 64);
+        using var source = Mkv(Info(1000),
+            [VideoTrack(config: AvcConfig), AudioTrack(config: AacConfig)],
+            Cluster(0, SimpleBlock(1, 0, true, Frame(0, 128)), SimpleBlock(2, 0, true, audio)));
+        using var output = new MemoryStream();
+
+        var conversion = new FakeConversion();
+        Assert.True(Mp4Remuxer.Remux(source, output, conversion).Succeeded);
+
+        // Untouched: the exact source bytes, and the converter never opened.
+        Assert.Equal([audio], SamplesOf(output.ToArray(), trackIndex: 1));
+        Assert.False(conversion.Disposed, "the converter should never have been started");
+    }
+
     // ── the kit's DEFAULT converter ───────────────────────────────────────────────────────────────────
 
     private static MediaConversionRequest Request(string source, string destination, List<double>? progress = null)

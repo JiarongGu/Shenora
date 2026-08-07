@@ -241,6 +241,28 @@ at the first list and missed five more breaking changes.
     giving the page a 200 and silence. The exception carries the `Mp4RemuxerOutcome` name, not prose.
     Cancellation is honoured between frames, so shutdown is prompt without leaving a torn frame.
 
+  - **`IMediaStreamConversion` + `IMediaStreamConversionRun` — the TRANSCODE tier** (D52 tier 2). Pass one
+    to `Remux` and an H.264 + AC-3 film that the remuxer alone refuses becomes fully playable: the picture
+    is still copied untouched, and only the soundtrack goes through the device's codecs. Zero bytes
+    shipped, zero licence weight, no codec written.
+    - **Per-FRAME, not per-file.** A two-hour soundtrack is hundreds of megabytes compressed and gigabytes
+      as PCM, so a whole-stream call cannot run on a phone — and it is the shape both platforms already
+      have (`MediaCodec` and `AudioConverter` are fed buffers and drained).
+    - ⚠ **Zero outputs from `Push` is NORMAL.** Codecs buffer; a caller treating an empty return as failure
+      abandons every conversion in its first few frames. And 🔴 **`Drain` is not optional** — skip it and
+      the tail stays inside the codec, producing a well-formed file whose audio simply stops early.
+    - **Timing comes from the ENCODER**, not the source: a decoder may resample or downmix, so the input's
+      timestamps no longer describe the output. Each output frame lasts exactly one packet at the output
+      rate, which is exact by construction.
+    - **Copying beats converting** whenever both are possible — faster, lossless, and it cannot fail
+      halfway — so a carriable soundtrack is never transcoded just because a converter was supplied.
+    - Converted audio is **spooled to a temp file**, not held: ~115 MB as AAC for a feature film. That also
+      keeps the offset/length model identical for copied and converted tracks, so nothing downstream knows
+      which is which.
+    - ⚠ **No implementation ships yet** — the shells implement it next, and `IMediaCapability` already
+      answers whether a given device can. On an iPhone that is `ac3 repairable=True`; on AOSP Android it is
+      false, and the planner then says `Unsupported` rather than starting work that cannot finish.
+
   - **It is a TWO-PASS job over the source, forced by the format rather than chosen.** A player needs the
     sample table before it can seek, and that table cannot be written until every frame's size and position
     are known — so `moov` precedes `mdat` and the source is walked for positions before a byte is written.

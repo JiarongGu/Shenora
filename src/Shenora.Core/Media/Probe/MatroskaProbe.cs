@@ -251,7 +251,7 @@ public static class MatroskaProbe
     /// safe direction.
     /// </para>
     /// </summary>
-    private static string? CodecNameOf(string? codecId)
+    internal static string? CodecNameOf(string? codecId)
     {
         if (string.IsNullOrWhiteSpace(codecId)) return null;
         var id = codecId.Trim().ToUpperInvariant();

@@ -119,6 +119,18 @@ internal sealed class Mp4TrackPlan
     /// <summary>Samples in storage order, which for every track is also decode order.</summary>
     public required MatroskaSample[] Samples { get; init; }
 
+    /// <summary>
+    /// Where this track's sample bytes actually live. Null means the SOURCE file, which is the copy case.
+    /// <para>
+    /// 🔴 A CONVERTED track's bytes are not in the source at all — they came out of a codec — so they are
+    /// spooled to a temporary stream and its offsets point there instead. Spooled rather than held in
+    /// memory because a two-hour soundtrack is ~115 MB as AAC, which is not a thing to keep on a phone;
+    /// spooling also means the offset/length model is IDENTICAL for both kinds of track, so nothing
+    /// downstream has to know which is which.
+    /// </para>
+    /// </summary>
+    public Stream? ByteSource { get; set; }
+
     public required long[] Decode { get; init; }
     public required long[] Composition { get; init; }
     public required long[] Durations { get; init; }

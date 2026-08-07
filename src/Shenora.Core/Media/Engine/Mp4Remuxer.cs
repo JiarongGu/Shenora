@@ -158,6 +158,17 @@ public static class Mp4Remuxer
     /// Remux <paramref name="sourcePath"/> into <paramref name="destinationPath"/>, overwriting it.
     /// </summary>
     public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
+        => Remux(sourcePath, destinationPath, conversion: null, cancellationToken);
+
+    /// <summary>
+    /// Remux, and TRANSCODE any soundtrack MP4 cannot carry using the device the app supplies.
+    /// <para>
+    /// With a <paramref name="conversion"/> an AC-3 or DTS film becomes fully playable instead of being
+    /// refused — on a device whose codecs can do it. Where they cannot, the refusal is unchanged and honest.
+    /// </para>
+    /// </summary>
+    public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath,
+                                         IMediaStreamConversion? conversion, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
@@ -166,7 +177,7 @@ public static class Mp4Remuxer
         {
             using var source = File.OpenRead(sourcePath);
             using var destination = File.Create(destinationPath);
-            return Remux(source, destination, cancellationToken);
+            return Remux(source, destination, conversion, cancellationToken);
         }
         catch (Exception)
         {
@@ -181,13 +192,18 @@ public static class Mp4Remuxer
     /// to be built before the media is copied, so the frames are visited twice.
     /// </summary>
     public static Mp4RemuxerResult Remux(Stream source, Stream destination, CancellationToken cancellationToken = default)
+        => Remux(source, destination, conversion: null, cancellationToken);
+
+    /// <summary>Remux one open stream into another, transcoding an uncarriable soundtrack when it can.</summary>
+    public static Mp4RemuxerResult Remux(Stream source, Stream destination,
+                                         IMediaStreamConversion? conversion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
 
         try
         {
-            return Run(source, destination, cancellationToken);
+            return Run(source, destination, conversion, cancellationToken);
         }
         catch (Exception)
         {
@@ -195,7 +211,7 @@ public static class Mp4Remuxer
         }
     }
 
-    private static Mp4RemuxerResult Run(Stream source, Stream destination, CancellationToken cancellationToken)
+    private static Mp4RemuxerResult Run(Stream source, Stream destination, IMediaStreamConversion? conversion, CancellationToken cancellationToken)
     {
         if (!source.CanSeek) return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "source is not seekable");
 
@@ -208,7 +224,23 @@ public static class Mp4Remuxer
         var video = reader.Tracks.FirstOrDefault(t => t.Kind == MediaStreamKind.Video && CanCarryVideo(t));
         var audio = reader.Tracks.FirstOrDefault(t => t.Kind == MediaStreamKind.Audio && CanCarryAudio(t));
 
-        if (video is null && audio is null)
+        // Copying beats converting whenever both are possible: it is faster, lossless, and cannot fail
+        // halfway. Only when NO carriable soundtrack exists is a convertible one worth reaching for.
+        MatroskaTrack? convert = null;
+        string? convertCodec = null;
+        if (audio is null && conversion is not null)
+        {
+            foreach (var track in reader.Tracks.Where(t => t.Kind == MediaStreamKind.Audio))
+            {
+                var codec = MatroskaProbe.CodecNameOf(track.CodecId);
+                if (codec is null || !conversion.CanConvert(codec)) continue;
+                convert = track;
+                convertCodec = codec;
+                break;
+            }
+        }
+
+        if (video is null && audio is null && convert is null)
         {
             var codecs = string.Join(" + ", reader.Tracks.Select(t => $"{t.Kind}:{t.CodecId ?? "?"}"));
             return new Mp4RemuxerResult(Mp4RemuxerOutcome.NoCarriableStream,
@@ -233,12 +265,13 @@ public static class Mp4Remuxer
 
         // ── walk the clusters ─────────────────────────────────────────────────────────────────────────
         var wanted = plans.Select(p => p.Source.Number).ToHashSet();
+        if (convert is not null) wanted.Add(convert.Number);
         if (!reader.ReadSamples(wanted))
         {
             return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "malformed or unbounded clusters");
         }
 
-        if (plans.All(p => p.Source.Samples.Count == 0))
+        if (plans.All(p => p.Source.Samples.Count == 0) && (convert is null || convert.Samples.Count == 0))
         {
             return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "the file declares tracks but holds no frames");
         }
@@ -250,6 +283,20 @@ public static class Mp4Remuxer
             if (plan.Source.Samples.Count == 0) continue;   // a declared-but-empty track is dropped, not written empty
             resolved.Add(Resolve(plan, reader.TimestampScaleNs));
         }
+
+        // The transcode, after the copies: a failure here must not have already spooled work for tracks
+        // that were going to be copied anyway.
+        if (convert is not null && convertCodec is not null && convert.Samples.Count > 0)
+        {
+            var converted = Convert(source, convert, convertCodec, conversion!, cancellationToken);
+            if (converted is null)
+            {
+                return new Mp4RemuxerResult(Mp4RemuxerOutcome.NoCarriableStream,
+                    $"the device could not convert {convertCodec} after accepting it");
+            }
+            resolved.Add(converted);
+        }
+
         if (resolved.Count == 0) return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "no frames for any carriable track");
 
         var writeOrder = Interleave(resolved);
@@ -367,37 +414,53 @@ public static class Mp4Remuxer
     /// and the result is not a crash: it is a file that parses perfectly and decodes garbage.
     /// </para>
     /// </summary>
-    private static MatroskaSample[] Interleave(List<Mp4TrackPlan> tracks)
+    private static WriteItem[] Interleave(List<Mp4TrackPlan> tracks)
     {
+        // Ordered by DECODE TIME, not by position in the source.
+        //
+        // ⚠ It used to sort on the source offset, which worked only because every track's bytes came from
+        // the same file. A CONVERTED track's bytes live in a spool with offsets of its own, so comparing
+        // them against the source's is comparing two unrelated numbers — and the result is a file whose
+        // chunks are ordered by nothing. Time is what interleaving actually means, it is what a player
+        // reading forward needs, and for a copy-only remux it produces the same order as before because
+        // Matroska clusters are already time-ordered.
+        //
+        // Normalised to seconds first: two tracks can have different timescales, and comparing raw ticks
+        // across them silently interleaves by the wrong ratio.
         var ordered = tracks
-            .SelectMany((track, index) => track.Samples.Select(s => (Track: index, Sample: s)))
-            .OrderBy(s => s.Sample.Offset)
+            .SelectMany((track, index) => track.Samples.Select((sample, i) => new WriteItem(
+                index, i, sample, track.Timescale == 0 ? 0d : (double)track.Decode[i] / track.Timescale)))
+            .OrderBy(item => item.Seconds)
+            .ThenBy(item => item.Track)
             .ToArray();
 
         var running = 0L;
         var current = -1;
-        foreach (var (track, sample) in ordered)
+        foreach (var item in ordered)
         {
-            if (track != current)
+            if (item.Track != current)
             {
-                tracks[track].ChunkOffsets.Add(running);
-                tracks[track].ChunkSamples.Add(0);
-                current = track;
+                tracks[item.Track].ChunkOffsets.Add(running);
+                tracks[item.Track].ChunkSamples.Add(0);
+                current = item.Track;
             }
 
-            tracks[track].ChunkSamples[^1]++;
-            running += sample.Length;
+            tracks[item.Track].ChunkSamples[^1]++;
+            running += item.Sample.Length;
         }
 
-        return [.. ordered.Select(s => s.Sample)];
+        return ordered;
     }
 
+    /// <summary>One frame in the order it will be written, and which track's byte source it comes from.</summary>
+    private readonly record struct WriteItem(int Track, int Index, MatroskaSample Sample, double Seconds);
+
     private static Mp4RemuxerResult Write(Stream source, Stream destination,
-                                          List<Mp4TrackPlan> tracks, MatroskaSample[] writeOrder,
+                                          List<Mp4TrackPlan> tracks, WriteItem[] writeOrder,
                                           CancellationToken cancellationToken)
     {
         var ftyp = Mp4Builder.Ftyp();
-        var mediaBytes = writeOrder.Sum(s => (long)s.Length);
+        var mediaBytes = writeOrder.Sum(item => (long)item.Sample.Length);
         var headerBytes = MediaHeaderBytesFor(mediaBytes);
 
         // Built twice on purpose: the first tells us how long it is, which is what decides where the media
@@ -433,7 +496,7 @@ public static class Mp4Remuxer
         }
         destination.Write(header[..headerBytes]);
 
-        CopySamples(source, destination, writeOrder, cancellationToken);
+        CopySamples(source, destination, tracks, writeOrder, cancellationToken);
 
         var duration = tracks.Max(t => t.Timescale == 0 ? 0d : (double)t.Duration / t.Timescale);
         return new Mp4RemuxerResult(
@@ -453,26 +516,112 @@ public static class Mp4Remuxer
     /// that keeps up with playback and one that does not.
     /// </para>
     /// </summary>
-    private static void CopySamples(Stream source, Stream destination, MatroskaSample[] writeOrder,
-                                    CancellationToken cancellationToken)
+    private static void CopySamples(Stream source, Stream destination, List<Mp4TrackPlan> tracks,
+                                    WriteItem[] writeOrder, CancellationToken cancellationToken)
     {
         var buffer = new byte[64 * 1024];
-        foreach (var sample in writeOrder)
+        foreach (var item in writeOrder)
         {
+            // Each track says where ITS bytes are: the source file for a copied track, a spool for a
+            // converted one. Reading everything from `source` is the bug this indirection exists to stop,
+            // and it would produce a file full of the wrong bytes at plausible-looking offsets.
+            var from = tracks[item.Track].ByteSource ?? source;
+            var sample = item.Sample;
             // Between frames, not mid-frame: a partial frame would leave the output inconsistent with the
             // sample table already written, and the caller discards the whole file on cancellation anyway.
             cancellationToken.ThrowIfCancellationRequested();
-            source.Position = sample.Offset;
+            from.Position = sample.Offset;
             var left = sample.Length;
             while (left > 0)
             {
                 var take = Math.Min(left, buffer.Length);
-                var read = source.ReadAtLeast(buffer.AsSpan(0, take), take, throwOnEndOfStream: false);
+                var read = from.ReadAtLeast(buffer.AsSpan(0, take), take, throwOnEndOfStream: false);
                 if (read <= 0) throw new EndOfStreamException();
                 destination.Write(buffer, 0, read);
                 left -= read;
             }
         }
+    }
+
+    /// <summary>
+    /// Run one audio track through the device's codecs and spool the result, returning a plan whose bytes
+    /// live in the spool rather than in the source.
+    ///
+    /// <para>
+    /// <b>Timing is taken from the ENCODER, not from the source, and that is the whole reason this is not
+    /// just "convert the bytes".</b> A decoder may resample and a downmix may change the channel count, so
+    /// the output's frames do not line up with the input's at all. What IS exact is that every output frame
+    /// carries <see cref="IMediaStreamConversionRun.OutputFramesPerPacket"/> samples at
+    /// <see cref="IMediaStreamConversionRun.OutputSampleRate"/> — so the timescale is the sample rate, each
+    /// frame lasts one packet, and the table is exact by construction instead of being re-derived from
+    /// timestamps that no longer apply.
+    /// </para>
+    /// <para>
+    /// ⚠ Spooled to a TEMPORARY FILE, deleted on close. A two-hour soundtrack is ~115 MB as AAC and this
+    /// runs on phones; holding it would be the kind of allocation that works on every test file and dies on
+    /// a real one.
+    /// </para>
+    /// </summary>
+    private static Mp4TrackPlan? Convert(Stream source, MatroskaTrack track, string codec,
+                                         IMediaStreamConversion conversion, CancellationToken cancellationToken)
+    {
+        using var run = conversion.Begin(new MediaStreamInfo(
+            MediaStreamKind.Audio, codec, Channels: track.Channels > 0 ? track.Channels : null));
+        if (run is null) return null;
+
+        var spool = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
+                                   FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
+        var samples = new List<MatroskaSample>();
+        var frame = Array.Empty<byte>();
+
+        void Emit(IReadOnlyList<ReadOnlyMemory<byte>> outputs)
+        {
+            foreach (var output in outputs)
+            {
+                if (output.Length == 0) continue;
+                samples.Add(new MatroskaSample(spool.Position, output.Length,
+                    Ticks: samples.Count * (long)run.OutputFramesPerPacket, KeyFrame: true));
+                spool.Write(output.Span);
+            }
+        }
+
+        foreach (var sample in track.Samples)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (frame.Length < sample.Length) frame = new byte[sample.Length];
+            source.Position = sample.Offset;
+            if (source.ReadAtLeast(frame.AsSpan(0, sample.Length), sample.Length, throwOnEndOfStream: false) != sample.Length) break;
+            // Zero outputs is NORMAL — codecs buffer. Treating an empty return as failure would abandon
+            // every conversion in its first few frames.
+            Emit(run.Push(frame.AsMemory(0, sample.Length)));
+        }
+
+        // 🔴 Without this the tail stays inside the codec and the soundtrack simply stops early, in a file
+        // that is otherwise perfectly well-formed.
+        Emit(run.Drain());
+
+        var config = run.OutputConfig;
+        if (samples.Count == 0 || config.Length == 0) { spool.Dispose(); return null; }
+
+        var timescale = (uint)Math.Max(run.OutputSampleRate, 1);
+        var perPacket = (long)Math.Max(run.OutputFramesPerPacket, 1);
+        var decode = new long[samples.Count];
+        var durations = new long[samples.Count];
+        for (var i = 0; i < samples.Count; i++) { decode[i] = i * perPacket; durations[i] = perPacket; }
+
+        return new Mp4TrackPlan
+        {
+            Source = track,
+            IsVideo = false,
+            Timescale = timescale,
+            SampleEntry = Mp4Builder.AudioSampleEntry(Math.Max(run.OutputChannels, 1), timescale, config.ToArray()),
+            Samples = [.. samples],
+            Decode = decode,
+            Composition = new long[samples.Count],
+            Durations = durations,
+            Shift = 0,
+            ByteSource = spool,
+        };
     }
 
     /// <summary>
