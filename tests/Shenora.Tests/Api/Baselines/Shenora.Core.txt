@@ -985,6 +985,8 @@ sealed class Shenora.Media.MediaPlaybackPolicy : System.IEquatable<Shenora.Media
 sealed class Shenora.Media.MediaPlayerException : System.Exception
   public .ctor(string message)
   public .ctor(string message, System.Exception inner)
+static class Shenora.Media.MediaPlayerExtensions
+  public static System.IDisposable ReportTo(Shenora.Media.IMediaPlayer player, Shenora.Core.IPlaybackSession session)
 enum Shenora.Media.MediaPlayerState (int)
   public const Shenora.Media.MediaPlayerState Buffering = 4
   public const Shenora.Media.MediaPlayerState Empty = 0

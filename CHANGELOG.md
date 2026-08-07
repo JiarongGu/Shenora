@@ -183,6 +183,12 @@ at the first list and missed five more breaking changes.
   - ⚠ **Background playback additionally needs the APP's `AVAudioSession` and `UIBackgroundModes: [audio]`.**
     The kit plays; the app decides whether it may mix, duck or interrupt someone else's audio — the same
     division `MobilePlaybackSession` already draws.
+  - **`player.ReportTo(session)` keeps the OS transport surface honest.** Before the host owned a player,
+    `IPlaybackSession` published whatever the app CLAIMED, so a lock screen could say "playing" while the
+    audio had stalled, ended or failed — and nothing reconciled the two. One line now does.
+    ⚠ It calls `Report` and never `Publish`: a player knows a position and a rate, not a title or artwork,
+    and `Publish` takes a WHOLE `PlaybackInfo` — so a bridge publishing what it knows would blank the
+    metadata the app had set. Metadata stays the app's. Pinned by a sabotage-verified test.
   - **`Player` was argued into the surface lexicon against a warning that file had already written**
     (its `Audio` entry named `AudioPlayer` as the shape that would mean the kit had grown a product). The
     line moved because D54 changed what the kit is FOR, and the argument is recorded next to the word,
