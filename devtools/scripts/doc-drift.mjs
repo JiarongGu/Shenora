@@ -358,15 +358,47 @@ if (listOnly) {
   process.exit(0);
 }
 
+// ── 6. Every DECISIONS entry number is unique ────────────────────────────────────────────────────
+//
+// A D-number is a permanent address: shipped XML docs cite them (Mp4Remuxer says D51, UpdateStage says
+// D50), so two entries sharing one silently redirects a published reference. Added 2026-08-07 because
+// exactly that happened — `D51` was written TWICE on consecutive days and the collision survived four
+// sessions, because the file is appended to at the bottom and nobody reads the middle. Cheap and exact:
+// the numbers either repeat or they do not.
+
+function checkDecisionNumbers() {
+  const file = path.join(repo, 'docs', 'DECISIONS.md');
+  if (!fs.existsSync(file)) return;
+
+  const seen = new Map();
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    // Entry headings only — `- **D<n> — …`. A mention of D51 inside a body is a citation, not a heading.
+    const match = /^- \*\*D(\d+)\s*—/.exec(lines[i]);
+    if (!match) continue;
+    const number = match[1];
+    if (seen.has(number)) {
+      problems.push(
+        `docs/DECISIONS.md:${i + 1}: D${number} is already used at line ${seen.get(number)}.\n` +
+        `      ${lines[i].trim().slice(0, 110)}\n` +
+        '      A D-number is a permanent address cited from shipped XML — give this one the next free number.');
+    } else {
+      seen.set(number, i + 1);
+    }
+  }
+}
+
 checkDependencyGraph();
 checkRetiredNames();
 checkDocLinks();
 checkPackagesAreDocumented();
 checkPackageCountClaim();
+checkDecisionNumbers();
 
 if (problems.length === 0) {
   console.log('  ok  doc-drift: dependency graph matches the csproj files; no retired name stated as ' +
-              'current; every docs/ pointer resolves; every packable project is documented and counted');
+              'current; every docs/ pointer resolves; every packable project is documented and counted; ' +
+              'no duplicate DECISIONS number');
   process.exit(0);
 }
 console.error(`\n\x1b[31m✖ doc-drift: ${problems.length} stale claim(s) in prose:\x1b[0m`);

@@ -3,6 +3,17 @@
 Numbered rationale log so a future session doesn't relitigate them. Amend an entry by appending
 a dated note (or a later entry that supersedes it) — never silently rewrite.
 
+> 🔴 **A NUMBER IS A PERMANENT ADDRESS. Never reuse one, never renumber a cited entry, and check the
+> highest number before writing a new one.** Code cites these — `Mp4Remuxer` says `D51`, `UpdateStage` says
+> `D50`, `IMissionScheduler` says `D27–D31`, and those are **shipped XML docs on nuget.org**, so a
+> renumber silently redirects a published reference.
+> ⚠ **This rule was earned: `D51` was written TWICE on consecutive days and the collision survived four
+> sessions**, because the file is appended to at the bottom and nobody reads the middle. The duplicate was
+> found on 2026-08-07 and the loser — which nothing cited — became **D60**. When two entries share a
+> number, the one with citations keeps it; the orphan moves.
+> **A SUPERSEDED entry keeps its number and becomes a tombstone** pointing at what replaced it (see
+> `D40 · D41`), so a citation always lands somewhere that explains itself.
+
 > **The package set lives HERE, once** (2026-08-05). Seven entries have moved it — D2 drew it, D37
 > reorganised it by platform, D40 added an optional feature package, D48 added a family of them, D50
 > added the native launcher, **D53 folded media back into Core** and **D55 folded the IO family in after
@@ -44,18 +55,18 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   this even though its package sketch listed one). No `Shenora.Extensions.DependencyInjection`
   either: standard Microsoft DI abstractions are used directly (brief requirement), so there is
   nothing to put in it yet.
-  *(Amended 2026-07-30: the set is now FIVE NuGet packages + npm — `Shenora.WebView2.Sessions` was
-  added per D14. A sixth, `Shenora.Shell.Abstractions`, was considered and rejected per D20.)*
-  **⚠ SUPERSEDED 2026-08-02 by D37** — the SHELL set became ONE package per PLATFORM:
-  `Shenora.Core` / `Shenora.Ipc` / `Shenora.Windows` / `Shenora.Android` / `Shenora.iOS` + npm. The
-  three Windows ids named above merged into one. This entry stands as the record of why the original
-  split was drawn, which is still worth reading before anyone proposes another one.
-  **⚠ Further amended by D40 (2026-08-03) and D48 (2026-08-05)**, which added three OPTIONAL feature
-  packages hanging off Core — `Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression`. Note what this
-  entry's "no separate package" instinct still gets right and where it stops: a package for a SEAM or an
-  `*.Abstractions` split earns nothing and is still rejected, but a package for optional WEIGHT in the
-  one assembly everything references does earn its keep. `.claude/knowledge/generic-library.md` carries
-  the current rule; the header table above carries the current set.
+  🔴 **THE SET NAMED ABOVE IS OBSOLETE — read the header table, never this line.** It has been redrawn
+  four times since (D14, D37, D53, D55) and the amendment stack that used to live here was wrong twice
+  over by 2026-08-07: it announced three optional feature packages that no longer exist, and it concluded
+  that "a package for optional WEIGHT earns its keep", which **D55 reversed outright**. Replaced with one
+  pointer on 2026-08-07 rather than a fifth amendment — the header table is the single place the set lives,
+  and this entry kept contradicting it.
+  - **What survives, and is still the rule:** a package for a SEAM or an `*.Abstractions` split earns
+    nothing — Core already holds the contracts. That instinct was right on day one and has never been
+    overturned; what changed is that WEIGHT is no longer an exception to it (D55).
+  - **Why the original split is still worth reading:** it records what a package boundary was thought to
+    buy before any of them had consumers, which is the mistake D37, D53 and D55 each had to undo.
+    Current rule: `.claude/knowledge/generic-library.md`. Current set: the header table.
 
 - **D3 — One .NET VERSION, .NET 10, not the brief's ".NET 8".** The brief predates
   the survey: every family app and Lyntai target .NET 10, the dev machine has no .NET 8 SDK, and
@@ -205,6 +216,24 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   needed no contract change and app logic written against `@shenora/react` runs unchanged on all three.
   Proven on a device and a simulator. What mobile actually cost landed elsewhere — see
   `.claude/knowledge/mobile-shells.md`, D44 (opposite range bodies per platform) and D45 (interception).
+  - **AMENDED (2026-08-01, 0.2.0 design pass D3) — transport neutrality is now EXECUTED, and the
+    claim's exact boundary is recorded with it.** D16 said the same envelopes ride WebView2 postMessage
+    today and a WebSocket or mobile channel tomorrow; `NotificationPump` was extracted so "a second,
+    non-WinForms base" would inherit its fixes. No such base existed, so none of it had ever run — the
+    kit's own `generic-library.md` calls that shape speculation. A throwaway spike
+    (`devtools/_transport-spike/`, gitignored) closed the gap: a `net10.0` console app referencing ONLY
+    `Shenora.Core` + `Shenora.Ipc` ran request/response, the error boundary, the pump on a
+    `PeriodicTimer`, and a `ctx.Run` operation streamed as batched notifications. It passed with **no
+    change to `Shenora.Ipc`**, and the TFM enforces it: a Windows type anywhere in that graph turns the
+    project red.
+    **What that does NOT license.** The spike validates the IPC/transport half only. It says nothing
+    about the desktop-FLAVOURED service contracts, because a transport needs no file dialogs —
+    `FileDialogContracts.cs` still concedes in writing that `FileDialogOptions` carries Win32 vocabulary
+    and a mobile picker would ignore half of it and return a content URI. That narrowing is still an
+    accepted pre-1.0 possibility awaiting a real mobile consumer (D15), not something a second spike can
+    settle. Two convenience gaps the spike also surfaced are in `TASKS.md` and deliberately unbuilt: the
+    host-side mirror of `ShenoraBridge` (~40 lines every non-WinForms base rewrites) and a headless
+    `IShenoraRunner`, both held to the two-consumer bar rather than built for the spike that found them.
 
 - **D17 — `Shenora.Core` depends on the Microsoft DI IMPLEMENTATION package, not only the
   abstractions.** The builder (`ShenoraApplication.CreateBuilder` → `Build()`) constructs the
@@ -274,13 +303,14 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   off Windows** — portable-in-signature is not the bar, which is why the whole window-state stack
   stays in the Windows shell (window geometry is a desktop concept). Per D16 this pass ships NO
   mobile host or transport adapter — the seam, not the package.
-  **⚠ Corollary added by D48 (2026-08-05), which decides the cases this entry does not:** a contract a
-  SHELL implements must live in Core even when its subject matter belongs to an optional feature
-  package, because **a shell must never need an optional package in order to implement a Core
-  contract**. `IFileLockInspector` travelled out with the file-operation engine and had to be split
-  back, or `Shenora.Windows` would have gained a `Shenora.IO` reference for one interface. The mirror
-  case is also recorded there: `IPathLocker` stays WITH its implementation, because advisory lock files
-  are portable and no shell implements it.
+  **⚠ Corollary added by D48 (2026-08-05), which decides the cases this entry does not: if a SHELL
+  implements it, the contract lives in Core — full stop.** `IFileLockInspector` travelled out with the
+  file-operation engine and had to be split back, or `Shenora.Windows` would have gained a `Shenora.IO`
+  reference for one interface. The mirror case is also recorded there: `IPathLocker` stays WITH its
+  implementation, because advisory lock files are portable and no shell implements it.
+  *(D48 phrased this as "a shell must never need an OPTIONAL PACKAGE to implement a Core contract". D55
+  removed the optional tier, so the packaging half is moot; the rule now decides which FOLDER a contract
+  belongs in, and it decides the same cases the same way.)*
 
 - **D21 — For a whole application FEATURE, the kit ships primitives + lifecycle hooks; the app owns
   the product.** (User direction, 2026-07-30: *"co-browse itself is a whole feature — you just need
@@ -422,7 +452,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   hands. (2) **`Resumable` was removed** — consulted nowhere except `RegisterInterrupted`'s own
   required-true gate, which every caller had already satisfied, making it a tautology; the existing
   non-empty-`ResumePayload` requirement already expresses resumability. (3) **`Find(id)`** (dropped
-  pre-0.2.0 as unearned surface — see the design doc §4.2) **was reinstated**, because `RequestPause`/
+  pre-0.2.0 as unearned surface) **was reinstated**, because `RequestPause`/
   `RequestResume` both need an id→handle translation every such consumer would otherwise re-solve by
   hand. (4) **`ClearFinished` gained the `module?`/`scope?` filter `GetAll` always had**, and a removal
   (`MaxHistory` eviction, `ClearFinished`, the `Interrupted`-drop above) now publishes
@@ -727,34 +757,15 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     impossible and the only useful thing is a NAME. `WhoHolds` returning empty means "cannot tell",
     never "nobody" — the distinction matters at a call site. The Windows implementation is Restart
     Manager, and it lives in `Shenora.Windows` because it is Win32. **The CONTRACT stayed in
-    `Shenora.Core` when the rest of the file-operation engine left for `Shenora.IO`** (D48), and for
-    this same reason: a per-platform answer means a portable contract with a shell implementation, and
-    a shell must not need an optional feature package in order to implement one.
+    `Shenora.Core` when the rest of the file-operation engine moved out to the `Shenora.IO` namespace**
+    (D48; a package until D55), and for this same reason: a per-platform answer means a portable contract
+    with a shell implementation, and if a shell implements it, the contract lives in Core.
   - **Lock files live in the app's own directory, never the managed tree.** An app frequently does
     not own the folder it manages; sidecar locks there get synced, committed, and outlive the process.
   - **Network shares are supported, correcting an earlier "not a target".** Leases work over SMB2+
     provided the lock directory is ON the share — a lock in one machine's local storage is invisible
     to the other, and that is the setting that fails silently. A lease released by a crash returns
     when the SMB session times out, not instantly.
-
-- **D16 AMENDMENT (2026-08-01, 0.2.0 design pass D3) — transport neutrality is now EXECUTED, and the
-  claim's exact boundary is recorded with it.** D16 said the same envelopes ride WebView2 postMessage
-  today and a WebSocket or mobile channel tomorrow; `NotificationPump` was extracted so "a second,
-  non-WinForms base" would inherit its fixes. No such base existed, so none of it had ever run — the
-  kit's own `generic-library.md` calls that shape speculation. A throwaway spike
-  (`devtools/_transport-spike/`, gitignored) closed the gap: a `net10.0` console app referencing ONLY
-  `Shenora.Core` + `Shenora.Ipc` ran request/response, the error boundary, the pump on a
-  `PeriodicTimer`, and a `ctx.Run` operation streamed as batched notifications. It passed with **no
-  change to `Shenora.Ipc`**, and the TFM enforces it: a Windows type anywhere in that graph turns the
-  project red.
-  **What that does NOT license.** The spike validates the IPC/transport half only. It says nothing
-  about the desktop-FLAVOURED service contracts, because a transport needs no file dialogs —
-  `FileDialogContracts.cs` still concedes in writing that `FileDialogOptions` carries Win32 vocabulary
-  and a mobile picker would ignore half of it and return a content URI. That narrowing is still an
-  accepted pre-1.0 possibility awaiting a real mobile consumer (D15), not something a second spike can
-  settle. Two convenience gaps the spike also surfaced are in `TASKS.md` and deliberately unbuilt: the
-  host-side mirror of `ShenoraBridge` (~40 lines every non-WinForms base rewrites) and a headless
-  `IShenoraRunner`, both held to the two-consumer bar rather than built for the spike that found them.
 
 - **D32 — a second shell is a PEER, and the kit's job is the substrate under both.** (Owner,
   2026-08-02: *"abstract the logic out as much as possible (or make interface) so it supports both
@@ -1319,6 +1330,14 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   portable engine; a format or a platform that needs its own dependency gets its own package**
   (owner, 2026-08-05).
 
+  🔴 **ITS PACKAGING CONCLUSION IS REVERSED — see D55 (2026-08-07). `Shenora.IO` and
+  `Shenora.IO.Compression` are namespaces inside `Shenora.Core`, not packages.** Kept unabridged, and
+  cited from fourteen places, because **what this entry actually proved is still load-bearing and is not
+  about packaging**: the dependency edge runs `IO → Core` (checked, not assumed — every type logs through
+  `AppCallback`), and that direction is what decided which types could move and which could not. It is
+  also what made D55's merge the ONLY available mechanism: a Core that packed `Shenora.IO.dll` would have
+  to reference what already references it. Read the layering; ignore the package ids.
+
   > *"because this include file operation so we should have a sperated library/package for this"* …
   > *"so IO becomes like a contract and logic library just like core media, and compression is one of the
   > option"*
@@ -1407,8 +1426,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     nuget.org that does not exist is not.
 
 - **D50 — the native launcher is a LIBRARY plus a template, written in C++, shipped as one binary per
-  platform. Amends the design doc's §5, which said "template only".** (Owner, 2026-08-05.)
-  **Nothing is built — this decides the shape so B4 can be picked up without re-arguing it.**
+  platform** (owner, 2026-08-05; it overturned an earlier "template only" plan). **Shipped in 0.10.0.**
 
   > *"so it probably need to be template + c++ library"* … *"the only requirement is (compatibale linux+
   > windows for future needs, and small) we can have for different platform use differnt binary too just
@@ -1488,31 +1506,6 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     `UpdateStage.ApplyAsync` already overlays, removes and clears in portable .NET, gate-covered and
     sabotage-verified. This whole capability serves framework-dependent apps, where the runtime may be
     absent and files may be held open. Harvest-driven (D15): build it when an app needs it.
-
-- **D51 — the kit ships NO page-diagnostic facade. The two-consumer signal is real and the generalisation
-  is still not worth making.** (2026-08-05, closing the open question in `TASKS.md`.) The pattern stays
-  documented in `docs/ADOPTION.md`; `PageDiagFacade` stays sample-local in `samples/Shenora.Sample.Maui/`.
-
-  - **The signal that made this a question.** Two repos independently built the same tiny facade for the
-    same measured reason: **WebKit does not forward a page's `console.*` to the unified log** (checked on
-    the simulator with a tagged line and zero hits), and a screenshot cannot report a number, a header or an
-    array. That is normally the harvest bar (D15).
-  - **What fails the bar is the SHAPE, not the count.** D15 promotes something that *proves nice and pays
-    to generalise*. This is a `switch` with one case and a log call — and the parts that differ per app are
-    the parts that matter: the module name, the log sink, and whether page text is redacted before it is
-    written. A kit version would either hard-code those or take three delegates, at which point the adopter
-    has written more configuration than the twenty lines it replaces.
-  - **⚠ And a kit-shipped version would be a PRIVACY hazard the app cannot see.** It writes page-supplied
-    text to the device log — readable by anything with log access on the device. Shipped as kit surface and
-    registered by default, that is the kit making a data-handling decision on a consumer's behalf. **This is
-    the same reasoning that killed D10's loopback-gate helper**: a generic security-shaped helper is worse
-    than shipping nothing, because the consumer stops thinking about it.
-  - **It is also a DEVELOPMENT workaround, not a product capability.** It exists because a diagnostic route
-    is closed on one platform. Baking a dev-loop workaround into a public, SemVer-frozen surface is exactly
-    the "ship the consumer's shape" failure `generic-library.md` warns about — and unlike a real capability,
-    it gets *less* useful the moment the platform fixes its logging.
-  - **Revisit trigger:** an adopter that cannot express what it needs over the existing IPC pipe. Wanting a
-    ready-made twenty lines is not that — the same bar every other deferred capability is held to (D10).
 
 - **D51 — anything the kit SHIPS AS BYTES must be MIT-compatible. The kit never redistributes a copyleft
   binary; an app that wants one supplies it through a `ResourcePack`.** (owner, 2026-08-06:
@@ -1940,3 +1933,32 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     `MediaAudioConversion` — a middleware chain, last-registered-first — not any one implementation. An
     adopter with a better decoder calls `Use(...)` and it serves the default converter, the segment engine
     and the player alike. Pinned by `ConvertWith_accepts_a_pipeline_so_a_registered_converter_is_consulted`.
+
+- **D60 — the kit ships NO page-diagnostic facade. The two-consumer signal is real and the generalisation
+  is still not worth making.** (2026-08-05, closing the open question in `TASKS.md`.) The pattern stays
+  documented in `docs/ADOPTION.md`; `PageDiagFacade` stays sample-local in `samples/Shenora.Sample.Maui/`.
+  ⚠ **Renumbered from D51 on 2026-08-07 — it was a DUPLICATE.** Two entries were written as D51 on
+  consecutive days and the collision survived four sessions. Every one of the 12+ citations in code and
+  docs means the other one (MIT-compatible bytes), so that keeps the number and this moved. See the header
+  block's numbering rule, added the same day.
+
+  - **The signal that made this a question.** Two repos independently built the same tiny facade for the
+    same measured reason: **WebKit does not forward a page's `console.*` to the unified log** (checked on
+    the simulator with a tagged line and zero hits), and a screenshot cannot report a number, a header or an
+    array. That is normally the harvest bar (D15).
+  - **What fails the bar is the SHAPE, not the count.** D15 promotes something that *proves nice and pays
+    to generalise*. This is a `switch` with one case and a log call — and the parts that differ per app are
+    the parts that matter: the module name, the log sink, and whether page text is redacted before it is
+    written. A kit version would either hard-code those or take three delegates, at which point the adopter
+    has written more configuration than the twenty lines it replaces.
+  - **⚠ And a kit-shipped version would be a PRIVACY hazard the app cannot see.** It writes page-supplied
+    text to the device log — readable by anything with log access on the device. Shipped as kit surface and
+    registered by default, that is the kit making a data-handling decision on a consumer's behalf. **This is
+    the same reasoning that killed D10's loopback-gate helper**: a generic security-shaped helper is worse
+    than shipping nothing, because the consumer stops thinking about it.
+  - **It is also a DEVELOPMENT workaround, not a product capability.** It exists because a diagnostic route
+    is closed on one platform. Baking a dev-loop workaround into a public, SemVer-frozen surface is exactly
+    the "ship the consumer's shape" failure `generic-library.md` warns about — and unlike a real capability,
+    it gets *less* useful the moment the platform fixes its logging.
+  - **Revisit trigger:** an adopter that cannot express what it needs over the existing IPC pipe. Wanting a
+    ready-made twenty lines is not that — the same bar every other deferred capability is held to (D10).
