@@ -73,6 +73,16 @@ public static class MobileHostExtensions
         // with a message about a missing service.
         builder.Services.TryAddSingleton<ILiveActivities>(_ => new MobileLiveActivities());
 
+        // What THIS DEVICE can decode and encode. Registered on both shells because the answer differs
+        // between them AND between devices of the same platform — Android codec support is vendor-declared,
+        // which is why MediaCodecList is a runtime query. Before this, an app filling MediaPlaybackPolicy
+        // had to GUESS those sets; the kit still ships no codec list, it ships the question (D42).
+        //
+        // Singleton because both implementations cache: the Android walk allocates a Java object per codec
+        // and the iOS one builds a converter per candidate, and neither answer can change while the process
+        // runs.
+        builder.Services.TryAddSingleton<Shenora.Media.IMediaCapability>(_ => new MobileMediaCapability());
+
         return builder;
     }
 }

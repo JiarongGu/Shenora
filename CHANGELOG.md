@@ -149,6 +149,39 @@ at the first list and missed five more breaking changes.
   reading also HIDES the fragment, which is precisely how this defect was first attributed to the wrong
   component.
 
+- **`IMediaCapability` + `MediaCapabilityExtensions` (`Shenora.Core`, `Shenora.Media` namespace)** — what
+  THIS DEVICE can decode and encode, asked at runtime, implemented by the Android and iOS shells.
+
+  `MediaPlaybackPolicy` is the app's and the kit still ships no codec list (D42) — but "the app's" has
+  meant "the app GUESSES", because the sets it must fill are properties of the hardware in hand. **The kit
+  now ships the QUESTION rather than the answer.**
+
+  ```csharp
+  var device = services.GetRequiredService<IMediaCapability>();
+  var policy = myWebviewPolicy.WithDeviceEncoders(device);      // can we transcode AT ALL here?
+  if (!device.CanRepairAudio("ac3")) policy = policy with { CanEncodeAudio = false };
+  ```
+
+  - 🔴 **It reports the PLATFORM's codec stack, which is NOT what the webview will play**, and the two
+    answer different questions: the policy's container/codec SETS describe the player (only the page can
+    answer that), while this decides whether a transcode is possible at all. A device routinely decodes
+    more than its browser plays — an iPhone decodes AC-3, no browser touches it — and **that gap is the
+    transcode tier's whole reason to exist**, so `WithDeviceEncoders` touches only the two encode flags.
+    Widening the codec sets from the platform would turn every AC-3 file from `Transcode` into `Direct`:
+    a file that serves perfectly and plays silent.
+  - **`CanRepairAudio(codec)` asks BOTH halves**, because either alone is useless — a device that decodes
+    AC-3 but encodes nothing cannot repair a soundtrack, and neither can one that encodes AAC but cannot
+    decode AC-3.
+  - ⚠ **Measured per device, never assumed.** The same query answered differently on an iPhone 17 Pro
+    (AC-3 and E-AC-3 decode present, at 5.1 *and* stereo) and an API 36 AOSP emulator (absent entirely),
+    with AAC encode on both. Android support is vendor-declared, which is why `MediaCodecList` is a runtime
+    query; a handset may differ again from the emulator.
+  - ⚠ **iOS reports NO video sets, deliberately empty rather than guessed** — the equivalent question is
+    VideoToolbox's and is asked differently. An invented set reads as a capability, which is worse than
+    admitting the gap; the planner then refuses a video transcode rather than promising one.
+  - On iOS the query builds an `AudioConverter`, because `kAudioFormatProperty_DecodeFormatIDs` is
+    **macOS-only** and returns `'prop'` on a device.
+
 - **`Shenora.Media` is now a PIPELINE, and reads as one: `Probe/` → `Plan/` → `Serve/` → `Engine/`.** The
   package is the TRANSLATION LAYER for the web (D52) — the minimum transformation that makes a file the user
   already has playable in a webview, and never more. Folders and an `ARCHITECTURE.md` narrative only:
