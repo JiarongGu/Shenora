@@ -45,9 +45,15 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 > the 0.10.0 release. A prose count is not gated by anything — **`node devtools/dev.mjs doctor` prints the
 > real number of packable projects, so check it here rather than trusting the sentence.**
 
-- **D1 — Shenora is the desktop body; Lyntai is the brain; no dependency between them.** Apps may
+- **D1 — Shenora is the BODY; Lyntai is the brain; no dependency between them.** Apps may
   use both; Shenora must never reference Lyntai (brief, "Relationship to Lyntai"). Keeps each
-  library adoptable alone.
+  library adoptable alone. **This half has never changed and is the one thing D1 is cited for.**
+  ⚠ **"the DESKTOP body" was the original wording and it is wrong as of 2026-08-07.** The kit is a
+  **hybrid app framework — .NET + React — across Windows, Android and iOS** (D32 made a second shell a
+  PEER, D37 named one package per platform, D53–D55 settled the identity, and `CLAUDE.md`'s opening now
+  carries it). Corrected in place rather than tombstoned because the body/brain split is what D1 means and
+  it still holds exactly; only the word "desktop" had gone stale, and it sat in entry #1 where every reader
+  starts.
 
 - **D2 — Package set: `Shenora.Core` / `Shenora.Ipc` / `Shenora.WebView2` / `Shenora.WinForms` (NuGet)
   + `@shenora/react` (npm).** No separate `Shenora.Modules` package — module registration is core
@@ -207,6 +213,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   packaging (`@shenora/capacitor` transport adapter vs an adapter inside `@shenora/react`) is
   decided when the first mobile adoption happens, not before (YAGNI on the package, not on the
   seam).
+
+  ⚠ **The SEAM held; the MECHANISM named here did not happen.** The kit ships its OWN Android and iOS
+  shells (D32, D37) rather than riding a Capacitor bridge, and D56 goes further — the kit owns its own
+  device deploy loop precisely so an adopter needs no Capacitor project. `@shenora/capacitor` was never
+  built and is not planned. What this entry got right is the part that mattered: the envelope was
+  transport-neutral, so shipping a second shell cost **no contract change at all**.
   **✅ RESOLVED 2026-08-02/03 — it happened, and both open questions closed the other way than sketched.**
   The shell is **MAUI `HybridWebView`**, not Capacitor (D32; `src/Shenora.Mobile/` compiled into
   `Shenora.Android` + `Shenora.iOS`, D37). The transport is **`createHybridWebViewTransport` INSIDE
@@ -865,6 +877,10 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   (Owner, 2026-08-02.) `Shenora.WinForms` + `Shenora.WebView2` + `Shenora.WebView2.Sessions` merge
   into **`Shenora.Windows`**; the mobile shell ships as **`Shenora.Android`** + **`Shenora.iOS`**.
   D2 stands as the record of the original set and why it was drawn that way; this replaces it.
+  ⚠ **And this entry's SET is in turn superseded — D53 and D55 folded media and IO back into Core, so
+  the current list is five managed packages + the launcher + npm. The header table is the only place to
+  read it.** What this entry decided and what still governs is the SHAPE: one shell package per platform,
+  named for the platform. That rule is untouched; only the count around it moved.
   - **The test, applied in both directions: does the boundary correspond to something a CONSUMER
     experiences?** "I am building an Android app" does — so mobile SPLIT even though the two share
     every line of source. "WinForms without WebView2" does not — this kit's premise is React in a
@@ -1086,6 +1102,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 - **D43 — the media contracts split by DEPENDENCY, not by feature name. "Thumbnail" is two mechanisms and
   gets two homes.** (Owner asked for thumbnails alongside playback, 2026-08-03: *"yes we kind need that too
   if possible"*. It is possible on all three platforms at zero added bytes — see below.)
+
+  ⚠ **The HOMES it names are gone; the AXIS it chose is not.** The `Shenora.Media.{Platform}` family this
+  entry distributed contracts across was deleted by D45, and media itself moved into `Shenora.Core` by
+  D53 — so read "two homes" as two FOLDERS, not two packages. What survives is the question it settled and
+  which is still the right one: split by **what an operation NEEDS**, not by the feature name a user would
+  give it. Thumbnails are still unbuilt (D15 — no consumer has asked twice).
   - **The question was whether "play this" and "thumbnail this" are one host contract or two. Neither: the
     honest axis is what each operation NEEDS.**
 
@@ -1598,6 +1620,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   transformation that makes a file playable in a webview, and never more.** (owner, 2026-08-06: *"the issue
   is not I want to recreate ffmpeg because it's capable of any kind of video/audio type and adjust them,
   what I'm building is a translation layer for web"*.)
+
+  ⚠ **SHARPENED BY D59 (2026-08-07) — read that first.** "A translation layer for the web" was still loose
+  enough to be read as *make more formats play*, which is a treadmill. D59 states the target as a DELTA
+  between two things the code already measures: what the **device** can decode (`IMediaCapability`) versus
+  what **its webview** accepts (`MediaPlaybackPolicy`). Also note `Shenora.Media` is a NAMESPACE now, not a
+  package (D53), and D58 made this layer the player's output pipe rather than a parallel feature.
   - **The scope test, and it is narrow on purpose:** *would a normal file the user already has fail to play,
     and is this the least we can do about it?* Not "can we convert anything to anything" — that is ffmpeg's
     job and it is explicitly not ours (D42, D51).

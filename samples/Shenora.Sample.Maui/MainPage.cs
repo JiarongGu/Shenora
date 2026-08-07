@@ -155,6 +155,19 @@ public sealed class MainPage : ContentPage
 				MauiProgram.Log(await PageProbe.CheckReloadAsync(_webView, MauiProgram.Log));
 			}
 			catch (Exception ex) { MauiProgram.Log($"[NAV] probe threw — {ex}"); }
+
+			// The HOST-OWNED player (D54). It runs HERE for a precondition, not for tidiness: it opens the
+			// STAGED clip, so it cannot start before PrepareAsync above has copied it out of the app
+			// package — and after the page probes, because two things making sound at once would make
+			// either result unreadable.
+			//
+			// GetService, not GetRequiredService: the player is deliberately ABSENT on Android and Windows,
+			// and the probe reports that as a fact rather than a failure.
+			try
+			{
+				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Media.IMediaPlayer>(), MauiProgram.Log);
+			}
+			catch (Exception ex) { MauiProgram.Log($"PLAYER: probe threw — {ex}"); }
 		});
 
 		// 🔴 THE TWO ISLAND CLAIMANTS ARE MUTUALLY EXCLUSIVE, and running both is why the Dynamic Island
