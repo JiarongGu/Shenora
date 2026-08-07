@@ -142,15 +142,15 @@ app.Run();
   lambdas — with a comment claiming the kit *"ships no DI extension for it, and it needs none"*, untrue
   since `UseMissions` shipped. **A reference app that writes the framework's own composition is the whole
   finding**; when that block is gone, D64 has landed.
-- [ ] **Every kit module moves onto the reserved `SHENORA.` prefix** (owner's call): `SHENORA.MEDIA`,
-  `SHENORA.FILES`, `SHENORA.OPERATIONS`, `SHENORA.DIALOGS`. **The two already shipped were renamed too** —
-  no grandfathering, because one rule with two permanent exceptions is a rule nobody applies from memory.
-  The prefix is what frees the app to own `MEDIA`/`FILES` itself, and it is what makes registering the kit's
-  facades by default safe. ⚠ A WIRE break: `@shenora/react` names these strings, so the TS half and the
-  C#⇄TS mirror tripwires move in the SAME commit or the halves disagree silently.
-- [ ] **The kit's IPC modules register by default**, which closes the player hang below. ⚠ Dependency
-  direction decides placement: `Core ← Ipc ← shells`, so a facade cannot live in Core and the SHELL
-  registers it.
+- [x] ~~Every kit module onto the reserved `SHENORA.` prefix~~ — DONE (`9a8067f`). Five moved, including
+  the two already shipped. `retired-names.txt` learned WIRE names and found four stale JSDoc sites on its
+  first run.
+- [x] ~~The kit's media facade registers by default~~ — DONE. `MediaPlayerFacade` ships with
+  `AddMessageDispatcher`, so the player loop closes with no app wiring. **⚠ `FileDialogFacade` and
+  `OperationsFacade` are still opt-in**, because each needs a dependency the kit cannot guarantee
+  (`IFileDialogs` from a shell, `IOperationRegistry` from `AddShenoraOperations`). Finishing them means
+  deciding what an absent dependency DOES — the honest answer is a `CapabilityNotSupported` refusal, which
+  is D64's own rule, not an absent registration.
 - [ ] 🔴 **Implement the real thing wherever the platform CAN — a refusal is the last resort.** (Owner:
   *"we should try to implement a default if the platform can support this is to close the web gap"*.) This
   REPLACES the refusal-stub sweep this task first proposed: a stub that declines on two of three platforms
