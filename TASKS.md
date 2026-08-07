@@ -370,6 +370,25 @@ regardless. This is the 0.9.0 lesson for the third time in one file's history.
   - **(b) Document the devkit as requiring the adopter's own widget extension target**, and ship only the
     Swift shim + `ILiveActivities`. Honest and cheap; abandons the "no `.xcodeproj`" promise, which was the
     whole selling point.
+
+- [ ] **THEN: remove the Swift authoring burden with a C# → Swift translation layer.**
+  > DIRECTION (owner, 2026-08-07): *"what we can do to remove the swift dependency is to create a proper
+  > config/translation layer from c# -> swift"*.
+
+  The adopter describes the Island's CONTENT in C# — a declarative layout (regions → text bound to a state
+  field, a symbol, a progress bar, an image) — and an MSBuild step GENERATES the SwiftUI from it. The kit
+  already generates the extension, its plist, the build and the signing; the views are the only thing left
+  that an adopter hand-writes, and they are the part that requires learning a second language.
+  - ⚠ **ORDER MATTERS: this must come AFTER the extension actually loads.** Generating nicer Swift on top
+    of a widget that exits before serving would produce a bigger, better-looking thing that still renders
+    nothing — and the generator would then be suspected of the bug it did not cause. Fix (a) or (b) first,
+    prove a hand-written widget renders on a DEVICE, then remove the authoring.
+  - ⚠ **It brushes against D13** (the kit ships no design system). A declarative model where the app
+    supplies content and SEMANTICS while the kit picks the LOOK is a different thing from a component
+    library, and defensible — but it is a decision to make deliberately, not to slide into. The honest test:
+    can an adopter still express their own look, or have we frozen ours into everyone's Island?
+  - SwiftUI views compile at BUILD time, so the generation is a build step and cannot be dynamic. That is
+    fine — `swiftc` already runs there — but it means the layout model is fixed per build, not per activity.
   - ⚠ Also worth settling: a sibling's iOS notes argue **a media app should not use a Live Activity for
     playback at all** — it duplicates the presentation the system already gives media apps, and App Review
     pushes back. `IPlaybackSession` is the right answer for a player, which shrinks how much this matters.
