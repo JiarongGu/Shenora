@@ -123,7 +123,7 @@ Shenora.slnx
 │   │                                          BYTES. No engine byte ever ships, so what remained was
 │   │                                          98 KB of the kit's own managed IL. Ships no codec LIST:
 │   │                                          the mechanism is the kit's, the policy the app's (D42).
-│   │                                    Io/   namespace Shenora.IO — file operations, whole:
+│   │                                    Files/ namespace Shenora.IO — file operations, whole:
 │   │                                            Files/FileReplacement (atomic replace, the default
 │   │                                                    behind IFileDialogs.SaveAsync)
 │   │                                            PathClaims — a claim SCOPE over the mission types;
@@ -143,7 +143,7 @@ Shenora.slnx
 │   │                                                    alone, and any other format is a SEAM (D42).
 │   │                                          ⚠ These were two packages (D48) until 2026-08-07 (D55).
 │   │                                          The layering D48 established is INTACT and still visible
-│   │                                          here — the edge runs Io/ → Core because every type logs
+│   │                                          here — the edge runs Files/ → Core because every type logs
 │   │                                          through AppCallback, which is also why merging them INTO
 │   │                                          Core was the only mechanism available: a Core that packed
 │   │                                          Shenora.IO.dll would have to reference it, and it already
@@ -313,7 +313,7 @@ changes, noting them in `CHANGELOG.md`).
   **This is what makes `<video>`, `<audio>` and `<img>` work with no media package at all** — a file the
   platform cannot decode simply errors in the element, and deciding what to do about that is
   `Shenora.Media`'s job as a further middleware.
-- **`Shenora.Core`'s mission-scheduling layer (0.3.0, `Missions/` + `Io/`)** — the EXECUTION half of
+- **`Shenora.Core`'s mission-scheduling layer (0.3.0, `Missions/` + `Files/`)** — the EXECUTION half of
   long-running work, portable and with no DI, storage or reporting dependency of its own:
   `IMissionScheduler`/`MissionScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `GlobalLane`, `PendingCount`/
   `RunningCount`, `IsActive(MissionKey)`, `Snapshot()`, `Reevaluate()`, `RecoverAsync(rehydrate)`;
@@ -379,7 +379,7 @@ changes, noting them in `CHANGELOG.md`).
   exclusively), and the retry repeats only that step, never the ones before it. A failing step fails
   the chain; cancelling cancels the chain. The context is IN-MEMORY only: a durable chain carries
   state in `Payload`, because an arbitrary object graph is what the kit cannot serialize for an app.
-  **`Io/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
+  **`Files/PathClaims`** (static) — `Scope` (a `NestedClaimScope` over `Path.DirectorySeparatorChar`,
   case-insensitive on Windows only), `Exclusive`/`Shared` (claims on the `"path"` scope, `ScopeName`),
   `Canonical` (absolute + separator-normalized, so two spellings of one location are one key) and
   `IsContained(root, candidate)` (the containment guard for anything mapping caller input to a file —
@@ -393,7 +393,7 @@ changes, noting them in `CHANGELOG.md`).
   silently costing the exclusivity that was configured; two XML remarks used to claim the lane threw,
   corrected and pinned by `An_unseen_LANE_name_is_created_at_the_default_capacity_rather_than_throwing`);
   (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
-  whole of the scheduler's `Io/` half, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit`
+  whole of the scheduler's `Files/` half, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit`
   models; (3) nothing
   in `Shenora.Ipc` implements `IMissionObserver`, so wiring execution to the operation registry is the
   app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionOperationObserver.cs` is the worked

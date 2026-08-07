@@ -1364,7 +1364,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   > *"so IO becomes like a contract and logic library just like core media, and compression is one of the
   > option"*
 
-  - **The measurement that decided it.** `Shenora.Core/Io/` was 2,244 lines — **34% of `Shenora.Core`** — and
+  - **The measurement that decided it.** `Shenora.Core/Files/` was 2,244 lines — **34% of `Shenora.Core`** — and
     all but ~500 of it is the update ENGINE: the journalled queue, path leases, the manifest pair, the staged
     updater. `Shenora.Core` is the package *every other package references*, so a phone app that hosts a page
     and plays a file was carrying a self-updater it will never call. That is the same argument D40 made for
@@ -1380,7 +1380,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       `Files.BeginReplace`, so moving them would invert the edge.
     - `PathClaims` stays — it is a claim SCOPE built on the mission types. Scheduling vocabulary that happens
       to be about paths, not a file operation.
-    - `IFileLockInspector`/`FileLockHolder` were SPLIT BACK OUT of the move (they were in `Io/` and went with
+    - `IFileLockInspector`/`FileLockHolder` were SPLIT BACK OUT of the move (they were in `Files/` (then `Io/`) and went with
       it in the first pass). "Who is holding this file open?" has a genuinely different answer per platform —
       Windows asks the Restart Manager — so it is a portable contract with a shell implementation, exactly
       like `IFileDialogs` and `IPlaybackSession`. **A shell package must be able to implement a Core contract
@@ -1817,7 +1817,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     `AppCallback`. For `Shenora.Core.nupkg` to carry `Shenora.IO.dll`, Core's csproj must reference IO,
     which already references Core — a cycle. ⚠ **A dependency edge decides whether a "keep the projects,
     merge the package" plan is even available.** Check the direction before promising it.
-  - What the owner asked for survives anyway: `src/Shenora.Core/Io/` and `Io/Compression/` are folders with
+  - What the owner asked for survives anyway: `src/Shenora.Core/Files/` and `Files/Compression/` are folders with
     the namespaces `Shenora.IO` / `Shenora.IO.Compression` unchanged, which is what `Media/` already does.
     Tests and probes reference `Shenora.Core` and compile untouched.
   - **A documented BREAK, and the same cheap one as D53 (D47):** an adopter deletes two
