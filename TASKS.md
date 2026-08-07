@@ -223,38 +223,12 @@ managed player, so every test here pins the CONTRACT — `MediaPlayerContractTes
 AVPlayer keeps playing while the app is backgrounded, where a `<video>` cannot — is a **DEVICE** claim
 and is untested.
 
-- [ ] **Prove it on the iPhone — the probe is WRITTEN and committed; only the run is missing.**
-  `samples/Shenora.Sample.Maui/MediaPlayerProbe.cs` opens the staged clip, plays, and asserts the POSITION
-  MOVED (not that `PlayAsync` returned). Wired into `MainPage` after the staging step.
-  **Attempted 2026-08-07 and blocked on hardware, not code:** the Mac built and signed, then the install
-  timed out — `NWError 60` on the CoreDevice tunnel — and `mac devices` then reported
-  `paired/NOT CONNECTED`. The phone had dropped off Wi-Fi. **Next session: plug the phone in, keep it
-  awake, `node devtools/dev.mjs mac device`, then `mac device-log` and read the `PLAYER:` lines.**
-  - Expect `PLAYER: <a>s -> <b>s state=Playing` then `PLAYER: PASS`.
-  - ⚠ **Backgrounding is a HUMAN step and the probe says so in its own output.** Nothing in the harness
-    can make the app leave the foreground. Press home while it is playing and watch the log — that is the
-    claim the native player exists for, and it is still the one thing unproven.
-  - The app already configures `AVAudioSession` + `UIBackgroundModes: [audio]` for the `<audio>` probe, so
-    the `<video>`-pauses / AVPlayer-continues comparison is available in the same build.
-- [ ] 🔴 **`app.UseMediaPlayer()` — ONE call, and the system works. `UseMediaPlayer(x => …)` when there is
-  conversion to configure.** (Owner, 2026-08-07, and it is the shape the rest of this section is judged
-  against.) Today an adopter constructs `MediaPlayerOptions`, supplies a required `ResolveUri`, wires
-  `UseMediaConversion` on the interceptor and registers the result. That is the price of entry for a file
-  that would have played on its own — the opposite of what the owner asked for twice
-  (*"unless we need a custom decoder, we dont need to have this complex play logic"*).
-  - **It belongs on `ShenoraApplicationBuilder`**, matching `UseMobile` / `UseWinForms` / `UseHeadless`.
-  - **The zero-arg call must not need a security decision, and that is what splits the two overloads.**
-    `CacheRoot` can default (`ShenoraPaths`), the module name can default, the converter can default
-    (`Mp4Remuxer.ConvertWith(the registered IMediaAudioConversion)`) — but **`AllowedRoots` cannot**. It is
-    the containment boundary that stops a page-supplied path escaping, and a kit that picked one for you
-    would be making a data-access decision on the app's behalf (the same reasoning that killed D10's
-    loopback helper and D60's diag facade). So: `UseMediaPlayer()` = a player, no file-serving conversion;
-    `UseMediaPlayer(x => x.AllowedRoots = […])` = conversion switched on. **The security constraint and
-    the ergonomic split are the same line**, which is why the shape is right.
-  - ⚠ **Decide which implementation the zero-arg call binds** — the native player where a shell ships one
-    (iOS) and the page-backed `MediaPlayer` otherwise, or always the page one with native as opt-in. Not
-    settled. The argument for native-preferred is background playback; the argument against is that it
-    silently changes where audio comes from.
+**✅ PROVEN ON THE IPHONE (2026-08-07).** `PLAYER: 1.13s -> 2.63s state=Playing` → `PLAYER: PASS — the
+host decoded a real file and advanced a real clock`, on an iPhone 17 Pro / iOS 26.5.2. AVPlayer opened a
+staged MP4 and moved a real clock; the claim `IMediaPlayer` rests on is no longer untested.
+⚠ **Background survival is STILL unproven** — nothing in the harness can make the app leave the
+foreground. Press home while it plays and watch `mac device-log`. That is the one claim the NATIVE player
+exists for, and it is the only part left.
 
 - [ ] **Then Android (ExoPlayer/MediaPlayer) and Windows (Media Foundation).** Absent rather than stubbed
   today, deliberately — an app without a player keeps using `<video>`.

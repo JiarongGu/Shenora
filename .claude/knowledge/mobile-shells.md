@@ -550,3 +550,16 @@ knowledge, not devtool trivia: the deploy loop is part of what the framework sel
   this trap on its build step and it was reintroduced directly beneath that comment the same day. Name it
   as a pattern: **a harness that pipes a tool through `tail`/`head` to keep output readable silently
   converts every failure into a success.** `set -o pipefail`, or check the tool's status before piping.
+
+- 🔴 **`xcrun devicectl device console` DOES NOT EXIST, and the tool that called it said nothing at all.**
+  `devicectl device` offers copy, info, install, notification, orientation, process, reboot, sysdiagnose
+  and uninstall — no `console`. The invocation was `… console … 2>/dev/null | head -N`, so the error text
+  went to `/dev/null` AND the exit status became `head`'s, which is always 0: no output, no failure, and a
+  fallback message that could never fire. **This is the SAME `| head`/`| tail` trap recorded above for
+  `mac device`, in a sibling function, surviving the write-up of the first one** — which is the reason it
+  is worth a second bullet rather than a footnote. Fix the pattern everywhere, not the call site.
+  **Reading an app's log off a device is `xcrun devicectl device process launch --console
+  --terminate-existing`**, which relaunches with stdout attached. That is right rather than merely
+  available: this repo's probes run at STARTUP, so anything attaching to a running app misses what it came
+  for. ⚠ Exit 141 (SIGPIPE) is the SUCCESS path once `head` closes the stream — treat it as such, or the
+  fix reintroduces the bug in the opposite direction.

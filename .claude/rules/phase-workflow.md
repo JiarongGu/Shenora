@@ -28,12 +28,15 @@ should ignore (a version guard that had never run DURING a release; a size budge
 on a CRLF checkout; a `warning CS` filter that had never met a non-CS analyser warning). Ask: **when
 should this stay silent, and where does it execute?** Then try those.
 
-**A non-trivial fix records its ROOT CAUSE in the commit message, and nowhere else.** There is no fix
-log any more (deleted 2026-08-07 with the rest of `docs/archive/`) — git is the history, so name the
-mechanism in the message and trace a regression's origin with `git log -S "<distinctive token>" --
-<path>`. ⚠ **If the root cause is a reusable invariant, that is a RULE, not a commit message**:
-`node devtools/dev.mjs knowledge new <name>`. The log was history; the rule is prevention, and only one
-of those was ever worth keeping.
+**A fix records its ROOT CAUSE in the commit message** (there is no fix log — git is the history; trace
+with `git log -S "<token>" -- <path>`). ⚠ **A reusable invariant is a RULE, not a message**:
+`dev.mjs knowledge new <name>`.
+
+🔴 **An extension point is done when something ASKS for it, not when the interface compiles (D63).** Three
+times in one fortnight the kit declared a capability nothing consulted — and none threw, logged or failed
+a test, because ABSENT is indistinguishable from working. A test must supply a fake and assert it was
+USED. After any pass that adds seams, re-run the audit: which contracts have a kit implementation and no
+consumer?
 
 **Keep a gate proportionate.** Correctness stops a release; style warns. That budget was made fatal
 and then blocked shipping over 0.2 KB.

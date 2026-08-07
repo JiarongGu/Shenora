@@ -1437,13 +1437,34 @@ dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${
  * ⚠ Filtered at the source, not tailed and grepped here. `android.mjs` already records why: an unfiltered
  * device log is a firehose that rotates the interesting lines out while you are reading them.
  */
+/**
+ * Read the app's own log off the device by RELAUNCHING it with a console attached.
+ *
+ * ⚠ It relaunches, and that is deliberate rather than a compromise: this repo's probes run at STARTUP, so
+ * a reader that attached to an already-running app would miss everything it came for.
+ *
+ * ⚠⚠ THIS FUNCTION WAS BROKEN AND SAID NOTHING (fixed 2026-08-07). It called
+ * `devicectl device console`, which is not a subcommand on any Xcode — `devicectl device` offers copy,
+ * info, install, notification, orientation, process, reboot, sysdiagnose, uninstall and nothing else. The
+ * invocation piped through `2>/dev/null | head`, so the error text was discarded AND the exit status became
+ * head's, which is always 0. The tool printed nothing, reported success, and the fallback advice below its
+ * status check could never fire. **That is the exact trap `.claude/knowledge/mobile-shells.md` records for
+ * `mac device` — the same mistake, in a sibling function, surviving the write-up of the first one.**
+ * `set -o pipefail` is now on, as it is on the launch path.
+ */
 function deviceLog(cfg, count, wanted) {
   const target = pickDevice(cfg, wanted);
-  const r = ssh(cfg, `xcrun devicectl device console --device ${q(target.id)} 2>/dev/null | head -${Number(count) || 200}`,
+  const lines = Number(count) || 200;
+  console.log(`mac: relaunching ${cfg.bundleId} with a console attached (startup output is the point)…`);
+  const r = ssh(cfg,
+    `set -o pipefail; xcrun devicectl device process launch --console --terminate-existing `
+    + `--device ${q(target.id)} ${q(cfg.bundleId)} 2>&1 | head -${lines}`,
     { inherit: true });
-  if (r.status !== 0) {
-    console.log('mac: devicectl console is not available on this Xcode; use Console.app on the Mac,\n'
-      + '     or `mac ssh "log stream --device"` if the device is paired for logging.');
+  // head closing the pipe kills the stream, which is how this returns at all — so SIGPIPE (141) is the
+  // expected success path, not a failure.
+  if (r.status !== 0 && r.status !== 141) {
+    console.log('\nmac: could not attach a console. Check the app is installed (`mac device`), or read it\n'
+      + '     on the Mac with Console.app filtered to the device.');
   }
 }
 
