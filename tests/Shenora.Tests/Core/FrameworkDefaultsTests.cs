@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
 using Shenora.IO;
+using Shenora.Ipc;
 using Shenora.Media;
 using Shenora.Missions;
 
@@ -89,6 +91,42 @@ public class FrameworkDefaultsTests
         using var app = BuildBare(root);
 
         Assert.Empty(app.Services.GetRequiredService<MediaPlayerOptions>().AllowedRoots);
+    }
+
+    /// <summary>
+    /// 🔴 <b>THE WHOLE D64+D65 CLAIM, end to end: an app that composes IPC and calls nothing else can
+    /// receive the page's player report.</b> Build the app, ask the dispatcher, and the media feature's
+    /// own module answers — nobody registered a facade, named a module, or wrote a route.
+    /// <para>
+    /// ⚠ It asserts the route is HANDLED, not that it succeeds: the point is that the module EXISTS.
+    /// <c>NO_HANDLER</c> is what a lost registration looks like, and it is the failure this pins —
+    /// the facade's own tests map it by hand, so they would all still pass with the default gone.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_media_module_answers_through_the_DEFAULT_wiring_with_no_app_registration()
+    {
+        using var root = new TempRoot();
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+        {
+            ApplicationName = "probe",
+            Paths = new ShenoraPathsOptions { ExplicitRoot = root.Path },
+        });
+        builder.Services.AddMessageDispatcher();
+        using var app = builder.Build();
+
+        var response = await app.Services.GetRequiredService<IMessageDispatcher>().DispatchAsync(
+            new IpcRequest
+            {
+                Id = "r1",
+                Module = app.Services.GetRequiredService<MediaPlayerOptions>().Module,
+                Type = MediaPlayerFacade.ReportType,
+                Payload = JsonSerializer.Deserialize<JsonElement>(
+                    JsonSerializer.Serialize(new { state = "Paused", position = 0.0 }, IpcJson.Options)),
+            },
+            CancellationToken.None);
+
+        Assert.True(response.Success, response.Error?.Code);
     }
 
     private sealed class TempRoot : IDisposable

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Shenora;
+using Shenora.Ipc;
 using Shenora.Missions;
 
 namespace Shenora.Media;
@@ -17,12 +19,16 @@ public static class MediaPlayerExtensions
     /// builder.UseMediaPlayer(x => x.AllowedRoots = [library]);   // …and repair what the webview refuses
     /// </code>
     /// <para>
-    /// 🔴 <b>⚠ THIS IS ONE OF THREE PIECES, and the loop does not run without all three.</b> This
-    /// registers the host half. The page half is <c>useMediaPlayer(ref)</c> in <c>@shenora/react</c>. The
-    /// third is <b>yours</b>: an IPC route on <see cref="MediaPlayerOptions.Module"/> that answers
-    /// <c>PLAYER_REPORT</c> by calling <see cref="MediaPlayer.Report"/> — <b>the kit registers no facade
-    /// for it</b>, and without one <see cref="IMediaPlayer.OpenAsync"/> waits on a report that never
-    /// arrives, with no exception and no log line. `docs/ADOPTION.md` carries the route verbatim.
+    /// <b>It registers the WHOLE host half — the player and the IPC module that receives the page's
+    /// reports.</b> The only thing left is <c>useMediaPlayer(ref)</c> in <c>@shenora/react</c>.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It used to be one of three pieces, and the third was yours.</b> Until 2026-08-07 nothing
+    /// answered <c>PLAYER_REPORT</c>, so <see cref="IMediaPlayer.OpenAsync"/> — which completes on the
+    /// page's first report and on nothing else — waited forever with no exception and no log line. The
+    /// route now ships as <see cref="Ipc.MediaPlayerFacade"/>, registered here BY THE FEATURE rather than
+    /// by the dispatcher, so a core never has to know a feature's name (D65). Delete any route you wrote
+    /// against an earlier build; two facades on one module is a duplicate the dispatcher rejects.
     /// </para>
     /// <para>
     /// <b>The zero-argument call is the point, not a convenience.</b> Owner, 2026-08-07: *"unless we need a
@@ -69,6 +75,20 @@ public static class MediaPlayerExtensions
         var paths = builder.Paths;
 
         builder.Services.TryAddSingleton(options);
+
+        // 🔴 THE FEATURE REGISTERS ITS OWN IPC MODULE (D65). The route that carries the page's
+        // `PLAYER_REPORT` back is part of this feature, not something the dispatcher should know the name
+        // of — a core that enumerated its features would have to be edited every time one was added.
+        // ⚠ `TryAddEnumerable` with the TWO-TYPE overload: given a factory whose implementation type is
+        // the SERVICE type it throws "indistinguishable from other services registered for IModuleFacade",
+        // because it has nothing to compare for duplicates. Naming the implementation is what makes
+        // registering twice a no-op rather than a duplicate module the dispatcher rejects.
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IModuleFacade, MediaPlayerFacade>(sp =>
+            new MediaPlayerFacade(
+                sp.GetRequiredService<IMediaPlayer>(),
+                sp.GetRequiredService<MediaPlayerOptions>(),
+                sp.GetService<ILogger<MediaPlayerFacade>>())));
+
         builder.Services.TryAddSingleton<IMediaPlayer>(services =>
         {
             // ⚠ Resolved from DI, never the captured instance: `TryAddSingleton` no-ops when the app

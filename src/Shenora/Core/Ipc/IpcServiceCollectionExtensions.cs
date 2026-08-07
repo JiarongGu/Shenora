@@ -134,41 +134,19 @@ public static class IpcServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // 🔴 THE KIT'S OWN MODULES COME WITH THE DISPATCHER (D64). If you are composing IPC at all, the
-        // framework's routes are part of what you are composing — the same reason
-        // `WebApplication.CreateBuilder` brings Kestrel. They are inert until the page posts to them, so
-        // there is nothing to opt out of, and they answer on RESERVED `SHENORA.` module names that cannot
-        // collide with an app's own.
+        // 🔴 THIS METHOD NAMES NO FEATURE, and that is the D65 rule it exists to demonstrate: **a CORE
+        // must not know the names of the features built on it.** The dispatcher composes whatever
+        // `IModuleFacade`s are REGISTERED; which ones exist is each feature's own business, registered
+        // from the feature itself (`UseMediaPlayer`) or from the shell that can satisfy it
+        // (`AddShenoraFileDialogs`, called by the shells because only a platform knows whether it has
+        // native dialogs).
         //
-        // ⚠ `MediaPlayerFacade` is the one that was MISSING rather than merely opt-in, and its absence was
-        // silent: the kit shipped `useMediaPlayer` on the page and no host route for the reports it posts,
-        // so `IMediaPlayer.OpenAsync` waited forever on a message nothing answered. TryAddEnumerable
-        // rather than AddModuleFacade so registering it twice cannot map the module twice — which the
-        // dispatcher rejects outright as a duplicate.
-        //
-        // ⚠ Both dependencies are resolved OPTIONALLY. This lives in `Shenora.Ipc`, which cannot assume
-        // anyone called `ShenoraApplicationBuilder.Build()` — composing IPC over a bare ServiceCollection
-        // is a legitimate shape and the kit's own IPC tests are exactly that. A default registration that
-        // threw on resolve would turn "the framework is on" into "the framework fell over".
-        // ⚠ The two-type overload, NOT `Singleton<IModuleFacade>(factory)`: `TryAddEnumerable` refuses a
-        // descriptor whose implementation type is the SERVICE type, because it has nothing to compare for
-        // duplicates ("indistinguishable from other services registered for IModuleFacade"). Naming
-        // MediaPlayerFacade as the implementation is what makes the try-add idempotent at all.
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IModuleFacade, MediaPlayerFacade>(sp =>
-            new MediaPlayerFacade(
-                sp.GetService<IMediaPlayer>(),
-                sp.GetService<MediaPlayerOptions>() ?? new MediaPlayerOptions(),
-                sp.GetService<ILogger<MediaPlayerFacade>>())));
-
-        // ⚠ NOTHING ELSE IS REGISTERED HERE, and the attempt to is worth recording. Defaulting
-        // `AddShenoraOperations()` from this method broke five composition tests with UNKNOWN_ERROR:
-        // `OperationRegistry` needs `IEventBus`, which `Shenora.Ipc` cannot assume exists because
-        // composing IPC over a bare ServiceCollection is legitimate. The lesson is not "resolve it
-        // optionally too" — it is that **a CORE must not know the names of the features built on it**
-        // (D65). The dispatcher composes whatever facades are REGISTERED; deciding which ones exist
-        // belongs to each feature. `MediaPlayerFacade` above is the last hold-out of the wrong shape and
-        // moves out with the D65 restructure.
-
+        // ⚠ It briefly did the opposite, and BOTH attempts are worth not repeating. Hardcoding
+        // `MediaPlayerFacade` here worked only because its dependencies could be resolved optionally;
+        // adding `AddShenoraOperations()` beside it broke five composition tests with UNKNOWN_ERROR,
+        // because `OperationRegistry` needs `IEventBus` and composing IPC over a bare
+        // `ServiceCollection` is a legitimate shape with no builder behind it. The fix was never
+        // "resolve that optionally too" — it was to stop a core reaching downward at all.
         services.AddSingleton<IMessageDispatcher>(sp =>
         {
             IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>());
