@@ -270,6 +270,58 @@ public class MediaPlayerTests
         Assert.Contains(session.Reports, r => r.State == PlaybackState.Playing && r.Position == TimeSpan.FromSeconds(9));
     }
 
+    // ── the URL convention: policy → plan → converter, across a string ───────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The planner's verdict survives the URL.</b> The plan is computed in the player and the route
+    /// only ever sees a string, so anything not encoded here is re-derived from the file by a converter
+    /// that never saw the policy — and two places deciding the same thing is how they come to disagree.
+    /// </summary>
+    [Theory]
+    [InlineData(MediaPlaybackAction.Remux)]
+    [InlineData(MediaPlaybackAction.Transcode)]
+    public void The_planners_verdict_survives_the_round_trip(MediaPlaybackAction action)
+    {
+        var uri = MediaPlayerRoute.Build("C:/media/film.mkv", action);
+
+        Assert.Equal("C:/media/film.mkv", MediaPlayerRoute.SourceOf(uri));
+        Assert.Equal(action, MediaPlayerRoute.ActionOf(uri));
+    }
+
+    /// <summary>
+    /// ⚠ A source containing the action marker must not truncate — the action is APPENDED, so the split is
+    /// on the LAST occurrence. This is the case that makes the encoding unambiguous rather than merely
+    /// usually right.
+    /// </summary>
+    [Fact]
+    public void A_source_containing_the_marker_still_round_trips()
+    {
+        const string awkward = "C:/media/what&do=next.mkv";
+
+        var uri = MediaPlayerRoute.Build(awkward, MediaPlaybackAction.Transcode);
+
+        Assert.Equal(awkward, MediaPlayerRoute.SourceOf(uri));
+        Assert.Equal(MediaPlaybackAction.Transcode, MediaPlayerRoute.ActionOf(uri));
+    }
+
+    /// <summary>A URL this route did not build is not its business — the pipeline falls through.</summary>
+    [Fact]
+    public void A_foreign_url_is_declined()
+    {
+        Assert.Null(MediaPlayerRoute.SourceOf("/assets/logo.png"));
+    }
+
+    /// <summary>
+    /// An unreadable or absent action falls back to <see cref="MediaPlaybackAction.Remux"/> — the cheaper
+    /// repair. A request reaching a conversion route at all means the container is wrong.
+    /// </summary>
+    [Fact]
+    public void A_missing_action_falls_back_to_the_cheaper_repair()
+    {
+        Assert.Equal(MediaPlaybackAction.Remux, MediaPlayerRoute.ActionOf("/__shenora/media?src=a.mkv"));
+        Assert.Equal(MediaPlaybackAction.Remux, MediaPlayerRoute.ActionOf("/__shenora/media?src=a.mkv&do=nonsense"));
+    }
+
     // ── UseMediaPlayer: the zero-config call is the one that has to be right ─────────────────────
 
     /// <summary>

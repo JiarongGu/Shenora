@@ -451,8 +451,8 @@ changes, noting them in `CHANGELOG.md`).
   `MediaStreamPlan`, `ContainerOpens`, and a log-only `Reason`). The order is load-bearing: the CONTAINER is
   decided first and separately (an `.mkv` of ordinary AAC opens nowhere), an UNPROBED file gets the benefit
   of the doubt rather than a needless transcode, an unknown codec counts as decodable while the container
-  opens, and subtitles never vote. `MediaPlaybackPolicy` (containers + video/audio codec sets +
-  `CanEncodeVideo`/`CanEncodeAudio`) is the APP's — **the kit ships no default set**, because Android's
+  opens, and subtitles never vote. `MediaPlaybackPolicy` (containers + `Codecs` and `Encodable`, both keyed
+  by `MediaStreamKind` to match `IMediaCapability`) is the APP's — **the kit ships no default set**, because Android's
   codec support is vendor-declared per device and a baked-in list is one app's guess frozen into everyone's
   planner (D42).
   **`Serve/` — handing the result to the page.** Both are middleware over `Shenora.Core`'s

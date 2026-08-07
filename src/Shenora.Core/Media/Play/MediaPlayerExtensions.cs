@@ -110,23 +110,21 @@ public static class MediaPlayerExtensions
         var options = services.GetRequiredService<MediaPlayerOptions>();
         if (options.AllowedRoots.Count == 0) return null;
 
-        // ONE convention, defined once and shared: the route recognises what the player emits, because the
-        // two are configured from the same object. An app wanting its own URL shape sets ResolveUri and
-        // registers UseMediaConversion itself.
-        const string Prefix = "/__shenora/media?src=";
+        // ONE convention, defined once in MediaPlayerRoute and used from both ends here — the encoder and
+        // the decoder cannot drift because they are the same code, and it has a round-trip test.
         options.ResolveUri ??= (source, plan) =>
             plan is null || plan.Action == MediaPlaybackAction.Direct
                 ? source
-                : Prefix + Uri.EscapeDataString(source);
-
+                : MediaPlayerRoute.Build(source, plan.Action);
         return interceptor.UseMediaConversion(
             services.GetRequiredService<IMissionScheduler>(),
             services.GetRequiredService<IEventBus>(),
             new MediaConversionOptions
             {
-                Resolve = uri => uri.PathAndQuery.StartsWith(Prefix, StringComparison.Ordinal)
-                    ? Uri.UnescapeDataString(uri.PathAndQuery[Prefix.Length..])
-                    : null,
+                // Both ends of the convention come from MediaPlayerRoute, so the encoder above and these
+                // decoders are literally the same code — see its remarks for why that matters.
+                Resolve = uri => MediaPlayerRoute.SourceOf(uri.PathAndQuery),
+                ResolveAction = uri => MediaPlayerRoute.ActionOf(uri.PathAndQuery),
                 // BOTH seams resolved from DI, so registering one is enough to have it used — the rule
                 // D59 and the lock-inspector defect were both about. A consumer's native muxer replaces
                 // only the muxing stage; their codec replaces only the codec. Reads as what it is now that

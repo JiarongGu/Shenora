@@ -931,6 +931,7 @@ static class Shenora.Media.MediaConversionExtensions
 sealed class Shenora.Media.MediaConversionOptions
   public System.Action<string>? Log { get; init; }
   public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; init; }
+  public System.Func<System.Uri, Shenora.Media.MediaPlaybackAction>? ResolveAction { get; init; }
   public System.Func<System.Uri, bool>? AllowRemoteSource { get; init; }
   public System.Func<string, string>? ContentType { get; init; }
   public required System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> Convert { get; init; }
@@ -941,6 +942,7 @@ sealed class Shenora.Media.MediaConversionOptions
 sealed class Shenora.Media.MediaConversionRequest : System.IEquatable<Shenora.Media.MediaConversionRequest>
   public .ctor(string SourcePath, string DestinationPath, System.IProgress<double> Progress, string Container = ".mp4")
   public Shenora.Media.MediaConversionRequest <Clone>$()
+  public Shenora.Media.MediaPlaybackAction Action { get; init; }
   public System.Collections.Generic.IList<string> Dropped { get; }
   public System.IProgress<double> Progress { get; init; }
   public bool Equals(Shenora.Media.MediaConversionRequest? other)

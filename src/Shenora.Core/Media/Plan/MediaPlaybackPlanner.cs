@@ -56,8 +56,8 @@ public sealed record MediaPlaybackPolicy
     /// Codec names the player can DECODE, keyed by stream kind, as a probe reports them (<c>h264</c>,
     /// <c>aac</c>). A kind that is absent decodes nothing.
     /// <para>
-    /// <b>Keyed by <see cref="MediaStreamKind"/> rather than split into <c>VideoCodecs</c>/<c>AudioCodecs</c>
-    /// properties, to match <see cref="IMediaCapability"/> — which asks the DEVICE the same question.</b>
+    /// <b>Keyed by <see cref="MediaStreamKind"/> to match <see cref="IMediaCapability"/>, which asks the
+    /// DEVICE the same question.</b> It replaced a pair of named properties, one per kind.
     /// The two are compared constantly (the gap between them IS the converter's job, D59), and a comparison
     /// between a keyed lookup and a pair of named properties is written by hand every time. A kind the kit
     /// does not act on today needs no new member here, which is the same reason the capability is keyed.
@@ -76,7 +76,7 @@ public sealed record MediaPlaybackPolicy
     /// Kinds the app can RE-ENCODE. A kind that is absent turns an undecodable stream into
     /// <see cref="MediaPlaybackAction.Unsupported"/> instead of a transcode it cannot perform.
     /// <para>
-    /// A set rather than <c>CanEncodeVideo</c>/<c>CanEncodeAudio</c> booleans, for the reason above: it is
+    /// A set rather than the <c>CanEncodeVideo</c>/<c>CanEncodeAudio</c> booleans it replaced, for the reason above: it is
     /// the same question keyed the same way, so growing a kind adds no member.
     /// </para>
     /// </summary>

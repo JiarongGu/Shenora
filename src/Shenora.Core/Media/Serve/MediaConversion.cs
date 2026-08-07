@@ -50,6 +50,29 @@ public sealed record MediaConversionRequest(
     /// </para>
     /// </summary>
     public IList<string> Dropped { get; } = new List<string>();
+
+    /// <summary>
+    /// What the PLANNER decided this file needs — <see cref="MediaPlaybackAction.Remux"/> (container only)
+    /// or <see cref="MediaPlaybackAction.Transcode"/> (a stream must be re-encoded).
+    /// <para>
+    /// 🔴 <b>This is the last link in <c>policy → plan → converter</c>, and until 2026-08-07 it was
+    /// missing.</b> The planner decided against the app's <see cref="MediaPlaybackPolicy"/> and the
+    /// device's <see cref="IMediaCapability"/>, then that decision was thrown away when the plan became a
+    /// URL, and the converter re-derived it from the file. Two places deciding the same thing is how they
+    /// come to disagree — and only one of them had the policy.
+    /// </para>
+    /// <para>
+    /// A converter MAY trust it: <see cref="MediaPlaybackAction.Remux"/> means no codec is needed, so a
+    /// converter can skip building one. ⚠ It is a HINT about intent, not a guarantee about content — the
+    /// file is still the authority on what it holds, and a converter that finds otherwise should do the
+    /// honest thing and report it (<see cref="Dropped"/>).
+    /// </para>
+    /// <para>
+    /// Defaults to <see cref="MediaPlaybackAction.Remux"/>: a request reaching a conversion route at all
+    /// means something is wrong with the container, which is the cheaper repair to assume.
+    /// </para>
+    /// </summary>
+    public MediaPlaybackAction Action { get; init; } = MediaPlaybackAction.Remux;
 }
 
 /// <summary>Event types this middleware publishes, on <see cref="MediaConversionOptions.Module"/>.</summary>
@@ -83,6 +106,17 @@ public sealed class MediaConversionOptions
     /// <see cref="AllowedRoots"/>, so being generous here cannot widen what is reachable.
     /// </summary>
     public required Func<Uri, string?> Resolve { get; init; }
+
+    /// <summary>
+    /// What the PLANNER decided for this request, read from the same URL <see cref="Resolve"/> reads.
+    /// Unset means <see cref="MediaPlaybackAction.Remux"/>.
+    /// <para>
+    /// <b>The last link in <c>policy → plan → converter</c>.</b> Without it the planner's decision — made
+    /// against the app's policy and the device's capability — is lost when the plan becomes a URL, and the
+    /// converter re-derives it from the file alone. See <see cref="MediaConversionRequest.Action"/>.
+    /// </para>
+    /// </summary>
+    public Func<Uri, MediaPlaybackAction>? ResolveAction { get; init; }
 
     /// <summary>
     /// Produce a playable file. <b>This is the app's engine</b> — the kit ships none and never vendors one
@@ -272,7 +306,9 @@ public static class MediaConversionExtensions
                     WebViewFiles.Serve(request, cachePath, contentType, delivery));
             }
 
-            StartConversion(scheduler, events, options, source, cachePath, key, isLocal: !IsRemote(source, out _));
+            // The planner's verdict travels with the job, so the converter is TOLD rather than re-deriving it.
+            var action = options.ResolveAction?.Invoke(request.Uri) ?? MediaPlaybackAction.Remux;
+            StartConversion(scheduler, events, options, source, cachePath, key, action, isLocal: !IsRemote(source, out _));
             return Task.FromResult<WebViewResourceResponse?>(NotReadyYet());
         });
     }
@@ -321,7 +357,8 @@ public static class MediaConversionExtensions
     /// conversion. The mission's own body is guarded too — this covers the SUBMIT.
     /// </remarks>
     private static void StartConversion(IMissionScheduler scheduler, IEventBus events,
-        MediaConversionOptions options, string source, string cachePath, string key, bool isLocal)
+        MediaConversionOptions options, string source, string cachePath, string key,
+        MediaPlaybackAction action, bool isLocal)
     {
         var definition = new MissionDefinition
         {
@@ -334,7 +371,7 @@ public static class MediaConversionExtensions
             // ⚠ A remote url gets NO path claim — feeding a url to a path-shaped scope would have it
             // normalised as a path and made to conflict with unrelated urls sharing a prefix.
             Claims = isLocal ? [PathClaims.Exclusive(source)] : [],
-            Run = (_, missionToken) => ConvertAsync(events, options, source, cachePath, missionToken),
+            Run = (_, missionToken) => ConvertAsync(events, options, source, cachePath, action, missionToken),
         };
 
         _ = SubmitGuardedAsync(scheduler, definition, options);
@@ -360,7 +397,7 @@ public static class MediaConversionExtensions
     }
 
     private static async Task ConvertAsync(IEventBus events, MediaConversionOptions options,
-        string source, string cachePath, CancellationToken cancellationToken)
+        string source, string cachePath, MediaPlaybackAction action, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(options.CacheRoot);
 
@@ -376,7 +413,10 @@ public static class MediaConversionExtensions
 
         try
         {
-            var request = new MediaConversionRequest(source, replacement.TempPath, progress, options.CacheExtension);
+            var request = new MediaConversionRequest(source, replacement.TempPath, progress, options.CacheExtension)
+            {
+                Action = action,
+            };
             await options.Convert(request, cancellationToken);
             replacement.Commit();
             // `dropped` travels with READY so a page can tell a user WHY a film is silent, instead of

@@ -97,6 +97,15 @@ public sealed record MediaRemuxerResult(
 /// </para>
 ///
 /// <para>
+/// <b>MEASURED, because "fast" deserves a number</b> (2026-08-07, Release, in-memory, 31.3 MB / 4000
+/// frames): <b>22–26 ms steady state — roughly 1.2–1.4 GB/s</b>, with 64 ms on the first run including
+/// JIT. A gigabyte film is therefore ~1 s of CPU, and real runs are dominated by disk rather than by this.
+/// That is the D52 thesis paying off in one number: it is a COPY, not a decode, so the work is proportional
+/// to bytes moved and nothing else. ⚠ The figure is in-memory and excludes file I/O — it measures parsing,
+/// table building and the copy, which is the part this class controls.
+/// </para>
+///
+/// <para>
 /// <b>What it deliberately does NOT do.</b> It re-encodes nothing, so a stream MP4 cannot carry — AC-3,
 /// DTS, VP9 — is reported rather than converted; that is the transcode tier's job and this refuses instead
 /// of half-doing it. It does not convert Annex-B start codes, because Matroska already stores H.264 in the
@@ -136,7 +145,7 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
         => Remux(source, destination, conversion, cancellationToken);
 
     /// <summary>Matroska CodecIDs this can carry into MP4, and the boxes each becomes.</summary>
-    private static readonly Dictionary<string, (string Entry, string Config)> VideoCodecs = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, (string Entry, string Config)> CarriableVideo = new(StringComparer.OrdinalIgnoreCase)
     {
         ["V_MPEG4/ISO/AVC"] = ("avc1", "avcC"),
         ["V_MPEGH/ISO/HEVC"] = ("hvc1", "hvcC"),
@@ -373,7 +382,7 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
     }
 
     private static bool CanCarryVideo(MatroskaTrack track) =>
-        track.CodecId is not null && VideoCodecs.ContainsKey(track.CodecId);
+        track.CodecId is not null && CarriableVideo.ContainsKey(track.CodecId);
 
     /// <summary>AAC, in any of the profile-qualified spellings Matroska uses (<c>A_AAC/MPEG4/LC</c>).</summary>
     private static bool CanCarryAudio(MatroskaTrack track) =>
@@ -384,7 +393,7 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
     private static byte[]? BuildVideoEntry(MatroskaTrack track)
     {
         if (track.CodecPrivate is not { Length: > 0 } config) return null;
-        var (entry, configBox) = VideoCodecs[track.CodecId!];
+        var (entry, configBox) = CarriableVideo[track.CodecId!];
 
         // A zero dimension makes a track a player lays out as nothing. Fall back to a sane frame rather
         // than writing a file that decodes into a window with no area.
