@@ -82,10 +82,15 @@ live in `CHANGELOG.md`; the current package set is the table at the top of `docs
 
 ## Open
 
-> ⚠ **Designing anything in media? Read `D52` (the scope), `D51` (no engine byte ever ships), `D53` (why
-> it lives in `Shenora.Core`), then `D44` + `D45`.** That is the whole reading list; the 2026-08-03 design
-> doc was RETIRED on 2026-08-07 once the pipeline was built, because it described a package family
-> (`Shenora.Media.{Platform}`) that never existed and a placement that D53 reversed. Git history has it.
+> ⚠ **Designing anything in media? The reading list, in this order: `D59` (what the converter is FOR — the
+> gap between what the DEVICE decodes and what its WEBVIEW accepts, nothing wider), `D58` (the interceptor
+> route is the player's output pipe, not a parallel feature), `D51` (no engine byte ever ships), `D42`
+> (the kit ships the QUESTION, never a codec list), then `D63` (the defect class this subsystem kept
+> producing).** D52 and D53 are still true and are the earlier framing D59 sharpened.
+
+> 🔴 **NEXT SESSION IS A FULL CODE REVIEW + DOC CLEANUP** (owner, 2026-08-07). The media namespace changed
+> shape four times in one session and **nobody has read it end to end since**. `local/PROJECT_NOTES.md`
+> lists where to point a reviewer first, what is measured, and what is still unproven.
 
 ### Device deployment must be the KIT's, not borrowed from an app (2026-08-06)
 
