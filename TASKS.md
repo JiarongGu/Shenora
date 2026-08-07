@@ -192,10 +192,38 @@ runs the new assemblies against old sources and proves nothing):
     | + `AddWebResourceRequestedFilter` + `WebResourceRequested` over `https://` | no crash |
     | the Shenora sample | **crashes** |
 
-  - **Next, and it halves the remaining space in ONE run:** point the sample at a blank document
-    instead of its React bundle. Still crashes → the host (injected scripts, the IPC bridge, frameless
-    chrome/`OptimizedForm`, single-instance, drop zones). Stops → the page. Cheaper than porting the kit
-    into the probe piece by piece, which is the trap to avoid.
+  - **Eliminated by A/B on the SAMPLE, each rebuilt and re-run:** the React bundle (a trivial inline
+    document still crashes — so it is not the page, and not the page-side IPC client, which never even
+    handshakes) · the custom scheme (`DeferredSchemes = []`) · `_bridge.Attach()` (the host-side IPC
+    bridge). Combined with the probe results above, the cause is in the HOST and independent of page
+    content, scheme registration and IPC.
+  - 🔴 **THE LEAD, and it came from the OWNER seeing what the logs did not show: `0x800700AA`
+    (`ERROR_BUSY`, "the requested resource is in use").** WebView2 raises that when a second
+    environment is created against a user-data folder that already has one **with different options** —
+    which also explains the "Device or resource busy" seen on every profile file, and why redirected
+    runs stalled with no output (a MODAL error dialog was up, which is also why `CloseMainWindow()`
+    could not close the app).
+    - ⚠ Checked and NOT the cause on its own: the main host (`data/webview2`) and the render pool
+      (`data/sessions/render`) use DIFFERENT profiles. But `RenderSessionPool` runs `Capacity = 2`
+      against ONE profile directory, and `SessionBrowser` already carries documented profile-lock
+      scars (P5.5 H2 — an abandoned `await` orphaning a second `CreateAsync` onto the same lock).
+      **That pair is the next thing to test.**
+  - **DESIGN POINT raised (owner, 2026-08-08): "the webview2 bundle should be at the application
+    location so it should never be shared".** ⚠ **Checked against both desktop siblings before acting,
+    and the check SPLITS the question in two:**
+    - **The USER-DATA folder is already app-local everywhere** — the kit uses
+      `paths.DataArea("webview2")`, and both siblings do the same (one under a `system/webview2` data
+      dir, the other a computed path). Nothing is shared today and nothing needs changing.
+    - **The BROWSER BINARIES are Evergreen everywhere, including both siblings**, which pass
+      `browserExecutableFolder: null` explicitly. So a fixed-version bundle would be a NEW position,
+      not a harvest (D15's bar), and it costs ~150 MB per app plus ownership of the security updates
+      the Evergreen runtime otherwise handles.
+    - [ ] **Decide it on its merits, not as a crash fix.** The argument FOR is determinism — a framework
+      whose pitch is "the shell" arguably should ship the browser it was tested against, and it removes a
+      shared, self-updating dependency from exactly this kind of investigation. The kit already supports
+      it (`WebViewEnvironmentOptions.BrowserExecutableFolder`), so this is a default and a doc, not a
+      feature. ⚠ It is NOT established that Evergreen is causing the crash — the minimal probe used the
+      same runtime and did not crash.
   - ⚠ **Recreate the probe rather than looking for it** — it lived in `devtools/_wv2probe` and is
     gitignored. Two of its five runs tested NOTHING and the reasons are worth not repeating: an
     `async void` init handler swallowed its exception until a try/catch printed one, and
