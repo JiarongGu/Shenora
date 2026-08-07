@@ -47,19 +47,7 @@ public static class FileSystemExtensions
 
         var options = new FileUpdateQueueOptions();
         configure?.Invoke(options);
-
-        // Defaulted AFTER configure, so an explicit value always wins.
-        options.Journal ??= new FileUpdateJournal(new FileUpdateJournalOptions
-        {
-            Directory = builder.Paths.DataArea("journal"),
-            Log = options.Log,
-        });
-        options.Locker ??= new FilePathLocker(new FilePathLockerOptions
-        {
-            // ⚠ NOT inside the tree being managed. A sidecar lock in the app's content directory gets
-            // synced, committed and outlives the process — the trap D31 records.
-            LockDirectory = builder.Paths.DataArea("locks"),
-        });
+        var paths = builder.Paths;
 
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddSingleton<IFileUpdateQueue>(services =>
@@ -73,8 +61,32 @@ public static class FileSystemExtensions
             // ⚠ Registering a capability is not the same as CONSULTING it, and this repo has now paid for
             // that twice (D59, and RestartManagerLockInspector going unregistered entirely). Whenever the
             // kit says "supply an implementation and we will use it", something must actually ask.
+            //
+            // ⚠ EVERY default below lands on `resolved`, never on the captured `options` — `TryAddSingleton`
+            // no-ops when the app registered its own `FileUpdateQueueOptions`, and then the captured
+            // instance is one nothing will ever read. Defaulting onto it would build a journal for the
+            // wrong object and hand the queue one with none.
             var resolved = services.GetRequiredService<FileUpdateQueueOptions>();
             resolved.LockInspector ??= services.GetService<IFileLockInspector>();
+
+            // 🔴 THE JOURNAL AND LOCKER ARE BUILT HERE, NOT AT `Use…` TIME, and that is what lets this
+            // engine be registered by DEFAULT (D64). `Paths.DataArea` CREATES the directory it names, so
+            // constructing them eagerly meant every app got a `journal/` and a `locks/` folder whether or
+            // not it ever mutated a file — the cost that made an "on by default" framework impossible.
+            // Registration is free; only RESOLVING this touches a disk, and nothing resolves it until the
+            // app asks for a file mutation. Still defaulted after `configure`, so an explicit value wins.
+            resolved.Journal ??= new FileUpdateJournal(new FileUpdateJournalOptions
+            {
+                Directory = paths.DataArea("journal"),
+                Log = resolved.Log,
+            });
+            resolved.Locker ??= new FilePathLocker(new FilePathLockerOptions
+            {
+                // ⚠ NOT inside the tree being managed. A sidecar lock in the app's content directory gets
+                // synced, committed and outlives the process — the trap D31 records.
+                LockDirectory = paths.DataArea("locks"),
+            });
+
             return new FileUpdateQueue(resolved);
         });
 

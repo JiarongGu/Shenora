@@ -2065,3 +2065,119 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     so the signal is narrow: **a kit-built implementation with no consumer**.
   - ⚠ **It is worth re-running after any pass that adds seams.** All three were added in the same fortnight
     of media work, by someone (me) who believed each was wired at the time.
+
+- **D64 — the framework is ON BY DEFAULT. `Use…` CONFIGURES; it does not enable. The only per-platform
+  call is the shell's, and it exists to inject implementations.** (Owner, 2026-08-07, across five messages:
+  *"this is a full react+.net application framework, media, filesystem should probably do the same, and
+  those `use` function basiclly just a way to override or configure"* · *"because non-of them will work
+  without frontend ask via ipc/routing"* · *"we will have some configuration for windows, andriod, ios,
+  they will be injecting different implementation (if there are) that will be the try useWindows,
+  useAndriod, useIOS case"* · *"core has its own implementation if this requires platform then its
+  nonthing … but for things like media pipeline, they will be having events … under a default category (so
+  not going to effect comsuer's category, and they also able to subscribe)"* · *"this will minimize the
+  recoding for all implmentations since they never changes (most the cases)"*.)
+  - 🔴 **The argument that decides it is a SAFETY one, not an ergonomic one: none of these capabilities
+    DOES anything until the frontend asks over IPC or requests a URL.** A registered media route, file
+    engine or player facade is inert code sitting in a container. So opt-in gating buys nothing real — it
+    only guarantees that every app re-types the same block and that one of them will forget. The gate that
+    matters is the page making a request, and the boundary that matters is CONTAINMENT
+    (`AllowedRoots`, `WebViewFileOptions`), which stays fail-closed and is unaffected by this.
+  - **What it replaces.** Three portable engines had three ways in (`UseMissions`, `UseFileSystem`,
+    `UseMediaPlayer`) and the kit's own IPC modules had two more (`AddShenoraOperations`,
+    `AddShenoraFileDialogs`). `UseMissions`'s own remarks already named the smell — *"three engines, three
+    ways in, was the inconsistency"* — and answered it one level too low. The answer is zero ways in.
+  - **The rule, stated so it can be checked:** *registration is free; construction is lazy; nothing touches
+    a disk, a thread or a handle until something asks.* This is not a style preference — it is the
+    PRECONDITION for defaulting anything. `UseFileSystem` built its journal and locker at `Use…` time and
+    `Paths.DataArea` CREATES the directory it names, so as a default it would have provisioned `journal/`
+    and `locks/` in every app that never mutates a file. Both now build inside the DI factory, and
+    `FileSystemExtensionsTests` asserts the directory does NOT exist until `IFileUpdateQueue` is resolved.
+    ⚠ Defaults must land on the instance RESOLVED FROM DI, never on the one captured at `Use…` time:
+    `TryAddSingleton` no-ops when the app registered its own options, and defaulting onto the captured
+    object then silently configures something nothing will ever read.
+  - **The kit's own modules live under a RESERVED `SHENORA.` prefix, and every existing one moves onto it**
+    (owner's call, 2026-08-07): `SHENORA.MEDIA`, `SHENORA.FILES`, `SHENORA.OPERATIONS`, `SHENORA.DIALOGS`.
+    That is what makes shipping a facade by default safe — the objection to it was that a kit-registered
+    `MEDIA` module would claim a name an adopting app might already own. **The prefix means the app is free
+    to own `MEDIA`, `FILES`, or any other unqualified name it likes**, and a consumer can still subscribe to
+    the kit's, which is the point of publishing on the bus at all.
+    - ⚠ **Everything moves, including the two already shipped.** `OPERATIONS` and `FILE_DIALOGS` keep no
+      grandfathered names: one rule with two permanent exceptions is a rule nobody can apply from memory,
+      and the exceptions would be the two an adopter meets first. It IS a wire break — `@shenora/react`'s
+      clients name these strings — but both halves are ours and D47's bar is one repo. Under `### Breaking`
+      with the migration, and the C#⇄TS mirror tripwires must move in the same commit.
+  - 🔴 **Where a platform CAN do it, IMPLEMENT it — a refusal is the last resort, not the default answer.**
+    (Owner, 2026-08-07: *"we should try to implement a default if the platform can support this is to close
+    the web gap"*.) This corrects the shape this entry was first drafted with, which was a sweep of refusal
+    stubs. **Closing the web gap is the entire thesis (D54)** — a stub that refuses on Windows and Android
+    leaves the framework claiming a capability it declines to provide on two of three platforms, which is
+    the same "the app keeps using `<video>`" outcome as shipping nothing. So `IMediaPlayer` gets a real
+    Media Foundation implementation on Windows and a real ExoPlayer/MediaPlayer one on Android, beside the
+    AVPlayer one on iOS.
+    - **A refusal is still right where the platform genuinely cannot** — and then it must be EXPLICIT
+      (`ShellCapability.NotSupported`, the shape `WindowsMediaCapability.Unsupported.cs` and
+      `ILiveActivities`'s `Unavailable` channel already use), never an absent registration. That is D63's
+      rule reaching its conclusion: absence produces no signal, so the framework must never answer a
+      question by not being there.
+    - ⚠ **The test for which one you are looking at is "can this platform do it?", not "have we written it
+      yet?"** — an unwritten implementation is a TASK, and recording it as a refusal freezes a gap into the
+      surface and makes it look decided.
+  - **`UseWindows()` / `UseAndroid()` / `UseIOS()` are the one call that remains, and they INJECT.**
+    Today they are `UseWinForms()` and `UseMobile()` — a UI-FRAMEWORK name and a CATEGORY name, while the
+    packages they ship from are `Shenora.Windows`, `Shenora.Android` and `Shenora.iOS`. **D37's law never
+    reached the method names**: one shell per PLATFORM, named for the platform. A platform is the one thing
+    an adopter genuinely picks, so it is the one call that genuinely earns its place.
+    - ⚠ **It costs the shared-baseline trick, and that is ACCEPTED rather than worked around.** `UseMobile`
+      lives in the SHARED source (`src/Shenora.Mobile/`) compiled into both mobile packages, and the two
+      surfaces are deliberately IDENTICAL — which is what lets the Android API baseline gate iOS from a
+      Windows host (`Shenora.Android.csproj` records the trick and why `AndroidGenerateResourceDesigner` is
+      off for it). Two platform-named methods make them differ by exactly that method. **Do not contort the
+      gate to preserve it**: the owner's reason is that the build story is changing anyway (*"we will also
+      build build toolkit so this will be different anyway"* — D56 makes deploy/build tooling product), so
+      an arrangement engineered around today's packaging would be rebuilt within the same effort. Split the
+      baseline when the rename lands and revisit it WITH the toolkit.
+  - **What this is FOR, in the owner's terms: it minimises the wiring every implementation rewrites,
+    because that wiring never varies.** An adopting app should meet the framework as a framework — the
+    same argument as D53/D55 (one whole, no feature tier) and D61 (one call per capability), applied to
+    composition instead of to packaging.
+
+  ### The MODEL is ASP.NET Core's minimal hosting, and copying it settles the naming (owner, 2026-08-07)
+
+  *"think about this should be like how .net webapp build setup style"* — and the analogy is not decoration,
+  it resolves questions this entry was otherwise going to answer by taste. **`Add*` and `Use*` mean
+  DIFFERENT things there, and this kit currently uses `Use*` for both.**
+
+  | ASP.NET Core | Shenora today | Under D64 |
+  |---|---|---|
+  | `WebApplication.CreateBuilder(args)` brings Kestrel, logging, config, DI — you never call `AddKestrel()` | `CreateBuilder` brings a paths object and an event bus | brings **the framework**: the engines, the kit's modules, the dispatcher |
+  | `builder.Services.Add*()` = DI registration | `AddShenoraOperations()` ✅ **but also** `builder.UseMissions()` ❌ | every registration is `builder.Services.Add*` |
+  | `var app = builder.Build()` | same ✅ | same |
+  | `app.Use*()` = the request PIPELINE, on the built app, order significant | `interceptor.UseFiles(…)` / `interceptor.UseMediaPlayer(services)` — on an inner object, with the provider handed BACK in | `app.Use*()` — the app already holds the provider |
+  | `app.MapControllers()` = endpoints | `builder.Services.AddModuleFacade<T>()` — a route registered as a service | `app.MapModule<T>()` |
+  | `app.Run()` | same ✅ | same |
+
+  - 🔴 **`Use*` on the BUILDER is a category error, and it is the one this kit made most.**
+    `UseMissions`/`UseFileSystem`/`UseMediaPlayer`/`UseWinForms` all register services; none of them adds
+    middleware. Under D64 most of them stop existing (the framework is already on) and what remains is a
+    CONFIGURE overload, which belongs on `Services` as `Add*` — leaving `Use*` to mean what it means
+    everywhere else in .NET.
+  - 🔴 **It also fixes the two-phase call this repo apologises for.** `interceptor.UseMediaPlayer(services)`
+    exists because the interceptor is created WITH the webview and cannot exist at registration time —
+    which is a real constraint and exactly the split ASP.NET draws. But ASP.NET's second phase is
+    `app.Use*()`, where the app carries the provider; ours makes the CALLER fetch the interceptor and hand
+    the provider back. `ADOPTION.md` had to spend a paragraph defending it. The fix is the analogy: put the
+    pipeline surface on `ShenoraApplication`.
+    - ⚠ **Which implies a semantic the kit should adopt deliberately: `app.Use*()` describes the pipeline
+      for EVERY webview the app hosts**, not one interceptor instance — the way an ASP.NET pipeline serves
+      every request. That is better than today (secondary windows and session browsers currently get
+      nothing unless wired again by hand) and it is a real change in meaning. The per-interceptor call
+      stays for the case that genuinely wants one pipeline to differ.
+  - **The evidence that the current shape is wrong is the kit's OWN sample.** `Shenora.Sample.Desktop`
+    hand-constructs `MissionScheduler` and `FileUpdateQueue` inside `AddSingleton` lambdas, with a comment
+    claiming *"Shenora.Core ships no DI extension for it, and it needs none"* — untrue since `UseMissions`
+    shipped, and the exact "wiring that never varies" this decision deletes. **A reference app that has to
+    write the framework's own composition is the finding.**
+  - ⚠ **It is a behaviour change for the existing adopter, and it belongs under `### Breaking`** even
+    though nothing's signature moves: modules the kit previously registered only on request now appear in
+    the ready handshake by default, so a page that branches on `shell.capabilities` sees more than before.
+    D47's bar applies — one repo fully adopts, so prefer the correct shape.

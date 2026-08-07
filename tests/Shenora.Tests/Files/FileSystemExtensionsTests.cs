@@ -46,6 +46,17 @@ public class FileSystemExtensionsTests
         using var app = builder.Build();
         var options = app.Services.GetRequiredService<FileUpdateQueueOptions>();
 
+        // 🔴 NOT YET — and this half is the point. The journal and locker are built when the QUEUE is
+        // resolved, never at `Use…` time, because `Paths.DataArea` creates the directory it names: an
+        // engine that provisions storage merely by being registered cannot be on by default (D64).
+        Assert.Null(options.Journal);
+        Assert.Null(options.Locker);
+        Assert.False(Directory.Exists(Path.Combine(root.Path, "journal")),
+            "registration alone must not create the journal directory");
+
+        // Asking for the engine is what provisions it.
+        _ = app.Services.GetRequiredService<IFileUpdateQueue>();
+
         Assert.NotNull(options.Journal);
         Assert.NotNull(options.Locker);
     }

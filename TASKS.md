@@ -88,7 +88,89 @@ live in `CHANGELOG.md`; the current package set is the table at the top of `docs
 > (the kit ships the QUESTION, never a codec list), then `D63` (the defect class this subsystem kept
 > producing).** D52 and D53 are still true and are the earlier framing D59 sharpened.
 
-### 🔴 The media player's loop is NOT CLOSED — decide who writes the joint (2026-08-07, from the review)
+### 🔴 D64 — MAKE THE FRAMEWORK ON BY DEFAULT. In flight (2026-08-07)
+
+> DIRECTION (owner, 2026-08-07): *"this is a full react+.net application framework, media, filesystem
+> should probably do the same, and those `use` function basiclly just a way to override or configure"* ·
+> *"because non-of them will work without frontend ask via ipc/routing"* · *"this will minimize the
+> recoding for all implmentations since they never changes (most the cases)"*.
+
+**Read D64 first — it carries the reasoning and the one trap.** The safety argument is the load-bearing
+one: none of these capabilities does anything until the frontend asks, so opt-in gating buys nothing while
+containment still fails closed.
+
+- [x] **Lazy construction, the PRECONDITION for any of it.** `UseFileSystem` built its journal and locker at
+  `Use…` time and `Paths.DataArea` CREATES the directory — so as a default it would have provisioned
+  `journal/` and `locks/` in every app that never mutates a file. Both now build inside the DI factory;
+  `UseMediaPlayer`'s cache root likewise. The test asserts the directory does NOT exist until
+  `IFileUpdateQueue` is resolved. ⚠ Defaults land on the DI-resolved options, never the captured instance.
+**The target shape, which is ASP.NET Core's minimal hosting model** (owner: *"think about this should be
+like how .net webapp build setup style"*). D64's table maps every call; the short version:
+
+```csharp
+var builder = ShenoraApplication.CreateBuilder(args);   // the framework is ON — engines, modules, dispatcher
+
+builder.Services.AddShenoraMissions(x => x.GlobalLaneCapacity = 4);  // CONFIGURE, optional
+builder.Services.AddModuleFacade<MyFacade>();                        // the app's own routes
+builder.UseWindows(new WindowsHostOptions { … });                    // the ONE platform call — it INJECTS
+
+var app = builder.Build();
+
+app.UseFiles(new WebViewFileOptions { … });   // the PIPELINE — order matters, like app.UseAuthentication()
+app.UseMediaPlayer();                          // no `services` argument: the app carries the provider
+app.Run();
+```
+
+- [ ] **`CreateBuilder` brings the framework**, the way `WebApplication.CreateBuilder` brings Kestrel — the
+  engines, the kit's IPC modules and the dispatcher. Register by calling the same methods an app would, so
+  the default path and the explicit path stay literally the same code (they already `TryAdd`, so an
+  explicit earlier call still wins).
+- [ ] 🔴 **Fix the `Add*` / `Use*` category error.** `Use*` means MIDDLEWARE in .NET and lives on the built
+  app; this kit put it on the BUILDER for pure service registration (`UseMissions`, `UseFileSystem`,
+  `UseMediaPlayer`). What survives D64 is a configure overload, and it belongs on `Services` as `Add*`.
+- [ ] 🔴 **Move the pipeline surface onto `ShenoraApplication`** — `app.UseFiles()`, `app.UseMediaPlayer()`,
+  `app.MapModule<T>()`. This deletes `interceptor.UseMediaPlayer(services)`, the two-phase call
+  `ADOPTION.md` currently spends a paragraph defending: the constraint is real (the interceptor is created
+  WITH the webview) and is exactly ASP.NET's split, but ASP.NET's second phase is `app.Use*()` where the
+  app holds the provider, not an inner object handed it back.
+  - ⚠ **Decide the semantic deliberately: `app.Use*()` should describe the pipeline for EVERY webview the
+    app hosts**, the way an ASP.NET pipeline serves every request. Better than today — secondary windows
+    and session browsers currently get nothing unless wired again by hand — and a real change in meaning.
+    Keep the per-interceptor call for the case that genuinely wants one pipeline to differ.
+- [ ] **Rewrite `Shenora.Sample.Desktop`'s composition to the new shape, and treat it as the acceptance
+  test.** It currently hand-constructs `MissionScheduler` and `FileUpdateQueue` inside `AddSingleton`
+  lambdas — with a comment claiming the kit *"ships no DI extension for it, and it needs none"*, untrue
+  since `UseMissions` shipped. **A reference app that writes the framework's own composition is the whole
+  finding**; when that block is gone, D64 has landed.
+- [ ] **Every kit module moves onto the reserved `SHENORA.` prefix** (owner's call): `SHENORA.MEDIA`,
+  `SHENORA.FILES`, `SHENORA.OPERATIONS`, `SHENORA.DIALOGS`. **`OPERATIONS` and `FILE_DIALOGS` move too** —
+  no grandfathering, because one rule with two permanent exceptions is a rule nobody applies from memory.
+  The prefix is what frees the app to own `MEDIA`/`FILES` itself, and it is what makes registering the kit's
+  facades by default safe. ⚠ A WIRE break: `@shenora/react` names these strings, so the TS half and the
+  C#⇄TS mirror tripwires move in the SAME commit or the halves disagree silently.
+- [ ] **The kit's IPC modules register by default**, which closes the player hang below. ⚠ Dependency
+  direction decides placement: `Core ← Ipc ← shells`, so a facade cannot live in Core and the SHELL
+  registers it.
+- [ ] 🔴 **Implement the real thing wherever the platform CAN — a refusal is the last resort.** (Owner:
+  *"we should try to implement a default if the platform can support this is to close the web gap"*.) This
+  REPLACES the refusal-stub sweep this task first proposed: a stub that declines on two of three platforms
+  leaves the app on `<video>`, which is the outcome D54 exists to remove. Concretely:
+  - [ ] **`IMediaPlayer` on Windows — Media Foundation.** Absent today.
+  - [ ] **`IMediaPlayer` on Android — ExoPlayer/MediaPlayer.** Absent today.
+  - [ ] **`IMediaCapability` on Windows** already lands this pass (`CodecQuery`).
+  - An explicit refusal stays correct where the platform genuinely cannot. ⚠ The test is *"can this
+    platform do it?"*, never *"have we written it yet?"* — an unwritten implementation is a TASK, and
+    filing it as a refusal freezes a gap into the surface and makes it look decided.
+- [ ] **`UseWinForms()` → `UseWindows()`, `UseMobile()` → `UseAndroid()` / `UseIOS()`.** D37's law never
+  reached the method names. ⚠ It splits the shared mobile API baseline (identical surfaces are what let the
+  Android baseline gate iOS from a Windows host). **Accepted, not worked around** — owner: *"we will also
+  build build toolkit so this will be different anyway"*, so revisit the arrangement WITH that toolkit
+  rather than engineering around today's packaging.
+- [ ] **`### Breaking` entry**, two parts: the module renames above, and the fact that modules the kit
+  registered only on request now appear in the ready handshake — so a page branching on
+  `shell.capabilities` sees more than before.
+
+### 🔴 The media player's loop is NOT CLOSED — the hang D64's default registration removes (2026-08-07)
 
 **The review that `TASKS.md` asked for has run.** The media namespace was read end to end; the code fixes
 and the doc cleanup are committed. What it found that needs a DECISION is this one thing.

@@ -65,18 +65,23 @@ public static class MediaPlayerExtensions
 
         var options = new MediaPlayerOptions();
         configure?.Invoke(options);
-
-        // Defaulted after `configure`, so an explicit value wins — and ONLY when conversion is actually
-        // being configured, because DataArea CREATES the directory and the zero-config case has nothing to
-        // put in it.
-        if (options.AllowedRoots.Count > 0 && string.IsNullOrWhiteSpace(options.CacheRoot))
-        {
-            options.CacheRoot = builder.Paths.DataArea("media");
-        }
+        var paths = builder.Paths;
 
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddSingleton<IMediaPlayer>(services =>
-            new MediaPlayer(services.GetRequiredService<IEventBus>(), services.GetRequiredService<MediaPlayerOptions>()));
+        {
+            // ⚠ Resolved from DI, never the captured instance: `TryAddSingleton` no-ops when the app
+            // registered its own options, and defaulting onto an object nothing reads is a silent no-op.
+            var resolved = services.GetRequiredService<MediaPlayerOptions>();
+            // Defaulted here rather than at `Use…` time so REGISTRATION touches no disk (D64) — the whole
+            // engine can then be on by default. `Paths.DataArea` CREATES the directory it names, and only
+            // an app that actually named `AllowedRoots` has anything to put in it.
+            if (resolved.AllowedRoots.Count > 0 && string.IsNullOrWhiteSpace(resolved.CacheRoot))
+            {
+                resolved.CacheRoot = paths.DataArea("media");
+            }
+            return new MediaPlayer(services.GetRequiredService<IEventBus>(), resolved);
+        });
 
         return builder;
     }
