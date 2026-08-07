@@ -165,11 +165,22 @@ public sealed class MainPage : ContentPage
 			// package — and after the page probes, because two things making sound at once would make
 			// either result unreadable.
 			//
-			// GetService, not GetRequiredService: the player is deliberately ABSENT on Android and Windows,
-			// and the probe reports that as a fact rather than a failure.
+			// 🔴 BY ITS OWN TYPE, not IMediaPlayer (2026-08-08). The shells no longer claim IMediaPlayer —
+			// that resolves to the PAGE-BACKED player everywhere now — and asking for the contract here
+			// would not merely test the wrong object, it would HANG: the page-backed player's OpenAsync
+			// completes on the page's first PLAYER_REPORT, and there is no element behind this probe to
+			// send one. Absent-by-design and quietly-wrong look identical from the outside (D63), so the
+			// probe must name the type it means.
+			//
+			// GetService, not GetRequiredService: the native player is deliberately ABSENT on Android and
+			// Windows-under-MAUI, and the probe reports that as a fact rather than a failure.
 			try
 			{
-				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Modules.Media.IMediaPlayer>(), MauiProgram.Log);
+#if IOS || MACCATALYST
+				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Mobile.MobileMediaPlayer>(), MauiProgram.Log);
+#else
+				await MediaPlayerProbe.RunAsync(null, MauiProgram.Log);
+#endif
 			}
 			catch (Exception ex) { MauiProgram.Log($"PLAYER: probe threw — {ex}"); }
 		});

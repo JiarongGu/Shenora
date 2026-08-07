@@ -100,10 +100,20 @@ Shenora.slnx
 │   │                                                        the interceptor's conversion route becomes
 │   │                                                        this player's OUTPUT PIPE rather than a
 │   │                                                        parallel feature (D58).
-│   │                                                      · MobileMediaPlayer (iOS, AVPlayer) — the native
+│   │                                                      · MobileMediaPlayer (iOS, AVPlayer) — a native
 │   │                                                        one, for the case a page element cannot serve:
 │   │                                                        iOS pauses a <video> when backgrounded.
-│   │                                                    Android and Windows native players are absent
+│   │                                                      · WindowsMediaPlayer (Media Foundation, via
+│   │                                                        Windows.Media.Playback) — the desktop native
+│   │                                                        one: playback that survives the webview, and
+│   │                                                        the platform's codec set rather than the
+│   │                                                        webview's subset.
+│   │                                                    ⚠ The natives are registered BY THEIR OWN TYPE,
+│   │                                                    never as IMediaPlayer — that stays the page-backed
+│   │                                                    MediaPlayer on every shell, so a page's
+│   │                                                    PLAYER_REPORT cannot land on a native player that
+│   │                                                    has no Report to take. Opt in by name.
+│   │                                                    An Android native player is absent
 │   │                                                    rather than stubbed.
 │   │                                                    ⚠ This BOUNDS the four stages above rather than
 │   │                                                    replacing them: they exist for apps serving bytes

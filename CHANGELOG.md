@@ -52,6 +52,26 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- **A shell's NATIVE media player is no longer registered as `IMediaPlayer`** — resolve it by its own type
+  (owner, 2026-08-08: *"opt-in everywhere"*). `UseIOS()` used to bind `MobileMediaPlayer` to the contract,
+  so on that shell `IMediaPlayer` resolved to the native player and the page-backed one was unreachable.
+  - **Why it is a bug and not a preference:** `useMediaPlayer(ref)` sends `PLAYER_REPORT` to the host, and
+    `MediaPlayerModule` short-circuits when the resolved player is not the page-backed `MediaPlayer` — a
+    native player is its own clock and has no `Report` to take. So on iOS the page's element was driving
+    nothing. It did not fail, it went quiet, which is the degradation this kit treats as the worse outcome
+    — and it made `MediaPlayerExtensions`' own documentation ("it binds the PAGE-BACKED `MediaPlayer`,
+    never the native one") false on the one shell that had a native player.
+  - **Migrate:** `services.GetRequiredService<MobileMediaPlayer>()` instead of `IMediaPlayer`. Nothing else
+    changes — it still implements the contract, so every call site is identical.
+  - `IMediaPlayer` now means the page-backed player on **every** shell, which is what D58 says the normal
+    case is.
+
+- **New: `WindowsMediaPlayer`** — the desktop's native player, Media Foundation through
+  `Windows.Media.Playback`. Registered by `UseWindows()` **by its own type**, under the rule above. It is
+  opt-in because the desktop gap is narrower than iOS's: what it adds over a page element is playback that
+  survives the webview and the platform's whole codec set rather than the webview's subset. Like
+  `WindowsPlaybackSession` it needs the versioned TFM and refuses by name on plain `net10.0-windows`.
+
 - **The conversion types were tidied by RESPONSIBILITY, not by taste** (owner: *"tidy update naming and
   responsibility of those conversion classes"*). Two changes, each fixing a type that was doing or claiming
   the wrong thing:

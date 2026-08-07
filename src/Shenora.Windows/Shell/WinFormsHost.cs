@@ -154,6 +154,27 @@ public static class WindowsHostExtensions
             new WindowsMediaCapability(message =>
                 sp.GetService<ILogger<WindowsMediaCapability>>()?.LogDebug("{Message}", message)));
 
+        // The HOST-OWNED PLAYER (D54) — Media Foundation through Windows.Media.Playback.
+        //
+        // 🔴 REGISTERED BY ITS OWN TYPE, NOT AS IMediaPlayer, and that is the whole decision. The default
+        // IMediaPlayer stays the PAGE-BACKED MediaPlayer, because rendering through the page is the normal
+        // case for a hybrid app (D58) and `useMediaPlayer(ref)` in @shenora/react binds to it: a shell that
+        // grabbed IMediaPlayer here would move the audio out of the page's own element, and the page's
+        // PLAYER_REPORT would land on a native player that has no Report to take (MediaPlayerModule
+        // short-circuits, so nothing would fail — it would just quietly stop working).
+        //
+        // So the native player is OPT-IN, resolved by name when an app actually wants what it adds:
+        // playback that survives the webview, and the platform's whole codec set.
+        //
+        //     var player = services.GetRequiredService<WindowsMediaPlayer>();
+        //     using var link = player.ReportTo(services.GetRequiredService<IPlaybackSession>());
+        //
+        // Lazy, like every registration here: constructing one builds an audio graph, and on plain
+        // net10.0-windows it refuses by name — so an app that never asks never pays and never throws.
+        builder.Services.TryAddSingleton(sp =>
+            new WindowsMediaPlayer(message =>
+                sp.GetService<ILogger<WindowsMediaPlayer>>()?.LogDebug("{Message}", message)));
+
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
         // the SAME singleton — so an app's own logic can inject Shenora contracts, compile
         // without a Windows reference, and still get these implementations at runtime.

@@ -112,9 +112,19 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 - [x] ~~`FileDialogFacade`'s default wiring had no test~~ — DONE.
   `UseWindows_registers_the_dialog_ROUTE_so_a_page_can_reach_it` drives a fake `IFileDialogs` end to end
   (registration → mapping → facade → service), sabotage-verified against the shell's registration line.
-- [ ] **Real `IMediaPlayer` on Windows (Media Foundation) and Android (ExoPlayer)** — D64's *"implement
-  it where the platform CAN, refuse only where it cannot"*. Both are absent today, so both platforms
-  silently fall back to `<video>`, which is the outcome D54 exists to remove.
+- [ ] **Real `IMediaPlayer` on Android (ExoPlayer)** — D64's *"implement it where the platform CAN, refuse
+  only where it cannot"*. Android is the last shell with no native player, so it still falls back to
+  `<video>`, which is the outcome D54 exists to remove. Windows landed 2026-08-08 (`WindowsMediaPlayer`,
+  Media Foundation via `Windows.Media.Playback`), proven by `MEDIA PLAYER: PASS` in the desktop sample and
+  sabotage-verified both ways.
+- [ ] ⚠ **The iOS half of the "opt-in everywhere" change is UNVERIFIED — it did not compile here.**
+  `Shenora.Mobile` builds `net10.0-android` on this box; the iOS TFM needs a Mac host, and both edits sit
+  inside `#if IOS || MACCATALYST`: `MobileHostExtensions` registering `MobileMediaPlayer` by its own type
+  instead of as `IMediaPlayer`, and `Sample.Maui/MainPage` resolving it by name. The syntax is trivial and
+  the Android `#else` path compiles clean — but "it should compile" is exactly the claim this repo
+  distrusts. **Build the iOS TFM before the next release**, and re-run the MAUI player probe on a device:
+  it now resolves a different type, so a silent `PLAYER: absent` would be the tell that the registration
+  did not take.
 - [ ] 🔴 **D66 — fold the "operation" into `IpcRequest`. A long-running request is still a request.**
   Read D66 first; it carries the measurement. `OperationRegistry` mints a fresh GUID unrelated to the
   `IpcRequest.Id` that caused it, so one logical thing has TWO identities and correlating them is the

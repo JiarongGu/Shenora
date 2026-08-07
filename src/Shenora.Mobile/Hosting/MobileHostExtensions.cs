@@ -151,7 +151,18 @@ public static class MobileHostExtensions
         //
         // Singleton to match IPlaybackSession, and for the same reason: it is a handle on a process-wide
         // facility, so two of them would fight over the audio session and the Now Playing surface.
-        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaPlayer>(_ => new MobileMediaPlayer());
+        //
+        // 🔴 BY ITS OWN TYPE, NOT AS IMediaPlayer (owner, 2026-08-08) — a BREAKING change from the original
+        // registration, and the rule is now the same on every shell. The default IMediaPlayer is the
+        // PAGE-BACKED MediaPlayer because rendering through the page is the normal case (D58); a shell that
+        // claimed IMediaPlayer moved the audio out of the page's element, and the page's PLAYER_REPORT then
+        // landed on a native player with no Report to take — MediaPlayerModule short-circuits, so
+        // `useMediaPlayer(ref)` did not fail, it quietly stopped working. That is the silent degradation
+        // this kit treats as the worse outcome, and it also made MediaPlayerExtensions' own documentation
+        // false on this shell.
+        //
+        //     var player = services.GetRequiredService<MobileMediaPlayer>();   // opt in by name
+        builder.Services.TryAddSingleton(_ => new MobileMediaPlayer());
 #endif
 
         return builder;

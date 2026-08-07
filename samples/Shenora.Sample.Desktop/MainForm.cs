@@ -425,6 +425,12 @@ public sealed class MainForm : OptimizedForm
         // startup self-check for the same reason: it is only provable against the real OS.
         try { Console.WriteLine(await PlaybackSessionProbe.RunAsync().ConfigureAwait(true)); }
         catch (Exception ex) { Console.WriteLine($"PLAYBACK SESSION: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+
+        // The host-owned player (D54), for the same reason as the line above: Media Foundation is only
+        // provable against the real platform. AFTER the transport probe, because both touch the audio
+        // stack and two of them at once would make either result unreadable.
+        try { Console.WriteLine(await MediaPlayerProbe.RunAsync().ConfigureAwait(true)); }
+        catch (Exception ex) { Console.WriteLine($"MEDIA PLAYER: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private void ReportSplashCaptionButtons()

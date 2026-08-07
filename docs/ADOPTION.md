@@ -1253,10 +1253,20 @@ pipeline.Use((source, codecPrivate) => source.Codec is "ac3" ? MyDecoder.Begin(s
 ⚠ **The kit ships no codec and no engine, ever** (D51) — every byte of decoding is the platform's. Where
 the device cannot decode it either, there is nothing to bridge and the honest answer is a refusal.
 
-> **Need playback while the app is BACKGROUNDED?** A page element cannot do it on iOS — the system pauses
-> a `<video>` the moment the app leaves the foreground. Resolve the shell's native player instead
-> (`MobileMediaPlayer`, iOS only) and give your app `AVAudioSession` + `UIBackgroundModes: [audio]`. Both
-> are `IMediaPlayer`, so only the registration changes.
+> **Need playback the page element cannot give you?** Resolve the shell's NATIVE player instead —
+> `MobileMediaPlayer` on iOS, `WindowsMediaPlayer` on the desktop. On iOS the gap is absolute: the system
+> pauses a `<video>` the moment the app backgrounds, so background audio also needs your app's own
+> `AVAudioSession` + `UIBackgroundModes: [audio]`. On Windows it is narrower — playback that survives the
+> webview, and the platform's whole codec set rather than the webview's subset.
+>
+> ⚠ **Resolve them BY NAME, not as `IMediaPlayer`** — `services.GetRequiredService<WindowsMediaPlayer>()`.
+> `IMediaPlayer` is the page-backed player on every shell, deliberately, because rendering through the
+> page is the normal case. Both types implement the contract, so everything you call is identical:
+>
+> ```csharp
+> var player = services.GetRequiredService<WindowsMediaPlayer>();
+> using var link = player.ReportTo(services.GetRequiredService<IPlaybackSession>());
+> ```
 
 ---
 
