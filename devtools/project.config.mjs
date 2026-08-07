@@ -26,12 +26,9 @@ export default {
   packableProjects: [
     'src/Shenora.Core',
     'src/Shenora.Ipc',
-    // net10.0 and portable, so it packs and gates exactly like Core/Ipc — no platform host needed.
-    // Compression: net10.0, no native engine, packs and gates exactly like Core/Ipc/Media.
-    // The file-operation engine, split out of Core (D48): 1,700 lines an app that never mutates
-    // a file tree should not carry.
-    'src/Shenora.IO',
-    'src/Shenora.IO.Compression',
+    // ⚠ Shenora.IO and Shenora.IO.Compression are NOT here: they folded into Core on 2026-08-07
+    // (D55), the same call as Media. Their namespaces live on inside Core, so nothing here needs a
+    // rename — the packages simply stopped existing.
     // The native launcher's packaging project. Listed here because it IS shipped and the
     // coverage check reads IsPackable as the definition of "shipped" — but it packs DOWNLOADED CI
     // artifacts, not anything built on this machine, so `pack` skips it unless they are staged. See

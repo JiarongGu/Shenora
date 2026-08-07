@@ -98,37 +98,39 @@ keeps the library reusable (adopted from the family's other library, where it's 
   `Shenora.iOS`. The bar for moving a contract to Core is **"app logic must be able to compile off
   Windows"**, NOT "the signature happens to be platform-neutral" — which is exactly why the whole
   window-state stack stays in `Shenora.Windows` (window geometry is a desktop concept).
-- **⚠ A Core CONTRACT must be implementable without an optional package (D48).** This is the corollary
-  that decides the hard cases, and it was learned by getting one wrong: `IFileLockInspector` initially
-  travelled with the file-operation engine into `Shenora.IO`, which would have forced
-  `Shenora.Windows → Shenora.IO` for a single interface. If a shell implements it, the contract lives in
-  Core — full stop. Its sibling `IPathLocker` went the other way for the opposite reason: advisory lock
-  files are portable, so contract and implementation ship together with the engine that uses them.
-- **A package for a SEAM is still rejected (D2). A package for optional WEIGHT is not.** The old
-  wording of this rule said flatly "no new package", which by 2026-08-05 would have condemned three
-  packages that exist. Read it as it was meant: a `*.Abstractions` package for interfaces earns nothing
-  (Core already holds them), but an optional FEATURE package earns its place when **(a)** it is
-  something only SOME apps do and **(b)** it is real shipped weight sitting in a package everything
-  references. `Shenora.IO` + `Shenora.IO.Compression` (D48) pass both;
-  `Io/` was 34% of `Shenora.Core` and a phone app that hosts a page carried a self-updater. These hang
-  OFF Core — they are not layers under it, and no shell reference brings them.
-  🔴 **(a) is the test that decides; (b) alone will mislead you (D53, 2026-08-07).** `Shenora.Media` was
-  its own package on a weight argument and was folded BACK into Core, because weight alone would equally
-  have justified splitting out anything of a similar size. The question that survives is the CONSUMER's:
-  **is this shell work — making the page host, serve and play what it was handed — or is it something only
-  some apps do?** Every app that hosts a page can be handed a file it cannot play, so media is Core; not
-  every app rewrites a directory tree, so `IO` is its own. ⚠ And check whether the *reason* still holds:
-  D40 justified the media package with "a demuxer is real shipped BYTES", and D51 later guaranteed no
-  engine byte would ever ship — the premise died and nobody noticed for two days.
+- **⚠ If a SHELL implements it, the contract lives in Core — full stop.** Learned by getting one wrong:
+  `IFileLockInspector` initially travelled with the file-operation engine out of Core, which would have
+  forced `Shenora.Windows → Shenora.IO` for a single interface. Its sibling `IPathLocker` went the other
+  way for the opposite reason: advisory lock files are portable, so contract and implementation ship
+  together with the engine that uses them. D55 made the packaging half of this moot — everything is in
+  Core now — but the rule still decides which FOLDER a contract belongs in, and it is the same rule.
+- 🔴 **A new NuGet package is the wrong answer. Ship a FOLDER (D55, 2026-08-07).** The framework is one
+  whole: `Shenora.Core` + one shell + `@shenora/react`. There is no "optional features" tier any more —
+  `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` were all folded back into Core, and the
+  namespaces stayed, so it cost adopters a deleted `PackageReference` and no code.
+  **The test is not layering, it is what the package set SAYS the product is.** A nuget.org listing of
+  `Shenora.Media` + `Shenora.IO` + `Shenora.IO.Compression` reads as a shelf of single-domain libraries;
+  this is a hybrid app framework and those are capabilities it carries. Before defending any boundary,
+  ask whether it makes a claim about the product nobody meant.
+  ⚠ **Two ways this rule was got wrong, both worth knowing because the arguments were plausible:**
+  - **Weight is not a reason (D40 → D53).** `Shenora.Media` was split out because "a demuxer is real
+    shipped BYTES", then D51 guaranteed no engine byte would ever ship. The premise died and nobody
+    noticed for two days. Weight alone would equally justify splitting anything of a similar size.
+  - **"Only SOME apps do it" is not a reason either (D48 → D55).** That test survived D53 and still
+    fell: it is a fine *layering* test and it answers a question nobody was asking. Whether the code
+    lives in `Core/Io/` or `Shenora.IO.dll` changes nothing an adopter experiences except how many lines
+    they paste — and on a trimmed build, not even the size.
+  - **Before promising "keep the projects, merge the package", check the dependency DIRECTION.** It was
+    the first plan for D55 and it was impossible: `IO → Core` (every type logs through `AppCallback`),
+    so a Core that packed `Shenora.IO.dll` would have to reference what already references it. The edge
+    decides whether that option exists at all.
 - **One shell package per PLATFORM, named for the platform (2026-08-02).** Not per framework, and not
   per sub-area. Windows merged three packages into one because the seam they preserved protected a
   consumer this kit cannot have; mobile SPLIT into two because Android and iOS ship, build and get
-  consumed separately. The test both times was the same, and it is the same test the feature packages
-  pass: does the boundary correspond to something a CONSUMER experiences? "WinForms without WebView2"
-  did not. "I am building an Android app" does; so does "my app mutates a file tree".
-- **Reserve a family name before you need it; ship the member only when it has contents.**
-  `Shenora.IO.Windows` and `Shenora.IO.Android` are deliberately NOT created — today they would hold one
-  class and zero classes. The naming leaves room, D15 decides the timing.
+  consumed separately. The test both times was the same: does the boundary correspond to something a
+  CONSUMER experiences? "WinForms without WebView2" did not. "I am building an Android app" does — and
+  **that is now the only boundary the package set draws**, since D55 removed the feature tier. A platform
+  is the one thing you genuinely pick.
 - **Options records over magic values.** Every number/color/URL a source app hardcoded (dev port,
   background color, timeouts, batch intervals) becomes a documented option with the family-proven
   default.

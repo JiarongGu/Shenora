@@ -66,31 +66,15 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
               ├──── Shenora.Windows ──────┘             net10.0-windows
               ├──── Shenora.Android                     net10.0-android
               └──── Shenora.iOS                         net10.0-ios
-
-                    Shenora.Core
-                      ↑
-                      └──── Shenora.IO                  net10.0   optional, file-operation engine
-                                  ↑
-                            Shenora.IO.Compression      net10.0   optional, safe archive extraction
 ```
 
 **One shell package per platform.** Reference the one you are building for. Pin exact versions — see
 `docs/RELEASING.md` for the pre-release feed recipe.
 
-**The three optional packages hang OFF `Shenora.Core`, they are not layers under it** (D48) — a shell
-reference does not bring them, and you add one only when you want what it does. `Shenora.IO` is what
-Stage 4's file-landing section below needs.
-
-> ⚠ **Coming from 0.4.0? Three package ids were renamed** (D37). `Shenora.WinForms`,
-> `Shenora.WebView2` and `Shenora.WebView2.Sessions` are now the single `Shenora.Windows`.
-> **Migration is a rename, not a rewrite** — every type keeps its name and every member its
-> signature, verified by diffing the merged API surface against the three old baselines. Replace the
-> package references with one, and the three namespaces with `using Shenora.Windows;`. The old ids
-> stay restorable by exact version, and carry a deprecation notice pointing here.
->
-> The old split existed so a shell with no web frontend could take the WinForms primitives without
-> WebView2. That case does not arise in practice — this kit is React-in-a-webview — so the seam was
-> removed rather than maintained.
+**There are no optional feature packages** (D55). Media, file operations and archive extraction ship
+inside `Shenora.Core` as the namespaces `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` — so a
+shell reference brings all of them and there is nothing extra to add. Stage 4's file-landing section
+below needs no new `PackageReference`.
 
 > ⚠ **Pre-release trap that costs an afternoon.** NuGet's global folder (`~/.nuget/packages`) is
 > keyed on id+**version** and beats every source, so re-consuming the same pre-release version can
@@ -1058,20 +1042,14 @@ What to know before you reach for it:
 
 ## The file-update queue — for when claims are too coarse
 
-This one is **`Shenora.IO`**, an optional package you add (it used to be part of `Shenora.Core`, and
-moved out under D48 because most apps never mutate a file tree). Still no shell/IPC/Windows, and
-**independent of the scheduler** — usable with it, without it, or before you adopt it.
+This is the **`Shenora.IO`** namespace, inside `Shenora.Core` — no extra package to reference. Still no
+shell/IPC/Windows dependency, and **independent of the scheduler**: usable with it, without it, or before
+you adopt it.
 
-```xml
-<PackageReference Include="Shenora.IO" Version="…" />
-```
 ```csharp
 using Shenora.IO;   // FileUpdate*, FileChange, IPathLocker, UpdateManifest, UpdateStage
 ```
 
-Everything from here to the end of this section lives in that package, with three exceptions that stay
-in `Shenora.Core` because other Core code or a shell needs them: `Files`/`FileReplacement`,
-`PathClaims`, and `IFileLockInspector`/`FileLockHolder`.
 
 **The problem it solves.** A path claim excludes two missions for their WHOLE duration. But the
 expensive phase usually does not touch the destination at all — it writes a temp file. Only the final

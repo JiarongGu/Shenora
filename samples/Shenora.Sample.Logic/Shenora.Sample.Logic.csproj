@@ -28,7 +28,6 @@
   <ItemGroup>
     <!-- Deliberately NOT Shenora.Windows or Shenora.Windows. Adding either would defeat the guard. -->
     <ProjectReference Include="..\..\src\Shenora.Core\Shenora.Core.csproj" />
-    <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
     <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
     <!--
       ⚠ The media half arrives through Shenora.Core now — `Shenora.Media` stopped being a package on

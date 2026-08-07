@@ -3,23 +3,28 @@
 Numbered rationale log so a future session doesn't relitigate them. Amend an entry by appending
 a dated note (or a later entry that supersedes it) — never silently rewrite.
 
-> **The package set lives HERE, once** (2026-08-05). Six entries have moved it — D2 drew it, D37
+> **The package set lives HERE, once** (2026-08-05). Seven entries have moved it — D2 drew it, D37
 > reorganised it by platform, D40 added an optional feature package, D48 added a family of them, D50
-> added the native launcher and **D53 folded media back into Core** — and reconstructing it from that
-> chain is how three of them ended up stating a set that no longer existed.
-> **As of 2026-08-07 there are EIGHT packable projects + npm:**
+> added the native launcher, **D53 folded media back into Core** and **D55 folded the IO family in after
+> it** — and reconstructing it from that chain is how three of them ended up stating a set that no longer
+> existed.
+> **As of 2026-08-07 there are SIX packable projects + npm:**
 >
 > | | | |
 > |---|---|---|
 > | **shells** (D37) | `Shenora.Core` · `Shenora.Ipc` · `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform |
-> | **optional features** (D48) | `Shenora.IO` · `Shenora.IO.Compression` | hang OFF Core; no shell reference brings them |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
 > | **npm** | `@shenora/react` | |
 >
-> ⚠ **`Shenora.Media` is no longer a package (D53, 2026-08-07) — but `Shenora.Media` is still a live
-> NAMESPACE, inside `Shenora.Core`.** The id is retired and the namespace is current, which is why the
-> name is deliberately NOT in `devtools/retired-names.txt`: the gate matches names and cannot tell a
-> package id from a namespace, so registering it would fire on every correct sentence in the repo.
+> 🔴 **There is no longer an "optional features" tier at all** (D55, 2026-08-07). The framework is ONE
+> whole: `Shenora.Core` + a shell + `@shenora/react`. A capability that grows big enough to look like a
+> library gets a FOLDER, not a package.
+>
+> ⚠ **`Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` are no longer packages (D53, D55) — but
+> all three are still live NAMESPACES inside `Shenora.Core`.** The ids are retired and the namespaces are
+> current, which is why those names are deliberately NOT in `devtools/retired-names.txt`: the gate matches
+> names and cannot tell a package id from a namespace, so registering them would fire on every correct
+> sentence in the repo.
 >
 > `docs/ARCHITECTURE.md` is the as-built map and `doc-drift` gates it against the csproj files. **When an
 > entry below names a package set, read it as the set AT ITS DATE.**
@@ -1771,3 +1776,34 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       If it can, the kit is competing with the web platform and will lose. If it cannot — and .NET can —
       that is exactly the gap this framework exists to close, and the kit owes a lifecycle contract plus one
       implementation per shell.
+
+- **D55 — the `Shenora.IO` family folds into `Shenora.Core` too. There is no "optional features" tier
+  any more: the framework ships as ONE whole.** (Owner, 2026-08-07, immediately after D53's amendment:
+  *"its the same thing for Compression and IO, we can have different projects for clearer namespacing and
+  easier for testing, but the final framework is a whole, what we should support is bridge the both, react
+  and .net and support for other consumer to implement things in .net to complete their goal."*)
+  - **This is D53's identity argument applied where D53 explicitly declined to apply it.** D53 kept
+    `Shenora.IO` split on the test *"is this shell work, or something only SOME apps do?"* — and that test
+    is a fine LAYERING test but it was answering the wrong question. The question is what the package set
+    tells a stranger the product IS. A nuget.org listing of `Shenora.Media` + `Shenora.IO` +
+    `Shenora.IO.Compression` reads as a collection of single-domain libraries; the product is a hybrid app
+    framework. **D53's closing line — "the next feature is judged on the same question" — is hereby
+    replaced**: it is judged on whether the framework is one whole, and the answer so far is always yes.
+  - **The mechanism was forced, not chosen, and this is the part worth keeping.** "Different projects, one
+    shipped package" was tried first and is structurally impossible here: D48 established (by checking,
+    not assuming) that the edge runs `IO → Core`, because every type in the engine logs through Core's
+    `AppCallback`. For `Shenora.Core.nupkg` to carry `Shenora.IO.dll`, Core's csproj must reference IO,
+    which already references Core — a cycle. ⚠ **A dependency edge decides whether a "keep the projects,
+    merge the package" plan is even available.** Check the direction before promising it.
+  - What the owner asked for survives anyway: `src/Shenora.Core/Io/` and `Io/Compression/` are folders with
+    the namespaces `Shenora.IO` / `Shenora.IO.Compression` unchanged, which is what `Media/` already does.
+    Tests and probes reference `Shenora.Core` and compile untouched.
+  - **A documented BREAK, and the same cheap one as D53 (D47):** an adopter deletes two
+    `PackageReference` lines and changes **no code**.
+  - **Proven a pure move by the same measurement D53 used**, because "nothing changed but the location"
+    deserves checking rather than asserting: `Shenora.Core.txt` went **+243 / −0**, the two deleted
+    baselines were 206 + 37 = 243 lines, and every added line was verified to come from them (`comm -23`
+    against their union was empty). Nothing was invented, renamed or dropped in the move.
+  - ⚠ **The count in this file's header block is the thing that goes stale** — it has now done so twice.
+    `node devtools/dev.mjs doctor` prints the real number; `doc-drift` failed this change until the table
+    matched, which is the only reason it is right.

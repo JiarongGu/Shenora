@@ -34,11 +34,9 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
-| `Shenora.Core` | NuGet | `net10.0` | The application host, the platform-neutral contracts your logic compiles against, and the media translation layer (`Shenora.Media` namespace — probe, plan, serve, remux). |
+| `Shenora.Core` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Media` — probe, plan, serve, remux), file operations (`Shenora.IO` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.IO.Compression`). |
 | `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.IO` | NuGet | `net10.0` | Mutating a file tree without corrupting it: a journalled update queue with rollback, cross-process path locks, and a staged self-updater with per-file verification. |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
-| `Shenora.IO.Compression` | NuGet | `net10.0` | Getting files into and out of an archive SAFELY: extraction that refuses any entry escaping its destination, bounded size and count, and a ZIP-backed update source. No native engine — zip works on the framework alone. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
@@ -66,18 +64,15 @@ Dependencies — the graph is a **diamond, not a chain**:
               ├──── Shenora.Windows ──────┘             net10.0-windows
               ├──── Shenora.Android                     net10.0-android
               └──── Shenora.iOS                         net10.0-ios
-
-        Shenora.Core
-              ↑
-              └──── Shenora.IO                          net10.0    optional, the file-operation engine
-                          ↑
-                    Shenora.IO.Compression              net10.0    optional, safe archive extraction
 ```
 
-**The optional feature packages hang off `Shenora.Core`, they do not sit under it.** Mutating a file tree
-safely is something only *some* apps do — a phone app that hosts a page and plays a file does not, and it
-used to carry the whole update engine anyway because that engine lived in `Shenora.Core`, which every
-package references. Reference the leaf you actually use (D48).
+**There are no optional feature packages — the framework ships as one whole** (D55). `Shenora.Core`
+carries media, file operations and archive extraction as namespaces (`Shenora.Media`, `Shenora.IO`,
+`Shenora.IO.Compression`) rather than as separate NuGet ids. They were separate until 2026-08-07, and the
+reason they stopped is not size: **a package set is a public statement about what a product IS**, and
+`Shenora.Media` + `Shenora.IO` + `Shenora.IO.Compression` on nuget.org read as a shelf of single-domain
+libraries. This is a hybrid app framework; those are capabilities it carries. Reference `Shenora.Core`
+plus your platform's shell and you have all of it.
 
 **The line is what a CONSUMER experiences, not size** (D53): *making the page host, serve and play what it
 was handed* is shell work and lives in `Shenora.Core`; *something only some apps do* earns its own package.

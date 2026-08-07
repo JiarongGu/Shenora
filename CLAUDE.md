@@ -18,9 +18,10 @@ them: what .NET can do and React cannot.** So the question for any feature is no
 *"can React already do this?"* — if it can, the kit is competing with the web platform and loses.
 `.NET does the platform work · React does the interface · the kit owns the seam and the IPC.`
 
-Shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 —
-plus the optional `IO|IO.Compression` hanging off Core, D48; media is IN Core since D53) + npm
-(`@shenora/react`), all versioned in lockstep. Code is **extracted from proven sibling apps**, not
+Shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 — plus
+the native `Launcher`, D50) + npm (`@shenora/react`), all versioned in lockstep. **There is no optional
+feature tier: media, IO and IO.Compression are NAMESPACES inside Core** (D53/D55) — a capability gets a
+folder, never a package. Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
 (postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See

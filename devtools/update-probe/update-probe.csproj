@@ -31,6 +31,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
+    <!-- Shenora.Core, because the file-operation engine folded into it on 2026-08-07 (D55). The
+         namespace this probe drives is still Shenora.IO. -->
+    <ProjectReference Include="..\..\src\Shenora.Core\Shenora.Core.csproj" />
   </ItemGroup>
 </Project>

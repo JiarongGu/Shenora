@@ -37,6 +37,17 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **`Shenora.IO` and `Shenora.IO.Compression` are no longer packages.** Both folded into
+  `Shenora.Core` (D55), following `Shenora.Media` (D53). **Delete the `PackageReference` lines; change no
+  code** — the namespaces are unchanged and now live inside Core. The package set is now five managed
+  packages + the native launcher + npm, and **there is no optional-feature tier at all**: a capability
+  gets a folder, not a package id.
+  - The reason is identity rather than layering: a nuget.org listing of `Shenora.Media` + `Shenora.IO` +
+    `Shenora.IO.Compression` reads as a shelf of single-domain libraries, and the product is a hybrid app
+    framework in which those are capabilities it carries.
+  - Proven a pure move the same way D53 was: `Shenora.Core`'s API baseline went **+243 / −0**, the two
+    deleted baselines were 206 + 37 = 243 lines, and every added line was traced back to them.
+
 - **The media seams were reshaped before any of them shipped: names made SPECIFIC, shapes made GENERIC.**
   (Owner, 2026-08-07.) Everything here is new in this same unreleased version, so nothing published moves.
   - **`IMediaStreamConversion` → `IMediaAudioConversion`** (and its `…Run`). The old name OVER-CLAIMED: the

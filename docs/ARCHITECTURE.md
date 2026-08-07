@@ -100,26 +100,32 @@ Shenora.slnx
 │   │                                          BYTES. No engine byte ever ships, so what remained was
 │   │                                          98 KB of the kit's own managed IL. Ships no codec LIST:
 │   │                                          the mechanism is the kit's, the policy the app's (D42).
-│   ├── Shenora.IO          net10.0          — deps: Shenora.Core
-│   │                                          The file-operation ENGINE: the journalled update queue,
-│   │                                          cross-process path leases, the manifest/diff pair and the
-│   │                                          staged updater. Left Core on 2026-08-05 (D48) — 1,700
-│   │                                          lines of machinery that only an app which MUTATES a file
-│   │                                          tree needs, sitting in the one package everything
-│   │                                          references. The edge points at Core (not the reverse)
-│   │                                          because every type here logs through Core's AppCallback;
-│   │                                          that is also what decided the leftovers — Files/
-│   │                                          FileReplacement stayed because Core's own
-│   │                                          IFileDialogs.SaveAsync default calls Files.BeginReplace,
-│   │                                          PathClaims because it is scheduling vocabulary, and
-│   │                                          IFileLockInspector because it is a portable CONTRACT with
-│   │                                          a per-platform implementation, like IFileDialogs (D19/D20).
-│   ├── Shenora.IO.Compression net10.0       — deps: Shenora.IO
-│   │                                          Archives, safely: containment-checked extraction with
-│   │                                          size/count limits, and ZipUpdateSource — the IUpdateSource
-│   │                                          over one or more ZIPs. Its own package because zip is ONE
-│   │                                          format and the next (7-Zip, rar) needs a native engine
-│   │                                          that must not reach an app using neither.
+│   │                                    Io/   namespace Shenora.IO — file operations, whole:
+│   │                                            Files/FileReplacement (atomic replace, the default
+│   │                                                    behind IFileDialogs.SaveAsync)
+│   │                                            PathClaims — a claim SCOPE over the mission types;
+│   │                                                    scheduling vocabulary that is about paths
+│   │                                            FileUpdateJournal/Queue — the journal is written BEFORE
+│   │                                                    the mutation, so undo is DATA and recovery can
+│   │                                                    roll back Applying and FINISH Committing
+│   │                                            PathLocks — cross-process advisory leases, taken after
+│   │                                                    the in-process gate, in sorted path order
+│   │                                            UpdateManifest/UpdateStage — the staged self-updater
+│   │                                                    with per-file verification
+│   │                                            Compression/  namespace Shenora.IO.Compression —
+│   │                                                    containment-checked ZIP extraction (any entry
+│   │                                                    escaping its destination is refused) with
+│   │                                                    size/count limits, plus ZipUpdateSource.
+│   │                                                    No native engine: zip works on the framework
+│   │                                                    alone, and any other format is a SEAM (D42).
+│   │                                          ⚠ These were two packages (D48) until 2026-08-07 (D55).
+│   │                                          The layering D48 established is INTACT and still visible
+│   │                                          here — the edge runs Io/ → Core because every type logs
+│   │                                          through AppCallback, which is also why merging them INTO
+│   │                                          Core was the only mechanism available: a Core that packed
+│   │                                          Shenora.IO.dll would have to reference it, and it already
+│   │                                          references Core. What changed is the package COUNT, not
+│   │                                          the structure.
 │   ├── Shenora.Launcher/   (C++17, CMake — NOT a NuGet package yet)
 │   │                                          The native APPLY step, which is the one part of staged
 │   │                                          updates that cannot be done in .NET: it runs when the
