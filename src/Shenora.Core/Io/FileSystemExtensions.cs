@@ -63,7 +63,20 @@ public static class FileSystemExtensions
 
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddSingleton<IFileUpdateQueue>(services =>
-            new FileUpdateQueue(services.GetRequiredService<FileUpdateQueueOptions>()));
+        {
+            // 🔴 PULL THE PER-PLATFORM PIECE OUT OF DI, at build time rather than at Use time — the shell's
+            // `UseWinForms`/`UseMobile` may run after this. This is the file system's version of what
+            // `IMediaCapability` and `IMediaAudioConversion` are for media: the ENGINE is portable, the
+            // answers are not. "Who holds this file open?" is Restart Manager on Windows and something else
+            // everywhere else.
+            //
+            // ⚠ Registering a capability is not the same as CONSULTING it, and this repo has now paid for
+            // that twice (D59, and RestartManagerLockInspector going unregistered entirely). Whenever the
+            // kit says "supply an implementation and we will use it", something must actually ask.
+            var resolved = services.GetRequiredService<FileUpdateQueueOptions>();
+            resolved.LockInspector ??= services.GetService<IFileLockInspector>();
+            return new FileUpdateQueue(resolved);
+        });
 
         return builder;
     }

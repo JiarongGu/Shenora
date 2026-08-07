@@ -123,6 +123,17 @@ public static class WinFormsHostExtensions
             new WindowsPlaybackSession(message =>
                 sp.GetService<ILogger<WindowsPlaybackSession>>()?.LogDebug("{Message}", message)));
 
+        // "Who is holding this file open?" — Windows answers with the Restart Manager, which is why the
+        // CONTRACT is portable and this implementation is not (D19/D20, and D31's two-mechanisms split).
+        //
+        // ⚠ IT WAS NEVER REGISTERED until 2026-08-07. RestartManagerLockInspector shipped, was documented,
+        // was tested — and no container ever built one, so FileUpdateQueueOptions.LockInspector was always
+        // null and a locked file reported "cannot tell" instead of naming the process. Nothing failed:
+        // `WhoHolds` empty legitimately MEANS "cannot tell", so the degraded answer was indistinguishable
+        // from the honest one. Same failure mode as D59 — a capability that is ABSENT rather than broken
+        // produces no error, no log line and no failing test.
+        builder.Services.TryAddSingleton<IFileLockInspector, RestartManagerLockInspector>();
+
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
         // the SAME singleton — so an app's own logic can inject Shenora.Core contracts, compile
         // without a Windows reference, and still get these implementations at runtime.

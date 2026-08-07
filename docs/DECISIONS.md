@@ -2016,3 +2016,29 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     the app's own storage, so `UseFileSystem()` defaults them; `MediaPlayerOptions.AllowedRoots` is a
     containment boundary, so `UseMediaPlayer()` refuses to (D58). The security line and the ergonomic line
     are the same line, and that is now true twice.
+
+- **D62 — the IPC pipe carries INTENT; BYTES go through the resource interceptor. So a binary IPC pipeline
+  would not speed up media, and the two questions it was raised for have different answers.** (Owner,
+  2026-08-07: *"to improve the performance of the platform, we might also need to introduce binary pipeline
+  for ipc"*, and *"why there is a bus send so we cannot really wire into the native web player?"*)
+  - **What the bus actually costs in the player, measured by counting rather than guessing:** SIX messages
+    for an entire playback session — load, play, pause, seek, rate, unload — plus one report per element
+    TRANSITION. Not per frame, not per second: `timeupdate` is deliberately never forwarded (it fires
+    ~4×/second and the host can extrapolate). A JSON hop for six control messages is not a performance
+    problem, and making it binary would not move a measurable number.
+  - 🔴 **The page's `<video>` IS the platform's native player.** WKWebView decodes through AVFoundation and
+    Android's WebView through the platform's own stack — so driving the element through this hook *is*
+    wiring into the native player, via the DOM rather than around it. What the kit adds is the part the
+    element cannot do for itself: probing, planning against a device capability query, and pointing at a
+    conversion (D58/D59).
+  - **And the bytes were never on the IPC pipe.** `UseFiles`/`UseMediaConversion`/`UseSegmentStream` answer
+    through the resource interceptor — the platform's own binary, range-capable path — which is exactly why
+    D45 put serving there. **A media file has never been base64'd through a JSON envelope**, and that is
+    the design decision that makes binary IPC unnecessary for this workload.
+  - ⚠ **Where binary IPC WOULD earn its place, stated so the idea is not lost:** a payload that is genuinely
+    data rather than intent and has no URL to be fetched from — a large structured result, a screenshot
+    handed back from the page, telemetry batches. Today those are JSON strings over
+    `PostWebMessageAsString` (Windows) and the HybridWebView equivalent, so they pay base64 + parse on both
+    sides. **The bar is a MEASUREMENT**, not a plausible story: no adopter has yet reported an IPC payload
+    that hurts, and the kit has an interceptor for anything big enough to matter — which is the first thing
+    to reach for before widening the envelope.

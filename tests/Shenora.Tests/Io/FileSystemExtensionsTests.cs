@@ -67,6 +67,42 @@ public class FileSystemExtensionsTests
         Assert.Equal(TimeSpan.FromMinutes(7), app.Services.GetRequiredService<FileUpdateQueueOptions>().LeaseTimeout);
     }
 
+    /// <summary>
+    /// 🔴 A shell-registered per-platform piece must actually be CONSULTED. <c>IFileLockInspector</c> is
+    /// the file system's equivalent of media's <c>IMediaCapability</c>: the engine is portable, the answer
+    /// is not — "who holds this file open?" is Restart Manager on Windows and something else elsewhere.
+    /// <para>
+    /// ⚠ This repo has paid twice for registering something nothing asks for — D59's audio conversion, and
+    /// <c>RestartManagerLockInspector</c>, which shipped, was documented and was tested, yet no container
+    /// ever built one. Both were INVISIBLE: an empty <c>WhoHolds</c> legitimately means "cannot tell", so
+    /// the degraded answer was indistinguishable from the honest one.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_registered_lock_inspector_reaches_the_queue()
+    {
+        using var root = new TempRoot();
+        var builder = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
+        {
+            ApplicationName = "probe",
+            Paths = new ShenoraPathsOptions { ExplicitRoot = root.Path },
+        });
+
+        var inspector = new StubInspector();
+        builder.Services.AddSingleton<IFileLockInspector>(inspector);
+        builder.UseFileSystem();
+        using var app = builder.Build();
+
+        _ = app.Services.GetRequiredService<IFileUpdateQueue>();   // building the queue is what wires it
+
+        Assert.Same(inspector, app.Services.GetRequiredService<FileUpdateQueueOptions>().LockInspector);
+    }
+
+    private sealed class StubInspector : IFileLockInspector
+    {
+        public IReadOnlyList<FileLockHolder> WhoHolds(string path) => [];
+    }
+
     private sealed class TempRoot : IDisposable
     {
         public string Path { get; } =
