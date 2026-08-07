@@ -2323,3 +2323,37 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     module and registers it; `AddMessageDispatcher` knows the name of none of them. D64 shipped the
     opposite as an interim (the dispatcher hardcoding `MediaPlayerModule`, shells calling
     `AddShenoraFileDialogs`) and this entry is what deletes it.
+
+- **D66 — a long-running request IS A REQUEST. The "operation" is a second identity for one thing and
+  should collapse into the IPC contract.** (Owner, 2026-08-08, after settling that operations is *"an
+  XHR-like state machine"* and then rejecting every replacement NAME: *"maybe just IpcRequest? so we
+  sharp the original request properly to have this logic into it"* · *"because the long run request still
+  a request?"*.)
+  - 🔴 **The defect the naming argument uncovered, measured rather than argued.** `OperationRegistry`
+    mints `Id = Guid.NewGuid()` — an id with NO relationship to the `IpcRequest.Id` that caused it — and
+    `IModuleContext.Start` never receives the request at all. So a page sends request `r1`, the facade
+    starts operation `guid-xyz`, and **the page has to correlate the two itself**. One logical thing,
+    two identities, and the correlation is the adopter's problem.
+  - **XHR is the comparison that makes it obvious.** `XMLHttpRequest` does not hand you a separate
+    "operation" object: one request carries `readyState`, `progress` events and `abort()`. The kit
+    already has the request; what it lacks is the admission that a request may outlive its response.
+  - **What folding it in means, concretely:** the response may say *accepted, still running*; progress
+    and status events are keyed by the REQUEST id; cancel targets the request id (the dispatcher already
+    threads a `CancellationToken`); `IModuleContext.Run` declares *this request is long-running* rather
+    than minting a parallel entity. The `SHENORA.OPERATIONS` module's `LIST` becomes "requests still in
+    flight" — a view over the wire, not a separate registry with its own vocabulary.
+  - ⚠ **The minority case that does NOT fold, and it is the interesting one: work nobody asked for.**
+    A scheduled or crash-recovered mission reports progress with no request behind it. Inside the kit
+    every operation comes from a request — the ONLY counter-example is app code, the sample's
+    `MissionOperationObserver`. So host-initiated work is genuinely a different thing and should be
+    modelled as what it is (an event stream, which `IEventBus` already provides), not squeezed into a
+    request-shaped hole. **The current design's real fault is that it made these two cases share one
+    bucket, which is why neither had a good name.**
+  - ⚠ **`waiting`/`resume` needs deciding before this is built.** An operation can park awaiting a
+    decision and resume later, which XHR has no analogue for. Either a request id survives that (and
+    "request" stretches further than the word implies), or parked work is the host-initiated case above
+    wearing a different hat.
+  - **Why this is recorded rather than named:** three replacement names were rejected for being words
+    every library owns (`Exchange`, `Progress`, and `Operation` itself), and the reason none fitted is
+    that the concept should not exist. ⚠ A naming problem that resists every candidate is worth reading
+    as a design smell, not as a vocabulary shortage.

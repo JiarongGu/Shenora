@@ -115,6 +115,19 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 - [ ] **Real `IMediaPlayer` on Windows (Media Foundation) and Android (ExoPlayer)** — D64's *"implement
   it where the platform CAN, refuse only where it cannot"*. Both are absent today, so both platforms
   silently fall back to `<video>`, which is the outcome D54 exists to remove.
+- [ ] 🔴 **D66 — fold the "operation" into `IpcRequest`. A long-running request is still a request.**
+  Read D66 first; it carries the measurement. `OperationRegistry` mints a fresh GUID unrelated to the
+  `IpcRequest.Id` that caused it, so one logical thing has TWO identities and correlating them is the
+  adopter's problem. The fix is not a rename — three candidates were rejected for being words every
+  library owns, and the reason none fitted is that the concept should not exist separately.
+  - **Decide `waiting`/`resume` FIRST.** A parked, resumable request is the part XHR has no analogue
+    for, and it decides whether "request" stretches far enough or whether parked work belongs with the
+    host-initiated case below.
+  - **Host-initiated work does NOT fold** — a scheduled or recovered mission has no request behind it.
+    Inside the kit every operation comes from a request; the only counter-example is app code (the
+    sample's `MissionOperationObserver`). Model it as the event stream it already is.
+  - ⚠ Wide wire break when it lands: `SHENORA.OPERATIONS`, `OPERATION_UPDATED`/`_REMOVED`, the
+    `OperationStatus` values, `IModuleContext.Run`, and `createOperationsStore` in `@shenora/react`.
 - [ ] 🔎 **"No such MODULE" and "no such ROUTE in a module" are indistinguishable on the wire.**
   `BaseFacade.UnknownType` and the dispatcher's terminal both answer `NO_HANDLER` with the same
   `module`/`type` parameters — so an adopter debugging a page cannot tell "I never registered that
