@@ -25,6 +25,16 @@
   the incremental build silently keeps running it (dangerous direction: a stale PASS); and
   `git checkout -- <path>` reverts to HEAD, discarding uncommitted edits the file already carried.
   A sabotage is only verified once both directions are — `dotnet build -t:Rebuild` if unsure.
+- 🔴 **NEVER launch a WebView2 app under `timeout` — it manufactures a renderer CRASH.** GNU `timeout`
+  puts the child in its OWN process group, and Chromium's renderer sandbox breaks inside one: the
+  renderer dies with `0xC0000005` about 8 s in — **before any kill** — then the Storage Service, Network
+  Service and GPU process follow, and the host's auto-reload makes the probes run twice. Measured
+  2026-08-08: **0/9 crashes launching directly, 0/3 with `timeout --foreground`, 6/12 with plain
+  `timeout`.** It is ~50 % per run, which is what made it survive ~12 single-run A/B eliminations
+  (`phase-workflow.md` has the method lesson). It is also the likeliest source of the reported
+  `0x800700AA` ("the requested resource is in use"). **To bound a sample run, spawn it from a
+  `devtools/_*.mjs` script and `p.kill()` on a timer** — or pass `--foreground` if `timeout` is
+  unavoidable. The redirect is innocent: `> file` alone never crashed it.
 - **NEVER kill a SHARED runtime by name** — `Stop-Process -Name msedgewebview2` also kills Teams',
   Outlook's and Widgets'. Killed 38 live 2026-08-02 to clear one sample. Kill the app by its own name
   and let it take its children.

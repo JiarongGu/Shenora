@@ -167,83 +167,17 @@ runs the new assemblies against old sources and proves nothing):
     empty message, since WinRT COMExceptions routinely carry none. Adding the HRESULT and the failing
     STEP named the cause on the first run. A diagnostic that names an exception and nothing about it is
     worse than none: it reads as evidence.
-- [ ] **`RenderProcessExited` on the desktop sample — INVESTIGATED 2026-08-08, four causes eliminated,
-  still unexplained.** Not blocking: the host's auto-reload recovers it and every probe passes on the
-  second cycle, which is the recovery path earning its keep rather than a workaround.
-  - **What is now known**, thanks to the richer diagnostic added in the same pass:
-    `exitCode 0xC0000005` (STATUS_ACCESS_VIOLATION) on the renderer and later on the Storage Service,
-    Network Service and GPU process — **the same code for all four**. `FailureSourceModulePath` is
-    EMPTY and **Windows Error Reporting logs no Application Error at all**, which a genuine
-    access-violation fault normally would. WebView2 Runtime 151.0.4129.72.
-  - **Ruled out by A/B, each rebuilt and re-run:** the playback probe · both seam probes ·
-    GPU acceleration (`--disable-gpu --disable-gpu-compositing`) · a stale or corrupt user-data profile
-    (deleted; a fresh one crashes identically).
-  - ⚠ **A transient red herring worth not re-chasing:** deleting the profile right after a run fails
-    with "Device or resource busy" on every file, which looks like leaked WebView2 processes holding
-    it. It is not — they are still shutting down, and a check moments later finds zero orphans.
-  - 🔴 **IT IS NOT ENVIRONMENTAL — measured, and it reverses the leading hypothesis.** A minimal
-    WebView2 host with NO Shenora in it runs 30 s, navigates, closes cleanly and reports zero process
-    failures. Adding full resource interception over `https://` — the kit's most distinctive feature —
-    still does not crash it. So the cause is in the HOST or the SAMPLE, not the machine.
-
-    | probe | result |
-    |---|---|
-    | plain WebView2 host | no crash |
-    | + `AddWebResourceRequestedFilter` + `WebResourceRequested` over `https://` | no crash |
-    | the Shenora sample | **crashes** |
-
-  - **Eliminated by A/B on the SAMPLE, each rebuilt and re-run:** the React bundle (a trivial inline
-    document still crashes — so it is not the page, and not the page-side IPC client, which never even
-    handshakes) · the custom scheme (`DeferredSchemes = []`) · `_bridge.Attach()` (the host-side IPC
-    bridge). Combined with the probe results above, the cause is in the HOST and independent of page
-    content, scheme registration and IPC.
-  - 🔴 **THE LEAD, and it came from the OWNER seeing what the logs did not show: `0x800700AA`
-    (`ERROR_BUSY`, "the requested resource is in use").** WebView2 raises that when a second
-    environment is created against a user-data folder that already has one **with different options** —
-    which also explains the "Device or resource busy" seen on every profile file, and why redirected
-    runs stalled with no output (a MODAL error dialog was up, which is also why `CloseMainWindow()`
-    could not close the app).
-    - ⚠ **The render pool is NOT it, ruled out by READING rather than a run** (cheaper and more
-      certain): `Capacity` only sizes a semaphore, sessions are created on `LeaseAsync`, and the
-      sample leases only inside its `RENDER`/`PROBE` route — on demand, never at startup. It also uses
-      a different profile from the main host.
-    - ⚠ **And there is no second environment at startup at all**, which the LOGS settle: exactly one
-      `[WebView2] Creating environment` line every run. `GetSharedAsync` caches, so prewarm and the
-      host share one; `CreateForCurrentThreadAsync` is for secondary windows and nothing calls it at
-      startup. So the double-environment reading of `ERROR_BUSY` does not hold — ⚠ and the number
-      itself was never observed in these logs, only reported, so do not over-fit to it.
-  - ⚠ **Accumulated .NET hosts are NOT it either** — a plausible reading of Task Manager, tested
-    rather than argued: `dotnet build-server shutdown` took 10 hosts down to 2 (both unrelated,
-    days-old `dotnet run` of other projects) and the sample crashed identically. MSBuild node reuse
-    accumulates workers by design; they hold no WebView2 profile and touch nothing the renderer uses.
-  - **Where the crash actually sits, after ~12 experiments:** between `Host initialized` and the first
-    page render, with ONE environment, no page, no scheme, no IPC bridge, no probes, no pool. Also not
-    document-created script injection — the shell calls `AddScriptToExecuteDocumentCreatedAsync`
-    nowhere. **What is left is inside `InitializeAsync`'s WebView2 control setup, or the frameless
-    `OptimizedForm` window setup it happens under** (custom regions, DWM, caption buttons) — which is
-    the one area a plain `Form`-based probe never exercised.
-  - **DESIGN POINT raised (owner, 2026-08-08): "the webview2 bundle should be at the application
-    location so it should never be shared".** ⚠ **Checked against both desktop siblings before acting,
-    and the check SPLITS the question in two:**
-    - **The USER-DATA folder is already app-local everywhere** — the kit uses
-      `paths.DataArea("webview2")`, and both siblings do the same (one under a `system/webview2` data
-      dir, the other a computed path). Nothing is shared today and nothing needs changing.
-    - **The BROWSER BINARIES are Evergreen everywhere, including both siblings**, which pass
-      `browserExecutableFolder: null` explicitly. So a fixed-version bundle would be a NEW position,
-      not a harvest (D15's bar), and it costs ~150 MB per app plus ownership of the security updates
-      the Evergreen runtime otherwise handles.
-    - [ ] **Decide it on its merits, not as a crash fix.** The argument FOR is determinism — a framework
-      whose pitch is "the shell" arguably should ship the browser it was tested against, and it removes a
-      shared, self-updating dependency from exactly this kind of investigation. The kit already supports
-      it (`WebViewEnvironmentOptions.BrowserExecutableFolder`), so this is a default and a doc, not a
-      feature. ⚠ It is NOT established that Evergreen is causing the crash — the minimal probe used the
-      same runtime and did not crash.
-  - ⚠ **Recreate the probe rather than looking for it** — it lived in `devtools/_wv2probe` and is
-    gitignored. Two of its five runs tested NOTHING and the reasons are worth not repeating: an
-    `async void` init handler swallowed its exception until a try/catch printed one, and
-    `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` is NULL in this SDK, so `.Add` threw a
-    bare NullReferenceException. ⚠ The kit registers no custom scheme at all, so that arm was never
-    the right comparison anyway — the sample serves `https://sample.local` through interception.
+- [ ] **Ship a fixed-version WebView2 bundle, or stay Evergreen — decide it on its merits.**
+  Raised by the owner 2026-08-08 as "the webview2 bundle should be at the application location so it
+  should never be shared". Checked against both desktop siblings, and the check SPLITS the question:
+  - **The USER-DATA folder is already app-local everywhere** — the kit uses `paths.DataArea("webview2")`
+    and both siblings do the same. Nothing is shared today; nothing needs changing.
+  - **The BROWSER BINARIES are Evergreen everywhere, including both siblings**, which pass
+    `browserExecutableFolder: null` explicitly. A fixed-version bundle is therefore a NEW position, not
+    a harvest (D15's bar): ~150 MB per app, plus ownership of the security updates Evergreen handles.
+  - The argument FOR is determinism — a framework whose pitch is "the shell" arguably should ship the
+    browser it was tested against. The kit already supports it
+    (`WebViewEnvironmentOptions.BrowserExecutableFolder`), so this is a DEFAULT and a DOC, not a feature.
 
 ⚠ **After ANY rename sweep in this work: READ THE DIFF.** Three instances of "a thing is not itself" from
 D37's 2026-08-02 merge survived every review until the D65 sweep surfaced them, because `doc-drift` is

@@ -14,6 +14,27 @@ repo: it readies the LIBRARY and writes `docs/ADOPTION.md`; the adopting app's o
    asserted; performance claims need numbers. **When a claim is not covered by the gate, say so** —
    a green gate that wasn't looking at the samples is how the P0–P5 latent defects passed five
    reviews.
+
+   🔴 **A/B THE HARNESS ITSELF — and count TRIALS, because an intermittent failure makes every
+   single-run elimination a coin flip.** A renderer crash was chased through ~12 single-run A/B
+   eliminations over two sessions (GPU, profile, page, scheme, IPC bridge, pool, .NET hosts). Every one
+   "succeeded" and every one was meaningless: the crash fires ~50 % of the time, so half of those
+   verdicts were noise, and the search kept moving because each answer looked clean. Treating the
+   LAUNCHER as the variable and running 5 alternated trials per arm settled it in minutes —
+   **0/12 without a new process group, 6/12 with one** (`dev.mjs sample` under `timeout`; see
+   `windows-dev-gotchas.md`). The kit was never at fault.
+   - **Measure WHEN before eliminating WHAT.** Timestamping was the cheapest experiment available and
+     was run LAST, after everything it would have redirected. Two earlier attempts produced no output
+     (shell pipe buffering) and were abandoned — **abandoning a broken instrument IS the error**,
+     because every experiment after it answers a question nobody asked.
+   - **The tells that the harness, not the code, is the author:** the failure appears only under
+     instrumentation; it never reproduces when a human runs the app; no single cause survives
+     elimination; and the diagnostics contradict each other (here: no Windows Error Reporting event
+     despite an access violation, and an empty `FailureSourceModulePath` — no faulting module).
+   - ⚠ **Do not stop at the first coherent story either.** "The `timeout` KILL orphans the app and its
+     teardown writes the crash" fitted the evidence, was written into this rule, and was WRONG — the
+     crash lands ~8 s in, long before any kill, and an immediate check found zero orphans. Reading the
+     log IN ORDER killed it. A story that explains the facts is a hypothesis, not a finding.
 3. **Review** with `/phase-review` — an adversarial pass over the whole diff → fix the real findings
    → sync docs (`ARCHITECTURE`/`TASKS`/`CHANGELOG`) and rules → then commit.
 4. **Commit only on explicit user approval.** One commit per logical change; never fold a security
