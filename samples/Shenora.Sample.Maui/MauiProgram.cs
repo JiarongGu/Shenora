@@ -76,7 +76,14 @@ public static class MauiProgram
 		// which IS the UI thread, so asking the thread directly is both correct and earlier-safe.
 		var dispatcher = Dispatcher.GetForCurrentThread()
 			?? throw new InvalidOperationException("CreateMauiApp is not running on a dispatcher thread.");
-		shenora.UseMobile(dispatcher, ex => Log($"UI work failed: {ex}"));
+		// Named for the PLATFORM (D65) — the shell call is the one thing an adopter genuinely picks, so
+		// it says which platform it is picking. A multi-targeted app writes the `#if`; a single-platform
+		// one writes one line and never sees this.
+#if ANDROID
+		shenora.UseAndroid(dispatcher, ex => Log($"UI work failed: {ex}"));
+#elif IOS || MACCATALYST
+		shenora.UseIOS(dispatcher, ex => Log($"UI work failed: {ex}"));
+#endif
 
 		// Opt-in, exactly as the desktop sample does.
 		shenora.Services.AddShenoraOperations();

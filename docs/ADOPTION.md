@@ -427,7 +427,7 @@ adapter, which needed no Windows reference either):
    secondary windows on their own STA threads, tray behaviour, window geometry — these are desktop
    concepts and forcing them through a portable contract only produces a contract nobody else can
    implement. `Shenora.Sample.Logic` and the desktop sample's own facade split exactly along that line.
-5. **Register nothing extra.** `UseWinForms` registers both faces of each contract — the Windows one
+5. **Register nothing extra.** `UseWindows` registers both faces of each contract — the Windows one
    (`IShellLauncher`, `IFormInteraction`) and the portable one (`IUrlLauncher`, `IUiInteraction`) —
    against one implementation, so injecting the portable face just works.
 
@@ -464,7 +464,7 @@ var shenora = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
     // Android's private data directory IS the app root; --app-root is desktop packaging vocabulary.
     Paths = new ShenoraPathsOptions { ExplicitRoot = FileSystem.AppDataDirectory },
 });
-shenora.UseMobile(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
+shenora.UseAndroid`/`UseIOS(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
 shenora.Services.AddModuleFacade<YourPortableFacade>();
 shenora.Services.AddMessageDispatcher();
 var app = shenora.Build();
@@ -481,7 +481,7 @@ var bridge = new MobileIpcBridge(webView, new MobileIpcBridgeOptions
 bridge.Attach();          // construct early (buffering starts), attach before the page loads
 ```
 
-**`UseMobile` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
+**`UseAndroid`/`UseIOS` registers no `IShenoraRunner`, deliberately.** MAUI owns the loop, so
 `ShenoraApplication.Run` — contractually "blocks until shutdown" — has no honest implementation.
 Drive the pair from the platform instead: `Start()` from `Window.Created`, `Stop()` from
 `Window.Destroying`. Both are idempotent, so wiring them somewhere that fires more than once

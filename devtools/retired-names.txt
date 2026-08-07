@@ -106,6 +106,16 @@ MediaRangeServer         # -> Core.WebViewFiles.Serve + interceptor.UseFiles(…
 MediaBodyMode            # -> Core.WebViewRangeDelivery, read off the interceptor
 MediaAccess              # -> Core.WebViewFiles.ResolveContained; the IsRemoteAllowed half was dropped
 MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived artefact, not a media one
+# --- 2026-08-07, D65: the shell entry points are named for the PLATFORM ---------------------------
+# D37 made the package set one-per-platform in 0.5.0 and the ENTRY POINTS never followed: the calls
+# were still named for a UI framework and for a category. A platform is the one thing an adopter
+# genuinely picks, so it is the one call that earns a name.
+UseWinForms              # -> UseWindows (named for a UI framework, not a platform)
+WinFormsHostExtensions   # -> WindowsHostExtensions
+WinFormsHostOptions      # -> WindowsHostOptions
+UseMobile                # -> UseAndroid / UseIOS — a category name serving two packages that ship,
+                         #    build and are consumed separately
+
 # --- 2026-08-07, D65: the main package is `Shenora`, and IPC folded into it ------------------------
 # ⚠ UNLIKE Shenora.Media / Shenora.IO / Shenora.Ipc, this one IS listed — because it is retired in BOTH
 # senses at once. Those three kept live NAMESPACES after their package ids went, so watching them would

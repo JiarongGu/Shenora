@@ -2125,12 +2125,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       yet?"** — an unwritten implementation is a TASK, and recording it as a refusal freezes a gap into the
       surface and makes it look decided.
   - **`UseWindows()` / `UseAndroid()` / `UseIOS()` are the one call that remains, and they INJECT.**
-    Today they are `UseWinForms()` and `UseMobile()` — a UI-FRAMEWORK name and a CATEGORY name, while the
+    They were `UseWinForms()` and `UseMobile()` until 2026-08-07 — a UI-FRAMEWORK name and a CATEGORY name, while the
     packages they ship from are `Shenora.Windows`, `Shenora.Android` and `Shenora.iOS`. **D37's law never
     reached the method names**: one shell per PLATFORM, named for the platform. A platform is the one thing
     an adopter genuinely picks, so it is the one call that genuinely earns its place.
     - ⚠ **It costs the shared-baseline trick, and that is ACCEPTED rather than worked around.** `UseMobile`
-      lives in the SHARED source (`src/Shenora.Mobile/`) compiled into both mobile packages, and the two
+      lived in the SHARED source (`src/Shenora.Mobile/`) compiled into both mobile packages, and the two
       surfaces are deliberately IDENTICAL — which is what lets the Android API baseline gate iOS from a
       Windows host (`Shenora.Android.csproj` records the trick and why `AndroidGenerateResourceDesigner` is
       off for it). Two platform-named methods make them differ by exactly that method. **Do not contort the

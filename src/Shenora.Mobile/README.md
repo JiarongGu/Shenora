@@ -10,7 +10,7 @@ Shenora.Mobile/          ← you are here. Source only.
   Ipc/                   MobileIpcBridge — the HybridWebView transport
   Threading/             MobileUiDispatcher — the ONE UI-marshalling owner on this shell
   Services/              the Core shell contracts MAUI Essentials can honour
-  Hosting/               UseMobile(...) — the DI registration
+  Hosting/               UseAndroid(...) / UseIOS(...) — the DI registration
 
 Shenora.Android/         ← packs. net10.0-android. Platforms/ = Android-only code.
 Shenora.iOS/             ← packs. net10.0-ios. Platforms/ = iOS-only code. macOS build host required.

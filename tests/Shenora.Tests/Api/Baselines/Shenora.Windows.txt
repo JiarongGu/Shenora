@@ -595,13 +595,6 @@ sealed class Shenora.Windows.WinFormsBootstrapOptions
   public bool ObserveUnobservedTaskExceptions { get; init; }
   public bool ShowCrashDialog { get; init; }
   public string ApplicationName { get; init; }
-static class Shenora.Windows.WinFormsHostExtensions
-  public static Shenora.ShenoraApplicationBuilder UseWinForms(Shenora.ShenoraApplicationBuilder builder, Shenora.Windows.WinFormsHostOptions options)
-sealed class Shenora.Windows.WinFormsHostOptions
-  public Shenora.Windows.SingleInstanceHostOptions? SingleInstance { get; init; }
-  public Shenora.Windows.WinFormsBootstrapOptions? Bootstrap { get; init; }
-  public Shenora.Windows.WindowStateHostOptions? WindowState { get; init; }
-  public required System.Func<System.IServiceProvider, System.Windows.Forms.Form> MainForm { get; init; }
 sealed class Shenora.Windows.WinFormsUiDispatcher : Shenora.IUiDispatcher
   public .ctor(System.Windows.Forms.Control owner, System.Action<System.Exception>? onPostFailure = null)
   public Shenora.UiTargetState State { get; }
@@ -662,6 +655,13 @@ sealed class Shenora.Windows.WindowStateOptions
   public int MinVisibleHeight { get; init; }
   public int MinVisibleWidth { get; init; }
   public int MinWidth { get; init; }
+static class Shenora.Windows.WindowsHostExtensions
+  public static Shenora.ShenoraApplicationBuilder UseWindows(Shenora.ShenoraApplicationBuilder builder, Shenora.Windows.WindowsHostOptions options)
+sealed class Shenora.Windows.WindowsHostOptions
+  public Shenora.Windows.SingleInstanceHostOptions? SingleInstance { get; init; }
+  public Shenora.Windows.WinFormsBootstrapOptions? Bootstrap { get; init; }
+  public Shenora.Windows.WindowStateHostOptions? WindowState { get; init; }
+  public required System.Func<System.IServiceProvider, System.Windows.Forms.Form> MainForm { get; init; }
 sealed class Shenora.Windows.WindowsMediaCapability : Shenora.Media.IMediaCapability
   public .ctor(System.Action<string>? log = null)
   public System.Collections.Generic.IReadOnlySet<string> Decodable(Shenora.Media.MediaStreamKind kind)

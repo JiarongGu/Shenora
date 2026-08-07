@@ -116,7 +116,7 @@ internal static class Program
             app.Services.GetRequiredService<IMissionScheduler>().Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2);
         // The kit's own dialog routes, so the PAGE can open a picker without this sample writing a route for
 // it — which is what it used to do, in two samples, identically. Opt-in like every other kit cluster;
-// it needs the IFileDialogs that UseWinForms registered above.
+// it needs the IFileDialogs that UseWindows registered above.
 builder.Services.AddShenoraFileDialogs();
 
 builder.Services.AddModuleFacade<SampleFacade>();
@@ -133,7 +133,7 @@ builder.Services.AddModuleFacade<SampleFacade>();
         builder.OnStarting(app =>
             (app.Services.GetRequiredService<IWebViewResourceProvider>() as EmbeddedResourceProvider)?.BeginWarmup());
 
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = sp => sp.GetRequiredService<MainForm>(),
             WindowState = new WindowStateHostOptions

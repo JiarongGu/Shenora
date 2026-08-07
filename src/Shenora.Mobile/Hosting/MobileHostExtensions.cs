@@ -10,10 +10,23 @@ namespace Shenora.Mobile;
 public static class MobileHostExtensions
 {
     /// <summary>
+    /// 🔴 <b>Named for the PLATFORM, not the category — <c>UseAndroid</c> on Android and
+    /// <c>UseIOS</c> on iOS, over one shared body (D65).</b> D37 made the package set one-per-platform
+    /// and the ENTRY POINTS never followed: this was <c>UseMobile</c>, a category name serving two
+    /// packages that ship, build and are consumed separately. A platform is the one thing an adopter
+    /// genuinely picks, so it is the one call that earns a name.
+    /// <para>
+    /// ⚠ <b>It is the ONE place the two mobile surfaces deliberately differ</b>, which costs the trick
+    /// that let the Android API baseline gate iOS from a Windows host. Accepted rather than worked
+    /// around (owner, 2026-08-07: the build story is changing anyway) — revisit the arrangement with
+    /// the build toolkit rather than engineering around today's packaging.
+    /// </para>
+    /// <para>
     /// Make this a MAUI-hosted application: registers the shell contracts this platform can honour
     /// (<see cref="IClipboardService"/>, <see cref="IUrlLauncher"/>, <see cref="IUiInteraction"/>,
     /// <see cref="IFileDialogs"/>, <see cref="IUiDispatcher"/>), each with <c>TryAdd</c> so an app
     /// registration wins.
+    /// </para>
     /// <para>
     /// <b>It registers NO <see cref="IShenoraRunner"/>, deliberately.</b> MAUI owns the loop, so
     /// <see cref="ShenoraApplication.Run"/> — contractually "blocks until shutdown" — has no honest
@@ -35,8 +48,20 @@ public static class MobileHostExtensions
     /// silently-missing UI dispatcher swallows UI work.
     /// </param>
     /// <param name="onError">Reports a failure from posted UI work or a backgrounded URL open.</param>
-    public static ShenoraApplicationBuilder UseMobile(this ShenoraApplicationBuilder builder,
+#if ANDROID
+    public static ShenoraApplicationBuilder UseAndroid(this ShenoraApplicationBuilder builder,
         IDispatcher dispatcher, Action<Exception>? onError = null)
+#elif IOS || MACCATALYST
+    public static ShenoraApplicationBuilder UseIOS(this ShenoraApplicationBuilder builder,
+        IDispatcher dispatcher, Action<Exception>? onError = null)
+#else
+    // A hard COMPILE error rather than a category-named fallback: this source compiles into
+    // Shenora.Android and Shenora.iOS and nothing else, so a third target reaching here means someone
+    // added a platform without naming its entry point — and a category-named shim (which is what this
+    // used to be) would let that ship looking deliberate. Same fail-closed choice as
+    // MobilePlaybackSession's guard a few lines down.
+#error Shenora.Mobile: this platform has no shell entry point. Add a Use<Platform>() arm above (D65).
+#endif
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(dispatcher);

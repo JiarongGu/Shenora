@@ -224,7 +224,7 @@ Shenora.slnx
 ├── tests/
 │   └── Shenora.Tests       net10.0-windows  — xunit; references the four leaf src projects (Core transitively)
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
-    ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWinForms →
+    ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWindows →
     │                                            prewarm → WebViewHost + provider + SplashPanel +
     │                                            frameless OptimizedForm + WindowCommandFacade +
     │                                            DropZoneManager/Facade + SecondaryWindows + TrayIcon +
@@ -274,7 +274,7 @@ question is "no, it is a different category". **Four kinds, not one list:**
 | Kind | What it is | Members | How an adopter reaches it |
 |---|---|---|---|
 | **Host** | the application object, its lifecycle and the things every app needs | builder · runner · `ShenoraPaths` · `ShenoraEnvironment` · `IEventBus` · `AppCallback` | `ShenoraApplication.CreateBuilder(…)` |
-| **Shell** | one per PLATFORM; picks who owns the UI loop | `UseWinForms` · `UseMobile` · `UseHeadless` | exactly one, at startup |
+| **Shell** | one per PLATFORM; picks who owns the UI loop | `UseWindows` · `UseAndroid`/`UseIOS` · `UseHeadless` | exactly one, at startup |
 | **Engines** | portable logic with no platform code — the kit's own algorithms | **Missions** (`Missions/`) · **Media** (`Media/`) · **File system** (`Files/`) | one `Use…` call each |
 | **Shell capabilities** | "can this platform do X?" — a portable contract, an implementation per shell | dialogs · clipboard · **drop zones** · tray/windows · `IPlaybackSession` · `ILiveActivities` · safe area · `IUrlLauncher` · `IUiDispatcher` · `IFileLockInspector` · `IMediaCapability` | injected; registered BY the shell |
 
@@ -606,7 +606,7 @@ changes, noting them in `CHANGELOG.md`).
   `--restarted` widened-wait handoff with abandoned-mutex recovery); `WinFormsBootstrap(+Options)`
   + `UnhandledExceptionReport/Source` (one-call WinForms init + the three global exception
   channels with crash-log callback and last-resort dialog); the host composition —
-  `UseWinForms(WinFormsHostOptions)` on `WinFormsHostExtensions`, with `SingleInstanceHostOptions` (gate scope/restart
+  `UseWindows(WindowsHostOptions)` on `WindowsHostExtensions`, with `SingleInstanceHostOptions` (gate scope/restart
   argument/wait/losing-launch callback) and `WindowStateHostOptions` (store factory + options),
   backed by an internal runner (gate → bootstrap → starting hooks → form factory → window state →
   activate-message filter → loop → reverse-order stopping hooks → release); `SplashPanel(+Options)`
@@ -627,7 +627,7 @@ changes, noting them in `CHANGELOG.md`).
   drawing itself lives in the internal `CaptionButtonRenderer` (0.2.0 design pass): pure input →
   pixels — palette fallback, glyph selection, the DPI-scaled icon font — so it is unit-tested with no
   STA thread, no handle and no pump, while everything that answers a window message stayed in the
-  form. The native services, TryAdd-registered by `UseWinForms` —
+  form. The native services, TryAdd-registered by `UseWindows` —
   `IFormInteraction`/`FormInteraction` (main-window registry, runner-wired; nested modal
   blocking), `IFileDialogs`/`FileDialogs(+Options)` + `FileDialogOptions`/`Filter`/`Result` +
   `IFileDialogPathStore` seam (dedicated-STA open/folder/save dialogs, owner-handle z-order,

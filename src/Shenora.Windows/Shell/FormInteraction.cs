@@ -6,12 +6,12 @@ namespace Shenora.Windows;
 /// The main-window registry + modal-interaction blocking, ported from the primary desktop
 /// sibling: native dialogs need the main window's handle for ownership (z-order), and the
 /// window is disabled while one is up so the user can't re-enter the app mid-dialog.
-/// Registered by <c>UseWinForms</c>; the runner sets the main form automatically.
+/// Registered by <c>UseWindows</c>; the runner sets the main form automatically.
 /// <para>
 /// The portable half is <see cref="IUiInteraction"/> in <c>Shenora</c> (block/unblock, which any
 /// host can implement); what remains here is the <see cref="Form"/>-typed part, which is Windows by
 /// definition (D20). App logic that only needs to block the UI should depend on
-/// <see cref="IUiInteraction"/> — <c>UseWinForms</c> registers both faces of the same instance.
+/// <see cref="IUiInteraction"/> — <c>UseWindows</c> registers both faces of the same instance.
 /// Note the blocking members are NOT redeclared here: re-declaring an inherited member is CS0108,
 /// which is a build error now that warnings are errors.
 /// </para>

@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Shenora.Tests.WinForms;
 
-/// <summary>The native-services composition added by <c>UseWinForms</c> (P4.3).</summary>
+/// <summary>The native-services composition added by <c>UseWindows</c> (P4.3).</summary>
 public class NativeServicesRegistrationTests
 {
     private static ShenoraApplicationBuilder Builder() =>
@@ -19,7 +19,7 @@ public class NativeServicesRegistrationTests
     public void UseWinForms_registers_the_native_services()
     {
         var builder = Builder();
-        builder.UseWinForms(new WinFormsHostOptions { MainForm = _ => new Form() });
+        builder.UseWindows(new WindowsHostOptions { MainForm = _ => new Form() });
         using var app = builder.Build();
 
         Assert.IsType<FormInteraction>(app.Services.GetRequiredService<IFormInteraction>());
@@ -34,7 +34,7 @@ public class NativeServicesRegistrationTests
         var builder = Builder();
         var custom = new FormInteraction();
         builder.Services.AddSingleton<IFormInteraction>(custom);
-        builder.UseWinForms(new WinFormsHostOptions { MainForm = _ => new Form() });
+        builder.UseWindows(new WindowsHostOptions { MainForm = _ => new Form() });
         using var app = builder.Build();
 
         Assert.Same(custom, app.Services.GetRequiredService<IFormInteraction>());
@@ -46,7 +46,7 @@ public class NativeServicesRegistrationTests
         var root = @"C:\ShenoraTests\" + Guid.NewGuid().ToString("n");
         Form? created = null;
         var builder = Builder();
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = _ => created = new Form(),
             SkipProcessInit = true,

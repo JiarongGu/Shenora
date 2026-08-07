@@ -56,7 +56,7 @@ public static class FileSystemExtensions
             // and this reads the same whether it was called by an app or by the D64 default in Build().
             var paths = provider.GetRequiredService<ShenoraPaths>();
             // 🔴 PULL THE PER-PLATFORM PIECE OUT OF DI, at build time rather than at Use time — the shell's
-            // `UseWinForms`/`UseMobile` may run after this. This is the file system's version of what
+            // `UseWindows`/`UseMobile` may run after this. This is the file system's version of what
             // `IMediaCapability` and `IMediaAudioConversion` are for media: the ENGINE is portable, the
             // answers are not. "Who holds this file open?" is Restart Manager on Windows and something else
             // everywhere else.

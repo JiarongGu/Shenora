@@ -190,7 +190,7 @@ public sealed class MainPage : ContentPage
 		if (IslandClaimant == IslandSurface.NowPlaying)
 		{
 			// The system media transport surface. Resolved from DI rather than constructed, because that is
-			// what an adopting app does and it also proves the registration in UseMobile picked the right
+			// what an adopting app does and it also proves the registration in UseAndroid/UseIOS picked the right
 			// implementation for this platform.
 			PlaybackSessionProbe.Run(services.GetRequiredService<IPlaybackSession>(), MauiProgram.Log);
 		}

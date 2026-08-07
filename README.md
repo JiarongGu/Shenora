@@ -137,7 +137,7 @@ and the in-process `IEventBus`.
 var builder = ShenoraApplication.CreateBuilder(args);
 builder.Services.AddSingleton<IMyService, MyService>();
 using var app = builder.Build();
-app.Run();                       // executes the registered runner (UseWinForms supplies one)
+app.Run();                       // executes the registered runner (UseWindows supplies one)
 ```
 
 Put your facades in a plain `net10.0` project that references only this package and inject the
@@ -199,7 +199,7 @@ own STA pumps, tray icon, frameless `OptimizedForm` with optional native caption
 panel, and the Windows implementations of the Core contracts.
 
 ```csharp
-builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) });
+builder.UseWindows(new WindowsHostOptions { MainForm = sp => new MainForm(sp) });
 ```
 
 **`CloseReason.UserClosing` also means a programmatic `Close()`.** With close-to-tray on, a

@@ -601,14 +601,6 @@ Shenora.Windows.WinFormsBootstrapOptions
   property ObserveUnobservedTaskExceptions
   property OnUnhandledException
   property ShowCrashDialog
-Shenora.Windows.WinFormsHostExtensions
-  method UseWinForms
-Shenora.Windows.WinFormsHostOptions
-  method .ctor
-  property Bootstrap
-  property MainForm
-  property SingleInstance
-  property WindowState
 Shenora.Windows.WinFormsUiDispatcher
   method .ctor
   method InvokeAsync
@@ -670,6 +662,14 @@ Shenora.Windows.WindowStateOptions
   property MinVisibleHeight
   property MinVisibleWidth
   property MinWidth
+Shenora.Windows.WindowsHostExtensions
+  method UseWindows
+Shenora.Windows.WindowsHostOptions
+  method .ctor
+  property Bootstrap
+  property MainForm
+  property SingleInstance
+  property WindowState
 Shenora.Windows.WindowsMediaCapability
   method .ctor
   method Decodable

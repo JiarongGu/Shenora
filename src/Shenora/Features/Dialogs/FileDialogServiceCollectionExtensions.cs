@@ -15,7 +15,7 @@ public static class FileDialogServiceCollectionExtensions
     /// primitive rather than the product.
     /// <para>
     /// ⚠ <b>Requires an <see cref="IFileDialogs"/> in the container</b>, which the SHELL registers —
-    /// <c>UseWinForms</c> on the desktop, <c>UseMobile</c> on Android/iOS. Call this after the shell, and
+    /// <c>UseWindows</c> on the desktop, <c>UseAndroid</c>/<c>UseIOS</c> on Android/iOS. Call this after the shell, and
     /// nothing here resolves it eagerly: the facade is constructed on first dispatch through the same lazy
     /// path every other DI-registered module uses, so a missing shell registration surfaces as an ordinary
     /// resolve failure rather than a startup crash inside a singleton factory.

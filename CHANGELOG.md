@@ -198,6 +198,31 @@ at the first list and missed five more breaking changes.
     rename kept 1484 → 1484, likewise empty once normalised. Not one symbol added, changed or lost by
     either.
 
+- **The shell entry points are named for the PLATFORM (D65).** `UseWinForms()` → **`UseWindows()`**,
+  `UseMobile()` → **`UseAndroid()` / `UseIOS()`**. `WinFormsHostOptions` → `WindowsHostOptions`,
+  `WinFormsHostExtensions` → `WindowsHostExtensions`.
+  - D37 made the package set one-per-platform in 0.5.0 and the calls never followed: one was named for a
+    UI FRAMEWORK, the other for a CATEGORY, while shipping from `Shenora.Windows`, `Shenora.Android` and
+    `Shenora.iOS`. **A platform is the one thing an adopter genuinely picks**, so it is the one call that
+    earns a name.
+  - ⚠ **A multi-targeted MAUI app now writes an `#if`** — the two mobile faces expose different method
+    names, which is the one place their surfaces deliberately differ. A single-platform app writes one
+    line and never notices.
+  - ⚠ The non-Android/iOS arm of the shared mobile source is now a **`#error`** rather than a
+    category-named fallback: a third target reaching it means a platform was added without naming its
+    entry point, and a shim would let that ship looking deliberate.
+
+- **The layers are now the folder structure (D65)** — `Core/` (Ipc · Events · WebView · Shell) ·
+  `Logic/` (Missions · Files) · `Features/` (Media · Dialogs · Operations · Platform · Update).
+  **Zero API impact**: every file declares its namespace explicitly, so 60+ files moved with the API
+  baseline byte-identical. `Files/` split, because the name spanned two layers — the journaled queue and
+  its primitives are logic, while `UpdateManifest`/`UpdateStage`/`Compression` are the app-update FEATURE.
+  - 🔴 **And features now own their IPC modules.** `AddMessageDispatcher` names no feature at all: it
+    composes whatever facades are registered, and each feature registers its own (`UseMediaPlayer`
+    registers `MediaPlayerFacade`; the shells register the dialogs one, because only a platform knows
+    whether it has native dialogs). A core that enumerated its features needed editing every time one was
+    added — and briefly did.
+
 - **The layers now have names (D65).** Core is the CONTRACT (IPC · EventBus · RouteInterceptor), logic is
   the BRAIN (missions, safe file mutation), features BRIDGE .NET to the web (media, dialogs, update).
   Nothing moved for this yet beyond the two folds above — it is the map the remaining restructure follows,

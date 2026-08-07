@@ -13,7 +13,7 @@ namespace Shenora.Windows;
 /// not use, the package multi-targets and this variant refuses with the exact fix in the message.
 /// </para>
 /// <para>
-/// <b>It refuses at CONSTRUCTION, not per call.</b> The registration in <c>UseWinForms</c> is lazy, so the
+/// <b>It refuses at CONSTRUCTION, not per call.</b> The registration in <c>UseWindows</c> is lazy, so the
 /// throw lands the first time an app resolves <see cref="IPlaybackSession"/> — at the point it asked for the
 /// capability, naming the platform and the one-line remedy. A per-method refusal would let an app publish
 /// metadata and report progress into nothing for a while first, which is the silent-degradation this kit

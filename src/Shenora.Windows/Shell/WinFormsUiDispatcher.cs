@@ -188,7 +188,7 @@ public sealed class WinFormsUiDispatcher : IUiDispatcher
 
 /// <summary>
 /// The DI-registered <see cref="IUiDispatcher"/>: dispatches to the application's main window,
-/// resolved LAZILY. Internal because only <c>UseWinForms</c> constructs it — it needs no
+/// resolved LAZILY. Internal because only <c>UseWindows</c> constructs it — it needs no
 /// cross-package reach, so it stays off the public surface.
 /// <para>
 /// Lazy resolution is required, not stylistic: the service provider is built BEFORE the runner

@@ -11,7 +11,7 @@ Shenora.Mobile.MobileFileDialogs
   method SaveAsync
   method SaveFileAsync
 Shenora.Mobile.MobileHostExtensions
-  method UseMobile
+  method UseAndroid
 Shenora.Mobile.MobileIpcBridge
   method .ctor
   method Attach

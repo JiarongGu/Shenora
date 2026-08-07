@@ -14,7 +14,7 @@ namespace Shenora.Sample.Logic;
 /// Every native capability it uses arrives through a platform-neutral contract from
 /// <c>Shenora</c>: <see cref="IFileDialogs"/>, <see cref="IClipboardService"/>,
 /// <see cref="IUrlLauncher"/>, <see cref="IUiDispatcher"/>. The desktop app supplies the WinForms
-/// implementations (<c>UseWinForms</c> registers both the Windows and the portable face of each), so
+/// implementations (<c>UseWindows</c> registers both the Windows and the portable face of each), so
 /// this class never names a Windows type and never references <c>Shenora.Windows</c>.
 /// </para>
 /// <para>

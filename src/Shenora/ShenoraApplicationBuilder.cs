@@ -13,7 +13,7 @@ namespace Shenora;
 /// Composes a Shenora application: paths + environment (resolved up front so registrations can use
 /// them), service registrations, modules, and lifecycle hooks. Created by
 /// <see cref="ShenoraApplication.CreateBuilder(string[])"/>; host packages contribute through
-/// extension methods (e.g. Shenora.Windows <c>UseWinForms</c>, Shenora.Windows
+/// extension methods (e.g. Shenora.Windows <c>UseWindows</c>, Shenora.Windows
 /// <c>PrewarmWebView2</c>) so the packages never reference each other — the app composes them
 /// (the design contract's downward-only dependency rule).
 /// </summary>

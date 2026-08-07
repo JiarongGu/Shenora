@@ -25,7 +25,7 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
    `ArgumentNullException.ThrowIfNull` / `ArgumentException.ThrowIfNullOrWhiteSpace`, and decide
    the empty-versus-null policy explicitly: empty is usually app DATA and null is a caller bug
    (`Clipboard.SetText("")` throws, so empty routes to `Clear()` instead).
-4. **Register in `WinFormsHostExtensions.UseWinForms`** with `TryAddSingleton`, so an app's own
+4. **Register in `WindowsHostExtensions.UseWindows`** with `TryAddSingleton`, so an app's own
    registration wins. If you split the contract in step 1, register the portable face resolving to
    the SAME singleton — `TryAddSingleton<IUiInteraction>(sp => sp.GetRequiredService<IFormInteraction>())`
    — or an app depending on the Core contract gets a second instance. Anything that needs the main

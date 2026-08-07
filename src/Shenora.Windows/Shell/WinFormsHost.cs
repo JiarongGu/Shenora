@@ -7,7 +7,7 @@ using Shenora.Ipc;
 
 namespace Shenora.Windows;
 
-/// <summary>Single-instance behavior for <see cref="WinFormsHostOptions.SingleInstance"/>.</summary>
+/// <summary>Single-instance behavior for <see cref="WindowsHostOptions.SingleInstance"/>.</summary>
 public sealed class SingleInstanceHostOptions
 {
     /// <summary>
@@ -37,7 +37,7 @@ public sealed class SingleInstanceHostOptions
     public Action<ShenoraApplication, SingleInstanceGuard>? OnSecondInstance { get; init; }
 }
 
-/// <summary>Main-window state persistence for <see cref="WinFormsHostOptions.WindowState"/>.</summary>
+/// <summary>Main-window state persistence for <see cref="WindowsHostOptions.WindowState"/>.</summary>
 public sealed class WindowStateHostOptions
 {
     /// <summary>
@@ -50,8 +50,8 @@ public sealed class WindowStateHostOptions
     public WindowStateOptions? Options { get; init; }
 }
 
-/// <summary>Inputs for <see cref="WinFormsHostExtensions.UseWinForms"/>.</summary>
-public sealed class WinFormsHostOptions
+/// <summary>Inputs for <see cref="WindowsHostExtensions.UseWindows"/>.</summary>
+public sealed class WindowsHostOptions
 {
     /// <summary>
     /// Creates the main window once services are available. The runner shows it via the message
@@ -86,7 +86,7 @@ public sealed class WinFormsHostOptions
 }
 
 /// <summary>Registers the WinForms host loop on a <see cref="ShenoraApplicationBuilder"/>.</summary>
-public static class WinFormsHostExtensions
+public static class WindowsHostExtensions
 {
     /// <summary>
     /// Make this a WinForms-hosted application: registers the runner that
@@ -95,8 +95,8 @@ public static class WinFormsHostExtensions
     /// lifecycle hooks, main-form creation (+ optional window-state persistence and
     /// activate-on-second-launch), the message loop, and ordered shutdown.
     /// </summary>
-    public static ShenoraApplicationBuilder UseWinForms(this ShenoraApplicationBuilder builder,
-        WinFormsHostOptions options)
+    public static ShenoraApplicationBuilder UseWindows(this ShenoraApplicationBuilder builder,
+        WindowsHostOptions options)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
@@ -124,7 +124,7 @@ public static class WinFormsHostExtensions
 
         // The system media transport surface, registered LAZILY like everything else here — a
         // WindowsPlaybackSession creates a MediaPlayer in its constructor, and an app that never plays
-        // anything should not pay for a media pipeline just by calling UseWinForms(). DI disposes it.
+        // anything should not pay for a media pipeline just by calling UseWindows(). DI disposes it.
         builder.Services.TryAddSingleton<IPlaybackSession>(sp =>
             new WindowsPlaybackSession(message =>
                 sp.GetService<ILogger<WindowsPlaybackSession>>()?.LogDebug("{Message}", message)));
@@ -172,7 +172,7 @@ internal sealed class WinFormsRunner : IShenoraRunner
 {
     public void Run(ShenoraApplication app)
     {
-        var options = app.Services.GetRequiredService<WinFormsHostOptions>();
+        var options = app.Services.GetRequiredService<WindowsHostOptions>();
 
         // Single-instance gate FIRST — before any lifecycle hook or heavy init. Hooks may take
         // OS locks (the WebView2 environment prewarm takes the user-data-folder lock), and a
