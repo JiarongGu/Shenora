@@ -228,14 +228,15 @@ at the first list and missed five more breaking changes.
   Nothing moved for this yet beyond the two folds above — it is the map the remaining restructure follows,
   and it is worth reading before judging where anything belongs.
 
-- ** split in two: an unknown MODULE and an unknown ROUTE are now different codes.**
-   still means nothing claimed the module name; ** (new) means the module answered
-  and has no such type**. Raised by , so every module gets it for free.
-  - **Migration:** a client branching on  for a bad ROUTE name should read ;
-     is exported from  alongside it.
+- **`NO_HANDLER` split in two: an unknown MODULE and an unknown ROUTE are now different codes.**
+  `NO_HANDLER` still means nothing claimed the module name; **`NO_ROUTE` (new) means the module answered
+  and has no such type**. Raised by `ModuleBase.UnknownType`, so every module gets it for free.
+  - **Migration:** a client branching on `NO_HANDLER` for a bad ROUTE name should read `NO_ROUTE`;
+    `IpcErrorCodes.noRoute` is exported from `@shenora/react` alongside it.
   - **Why it matters to an adopter:** the two need OPPOSITE fixes — wire the module up, versus correct a
-    route name — and they were indistinguishable on the wire, same code and same /    parameters. **Found by a test that tried to USE the distinction as its probe and discovered there was
-    none**, which is also why the dialogs test now drives a fake service instead.
+    route name — and they were indistinguishable on the wire, carrying the same code and the same
+    `module`/`type` parameters. **Found by a test that tried to USE the distinction as its probe and
+    discovered there was none**, which is also why the dialogs test now drives a fake service instead.
   - The C#⇄TS mirror gate covers error codes both ways and was sabotage-verified on this pair: removing
     the client half fails it by name.
 
