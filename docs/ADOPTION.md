@@ -573,7 +573,55 @@ so a page-side error can be genuinely invisible. Both this repo and the adopter 
 routing page → host over IPC and logging host-side (`PageDiagFacade` in `samples/Shenora.Sample.Maui`). It is
 a few lines; copy the pattern.
 
-### Live Activities / the Dynamic Island — the whole adoption is one property and four view bodies
+### The Dynamic Island for a PLAYER — what the kit gives you, and the four things you still write
+
+**Use `IPlaybackSession`, not a Live Activity.** Two different iOS mechanisms reach the Island and they are
+**mutually exclusive** — an app publishing a Now Playing session takes the Island, and a Live Activity
+started beside it has nowhere to render. For playback, Now Playing is also the one Apple intends: it is
+Apple's own presentation, it reaches CarPlay, the Watch, AirPods and car head units as well as the Island,
+and a custom card duplicating it is the sort of duplication App Review pushes back on. Verified end to end
+on an iPhone 17 Pro (2026-08-07).
+
+**What the kit does:** `IPlaybackSession` on all three shells — `Publish`/`Report`/`Clear` out,
+`CommandReceived` back, one contract, no platform code in your app logic.
+
+**What you still write, and all four are small:**
+
+1. **Artwork.** 🔴 *This is the one that decides whether the Island shows anything at all.* Set
+   `PlaybackInfo.Artwork` (PNG/JPEG bytes). With a title and duration but no image, iOS knows something is
+   playing, falls back to your app icon, and the Island is a wide bar with nothing in it — which reads
+   exactly like "the feature is broken". It is the field most likely to be skipped, because it is the only
+   one that is not a string.
+2. **`UIBackgroundModes: [audio]`** in your `Platforms/iOS/Info.plist`. The kit cannot add it — no MSBuild
+   item merges a key into your manifest. ⚠ Editing it does not reach an INCREMENTAL build either;
+   `_WriteAppManifest` merges a stale `obj/**/AppManifest.plist`, so delete that or clean.
+3. **An active `AVAudioSession`**, once at startup:
+   ```csharp
+   var session = AVFoundation.AVAudioSession.SharedInstance();
+   session.SetCategory(AVFoundation.AVAudioSessionCategory.Playback,
+                       AVFoundation.AVAudioSessionMode.Default, default);
+   session.SetActive(true);
+   ```
+   The kit stays out of this deliberately: the category, whether you mix with other audio, and what happens
+   on an interruption are product decisions. ⚠ **2 and 3 are a PAIR and neither does anything alone** —
+   without the key iOS suspends your process; without the session it does not believe you are playing. The
+   symptom of missing either is identical: plays in the foreground, silent after a swipe.
+4. **A video→audio handoff, if you play VIDEO.** iOS pauses a `<video>` when the app backgrounds (the video
+   track cannot render); an `<audio>` already playing continues. So on `visibilitychange` to hidden, copy
+   the playhead onto an `<audio>` with the same source, start it, and pause the video — reversing it on the
+   way back. ⚠ iOS restricts *starting* new playback once backgrounded, so if the handoff loses that race,
+   keep the `<audio>` running muted alongside and just unmute it. `samples/Shenora.Sample.Maui`'s
+   `wwwroot/index.html` has both the handoff and a standalone `♪` button, and the button matters as a
+   DIAGNOSTIC: with only a `<video>`, a correctly-configured shell and a broken one look identical.
+
+### Live Activities / the Dynamic Island — 🔴 BROKEN ON DEVICE, do not adopt yet
+
+> ⚠ **The widget does not render on real hardware** (2026-08-07). ActivityKit starts the activity and
+> returns an id, updates are accepted, the system reserves Island space — and the widget process never runs:
+> the `.appex` the kit builds with `swiftc` starts at `main`, `WidgetBundle.main()` returns, and the process
+> exits before serving. An app extension must be linked with `-e _NSExtensionMain` to enter the XPC run
+> loop, which a bare `swiftc` does not do. It was only ever exercised on a simulator, which loads the bundle
+> regardless. `TASKS.md` carries the decision. **`IPlaybackSession` is unaffected — use the section above.**
 
 The OS requires the UI to be a SwiftUI view in a widget extension, so **you cannot avoid writing Swift** —
 but you write only the views, which are your design system anyway and the one thing the kit does not ship
