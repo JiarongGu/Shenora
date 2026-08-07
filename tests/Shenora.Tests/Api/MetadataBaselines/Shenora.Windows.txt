@@ -670,6 +670,10 @@ Shenora.Windows.WindowStateOptions
   property MinVisibleHeight
   property MinVisibleWidth
   property MinWidth
+Shenora.Windows.WindowsMediaCapability
+  method .ctor
+  method Decodable
+  method Encodable
 Shenora.Windows.WindowsPlaybackSession
   event CommandReceived
   method .ctor

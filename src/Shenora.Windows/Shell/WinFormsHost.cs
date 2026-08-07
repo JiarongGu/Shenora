@@ -134,6 +134,16 @@ public static class WinFormsHostExtensions
         // produces no error, no log line and no failing test.
         builder.Services.TryAddSingleton<IFileLockInspector, RestartManagerLockInspector>();
 
+        // What THIS MACHINE decodes and encodes. Registered here for the same reason both mobile shells
+        // register theirs: the kit ships the QUESTION, never a codec list (D42), and a shell that cannot
+        // answer it pushes the guess back onto every app. Windows was the one shell that answered nothing.
+        //
+        // Singleton because it caches — the codec set cannot change while the process runs (an installed
+        // extension needs a restart), and each query walks the platform's MFT list.
+        builder.Services.TryAddSingleton<Shenora.Media.IMediaCapability>(sp =>
+            new WindowsMediaCapability(message =>
+                sp.GetService<ILogger<WindowsMediaCapability>>()?.LogDebug("{Message}", message)));
+
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
         // the SAME singleton — so an app's own logic can inject Shenora.Core contracts, compile
         // without a Windows reference, and still get these implementations at runtime.

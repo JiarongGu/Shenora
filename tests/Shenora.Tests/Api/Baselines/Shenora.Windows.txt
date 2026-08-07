@@ -662,6 +662,10 @@ sealed class Shenora.Windows.WindowStateOptions
   public int MinVisibleHeight { get; init; }
   public int MinVisibleWidth { get; init; }
   public int MinWidth { get; init; }
+sealed class Shenora.Windows.WindowsMediaCapability : Shenora.Media.IMediaCapability
+  public .ctor(System.Action<string>? log = null)
+  public System.Collections.Generic.IReadOnlySet<string> Decodable(Shenora.Media.MediaStreamKind kind)
+  public System.Collections.Generic.IReadOnlySet<string> Encodable(Shenora.Media.MediaStreamKind kind)
 sealed class Shenora.Windows.WindowsPlaybackSession : Shenora.Core.IPlaybackSession, System.IDisposable
   public .ctor(System.Action<string>? log = null)
   public Shenora.Core.PlaybackCommands Supported { get; set; }
