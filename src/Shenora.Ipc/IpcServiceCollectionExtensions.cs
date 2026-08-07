@@ -160,6 +160,15 @@ public static class IpcServiceCollectionExtensions
                 sp.GetService<MediaPlayerOptions>() ?? new MediaPlayerOptions(),
                 sp.GetService<ILogger<MediaPlayerFacade>>())));
 
+        // ⚠ NOTHING ELSE IS REGISTERED HERE, and the attempt to is worth recording. Defaulting
+        // `AddShenoraOperations()` from this method broke five composition tests with UNKNOWN_ERROR:
+        // `OperationRegistry` needs `IEventBus`, which `Shenora.Ipc` cannot assume exists because
+        // composing IPC over a bare ServiceCollection is legitimate. The lesson is not "resolve it
+        // optionally too" — it is that **a CORE must not know the names of the features built on it**
+        // (D65). The dispatcher composes whatever facades are REGISTERED; deciding which ones exist
+        // belongs to each feature. `MediaPlayerFacade` above is the last hold-out of the wrong shape and
+        // moves out with the D65 restructure.
+
         services.AddSingleton<IMessageDispatcher>(sp =>
         {
             IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>());

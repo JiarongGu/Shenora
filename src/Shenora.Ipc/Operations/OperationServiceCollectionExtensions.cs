@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shenora.Core;
 
 namespace Shenora.Ipc;
@@ -31,16 +32,22 @@ public static class OperationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         options ??= new OperationRegistryOptions();
-        services.AddSingleton(options);
+        // 🔴 TryAdd throughout, because this is now called BOTH by an app configuring the registry and by
+        // `AddMessageDispatcher` defaulting it (D64). With `AddSingleton` the second call registers a
+        // SECOND `OperationsFacade`, and two facades claiming one module name is a duplicate the
+        // dispatcher rejects — so an app that configured its options would have broken its own routes by
+        // doing so. Idempotence is the precondition for defaulting anything, exactly as it was for the
+        // engines in `Build()`.
+        services.TryAddSingleton(options);
 
         // A single GetRequiredService<IEventBus>() call, not an enumeration of the provider — this is
         // the ordinary "resolve one dependency" shape every other factory here uses, not the
         // GetServices<IModuleFacade>()-inside-a-singleton-factory pattern that caused the silent
         // StackOverflow in AddMessageDispatcher (see IpcServiceCollectionExtensions).
-        services.AddSingleton<IOperationRegistry>(sp =>
+        services.TryAddSingleton<IOperationRegistry>(sp =>
             new OperationRegistry(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<OperationRegistryOptions>()));
 
-        services.AddModuleFacade<OperationsFacade>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IModuleFacade, OperationsFacade>());
 
         return services;
     }

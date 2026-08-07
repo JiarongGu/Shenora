@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Maui.Dispatching;
 using Shenora.Core;
+using Shenora.Ipc;
 
 namespace Shenora.Mobile;
 
@@ -45,6 +46,12 @@ public static class MobileHostExtensions
         builder.Services.TryAddSingleton<IUrlLauncher>(_ => new MobileUrlLauncher(onError));
         builder.Services.TryAddSingleton<IUiInteraction, MobileUiInteraction>();
         builder.Services.TryAddSingleton<IFileDialogs, MobileFileDialogs>();
+        // The page's ROUTE to them, registered where the platform implementation is (D64). ⚠ Two of the
+        // four routes are DESKTOP capabilities and refuse here with CapabilityNotSupported (D35) — which
+        // is why the facade ships on this shell at all rather than being withheld: the page asks the
+        // handshake what this shell can honour and renders accordingly (D36), and a refusal is a real
+        // answer where an absent module would just look broken.
+        builder.Services.AddShenoraFileDialogs();
 
         // The system media transport surface. ONE NAME, two entirely separate bodies — Android registers a
         // MediaSession, iOS writes two process-wide singletons and shares no code with it at all. That is

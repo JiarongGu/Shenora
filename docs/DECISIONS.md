@@ -2226,3 +2226,47 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     though nothing's signature moves: modules the kit previously registered only on request now appear in
     the ready handshake by default, so a page that branches on `shell.capabilities` sees more than before.
     D47's bar applies — one repo fully adopts, so prefer the correct shape.
+
+- **D65 — THREE LAYERS, and the package is called `Shenora`. "Core" means the WIRE between .NET and the
+  web — nothing else.** (Owner, 2026-08-07, redefining it after D64 exposed that the word had no edge:
+  *"we need to redefine whats core, IPC, EventBus, RouteInterceptor are 'core' FileDialog is an IPC module
+  just like other features"* · *"the Core is the main wire between .net and web (you might have different
+  implementation via different platform too for core), and instead of call the main project Shenora.Core,
+  this is more like Shenora (itself), core is the main underlying messaging pipeline, on top of that is
+  pure logic layer, like Mission, Files, and then we have what we call 'features' Media, Dialog"*.)
+
+  | Layer | What it is | Members |
+  |---|---|---|
+  | **Core — the wire** | the messaging pipelines between .NET and the web. **Per-platform implementations are EXPECTED here** (WebView2 `postMessage` vs HybridWebView `SendRawMessage`), which is what makes it core rather than a feature | IPC · EventBus · RouteInterceptor |
+  | **Logic** | pure portable algorithm. No platform half, no IPC surface | Missions · safe file mutation |
+  | **Features** | has a platform half and/or an IPC surface | Media · Dialogs · Update |
+
+  - 🔴 **The membership test, so the boundary is decided rather than argued each time:** *does it have a
+    platform half or an IPC surface?* Yes → feature. Neither → logic. **Is it the wire itself?** → core.
+    That test is what moves Media OUT of "engine", where `ARCHITECTURE.md` filed it beside Missions: media
+    has three platform halves (`IMediaCapability`, `IMediaAudioConversion`, `MobileMediaPlayer`) and a
+    route. Missions has neither and stays logic.
+    - ⚠ **An OPTIONAL collaborator is not a platform half.** The file engine consults `IFileLockInspector`,
+      which does have a Windows implementation — and the engine works without it. Stating this explicitly
+      because it is the one edge that will otherwise be re-argued: the question is whether the thing NEEDS
+      a platform to function, not whether a platform can improve it.
+  - **The layering is already in the CODE; only the names failed to say it.** Four files under `Media/`
+    depend on `Missions` and `Files`, and nothing goes the other way — feature → logic → wire, exactly as
+    described, discovered by reading the edges rather than by design. That is the strongest evidence the
+    split is real and not imposed.
+  - **`Shenora.Ipc` folds into the main package**, because IPC is a CORE and a separate package id says
+    "optional" — the claim D53/D55 killed for Media and IO. The direction already allows it (`Ipc → Core`,
+    mechanically identical to D55's `IO → Core`). 🔴 **That fold is also what unblocks everything else:**
+    a feature could not own its own IPC module while `BaseFacade` lived in a package `Core` may not
+    reference, which is exactly why D64's facades ended up registered from inside `AddMessageDispatcher` —
+    a core knowing the name of every feature built on it.
+  - **`Shenora.Core` → `Shenora`.** It is the framework, not a component of one. The id is free.
+    ⚠ **Fold first, rename second, each with its own green gate** — landing a namespace sweep on top of a
+    package fold makes any failure unattributable, and this repo has paid for exactly that before.
+  - **`Files/` splits, because the name covers two layers.** Atomic replace, path claims, advisory locks
+    and the journaled mutation queue are LOGIC; `UpdateManifest`, `UpdateStage` and `Compression/` are the
+    app-UPDATE story, which is a FEATURE — it has a platform half in the native `Launcher` (D50).
+  - **What this leaves for IPC registration, which is the question that started it:** a feature owns its
+    module and registers it; `AddMessageDispatcher` knows the name of none of them. D64 shipped the
+    opposite as an interim (the dispatcher hardcoding `MediaPlayerFacade`, shells calling
+    `AddShenoraFileDialogs`) and this entry is what deletes it.

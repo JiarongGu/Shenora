@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shenora.Core;
 
 namespace Shenora.Ipc;
@@ -28,7 +29,12 @@ public static class FileDialogServiceCollectionExtensions
     public static IServiceCollection AddShenoraFileDialogs(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddModuleFacade<FileDialogFacade>();
+        // ⚠ TryAddEnumerable, not AddModuleFacade: the SHELL calls this now (D64), and an app that also
+        // calls it — every app written before that did — would otherwise register a SECOND
+        // FileDialogFacade, and two facades claiming one module name is a duplicate the dispatcher
+        // rejects. So the old explicit call stays valid and becomes a harmless no-op, which is what makes
+        // this a default rather than a migration.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IModuleFacade, FileDialogFacade>());
         return services;
     }
 }
