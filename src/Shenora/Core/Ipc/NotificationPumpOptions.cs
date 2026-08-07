@@ -1,6 +1,7 @@
 using Shenora;
+using Shenora.Core.Events;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>Inputs for <see cref="NotificationPump"/>. Validated at construction — a bad value names itself.</summary>
 public sealed record NotificationPumpOptions

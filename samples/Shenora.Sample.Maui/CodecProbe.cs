@@ -1,9 +1,10 @@
+using Shenora.Modules.Media;
+
 #if IOS
 using System.Runtime.InteropServices;
 #endif
 // For MediaCapabilityExtensions. An extension method needs the NAMESPACE imported — naming the interface
 // fully-qualified below is not enough, which is what the first build of this file discovered.
-using Shenora.Media;
 
 namespace Shenora.Sample.Maui;
 
@@ -204,7 +205,7 @@ internal static class CodecProbe
     public static string Question => $"[CODEC] the question: can this device DECODE {string.Join('/', Interesting)}?";
 
     /// <summary>
-    /// Cross-check the KIT's <see cref="Shenora.Media.IMediaCapability"/> against what this probe asked the
+    /// Cross-check the KIT's <see cref="Shenora.Modules.Media.IMediaCapability"/> against what this probe asked the
     /// platform directly.
     ///
     /// <para>
@@ -220,8 +221,8 @@ internal static class CodecProbe
     /// feeds the other, and disagreement is the whole signal.
     /// </para>
     /// </summary>
-    public static void CrossCheck(Shenora.Media.IMediaCapability device,
-                                  Shenora.Media.IMediaAudioConversion? conversion, Action<string> log)
+    public static void CrossCheck(Shenora.Modules.Media.IMediaCapability device,
+                                  Shenora.Modules.Media.IMediaAudioConversion? conversion, Action<string> log)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(log);

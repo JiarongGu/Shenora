@@ -1,6 +1,7 @@
 using System.Text;
 using Shenora;
-using Shenora.Media;
+using Shenora.Modules.Media;
+using Shenora.Core.WebView;
 
 namespace Shenora.Tests.Media;
 

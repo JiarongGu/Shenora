@@ -1,5 +1,5 @@
 using Shenora;
-using Shenora.Missions;
+using Shenora.Engine.Missions;
 
 namespace Shenora.Tests.Missions;
 

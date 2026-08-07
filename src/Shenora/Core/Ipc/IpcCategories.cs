@@ -1,4 +1,4 @@
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// Values of the <c>category</c> discriminator on host→client messages. Transports that

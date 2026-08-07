@@ -1,11 +1,11 @@
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
-public class BaseFacadeTests
+public class ModuleBaseTests
 {
-    private sealed class EchoFacade() : BaseFacade
+    private sealed class EchoFacade() : ModuleBase
     {
         public override string ModuleName => "ECHO";
 

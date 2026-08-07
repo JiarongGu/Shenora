@@ -1,5 +1,6 @@
 using Shenora;
-using Shenora.Media;
+using Shenora.Modules.Platform;
+using Shenora.Modules.Media;
 
 namespace Shenora.Tests.Media;
 

@@ -2,6 +2,8 @@ using Foundation;
 using Microsoft.Maui.ApplicationModel;
 using Shenora;
 using UIKit;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
 
 namespace Shenora.Mobile;
 

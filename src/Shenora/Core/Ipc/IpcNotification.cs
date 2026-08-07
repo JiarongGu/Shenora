@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// One host→client event inside an <see cref="IpcNotificationBatch"/>: <c>{ module, type,

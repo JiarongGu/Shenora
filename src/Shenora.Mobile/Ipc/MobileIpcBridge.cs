@@ -1,7 +1,9 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Dispatching;
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Mobile;
 

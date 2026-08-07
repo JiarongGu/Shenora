@@ -117,12 +117,13 @@ UseMobile                # -> UseAndroid / UseIOS — a category name serving tw
                          #    build and are consumed separately
 
 # --- 2026-08-07, D65: the main package is `Shenora`, and IPC folded into it ------------------------
-# ⚠ UNLIKE Shenora.Media / Shenora.IO / Shenora.Ipc, this one IS listed — because it is retired in BOTH
-# senses at once. Those three kept live NAMESPACES after their package ids went, so watching them would
-# fire on every correct sentence; `Shenora.Core` has no namespace left either (the types now sit in
-# `Shenora`), so every remaining mention is stale by construction and there are no false positives to
-# weigh. That asymmetry is the whole reason the other three are absent and this one is not.
-Shenora.Core             # -> Shenora (D65). The package IS the framework, not a component of one.
+# ⚠ `Shenora.Core` WAS listed here for one day and has been REMOVED, which is the rule working rather
+# than failing. It was added because it was retired in BOTH senses at once — package id AND namespace —
+# unlike Shenora.Media / Shenora.IO / Shenora.Ipc, which kept live namespaces after their ids went.
+# Then D65's layer naming brought `Shenora.Core.*` back as the namespace of the CORE LAYER, so the name
+# is live again in one sense and the gate would fire on every correct sentence. Same test as the other
+# three, applied in reverse: watch a name only when NOTHING legitimately still uses it.
+#   the retired PACKAGE ID `Shenora.Core` -> `Shenora`; the live NAMESPACE `Shenora.Core.*` -> the cores.
 
 # --- 2026-08-07, D64: every kit module moved onto the reserved `SHENORA.` prefix -------------------
 # These are WIRE names, which is a category this file did not previously watch and the one where a stale

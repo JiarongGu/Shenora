@@ -1,12 +1,13 @@
 using System.Text.Json;
 using Shenora;
-using Shenora.Ipc;
-using Shenora.Media;
+using Shenora.Modules.Media;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
 /// <summary>
-/// <see cref="MediaPlayerFacade"/> — the joint between the two halves the kit already shipped.
+/// <see cref="MediaPlayerModule"/> — the joint between the two halves the kit already shipped.
 /// <para>
 /// 🔴 <b>Every test here would have passed vacuously before the facade existed, because the failure was
 /// SILENCE.</b> The page posted <c>PLAYER_REPORT</c>, nothing answered, and
@@ -15,7 +16,7 @@ namespace Shenora.Tests.Ipc;
 /// <see cref="A_page_report_COMPLETES_an_open_that_is_waiting_for_it"/>: the await has to finish.
 /// </para>
 /// </summary>
-public class MediaPlayerFacadeTests
+public class MediaPlayerModuleTests
 {
     /// <summary>
     /// 🔴 <b>THE ONE THAT MATTERS.</b> `OpenAsync` completes on the first non-`Opening` report and on
@@ -113,18 +114,18 @@ public class MediaPlayerFacadeTests
         using var player = new MediaPlayer(new RecordingBus(), options);
 
         Assert.Equal("SHENORA.MEDIA", options.Module);
-        Assert.Equal(options.Module, new MediaPlayerFacade(player, options).ModuleName);
+        Assert.Equal(options.Module, new MediaPlayerModule(player, options).ModuleName);
     }
 
     private static async Task<IpcResponse> DispatchAsync(IMediaPlayer player, MediaPlayerOptions options, object payload)
     {
         var dispatcher = new MessageDispatcher();
-        dispatcher.MapModule(new MediaPlayerFacade(player, options));
+        dispatcher.MapModule(new MediaPlayerModule(player, options));
         return await dispatcher.DispatchAsync(new IpcRequest
         {
             Id = "r1",
             Module = options.Module,
-            Type = MediaPlayerFacade.ReportType,
+            Type = MediaPlayerModule.ReportType,
             Payload = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(payload, IpcJson.Options)),
         }, CancellationToken.None);
     }

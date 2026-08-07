@@ -132,7 +132,7 @@ that every app needs every row.
 | Extra windows on their own threads | `SecondaryWindows` | `FormClosed` is **not** the end of a window; cleanup happens after `Application.Run` returns, or a WebView2 child leaves a locked profile folder. |
 | App root / data / resources paths, env overrides | `ShenoraPaths(+Options)` | Resolves and absolutizes; file dialogs move the process CWD, so a relative root must not be re-resolved later. |
 | Startup splash | `SplashPanel(+Options)` | Colours are yours. |
-| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.Windows`) + **`useDropZone`** | **Not optional sugar — the only workable file-drop path for a desktop shell, and the page's own drop event is what it replaces.** A page-side `onDrop` yields a `File` whose only accessor is its CONTENT, so with the page as UI and the host doing the file work, the bytes must be read into the renderer and pushed across IPC: a full copy of every dropped file, EAGERLY, at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the host could have opened off the same disk. `DropZoneManager` puts transparent native overlays over the page's zone elements, reads the OS drag data directly, and hands you `string[]` paths — open lazily, stream, hash incrementally, move or link without copying — including drags from Explorer or another app while your window is **backgrounded**. Wiring: **Stage-1-adoptable STANDALONE despite living in the WebView2 package** — it depends only on `Shenora` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneFacade` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneFacade` + `useDropZone` — formally belongs to Stage 3 because it rides the typed bridge, but treat it as the DESTINATION for this row rather than an optional extra: a React page should call `useDropZone` and never register a DOM drop handler for files. |
+| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.Windows`) + **`useDropZone`** | **Not optional sugar — the only workable file-drop path for a desktop shell, and the page's own drop event is what it replaces.** A page-side `onDrop` yields a `File` whose only accessor is its CONTENT, so with the page as UI and the host doing the file work, the bytes must be read into the renderer and pushed across IPC: a full copy of every dropped file, EAGERLY, at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the host could have opened off the same disk. `DropZoneManager` puts transparent native overlays over the page's zone elements, reads the OS drag data directly, and hands you `string[]` paths — open lazily, stream, hash incrementally, move or link without copying — including drags from Explorer or another app while your window is **backgrounded**. Wiring: **Stage-1-adoptable STANDALONE despite living in the WebView2 package** — it depends only on `Shenora` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneModule` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneModule` + `useDropZone` — formally belongs to Stage 3 because it rides the typed bridge, but treat it as the DESTINATION for this row rather than an optional extra: a React page should call `useDropZone` and never register a DOM drop handler for files. |
 
 > **If you only take one thing from Stage 1, take the drop zones.** They are the clearest case in the
 > kit for adopting anything at all. Native drag-drop over a web view is genuinely fiddly — transparent
@@ -290,13 +290,13 @@ Both were written against this surface and run before this guide claimed they co
 > payload, scope)` — it is stamped with the facade's own `ModuleName`, so it cannot drift the way a
 > literal re-typed at every call site can.
 
-- **Host side.** Derive from `BaseFacade`, one instance per existing module, and let
+- **Host side.** Derive from `ModuleBase`, one instance per existing module, and let
   `RouteMessageAsync` call your module's handler. `request.Type` is your action; rebuild whatever
   document shape your handler expects from `request.Payload` (if your client spread the payload at
   the top level, nest/unnest here — it is a few lines). Return `null`: your modules answer with
   events, which is the `post` shape, and answering at all is what buys correlation. Emit through
   `context.Publish(type, payload, scope)` (or `IEventBus.EmitAsync(module, type, payload)` directly,
-  if you're not yet on `BaseFacade`'s context). Nothing about this needs Windows, so the adapter can
+  if you're not yet on `ModuleBase`'s context). Nothing about this needs Windows, so the adapter can
   live in a `net10.0` project (see Stage 4).
 - **Client side.** `bridge.post(module, type, { payload })` for the send; `eventBus.subscribeToAll`
   for a legacy "every host message" handler. Emit real `(module, type)` pairs from the host adapter
@@ -310,7 +310,7 @@ Both were written against this surface and run before this guide claimed they co
 > the wire VERBATIM by design — it is *your* words for an expected failure — so that one line puts raw
 > exception text (paths, connection strings) back on the page. It is exactly the line you would port
 > if your old dispatcher emitted `$"{action} failed: {ex.Message}"`. Let the exception escape instead:
-> `BaseFacade` maps it to `UNKNOWN_ERROR` plus the exception's type name and logs the detail host-side.
+> `ModuleBase` maps it to `UNKNOWN_ERROR` plus the exception's type name and logs the detail host-side.
 
 Three things the adapters lean on that are worth knowing before you write yours:
 
@@ -353,7 +353,7 @@ until the page is listening.
   long case. `context.Start` is the lower-level primitive if your lifecycle doesn't fit one
   background body (a start outside the block, several failure branches, a resumable session).
   Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
-  you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`
+  you do) and it ships `OperationsModule` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`
   under module `SHENORA.OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
   no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
@@ -465,7 +465,7 @@ var shenora = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
     Paths = new ShenoraPathsOptions { ExplicitRoot = FileSystem.AppDataDirectory },
 });
 shenora.UseAndroid`/`UseIOS(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
-shenora.Services.AddModuleFacade<YourPortableFacade>();
+shenora.Services.AddIpcModule<YourPortableFacade>();
 shenora.Services.AddMessageDispatcher();
 var app = shenora.Build();
 ```
@@ -497,7 +497,7 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 
 | | |
 |---|---|
-| **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `BaseFacade`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora` contract. The mission scheduler and the file-update queue. |
+| **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `ModuleBase`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora` contract. The mission scheduler and the file-update queue. |
 | **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
 | **Transfers, INCLUDING seekable media — this row has been wrong twice** | **Resource serving.** `HybridWebView` has a request-interception seam in .NET 10 (`WebResourceRequested`, `e.Uri`, `e.Headers`, `e.Handled`), and the simple case needs none of it — put the built frontend in `Resources/Raw/wwwroot` and the platform serves it. What the seam buys is DYNAMIC content: a generated image, an exported file, **and seekable media**. ⚠ This row previously said seeking was impossible without `e.PlatformArgs`. **That is false** (corrected 2026-08-03 by device runs — **D44**): `SetResponse` has a SECOND overload taking a header DICTIONARY, on both mobile TFMs, and every header reaches the native response. Neither platform needed `PlatformArgs`. **But the two shells need OPPOSITE BODIES** for the same request — Android applies the `Range` start itself so you must NOT slice; iOS passes the body through so you MUST. **You do not write that yourself any more** (D45): `MobileWebViewInterceptor` implements the same `IWebViewInterceptor` the desktop does, so `interceptor.UseFiles(…)` and the page's `mediaUrl(…)` are literally the same code on all three shells and the delivery rule is read off the platform. Read D44 only if you are writing a middleware that answers ranges by hand; getting it wrong plays every faststart file perfectly and fails every other one. |
 | **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
@@ -554,7 +554,7 @@ Two consequences, and they bite in sequence:
 
 **The related tooling gap, if you hit it:** WebKit does not forward the page's `console.*` to the device log,
 so a page-side error can be genuinely invisible. Both this repo and the adopter independently ended up
-routing page → host over IPC and logging host-side (`PageDiagFacade` in `samples/Shenora.Sample.Maui`). It is
+routing page → host over IPC and logging host-side (`PageDiagModule` in `samples/Shenora.Sample.Maui`). It is
 a few lines; copy the pattern.
 
 ### The Dynamic Island for a PLAYER — what the kit gives you, and the four things you still write
@@ -1219,7 +1219,7 @@ decides whether a file can play as-is, and points at a conversion when it cannot
 > and no joint: the page posted its reports to a module nothing answered, and `OpenAsync` — which
 > completes on the page's first report and on nothing else — simply never returned. No exception, no log
 > line, and an element that was visibly playing. If you wrote that route yourself against an earlier
-> build, **delete it**; `MediaPlayerFacade` now answers on `SHENORA.MEDIA` and yours would collide.
+> build, **delete it**; `MediaPlayerModule` now answers on `SHENORA.MEDIA` and yours would collide.
 
 **Add conversion only when the device and its webview disagree** — which is the entire job of the media
 pipeline (D59): your hardware decodes AC-3, the `<video>` element will not touch it, and something has to

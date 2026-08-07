@@ -1,6 +1,6 @@
 using System.Text.Json;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -284,7 +284,7 @@ public class MessageDispatcherTests
     // The capability an app needs when it maps modules it did not write and cannot check at compile
     // time (plug-ins, licence-gated features, per-tenant or lazily loaded areas).
 
-    private sealed class StubFacade(string module, string answer) : IModuleFacade
+    private sealed class StubFacade(string module, string answer) : IIpcModule
     {
         public string ModuleName => module;
         public Task<IpcResponse> HandleMessageAsync(IpcRequest request, CancellationToken cancellationToken = default) =>

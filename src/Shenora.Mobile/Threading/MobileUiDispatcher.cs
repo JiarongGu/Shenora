@@ -1,5 +1,7 @@
 using Microsoft.Maui.Dispatching;
 using Shenora;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Mobile;
 

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// Reads typed values out of an <see cref="IpcRequest.Payload"/>. Ported from the primary

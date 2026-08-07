@@ -1,3 +1,6 @@
+using Shenora.Modules.Platform;
+using Shenora.Core.Shell;
+
 #if ANDROID
 using Shenora;
 

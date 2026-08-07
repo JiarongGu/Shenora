@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -35,7 +35,7 @@ public class DispatchCancellationTests
     }
 
     [Fact]
-    public async Task A_facade_receives_the_token_through_BaseFacade()
+    public async Task A_facade_receives_the_token_through_ModuleBase()
     {
         var facade = new TokenCapturingFacade();
         var dispatcher = new MessageDispatcher();
@@ -159,7 +159,7 @@ public class DispatchCancellationTests
         Assert.Equal(cts.Token, seen);
     }
 
-    private sealed class TokenCapturingFacade : BaseFacade
+    private sealed class TokenCapturingFacade : ModuleBase
     {
         public CancellationToken Seen { get; private set; }
 

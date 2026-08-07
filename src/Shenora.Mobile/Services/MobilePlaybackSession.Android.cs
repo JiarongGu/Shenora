@@ -1,3 +1,5 @@
+using Shenora.Modules.Platform;
+
 #if ANDROID
 using Android.Media;
 using Android.Media.Session;
@@ -6,7 +8,7 @@ using Shenora;
 // Android's is the builder-built state object. Aliased rather than partially qualified so no line in this
 // file is ambiguous to a reader either.
 using AndroidState = Android.Media.Session.PlaybackState;
-using PortableState = Shenora.PlaybackState;
+using PortableState = Shenora.Modules.Platform.PlaybackState;
 
 namespace Shenora.Mobile;
 

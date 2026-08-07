@@ -1,15 +1,17 @@
 using System.Text.Json;
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Desktop;
 
 /// <summary>
 /// The sample main window — since P4 a FRAMELESS <see cref="OptimizedForm"/>: the page renders
 /// its own title bar and drives the window over the <c>WINDOW</c> IPC module
-/// (<see cref="WindowCommandFacade"/>); drop zones overlay page elements
+/// (<see cref="WindowCommandModule"/>); drop zones overlay page elements
 /// (<see cref="DropZoneManager"/>); a tray icon (launcher-style, no close-to-tray so the e2e's
 /// graceful close still exits) rounds out the native surface. The IPC bridge keeps its intended
 /// order — construct before init (event buffering), attach after init, before navigation.
@@ -127,7 +129,7 @@ public sealed class MainForm : OptimizedForm
         // any composition that registered a different IMessageDispatcher or wrapped it in a decorator —
         // and the symptom was the frameless title bar simply not working, with no error anywhere.
         {
-            dispatcher.MapModule(new WindowCommandFacade(new WindowCommandOptions
+            dispatcher.MapModule(new WindowCommandModule(new WindowCommandOptions
             {
                 Window = this,
                 ToggleMaximize = ToggleMaximize,      // the frameless manual work-area path
@@ -138,9 +140,9 @@ public sealed class MainForm : OptimizedForm
                 CoordinateSpace = _webView,
                 SetCaptionButtons = SetCaptionButtons,
             }));
-            dispatcher.MapModule(new DropZoneFacade(_dropZones));
+            dispatcher.MapModule(new DropZoneModule(_dropZones));
 
-            // The route-builder shape (SampleFacade shows the BaseFacade shape): lease a pooled
+            // The route-builder shape (SampleModule shows the ModuleBase shape): lease a pooled
             // off-screen session, render the requested page, and prove its JS ran (title + HTML
             // length come from the LIVE DOM, not the response bytes) — the e2e drives this.
             dispatcher.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async (request, ct) =>
@@ -307,7 +309,7 @@ public sealed class MainForm : OptimizedForm
             Log = Console.WriteLine,
             // The other end of the MAUI sample's declaration — SAME page contract, different answer.
             // Every name below is something THIS composition actually registered a few lines up
-            // (WindowCommandFacade, DropZoneFacade, SecondaryWindows, TrayIcon, the STA dialogs), which
+            // (WindowCommandModule, DropZoneModule, SecondaryWindows, TrayIcon, the STA dialogs), which
             // is the discipline the descriptor demands: advertising one the app never mapped renders a
             // button that throws when pressed. The mobile shell answers `[filePicker]` to the same
             // handshake, and one bundle renders correctly against both.
@@ -428,7 +430,7 @@ public sealed class MainForm : OptimizedForm
     private void ReportSplashCaptionButtons()
     {
         if (_pageOwnsCaptionButtons || !IsHandleCreated || IsDisposed) return;
-        // CSS px -> physical px through the control's own DPI, exactly as WindowCommandFacade does
+        // CSS px -> physical px through the control's own DPI, exactly as WindowCommandModule does
         // for the page's report; a constant here would be wrong on any scaled display.
         var scale = DpiHelper.ScaleFromDeviceDpi(DeviceDpi);
         var w = (int)Math.Round(2.6 * 16 * scale);

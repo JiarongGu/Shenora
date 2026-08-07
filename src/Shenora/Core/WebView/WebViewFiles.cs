@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Shenora;
+namespace Shenora.Core.WebView;
 
 /// <summary>
 /// What an app permits a page to load from disk, and how its route maps to a file.

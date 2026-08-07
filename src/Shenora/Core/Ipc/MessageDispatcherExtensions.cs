@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The composition surface of <see cref="IMessageDispatcher"/> — every mapping and middleware helper,
@@ -149,7 +149,7 @@ public static class MessageDispatcherExtensions
 
     /// <summary>
     /// Route a whole module to a facade. This replaces the source app's static mutable service
-    /// registry: facades live in DI (registered as <see cref="IModuleFacade"/>) and are mapped here.
+    /// registry: facades live in DI (registered as <see cref="IIpcModule"/>) and are mapped here.
     /// <para>
     /// THROWS if the module is already mapped, matching the eager DI path
     /// (<c>MapRegisteredModules</c>) which has always guarded this. A facade answers every request
@@ -158,7 +158,7 @@ public static class MessageDispatcherExtensions
     /// than a composition bug.
     /// </para>
     /// </summary>
-    public static IMessageDispatcher MapModule(this IMessageDispatcher dispatcher, IModuleFacade facade)
+    public static IMessageDispatcher MapModule(this IMessageDispatcher dispatcher, IIpcModule facade)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(facade);
@@ -211,8 +211,8 @@ public static class MessageDispatcherExtensions
     /// name — after which the plug-in never runs, because the lazy middleware sits EARLIER in the
     /// pipeline and answers first. The PRECEDENCE is the intended one (the app's own modules win);
     /// the honest answer is what is missing. So map anything a plug-in must be able to collide with
-    /// through <see cref="MapModule(IMessageDispatcher, IModuleFacade)"/> or this method explicitly,
-    /// rather than through <c>AddModuleFacade</c>. Recorded rather than solved: closing it needs
+    /// through <see cref="MapModule(IMessageDispatcher, IIpcModule)"/> or this method explicitly,
+    /// rather than through <c>AddIpcModule</c>. Recorded rather than solved: closing it needs
     /// either a name-reservation seam the registry does not have, or re-opening that deadlock.
     /// </para>
     /// <para>
@@ -220,7 +220,7 @@ public static class MessageDispatcherExtensions
     /// </para>
     /// </summary>
     /// <returns>True if the module was mapped; false if the name was already claimed.</returns>
-    public static bool TryMapModule(this IMessageDispatcher dispatcher, IModuleFacade facade)
+    public static bool TryMapModule(this IMessageDispatcher dispatcher, IIpcModule facade)
     {
         ArgumentNullException.ThrowIfNull(facade);
         return Registry(dispatcher, nameof(TryMapModule)).TryClaimModule(facade);

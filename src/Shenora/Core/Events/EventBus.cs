@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Shenora;
+namespace Shenora.Core.Events;
 
 /// <summary>
 /// The <see cref="IEventBus"/> implementation (see the interface for the matching semantics).

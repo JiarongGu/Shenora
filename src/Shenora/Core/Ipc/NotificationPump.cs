@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
 using Shenora;
+using Shenora.Core.Events;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The transport-neutral half of a host's outbound notification channel: the bounded

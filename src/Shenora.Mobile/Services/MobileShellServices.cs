@@ -2,6 +2,9 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Storage;
 using Shenora;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 
 namespace Shenora.Mobile;
 

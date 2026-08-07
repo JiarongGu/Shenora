@@ -1,4 +1,7 @@
 using Microsoft.Web.WebView2.Core;
+using Shenora.Core.WebView;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -25,9 +28,9 @@ public sealed class WebViewHost
     private readonly WebView2Control _webView;
     private readonly WebViewHostOptions _options;
     private readonly Action<string>? _log;
-    private readonly Shenora.IUiDispatcher _ui;
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
-    private readonly Shenora.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
+    private readonly Shenora.Core.Shell.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
     private readonly WebView2Interceptor _interceptor = new();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
     private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)

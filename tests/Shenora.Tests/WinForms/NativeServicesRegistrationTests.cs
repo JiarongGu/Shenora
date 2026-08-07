@@ -1,6 +1,9 @@
 using Shenora;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WinForms;
 
@@ -24,7 +27,7 @@ public class NativeServicesRegistrationTests
     /// <para>
     /// ⚠ <b>It drives a FAKE <see cref="IFileDialogs"/> rather than probing for an error code, and the
     /// first attempt at the latter is why.</b> A bogus route looked like the obvious probe — "did the
-    /// module answer?" — but <c>BaseFacade.UnknownType</c> and the dispatcher's terminal BOTH return
+    /// module answer?" — but <c>ModuleBase.UnknownType</c> and the dispatcher's terminal BOTH return
     /// <c>NO_HANDLER</c> with identical <c>module</c>/<c>type</c> parameters, so "no such module" and
     /// "no such route in this module" are indistinguishable on the wire. Registering a fake before
     /// <c>UseWindows</c> (TryAdd means the app's wins) proves the whole chain instead: registration →
@@ -40,11 +43,11 @@ public class NativeServicesRegistrationTests
         builder.UseWindows(new WindowsHostOptions { MainForm = _ => new Form() });
         using var app = builder.Build();
 
-        var response = await app.Services.GetRequiredService<Shenora.Ipc.IMessageDispatcher>()
-            .DispatchAsync(new Shenora.Ipc.IpcRequest
+        var response = await app.Services.GetRequiredService<Shenora.Core.Ipc.IMessageDispatcher>()
+            .DispatchAsync(new Shenora.Core.Ipc.IpcRequest
             {
                 Id = "r1",
-                Module = Shenora.Ipc.FileDialogFacade.Module,
+                Module = FileDialogModule.Module,
                 Type = "OPEN_FILE",
             }, CancellationToken.None);
 

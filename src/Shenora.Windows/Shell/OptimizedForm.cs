@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
@@ -68,7 +69,7 @@ public sealed class OptimizedFormOptions
 /// borderless "custom chrome" (from the second sibling, with its measured lessons kept as
 /// comments below). With <see cref="OptimizedFormOptions.FramelessChrome"/> the default title
 /// bar is gone; min/max/close/drag/resize are driven from the frontend over IPC (see
-/// <c>WindowCommandFacade</c> in Shenora.Windows and <c>WindowCommands</c> in @shenora/react).
+/// <c>WindowCommandModule</c> in Shenora.Windows and <c>WindowCommands</c> in @shenora/react).
 ///
 /// Frameless technique: WM_NCCALCSIZE keeps Windows' native (visually invisible on Win11)
 /// side/bottom resize borders but gives the TOP back to the client — so the window is
@@ -267,7 +268,7 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <para>
     /// Call it on the UI THREAD. With <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on it
     /// reshapes child controls, which is not safe cross-thread; the kit's own route already marshals
-    /// (<c>WindowCommandFacade</c> posts through <c>IUiDispatcher</c>). Calling it before the handle
+    /// (<c>WindowCommandModule</c> posts through <c>IUiDispatcher</c>). Calling it before the handle
     /// exists is fine and supported — the rectangles are stored and the clip is applied once the
     /// window is shown, which is what lets an app declare its buttons early enough to be usable
     /// behind a splash screen.
@@ -424,7 +425,7 @@ public class OptimizedForm : Form, IAppMaximizable
     {
         if (_captionUnion.IsEmpty || child.Width <= 0 || child.Height <= 0) return Rectangle.Empty;
         // The union is in this FORM's client px; a window region is in the CHILD's own. Via screen
-        // coordinates for the same reason WindowCommandFacade converts that way: identical whenever
+        // coordinates for the same reason WindowCommandModule converts that way: identical whenever
         // the child fills the form, and correct when it does not.
         if (!IsHandleCreated || !child.IsHandleCreated) return Rectangle.Empty;
         var topLeft = child.PointToClient(PointToScreen(_captionUnion.Location));

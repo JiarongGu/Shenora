@@ -1,5 +1,6 @@
 using Shenora.Sample.Desktop;
 using Shenora.Windows;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Samples;
 

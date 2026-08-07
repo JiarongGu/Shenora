@@ -1,4 +1,4 @@
-namespace Shenora;
+namespace Shenora.Core.Events;
 
 /// <summary>
 /// An in-process pub/sub event on the <see cref="IEventBus"/>: which module it originates from,

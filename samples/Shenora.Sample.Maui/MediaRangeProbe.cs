@@ -1,5 +1,7 @@
 using Shenora;
 using Shenora.Mobile;
+using Shenora.Modules.Update;
+using Shenora.Core.WebView;
 
 namespace Shenora.Sample.Maui;
 

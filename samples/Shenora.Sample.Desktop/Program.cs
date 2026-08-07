@@ -1,9 +1,9 @@
 using Shenora;
-using Shenora.IO;
-using Shenora.Ipc;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Missions;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Desktop;
 
@@ -111,16 +111,16 @@ internal static class Program
             app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
                 [new Shenora.Sample.Logic.MissionOperationObserver(
                     app.Services.GetRequiredService<IOperationRegistry>(),
-                    Shenora.Sample.Logic.PortableSampleFacade.Module)];
+                    Shenora.Sample.Logic.PortableSampleModule.Module)];
             // Lane capacities are configured ONCE, at startup, by name — an unknown name is created at
             // the default capacity rather than rejected, so a typo silently costs the budget you meant.
             scheduler.Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2;
         });
 
-        builder.Services.AddModuleFacade<SampleFacade>();
+        builder.Services.AddIpcModule<SampleModule>();
         // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
         // resolves the same implementations through their platform-neutral contracts.
-        builder.Services.AddModuleFacade<Shenora.Sample.Logic.PortableSampleFacade>();
+        builder.Services.AddIpcModule<Shenora.Sample.Logic.PortableSampleModule>();
 
         builder.Services.AddSingleton<MainForm>();
 

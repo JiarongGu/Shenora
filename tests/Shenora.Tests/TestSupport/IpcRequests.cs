@@ -1,4 +1,5 @@
-using Shenora.Ipc;
+using Shenora.Core.Ipc;
+
 
 namespace Shenora.Tests.TestSupport;
 

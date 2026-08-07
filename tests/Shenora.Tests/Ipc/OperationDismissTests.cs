@@ -1,5 +1,6 @@
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 

@@ -1,4 +1,5 @@
 using Shenora;
+using Shenora.Modules.Platform;
 
 namespace Shenora.Tests.Core;
 

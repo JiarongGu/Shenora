@@ -1,4 +1,6 @@
-namespace Shenora;
+using Shenora.Core.Shell;
+
+namespace Shenora.Core.WebView;
 
 /// <summary>
 /// The middleware registry and composition behind every shell's <see cref="IWebViewInterceptor"/> — the

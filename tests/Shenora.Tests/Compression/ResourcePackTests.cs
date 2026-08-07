@@ -1,5 +1,6 @@
 using System.IO.Compression;
-using Shenora.IO.Compression;
+using Shenora.Modules.Update.Compression;
+using Shenora.Modules.Update;
 
 namespace Shenora.Tests.Compression;
 

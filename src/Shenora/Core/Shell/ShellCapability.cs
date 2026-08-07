@@ -1,4 +1,7 @@
-namespace Shenora;
+using Shenora.Core.WebView;
+using Shenora.Core.Ipc;
+
+namespace Shenora.Core.Shell;
 
 /// <summary>
 /// How a shell reports a contract it cannot honour. Owner decision, 2026-08-02: an unsupported

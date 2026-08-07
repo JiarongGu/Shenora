@@ -1,5 +1,7 @@
 using Shenora;
 using Shenora.Tests.TestSupport;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WinForms;
 

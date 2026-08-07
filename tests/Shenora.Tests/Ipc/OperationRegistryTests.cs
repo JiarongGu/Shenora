@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Time.Testing;
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -200,7 +201,7 @@ public class OperationRegistryTests
     /// <summary>
     /// FINDING 4 (Important, whole-branch review): <c>GetAll</c> used to filter scope by STRICT
     /// equality, so an UNSCOPED operation was excluded from a scoped <c>LIST</c> — but both event
-    /// buses (<c>Shenora.EventBus</c>, the TS <c>ShenoraEventBus</c>) apply the family rule that a
+    /// buses (<c>Shenora.Core.Events.EventBus</c>, the TS <c>ShenoraEventBus</c>) apply the family rule that a
     /// scope-less (global) event still reaches scoped subscribers. A scoped operations store therefore
     /// never SAW an unscoped operation in its snapshot but DID fold its deltas, so its contents
     /// silently depended on whether it mounted before or after the work started. <c>GetAll</c> must

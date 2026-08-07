@@ -72,7 +72,7 @@ export interface UseMediaPlayerOptions {
  * at all, which needs a probe and a device capability query).
  *
  * ⚠ **The host half needs nothing from you.** The reports posted here are an ordinary IPC message
- * (`PLAYER_REPORT` on {@link MEDIA_PLAYER_MODULE}) and the kit's own `MediaPlayerFacade` answers it,
+ * (`PLAYER_REPORT` on {@link MEDIA_PLAYER_MODULE}) and the kit's own `MediaPlayerModule` answers it,
  * registered by the media feature itself. If you wrote that route by hand against a build from before
  * 2026-08-07, **delete it** — two facades on one module is a duplicate the host rejects.
  *

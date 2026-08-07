@@ -1,5 +1,8 @@
 using Shenora;
-using Shenora.Media;
+using Shenora.Modules.Platform;
+using Shenora.Modules.Media;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Media;
 

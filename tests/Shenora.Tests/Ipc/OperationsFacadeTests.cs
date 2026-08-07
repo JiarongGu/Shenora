@@ -1,17 +1,19 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Modules.Operations;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
-public class OperationsFacadeTests
+public class OperationsModuleTests
 {
-    private static (OperationsFacade Facade, OperationRegistry Registry) Build()
+    private static (OperationsModule Facade, OperationRegistry Registry) Build()
     {
         var registry = new OperationRegistry(new EventBus(),
             new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero });
-        return (new OperationsFacade(registry), registry);
+        return (new OperationsModule(registry), registry);
     }
 
     [Fact]
@@ -216,7 +218,7 @@ public class OperationsFacadeTests
 
         Assert.Same(provider.GetRequiredService<IOperationRegistry>(),
                     provider.GetRequiredService<IOperationRegistry>());          // singleton
-        Assert.Contains(provider.GetServices<IModuleFacade>(), f => f is OperationsFacade);
+        Assert.Contains(provider.GetServices<IIpcModule>(), f => f is OperationsModule);
     }
 
     /// <summary>
@@ -239,7 +241,7 @@ public class OperationsFacadeTests
         services.AddShenoraOperations(new OperationRegistryOptions { ModuleName = "MY_OPS", ProgressInterval = TimeSpan.Zero });
         using var provider = services.BuildServiceProvider();
 
-        var facade = provider.GetServices<IModuleFacade>().OfType<OperationsFacade>().Single();
+        var facade = provider.GetServices<IIpcModule>().OfType<OperationsModule>().Single();
         Assert.Equal("MY_OPS", facade.ModuleName);
 
         var events = new List<EventMessage>();

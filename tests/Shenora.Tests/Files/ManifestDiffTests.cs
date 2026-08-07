@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Shenora;
-using Shenora.IO;
+using Shenora.Modules.Update;
+using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Io;
 

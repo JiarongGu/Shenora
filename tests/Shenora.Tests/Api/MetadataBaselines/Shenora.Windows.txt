@@ -59,10 +59,6 @@ Shenora.Windows.DpiHelper
   method Scale
   method ScaleFromDeviceDpi
   method SystemScale
-Shenora.Windows.DropZoneFacade
-  method .ctor
-  method RouteMessageAsync
-  property ModuleName
 Shenora.Windows.DropZoneManager
   field Module
   method .ctor
@@ -77,6 +73,10 @@ Shenora.Windows.DropZoneManagerOptions
   property EventBus
   property ParentForm
   property WebView
+Shenora.Windows.DropZoneModule
+  method .ctor
+  method RouteMessageAsync
+  property ModuleName
 Shenora.Windows.EmbeddedResourceProvider
   method .ctor
   method BeginWarmup
@@ -611,7 +611,7 @@ Shenora.Windows.WinFormsUiDispatcher
   method Post
   property IsOnUiThread
   property State
-Shenora.Windows.WindowCommandFacade
+Shenora.Windows.WindowCommandModule
   field Module
   method .ctor
   method RouteMessageAsync

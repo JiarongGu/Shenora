@@ -1,5 +1,6 @@
 using Shenora.Windows;
 using Shenora;
+using Shenora.Core.WebView;
 
 namespace Shenora.Tests.Core;
 

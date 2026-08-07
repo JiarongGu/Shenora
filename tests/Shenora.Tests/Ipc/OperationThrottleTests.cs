@@ -1,7 +1,8 @@
 using System.Threading;
 using Microsoft.Extensions.Time.Testing;
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 

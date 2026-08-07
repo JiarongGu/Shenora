@@ -1,4 +1,4 @@
-namespace Shenora;
+namespace Shenora.Core.Shell;
 
 // Portable slices of the native-service contracts (D20). The rule for what lands here is NOT
 // "the signature happens to be platform-neutral" — it is "app logic must be able to compile off

@@ -1,6 +1,6 @@
-using Shenora.Ipc;
 using Shenora.Windows;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WebView2;
 
@@ -10,10 +10,10 @@ namespace Shenora.Tests.WebView2;
 /// START_DRAG/START_RESIZE are asserted at the response level only (their posted OS
 /// move/size-loop handoff needs a live interactive window — the sample e2e's subject).
 /// </summary>
-public class WindowCommandFacadeTests
+public class WindowCommandModuleTests
 {
     private static IpcRequest Request(string type, object? payload = null) =>
-        IpcRequests.Create(WindowCommandFacade.Module, type, payload: payload);
+        IpcRequests.Create(WindowCommandModule.Module, type, payload: payload);
 
     private static Form CreateForm()
     {
@@ -26,7 +26,7 @@ public class WindowCommandFacadeTests
     public async Task Minimize_posts_to_the_form()
     {
         using var form = CreateForm();
-        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
 
         var response = await facade.HandleMessageAsync(Request("MINIMIZE"));
         Application.DoEvents();
@@ -39,7 +39,7 @@ public class WindowCommandFacadeTests
     public async Task Toggle_maximize_defaults_to_window_state()
     {
         using var form = CreateForm();
-        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
 
         await facade.HandleMessageAsync(Request("TOGGLE_MAXIMIZE"));
         Application.DoEvents();
@@ -55,7 +55,7 @@ public class WindowCommandFacadeTests
     {
         using var form = CreateForm();
         var toggled = 0;
-        var facade = new WindowCommandFacade(new WindowCommandOptions
+        var facade = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             ToggleMaximize = () => toggled++,
@@ -72,8 +72,8 @@ public class WindowCommandFacadeTests
     public async Task Is_maximized_reads_the_seam_or_window_state()
     {
         using var form = CreateForm();
-        var byState = new WindowCommandFacade(new WindowCommandOptions { Window = form });
-        var bySeam = new WindowCommandFacade(new WindowCommandOptions
+        var byState = new WindowCommandModule(new WindowCommandOptions { Window = form });
+        var bySeam = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             IsMaximized = () => true, // e.g. OptimizedForm.IsAppMaximized — never in WindowState
@@ -92,7 +92,7 @@ public class WindowCommandFacadeTests
         using var form = CreateForm();
         var closed = false;
         form.FormClosed += (_, _) => closed = true;
-        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
 
         await facade.HandleMessageAsync(Request("CLOSE"));
         Application.DoEvents();
@@ -106,7 +106,7 @@ public class WindowCommandFacadeTests
     public async Task Drag_and_resize_routes_answer_success(string type)
     {
         using var form = CreateForm();
-        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
 
         // DISPATCHED FROM A WORKER THREAD ON PURPOSE — do not "simplify" this to a direct await.
         // The handoff body calls SendMessage(WM_NCLBUTTONDOWN), which enters the OS modal move/size
@@ -129,8 +129,8 @@ public class WindowCommandFacadeTests
     {
         using var form = CreateForm();
         var applied = new List<bool>();
-        var without = new WindowCommandFacade(new WindowCommandOptions { Window = form });
-        var with = new WindowCommandFacade(new WindowCommandOptions
+        var without = new WindowCommandModule(new WindowCommandOptions { Window = form });
+        var with = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             ApplyTheme = applied.Add,
@@ -154,7 +154,7 @@ public class WindowCommandFacadeTests
     public async Task Caption_buttons_are_refused_until_the_seam_is_wired()
     {
         using var form = CreateForm();
-        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
 
         var response = await facade.HandleMessageAsync(Request("SET_CAPTION_BUTTONS",
             new { buttons = new[] { new { kind = "maximize", x = 10, y = 0, width = 30, height = 30 } } }));
@@ -168,7 +168,7 @@ public class WindowCommandFacadeTests
     {
         using var form = CreateForm();
         IReadOnlyList<CaptionButtonRegion>? received = null;
-        var facade = new WindowCommandFacade(new WindowCommandOptions
+        var facade = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             CoordinateSpace = form,
@@ -200,7 +200,7 @@ public class WindowCommandFacadeTests
     {
         using var form = CreateForm();
         IReadOnlyList<CaptionButtonRegion>? received = null;
-        var facade = new WindowCommandFacade(new WindowCommandOptions
+        var facade = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             CoordinateSpace = form,
@@ -219,7 +219,7 @@ public class WindowCommandFacadeTests
     {
         using var form = CreateForm();
         IReadOnlyList<CaptionButtonRegion>? received = null;
-        var facade = new WindowCommandFacade(new WindowCommandOptions
+        var facade = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             CoordinateSpace = form,
@@ -247,7 +247,7 @@ public class WindowCommandFacadeTests
     {
         using var form = CreateForm();
         IReadOnlyList<CaptionButtonRegion>? received = null;
-        var facade = new WindowCommandFacade(new WindowCommandOptions
+        var facade = new WindowCommandModule(new WindowCommandOptions
         {
             Window = form,
             CoordinateSpace = form,
@@ -267,12 +267,12 @@ public class WindowCommandFacadeTests
     public async Task Unknown_types_answer_structured_no_handler()
     {
         using var form = CreateForm();
-        var facade = new WindowCommandFacade(new WindowCommandOptions { Window = form });
+        var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
 
         var response = await facade.HandleMessageAsync(Request("NOPE"));
 
         Assert.False(response.Success);
         Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
-        Assert.Equal(WindowCommandFacade.Module, response.Error.Parameters!["module"]);
+        Assert.Equal(WindowCommandModule.Module, response.Error.Parameters!["module"]);
     }
 }

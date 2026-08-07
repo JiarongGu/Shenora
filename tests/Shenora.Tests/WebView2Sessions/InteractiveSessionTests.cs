@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using Shenora.Windows;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WebView2Sessions;
 

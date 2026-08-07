@@ -1,5 +1,7 @@
 using System.Text;
 using Microsoft.Web.WebView2.Core;
+using Shenora.Core.WebView;
+using Shenora.Core.Shell;
 // WebViewContentTypes moved to Shenora on 2026-08-04 (D45): a MIME map has nothing Windows-specific
 // about it, and every shell's resource interceptor needs one.
 using Shenora;

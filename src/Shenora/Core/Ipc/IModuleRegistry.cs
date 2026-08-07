@@ -1,4 +1,4 @@
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The lifecycle of the modules a dispatcher routes — claim, ask, release. The seam an app needs
@@ -38,7 +38,7 @@ public interface IModuleRegistry
     /// already taken. Called by <c>MapModule</c>/<c>TryMapModule</c>; apps normally use those.
     /// </summary>
     /// <returns>True if the module was claimed; false if the name was already in use.</returns>
-    bool TryClaimModule(IModuleFacade facade);
+    bool TryClaimModule(IIpcModule facade);
 
     /// <summary>
     /// Release a claimed module: it stops answering and its name becomes free to claim again.

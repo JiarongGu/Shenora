@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The host→client push envelope: <c>{ category: "notification", id, payload: [...],

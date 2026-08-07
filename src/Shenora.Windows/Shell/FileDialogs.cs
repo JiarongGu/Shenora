@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shenora;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 
 namespace Shenora.Windows;
 

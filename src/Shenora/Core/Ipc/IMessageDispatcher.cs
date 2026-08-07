@@ -1,4 +1,6 @@
-namespace Shenora.Ipc;
+using Shenora.Modules.Operations;
+
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// Routes IPC requests through the middleware pipeline to module handlers/facades — the seam
@@ -20,7 +22,7 @@ public interface IMessageDispatcher
     /// never given. It is deliberately NOT per-request client cancellation: a one-way
     /// <c>post</c> has no caller waiting, so "the client changed its mind" is an app-level CANCEL
     /// route carrying the operation id, not a transport concern (see <c>docs/DECISIONS.md</c> D23,
-    /// and <see cref="OperationsFacade"/>, which ships that route). Cancellation surfaces to the client as
+    /// and <see cref="OperationsModule"/>, which ships that route). Cancellation surfaces to the client as
     /// <see cref="IpcErrorCodes.OperationCancelled"/>, never as a thrown exception — the
     /// never-throws contract holds.
     /// </para>
@@ -40,7 +42,7 @@ public interface IMessageDispatcher
 
     /// <summary>
     /// Append a middleware — the ONE composition primitive. Every mapping helper
-    /// (<see cref="MessageDispatcherExtensions.MapModule(IMessageDispatcher, IModuleFacade)"/> and
+    /// (<see cref="MessageDispatcherExtensions.MapModule(IMessageDispatcher, IIpcModule)"/> and
     /// friends) is an extension method over this, so all of them work on the interface.
     /// <para>
     /// WHY THIS IS ON THE INTERFACE (P5.5 H6). The interface previously exposed only dispatch/send, so

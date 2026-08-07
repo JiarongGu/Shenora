@@ -1,4 +1,5 @@
 using Shenora;
+using Shenora.Core.WebView;
 
 namespace Shenora.Windows;
 

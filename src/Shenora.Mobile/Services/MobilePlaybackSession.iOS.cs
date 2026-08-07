@@ -1,8 +1,11 @@
+using Shenora.Modules.Platform;
+using Shenora.Modules.Media;
+
 #if IOS || MACCATALYST
 using Foundation;
 using MediaPlayer;
 using Shenora;
-using PortableState = Shenora.PlaybackState;
+using PortableState = Shenora.Modules.Platform.PlaybackState;
 
 namespace Shenora.Mobile;
 

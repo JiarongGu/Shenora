@@ -135,7 +135,7 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
  */
 function SlowPanel({ hosted }: { hosted: boolean }) {
   // The store is shared/module-wide (any op, any module); this pane selects only ITS operation by
-  // the module + kind the host route sets (SampleFacade's SLOW case: Kind = "SLOW"). `s.running` is
+  // the module + kind the host route sets (SampleModule's SLOW case: Kind = "SLOW"). `s.running` is
   // the store's own shipped selector for "currently running", not a hand-rolled status check — the
   // supported idiom its own doc recommends.
   const operation = useShenoraOperations((s) => s.running.find((o) => o.module === 'SAMPLE' && o.kind === 'SLOW'));

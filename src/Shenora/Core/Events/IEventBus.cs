@@ -1,4 +1,6 @@
-namespace Shenora;
+using Shenora.Core.WebView;
+
+namespace Shenora.Core.Events;
 
 /// <summary>
 /// In-process pub/sub between modules, services, and transport bridges — ported from the primary

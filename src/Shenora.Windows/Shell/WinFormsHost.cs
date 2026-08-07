@@ -3,7 +3,11 @@ using Shenora;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Shenora.Ipc;
+using Shenora.Modules.Platform;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Media;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 
 namespace Shenora.Windows;
 
@@ -146,7 +150,7 @@ public static class WindowsHostExtensions
         //
         // Singleton because it caches — the codec set cannot change while the process runs (an installed
         // extension needs a restart), and each query walks the platform's MFT list.
-        builder.Services.TryAddSingleton<Shenora.Media.IMediaCapability>(sp =>
+        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(sp =>
             new WindowsMediaCapability(message =>
                 sp.GetService<ILogger<WindowsMediaCapability>>()?.LogDebug("{Message}", message)));
 

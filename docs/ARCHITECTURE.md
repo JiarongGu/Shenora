@@ -31,7 +31,7 @@ narrative is `CHANGELOG.md`.
 **2026-08-01 — the communication core** (D23,
 implemented; drafted under the name "0.2.0" and released later that day as part of v0.3.0): the module
 contract now carries the EVENT path — `IModuleContext` (`Publish`/`Start`/`Run`/`Logger`) is the
-second parameter of `BaseFacade.RouteMessageAsync`, the one breaking change this release makes. A new
+second parameter of `ModuleBase.RouteMessageAsync`, the one breaking change this release makes. A new
 operations cluster in `Shenora.Ipc` tracks long-running work (id, status, progress, cancel-by-id,
 throttled progress emission) as mechanism only — what an operation IS stays app-defined. The
 transport-neutral half of the outbound notification pipeline moved out of `WebViewIpcBridge` into
@@ -226,9 +226,9 @@ Shenora.slnx
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
     ├── Shenora.Sample.Desktop  net10.0-windows — the reference composition (builder → UseWindows →
     │                                            prewarm → WebViewHost + provider + SplashPanel +
-    │                                            frameless OptimizedForm + WindowCommandFacade +
+    │                                            frameless OptimizedForm + WindowCommandModule +
     │                                            DropZoneManager/Facade + SecondaryWindows + TrayIcon +
-    │                                            SampleFacade → MessageDispatcher → WebViewIpcBridge,
+    │                                            SampleModule → MessageDispatcher → WebViewIpcBridge,
     │                                            1 Hz IEventBus tick source); embeds wwwroot
     │                                            (built by the web sample, gitignored)
     ├── Shenora.Sample.Logic    net10.0         — the PORTABILITY PROOF (H4.3): one facade that picks
@@ -675,7 +675,7 @@ changes, noting them in `CHANGELOG.md`).
   `IMessageDispatcher`, `IsHandleCreated`-guarded `BeginInvoke` posts, bounded drop-oldest
   notification queue buffering from construction + ~50 ms batch flush after the reserved
   `SHENORA`/`READY` client handshake, optional `IEventBus` wildcard forwarding,
-  `SendNotification`, `OnClientReady` per-handshake callback); `WindowCommandFacade` + `WindowCommandOptions`
+  `SendNotification`, `OnClientReady` per-handshake callback); `WindowCommandModule` + `WindowCommandOptions`
   (module `SHENORA.WINDOW`: MINIMIZE/TOGGLE_MAXIMIZE/CLOSE/IS_MAXIMIZED/START_DRAG/START_RESIZE +
   optional SET_THEME; `ToggleMaximize`/`IsMaximized` delegate seams for frameless apps — here
   because the commands arrive over the bridge and need Ipc, which WinForms doesn't reference);
@@ -683,7 +683,7 @@ changes, noting them in `CHANGELOG.md`).
   capture real OS paths incl. background drags; non-blocking UI marshalling, activation sync,
   DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; zones cleared on
   `ContentLoading` so overlay lifetime follows the DOCUMENT, never the ready handshake, which used to
-  race the page that was registering; events on `IEventBus`) + `DropZoneFacade` (module `SHENORA.DROPZONE`:
+  race the page that was registering; events on `IEventBus`) + `DropZoneModule` (module `SHENORA.DROPZONE`:
   REGISTER/UPDATE/UNREGISTER/SHOW).
 - `Shenora` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
   where an escaping exception is fatal rather than catchable (a UI-thread event handler, a timer tick, a
@@ -693,7 +693,7 @@ changes, noting them in `CHANGELOG.md`).
   rewrote all three old Windows ids to the new one and nobody read the result. `doc-drift` is blind to
   it by construction (the retired names are gone, so nothing is left to match), which is why the rule
   after a rename sweep is to READ THE DIFF. Four instances of this shape have now been found: this one,
-  `AppCallback`'s XML, `WindowCommandFacade`'s, and `REVIEW-GUIDE.md`'s own (fixed 2026-08-05).
+  `AppCallback`'s XML, `WindowCommandModule`'s, and `REVIEW-GUIDE.md`'s own (fixed 2026-08-05).
 - `Shenora.Windows` — auxiliary browser sessions (D14: browser work outside the
   app's own UI, kept out of the core hosting package): `SessionBrowser(+Options)` (the ONE
   auxiliary-WebView2 configuration path — per-profile environment, quiet-start +
@@ -767,8 +767,8 @@ changes, noting them in `CHANGELOG.md`).
   transport entry: never throws, never null — `NO_HANDLER`/structured/`UNKNOWN_ERROR` mapping
   with details kept host-side; programmatic `SendAsync`/`SendAsync<T>` over the same pipeline,
   typed failures rethrow `OperationException`), `MessageMiddleware` delegate,
-  `ModuleRouteBuilder`, `IModuleFacade` (carries `ModuleName` — facade objects route via DI +
-  `MapModule`, no static registry) / `BaseFacade` (standardized error boundary) /
+  `ModuleRouteBuilder`, `IIpcModule` (carries `ModuleName` — facade objects route via DI +
+  `MapModule`, no static registry) / `ModuleBase` (standardized error boundary) /
   `IpcErrorMapping` (that boundary as public surface: `ToError`/`ToErrorResponse`, for an app whose
   failures travel as events and so has no response to attach one to); a `CancellationToken` flows
   the whole pipeline — the CALLER's lifetime, supplied by the transport and cancelled on its dispose,
@@ -777,7 +777,7 @@ changes, noting them in `CHANGELOG.md`).
   `OnScopeCreated`, single-flight creation, `MapModule<TFacade>` declarations, structured
   `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`
   (on `ScopedContainerRouterExtensions`); composition helpers
-  `AddModuleFacade<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher` on
+  `AddIpcModule<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher` on
   `IpcServiceCollectionExtensions` (error handler → app middleware → DI-registered facades, mapped
   LAZILY so the singleton is cached before the provider is enumerated); and
   `MessageDispatcherExtensions`, which carries the composition helpers as extensions over the
@@ -804,10 +804,10 @@ changes, noting them in `CHANGELOG.md`).
   `MapModule(facade)`/`TryMapModule` explicitly rather than through DI registration.
   **The module contract's event half (0.2.0, D23):** `IModuleContext` (`Module`, `Logger`,
   `Publish(type, payload?, scope?)`, `Start(OperationOptions)`, `Run(OperationOptions, work)`) is the
-  second parameter of `BaseFacade.RouteMessageAsync` — the release's one breaking change, because
+  second parameter of `ModuleBase.RouteMessageAsync` — the release's one breaking change, because
   `Shenora.Ipc` had zero references to `IEventBus` while the kit's own `DropZoneManager` took one as a
-  REQUIRED option. Built once per facade (`BaseFacade.Context`, lazy — `ModuleName` is abstract and
-  unreadable from the base constructor) from the now-optional `BaseFacade(ILogger?, IEventBus?,
+  REQUIRED option. Built once per facade (`ModuleBase.Context`, lazy — `ModuleName` is abstract and
+  unreadable from the base constructor) from the now-optional `ModuleBase(ILogger?, IEventBus?,
   IOperationRegistry?)` constructor params; `Publish`/`Start`/`Run` throw a loud, self-naming
   `InvalidOperationException` when the corresponding dependency was never supplied, rather than
   silently no-op-ing. `Publish` needs no registry and no opt-in — the primary, always-available
@@ -850,12 +850,12 @@ changes, noting them in `CHANGELOG.md`).
   throttled. `OperationEvents`
   (`Updated` = `OPERATION_UPDATED`, `ResumeRequested` = `OPERATION_RESUME_REQUESTED`,
   `WaitRequested` = `OPERATION_WAIT_REQUESTED`, `Removed` = `OPERATION_REMOVED`),
-  `OperationsFacade` (module `SHENORA.OPERATIONS` by default, shared with the registry via one
+  `OperationsModule` (module `SHENORA.OPERATIONS` by default, shared with the registry via one
   `OperationRegistryOptions` instance so the two can never drift apart:
   `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`), `AddShenoraOperations` (opt-in DI
   wiring; an app with no long-running work pays nothing).
   **The file-dialog cluster** (2026-08-05) — the page's route to whichever `IFileDialogs` the SHELL
-  registered, so a picker needs no app-written route: `FileDialogFacade` (module `SHENORA.DIALOGS`, a fixed
+  registered, so a picker needs no app-written route: `FileDialogModule` (module `SHENORA.DIALOGS`, a fixed
   const because this facade publishes nothing for a configurable name to stay in step with —
   `OPEN_FILE`/`OPEN_FOLDER`/`SAVE_FILE`/`SAVE_TEXT`) + `AddShenoraFileDialogs` (opt-in). `SAVE_TEXT` is the
   PORTABLE save — the host does the writing, so it works on every shell — and carries text rather than

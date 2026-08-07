@@ -184,7 +184,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 **Accepted design deviations (with rationale in `docs/DECISIONS.md` / port comments):**
 - `Shenora` depends on the Microsoft DI *implementation* package, not just abstractions (D17 —
   the builder needs `BuildServiceProvider`).
-- `WindowCommandFacade` / the drop-zone stack live in `Shenora.Windows/WebView/` (not `Shell/`)
+- `WindowCommandModule` / the drop-zone stack live in `Shenora.Windows/WebView/` (not `Shell/`)
   because they need `Shenora.Ipc`, which the primitives half deliberately does not reference.
 - ⚠ **The three Windows packages are ONE package now (D37, 0.5.0): `Shenora.Windows`.** What used to
   be `Shenora.WinForms` → `Shenora.WebView2` → `Shenora.WebView2.Sessions` is `Shell/` → `WebView/` →
@@ -233,7 +233,7 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
 - **Gated by tests:** the public surface is pinned by API-surface baseline tests
   (`tests/Shenora.Tests/Api/Baselines/*.txt` — drift fails the build). Since H6 that gate is
-  thorough, not nominal: `protected` members (including `BaseFacade.RouteMessageAsync`, the one every
+  thorough, not nominal: `protected` members (including `ModuleBase.RouteMessageAsync`, the one every
   consumer overrides), default parameter values, `init`-vs-`set`, `required`, `static`, virtuality,
   parameter NAMES, generic constraints, nullability, base types, const VALUES and attributes — all 22
   `[JsonPropertyName]` wire names included, so a rename cannot break the C#⇄TS mirror silently. A

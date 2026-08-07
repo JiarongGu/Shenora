@@ -1,12 +1,13 @@
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
 public class ModuleContextTests
 {
-    private sealed class PublishingFacade(IEventBus? events) : BaseFacade(null, events)
+    private sealed class PublishingFacade(IEventBus? events) : ModuleBase(null, events)
     {
         public override string ModuleName => "REPORTS";
 

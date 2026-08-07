@@ -68,7 +68,7 @@ export const OperationEventTypes = {
 } as const;
 
 /**
- * Mirrors the route names `Shenora.Ipc.OperationsFacade` switches on (its own
+ * Mirrors the route names `Shenora.Ipc.OperationsModule` switches on (its own
  * `ListType`/`CancelType`/`ClearFinishedType`/`ResumeType` constants) — pinned by
  * `WireMirrorTests.Operation_route_names_match_the_hosts_facade`, same rationale as
  * {@link OperationEventTypes}.
@@ -188,7 +188,7 @@ export interface OperationsState {
   readonly finished: OperationInfo[];
 }
 
-/** Fire-and-forget actions exposed on {@link useShenoraOperations}, routed to `OperationsFacade`. */
+/** Fire-and-forget actions exposed on {@link useShenoraOperations}, routed to `OperationsModule`. */
 export interface OperationsActions {
   /** `CANCEL { operationId }` — the app-level cancel route `ipc-contracts` prescribes. */
   cancel: (operationId: string) => string;
@@ -261,15 +261,15 @@ export interface OperationsStoreOptions {
    * The request/event module this store talks to. Must match the host's
    * `OperationRegistryOptions.ModuleName` — default `'OPERATIONS'` on both sides — when an app
    * renamed it to avoid a collision with one of its own module names (the duplicate-module guard
-   * `OperationsFacade`'s own docs describe). A store bound to the default name cannot reach a
+   * `OperationsModule`'s own docs describe). A store bound to the default name cannot reach a
    * renamed host at all, which is exactly the gap this field closes.
    */
   module?: string;
   /**
    * Optional app-defined scope, applied to THREE places so the store stays internally consistent:
    * the bus subscription (only deltas whose event scope matches are folded), the actions' request
-   * envelope, and the initial `LIST` snapshot's payload (`OperationsFacade` reads its scope filter
-   * from the payload, not the envelope — see `OperationsFacade.RouteMessageAsync`). Threading it
+   * envelope, and the initial `LIST` snapshot's payload (`OperationsModule` reads its scope filter
+   * from the payload, not the envelope — see `OperationsModule.RouteMessageAsync`). Threading it
    * into only the first two would load every scope on first subscribe and never remove the
    * out-of-scope rows, since no delta for them ever arrives: a silent, permanent leak.
    */
@@ -340,7 +340,7 @@ export function createOperationsStore(
 }
 
 /**
- * The client side of the operations primitive (design §4.6, `OperationsFacade` +
+ * The client side of the operations primitive (design §4.6, `OperationsModule` +
  * `IOperationRegistry`): snapshots via `LIST` on first subscribe, then folds `OPERATION_UPDATED` by
  * id — one subscription however many components read it, and a late mounter renders CURRENT state
  * because the host is authoritative (the store primitive's own late-mounter case is now

@@ -1,4 +1,4 @@
-namespace Shenora;
+namespace Shenora.Core.Shell;
 
 /// <summary>
 /// State of an <see cref="IUiDispatcher"/>'s target. THREE states, not a bool: "not created yet" and

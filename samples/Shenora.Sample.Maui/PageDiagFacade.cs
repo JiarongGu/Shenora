@@ -1,4 +1,5 @@
-using Shenora.Ipc;
+using Shenora.Core.Ipc;
+
 
 namespace Shenora.Sample.Maui;
 
@@ -24,7 +25,7 @@ namespace Shenora.Sample.Maui;
 /// whose page we control. An adopter that wants this writes the same twenty lines.
 /// </para>
 /// </summary>
-public sealed class PageDiagFacade : BaseFacade
+public sealed class PageDiagModule : ModuleBase
 {
 	/// <summary>The reserved module name for page→host diagnostics.</summary>
 	public const string Module = "PAGE_DIAG";

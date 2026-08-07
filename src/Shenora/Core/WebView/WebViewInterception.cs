@@ -1,4 +1,6 @@
-namespace Shenora;
+using Shenora.Core.Ipc;
+
+namespace Shenora.Core.WebView;
 
 /// <summary>
 /// How a platform's webview delivers the body of a ranged response.

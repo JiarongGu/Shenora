@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 

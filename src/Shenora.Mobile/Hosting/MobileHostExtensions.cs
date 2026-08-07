@@ -2,7 +2,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Maui.Dispatching;
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Modules.Platform;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Media;
+using Shenora.Core.Shell;
 
 namespace Shenora.Mobile;
 
@@ -113,7 +116,7 @@ public static class MobileHostExtensions
         // Singleton because both implementations cache: the Android walk allocates a Java object per codec
         // and the iOS one builds a converter per candidate, and neither answer can change while the process
         // runs.
-        builder.Services.TryAddSingleton<Shenora.Media.IMediaCapability>(_ => new MobileMediaCapability());
+        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(_ => new MobileMediaCapability());
 
 #if ANDROID || IOS || MACCATALYST
         // The transcode tier — the soundtrack half of D59's device→webview gap. Registered on BOTH mobile
@@ -127,11 +130,11 @@ public static class MobileHostExtensions
         //
         // NOT a singleton: each Begin() holds two real codec instances, and a device has only a handful.
         // Sharing the FACTORY is fine; sharing a run would not be.
-        builder.Services.TryAddSingleton<Shenora.Media.IMediaAudioConversion>(_ =>
+        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaAudioConversion>(_ =>
         {
             // The PIPELINE is registered, with this platform is converter already in it. An app adds its
             // own with pipeline.Use(...) and keeps this one behind it, rather than replacing the lot.
-            var pipeline = new Shenora.Media.MediaAudioPipeline();
+            var pipeline = new Shenora.Modules.Media.MediaAudioPipeline();
             MobileMediaAudioConversion.Use(pipeline);
             return pipeline;
         });
@@ -148,7 +151,7 @@ public static class MobileHostExtensions
         //
         // Singleton to match IPlaybackSession, and for the same reason: it is a handle on a process-wide
         // facility, so two of them would fight over the audio session and the Now Playing surface.
-        builder.Services.TryAddSingleton<Shenora.Media.IMediaPlayer>(_ => new MobileMediaPlayer());
+        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaPlayer>(_ => new MobileMediaPlayer());
 #endif
 
         return builder;

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using Shenora;
+using Shenora.Modules.Platform;
 
 namespace Shenora.Sample.Maui;
 

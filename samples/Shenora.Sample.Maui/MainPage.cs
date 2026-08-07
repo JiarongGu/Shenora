@@ -1,7 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Mobile;
+using Shenora.Modules.Platform;
+using Shenora.Modules.Media;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Maui;
 
@@ -105,7 +109,7 @@ public sealed class MainPage : ContentPage
 			EventBus = services.GetRequiredService<IEventBus>(),
 			// What this shell can do, answered in the handshake so ONE page can ship to both shells.
 			// Declared by the app rather than guessed by the kit, because it depends on what this
-			// app composed: no WindowCommandFacade and no DropZoneManager here, and on a phone there
+			// app composed: no WindowCommandModule and no DropZoneManager here, and on a phone there
 			// is no window chrome to draw and no OS drag-and-drop to receive.
 			Shell = new ShellInfo
 			{
@@ -165,7 +169,7 @@ public sealed class MainPage : ContentPage
 			// and the probe reports that as a fact rather than a failure.
 			try
 			{
-				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Media.IMediaPlayer>(), MauiProgram.Log);
+				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Modules.Media.IMediaPlayer>(), MauiProgram.Log);
 			}
 			catch (Exception ex) { MauiProgram.Log($"PLAYER: probe threw — {ex}"); }
 		});
@@ -207,8 +211,8 @@ public sealed class MainPage : ContentPage
 		CodecProbe.Run(MauiProgram.Log);
 		// And the KIT's answer to the same question, from DI, so the two independent queries can be
 		// compared. A contract that disagrees with the platform is worse than no contract.
-		CodecProbe.CrossCheck(services.GetRequiredService<Shenora.Media.IMediaCapability>(),
-			services.GetService<Shenora.Media.IMediaAudioConversion>(), MauiProgram.Log);
+		CodecProbe.CrossCheck(services.GetRequiredService<Shenora.Modules.Media.IMediaCapability>(),
+			services.GetService<Shenora.Modules.Media.IMediaAudioConversion>(), MauiProgram.Log);
 
 		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
 		// the media staging above.

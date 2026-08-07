@@ -1,3 +1,6 @@
+using Shenora.Modules.Platform;
+using Shenora.Core.Shell;
+
 #if !WINDOWS10_0_17763_0_OR_GREATER
 using Shenora;
 

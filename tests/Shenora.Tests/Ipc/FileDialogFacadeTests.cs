@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -9,7 +12,7 @@ namespace Shenora.Tests.Ipc;
 /// call four methods — it is that the OPTIONS survive the wire as the right per-method type, and that a
 /// shell's capability refusal arrives as a NAMED code rather than as an unknown fault.
 /// </summary>
-public class FileDialogFacadeTests
+public class FileDialogModuleTests
 {
     /// <summary>Records what the facade asked for, and answers whatever the test told it to.</summary>
     private sealed class RecordingDialogs : IFileDialogs
@@ -59,7 +62,7 @@ public class FileDialogFacadeTests
     private static IpcRequest Request(string type, object? payload = null) => new()
     {
         Id = "r1",
-        Module = FileDialogFacade.Module,
+        Module = FileDialogModule.Module,
         Type = type,
         Payload = payload is null
             ? null
@@ -69,7 +72,7 @@ public class FileDialogFacadeTests
     private static async Task<IpcResponse> DispatchAsync(RecordingDialogs dialogs, IpcRequest request)
     {
         var dispatcher = new MessageDispatcher();
-        dispatcher.MapModule(new FileDialogFacade(dialogs));
+        dispatcher.MapModule(new FileDialogModule(dialogs));
         return await dispatcher.DispatchAsync(request, CancellationToken.None);
     }
 
@@ -80,7 +83,7 @@ public class FileDialogFacadeTests
         // materialises the type that method actually accepts.
         var dialogs = new RecordingDialogs();
 
-        var response = await DispatchAsync(dialogs, Request(FileDialogFacade.OpenFileType,
+        var response = await DispatchAsync(dialogs, Request(FileDialogModule.OpenFileType,
             new { options = new { title = "Pick one", fileName = "seed.txt", rememberPathKey = "k" } }));
 
         Assert.True(response.Success);
@@ -97,7 +100,7 @@ public class FileDialogFacadeTests
         // empty object to open a file dialog.
         var dialogs = new RecordingDialogs();
 
-        var response = await DispatchAsync(dialogs, Request(FileDialogFacade.OpenFileType));
+        var response = await DispatchAsync(dialogs, Request(FileDialogModule.OpenFileType));
 
         Assert.True(response.Success);
         Assert.Null(dialogs.OpenFileSeen);
@@ -108,7 +111,7 @@ public class FileDialogFacadeTests
     {
         var dialogs = new RecordingDialogs();
 
-        var response = await DispatchAsync(dialogs, Request(FileDialogFacade.SaveTextType,
+        var response = await DispatchAsync(dialogs, Request(FileDialogModule.SaveTextType,
             new { text = "hello wire", options = new { fileName = "note", defaultExtension = "txt" } }));
 
         Assert.True(response.Success);
@@ -120,15 +123,15 @@ public class FileDialogFacadeTests
     [Fact]
     public async Task Save_text_without_text_is_a_named_payload_error()
     {
-        var response = await DispatchAsync(new RecordingDialogs(), Request(FileDialogFacade.SaveTextType));
+        var response = await DispatchAsync(new RecordingDialogs(), Request(FileDialogModule.SaveTextType));
 
         Assert.False(response.Success);
         Assert.Equal(IpcErrorCodes.MissingPayloadValue, response.Error!.Code);
     }
 
     [Theory]
-    [InlineData(FileDialogFacade.OpenFolderType, ShellCapability.FolderPicker)]
-    [InlineData(FileDialogFacade.SaveFileType, ShellCapability.SavePicker)]
+    [InlineData(FileDialogModule.OpenFolderType, ShellCapability.FolderPicker)]
+    [InlineData(FileDialogModule.SaveFileType, ShellCapability.SavePicker)]
     public async Task A_shell_refusal_arrives_as_a_NAMED_capability_code(string route, string capability)
     {
         // Not UNKNOWN_ERROR. A client must be able to tell "this shell cannot" from "something broke",
@@ -150,7 +153,7 @@ public class FileDialogFacadeTests
         // that the shell throws is planted with a marker the response must not contain.
         var dialogs = new RecordingDialogs { RefuseSave = true };
 
-        var response = await DispatchAsync(dialogs, Request(FileDialogFacade.SaveFileType));
+        var response = await DispatchAsync(dialogs, Request(FileDialogModule.SaveFileType));
 
         Assert.False(response.Success);
         Assert.DoesNotContain("test-shell", response.Error!.Message ?? "", StringComparison.Ordinal);

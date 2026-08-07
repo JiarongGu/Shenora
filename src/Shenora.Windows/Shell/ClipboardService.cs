@@ -1,5 +1,6 @@
 using System.Drawing.Imaging;
 using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 

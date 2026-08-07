@@ -1,8 +1,9 @@
 using System.Text.Json;
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WebView2;
 

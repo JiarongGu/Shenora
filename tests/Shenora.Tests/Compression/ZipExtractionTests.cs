@@ -1,5 +1,8 @@
 using System.IO.Compression;
-using Shenora.IO.Compression;
+using Shenora.Modules.Update.Compression;
+using Shenora.Modules.Update;
+using Shenora.Core.WebView;
+using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Compression;
 

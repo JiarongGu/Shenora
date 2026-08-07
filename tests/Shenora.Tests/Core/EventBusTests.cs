@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
+using Shenora.Core.Events;
 
 namespace Shenora.Tests.Core;
 

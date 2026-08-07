@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Shenora.Core.Ipc;
 
 namespace Shenora;
 
@@ -14,7 +15,7 @@ namespace Shenora;
 /// construction-time values), keeping modules order-independent.
 /// <para>
 /// IPC route mapping and lifecycle participation build ON this rather than widening it: a module
-/// registers its <c>IModuleFacade</c> here (via <c>AddModuleFacade</c>) and the dispatcher maps the
+/// registers its <c>IIpcModule</c> here (via <c>AddIpcModule</c>) and the dispatcher maps the
 /// registered facades itself, while anything needing the live window is mapped LATE, from where the
 /// window is created. So this interface stays at one member deliberately — it is not a placeholder
 /// awaiting more.

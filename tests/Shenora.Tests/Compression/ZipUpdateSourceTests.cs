@@ -1,7 +1,8 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using Shenora.IO.Compression;
-using Shenora.IO;
+using Shenora.Modules.Update.Compression;
+using Shenora.Modules.Update;
+using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Compression;
 

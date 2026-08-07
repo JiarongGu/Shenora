@@ -1,3 +1,5 @@
+using Shenora.Core.Ipc;
+
 namespace Shenora;
 
 /// <summary>

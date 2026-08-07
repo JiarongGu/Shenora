@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
-using Shenora.Media;
+using Shenora.Modules.Media;
+using Shenora.Engine.Files;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Media;
 

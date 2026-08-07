@@ -1,6 +1,7 @@
 using Shenora;
+using Shenora.Core.Shell;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// What the host is and what it can do, returned to the client as the handshake's response data.
@@ -13,7 +14,7 @@ namespace Shenora.Ipc;
 /// </para>
 /// <para>
 /// <b>Declared by the APP, not inferred by the kit</b>, because it is the app that decides. Whether
-/// window commands exist depends on whether it mapped <c>WindowCommandFacade</c>, not merely on which
+/// window commands exist depends on whether it mapped <c>WindowCommandModule</c>, not merely on which
 /// shell it is running; a kit-guessed list would be wrong for exactly the compositions that differ.
 /// The shell packages document their typical set, and <see cref="ShellCapability"/> holds the
 /// well-known names.

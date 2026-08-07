@@ -1966,7 +1966,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 
 - **D60 — the kit ships NO page-diagnostic facade. The two-consumer signal is real and the generalisation
   is still not worth making.** (2026-08-05, closing the open question in `TASKS.md`.) The pattern stays
-  documented in `docs/ADOPTION.md`; `PageDiagFacade` stays sample-local in `samples/Shenora.Sample.Maui/`.
+  documented in `docs/ADOPTION.md`; `PageDiagModule` stays sample-local in `samples/Shenora.Sample.Maui/`.
   ⚠ **Renumbered from D51 on 2026-08-07 — it was a DUPLICATE.** Two entries were written as D51 on
   consecutive days and the collision survived four sessions. Every one of the 12+ citations in code and
   docs means the other one (MIT-compatible bytes), so that keeps the number and this moved. See the header
@@ -2180,7 +2180,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   | `WebApplication.CreateBuilder(args)` brings Kestrel, logging, config, DI — you never call `AddKestrel()` | `CreateBuilder` brings a paths object and an event bus | brings **the framework**: the engines, the kit's modules, the dispatcher |
   | `var app = builder.Build()` | same ✅ | same |
   | `app.Use*()` = the request PIPELINE, on the built app, order significant | `interceptor.UseFiles(…)` / `interceptor.UseMediaPlayer(services)` — on an inner object, with the provider handed BACK in | `app.Use*()` — the app already holds the provider |
-  | `app.MapControllers()` = endpoints | `builder.Services.AddModuleFacade<T>()` — a route registered as a service | `app.MapModule<T>()` |
+  | `app.MapControllers()` = endpoints | `builder.Services.AddIpcModule<T>()` — a route registered as a service | `app.MapModule<T>()` |
   | `app.Run()` | same ✅ | same |
 
   - ⚠ **What the analogy does NOT settle is the PREFIX**, and reading it that way was a wrong turn worth
@@ -2238,7 +2238,31 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   pure logic layer, like Mission, Files, and then we have what we call 'features' Media, Dialog"*.)
 
   **In one line each** (owner's own framing, and the form worth remembering):
-  **core is the CONTRACT · logic is the BRAIN · features BRIDGE the gap between .NET and the web.**
+  **core is the CONTRACT · the engine is the BRAIN · modules BRIDGE the gap between .NET and the web.**
+
+  🔴 **The layer names ARE the namespace segments, so the layout cannot lie about the architecture:**
+
+  | Folder | Namespace | Holds |
+  |---|---|---|
+  | *(root)* | `Shenora` | the composition root — the one place allowed to reach every layer |
+  | `Core/` | `Shenora.Core.Ipc` · `.Events` · `.WebView` · `.Shell` | the contract |
+  | `Engine/` | `Shenora.Engine.Missions` · `.Files` | the brain |
+  | `Modules/` | `Shenora.Modules.Media` · `.FileDialog` · `.Operations` · `.Platform` · `.Update` | the bridges |
+
+  - **A module's root type is `XxxModule`, not `XxxFacade`** (owner, 2026-08-08: *"they actually the module
+    root rn, so just xxxModule sounds consistant"*). "Facade" described a thin front over something else;
+    these ARE the module. `BaseFacade` → `ModuleBase`, `IModuleFacade` → `IIpcModule`,
+    `AddModuleFacade` → `AddIpcModule`. ⚠ The lexicon gate caught `Facade` going unused the moment the
+    last one was renamed — an allow-list that only grows reviews nothing.
+  - **⚠ `Operations` sits UNDER `Core/Ipc/`, not beside it, and that was measured rather than assumed.**
+    The question is whether anything but IPC uses it; inside `src/` the answer is no — its consumers are
+    its own files, `Core/Ipc` (`IModuleContext.Run` is written against `IOperationRegistry`), and its own
+    routes. **The strongest evidence is the counter-example:** the mission scheduler, the one subsystem
+    that looks like it should couple to operations, deliberately does not — an app writes
+    `MissionOperationObserver` to bridge them, because Core must never learn what an operation is
+    (D19/D20). So operations is part of the IPC CONTRACT — how the wire says "this is taking a while" —
+    and promoting it to a peer would claim a generality nothing supports. ⚠ Its ROUTES are still a
+    module (`Modules/Operations`); only the contract and its registry are core.
 
   | Layer | What it is | Members |
   |---|---|---|
@@ -2286,7 +2310,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **`Shenora.Ipc` folds into the main package**, because IPC is a CORE and a separate package id says
     "optional" — the claim D53/D55 killed for Media and IO. The direction already allows it (`Ipc → Core`,
     mechanically identical to D55's `IO → Core`). 🔴 **That fold is also what unblocks everything else:**
-    a feature could not own its own IPC module while `BaseFacade` lived in a package `Core` may not
+    a feature could not own its own IPC module while `ModuleBase` lived in a package `Core` may not
     reference, which is exactly why D64's facades ended up registered from inside `AddMessageDispatcher` —
     a core knowing the name of every feature built on it.
   - **`Shenora` → `Shenora`.** It is the framework, not a component of one. The id is free.
@@ -2297,5 +2321,5 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     app-UPDATE story, which is a FEATURE — it has a platform half in the native `Launcher` (D50).
   - **What this leaves for IPC registration, which is the question that started it:** a feature owns its
     module and registers it; `AddMessageDispatcher` knows the name of none of them. D64 shipped the
-    opposite as an interim (the dispatcher hardcoding `MediaPlayerFacade`, shells calling
+    opposite as an interim (the dispatcher hardcoding `MediaPlayerModule`, shells calling
     `AddShenoraFileDialogs`) and this entry is what deletes it.

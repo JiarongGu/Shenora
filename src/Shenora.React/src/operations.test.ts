@@ -98,7 +98,7 @@ describe('operations store', () => {
   });
 
   it('threads scope into the LIST snapshot payload, not just the subscription', () => {
-    // OperationsFacade reads its scope filter from the PAYLOAD (see RouteMessageAsync), not the
+    // OperationsModule reads its scope filter from the PAYLOAD (see RouteMessageAsync), not the
     // envelope — asserting on the resulting state would pass even if the payload were empty, since
     // an unfiltered LIST returns a superset that just happens to still contain the scoped rows.
     const { store, transport } = harness([], { scope: 'tenant-1' });

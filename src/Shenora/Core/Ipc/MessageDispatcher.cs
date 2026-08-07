@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// A middleware in the dispatch pipeline: handle the request and return a response, or return
@@ -220,7 +220,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     }
 
     /// <inheritdoc />
-    public bool TryClaimModule(IModuleFacade facade)
+    public bool TryClaimModule(IIpcModule facade)
     {
         ArgumentNullException.ThrowIfNull(facade);
         ArgumentException.ThrowIfNullOrEmpty(facade.ModuleName);

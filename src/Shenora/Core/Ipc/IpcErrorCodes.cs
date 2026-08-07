@@ -1,4 +1,6 @@
-namespace Shenora.Ipc;
+using Shenora.Core.Shell;
+
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// Error codes reserved by the framework, in the family's SCREAMING_SNAKE_CASE i18n-key form
@@ -35,7 +37,7 @@ public static class IpcErrorCodes
 
     /// <summary>
     /// The shell has NO EXPRESSION of what was asked for — not a fault, and not something a retry fixes.
-    /// Parameters: <c>capability</c> (a <see cref="Shenora.ShellCapability"/> constant).
+    /// Parameters: <c>capability</c> (a <see cref="Shenora.Core.Shell.ShellCapability"/> constant).
     /// <para>
     /// Its own code for the same reason <see cref="OperationCancelled"/> has one: a client must be able to
     /// tell "this shell cannot do that" from "something broke", because the correct UI is different — hide

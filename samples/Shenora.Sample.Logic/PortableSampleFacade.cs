@@ -1,8 +1,10 @@
 using Shenora;
-using Shenora.IO;
-using Shenora.Ipc;
-using Shenora.Media;
-using Shenora.Missions;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Media;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Logic;
 
@@ -18,19 +20,19 @@ namespace Shenora.Sample.Logic;
 /// this class never names a Windows type and never references <c>Shenora.Windows</c>.
 /// </para>
 /// <para>
-/// Contrast with the desktop sample's own <c>SampleFacade</c>, which keeps the genuinely
+/// Contrast with the desktop sample's own <c>SampleModule</c>, which keeps the genuinely
 /// desktop-only routes (reveal-in-Explorer, secondary windows on their own STA threads). That split
 /// is the point: portable logic here, platform-bound composition there.
 /// </para>
 /// </summary>
-public sealed class PortableSampleFacade(
+public sealed class PortableSampleModule(
     IFileDialogs dialogs,
     IClipboardService clipboard,
     IUrlLauncher urls,
     IUiDispatcher ui,
     IMissionScheduler scheduler,
     IFileUpdateQueue updates,
-    ShenoraPaths paths) : BaseFacade
+    ShenoraPaths paths) : ModuleBase
 {
     /// <summary>The reserved module name for the portable half of the sample.</summary>
     public const string Module = "SAMPLE_LOGIC";
@@ -51,7 +53,7 @@ public sealed class PortableSampleFacade(
             // A file picker exists on every host worth shipping to; only the implementation differs.
             //
             // ⚠ AN APP THAT ONLY WANTS A PICKER SHOULD NOT WRITE THIS ROUTE ANY MORE. The kit ships
-            // FileDialogFacade (`services.AddShenoraFileDialogs()`), and `@shenora/react`'s
+            // FileDialogModule (`services.AddShenoraFileDialogs()`), and `@shenora/react`'s
             // `useFileDialogs()` calls it with capability gating already done. These two routes stay
             // because they demonstrate something different and still true: portable APP LOGIC composing a
             // dialog with behaviour of its own — see SAVE_TEXT's deliberately slow, interruptible write,

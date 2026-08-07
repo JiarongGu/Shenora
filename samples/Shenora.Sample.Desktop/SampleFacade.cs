@@ -1,6 +1,10 @@
 using Shenora;   // the portable contracts (IFileDialogs, IUrlLauncher…) live here since D20
-using Shenora.Ipc;
 using Shenora.Windows;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Operations;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Desktop;
 
@@ -9,14 +13,14 @@ namespace Shenora.Sample.Desktop;
 /// from DI, expected failures as structured <see cref="OperationException"/>s, payload reads
 /// through <see cref="PayloadHelper"/>.
 /// </summary>
-internal sealed class SampleFacade(
+internal sealed class SampleModule(
     IFileDialogs dialogs,
     IShellLauncher shell,
     SecondaryWindows windows,
     IEventBus events,
     IOperationRegistry operations,
     MainForm mainForm,
-    IUiDispatcher ui) : BaseFacade(events: events, operations: operations)
+    IUiDispatcher ui) : ModuleBase(events: events, operations: operations)
 {
     /// <summary>
     /// The SLOW route's independent "it actually started" signal — a substring of the native
@@ -118,7 +122,7 @@ internal sealed class SampleFacade(
                 // this route still does not observe `cancellationToken` (the request's lifetime) —
                 // work handed off outlives the request by design, and capturing the request token would
                 // kill a long operation the moment the page navigated. Using the operation's own token
-                // also means the CANCEL route (OperationsFacade) can now actually stop this work, which
+                // also means the CANCEL route (OperationsModule) can now actually stop this work, which
                 // the old hand-rolled version could not offer.
                 var operationId = context.Run(
                     new OperationOptions { Kind = "SLOW", Cancellable = true, Title = new OperationLabel(Text: "Slow work") },
@@ -151,7 +155,7 @@ internal sealed class SampleFacade(
                 return new { Mode = mode, RanOnUiThread = onUiThread, OperationId = operationId };
 
             default:
-                // BaseFacade owns the unknown-type shape now — an app no longer retypes it.
+                // ModuleBase owns the unknown-type shape now — an app no longer retypes it.
                 throw UnknownType(request);
         }
     }

@@ -1,3 +1,6 @@
+using Shenora.Modules.Platform;
+using Shenora.Modules.Media;
+
 // SystemMediaTransportControls is WinRT, and the WinRT projections only exist when the target framework
 // names a Windows SDK version — with a bare `net10.0-windows`, `Windows.Media` is not a namespace at all
 // (measured: CS0234). So this package MULTI-TARGETS and this whole file is the versioned half; the plain

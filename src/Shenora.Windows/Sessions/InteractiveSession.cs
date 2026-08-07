@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Windows;
 
@@ -28,7 +28,7 @@ public sealed class SessionResult
     /// them — and without one, every app routing a session over IPC hand-wrote the same
     /// <c>if (!result.Success) throw new OperationException(result.ErrorCode!)</c>. Throwing (rather
     /// than returning an error object) is what plugs into the dispatcher's documented boundary:
-    /// <c>BaseFacade</c> and <c>MessageDispatcher</c> already turn an <see cref="OperationException"/>
+    /// <c>ModuleBase</c> and <c>MessageDispatcher</c> already turn an <see cref="OperationException"/>
     /// into the structured wire error, so a facade route becomes a single call.
     /// </para>
     /// <code>

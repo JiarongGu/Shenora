@@ -1,13 +1,14 @@
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
 public class ModuleOperationTests
 {
     private sealed class WorkFacade(IEventBus bus, IOperationRegistry registry, Func<IOperation, CancellationToken, Task> work)
-        : BaseFacade(null, bus, registry)
+        : ModuleBase(null, bus, registry)
     {
         public override string ModuleName => "WORK";
 
@@ -196,7 +197,7 @@ public class ModuleOperationTests
         Assert.Equal("ITEM_IMPORTED", Assert.Single(seen).Type);
     }
 
-    private sealed class PublishOnlyFacade(IEventBus bus) : BaseFacade(null, bus)   // no registry at all
+    private sealed class PublishOnlyFacade(IEventBus bus) : ModuleBase(null, bus)   // no registry at all
     {
         public override string ModuleName => "WORK";
 
@@ -222,7 +223,7 @@ public class ModuleOperationTests
         Assert.DoesNotContain("secret", IpcJson.Serialize(info));
     }
 
-    private sealed class NoRegistryFacade(IEventBus bus, bool useRun) : BaseFacade(null, bus)   // no registry supplied
+    private sealed class NoRegistryFacade(IEventBus bus, bool useRun) : ModuleBase(null, bus)   // no registry supplied
     {
         public override string ModuleName => "WORK";
 

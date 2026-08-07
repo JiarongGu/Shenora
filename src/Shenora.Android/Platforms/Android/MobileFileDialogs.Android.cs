@@ -4,6 +4,9 @@ using AndroidX.Activity.Result.Contract;
 using Microsoft.Maui.ApplicationModel;
 using Shenora;
 using AndroidUri = Android.Net.Uri;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 
 namespace Shenora.Mobile;
 

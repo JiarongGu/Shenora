@@ -1,4 +1,4 @@
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The one exception type whose details cross the bridge: a structured error code plus optional

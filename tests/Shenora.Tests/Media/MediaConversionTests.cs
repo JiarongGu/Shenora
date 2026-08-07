@@ -1,7 +1,11 @@
 using System.Collections.Concurrent;
 using Shenora;
-using Shenora.Media;
-using Shenora.Missions;
+using Shenora.Modules.Media;
+using Shenora.Core.Events;
+using Shenora.Core.WebView;
+using Shenora.Engine;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
 
 namespace Shenora.Tests.Media;
 

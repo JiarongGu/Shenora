@@ -1,4 +1,6 @@
 using Shenora;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Windows;
 

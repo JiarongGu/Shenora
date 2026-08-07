@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Shenora.Core.Shell;
 
 namespace Shenora.Tests.Api;
 

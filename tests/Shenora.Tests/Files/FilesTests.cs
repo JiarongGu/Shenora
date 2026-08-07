@@ -1,5 +1,6 @@
 using System.Text;
 using Shenora;
+using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Io;
 

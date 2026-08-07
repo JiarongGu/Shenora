@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Shenora;
-using Shenora.Ipc;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 

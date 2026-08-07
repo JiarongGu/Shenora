@@ -1,8 +1,11 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Shenora;
-using Shenora.Ipc;
 using Shenora.Windows;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Operations;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -130,7 +133,7 @@ public class WireMirrorTests
         var extraOnClient = clientCodes.Except(hostCodes).Except(clientOnly).Order(StringComparer.Ordinal).ToArray();
         Assert.True(extraOnClient.Length == 0,
             $"The client names these codes but the host never emits them: {string.Join(", ", extraOnClient)}. " +
-            "Either add them to Shenora.Ipc.IpcErrorCodes or list them in ClientOnlyIpcErrorCodes.");
+            "Either add them to Shenora.Core.Ipc.IpcErrorCodes or list them in ClientOnlyIpcErrorCodes.");
     }
 
     [Fact]
@@ -184,7 +187,7 @@ public class WireMirrorTests
     /// ALSO IN THIS BATCH (whole-branch review): the client hardcodes <c>'OPERATION_UPDATED'</c>,
     /// <c>'LIST'</c>, <c>'CANCEL'</c>, <c>'CLEAR_FINISHED'</c>, <c>'RESUME'</c> and the
     /// <c>'OPERATIONS'</c> module name with nothing comparing them against
-    /// <see cref="OperationEvents"/>/<see cref="OperationsFacade"/>/
+    /// <see cref="OperationEvents"/>/<see cref="OperationsModule"/>/
     /// <see cref="OperationRegistryOptions.ModuleName"/> — a host rename left the suite green and the
     /// client deaf, the exact disease <see cref="Every_host_error_code_exists_on_the_client_and_vice_versa"/>
     /// already exists to catch for error codes.
@@ -209,15 +212,15 @@ public class WireMirrorTests
         var client = ParseConstObject(ClientSource("operations.ts"), "OperationRoutes");
 
         Assert.NotEmpty(client);   // parser self-check
-        Assert.Equal(OperationsFacade.ListType, client["List"]);
-        Assert.Equal(OperationsFacade.CancelType, client["Cancel"]);
-        Assert.Equal(OperationsFacade.ClearFinishedType, client["ClearFinished"]);
-        Assert.Equal(OperationsFacade.ResumeType, client["Resume"]);
+        Assert.Equal(OperationsModule.ListType, client["List"]);
+        Assert.Equal(OperationsModule.CancelType, client["Cancel"]);
+        Assert.Equal(OperationsModule.ClearFinishedType, client["ClearFinished"]);
+        Assert.Equal(OperationsModule.ResumeType, client["Resume"]);
         // RESUME/DISMISS are the human's decisions (§5A.3 amendment); WAIT (generic-library audit
-        // finding 3, renamed from PAUSE) is the client ASKING the host to wait — see OperationsFacade's
+        // finding 3, renamed from PAUSE) is the client ASKING the host to wait — see OperationsModule's
         // own class doc.
-        Assert.Equal(OperationsFacade.DismissType, client["Dismiss"]);
-        Assert.Equal(OperationsFacade.WaitType, client["Wait"]);
+        Assert.Equal(OperationsModule.DismissType, client["Dismiss"]);
+        Assert.Equal(OperationsModule.WaitType, client["Wait"]);
     }
 
     [Fact]
@@ -337,7 +340,7 @@ public class WireMirrorTests
         // the Assert.True below exists and why it is worth keeping.
         var module = Regex.Match(source, @"super\('(?<module>[A-Z_.]+)'");
         Assert.True(module.Success, "could not find the FileDialogs `super('MODULE'` call");
-        Assert.Equal(FileDialogFacade.Module, module.Groups["module"].Value);
+        Assert.Equal(FileDialogModule.Module, module.Groups["module"].Value);
 
         var routes = Regex.Matches(source, @"\.send<[^>]*>\('(?<route>[A-Z_]+)'")
             .Select(m => m.Groups["route"].Value)
@@ -346,10 +349,10 @@ public class WireMirrorTests
 
         var hostRoutes = new HashSet<string>(StringComparer.Ordinal)
         {
-            FileDialogFacade.OpenFileType,
-            FileDialogFacade.OpenFolderType,
-            FileDialogFacade.SaveFileType,
-            FileDialogFacade.SaveTextType,
+            FileDialogModule.OpenFileType,
+            FileDialogModule.OpenFolderType,
+            FileDialogModule.SaveFileType,
+            FileDialogModule.SaveTextType,
         };
         Assert.Equal(hostRoutes, routes);
     }

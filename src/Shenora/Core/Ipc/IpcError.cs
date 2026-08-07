@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The structured error carried by a failed <see cref="IpcResponse"/>: <c>{ code, message?,

@@ -1,13 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Shenora.Media;
+using Shenora.Modules.Media;
+using Shenora.Core.Events;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The standard IPC composition, formalizing the pattern the sample app proved: modules
-/// contribute facades through DI (<see cref="AddModuleFacade{TFacade}"/> from their
+/// contribute facades through DI (<see cref="AddIpcModule{TFacade}"/> from their
 /// <c>IShenoraModule.ConfigureServices</c>), and the dispatcher is registered once with the
 /// family's §5 pipeline order encoded — error handler → app middleware → registered facades.
 /// This replaces the source app's static mutable service registry with plain DI enumeration.
@@ -19,16 +20,16 @@ public static class IpcServiceCollectionExtensions
     /// automatically by <see cref="AddMessageDispatcher"/> (or explicitly via
     /// <see cref="MapRegisteredModules"/>).
     /// </summary>
-    public static IServiceCollection AddModuleFacade<TFacade>(this IServiceCollection services)
-        where TFacade : class, IModuleFacade
+    public static IServiceCollection AddIpcModule<TFacade>(this IServiceCollection services)
+        where TFacade : class, IIpcModule
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddSingleton<IModuleFacade, TFacade>();
+        services.AddSingleton<IIpcModule, TFacade>();
         return services;
     }
 
     /// <summary>
-    /// Map every DI-registered <see cref="IModuleFacade"/> onto the dispatcher, in registration order.
+    /// Map every DI-registered <see cref="IIpcModule"/> onto the dispatcher, in registration order.
     /// Resolves the facades NOW — safe from application code that already holds a built provider, but
     /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="AddMessageDispatcher"/>
     /// must use.
@@ -38,7 +39,7 @@ public static class IpcServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(services);
         var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var facade in services.GetServices<IModuleFacade>())
+        foreach (var facade in services.GetServices<IIpcModule>())
         {
             GuardDuplicateModule(seen, facade);
             dispatcher.MapModule(facade);
@@ -67,11 +68,11 @@ public static class IpcServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         // Lazy<T> is thread-safe by default: concurrent first dispatches resolve the facade set once.
-        var facades = new Lazy<IReadOnlyDictionary<string, IModuleFacade>>(() =>
+        var facades = new Lazy<IReadOnlyDictionary<string, IIpcModule>>(() =>
         {
             var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var map = new Dictionary<string, IModuleFacade>(StringComparer.OrdinalIgnoreCase);
-            foreach (var facade in services.GetServices<IModuleFacade>())
+            var map = new Dictionary<string, IIpcModule>(StringComparer.OrdinalIgnoreCase);
+            foreach (var facade in services.GetServices<IIpcModule>())
             {
                 GuardDuplicateModule(seen, facade);
                 map[facade.ModuleName] = facade;
@@ -103,7 +104,7 @@ public static class IpcServiceCollectionExtensions
     /// the lazy path the guarantee is "diagnosable", not "fails at startup".
     /// </para>
     /// </summary>
-    private static void GuardDuplicateModule(Dictionary<string, string> seen, IModuleFacade facade)
+    private static void GuardDuplicateModule(Dictionary<string, string> seen, IIpcModule facade)
     {
         var name = facade.ModuleName;
         if (string.IsNullOrWhiteSpace(name))
@@ -136,13 +137,13 @@ public static class IpcServiceCollectionExtensions
 
         // 🔴 THIS METHOD NAMES NO FEATURE, and that is the D65 rule it exists to demonstrate: **a CORE
         // must not know the names of the features built on it.** The dispatcher composes whatever
-        // `IModuleFacade`s are REGISTERED; which ones exist is each feature's own business, registered
+        // `IIpcModule`s are REGISTERED; which ones exist is each feature's own business, registered
         // from the feature itself (`UseMediaPlayer`) or from the shell that can satisfy it
         // (`AddShenoraFileDialogs`, called by the shells because only a platform knows whether it has
         // native dialogs).
         //
         // ⚠ It briefly did the opposite, and BOTH attempts are worth not repeating. Hardcoding
-        // `MediaPlayerFacade` here worked only because its dependencies could be resolved optionally;
+        // `MediaPlayerModule` here worked only because its dependencies could be resolved optionally;
         // adding `AddShenoraOperations()` beside it broke five composition tests with UNKNOWN_ERROR,
         // because `OperationRegistry` needs `IEventBus` and composing IPC over a bare
         // `ServiceCollection` is a legitimate shape with no builder behind it. The fix was never

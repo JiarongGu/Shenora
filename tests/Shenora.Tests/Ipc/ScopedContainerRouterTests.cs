@@ -1,12 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
 public class ScopedContainerRouterTests
 {
-    private sealed class ScopedFacade(string scopeId) : BaseFacade
+    private sealed class ScopedFacade(string scopeId) : ModuleBase
     {
         public override string ModuleName => "SCOPED";
 

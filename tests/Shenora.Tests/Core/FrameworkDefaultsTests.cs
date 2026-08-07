@@ -1,10 +1,10 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
-using Shenora.IO;
-using Shenora.Ipc;
-using Shenora.Media;
-using Shenora.Missions;
+using Shenora.Modules.Media;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Core;
 
@@ -120,7 +120,7 @@ public class FrameworkDefaultsTests
             {
                 Id = "r1",
                 Module = app.Services.GetRequiredService<MediaPlayerOptions>().Module,
-                Type = MediaPlayerFacade.ReportType,
+                Type = MediaPlayerModule.ReportType,
                 Payload = JsonSerializer.Deserialize<JsonElement>(
                     JsonSerializer.Serialize(new { state = "Paused", position = 0.0 }, IpcJson.Options)),
             },

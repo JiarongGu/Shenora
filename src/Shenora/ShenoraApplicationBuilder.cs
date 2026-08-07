@@ -1,12 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-// The framework's own engines, defaulted in Build() (D64). ⚠ Core reaching into its own capability
-// NAMESPACES is the shape D55 created deliberately — they are folders inside this package, not
-// dependencies, so there is no layering edge here to be uncomfortable about.
-using Shenora.IO;
-using Shenora.Ipc;
-using Shenora.Media;
-using Shenora.Missions;
+// The framework's own layers, defaulted in Build() (D64/D65). ⚠ The COMPOSITION ROOT is the one place
+// allowed to reach every layer — that is what a composition root IS. Nothing else crosses upward: a core
+// never names a module, which is why `AddMessageDispatcher` lists no facade.
+using Shenora.Core.Events;            // core — the event pipeline
+using Shenora.Core.Ipc;               // core — the message contract
+using Shenora.Engine.Files;           // engine — the file queue
+using Shenora.Engine.Missions;        // engine — the scheduler
+using Shenora.Modules.Media;          // module — the player
+using Shenora.Modules.Operations;     // module — the operation registry's registration
 
 namespace Shenora;
 

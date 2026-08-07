@@ -1,6 +1,7 @@
 using Shenora;
+using Shenora.Core.Shell;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>Inputs for <see cref="IpcHostBridge"/>.</summary>
 public sealed class IpcHostBridgeOptions

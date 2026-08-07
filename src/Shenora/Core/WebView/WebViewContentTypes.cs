@@ -1,4 +1,4 @@
-namespace Shenora;
+namespace Shenora.Core.WebView;
 
 /// <summary>
 /// Response-header policy for anything a host serves to a page: MIME type and caching, by extension.

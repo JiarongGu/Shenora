@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
@@ -25,7 +26,7 @@ public sealed record DownloadHit(string Url, string? FileName);
 public sealed class SessionController
 {
     private readonly Form _form;
-    private readonly Shenora.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly Action<bool>? _onLoading;

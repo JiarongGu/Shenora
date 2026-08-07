@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Shenora;
+namespace Shenora.Core.WebView;
 
 // MOVED HERE FROM Shenora.Windows on 2026-08-03 (D2a). These three types describe a resource exchange
 // between a host and a page — "URI plus headers in, status plus content-type plus a stream out" — and

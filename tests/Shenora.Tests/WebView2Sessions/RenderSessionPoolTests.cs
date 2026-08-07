@@ -1,5 +1,6 @@
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WebView2Sessions;
 

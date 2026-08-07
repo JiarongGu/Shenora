@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using Shenora;
+using Shenora.Modules.Platform;
 
 namespace Shenora.Mobile;
 

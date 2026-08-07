@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The response envelope the host returns for an <see cref="IpcRequest"/>:

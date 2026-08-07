@@ -1,6 +1,8 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Api;
 
@@ -13,7 +15,7 @@ namespace Shenora.Tests.Api;
 /// break shape:
 /// </para>
 /// <list type="bullet">
-/// <item><b>protected members.</b> <c>BaseFacade.RouteMessageAsync</c> — the one member EVERY consumer
+/// <item><b>protected members.</b> <c>ModuleBase.RouteMessageAsync</c> — the one member EVERY consumer
 /// overrides — was entirely outside the gate.</item>
 /// <item><b>Default parameter values.</b> <c>new EventBus()</c> compiles because the logger parameter is
 /// optional; the old dump rendered the constructor as if it were not, so DROPPING a <c>= null</c> — a

@@ -130,7 +130,6 @@ Context
 Controller
 Environment
 Extensions
-Facade
 Guard
 Helper
 Hook

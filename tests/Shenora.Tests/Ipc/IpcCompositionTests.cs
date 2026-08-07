@@ -1,12 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
 public class IpcCompositionTests
 {
-    private sealed class AlphaFacade : BaseFacade
+    private sealed class AlphaFacade : ModuleBase
     {
         public override string ModuleName => "ALPHA";
 
@@ -14,7 +14,7 @@ public class IpcCompositionTests
             Task.FromResult<object?>("alpha");
     }
 
-    private sealed class BetaFacade : BaseFacade
+    private sealed class BetaFacade : ModuleBase
     {
         public override string ModuleName => "BETA";
 
@@ -87,8 +87,8 @@ public class IpcCompositionTests
     public async Task AddMessageDispatcher_maps_every_registered_facade()
     {
         using var provider = new ServiceCollection()
-            .AddModuleFacade<AlphaFacade>()
-            .AddModuleFacade<BetaFacade>()
+            .AddIpcModule<AlphaFacade>()
+            .AddIpcModule<BetaFacade>()
             .AddMessageDispatcher()
             .BuildServiceProvider();
 
@@ -103,7 +103,7 @@ public class IpcCompositionTests
     {
         var order = new List<string>();
         using var provider = new ServiceCollection()
-            .AddModuleFacade<AlphaFacade>()
+            .AddIpcModule<AlphaFacade>()
             .AddMessageDispatcher((_, dispatcher) => dispatcher.Use(async (_, next, _) =>
             {
                 order.Add("app-middleware");
@@ -157,7 +157,7 @@ public class IpcCompositionTests
     public async Task A_facade_that_injects_the_dispatcher_resolves_instead_of_killing_the_process()
     {
         using var provider = new ServiceCollection()
-            .AddModuleFacade<SelfDispatchingFacade>()
+            .AddIpcModule<SelfDispatchingFacade>()
             .AddMessageDispatcher()
             .BuildServiceProvider();
 
@@ -179,8 +179,8 @@ public class IpcCompositionTests
         // unreachable with nothing logged anywhere. On the eager path the composition now refuses
         // outright, naming both facades.
         using var provider = new ServiceCollection()
-            .AddModuleFacade<DupOneFacade>()
-            .AddModuleFacade<DupTwoFacade>()   // both claim "DUP"
+            .AddIpcModule<DupOneFacade>()
+            .AddIpcModule<DupTwoFacade>()   // both claim "DUP"
             .BuildServiceProvider();
 
         var error = Assert.Throws<InvalidOperationException>(
@@ -200,8 +200,8 @@ public class IpcCompositionTests
         // fix here is "diagnosable instead of silent", not "fails at startup" — worth being precise
         // about, because the eager path above genuinely does fail at composition.
         using var provider = new ServiceCollection()
-            .AddModuleFacade<DupOneFacade>()
-            .AddModuleFacade<DupTwoFacade>()
+            .AddIpcModule<DupOneFacade>()
+            .AddIpcModule<DupTwoFacade>()
             .AddMessageDispatcher()
             .BuildServiceProvider();
 
@@ -215,7 +215,7 @@ public class IpcCompositionTests
     }
 
     /// <summary>A facade that injects the dispatcher — ordinary, and previously fatal.</summary>
-    private sealed class SelfDispatchingFacade(IMessageDispatcher dispatcher) : BaseFacade
+    private sealed class SelfDispatchingFacade(IMessageDispatcher dispatcher) : ModuleBase
     {
         public override string ModuleName => "SELF";
 
@@ -229,13 +229,13 @@ public class IpcCompositionTests
     }
 
     // Two facades claiming one module, with no dependencies — so the guard is what fails, not DI.
-    private sealed class DupOneFacade : BaseFacade
+    private sealed class DupOneFacade : ModuleBase
     {
         public override string ModuleName => "DUP";
         protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken) => Task.FromResult<object?>("one");
     }
 
-    private sealed class DupTwoFacade : BaseFacade
+    private sealed class DupTwoFacade : ModuleBase
     {
         public override string ModuleName => "DUP";
         protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken) => Task.FromResult<object?>("two");

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Shenora;
-using Shenora.Ipc;
-using Shenora.Missions;
+using Shenora.Engine.Missions;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Logic;
 

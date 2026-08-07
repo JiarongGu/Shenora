@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Shenora.Ipc;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 

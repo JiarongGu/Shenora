@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Shenora.Ipc;
+namespace Shenora.Core.Ipc;
 
 /// <summary>Inputs for <see cref="ScopedContainerRouter"/>.</summary>
 public sealed class ScopedContainerRouterOptions
@@ -57,7 +57,7 @@ public sealed class ScopedContainerRouter : IDisposable
     private readonly ScopedContainerRouterOptions _options;
     private readonly ILogger<ScopedContainerRouter> _logger;
     private readonly ConcurrentDictionary<string, Lazy<ServiceProvider>> _scopes = new();
-    private readonly ConcurrentDictionary<string, Func<IServiceProvider, IModuleFacade?>> _facadeResolvers =
+    private readonly ConcurrentDictionary<string, Func<IServiceProvider, IIpcModule?>> _facadeResolvers =
         new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
@@ -78,7 +78,7 @@ public sealed class ScopedContainerRouter : IDisposable
     /// <typeparamref name="TFacade"/> from the request's scope container. Register the facade
     /// itself in <see cref="ScopedContainerRouterOptions.ConfigureScope"/>.
     /// </summary>
-    public ScopedContainerRouter MapModule<TFacade>(string module) where TFacade : class, IModuleFacade
+    public ScopedContainerRouter MapModule<TFacade>(string module) where TFacade : class, IIpcModule
     {
         ArgumentException.ThrowIfNullOrEmpty(module);
         _facadeResolvers[module] = services => services.GetService<TFacade>();
@@ -178,7 +178,7 @@ public sealed class ScopedContainerRouter : IDisposable
                 new Dictionary<string, string> { ["module"] = request.Module });
         }
 
-        IModuleFacade? facade;
+        IIpcModule? facade;
         try
         {
             facade = _facadeResolvers[request.Module](GetScopeServices(request.Scope));

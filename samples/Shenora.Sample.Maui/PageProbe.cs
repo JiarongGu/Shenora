@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using Shenora;
+using Shenora.Modules.Media;
+using Shenora.Core.WebView;
 
 namespace Shenora.Sample.Maui;
 
