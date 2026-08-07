@@ -404,6 +404,18 @@ Matroska
 # of scope, and `Mp4Transcoder` or a `Decoder` would be that — argue those afresh.
 Mp4
 Remuxer
+# `Audio` (2026-08-07) — in `IMediaAudioConversion`, and admitted because the name had to become MORE
+# specific rather than less. It was `IMediaStreamConversion`, which OVER-CLAIMED: its run exposes
+# SampleRate and Channels, so it only ever converted audio, and a name that promises streams while
+# delivering audio is the same defect as a scenario name — it invites the next contributor to add video to
+# something shaped wrong for it. Owner's direction, same day: make the interfaces "more specific and more
+# generic" — specific in what each says it does, generic in the shapes that have to extend.
+# It is platform vocabulary rather than domain vocabulary: every OS names this surface the same way
+# (AVAudioSession, MediaCodec's `audio/*`, SystemMediaTransportControls), which is the `ProfileDirectory`
+# test — genuine mechanism words the platforms themselves use.
+# ⚠ Watch it the way `Media` is watched. `AudioPlayer`, `AudioLibrary` or an `AudioEffect` would be the kit
+# growing a product; this converts ONE stream so a webview can play it, and nothing more.
+Audio
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher

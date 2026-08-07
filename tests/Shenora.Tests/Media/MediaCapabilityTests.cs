@@ -17,7 +17,24 @@ public class MediaCapabilityTests
         IReadOnlySet<string> DecodableAudio,
         IReadOnlySet<string> EncodableAudio,
         IReadOnlySet<string> DecodableVideo,
-        IReadOnlySet<string> EncodableVideo) : IMediaCapability;
+        IReadOnlySet<string> EncodableVideo) : IMediaCapability
+    {
+        private static readonly IReadOnlySet<string> None = new HashSet<string>();
+
+        public IReadOnlySet<string> Decodable(MediaStreamKind kind) => kind switch
+        {
+            MediaStreamKind.Audio => DecodableAudio,
+            MediaStreamKind.Video => DecodableVideo,
+            _ => None,
+        };
+
+        public IReadOnlySet<string> Encodable(MediaStreamKind kind) => kind switch
+        {
+            MediaStreamKind.Audio => EncodableAudio,
+            MediaStreamKind.Video => EncodableVideo,
+            _ => None,
+        };
+    }
 
     private static IReadOnlySet<string> Set(params string[] names) =>
         new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
@@ -75,7 +92,7 @@ public class MediaCapabilityTests
     {
         var policy = WebviewPolicy.WithDeviceEncoders(Iphone);
 
-        Assert.True(Iphone.DecodableAudio.Contains("ac3"));
+        Assert.Contains("ac3", Iphone.Decodable(MediaStreamKind.Audio));
         Assert.DoesNotContain("ac3", policy.AudioCodecs);
         Assert.Equal(WebviewPolicy.AudioCodecs, policy.AudioCodecs);
         Assert.Equal(WebviewPolicy.Containers, policy.Containers);

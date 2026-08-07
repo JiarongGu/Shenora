@@ -36,10 +36,8 @@ Shenora.Mobile.MobileLiveActivities
   property Unavailable
 Shenora.Mobile.MobileMediaCapability
   method .ctor
-  property DecodableAudio
-  property DecodableVideo
-  property EncodableAudio
-  property EncodableVideo
+  method Decodable
+  method Encodable
 Shenora.Mobile.MobilePlaybackSession
   event CommandReceived
   method .ctor

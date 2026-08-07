@@ -26,7 +26,7 @@ namespace Shenora.Media;
 /// 2026-08-07: an iPhone decodes AC-3, an AOSP Android does not, so both answers are real.
 /// </para>
 /// </summary>
-public interface IMediaStreamConversion
+public interface IMediaAudioConversion
 {
     /// <summary>
     /// Can this device turn <paramref name="codec"/> into something MP4 carries?
@@ -60,7 +60,7 @@ public interface IMediaStreamConversion
     /// implementation to hunt for.
     /// </para>
     /// </param>
-    IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate);
+    IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate);
 }
 
 /// <summary>
@@ -72,7 +72,7 @@ public interface IMediaStreamConversion
 /// memory, it makes the NEXT conversion in the app fail with a resource error that names nothing.
 /// </para>
 /// </summary>
-public interface IMediaStreamConversionRun : IDisposable
+public interface IMediaAudioConversionRun : IDisposable
 {
     /// <summary>
     /// The decoder configuration the OUTPUT needs — an AudioSpecificConfig for AAC — which MP4 must carry

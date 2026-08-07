@@ -168,7 +168,7 @@ public static class Mp4Remuxer
     /// </para>
     /// </summary>
     public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath,
-                                         IMediaStreamConversion? conversion, CancellationToken cancellationToken = default)
+                                         IMediaAudioConversion? conversion, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
@@ -196,7 +196,7 @@ public static class Mp4Remuxer
 
     /// <summary>Remux one open stream into another, transcoding an uncarriable soundtrack when it can.</summary>
     public static Mp4RemuxerResult Remux(Stream source, Stream destination,
-                                         IMediaStreamConversion? conversion, CancellationToken cancellationToken = default)
+                                         IMediaAudioConversion? conversion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
@@ -211,7 +211,7 @@ public static class Mp4Remuxer
         }
     }
 
-    private static Mp4RemuxerResult Run(Stream source, Stream destination, IMediaStreamConversion? conversion, CancellationToken cancellationToken)
+    private static Mp4RemuxerResult Run(Stream source, Stream destination, IMediaAudioConversion? conversion, CancellationToken cancellationToken)
     {
         if (!source.CanSeek) return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "source is not seekable");
 
@@ -551,8 +551,8 @@ public static class Mp4Remuxer
     /// <b>Timing is taken from the ENCODER, not from the source, and that is the whole reason this is not
     /// just "convert the bytes".</b> A decoder may resample and a downmix may change the channel count, so
     /// the output's frames do not line up with the input's at all. What IS exact is that every output frame
-    /// carries <see cref="IMediaStreamConversionRun.OutputFramesPerPacket"/> samples at
-    /// <see cref="IMediaStreamConversionRun.OutputSampleRate"/> — so the timescale is the sample rate, each
+    /// carries <see cref="IMediaAudioConversionRun.OutputFramesPerPacket"/> samples at
+    /// <see cref="IMediaAudioConversionRun.OutputSampleRate"/> — so the timescale is the sample rate, each
     /// frame lasts one packet, and the table is exact by construction instead of being re-derived from
     /// timestamps that no longer apply.
     /// </para>
@@ -563,7 +563,7 @@ public static class Mp4Remuxer
     /// </para>
     /// </summary>
     private static Mp4TrackPlan? Convert(Stream source, MatroskaTrack track, string codec,
-                                         IMediaStreamConversion conversion, CancellationToken cancellationToken)
+                                         IMediaAudioConversion conversion, CancellationToken cancellationToken)
     {
         // Everything the platform codec must be configured with, from what Matroska declared: a decoder
         // told the wrong rate produces audio at the wrong SPEED rather than an error, and one told no

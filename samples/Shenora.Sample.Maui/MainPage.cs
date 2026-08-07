@@ -195,7 +195,7 @@ public sealed class MainPage : ContentPage
 		// And the KIT's answer to the same question, from DI, so the two independent queries can be
 		// compared. A contract that disagrees with the platform is worse than no contract.
 		CodecProbe.CrossCheck(services.GetRequiredService<Shenora.Media.IMediaCapability>(),
-			services.GetService<Shenora.Media.IMediaStreamConversion>(), MauiProgram.Log);
+			services.GetService<Shenora.Media.IMediaAudioConversion>(), MauiProgram.Log);
 
 		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
 		// the media staging above.

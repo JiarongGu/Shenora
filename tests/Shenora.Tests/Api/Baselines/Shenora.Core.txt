@@ -617,21 +617,19 @@ sealed class Shenora.Core.WebViewResourceResponse
   public static Shenora.Core.WebViewResourceResponse PartialContent(System.IO.Stream content, string contentType, Shenora.Core.WebViewByteRange range, long totalLength, System.Collections.Generic.IReadOnlyDictionary<string, string>? headers = null)
   public static Shenora.Core.WebViewResourceResponse RangeNotSatisfiable(long totalLength)
   public string ReasonPhrase { get; init; }
-interface Shenora.Media.IMediaCapability
-  public abstract System.Collections.Generic.IReadOnlySet<string> DecodableAudio { get; }
-  public abstract System.Collections.Generic.IReadOnlySet<string> DecodableVideo { get; }
-  public abstract System.Collections.Generic.IReadOnlySet<string> EncodableAudio { get; }
-  public abstract System.Collections.Generic.IReadOnlySet<string> EncodableVideo { get; }
-interface Shenora.Media.IMediaStreamConversion
-  public abstract Shenora.Media.IMediaStreamConversionRun? Begin(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
+interface Shenora.Media.IMediaAudioConversion
+  public abstract Shenora.Media.IMediaAudioConversionRun? Begin(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
   public abstract bool CanConvert(string codec)
-interface Shenora.Media.IMediaStreamConversionRun : System.IDisposable
+interface Shenora.Media.IMediaAudioConversionRun : System.IDisposable
   public abstract System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>> Drain()
   public abstract System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>> Push(System.ReadOnlyMemory<byte> frame)
   public abstract System.ReadOnlyMemory<byte> OutputConfig { get; }
   public abstract int OutputChannels { get; }
   public abstract int OutputFramesPerPacket { get; }
   public abstract int OutputSampleRate { get; }
+interface Shenora.Media.IMediaCapability
+  public abstract System.Collections.Generic.IReadOnlySet<string> Decodable(Shenora.Media.MediaStreamKind kind)
+  public abstract System.Collections.Generic.IReadOnlySet<string> Encodable(Shenora.Media.MediaStreamKind kind)
 interface Shenora.Media.ISegmentEngine
   public abstract Shenora.Media.ISegmentRun? Start(Shenora.Media.SegmentRunRequest request)
   public abstract System.TimeSpan? DurationOf(string source)
@@ -646,6 +644,11 @@ static class Shenora.Media.MatroskaProbe
   public static Shenora.Media.MediaProbeResult? Read(string path)
 static class Shenora.Media.MediaCapabilityExtensions
   public static Shenora.Media.MediaPlaybackPolicy WithDeviceEncoders(Shenora.Media.MediaPlaybackPolicy policy, Shenora.Media.IMediaCapability device)
+  public static System.Collections.Generic.IReadOnlySet<string> DecodableAudio(Shenora.Media.IMediaCapability device)
+  public static System.Collections.Generic.IReadOnlySet<string> DecodableVideo(Shenora.Media.IMediaCapability device)
+  public static System.Collections.Generic.IReadOnlySet<string> EncodableAudio(Shenora.Media.IMediaCapability device)
+  public static System.Collections.Generic.IReadOnlySet<string> EncodableVideo(Shenora.Media.IMediaCapability device)
+  public static bool CanRepair(Shenora.Media.IMediaCapability device, Shenora.Media.MediaStreamKind kind, string codec)
   public static bool CanRepairAudio(Shenora.Media.IMediaCapability device, string codec)
 static class Shenora.Media.MediaConversionEvents
   public const string Failed = "FAILED"
@@ -761,9 +764,9 @@ sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.Med
   public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)
 static class Shenora.Media.Mp4Remuxer
-  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaStreamConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, System.Threading.CancellationToken cancellationToken = default)
-  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Media.IMediaStreamConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath, System.Threading.CancellationToken cancellationToken = default)
   public static System.Threading.Tasks.Task ConvertAsync(Shenora.Media.MediaConversionRequest request, System.Threading.CancellationToken cancellationToken)
 enum Shenora.Media.Mp4RemuxerOutcome (int)

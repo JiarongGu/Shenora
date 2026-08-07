@@ -21,8 +21,7 @@ namespace Shenora.Media;
 /// <see cref="MediaPlaybackPolicy.VideoCodecs"/>, <see cref="MediaPlaybackPolicy.AudioCodecs"/>. That is
 /// the WEBVIEW, and only the page can answer it (<c>canPlayType</c>). It decides Direct vs Remux.</item>
 /// <item><b>What a TRANSCODE could read and write</b> — this interface. It decides whether Transcode is
-/// possible at all, which is <see cref="MediaPlaybackPolicy.CanEncodeAudio"/> /
-/// <see cref="MediaPlaybackPolicy.CanEncodeVideo"/>.</item>
+/// possible at all.</item>
 /// </list>
 /// <para>
 /// A device routinely decodes more than its webview plays — measured 2026-08-07: an iPhone decodes AC-3 via
@@ -31,37 +30,30 @@ namespace Shenora.Media;
 /// </para>
 ///
 /// <para>
-/// ⚠ <b>Measured per device, never assumed.</b> The same query on an API 36 AOSP emulator and an iPhone 17
-/// Pro gave different answers for AC-3 (absent / present), and a handset may differ again from the emulator.
-/// An implementation that returns a hardcoded table is worse than none, because it is confidently wrong on
-/// the one device that matters.
+/// ⚠ <b>Keyed by <see cref="MediaStreamKind"/> rather than four fixed properties</b>, so a kind the kit
+/// does not act on today needs no new member — the first shape hardcoded audio/video as a cross-product and
+/// would have needed a rename to grow. Implementations answer an unknown kind with an empty set rather than
+/// throwing: "I know of nothing" is the honest answer and the safe direction.
 /// </para>
 /// </summary>
 public interface IMediaCapability
 {
-    /// <summary>Audio codec names this device can DECODE, in the planner's lowercase vocabulary (<c>ac3</c>).</summary>
-    IReadOnlySet<string> DecodableAudio { get; }
+    /// <summary>
+    /// Codec names this device can DECODE for <paramref name="kind"/>, in the planner's lowercase
+    /// vocabulary (<c>ac3</c>, <c>h264</c>). Empty when the device knows of none.
+    /// </summary>
+    IReadOnlySet<string> Decodable(MediaStreamKind kind);
 
     /// <summary>
-    /// Audio codec names this device can ENCODE.
+    /// Codec names this device can ENCODE for <paramref name="kind"/>.
     /// <para>
-    /// The cheap half of a transcode and usually the present one: both mobile platforms encode AAC, so a
-    /// soundtrack repair needs only a decoder for what the file HAS.
+    /// For audio this is usually the present half — both mobile platforms encode AAC — so a soundtrack
+    /// repair needs only a decoder for what the file HAS. ⚠ And note what having a video encoder at all
+    /// means for licensing: an LGPL ffmpeg has no H.264 encoder either (libx264 is GPL), so the platform
+    /// encoder was always the only licence-clean option (D51/D52).
     /// </para>
     /// </summary>
-    IReadOnlySet<string> EncodableAudio { get; }
-
-    /// <summary>Video codec names this device can DECODE.</summary>
-    IReadOnlySet<string> DecodableVideo { get; }
-
-    /// <summary>
-    /// Video codec names this device can ENCODE.
-    /// <para>
-    /// ⚠ Note what having this at all means for licensing: an LGPL ffmpeg has no H.264 encoder either
-    /// (libx264 is GPL), so the platform encoder was always the only licence-clean option (D51/D52).
-    /// </para>
-    /// </summary>
-    IReadOnlySet<string> EncodableVideo { get; }
+    IReadOnlySet<string> Encodable(MediaStreamKind kind);
 }
 
 /// <summary>
@@ -69,6 +61,28 @@ public interface IMediaCapability
 /// </summary>
 public static class MediaCapabilityExtensions
 {
+    /// <summary>Audio codecs this device can decode. Shorthand for the common question.</summary>
+    public static IReadOnlySet<string> DecodableAudio(this IMediaCapability device)
+        => Ask(device).Decodable(MediaStreamKind.Audio);
+
+    /// <summary>Audio codecs this device can encode.</summary>
+    public static IReadOnlySet<string> EncodableAudio(this IMediaCapability device)
+        => Ask(device).Encodable(MediaStreamKind.Audio);
+
+    /// <summary>Video codecs this device can decode.</summary>
+    public static IReadOnlySet<string> DecodableVideo(this IMediaCapability device)
+        => Ask(device).Decodable(MediaStreamKind.Video);
+
+    /// <summary>Video codecs this device can encode.</summary>
+    public static IReadOnlySet<string> EncodableVideo(this IMediaCapability device)
+        => Ask(device).Encodable(MediaStreamKind.Video);
+
+    private static IMediaCapability Ask(IMediaCapability device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        return device;
+    }
+
     /// <summary>
     /// Answer <see cref="MediaPlaybackPolicy.CanEncodeAudio"/>/<see cref="MediaPlaybackPolicy.CanEncodeVideo"/>
     /// from what the DEVICE can actually do, leaving every other field alone.
@@ -92,8 +106,8 @@ public static class MediaCapabilityExtensions
 
         return policy with
         {
-            CanEncodeAudio = device.EncodableAudio.Count > 0,
-            CanEncodeVideo = device.EncodableVideo.Count > 0,
+            CanEncodeAudio = device.Encodable(MediaStreamKind.Audio).Count > 0,
+            CanEncodeVideo = device.Encodable(MediaStreamKind.Video).Count > 0,
         };
     }
 
@@ -105,11 +119,15 @@ public static class MediaCapabilityExtensions
     /// cannot either. The answer is per CODEC, which is why it is a method and not a flag.
     /// </para>
     /// </summary>
-    public static bool CanRepairAudio(this IMediaCapability device, string codec)
+    public static bool CanRepair(this IMediaCapability device, MediaStreamKind kind, string codec)
     {
         ArgumentNullException.ThrowIfNull(device);
         return !string.IsNullOrWhiteSpace(codec)
-            && device.DecodableAudio.Contains(codec)
-            && device.EncodableAudio.Count > 0;
+            && device.Decodable(kind).Contains(codec)
+            && device.Encodable(kind).Count > 0;
     }
+
+    /// <summary>Shorthand for the audio case, which is the one that actually turns up.</summary>
+    public static bool CanRepairAudio(this IMediaCapability device, string codec)
+        => device.CanRepair(MediaStreamKind.Audio, codec);
 }

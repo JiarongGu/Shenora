@@ -24,17 +24,25 @@ public sealed class MobileMediaCapability : IMediaCapability
 {
     private readonly Lazy<Sets> _sets = new(Read, isThreadSafe: true);
 
-    /// <inheritdoc />
-    public IReadOnlySet<string> DecodableAudio => _sets.Value.DecodableAudio;
+    private static readonly HashSet<string> None = new(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public IReadOnlySet<string> EncodableAudio => _sets.Value.EncodableAudio;
+    public IReadOnlySet<string> Decodable(MediaStreamKind kind) => kind switch
+    {
+        MediaStreamKind.Audio => _sets.Value.DecodableAudio,
+        MediaStreamKind.Video => _sets.Value.DecodableVideo,
+        // A kind this device knows nothing about answers EMPTY rather than throwing: "I know of none" is
+        // the honest answer and the safe direction for a planner reading it.
+        _ => None,
+    };
 
     /// <inheritdoc />
-    public IReadOnlySet<string> DecodableVideo => _sets.Value.DecodableVideo;
-
-    /// <inheritdoc />
-    public IReadOnlySet<string> EncodableVideo => _sets.Value.EncodableVideo;
+    public IReadOnlySet<string> Encodable(MediaStreamKind kind) => kind switch
+    {
+        MediaStreamKind.Audio => _sets.Value.EncodableAudio,
+        MediaStreamKind.Video => _sets.Value.EncodableVideo,
+        _ => None,
+    };
 
     private sealed record Sets(
         HashSet<string> DecodableAudio,

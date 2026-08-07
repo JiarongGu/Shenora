@@ -55,17 +55,20 @@ public sealed class MobileMediaCapability : IMediaCapability
     private readonly Lazy<(HashSet<string> Decode, HashSet<string> Encode)> _audio =
         new(ReadAudio, isThreadSafe: true);
 
-    /// <inheritdoc />
-    public IReadOnlySet<string> DecodableAudio => _audio.Value.Decode;
+    private static readonly HashSet<string> None = new(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public IReadOnlySet<string> EncodableAudio => _audio.Value.Encode;
+    /// <remarks>
+    /// ⚠ VIDEO answers EMPTY rather than guessed — the equivalent question is VideoToolbox's, asked
+    /// differently, and an invented set reads as a capability. The planner then refuses a video transcode
+    /// rather than promising one, which is the safe direction.
+    /// </remarks>
+    public IReadOnlySet<string> Decodable(MediaStreamKind kind)
+        => kind == MediaStreamKind.Audio ? _audio.Value.Decode : None;
 
     /// <inheritdoc />
-    public IReadOnlySet<string> DecodableVideo { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-    /// <inheritdoc />
-    public IReadOnlySet<string> EncodableVideo { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlySet<string> Encodable(MediaStreamKind kind)
+        => kind == MediaStreamKind.Audio ? _audio.Value.Encode : None;
 
     private static (HashSet<string> Decode, HashSet<string> Encode) ReadAudio()
     {

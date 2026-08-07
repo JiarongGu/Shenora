@@ -5,7 +5,7 @@ using Shenora.Media;
 namespace Shenora.Mobile;
 
 /// <summary>
-/// Android's <see cref="IMediaStreamConversion"/> — a platform decoder feeding a platform AAC encoder.
+/// Android's <see cref="IMediaAudioConversion"/> — a platform decoder feeding a platform AAC encoder.
 ///
 /// <para>
 /// <b>Two codecs chained, because MediaCodec has no compressed-to-compressed mode.</b> The soundtrack is
@@ -21,7 +21,7 @@ namespace Shenora.Mobile;
 /// cannot finish.
 /// </para>
 /// </summary>
-public sealed class MobileMediaStreamConversion : IMediaStreamConversion
+public sealed class MobileMediaAudioConversion : IMediaAudioConversion
 {
     private const string AacMime = "audio/mp4a-latm";
 
@@ -33,7 +33,7 @@ public sealed class MobileMediaStreamConversion : IMediaStreamConversion
     }
 
     /// <inheritdoc />
-    public IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate)
+    public IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Codec is null || MimeOf(source.Codec) is not { } mime) return null;
@@ -93,7 +93,7 @@ public sealed class MobileMediaStreamConversion : IMediaStreamConversion
     /// queue and a lock behind it to be re-serialised into exactly what the synchronous API already gives.
     /// </para>
     /// </summary>
-    private sealed class Run : IMediaStreamConversionRun
+    private sealed class Run : IMediaAudioConversionRun
     {
         private const int TimeoutUs = 10_000;
 

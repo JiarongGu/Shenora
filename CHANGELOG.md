@@ -37,6 +37,18 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- **The media seams were reshaped before any of them shipped: names made SPECIFIC, shapes made GENERIC.**
+  (Owner, 2026-08-07.) Everything here is new in this same unreleased version, so nothing published moves.
+  - **`IMediaStreamConversion` → `IMediaAudioConversion`** (and its `…Run`). The old name OVER-CLAIMED: the
+    run exposes `SampleRate`/`Channels`, so it only ever converted audio — and a name promising streams
+    while delivering audio invites the next contributor to add video to something shaped wrong for it.
+  - **`IMediaCapability` is keyed by `MediaStreamKind`** — `Decodable(kind)`/`Encodable(kind)` instead of
+    four fixed properties. A kind the kit does not act on today needs no new member; the cross-product
+    shape would have needed a rename to grow. Shorthands (`DecodableAudio()` etc.) remain as extension
+    methods, and `CanRepair(kind, codec)` generalises `CanRepairAudio`.
+  - An implementation answers an unknown kind with an EMPTY set rather than throwing: *"I know of none"* is
+    honest and is the safe direction for a planner reading it.
+
 - **`MediaStreamInfo` gained a `SampleRate` parameter.** Source-compatible — it is optional and last, so
   every existing construction and `with` expression still compiles — but **binary-breaking**, so a consumer
   compiled against an older version must be REBUILT rather than swapped.

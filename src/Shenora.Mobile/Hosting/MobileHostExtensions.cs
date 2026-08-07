@@ -92,7 +92,7 @@ public static class MobileHostExtensions
         //
         // NOT a singleton: each Begin() holds two real codec instances, and a device has only a handful.
         // Sharing the FACTORY is fine; sharing a run would not be.
-        builder.Services.TryAddSingleton<Shenora.Media.IMediaStreamConversion>(_ => new MobileMediaStreamConversion());
+        builder.Services.TryAddSingleton<Shenora.Media.IMediaAudioConversion>(_ => new MobileMediaAudioConversion());
 #endif
 
         return builder;

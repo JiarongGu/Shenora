@@ -221,21 +221,21 @@ internal static class CodecProbe
     /// </para>
     /// </summary>
     public static void CrossCheck(Shenora.Media.IMediaCapability device,
-                                  Shenora.Media.IMediaStreamConversion? conversion, Action<string> log)
+                                  Shenora.Media.IMediaAudioConversion? conversion, Action<string> log)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(log);
 
         try
         {
-            log($"[CODEC] kit decode audio: {string.Join(' ', device.DecodableAudio.OrderBy(n => n, StringComparer.Ordinal))}");
-            log($"[CODEC] kit encode audio: {string.Join(' ', device.EncodableAudio.OrderBy(n => n, StringComparer.Ordinal))}");
-            log($"[CODEC] kit decode video: {string.Join(' ', device.DecodableVideo.OrderBy(n => n, StringComparer.Ordinal))}");
-            log($"[CODEC] kit encode video: {string.Join(' ', device.EncodableVideo.OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit decode audio: {string.Join(' ', device.DecodableAudio().OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit encode audio: {string.Join(' ', device.EncodableAudio().OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit decode video: {string.Join(' ', device.DecodableVideo().OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit encode video: {string.Join(' ', device.EncodableVideo().OrderBy(n => n, StringComparer.Ordinal))}");
 
             // AAC is the control here for the same reason it is one above: every target decodes it, so a
             // "no" means the contract is broken rather than that the device lacks it.
-            if (!device.DecodableAudio.Contains("aac"))
+            if (!device.DecodableAudio().Contains("aac"))
             {
                 log("[CODEC] ⚠ CROSS-CHECK INCONCLUSIVE — the kit reports no AAC decoder, which cannot be "
                     + "true on any target. Treat the sets above as unmeasured.");
@@ -260,7 +260,7 @@ internal static class CodecProbe
             }
             else
             {
-                log("[CODEC] no IMediaStreamConversion registered on this shell — container repair only");
+                log("[CODEC] no IMediaAudioConversion registered on this shell — container repair only");
             }
             log("[CODEC] CROSS-CHECK: compare the four 'kit' lines against the platform lines above — "
                 + "they are independent queries and must agree.");

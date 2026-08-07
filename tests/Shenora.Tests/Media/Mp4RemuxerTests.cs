@@ -538,7 +538,7 @@ public class Mp4RemuxerTests
     /// </para>
     /// </summary>
     private sealed class FakeConversion(int framesPerPacket = 1024, int sampleRate = 48000, int channels = 2)
-        : IMediaStreamConversion, IMediaStreamConversionRun
+        : IMediaAudioConversion, IMediaAudioConversionRun
     {
         private ReadOnlyMemory<byte>? _held;
         public bool Disposed { get; private set; }
@@ -548,7 +548,7 @@ public class Mp4RemuxerTests
         public int OutputChannels => channels;
 
         public bool CanConvert(string codec) => codec is "ac3" or "eac3" or "dts";
-        public IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate) => this;
+        public IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate) => this;
 
         public IReadOnlyList<ReadOnlyMemory<byte>> Push(ReadOnlyMemory<byte> frame)
         {
@@ -648,10 +648,10 @@ public class Mp4RemuxerTests
         Assert.Equal(Mp4RemuxerOutcome.NoCarriableStream, result.Outcome);
     }
 
-    private sealed class RefusingConversion : IMediaStreamConversion
+    private sealed class RefusingConversion : IMediaAudioConversion
     {
         public bool CanConvert(string codec) => false;
-        public IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate) => null;
+        public IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate) => null;
     }
 
     /// <summary>
