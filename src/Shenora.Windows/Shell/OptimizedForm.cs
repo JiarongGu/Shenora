@@ -474,7 +474,7 @@ public class OptimizedForm : Form, IAppMaximizable
     {
         if (CaptionButtonStateChanged is not { } handler) return;
         var state = new CaptionButtonState(_hotCaptionButton, _pressedCaptionButton);
-        Shenora.Core.AppCallback.Run(() => handler(state));
+        Shenora.AppCallback.Run(() => handler(state));
     }
 
     /// <summary>
@@ -788,7 +788,7 @@ public class OptimizedForm : Form, IAppMaximizable
         // msg is copied out first: `m` is a `ref` parameter and cannot be captured by the guard's
         // lambda (CS1628). The hook only ever received the message id anyway.
         var msg = m.Msg;
-        if (WndProcHook is { } hook && Shenora.Core.AppCallback.RunOrDefault(() => hook(msg), false))
+        if (WndProcHook is { } hook && Shenora.AppCallback.RunOrDefault(() => hook(msg), false))
             return;
 
         if (!_options.FramelessChrome)

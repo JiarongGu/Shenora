@@ -23,7 +23,7 @@ interface Subscription {
  * Event enums/maps are app schema, so apps layer their own typed wrappers on top (headless per D13).
  * A throwing handler is isolated: it never breaks the other subscribers or the emitter.
  *
- * Three subscription breadths, mirroring the host's `Shenora.Core.IEventBus`: an exact
+ * Three subscription breadths, mirroring the host's `Shenora.IEventBus`: an exact
  * `(module, type)` pair, a whole {@link subscribeToModule | module}, or
  * {@link subscribeToAll | everything}. The broad two were added in P6.4 — the host had shipped them
  * from the start (`WebViewIpcBridge` itself consumes `SubscribeToAll`), so the client was the

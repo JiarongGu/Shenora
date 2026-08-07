@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Mobile;
 
 namespace Shenora.Sample.Maui;
@@ -6,7 +6,7 @@ namespace Shenora.Sample.Maui;
 /// <summary>
 /// Serving local media to the page — and after the D45 re-layering, this is the whole of it: declare where
 /// files may come from, say how your route maps to one, and let the shell's interceptor plus
-/// <c>Shenora.Core</c>'s file middleware do the rest.
+/// <c>Shenora</c>'s file middleware do the rest.
 /// <para>
 /// Worth keeping the history, because it is the shape of the mistake this file went through. It used to BE
 /// the range implementation (proven on both devices — D44), then it called <c>Shenora.Media</c>'s range

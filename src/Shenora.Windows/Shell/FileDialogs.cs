@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Windows;
 
 // The dialog CONTRACT (IFileDialogs, IFileDialogPathStore, FileDialogOptions/Filter/Result) moved to
-// Shenora.Core in P5.5 H4.1 so app logic that picks files compiles with no Windows reference (D20).
+// Shenora in P5.5 H4.1 so app logic that picks files compiles with no Windows reference (D20).
 // What stays here is the Windows IMPLEMENTATION and its configuration.
 
 /// <summary>Inputs for <see cref="FileDialogs"/>.</summary>

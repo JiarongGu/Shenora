@@ -24,7 +24,7 @@ public sealed class RenderSession : IAsyncDisposable
 
     private readonly RenderSessionPool _pool;
     private readonly RenderSessionPool.PoolInstance _instance;
-    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
+    private readonly Shenora.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly TimeSpan _opTimeout;

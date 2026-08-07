@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Tests.TestSupport;
 using Shenora.Windows;
 

@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using Shenora.Core;
+using Shenora;
 using Shenora.IO;
 using Shenora.Tests.TestSupport;
 

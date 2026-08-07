@@ -18,7 +18,7 @@ them: what .NET can do and React cannot.** So the question for any feature is no
 *"can React already do this?"* — if it can, the kit is competing with the web platform and loses.
 `.NET does the platform work · React does the interface · the kit owns the seam and the IPC.`
 
-Shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 — plus
+Shipped as NuGet packages (`Shenora|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 — plus
 the native `Launcher`, D50) + npm (`@shenora/react`), all versioned in lockstep. **There is no optional
 feature tier: media, IO and IO.Compression are NAMESPACES inside Core** (D53/D55) — a capability gets a
 folder, never a package. Code is **extracted from proven sibling apps**, not
@@ -62,7 +62,7 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 - **Layering (D19/D20/D37):** ONE shell package per PLATFORM. Windows primitives and web hosting
   are one layer — since 2026-08-02 literally one package, `Shenora.Windows`, with the direction kept
   internally (`Shell/` must never depend on `WebView/`). Portable contracts + the `IUiDispatcher`
-  marshalling seam live in `Shenora.Core` so app logic compiles with no Windows reference —
+  marshalling seam live in `Shenora` so app logic compiles with no Windows reference —
   enforced, not asserted: `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED if a
   Windows type creeps into app logic. `docs/ARCHITECTURE.md` describes this as-built; don't
   "fix" the layering back toward the pre-P5.5 shape or re-split the packages (D37 has the reasoning

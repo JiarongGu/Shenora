@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.IO;
 using Shenora.Ipc;
 using Shenora.Windows;
@@ -89,7 +89,7 @@ internal static class Program
         // it demonstrates rather than getting it for free — the same bar every consumer faces.
         builder.Services.AddShenoraOperations();
 
-        // The mission scheduler — a plain object, registered like any other singleton (Shenora.Core
+        // The mission scheduler — a plain object, registered like any other singleton (Shenora
         // ships no DI extension for it, and it needs none). Composition, not framework: the app
         // chooses the scopes, the capacity, and how execution reports itself.
         builder.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
@@ -99,7 +99,7 @@ internal static class Program
             GlobalLaneCapacity = 4,
             Scopes = [PathClaims.Scope],
             // Execution reports through the operations registry via ONE observer written in the app
-            // (Shenora.Core must never learn what an operation is — D19/D20). This is the whole cost
+            // (Shenora must never learn what an operation is — D19/D20). This is the whole cost
             // of the pairing that docs/ADOPTION.md describes.
             Observers = [new Shenora.Sample.Logic.MissionOperationObserver(
                 sp.GetRequiredService<IOperationRegistry>(), Shenora.Sample.Logic.PortableSampleFacade.Module)],

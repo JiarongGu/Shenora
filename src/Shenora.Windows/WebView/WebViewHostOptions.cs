@@ -1,6 +1,6 @@
 using System.Drawing;
 using Microsoft.Web.WebView2.Core;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Windows;
 

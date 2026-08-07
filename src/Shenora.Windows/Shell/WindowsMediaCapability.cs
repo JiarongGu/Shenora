@@ -2,7 +2,7 @@
 // here: this file is the versioned half, WindowsMediaCapability.Unsupported.cs refuses by name on plain
 // net10.0-windows. Guarding the FILE rather than each body, for the reason recorded there.
 #if WINDOWS10_0_17763_0_OR_GREATER
-using Shenora.Core;
+using Shenora;
 using Shenora.Media;
 // `global::` on every WinRT namespace, and it is not optional: inside `namespace Shenora.Windows` the bare
 // identifier `Windows` binds to THIS namespace, so `Windows.Media` resolves to `Shenora.Windows.Windows.Media`

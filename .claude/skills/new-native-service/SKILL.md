@@ -1,6 +1,6 @@
 ---
 name: new-native-service
-description: Walk the chain for adding a native desktop service — where the contract goes, the Windows implementation, DI registration, the registration tripwire. Use before adding a clipboard/dialog/shell/interaction capability, or whenever a new contract has to be placed between Shenora.Core and Shenora.Windows.
+description: Walk the chain for adding a native desktop service — where the contract goes, the Windows implementation, DI registration, the registration tripwire. Use before adding a clipboard/dialog/shell/interaction capability, or whenever a new contract has to be placed between Shenora and Shenora.Windows.
 ---
 
 # new-native-service
@@ -12,7 +12,7 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
 
 1. **Place the CONTRACT before writing anything.** The bar is *"app logic must be able to compile
    off Windows"*, NOT "the signature happens to be platform-neutral" — which is why the whole
-   window-state stack correctly stays in `Shenora.Windows`. Portable → `Shenora.Core`. Partly
+   window-state stack correctly stays in `Shenora.Windows`. Portable → `Shenora`. Partly
    portable → SPLIT it: the portable slice in Core, the desktop-only operations on an interface
    deriving from it (`IShellLauncher : IUrlLauncher`, `IFormInteraction : IUiInteraction`).
    Windows-only concept → `Shenora.Windows` alone. Never a new package (D2).

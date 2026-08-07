@@ -130,7 +130,7 @@ at the first list and missed five more breaking changes.
   ```
 
   Proof it was a pure move rather than a rewrite: the API baselines went `Shenora.Media.txt` **−180 lines
-  (retired)** and `Shenora.Core.txt` **+180, −0**.
+  (retired)** and `Shenora.txt` **+180, −0**.
 
   **Why (D53).** The package existed because media was going to be *"real shipped bytes"* — a demuxer or a
   codec. **D51 then guaranteed the kit ships no engine byte, ever**, so that premise can never come true;
@@ -163,7 +163,7 @@ at the first list and missed five more breaking changes.
 - **The mission namespace is now `Shenora.Missions`, a peer of `Shenora.Media` and `Shenora.IO`.**
   **Migration: add `using Shenora.Missions;`** wherever you name a mission type; nothing else changed.
   - There were THREE conventions and nobody chose the third: twelve of the thirteen mission files sat flat
-    in `Shenora.Core`, while `MissionExtensions` alone declared `Shenora.Core.Missions`. Media and IO had
+    in `Shenora.Core`, while `MissionExtensions` alone declared `Shenora.Missions`. Media and IO had
     top-level namespaces only because they used to be PACKAGES — so the layout was a fossil of a package
     set that no longer exists (D53/D55) rather than anything anyone decided.
   - Proven a pure move: normalised for the namespace, the API-baseline diff is EMPTY in both directions
@@ -588,7 +588,7 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
   ```
 
   **Nothing else changes** — no member was added, removed or resigned, which the API baselines show
-  exactly: `Shenora.Core.txt` lost 206 lines and gained none. An app that never mutates a file tree simply
+  exactly: `Shenora.txt` lost 206 lines and gained none. An app that never mutates a file tree simply
   does not reference the package, which is the point: `Io/` was **34% of `Shenora.Core`** (2,244 lines) and
   `Shenora.Core` is what every other package references, so a phone app that hosts a page and plays a file
   was carrying a self-updater it will never call.
@@ -1219,7 +1219,7 @@ finding was in what a gate is structurally blind to — shipped package metadata
   `Shenora.Windows` to `Shenora.Core`** (namespace `Shenora.Windows` → `Shenora.Core`).
   `WebViewDeferredScheme.Handler`'s signature now names the Core types; the member is otherwise unchanged.
 
-  **Migration: add `using Shenora.Core;` to files that name these types.** That is the whole fix, and it
+  **Migration: add `using Shenora;` to files that name these types.** That is the whole fix, and it
   was measured rather than asserted — the move broke exactly three files in this repo (one sample, two test
   files) and each needed exactly that one line. Code that already has both usings does not change at all.
 
@@ -1440,7 +1440,7 @@ Left published rather than unlisted, deliberately: it is a valid, working build 
   disk; a share that will not honour the rename) and is pinned by a test asserting it does NOT protect
   the previous file, so the trade is stated rather than implied.
 
-  It cannot be called `File`: a consumer with both `using System.IO;` and `using Shenora.Core;` would
+  It cannot be called `File`: a consumer with both `using System.IO;` and `using Shenora;` would
   get an ambiguity error on every existing `File.` call.
 
   **The failure it prevents is a silent one.** `File.WriteAllText` truncates the target and then writes
@@ -2383,7 +2383,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   leak what those apps do. Derived from the 147 public types then shipping: 134 words, every one a
   mechanism, so the kit passed its own criterion on the day the gate was written. Sabotage-verified
   both ways, and a second test fails if the lexicon keeps words no type uses. No surface change.
-- **`Shenora.Core.AppCallback.Log(Action<string>? sink, Func<string> message)`** — the guarded, lazy
+- **`Shenora.AppCallback.Log(Action<string>? sink, Func<string> message)`** — the guarded, lazy
   diagnostic helper existed as FIVE byte-identical private copies (`WebViewHost`,
   `WebViewIpcBridge`, `EmbeddedResourceProvider`, `NotificationPump`, `OperationRegistry`), the same
   "N copies of the rule that must never be broken" shape `IpcErrorMapping` was collapsed for. One
@@ -2606,13 +2606,13 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   `Shenora.WebView2` now depends on `Shenora.WinForms` — the boundary is Windows *primitives* and
   *web hosting on top of them*, not two peers. `WinForms` still carries no `Shenora.Ipc` dependency,
   and `WinForms → WebView2` remains forbidden.
-  **What a consumer must change:** add `using Shenora.Core;` where these types are referenced —
+  **What a consumer must change:** add `using Shenora;` where these types are referenced —
   `IFileDialogs`, `IFileDialogPathStore`, `FileDialogOptions`, `FileDialogFilter`,
   `FileDialogResult`, `IClipboardService` moved namespace (identical signatures otherwise). Nothing
   needs re-registering: `UseWinForms` registers the same implementations, now behind both the
   Windows and the portable interface.
   `IShellLauncher` and `IFormInteraction` were **split**, not changed: they now derive from
-  `Shenora.Core.IUrlLauncher` and `Shenora.Core.IUiInteraction` respectively, so `OpenUrl`,
+  `Shenora.IUrlLauncher` and `Shenora.IUiInteraction` respectively, so `OpenUrl`,
   `BlockInteraction` and `UnblockInteraction` are inherited rather than declared. Existing call
   sites compile unchanged; code that *implements* these interfaces still implements the same member
   set. Depend on the portable base where you only need the portable operation, and your logic
@@ -2890,7 +2890,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   file-name characters and Windows reserved device names. Per-provider/per-account scoping is the
   session stack's isolation boundary, and the library previously documented that boundary while
   shipping no safe way to construct the path.
-- **`Shenora.Core.AppCallback`** (P5.5 H2) — the one guard for invoking APP-SUPPLIED code from a place
+- **`Shenora.AppCallback`** (P5.5 H2) — the one guard for invoking APP-SUPPLIED code from a place
   where an escaping exception is fatal rather than catchable: a UI-thread event handler, a timer tick, a
   posted delegate, a dispose path. `Run` returns whether the callback completed; `RunOrDefault` returns
   its answer or an explicit policy fallback. Both swallow, deliberately — at these sites the

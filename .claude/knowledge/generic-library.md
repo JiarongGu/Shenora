@@ -93,7 +93,7 @@ keeps the library reusable (adopted from the family's other library, where it's 
   (`IWindowStateStore`, injected scripts, custom schemes, transports), not boolean options
   that switch between two consumers' behaviors.
 - **Placement is a design decision, not an accident (D19/D20).** A **portable contract** belongs in
-  `Shenora.Core` (`net10.0`); its **platform implementation** belongs in that platform's shell package
+  `Shenora` (`net10.0`); its **platform implementation** belongs in that platform's shell package
   — `Shenora.Windows`, or `src/Shenora.Mobile/` for the shared source behind `Shenora.Android` and
   `Shenora.iOS`. The bar for moving a contract to Core is **"app logic must be able to compile off
   Windows"**, NOT "the signature happens to be platform-neutral" — which is exactly why the whole
@@ -105,7 +105,7 @@ keeps the library reusable (adopted from the family's other library, where it's 
   together with the engine that uses them. D55 made the packaging half of this moot — everything is in
   Core now — but the rule still decides which FOLDER a contract belongs in, and it is the same rule.
 - 🔴 **A new NuGet package is the wrong answer. Ship a FOLDER (D55, 2026-08-07).** The framework is one
-  whole: `Shenora.Core` + one shell + `@shenora/react`. There is no "optional features" tier any more —
+  whole: `Shenora` + one shell + `@shenora/react`. There is no "optional features" tier any more —
   `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` were all folded back into Core, and the
   namespaces stayed, so it cost adopters a deleted `PackageReference` and no code.
   **The test is not layering, it is what the package set SAYS the product is.** A nuget.org listing of

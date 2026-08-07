@@ -342,7 +342,7 @@ decoder/encoder just if they needed, and we built something that can work by def
 treadmill whose ceiling is still the webview. The gap is that **the PAGE owns playback and should not**.
 
 **✅ THE CONTRACT AND THE iOS IMPLEMENTATION ARE IN** (2026-08-07, `dc29b2e` + `fbb2716`).
-`IMediaPlayer` in `Shenora.Core/Media/Play/`, `MobileMediaPlayer` (AVPlayer) on iOS,
+`IMediaPlayer` in `Shenora/Media/Play/`, `MobileMediaPlayer` (AVPlayer) on iOS,
 `player.ReportTo(session)` reconciling Now Playing with the player's real state. 1191 tests.
 
 🔴 **WHAT IS NOT PROVEN, and no green gate says otherwise: NOTHING HAS PLAYED A BYTE.** There is no
@@ -645,7 +645,7 @@ adoption-driven, so "next" is not a phase.
 - **`Shenora.Hosting.AspNetCore`** (SPA static policy, loopback-gated endpoint helpers) — D10.
 - **A mobile transport adapter** speaking the same IPC envelope — D16. The decision point is unchanged
   (first real mobile adoption), and the .NET-side surface such a shell would implement is enumerated
-  rather than hypothetical: D20's portable contracts in `Shenora.Core` (`IUiDispatcher`, `IFileDialogs`,
+  rather than hypothetical: D20's portable contracts in `Shenora` (`IUiDispatcher`, `IFileDialogs`,
   `IClipboardService`, `IUrlLauncher`, `IUiInteraction`). D16 covers the transport seam, D20 the feature
   seams; neither ships an implementation until there is a consumer.
 - **Contract codegen (C# ⇄ TS)** — out of initial scope; revisit after adoption feedback. ⚠ Related but

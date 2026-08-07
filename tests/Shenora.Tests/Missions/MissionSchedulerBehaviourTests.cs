@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Missions;
 
 namespace Shenora.Tests.Missions;

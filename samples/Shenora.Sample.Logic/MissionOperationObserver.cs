@@ -1,18 +1,18 @@
 using System.Collections.Concurrent;
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 using Shenora.Missions;
 
 namespace Shenora.Sample.Logic;
 
 /// <summary>
-/// Binds the EXECUTION half (<see cref="IMissionScheduler"/>, in <c>Shenora.Core</c>) to the REPORTING
+/// Binds the EXECUTION half (<see cref="IMissionScheduler"/>, in <c>Shenora</c>) to the REPORTING
 /// half (<see cref="IOperationRegistry"/>, in <c>Shenora.Ipc</c>) so scheduled work shows up in the
 /// page's operations list without a single mission body opening an operation by hand.
 ///
 /// <para>
 /// <b>The kit ships no adapter like this on purpose</b>, and this file is the demonstration that it
-/// does not need to: `Shenora.Core` must never learn what an operation is (D19/D20), so the two
+/// does not need to: `Shenora` must never learn what an operation is (D19/D20), so the two
 /// compose through <see cref="IMissionObserver"/> in the APP — which also means an app that reports
 /// progress some other way (a status bar, a log, OpenTelemetry) writes its own instead and owes the
 /// kit nothing. `docs/ADOPTION.md` claims this costs an adopter a few lines; the class below is that

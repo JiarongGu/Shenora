@@ -7,7 +7,7 @@
 // is harder to read and easy to get subtly wrong. The cost is that the public shape is written twice, so
 // the plain TFM is gated by its own metadata baseline — see MetadataSurfaceTests.
 #if WINDOWS10_0_17763_0_OR_GREATER
-using Shenora.Core;
+using Shenora;
 // `global::` on every WinRT namespace below, and it is not optional: inside `namespace Shenora.Windows`
 // the bare identifier `Windows` binds to THIS namespace, so `Windows.Media` resolves to
 // `Shenora.Windows.Windows.Media` and fails with a confusing CS0234 about `Shenora.Windows`. Same trap

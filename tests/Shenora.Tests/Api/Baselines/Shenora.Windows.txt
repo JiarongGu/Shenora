@@ -36,7 +36,7 @@ struct Shenora.Windows.CaptionButtonState : System.IEquatable<Shenora.Windows.Ca
   public static bool op_Equality(Shenora.Windows.CaptionButtonState left, Shenora.Windows.CaptionButtonState right)
   public static bool op_Inequality(Shenora.Windows.CaptionButtonState left, Shenora.Windows.CaptionButtonState right)
   public void Deconstruct(out Shenora.Windows.CaptionButtonKind? Hot, out Shenora.Windows.CaptionButtonKind? Pressed)
-sealed class Shenora.Windows.ClipboardService : Shenora.Core.IClipboardService
+sealed class Shenora.Windows.ClipboardService : Shenora.IClipboardService
   public .ctor()
   public System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
   public System.Threading.Tasks.Task SetTextAsync(string text)
@@ -74,7 +74,7 @@ sealed class Shenora.Windows.DropZoneManager : System.IDisposable
   public void UpdateZoneBounds(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight)
 sealed class Shenora.Windows.DropZoneManagerOptions
   public required Microsoft.Web.WebView2.WinForms.WebView2 WebView { get; init; }
-  public required Shenora.Core.IEventBus EventBus { get; init; }
+  public required Shenora.IEventBus EventBus { get; init; }
   public required System.Windows.Forms.Form ParentForm { get; init; }
 sealed class Shenora.Windows.EmbeddedResourceProvider : Shenora.Windows.IWebViewResourceProvider
   public .ctor(Shenora.Windows.EmbeddedResourceProviderOptions options)
@@ -89,16 +89,16 @@ sealed class Shenora.Windows.EmbeddedResourceProviderOptions
   public required System.Reflection.Assembly Assembly { get; init; }
   public required string ResourcePrefix { get; init; }
   public string? FileFallbackDirectory { get; init; }
-sealed class Shenora.Windows.FileDialogs : Shenora.Core.IFileDialogs
+sealed class Shenora.Windows.FileDialogs : Shenora.IFileDialogs
   public .ctor(Shenora.Windows.FileDialogsOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.FileDialogs>? logger = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFileAsync(Shenora.Core.OpenFileOptions? options = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> OpenFolderAsync(Shenora.Core.OpenFolderOptions? options = null)
-  public System.Threading.Tasks.Task<Shenora.Core.FileDialogResult> SaveFileAsync(Shenora.Core.SaveFileOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.FileDialogResult> OpenFileAsync(Shenora.OpenFileOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.FileDialogResult> OpenFolderAsync(Shenora.OpenFolderOptions? options = null)
+  public System.Threading.Tasks.Task<Shenora.FileDialogResult> SaveFileAsync(Shenora.SaveFileOptions? options = null)
 sealed class Shenora.Windows.FileDialogsOptions
   public .ctor()
-  public Shenora.Core.IFileDialogPathStore? PathStore { get; init; }
+  public Shenora.IFileDialogPathStore? PathStore { get; init; }
   public Shenora.Windows.IFormInteraction? Interaction { get; init; }
-sealed class Shenora.Windows.FormInteraction : Shenora.Core.IUiInteraction, Shenora.Windows.IFormInteraction
+sealed class Shenora.Windows.FormInteraction : Shenora.IUiInteraction, Shenora.Windows.IFormInteraction
   public .ctor()
   public System.IntPtr GetMainFormHandle()
   public System.Windows.Forms.Form? GetMainForm()
@@ -108,11 +108,11 @@ sealed class Shenora.Windows.FormInteraction : Shenora.Core.IUiInteraction, Shen
 interface Shenora.Windows.IAppMaximizable
   public abstract System.Drawing.Rectangle AppRestoreBounds { get; }
   public abstract bool IsAppMaximized { get; }
-interface Shenora.Windows.IFormInteraction : Shenora.Core.IUiInteraction
+interface Shenora.Windows.IFormInteraction : Shenora.IUiInteraction
   public abstract System.IntPtr GetMainFormHandle()
   public abstract System.Windows.Forms.Form? GetMainForm()
   public abstract void SetMainForm(System.Windows.Forms.Form form)
-interface Shenora.Windows.IShellLauncher : Shenora.Core.IUrlLauncher
+interface Shenora.Windows.IShellLauncher : Shenora.IUrlLauncher
   public abstract void LaunchProcess(string executablePath, string? arguments = null, string? workingDirectory = null)
   public abstract void OpenDirectory(string directoryPath)
   public abstract void RevealInExplorer(string filePath)
@@ -197,9 +197,9 @@ sealed class Shenora.Windows.RenderSessionPoolOptions
   public int Capacity { get; init; }
   public required Shenora.Windows.SessionBrowserOptions Browser { get; init; }
   public required System.Windows.Forms.Control Anchor { get; init; }
-sealed class Shenora.Windows.RestartManagerLockInspector : Shenora.Core.IFileLockInspector
+sealed class Shenora.Windows.RestartManagerLockInspector : Shenora.IFileLockInspector
   public .ctor()
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> WhoHolds(string path)
+  public System.Collections.Generic.IReadOnlyList<Shenora.FileLockHolder> WhoHolds(string path)
 sealed class Shenora.Windows.SecondaryWindowOptions
   public Shenora.Windows.IWindowStateStore? StateStore { get; init; }
   public Shenora.Windows.WindowStateOptions? StateOptions { get; init; }
@@ -413,7 +413,7 @@ sealed class Shenora.Windows.SessionWheelInput : Shenora.Windows.SessionInput, S
   public static bool op_Inequality(Shenora.Windows.SessionWheelInput? left, Shenora.Windows.SessionWheelInput? right)
   public virtual Shenora.Windows.SessionWheelInput <Clone>$()
   public void Deconstruct(out double X, out double Y, out double DeltaY)
-sealed class Shenora.Windows.ShellLauncher : Shenora.Core.IUrlLauncher, Shenora.Windows.IShellLauncher
+sealed class Shenora.Windows.ShellLauncher : Shenora.IUrlLauncher, Shenora.Windows.IShellLauncher
   public .ctor()
   public void LaunchProcess(string executablePath, string? arguments = null, string? workingDirectory = null)
   public void OpenDirectory(string directoryPath)
@@ -432,7 +432,7 @@ sealed class Shenora.Windows.SingleInstanceGuard : System.IDisposable
   public void Dispose()
 sealed class Shenora.Windows.SingleInstanceHostOptions
   public .ctor()
-  public System.Action<Shenora.Core.ShenoraApplication, Shenora.Windows.SingleInstanceGuard>? OnSecondInstance { get; init; }
+  public System.Action<Shenora.ShenoraApplication, Shenora.Windows.SingleInstanceGuard>? OnSecondInstance { get; init; }
   public System.TimeSpan RestartWaitTimeout { get; init; }
   public string RestartArgument { get; init; }
   public string? Scope { get; init; }
@@ -506,17 +506,17 @@ enum Shenora.Windows.UnhandledExceptionSource (int)
   public const Shenora.Windows.UnhandledExceptionSource UnobservedTask = 2
   public int value__
 static class Shenora.Windows.WebView2BuilderExtensions
-  public static Shenora.Core.ShenoraApplicationBuilder PrewarmWebView2(Shenora.Core.ShenoraApplicationBuilder builder, System.Func<Shenora.Core.ShenoraApplication, Shenora.Windows.WebViewEnvironmentOptions> options)
-sealed class Shenora.Windows.WebView2Interceptor : Shenora.Core.IWebViewInterceptor
-  public Shenora.Core.WebViewRangeDelivery RangeDelivery { get; }
-  public System.IDisposable Use(Shenora.Core.WebViewResourceMiddleware middleware)
+  public static Shenora.ShenoraApplicationBuilder PrewarmWebView2(Shenora.ShenoraApplicationBuilder builder, System.Func<Shenora.ShenoraApplication, Shenora.Windows.WebViewEnvironmentOptions> options)
+sealed class Shenora.Windows.WebView2Interceptor : Shenora.IWebViewInterceptor
+  public Shenora.WebViewRangeDelivery RangeDelivery { get; }
+  public System.IDisposable Use(Shenora.WebViewResourceMiddleware middleware)
 sealed class Shenora.Windows.WebViewCustomScheme
   public System.Collections.Generic.IReadOnlyList<string> AllowedOrigins { get; init; }
   public bool HasAuthorityComponent { get; init; }
   public bool TreatAsSecure { get; init; }
   public required string Name { get; init; }
 sealed class Shenora.Windows.WebViewDeferredScheme
-  public required System.Func<Shenora.Core.WebViewResourceRequest, System.Threading.Tasks.Task<Shenora.Core.WebViewResourceResponse>> Handler { get; init; }
+  public required System.Func<Shenora.WebViewResourceRequest, System.Threading.Tasks.Task<Shenora.WebViewResourceResponse>> Handler { get; init; }
   public required string Scheme { get; init; }
   public string CacheControl { get; init; }
 static class Shenora.Windows.WebViewEnvironment
@@ -539,7 +539,7 @@ sealed class Shenora.Windows.WebViewFolderMapping
   public required string HostName { get; init; }
 sealed class Shenora.Windows.WebViewHost
   public .ctor(Microsoft.Web.WebView2.WinForms.WebView2 webView, Shenora.Windows.WebViewHostOptions options)
-  public Shenora.Core.IWebViewInterceptor Interceptor { get; }
+  public Shenora.IWebViewInterceptor Interceptor { get; }
   public System.Threading.Tasks.Task InitializeAsync()
   public bool IsDevelopment { get; }
   public void Navigate()
@@ -578,7 +578,7 @@ sealed class Shenora.Windows.WebViewIpcBridge : System.IDisposable
   public void Dispose()
   public void SendNotification(string module, string type, object? payload = null, string? scope = null)
 sealed class Shenora.Windows.WebViewIpcBridgeOptions
-  public Shenora.Core.IEventBus? EventBus { get; init; }
+  public Shenora.IEventBus? EventBus { get; init; }
   public Shenora.Ipc.ShellInfo? Shell { get; init; }
   public System.Action<Shenora.Ipc.IpcRequest>? OnClientReady { get; init; }
   public System.Action<string>? Log { get; init; }
@@ -596,15 +596,15 @@ sealed class Shenora.Windows.WinFormsBootstrapOptions
   public bool ShowCrashDialog { get; init; }
   public string ApplicationName { get; init; }
 static class Shenora.Windows.WinFormsHostExtensions
-  public static Shenora.Core.ShenoraApplicationBuilder UseWinForms(Shenora.Core.ShenoraApplicationBuilder builder, Shenora.Windows.WinFormsHostOptions options)
+  public static Shenora.ShenoraApplicationBuilder UseWinForms(Shenora.ShenoraApplicationBuilder builder, Shenora.Windows.WinFormsHostOptions options)
 sealed class Shenora.Windows.WinFormsHostOptions
   public Shenora.Windows.SingleInstanceHostOptions? SingleInstance { get; init; }
   public Shenora.Windows.WinFormsBootstrapOptions? Bootstrap { get; init; }
   public Shenora.Windows.WindowStateHostOptions? WindowState { get; init; }
   public required System.Func<System.IServiceProvider, System.Windows.Forms.Form> MainForm { get; init; }
-sealed class Shenora.Windows.WinFormsUiDispatcher : Shenora.Core.IUiDispatcher
+sealed class Shenora.Windows.WinFormsUiDispatcher : Shenora.IUiDispatcher
   public .ctor(System.Windows.Forms.Control owner, System.Action<System.Exception>? onPostFailure = null)
-  public Shenora.Core.UiTargetState State { get; }
+  public Shenora.UiTargetState State { get; }
   public System.Threading.Tasks.Task InvokeAsync(System.Action work, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task InvokeAsync(System.Func<System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task<T> InvokeAsync<T>(System.Func<System.Threading.Tasks.Task<T>> work, System.Threading.CancellationToken cancellationToken = default)
@@ -666,12 +666,12 @@ sealed class Shenora.Windows.WindowsMediaCapability : Shenora.Media.IMediaCapabi
   public .ctor(System.Action<string>? log = null)
   public System.Collections.Generic.IReadOnlySet<string> Decodable(Shenora.Media.MediaStreamKind kind)
   public System.Collections.Generic.IReadOnlySet<string> Encodable(Shenora.Media.MediaStreamKind kind)
-sealed class Shenora.Windows.WindowsPlaybackSession : Shenora.Core.IPlaybackSession, System.IDisposable
+sealed class Shenora.Windows.WindowsPlaybackSession : Shenora.IPlaybackSession, System.IDisposable
   public .ctor(System.Action<string>? log = null)
-  public Shenora.Core.PlaybackCommands Supported { get; set; }
+  public Shenora.PlaybackCommands Supported { get; set; }
   public System.TimeSpan SkipInterval { get; set; }
-  public event System.Action<Shenora.Core.PlaybackCommandRequest> CommandReceived
+  public event System.Action<Shenora.PlaybackCommandRequest> CommandReceived
   public void Clear()
   public void Dispose()
-  public void Publish(Shenora.Core.PlaybackInfo info)
-  public void Report(Shenora.Core.PlaybackProgress progress)
+  public void Publish(Shenora.PlaybackInfo info)
+  public void Report(Shenora.PlaybackProgress progress)

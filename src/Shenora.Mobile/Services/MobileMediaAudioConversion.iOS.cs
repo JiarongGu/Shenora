@@ -1,6 +1,6 @@
 #if IOS || MACCATALYST
 using System.Runtime.InteropServices;
-using Shenora.Core;
+using Shenora;
 using Shenora.Media;
 
 namespace Shenora.Mobile;

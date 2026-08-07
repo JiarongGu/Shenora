@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Shenora.Windows;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Sample.Desktop;
 

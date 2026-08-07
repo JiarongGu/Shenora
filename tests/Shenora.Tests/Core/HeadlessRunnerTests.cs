@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Tests.Core;
 

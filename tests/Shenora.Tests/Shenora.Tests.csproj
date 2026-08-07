@@ -45,7 +45,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The file-operation engine and its zip half arrive through Shenora.Core: Shenora.IO and
+    <!-- The file-operation engine and its zip half arrive through Shenora: Shenora.IO and
          Shenora.IO.Compression stopped being packages on 2026-08-07 (D55). The NAMESPACES are
          unchanged, so every test using them still compiles untouched. -->
     <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />

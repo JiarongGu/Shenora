@@ -148,7 +148,7 @@
                       Condition="$(TargetFramework.Contains('ios'))" />
     <!--
       No media PLATFORM reference any more (D45). Serving local files is the SHELL's interceptor plus
-      Shenora.Core's file middleware, and the range-delivery rule those two packages existed to carry turned
+      Shenora's file middleware, and the range-delivery rule those two packages existed to carry turned
       out to be a property of the interception rather than of media. `Shenora.Media` arrives transitively
       through Sample.Logic, which is the point: app logic names it, the platform head does not.
     -->

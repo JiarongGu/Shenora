@@ -4,7 +4,7 @@
     THE PORTABILITY PROOF for D20, and it works by what it CANNOT reference.
 
     This is plain `net10.0` — no `-windows`, no UseWindowsForms — and it references only
-    Shenora.Core + Shenora.Ipc. So an app facade here can pick a file, use the clipboard, open a URL
+    Shenora + Shenora.Ipc. So an app facade here can pick a file, use the clipboard, open a URL
     and marshal to the UI thread, and STILL compile with no Windows dependency: exactly the claim D20
     makes, checked by the compiler on every build instead of asserted in a document.
 
@@ -27,9 +27,9 @@
 
   <ItemGroup>
     <!-- Deliberately NOT Shenora.Windows or Shenora.Windows. Adding either would defeat the guard. -->
-    <ProjectReference Include="..\..\src\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\..\src\Shenora\Shenora.csproj" />
     <!--
-      ⚠ The media half arrives through Shenora.Core now — `Shenora.Media` stopped being a package on
+      ⚠ The media half arrives through Shenora now — `Shenora.Media` stopped being a package on
       2026-08-07 and its pipeline moved into Core as shell work. The D41 tripwire this reference used to
       ARM is unchanged and still armed: this project is net10.0, its facade USES the planner, so a platform
       type reaching app logic turns it RED at build time rather than in a comment. What changed is only

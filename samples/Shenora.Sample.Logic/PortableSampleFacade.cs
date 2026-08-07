@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.IO;
 using Shenora.Ipc;
 using Shenora.Media;
@@ -12,7 +12,7 @@ namespace Shenora.Sample.Logic;
 /// <c>net10.0</c>.
 /// <para>
 /// Every native capability it uses arrives through a platform-neutral contract from
-/// <c>Shenora.Core</c>: <see cref="IFileDialogs"/>, <see cref="IClipboardService"/>,
+/// <c>Shenora</c>: <see cref="IFileDialogs"/>, <see cref="IClipboardService"/>,
 /// <see cref="IUrlLauncher"/>, <see cref="IUiDispatcher"/>. The desktop app supplies the WinForms
 /// implementations (<c>UseWinForms</c> registers both the Windows and the portable face of each), so
 /// this class never names a Windows type and never references <c>Shenora.Windows</c>.
@@ -116,7 +116,7 @@ public sealed class PortableSampleFacade(
             case "UI_STATE":
                 return new { State = ui.State.ToString(), OnUiThread = ui.IsOnUiThread };
 
-            // Scheduling is portable too (Shenora.Core's Work layer), so it belongs on this side of
+            // Scheduling is portable too (Shenora's Work layer), so it belongs on this side of
             // the split. Four items go in at once: two contend for ONE path and must serialize, two
             // are disjoint and must overlap. Nothing is awaited here — the route returns immediately
             // and the page watches the operations list, which is the D23 shape for anything slow.

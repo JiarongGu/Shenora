@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Core;
+using Shenora;
 using Shenora.IO;
 using Shenora.Ipc;
 using Shenora.Mobile;

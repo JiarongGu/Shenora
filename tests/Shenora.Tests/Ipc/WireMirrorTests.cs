@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 using Shenora.Windows;
 

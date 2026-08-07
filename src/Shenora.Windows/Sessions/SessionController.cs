@@ -25,7 +25,7 @@ public sealed record DownloadHit(string Url, string? FileName);
 public sealed class SessionController
 {
     private readonly Form _form;
-    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
+    private readonly Shenora.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly Action<bool>? _onLoading;
@@ -259,7 +259,7 @@ public sealed class SessionController
     private static void Fan<T>(Action<T>[] handlers, T value)
     {
         foreach (var handler in handlers)
-            Shenora.Core.AppCallback.Run(() => handler(value));
+            Shenora.AppCallback.Run(() => handler(value));
     }
 
     /// <summary>

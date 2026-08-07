@@ -1,5 +1,5 @@
 using System.Text;
-using Shenora.Core;
+using Shenora;
 using Shenora.Windows;
 
 namespace Shenora.Sample.Desktop;

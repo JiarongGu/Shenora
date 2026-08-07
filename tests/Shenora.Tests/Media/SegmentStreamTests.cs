@@ -1,5 +1,5 @@
 using System.Text;
-using Shenora.Core;
+using Shenora;
 using Shenora.Media;
 
 namespace Shenora.Tests.Media;

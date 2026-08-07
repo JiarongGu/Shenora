@@ -134,7 +134,7 @@ public static class WinFormsBootstrap
         // The app's crash logger is app code invoked from an exception channel — nothing above it on
         // the stack. Through the one guard (P5.5 H2): the crash handler must never crash.
         if (options.OnUnhandledException is { } onException)
-            Shenora.Core.AppCallback.Run(() => onException(report));
+            Shenora.AppCallback.Run(() => onException(report));
 
         // Unobserved tasks get logged, not dialogued — they're background noise by definition.
         if (options.ShowCrashDialog && report.Source != UnhandledExceptionSource.UnobservedTask)

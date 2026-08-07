@@ -1,6 +1,6 @@
 using Foundation;
 using Microsoft.Maui.ApplicationModel;
-using Shenora.Core;
+using Shenora;
 using UIKit;
 
 namespace Shenora.Mobile;

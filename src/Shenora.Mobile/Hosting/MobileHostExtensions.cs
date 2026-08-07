@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Maui.Dispatching;
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 
 namespace Shenora.Mobile;

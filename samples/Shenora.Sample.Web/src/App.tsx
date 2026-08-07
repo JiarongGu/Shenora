@@ -189,7 +189,7 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
 }
 
 /**
- * The mission scheduler (`Shenora.Core`'s `Missions` layer), reported through the SAME operations store the
+ * The mission scheduler (`Shenora`'s `Missions` layer), reported through the SAME operations store the
  * slow route uses — because the host bound the two with one `IMissionObserver` written in the app. The
  * kit ships no such adapter: execution must not learn what an operation is (D19/D20).
  *

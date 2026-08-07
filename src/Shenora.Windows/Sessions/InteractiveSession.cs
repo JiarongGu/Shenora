@@ -281,7 +281,7 @@ public sealed class InteractiveSession
                 fallback.Tick += (_, _) =>
                 {
                     fallback.Stop();
-                    Shenora.Core.AppCallback.Run(() => onLoading(false));
+                    Shenora.AppCallback.Run(() => onLoading(false));
                 };
                 fallback.Start();
             }

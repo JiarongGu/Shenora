@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Shenora.Core;
+using Shenora;
 using Shenora.IO;
 
 namespace Shenora.Tests.Io;

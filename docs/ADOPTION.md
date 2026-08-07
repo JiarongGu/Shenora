@@ -31,7 +31,7 @@ requires a big-bang branch.
 
 **Two sections below are not stages at all.** [The mission scheduler](#the-mission-scheduler--not-a-stage-adoptable-on-its-own)
 and [the file-update queue](#the-file-update-queue--for-when-claims-are-too-coarse) both live in
-`Shenora.Core` and need no shell, no IPC and no Windows, so either can be taken first, last, or on
+`Shenora` and need no shell, no IPC and no Windows, so either can be taken first, last, or on
 its own by an app that wants nothing else here. They compose but neither requires the other.
 
 **⚠ If your app was one of the SOURCES this was extracted from, read this differently.** You are not
@@ -55,10 +55,10 @@ that is the design, not a gap.
 ## Stage 0 — consume the packages, change nothing
 
 Reference the **leaf** package you need; the rest arrive transitively. The graph is a DIAMOND over
-`Shenora.Core`, not a single chain:
+`Shenora`, not a single chain:
 
 ```
-                    Shenora.Core          net10.0        portable: no Windows reference
+                    Shenora          net10.0        portable: no Windows reference
                       ↑          ↑
         Shenora.Ipc ──┘          │
           net10.0                │
@@ -72,7 +72,7 @@ Reference the **leaf** package you need; the rest arrive transitively. The graph
 `docs/RELEASING.md` for the pre-release feed recipe.
 
 **There are no optional feature packages** (D55). Media, file operations and archive extraction ship
-inside `Shenora.Core` as the namespaces `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` — so a
+inside `Shenora` as the namespaces `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` — so a
 shell reference brings all of them and there is nothing extra to add. Stage 4's file-landing section
 below needs no new `PackageReference`.
 
@@ -102,7 +102,7 @@ below needs no new `PackageReference`.
 
 Build and ship. Nothing has changed yet — this stage only proves the feed.
 
-**Verified 2026-08-03, so you can skip re-proving it:** `Shenora.Core` + `Shenora.Ipc` restore from
+**Verified 2026-08-03, so you can skip re-proving it:** `Shenora` + `Shenora.Ipc` restore from
 nuget.org into a bare `net10.0` project, and `Shenora.Windows` into `net10.0-windows` — from a throwaway
 project with no local feed. And a **Stage 1 spike compiled clean against the published package**: an
 app's two window-state call sites (`Apply` on load, `Save` on close, persisting width/height/x/y/maximized)
@@ -128,11 +128,11 @@ that every app needs every row.
 | Caption buttons drawn by the page | `OptimizedFormOptions.NativeCaptionButtons` + `CaptionButtonColors` | Report the rects via `SetCaptionButtons`; the window clips them out of every covering child and paints them, which is what buys Windows 11 **Snap Layouts**. Requires `FramelessChrome` — the combination throws at construction rather than doing nothing. |
 | Tray icon + themed menu | `TrayIcon(+Options)`, `TrayMenuColors` | **`CloseReason.UserClosing` also means a programmatic `Close()`** — with close-to-tray on, a startup-abort path that calls `Close()` leaves a resident process. Close via `ExitApplication()`. |
 | Single-instance mutex + activate-existing | `SingleInstanceGuard` | Idempotent by design (an OS mutex is per-thread reentrant, which broke the naive version). |
-| File dialogs / clipboard / shell open / reveal | `IFileDialogs`, `IClipboardService`, `IUrlLauncher`(+`IShellLauncher`), `IUiInteraction`(+`IFormInteraction`) | Dialogs run on a dedicated STA thread with owner-handle z-order. The portable halves live in `Shenora.Core` — see Stage 4. |
+| File dialogs / clipboard / shell open / reveal | `IFileDialogs`, `IClipboardService`, `IUrlLauncher`(+`IShellLauncher`), `IUiInteraction`(+`IFormInteraction`) | Dialogs run on a dedicated STA thread with owner-handle z-order. The portable halves live in `Shenora` — see Stage 4. |
 | Extra windows on their own threads | `SecondaryWindows` | `FormClosed` is **not** the end of a window; cleanup happens after `Application.Run` returns, or a WebView2 child leaves a locked profile folder. |
 | App root / data / resources paths, env overrides | `ShenoraPaths(+Options)` | Resolves and absolutizes; file dialogs move the process CWD, so a relative root must not be re-resolved later. |
 | Startup splash | `SplashPanel(+Options)` | Colours are yours. |
-| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.Windows`) + **`useDropZone`** | **Not optional sugar — the only workable file-drop path for a desktop shell, and the page's own drop event is what it replaces.** A page-side `onDrop` yields a `File` whose only accessor is its CONTENT, so with the page as UI and the host doing the file work, the bytes must be read into the renderer and pushed across IPC: a full copy of every dropped file, EAGERLY, at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the host could have opened off the same disk. `DropZoneManager` puts transparent native overlays over the page's zone elements, reads the OS drag data directly, and hands you `string[]` paths — open lazily, stream, hash incrementally, move or link without copying — including drags from Explorer or another app while your window is **backgrounded**. Wiring: **Stage-1-adoptable STANDALONE despite living in the WebView2 package** — it depends only on `Shenora.Core` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneFacade` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneFacade` + `useDropZone` — formally belongs to Stage 3 because it rides the typed bridge, but treat it as the DESTINATION for this row rather than an optional extra: a React page should call `useDropZone` and never register a DOM drop handler for files. |
+| OS file drag-drop over page elements | `DropZoneManager` (in `Shenora.Windows`) + **`useDropZone`** | **Not optional sugar — the only workable file-drop path for a desktop shell, and the page's own drop event is what it replaces.** A page-side `onDrop` yields a `File` whose only accessor is its CONTENT, so with the page as UI and the host doing the file work, the bytes must be read into the renderer and pushed across IPC: a full copy of every dropped file, EAGERLY, at drop time, before the app knows whether it wants any of them. Drop 200 files to filter by extension and you pay for all 200; drop a multi-GB asset and you pay that, to reach a file the host could have opened off the same disk. `DropZoneManager` puts transparent native overlays over the page's zone elements, reads the OS drag data directly, and hands you `string[]` paths — open lazily, stream, hash incrementally, move or link without copying — including drags from Explorer or another app while your window is **backgrounded**. Wiring: **Stage-1-adoptable STANDALONE despite living in the WebView2 package** — it depends only on `Shenora` (`IEventBus`), the WebView2 control and a `Form`, and references no `Ipc` type at all. `new` it, hand it your own bus, subscribe to its three events, and forward them over whatever transport you already have — no Stage 3 migration required. (An earlier revision of this table filed the whole thing under Stage 3 because `DropZoneFacade` does need IPC; that is true of the FACADE, not the manager, i.e. not the part that is actually hard — an adopter found this only by reading the source.) Zones clear on **document change**, not the ready handshake, so there is no ordering contract against `notifyReady`. The IPC-wired half — `DropZoneFacade` + `useDropZone` — formally belongs to Stage 3 because it rides the typed bridge, but treat it as the DESTINATION for this row rather than an optional extra: a React page should call `useDropZone` and never register a DOM drop handler for files. |
 
 > **If you only take one thing from Stage 1, take the drop zones.** They are the clearest case in the
 > kit for adopting anything at all. Native drag-drop over a web view is genuinely fiddly — transparent
@@ -406,7 +406,7 @@ logic usable from a non-WinForms shell later, which is what D20 is for.
 adapter, which needed no Windows reference either):
 
 1. **New project, plain `net10.0`** — no `-windows` suffix, no `UseWindowsForms`. Reference
-   `Shenora.Core` and, if it holds facades, `Shenora.Ipc`. **Do not reference `Shenora.Windows` or
+   `Shenora` and, if it holds facades, `Shenora.Ipc`. **Do not reference `Shenora.Windows` or
    `Shenora.Windows`**; adding either defeats the guard entirely, which is the one way this goes
    wrong quietly.
 2. **Add it to your solution.** A guard project that nothing builds is not a guard. (This repo learned
@@ -415,7 +415,7 @@ adapter, which needed no Windows reference either):
 3. **Move the facades, then fix what goes red.** Each error is a genuine platform dependency; the
    fix is nearly always to inject a contract instead:
 
-   | App logic reaches for | Inject instead (all in `Shenora.Core`) |
+   | App logic reaches for | Inject instead (all in `Shenora`) |
    |---|---|
    | `OpenFileDialog` / `SaveFileDialog` / `FolderBrowserDialog` | `IFileDialogs` (+ `FileDialogOptions`, `FileDialogFilter`, `FileDialogResult`) |
    | `Clipboard` | `IClipboardService` |
@@ -497,7 +497,7 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 
 | | |
 |---|---|
-| **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `BaseFacade`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora.Core` contract. The mission scheduler and the file-update queue. |
+| **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `BaseFacade`, `IModuleContext`, the operation registry, `IEventBus`, batched notifications. Every `Shenora` contract. The mission scheduler and the file-update queue. |
 | **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
 | **Transfers, INCLUDING seekable media — this row has been wrong twice** | **Resource serving.** `HybridWebView` has a request-interception seam in .NET 10 (`WebResourceRequested`, `e.Uri`, `e.Headers`, `e.Handled`), and the simple case needs none of it — put the built frontend in `Resources/Raw/wwwroot` and the platform serves it. What the seam buys is DYNAMIC content: a generated image, an exported file, **and seekable media**. ⚠ This row previously said seeking was impossible without `e.PlatformArgs`. **That is false** (corrected 2026-08-03 by device runs — **D44**): `SetResponse` has a SECOND overload taking a header DICTIONARY, on both mobile TFMs, and every header reaches the native response. Neither platform needed `PlatformArgs`. **But the two shells need OPPOSITE BODIES** for the same request — Android applies the `Range` start itself so you must NOT slice; iOS passes the body through so you MUST. **You do not write that yourself any more** (D45): `MobileWebViewInterceptor` implements the same `IWebViewInterceptor` the desktop does, so `interceptor.UseFiles(…)` and the page's `mediaUrl(…)` are literally the same code on all three shells and the delivery rule is read off the platform. Read D44 only if you are writing a middleware that answers ranges by hand; getting it wrong plays every faststart file perfectly and fails every other one. |
 | **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
@@ -781,14 +781,14 @@ Two things that only showed up here, and both are about your PAGE rather than th
 
 ## The mission scheduler — not a stage; adoptable on its own
 
-`Shenora.Core` ships ONE scheduler for the two things the family built five separate times: a
+`Shenora` ships ONE scheduler for the two things the family built five separate times: a
 **filesystem operation planner** (serialize work that touches overlapping paths, run disjoint work in
 parallel) and a **job queue** (bounded concurrency, retry, cancel, durability). They are the same
 engine with different key types — paths conflict when one CONTAINS the other, lanes admit N holders at
 once — and putting only that difference behind a seam is what makes adoption a DELETION rather than a
 translation. Evidence, rationale and the deliberately-not-built list: `docs/DECISIONS.md` D27–D31 + D57.
 
-**It needs nothing else from the kit.** `IMissionScheduler` is in `Shenora.Core`: no shell, no IPC, no
+**It needs nothing else from the kit.** `IMissionScheduler` is in `Shenora`: no shell, no IPC, no
 Windows, and not even the host builder — `new MissionScheduler(options)`, registered as a singleton in
 whatever container you already use. Nothing above is a prerequisite.
 
@@ -912,7 +912,7 @@ if (!result.Succeeded)
 ### Progress reporting composes — it is not merged in
 
 The scheduler is the EXECUTION half of long-running work; `Shenora.Ipc`'s operation registry (Stage 3)
-is the REPORTING half, and they stay separate because `Shenora.Ipc` may depend on `Shenora.Core` and
+is the REPORTING half, and they stay separate because `Shenora.Ipc` may depend on `Shenora` and
 never the reverse (D19/D20). `IMissionObserver` is the seam: `OnQueued`/`OnStarted`/`OnFinished` for every
 item, each call guarded so a throwing observer cannot fail the work it was only watching.
 
@@ -971,7 +971,7 @@ is the one to verify against real workloads rather than only against tests.
    evidence rather than guessed at now.
 2. **No handler-registry-by-type.** Deliberate: the `rehydrate` delegate already needs your
    record→body mapping, so the kit would be duplicating your composition.
-3. **No persistent store.** Storage is the app's decision, and `Shenora.Core` takes no storage
+3. **No persistent store.** Storage is the app's decision, and `Shenora` takes no storage
    dependency.
 4. **Content URIs are not paths.** `PathClaims` assumes a hierarchical filesystem with a platform
    separator — right for app-private storage, wrong for an Android MediaStore/SAF content URI, which
@@ -1055,7 +1055,7 @@ each time is **may the kit make this choice without changing what the app is exp
 `builder.UseFileSystem(x => …)` overrides anything — the defaults are applied *after* your lambda, never
 over it. The rest of this section is what the queue does and how to drive it.
 
-This is the **`Shenora.IO`** namespace, inside `Shenora.Core` — no extra package to reference. Still no
+This is the **`Shenora.IO`** namespace, inside `Shenora` — no extra package to reference. Still no
 shell/IPC/Windows dependency, and **independent of the scheduler**: usable with it, without it, or before
 you adopt it.
 

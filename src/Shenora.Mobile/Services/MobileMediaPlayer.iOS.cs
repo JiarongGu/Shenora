@@ -2,7 +2,7 @@
 using AVFoundation;
 using CoreMedia;
 using Foundation;
-using Shenora.Core;
+using Shenora;
 using Shenora.Media;
 
 namespace Shenora.Mobile;

@@ -90,7 +90,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
   means a full local path, or a remote URL from an app scheme handler. One constant body; the diagnosis
   goes to the host log. Same rule as the IPC error boundary (`ipc-contracts`).
 - **Everything on `CoreWebView2` is UI-affine — marshal through the ONE owner, never hand-roll a
-  `BeginInvoke`.** Post-D19/D20 the seam is `IUiDispatcher` (`Shenora.Core`) implemented once as
+  `BeginInvoke`.** Post-D19/D20 the seam is `IUiDispatcher` (`Shenora`) implemented once as
   `WinFormsUiDispatcher(Control)` (`Shenora.Windows`); `Shenora.Windows` and
   `Shenora.Windows` consume it through the sanctioned downward edge. This rule exists
   because hand-rolling produced **14 copies with 5 incompatible pre-handle policies** and real
@@ -113,7 +113,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
     a perfectly reusable instance, and discarding it costs a browser startup on every ordinary error.
   - **The posted body is GUARDED.** An exception in a posted delegate is an unhandled UI-thread
     exception (crash dialog), because there is no caller on that stack to catch it.
-  - **There is ONE guard and it is `Shenora.Core.AppCallback`** (`Run`/`RunOrDefault`) — not a
+  - **There is ONE guard and it is `Shenora.AppCallback`** (`Run`/`RunOrDefault`) — not a
     try/catch remembered per site, because "remembered per site" is exactly how this reopened three
     times. It covers anything app-supplied reached from a place with no caller on the stack: event
     handlers, timer ticks, posted bodies, dispose paths.
@@ -203,7 +203,7 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 - **Prewarm stays BEHIND the single-instance gate.** Environment creation takes the user-data
   OS lock; a losing second launch must never touch it (`PrewarmWebView2` registers a lifecycle
   hook, not an immediate call — keep it that way).
-- **Caching policy: no-cache HTML, immutable hashed assets** (`WebViewContentTypes`, in `Shenora.Core`
+- **Caching policy: no-cache HTML, immutable hashed assets** (`WebViewContentTypes`, in `Shenora`
   since D45). The source served `index.html` immutable — stale bundle after every update.
 - **The interceptor (D45) shares the page's origin with the bundle, and the ORDER is the invariant.**
   `WebViewHost` asks the bundle first (`WebViewBundleServing.TryServe`) and serves a hit SYNCHRONOUSLY —

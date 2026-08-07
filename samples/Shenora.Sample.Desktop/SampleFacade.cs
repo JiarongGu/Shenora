@@ -1,4 +1,4 @@
-using Shenora.Core;   // the portable contracts (IFileDialogs, IUrlLauncher…) live here since D20
+using Shenora;   // the portable contracts (IFileDialogs, IUrlLauncher…) live here since D20
 using Shenora.Ipc;
 using Shenora.Windows;
 

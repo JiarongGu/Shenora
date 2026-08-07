@@ -1,6 +1,6 @@
 using Shenora.Windows;
 using Microsoft.Web.WebView2.Core;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Tests.WebView2;
 

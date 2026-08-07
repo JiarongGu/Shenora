@@ -2,7 +2,7 @@ using AndroidX.Activity;
 using AndroidX.Activity.Result;
 using AndroidX.Activity.Result.Contract;
 using Microsoft.Maui.ApplicationModel;
-using Shenora.Core;
+using Shenora;
 using AndroidUri = Android.Net.Uri;
 
 namespace Shenora.Mobile;

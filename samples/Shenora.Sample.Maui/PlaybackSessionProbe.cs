@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Sample.Maui;
 

@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Shenora.Tests.Core;

@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Shenora.Core;
+using Shenora;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -151,7 +151,7 @@ public static class WinFormsHostExtensions
                 sp.GetService<ILogger<WindowsMediaCapability>>()?.LogDebug("{Message}", message)));
 
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
-        // the SAME singleton — so an app's own logic can inject Shenora.Core contracts, compile
+        // the SAME singleton — so an app's own logic can inject Shenora contracts, compile
         // without a Windows reference, and still get these implementations at runtime.
         builder.Services.TryAddSingleton<IUiInteraction>(sp => sp.GetRequiredService<IFormInteraction>());
         builder.Services.TryAddSingleton<IUrlLauncher>(sp => sp.GetRequiredService<IShellLauncher>());

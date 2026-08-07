@@ -1,11 +1,11 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Tests.Api;
 
 /// <summary>
-/// The tripwire on the C#⇄SWIFT state mirror. <c>Shenora.Core.LiveActivityState</c> and the
+/// The tripwire on the C#⇄SWIFT state mirror. <c>Shenora.LiveActivityState</c> and the
 /// <c>ShenoraActivityState</c> struct in <c>src/Shenora.iOS/buildTransitive/swift/ShenoraLiveActivity.swift</c> are
 /// the same shape written twice, and they HAVE to be: ActivityKit decodes the Swift side from JSON the C#
 /// side wrote.

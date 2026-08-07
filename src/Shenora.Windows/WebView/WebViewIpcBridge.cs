@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
@@ -97,7 +97,7 @@ public sealed class WebViewIpcBridge : IDisposable
     private readonly WebView2Control _webView;
     private readonly WebViewIpcBridgeOptions _options;
     private readonly Action<string>? _log;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.IUiDispatcher _ui;
     private readonly NotificationPump _pump;
     private readonly IpcHostBridge _host;
     private System.Windows.Forms.Timer? _flushTimer;
@@ -232,12 +232,12 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). Every site
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). Every site
     /// here has no caller to catch anything — a WebView2 event handler, the flush timer's tick,
     /// dispose — and several sit inside a <c>catch</c> that exists to stop a failure escaping, so a
     /// throwing sink would defeat the very catch it reports from.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_log, message);
+    private void Log(Func<string> message) => Shenora.AppCallback.Log(_log, message);
 
     /// <summary>
     /// Queue a notification for the next batched push (fire-and-forget; delivery starts once the

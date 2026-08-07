@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Sample.Maui;
 

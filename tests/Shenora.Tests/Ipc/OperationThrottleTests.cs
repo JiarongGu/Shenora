@@ -1,6 +1,6 @@
 using System.Threading;
 using Microsoft.Extensions.Time.Testing;
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 
 namespace Shenora.Tests.Ipc;

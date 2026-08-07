@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Windows;
 
 namespace Shenora.Tests.WebView2;

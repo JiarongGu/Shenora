@@ -71,9 +71,14 @@ public sealed class WindowCommandOptions
 /// provider-build time, before any form exists (P5.5 H6). It also required a downcast to
 /// <c>MessageDispatcher</c> until the mapping helpers moved onto the interface.
 ///
-/// Lives in Shenora.Windows (not Shenora.Windows) because the commands arrive over the
-/// bridge and need Shenora.Ipc — which the WinForms package deliberately doesn't reference
-/// (packages depend only downward; the app composes them).
+/// Lives in <c>Shenora.Windows/WebView/</c> rather than its <c>Shell/</c> half because the commands
+/// arrive over the bridge and need the IPC types, which <c>Shell/</c> deliberately does not reference —
+/// D19's direction rule, surviving one level down inside the merged package (D37).
+/// ⚠ This sentence used to read "Lives in Shenora.Windows (not Shenora.Windows)", a thing saying it is
+/// not itself: the D37 rename replaced BOTH old package ids with the new one. `doc-drift` cannot catch
+/// that class at all — the retired name is gone, so nothing is left to match — which is why the rule is
+/// to READ THE DIFF after a rename sweep. `REVIEW-GUIDE.md` records the same defect in its own text,
+/// fixed 2026-08-05; this copy outlived that fix and was found by the D65 sweep three days later.
 ///
 /// Threading: routes touch the form via non-blocking <c>BeginInvoke</c> posts (the source
 /// shape) — correct from the transport's UI-thread dispatch AND from programmatic sends off it.
@@ -89,7 +94,7 @@ public sealed class WindowCommandFacade : BaseFacade
     private const int HTCAPTION = 2, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
 
     private readonly WindowCommandOptions _options;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.IUiDispatcher _ui;
 
     /// <summary>Window commands over IPC. Every route is opt-in: an unset callback answers NO_HANDLER.</summary>
     public WindowCommandFacade(WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<WindowCommandFacade>? logger = null)

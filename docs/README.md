@@ -39,10 +39,10 @@ update the relevant entry HERE — this file is the durable index.
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Running the same app logic on MOBILE (a MAUI shell) | `docs/ADOPTION.md` Stage 5 (what transfers, what does not, and the traps already paid for) + `docs/DECISIONS.md` **D32**–**D34** (a second shell is a PEER; absent vs differently-satisfied capabilities; why its API baseline is weaker) + **D36** (the host advertises capabilities in the handshake, so ONE web bundle serves both shells) + **D39** (why the auxiliary-session stack does NOT port, even though both shells host a webview) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/DECISIONS.md` **D27**–**D31** (the one-scheduler-two-key-kinds claim) + **D57** (why a policy is safe to expose: it chooses among LEGAL moves) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
-| Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + **D48**+**D55** (the `Shenora.IO` namespace, inside `Shenora.Core` — a package until 2026-08-07) + `docs/ARCHITECTURE.md` for the surface + the file-queue section of `docs/ADOPTION.md` |
+| Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + **D48**+**D55** (the `Shenora.IO` namespace, inside `Shenora` — a package until 2026-08-07) + `docs/ARCHITECTURE.md` for the surface + the file-queue section of `docs/ADOPTION.md` |
 | Multi-step missions, or where the pending queue lives | `docs/DECISIONS.md` **D28**+**D29** (a chain is ONE queue entry; the queue's store, and the pluggable async queue that was rejected) |
 | Shipping app updates: a staged/two-phase updater, an update manifest, or a native launcher | `docs/DECISIONS.md` **D50** (the launcher is a library + a template; the topology that deletes a bug class) + **D57** (why two phases at all, and the two-sibling evidence) + **D56** (this is PRODUCT, not devtools) |
-| Probing, planning or **playing a file the webview cannot decode** | `docs/DECISIONS.md` **D52** (what the translation layer IS and the scope test it gives) + **D51** (why no engine byte ever ships) + **D53** (why it lives in `Shenora.Core` and not its own package), then `docs/ARCHITECTURE.md`'s `Shenora.Media` pipeline bullet for the as-built surface |
+| Probing, planning or **playing a file the webview cannot decode** | `docs/DECISIONS.md` **D52** (what the translation layer IS and the scope test it gives) + **D51** (why no engine byte ever ships) + **D53** (why it lives in `Shenora` and not its own package), then `docs/ARCHITECTURE.md`'s `Shenora.Media` pipeline bullet for the as-built surface |
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
@@ -51,7 +51,7 @@ update the relevant entry HERE — this file is the durable index.
 ## Where things live (fast map)
 
 - `src/` — the packable projects, ONE shell per platform since 0.5.0 (D37):
-  `Shenora.Core|Ipc|Windows|Android|iOS` plus the optional `Media|IO|IO.Compression` hanging off Core
+  `Shenora|Ipc|Windows|Android|iOS` plus the optional `Media|IO|IO.Compression` hanging off Core
   (D48), with `Shenora.Mobile/` as the SOURCE (no csproj) compiled into
   both mobile packages — plus `Shenora.React/` (the `@shenora/react` npm package) and
   `Directory.Build.props` (the ONLY version source).

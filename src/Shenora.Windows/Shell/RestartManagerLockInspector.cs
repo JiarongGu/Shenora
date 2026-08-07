@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Windows;
 
@@ -25,7 +25,7 @@ namespace Shenora.Windows;
 ///
 /// <para>
 /// Windows-only, hence its home in <c>Shenora.Windows</c> (the Windows primitives layer, D19) rather
-/// than in <c>Shenora.Core</c> where the seam and the file-update queue live.
+/// than in <c>Shenora</c> where the seam and the file-update queue live.
 /// </para>
 /// </summary>
 public sealed class RestartManagerLockInspector : IFileLockInspector

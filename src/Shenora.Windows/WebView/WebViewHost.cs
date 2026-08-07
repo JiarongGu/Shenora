@@ -2,7 +2,7 @@ using Microsoft.Web.WebView2.Core;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Windows;
 
@@ -25,9 +25,9 @@ public sealed class WebViewHost
     private readonly WebView2Control _webView;
     private readonly WebViewHostOptions _options;
     private readonly Action<string>? _log;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.IUiDispatcher _ui;
     // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
-    private readonly Shenora.Core.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
+    private readonly Shenora.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
     private readonly WebView2Interceptor _interceptor = new();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
     private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)
@@ -73,13 +73,13 @@ public sealed class WebViewHost
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). Almost every
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). Almost every
     /// call site below sits inside a WebView2 event handler or a posted UI-thread body, where an
     /// escaping exception has no caller and becomes a modal crash dialog; and several messages read
     /// WebView2/COM properties (a download's URI, a process-failed reason) that throw once the
     /// underlying object is gone, which is why BUILDING the message must be inside the guard too.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_log, message);
+    private void Log(Func<string> message) => Shenora.AppCallback.Log(_log, message);
 
     /// <summary>
     /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event: true only
@@ -87,7 +87,7 @@ public sealed class WebViewHost
     /// default rather than leaving a WebView2 event unanswered (P5.5 H2).
     /// </summary>
     private bool AppCallbackRan<T>(Action<T> callback, T args, string hookName) =>
-        Shenora.Core.AppCallback.Run(() => callback(args),
+        Shenora.AppCallback.Run(() => callback(args),
             ex => Log(() => $"[Shenora.Windows] {hookName} threw ({ex.GetType().Name}: {ex.Message}); " +
                             "applying the built-in policy instead."));
 

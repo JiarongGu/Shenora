@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Mobile;
 

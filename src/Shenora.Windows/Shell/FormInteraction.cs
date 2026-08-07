@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Windows;
 
@@ -8,7 +8,7 @@ namespace Shenora.Windows;
 /// window is disabled while one is up so the user can't re-enter the app mid-dialog.
 /// Registered by <c>UseWinForms</c>; the runner sets the main form automatically.
 /// <para>
-/// The portable half is <see cref="IUiInteraction"/> in <c>Shenora.Core</c> (block/unblock, which any
+/// The portable half is <see cref="IUiInteraction"/> in <c>Shenora</c> (block/unblock, which any
 /// host can implement); what remains here is the <see cref="Form"/>-typed part, which is Windows by
 /// definition (D20). App logic that only needs to block the UI should depend on
 /// <see cref="IUiInteraction"/> — <c>UseWinForms</c> registers both faces of the same instance.

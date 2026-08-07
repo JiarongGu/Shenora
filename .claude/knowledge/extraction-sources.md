@@ -52,7 +52,7 @@ read BOTH before porting anything). Foundation: 2026-07-30 survey of all five fa
   settings hardening, and shipped WITHOUT the `NewWindowRequested`/`PermissionRequested`/
   `ProcessFailed` policies this file lists as must-fix. Before porting a helper a second time, grep
   the packages you already reference for an owner. **After D19/D20 a ported helper's home is decided
-  by LAYER, not by which sibling proved it** (portable contract → `Shenora.Core`; Windows
+  by LAYER, not by which sibling proved it** (portable contract → `Shenora`; Windows
   implementation → `Shenora.Windows`; web hosting on top).
 
 ## Gotchas / traps

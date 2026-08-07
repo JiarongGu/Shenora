@@ -8,8 +8,8 @@ three such claims in one pass on 2026-08-02 — two of them in **shipped XML** (
 ## The rules
 
 - **Write behavioural prose from the implementation, not from the design doc.** The docs for
-  `Shenora.Core`'s mission scheduler were written from `docs/2026-08-02-shenora-mission-scheduling-design.md`
-  and three claims did not survive a read of `src/Shenora.Core/Missions/`: an unknown LANE was documented
+  `Shenora`'s mission scheduler were written from `docs/2026-08-02-shenora-mission-scheduling-design.md`
+  and three claims did not survive a read of `src/Shenora/Missions/`: an unknown LANE was documented
   as throwing when `MissionScheduler.CreateEntry` creates it at the default capacity; `IMissionObserver` read
   as though the kit ships the operation-registry adapter, which nothing implements; and the design's
   `IFileSystem` + atomic-replace helper had never shipped at all. **A design doc states intent, and

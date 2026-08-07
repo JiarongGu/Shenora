@@ -151,9 +151,9 @@ co-development against an unpublished change, or a pre-release smoke test. The r
   `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the
   WebView2 package come from there) and pin EXACT versions with the range syntax:
   `<PackageReference Include="Shenora.Windows" Version="[0.1.0]" />`. Reference the leaf package you
-  actually need and the rest arrive transitively: `Shenora.Windows` pulls `Shenora.Ipc` + `Shenora.Core`.
+  actually need and the rest arrive transitively: `Shenora.Windows` pulls `Shenora.Ipc` + `Shenora`.
   There are no optional feature packages to add (D55): media, file operations and archive extraction
-  are namespaces inside `Shenora.Core`, so a shell reference brings all of them.
+  are namespaces inside `Shenora`, so a shell reference brings all of them.
   A consumer inside this repo's tree must set `ManagePackageVersionsCentrally=false`.
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.

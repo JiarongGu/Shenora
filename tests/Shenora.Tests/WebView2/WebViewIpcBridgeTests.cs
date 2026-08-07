@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;

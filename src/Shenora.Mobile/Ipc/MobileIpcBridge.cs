@@ -1,6 +1,6 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Dispatching;
-using Shenora.Core;
+using Shenora;
 using Shenora.Ipc;
 
 namespace Shenora.Mobile;

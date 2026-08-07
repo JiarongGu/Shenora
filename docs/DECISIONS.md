@@ -23,18 +23,18 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 >
 > | | | |
 > |---|---|---|
-> | **the framework** | `Shenora.Core` | the three CORES (IPC · EventBus · RouteInterceptor), the logic layer, and the features — D65 |
+> | **the framework** | `Shenora` | the three CORES (IPC · EventBus · RouteInterceptor), the logic layer, and the features — D65 |
 > | **shells** (D37) | `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform; each implements the cores and its features' platform halves |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
 > | **npm** | `@shenora/react` | |
 >
 > 🔴 **There is no longer an "optional features" tier at all** (D55). The framework is ONE whole:
-> `Shenora.Core` + a shell + `@shenora/react`. A capability that grows big enough to look like a library
-> gets a FOLDER, not a package. ⚠ **`Shenora.Core` is itself renamed to `Shenora` by D65** — it is the
+> `Shenora` + a shell + `@shenora/react`. A capability that grows big enough to look like a library
+> gets a FOLDER, not a package. ⚠ **`Shenora` is itself renamed to `Shenora` by D65** — it is the
 > framework, not a component of one; until that lands this table names the current id.
 >
 > ⚠ **`Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression` and `Shenora.Ipc` are no longer packages
-> (D53, D55, D65) — but all four are still live NAMESPACES inside `Shenora.Core`.** The ids are retired
+> (D53, D55, D65) — but all four are still live NAMESPACES inside `Shenora`.** The ids are retired
 > and the namespaces are current, which is why those names are deliberately NOT in
 > `devtools/retired-names.txt`: the gate matches names and cannot tell a package id from a namespace, so
 > registering them would fire on every correct sentence in the repo.
@@ -57,9 +57,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   it still holds exactly; only the word "desktop" had gone stale, and it sat in entry #1 where every reader
   starts.
 
-- **D2 — Package set: `Shenora.Core` / `Shenora.Ipc` / `Shenora.WebView2` / `Shenora.WinForms` (NuGet)
+- **D2 — Package set: `Shenora` / `Shenora.Ipc` / `Shenora.WebView2` / `Shenora.WinForms` (NuGet)
   + `@shenora/react` (npm).** No separate `Shenora.Modules` package — module registration is core
-  plumbing and lives in `Shenora.Core` (the brief's own solution-structure section agrees with
+  plumbing and lives in `Shenora` (the brief's own solution-structure section agrees with
   this even though its package sketch listed one). No `Shenora.Extensions.DependencyInjection`
   either: standard Microsoft DI abstractions are used directly (brief requirement), so there is
   nothing to put in it yet.
@@ -106,7 +106,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 
 - **D7 — One test project (`tests/Shenora.Tests`) referencing every src project it CAN** (in practice
   the leaf projects — five as of 2026-08-05: `Ipc`, `Windows`, `Media`, `IO`, `IO.Compression`;
-  `Shenora.Core` arrives transitively), not
+  `Shenora` arrives transitively), not
   per-package test projects (the brief sketched four). Lyntai proves the single-project layout
   scales to 11 packages; folders mirror src. API-surface baseline tests gate SemVer from the
   first release.
@@ -236,7 +236,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     non-WinForms base" would inherit its fixes. No such base existed, so none of it had ever run — the
     kit's own `generic-library.md` calls that shape speculation. A throwaway spike
     (`devtools/_transport-spike/`, gitignored) closed the gap: a `net10.0` console app referencing ONLY
-    `Shenora.Core` + `Shenora.Ipc` ran request/response, the error boundary, the pump on a
+    `Shenora` + `Shenora.Ipc` ran request/response, the error boundary, the pump on a
     `PeriodicTimer`, and a `ctx.Run` operation streamed as batched notifications. It passed with **no
     change to `Shenora.Ipc`**, and the TFM enforces it: a Windows type anywhere in that graph turns the
     project red.
@@ -249,7 +249,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     host-side mirror of `ShenoraBridge` (~40 lines every non-WinForms base rewrites) and a headless
     `IShenoraRunner`, both held to the two-consumer bar rather than built for the spike that found them.
 
-- **D17 — `Shenora.Core` depends on the Microsoft DI IMPLEMENTATION package, not only the
+- **D17 — `Shenora` depends on the Microsoft DI IMPLEMENTATION package, not only the
   abstractions.** The builder (`ShenoraApplication.CreateBuilder` → `Build()`) constructs the
   application's `ServiceProvider`, and `BuildServiceProvider` lives in
   `Microsoft.Extensions.DependencyInjection`, not in `.Abstractions` — the same dependency shape
@@ -262,7 +262,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   2026-07-30, at the P2/P3 boundary.) The kit was built under an earlier private working name;
   before anything was published the owner renamed it — 神阙 pairs with the sibling 灵台 (Lyntai)
   as an acupoint name, and the ending echoes Sonora. Everything renamed in lockstep: packages
-  (`Shenora.Core|Ipc|WebView2|WinForms`, `@shenora/react`), namespaces and `Shenora*` type
+  (`Shenora|Ipc|WebView2|WinForms`, `@shenora/react`), namespaces and `Shenora*` type
   names, repo files/docs/rules. Because the rename predates any release or remote, history was
   restarted as a single bootstrap commit rather than rewritten — the per-phase narrative is in
   `git log` and `CHANGELOG.md`, and the pre-rename history is
@@ -298,12 +298,12 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   for the same benefit) and sharing via a linked source file (two binaries carrying the same
   internal type; solves the least). As-built layering and full surface: `docs/ARCHITECTURE.md`.
 
-- **D20 — Portable contracts live in `Shenora.Core`; only Windows implementations live in the Windows
+- **D20 — Portable contracts live in `Shenora`; only Windows implementations live in the Windows
   shell** (written as `Shenora.WinForms`, which was merged into `Shenora.Windows` by D37).
   (User direction, 2026-07-30.) The reusable part of a desktop kit is the
   *logic* — IPC and the feature contracts — because that is what a non-Windows shell (mobile, D16)
   can share; an app's facades should compile with no Windows reference. So the platform-neutral
-  contracts move to `Shenora.Core` (`IClipboardService`, `IFileDialogs`/`IFileDialogPathStore` +
+  contracts move to `Shenora` (`IClipboardService`, `IFileDialogs`/`IFileDialogPathStore` +
   their models, a portable `IUrlLauncher` and `IUiInteraction` base for the mixed
   `IShellLauncher`/`IFormInteraction`), and `IUiDispatcher` — specified in design contract §4 and
   never built in P2 — is added there as the one UI-thread marshalling seam: a public
@@ -406,7 +406,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   operations), `Logger` — *in its signature*, because `Shenora.Ipc` had **zero** references to
   `IEventBus` while the kit's own `DropZoneManager` took one as a REQUIRED option. The bus was already
   the spine; the contract did not admit it, so every app re-agreed the conventions by hand. Layering was
-  never the obstacle: `Shenora.Ipc` already references `Shenora.Core`, so this adds no package edge.
+  never the obstacle: `Shenora.Ipc` already references `Shenora`, so this adds no package edge.
   **(b)** This **supersedes the one-way-IPC design's original "not shipped" list** ("no
   operation/job manager, registry, queue, or progress TYPE"), which itself said to revisit if adoption
   showed the need. It did: one sibling ships a 320-line `ProcessRegistry` feeding a status bar and an
@@ -425,7 +425,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   the client half has been base-agnostic since P3 (`ShenoraTransport`), while the host half welded four
   paid-for bug fixes to a `System.Windows.Forms.Timer`. It also closes a real gap: every bridge
   subscribes with `SubscribeToAll`, so with two windows every event reaches both.
-  Placement (D19/D20): operations live in `Shenora.Ipc`, not `Shenora.Core`, so they reuse
+  Placement (D19/D20): operations live in `Shenora.Ipc`, not `Shenora`, so they reuse
   `IpcError`/`OperationException` rather than duplicating a structured-error type in Core; both packages
   are `net10.0`, so portability is satisfied either way.
   Cost accepted: `RouteMessageAsync` gains a parameter, which breaks every override — mechanical, and
@@ -671,7 +671,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     Mac Catalyst, WinUI). And MAUI *for Windows* is separately rejected: it would mean rewriting the
     frameless chrome D24/D25 just settled, discarding the Snap Layouts / DWM / rounded-corner work,
     for no capability gain.
-  - **Measured cost of a Linux desktop shell** (2026-08-02): `Shenora.Core` + `Shenora.Ipc` are ~6,000
+  - **Measured cost of a Linux desktop shell** (2026-08-02): `Shenora` + `Shenora.Ipc` are ~6,000
     lines and already run on Linux (`net10.0`, no UI binding, D16/D3). The Windows shell — three
     packages then (`Shenora.WinForms` + `WebView2` + `WebView2.Sessions`, merged into `Shenora.Windows`
     by D37 later the same day) — was ~9,300 lines of `net10.0-windows` — **~60% of the kit's C#,
@@ -757,8 +757,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     the latter back would undo a success.
   - **⚠ It is a separate PACKAGE too, since D48 (2026-08-05): `Shenora.IO`.** This entry made it a
     separate component; the measurement that later made it a separate package is the same shape of
-    argument — it was 34% of `Shenora.Core`, which everything references, for a job most apps never do.
-    Everything above still describes the code exactly; only the namespace moved (`Shenora.Core` →
+    argument — it was 34% of `Shenora`, which everything references, for a job most apps never do.
+    Everything above still describes the code exactly; only the namespace moved (`Shenora` →
     `Shenora.IO`), and `PathClaims` stayed behind because it is scheduling vocabulary.
 
 - **D31 — cross-process file access is TWO problems, and one mechanism cannot serve both.** (Owner,
@@ -771,7 +771,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     impossible and the only useful thing is a NAME. `WhoHolds` returning empty means "cannot tell",
     never "nobody" — the distinction matters at a call site. The Windows implementation is Restart
     Manager, and it lives in `Shenora.Windows` because it is Win32. **The CONTRACT stayed in
-    `Shenora.Core` when the rest of the file-operation engine moved out to the `Shenora.IO` namespace**
+    `Shenora` when the rest of the file-operation engine moved out to the `Shenora.IO` namespace**
     (D48; a package until D55), and for this same reason: a per-platform answer means a portable contract
     with a shell implementation, and if a shell implements it, the contract lives in Core.
   - **Lock files live in the app's own directory, never the managed tree.** An app frequently does
@@ -1007,7 +1007,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - The three `Media.{Platform}` packages were **deleted by D45 (2026-08-04) before any of them shipped**.
     Serving bytes to a page turned out to be resource INTERCEPTION, which configures a webview and is
     therefore a shell capability, so they had nothing left to hold.
-  - **`Shenora.Media` itself was folded into `Shenora.Core` by D53 (2026-08-07)**, because D40's premise —
+  - **`Shenora.Media` itself was folded into `Shenora` by D53 (2026-08-07)**, because D40's premise —
     "a demuxer or image codec is real shipped bytes" — was made permanently false by D51, and D52 framed
     media repair as shell work.
 
@@ -1106,7 +1106,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   if possible"*. It is possible on all three platforms at zero added bytes — see below.)
 
   ⚠ **The HOMES it names are gone; the AXIS it chose is not.** The `Shenora.Media.{Platform}` family this
-  entry distributed contracts across was deleted by D45, and media itself moved into `Shenora.Core` by
+  entry distributed contracts across was deleted by D45, and media itself moved into `Shenora` by
   D53 — so read "two homes" as two FOLDERS, not two packages. What survives is the question it settled and
   which is still the right one: split by **what an operation NEEDS**, not by the feature name a user would
   give it. Thumbnails are still unbuilt (D15 — no consumer has asked twice).
@@ -1185,7 +1185,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     the honest instrument is an explicit `fetch` with a `Range` asserting the returned BYTES, not a
     `<video>` element, which can only ever report "no supported source".
 
-- **D45 — resource interception is a MIDDLEWARE PIPELINE in `Shenora.Core`, implemented by each SHELL, with
+- **D45 — resource interception is a MIDDLEWARE PIPELINE in `Shenora`, implemented by each SHELL, with
   content handled by a FAMILY of opt-in middleware packages (`Shenora.Media`, later `.Image`, `.Excel`).
   Re-layers D40 and supersedes its `Media.{Platform}` set.** (Owner, 2026-08-04, reached in five steps —
   each widened the scope, and the last two settled the shape.)
@@ -1195,7 +1195,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     mobile workaround; (3) *"even file access too"* — media is ONE CASE; (4) *"it's more like a middleware
     design if you think this way"*; (5) *"lets do media since we can have .Image .Excel later"*.
   - **Interception is a SHELL capability.** It configures a webview, so `IWebViewInterceptor` is a contract in
-    `Shenora.Core` and each of `Shenora.Windows`/`.Android`/`.iOS` implements it. A feature depends on the
+    `Shenora` and each of `Shenora.Windows`/`.Android`/`.iOS` implements it. A feature depends on the
     contract and stays portable — D19/D20's law, applied to resources.
   - **Every shell needs it, which is what makes it Core's business rather than mobile's.** A page cannot reach
     a local file on ANY shell: `file://` is blocked from a virtual-host origin and would be wrong anyway,
@@ -1214,7 +1214,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     keeps `Shenora.Media` the right name: it covers audio AND video (the frequent real failure is AC-3
     *audio*), and `Shenora.Video` would be wrong on the first day.
   - **⚠ It follows that anything the FAMILY shares belongs in Core, not in a member.** `MediaCacheKey` keys any
-    derived artefact — a thumbnail, a probe result, a rendered sheet — so it moved to `Shenora.Core` beside
+    derived artefact — a thumbnail, a probe result, a rendered sheet — so it moved to `Shenora` beside
     `Files` **and was renamed `DerivedCacheKey`**, because the new name says what is cached rather than which
     feature happened to need it first. A shared helper living in `.Media` would make `.Image` depend on media
     to cache a thumbnail.
@@ -1224,7 +1224,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     a property of the INTERCEPTION, so it became `Core.WebViewRangeDelivery` and the packages had nothing
     left. **Free: all three `shenora.media*` ids were unpublished (verified 404) when this was decided.**
     They return only if genuinely platform-specific media work lands — the frame-grab pixels D43 deferred.
-  - **What D40 got right and what it did not.** Right: media is optional and must not tax `Shenora.Core`'s
+  - **What D40 got right and what it did not.** Right: media is optional and must not tax `Shenora`'s
     consumers. Wrong in one clause — it argued the split on DEPENDENCIES ("an image codec or a container
     parser is real shipped bytes"), and `Shenora.Media` ships neither; it is pure functions and costs a
     consumer nothing. The argument that survives is **vocabulary**: an app that never plays media should not
@@ -1355,7 +1355,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   (owner, 2026-08-05).
 
   🔴 **ITS PACKAGING CONCLUSION IS REVERSED — see D55 (2026-08-07). `Shenora.IO` and
-  `Shenora.IO.Compression` are namespaces inside `Shenora.Core`, not packages.** Kept unabridged, and
+  `Shenora.IO.Compression` are namespaces inside `Shenora`, not packages.** Kept unabridged, and
   cited from fourteen places, because **what this entry actually proved is still load-bearing and is not
   about packaging**: the dependency edge runs `IO → Core` (checked, not assumed — every type logs through
   `AppCallback`), and that direction is what decided which types could move and which could not. It is
@@ -1366,9 +1366,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   > *"so IO becomes like a contract and logic library just like core media, and compression is one of the
   > option"*
 
-  - **The measurement that decided it.** `Shenora.Core/Files/` was 2,244 lines — **34% of `Shenora.Core`** — and
+  - **The measurement that decided it.** `Shenora/Files/` was 2,244 lines — **34% of `Shenora`** — and
     all but ~500 of it is the update ENGINE: the journalled queue, path leases, the manifest pair, the staged
-    updater. `Shenora.Core` is the package *every other package references*, so a phone app that hosts a page
+    updater. `Shenora` is the package *every other package references*, so a phone app that hosts a page
     and plays a file was carrying a self-updater it will never call. That is the same argument D40 made for
     `Shenora.Media` and it lands the same way.
   - **This APPLIES D37's test rather than overturning it.** D37 asks whether a boundary corresponds to
@@ -1414,9 +1414,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     decision and it does not repeat one level down; and two ~850-line packages is the over-splitting D37 was
     written to stop. **If this is ever revisited, the trigger is a real adopter that wants one and refuses the
     other**, not the observation that the call graph has two components.
-  - **Cost, stated because a break needs one:** every moved type changes namespace `Shenora.Core` →
+  - **Cost, stated because a break needs one:** every moved type changes namespace `Shenora` →
     `Shenora.IO`, which is a `using` line per consuming file plus one `PackageReference`. Thirty public types
-    moved, nothing was added or removed, and the API baselines show exactly that — `Shenora.Core.txt` lost 206
+    moved, nothing was added or removed, and the API baselines show exactly that — `Shenora.txt` lost 206
     lines and gained none. Cheap under D47, and it will not be cheap for long.
   - **⚠ The gate that did NOT catch the gap this created.** `Shenora.IO.Compression` shipped a day earlier with
     no `docs/ARCHITECTURE.md` entry at all, and every gate stayed green: `doc-drift` checked documented
@@ -1681,7 +1681,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     licence, no codec written. If a proposal here cannot be described that way — as a translation between
     what the user HAS and what the web ACCEPTS, using what the device already does — it is out of scope.
 
-- **D53 — `Shenora.Media` is folded back into `Shenora.Core`. Media repair is SHELL WORK, not an optional
+- **D53 — `Shenora.Media` is folded back into `Shenora`. Media repair is SHELL WORK, not an optional
   feature, and the package's own justification had become false.** (Owner, 2026-08-07, on being shown the
   weight numbers: *"since we dont really have any binary? and its mostly just our code should we just
   remove Media package merge to core"*, then *"98 kb on app still small?"* — both right.)
@@ -1690,7 +1690,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     ever** — not ffmpeg, not a vendored codec, nothing. So the premise the package rested on can never
     come true. What exists is managed code the kit wrote itself.
   - **The numbers, because "it is small" deserved measuring rather than asserting** (Release IL):
-    `Shenora.Core` 125 KB · `Shenora.Media` 98 KB · `Shenora.IO` 82 KB · `Shenora.IO.Compression` 24 KB.
+    `Shenora` 125 KB · `Shenora.Media` 98 KB · `Shenora.IO` 82 KB · `Shenora.IO.Compression` 24 KB.
     Merging costs Core +98 KB — and iOS mandates trimming (`PublishTrimmed=true`), so an app that never
     calls a media type does not carry it either way. ⚠ **The size argument was the weak one and it was
     argued first; the owner was right to push back on it.**
@@ -1719,7 +1719,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     Every app that hosts a page can be handed a file it cannot play. Not every app mutates a file tree.
   - **A documented BREAK, and a cheap one (D47).** The namespace stays `Shenora.Media`, so an adopter
     changes a `PackageReference` and **not one line of code**. Proof it was a pure move: the API baselines
-    went `Shenora.Media.txt` −180 lines (deleted) and `Shenora.Core.txt` **+180, −0**.
+    went `Shenora.Media.txt` −180 lines (deleted) and `Shenora.txt` **+180, −0**.
   - ⚠ **`Shenora.Media` is deliberately NOT in `devtools/retired-names.txt`.** The package id is retired
     while the NAMESPACE is current, and that gate matches names — it cannot tell the two apart, so
     registering it would fire on every correct sentence in the repo. This bullet is the record instead.
@@ -1801,7 +1801,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       that is exactly the gap this framework exists to close, and the kit owes a lifecycle contract plus one
       implementation per shell.
 
-- **D55 — the `Shenora.IO` family folds into `Shenora.Core` too. There is no "optional features" tier
+- **D55 — the `Shenora.IO` family folds into `Shenora` too. There is no "optional features" tier
   any more: the framework ships as ONE whole.** (Owner, 2026-08-07, immediately after D53's amendment:
   *"its the same thing for Compression and IO, we can have different projects for clearer namespacing and
   easier for testing, but the final framework is a whole, what we should support is bridge the both, react
@@ -1816,16 +1816,16 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **The mechanism was forced, not chosen, and this is the part worth keeping.** "Different projects, one
     shipped package" was tried first and is structurally impossible here: D48 established (by checking,
     not assuming) that the edge runs `IO → Core`, because every type in the engine logs through Core's
-    `AppCallback`. For `Shenora.Core.nupkg` to carry `Shenora.IO.dll`, Core's csproj must reference IO,
+    `AppCallback`. For `Shenora.nupkg` to carry `Shenora.IO.dll`, Core's csproj must reference IO,
     which already references Core — a cycle. ⚠ **A dependency edge decides whether a "keep the projects,
     merge the package" plan is even available.** Check the direction before promising it.
-  - What the owner asked for survives anyway: `src/Shenora.Core/Files/` and `Files/Compression/` are folders with
+  - What the owner asked for survives anyway: `src/Shenora/Files/` and `Files/Compression/` are folders with
     the namespaces `Shenora.IO` / `Shenora.IO.Compression` unchanged, which is what `Media/` already does.
-    Tests and probes reference `Shenora.Core` and compile untouched.
+    Tests and probes reference `Shenora` and compile untouched.
   - **A documented BREAK, and the same cheap one as D53 (D47):** an adopter deletes two
     `PackageReference` lines and changes **no code**.
   - **Proven a pure move by the same measurement D53 used**, because "nothing changed but the location"
-    deserves checking rather than asserting: `Shenora.Core.txt` went **+243 / −0**, the two deleted
+    deserves checking rather than asserting: `Shenora.txt` went **+243 / −0**, the two deleted
     baselines were 206 + 37 = 243 lines, and every added line was verified to come from them (`comm -23`
     against their union was empty). Nothing was invented, renamed or dropped in the move.
   - ⚠ **The count in this file's header block is the thing that goes stale** — it has now done so twice.
@@ -2062,7 +2062,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     when it is absent, and a test supplies a fake and asserts the fake was USED. Not that it exists.
   - **How the third one was found, because the method generalises:** enumerate every public contract, then
     ask of each *"is there an implementation, and does anything consume it?"* Two greps. Most of the 33
-    contracts in `Shenora.Core` are legitimately unregistered — options-supplied collaborators
+    contracts in `Shenora` are legitimately unregistered — options-supplied collaborators
     (`IMissionPolicy`), per-webview objects (`IWebViewInterceptor`), app-supplied seams (`IUpdateSource`) —
     so the signal is narrow: **a kit-built implementation with no consumer**.
   - ⚠ **It is worth re-running after any pass that adds seams.** All three were added in the same fortnight
@@ -2203,8 +2203,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **The capability NAMESPACES are peers now, and that was three conventions until 2026-08-07.**
     `Shenora.Media` and `Shenora.IO` had top-level namespaces because they used to be PACKAGES (D40/D48),
     and D53/D55 deliberately kept them so folding cost adopters no code. Missions never was a package, so
-    twelve of its thirteen files sat flat in `Shenora.Core` while `MissionExtensions` alone declared
-    `Shenora.Core.Missions` — a third convention nobody chose. All thirteen are now **`Shenora.Missions`**.
+    twelve of its thirteen files sat flat in `Shenora` while `MissionExtensions` alone declared
+    `Shenora.Missions` — a third convention nobody chose. All thirteen are now **`Shenora.Missions`**.
     The layout stopped being a fossil of the package era and started saying what the pipelines model says:
     three peers, one core. Proven a PURE move — the API baseline diff, normalised for the namespace, is
     empty in both directions apart from the `IDisposable` fix below.
@@ -2221,7 +2221,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     would be unsafe to dispose the documented way.**
   - **The evidence that the current shape is wrong is the kit's OWN sample.** `Shenora.Sample.Desktop`
     hand-constructs `MissionScheduler` and `FileUpdateQueue` inside `AddSingleton` lambdas, with a comment
-    claiming *"Shenora.Core ships no DI extension for it, and it needs none"* — untrue since `UseMissions`
+    claiming *"Shenora ships no DI extension for it, and it needs none"* — untrue since `UseMissions`
     shipped, and the exact "wiring that never varies" this decision deletes. **A reference app that has to
     write the framework's own composition is the finding.**
   - ⚠ **It is a behaviour change for the existing adopter, and it belongs under `### Breaking`** even
@@ -2233,7 +2233,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   web — nothing else.** (Owner, 2026-08-07, redefining it after D64 exposed that the word had no edge:
   *"we need to redefine whats core, IPC, EventBus, RouteInterceptor are 'core' FileDialog is an IPC module
   just like other features"* · *"the Core is the main wire between .net and web (you might have different
-  implementation via different platform too for core), and instead of call the main project Shenora.Core,
+  implementation via different platform too for core), and instead of call the main project Shenora,
   this is more like Shenora (itself), core is the main underlying messaging pipeline, on top of that is
   pure logic layer, like Mission, Files, and then we have what we call 'features' Media, Dialog"*.)
 
@@ -2274,13 +2274,22 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     depend on `Missions` and `Files`, and nothing goes the other way — feature → logic → wire, exactly as
     described, discovered by reading the edges rather than by design. That is the strongest evidence the
     split is real and not imposed.
+  - 🔴 **AND THE CATEGORY IS SETTLED WITH IT: Shenora is not a web application framework.** (Owner,
+    2026-08-07: *"shenora is never mean to be web application framework its desktop + mobile just like
+    other multiple platform app framework but its .net + react which no existing replacement can be more
+    capable"*.) It competes with Flutter, React Native, MAUI, Electron and Capacitor — multi-platform APP
+    frameworks — and its ceiling is higher because the pairing is .NET + React rather than a webview plus
+    a JS bridge. **That is why the old `Shenora.Ipc` justification had to go:** "a server-backed app might
+    take IPC without a shell" (D10) quietly imagined a WEB consumer, and building for one drags the whole
+    product toward a category it was never in. A package set is a statement about the category; this one
+    now says desktop + mobile app framework.
   - **`Shenora.Ipc` folds into the main package**, because IPC is a CORE and a separate package id says
     "optional" — the claim D53/D55 killed for Media and IO. The direction already allows it (`Ipc → Core`,
     mechanically identical to D55's `IO → Core`). 🔴 **That fold is also what unblocks everything else:**
     a feature could not own its own IPC module while `BaseFacade` lived in a package `Core` may not
     reference, which is exactly why D64's facades ended up registered from inside `AddMessageDispatcher` —
     a core knowing the name of every feature built on it.
-  - **`Shenora.Core` → `Shenora`.** It is the framework, not a component of one. The id is free.
+  - **`Shenora` → `Shenora`.** It is the framework, not a component of one. The id is free.
     ⚠ **Fold first, rename second, each with its own green gate** — landing a namespace sweep on top of a
     package fold makes any failure unattributable, and this repo has paid for exactly that before.
   - **`Files/` splits, because the name covers two layers.** Atomic replace, path claims, advisory locks

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shenora.Core;
+using Shenora;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -52,7 +52,7 @@ public sealed class DropZoneManager : IDisposable
 
     private readonly DropZoneManagerOptions _options;
     private readonly ILogger<DropZoneManager> _logger;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.IUiDispatcher _ui;
     private readonly Dictionary<string, DropZoneOverlay> _overlays = [];
     // Last CSS bounds per zone — so a DPI change (window moved to another monitor) can re-derive
     // every overlay's physical bounds without waiting for the page to resend them (P2.3b).

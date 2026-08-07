@@ -1,5 +1,5 @@
 using Shenora.Windows;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Tests.Core;
 

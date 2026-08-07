@@ -24,7 +24,7 @@ export default {
   solution: 'Shenora.slnx',
   /** Packable .NET projects (lockstep version; `pack` runs dotnet pack on each). */
   packableProjects: [
-    'src/Shenora.Core',
+    'src/Shenora',
     // ⚠ Shenora.Ipc is NOT here either: it folded into Core on 2026-08-07 (D65). IPC is a CORE — the
     // contract both sides agree on — and a separate package id said 'optional', the claim D53/D55 killed.
     // ⚠ Shenora.IO and Shenora.IO.Compression are NOT here: they folded into Core on 2026-08-07

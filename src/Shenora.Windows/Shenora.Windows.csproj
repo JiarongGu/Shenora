@@ -73,11 +73,11 @@
       single most public place that vocabulary appears (the nuget.org listing). Name what the types
       do, not one product they enable.
     -->
-    <Description>Shenora's Windows shell: application bootstrapper with global exception handling, DPI-correct window-state persistence, single-instance guard with activate broadcast, secondary windows on their own STA threads, tray icon, frameless-chrome form, and the Windows implementations of the Shenora.Core shell contracts (STA file dialogs, clipboard, shell launching, UI-thread dispatcher). Hosts WebView2: environment prewarm, dev-server vs packaged-frontend loading, navigation/new-window/download/permission/process-failure handling, drag-drop zones, and the postMessage IPC bridge with batched event push. Includes auxiliary browser sessions — off-screen driveable sessions with a bounded pool, interactive sessions over an isolated persistent profile, and streaming sessions (CDP screencast out, synthetic input in). Mechanisms only: the kit ships no workflow.</Description>
+    <Description>Shenora's Windows shell: application bootstrapper with global exception handling, DPI-correct window-state persistence, single-instance guard with activate broadcast, secondary windows on their own STA threads, tray icon, frameless-chrome form, and the Windows implementations of the Shenora shell contracts (STA file dialogs, clipboard, shell launching, UI-thread dispatcher). Hosts WebView2: environment prewarm, dev-server vs packaged-frontend loading, navigation/new-window/download/permission/process-failure handling, drag-drop zones, and the postMessage IPC bridge with batched event push. Includes auxiliary browser sessions — off-screen driveable sessions with a bounded pool, interactive sessions over an isolated persistent profile, and streaming sessions (CDP screencast out, synthetic input in). Mechanisms only: the kit ships no workflow.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
+    <ProjectReference Include="..\Shenora\Shenora.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>
 

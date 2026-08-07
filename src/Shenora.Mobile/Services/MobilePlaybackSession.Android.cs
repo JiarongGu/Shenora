@@ -1,12 +1,12 @@
 #if ANDROID
 using Android.Media;
 using Android.Media.Session;
-using Shenora.Core;
+using Shenora;
 // BOTH namespaces define `PlaybackState` and they mean different things — ours is the portable enum,
 // Android's is the builder-built state object. Aliased rather than partially qualified so no line in this
 // file is ambiguous to a reader either.
 using AndroidState = Android.Media.Session.PlaybackState;
-using PortableState = Shenora.Core.PlaybackState;
+using PortableState = Shenora.PlaybackState;
 
 namespace Shenora.Mobile;
 
@@ -112,7 +112,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
     /// <para>
     /// Android-only, and deliberately not on <see cref="IPlaybackSession"/>: the type is
     /// <c>Android.Media.Session.MediaSession.Token</c> and putting it on the portable contract would drag a
-    /// platform type into <c>Shenora.Core</c>. An app that needs it is already writing Android notification
+    /// platform type into <c>Shenora</c>. An app that needs it is already writing Android notification
     /// code, so it can name the Android type — cast the injected <see cref="IPlaybackSession"/>, or register
     /// this class itself.
     /// </para>

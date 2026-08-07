@@ -43,7 +43,7 @@ it (D16's "the seam, not the package" applied to the host half). `@shenora/react
 time**, precisely because that story exists: a version is assigned by the release workflow, so any
 version written into prose is a guess about the future.)
 
-**2026-08-02 — `Shenora.Core`'s mission-scheduling + filesystem-claims layer**
+**2026-08-02 — `Shenora`'s mission-scheduling + filesystem-claims layer**
 (D27–D31): one scheduler whose key spaces are pluggable, so
 a filesystem operation planner (paths conflict by containment) and a job queue (lanes admit N) are the
 same engine — the EXECUTION half of long-running work, composing with `Shenora.Ipc`'s operations
@@ -63,7 +63,7 @@ stack (persistent per-account profiles, silent refresh, clear-on-logout), and co
 ```
 Shenora.slnx
 ├── src/
-│   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
+│   ├── Shenora        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
 │   │                                        ── Media/ (namespace Shenora.Media; a PACKAGE until D53,
 │   │                                          2026-08-07, now shell work inside Core)
 │   │                                          The TRANSLATION LAYER for the web (D52): the minimum
@@ -184,7 +184,7 @@ Shenora.slnx
 │   │                                          surface, so it declares <NoManagedSurface>true</> and
 │   │                                          MetadataSurfaceTests exempts it BY THAT DECLARATION —
 │   │                                          delete the line and the baseline gate turns back on.
-│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Microsoft.Web.WebView2
+│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders
 │   │                                          keep the areas legible: Shell/ (primitives — bootstrap,
@@ -199,7 +199,7 @@ Shenora.slnx
 │   │                                          there is deliberately no Shenora.Mobile on nuget.org.
 │   │                                          Ipc/ Threading/ Services/ Hosting/, compiled INTO both
 │   │                                          platform packages by Shenora.Mobile.props.
-│   ├── Shenora.Android     net10.0-android  — deps: Shenora.Core, Microsoft.Maui.Controls
+│   ├── Shenora.Android     net10.0-android  — deps: Shenora, Microsoft.Maui.Controls
 │   ├── Shenora.iOS         net10.0-ios      — same deps, same source, and it builds on WINDOWS: a
 │   │                                          net10.0-ios LIBRARY needs only the maui-ios workload,
 │   │                                          never Xcode. Only an iOS APP needs a Mac.
@@ -294,13 +294,13 @@ question is "no, it is a different category". **Four kinds, not one list:**
   and `IWebViewInterceptor` for resources (`UseFiles`/`UseMediaConversion`/`UseSegmentStream`/`UseMediaPlayer`).
   ⚠ **The split between them is the D62 line: messages carry INTENT, resources carry BYTES.** A media file
   has never travelled through the message pipe, which is why a binary IPC envelope would not speed up media.
-- **IPC is a CORE, and it is a FOLDER inside `Shenora.Core` (D65, 2026-08-07).** It used to be its own
+- **IPC is a CORE, and it is a FOLDER inside `Shenora` (D65, 2026-08-07).** It used to be its own
   package on the argument that a server-backed app might take it without a shell (D10) — which was a
   LAYERING answer to a question nobody was asking, the same shape D55 rejected for `Shenora.IO`. What
   decides a package boundary is what the package SET says the product is, and a separate `Shenora.Ipc`
   said "optional". It is the opposite: **IPC is one of the three cores** — the contract both sides agree
   on — so it ships with the framework or the framework does not work.
-  ⚠ The fold was proven exact rather than asserted: `Shenora.Core`'s baseline went 1172 → 1484 lines,
+  ⚠ The fold was proven exact rather than asserted: `Shenora`'s baseline went 1172 → 1484 lines,
   `Shenora.Ipc.txt` was 312, and the set difference between the sum and the result is EMPTY in both
   directions. Namespace `Shenora.Ipc` is unchanged, so adopters delete a `PackageReference` and no code.
 
@@ -310,7 +310,7 @@ Gated by the API-surface baseline tests (`tests/Shenora.Tests/Api/Baselines/*.tx
 drift writes a gitignored `.actual` and fails; copy over the baseline only for intentional
 changes, noting them in `CHANGELOG.md`).
 
-- `Shenora.Core` — `ShenoraEnvironment` (the ONE dev-mode detection: `DOTNET_ENVIRONMENT`/
+- `Shenora` — `ShenoraEnvironment` (the ONE dev-mode detection: `DOTNET_ENVIRONMENT`/
   `ASPNETCORE_ENVIRONMENT` or the `.dev` marker; base directory); `AppRootArgument`
   (`--app-root` launcher-arg parsing); `ShenoraPaths`/`ShenoraPathsOptions` (the portable on-disk
   layout authority: explicit-root → root env var → libs-parent detection → base dir; data env
@@ -331,7 +331,7 @@ changes, noting them in `CHANGELOG.md`).
   global events reach scoped subscribers; handler failures logged + isolated; `EmitAsync` awaits
   every handler, `Emit` is the fire-and-forget twin for a synchronous caller; auto-registered
   by `Build()` via `TryAdd` — replaceable).
-- **`Shenora.Core`'s resource-interception layer (2026-08-04, D45)** — how a page gets bytes the platform will
+- **`Shenora`'s resource-interception layer (2026-08-04, D45)** — how a page gets bytes the platform will
   not give it, portable and identical on all three shells. `WebViewResourceRequest`/`Response`/
   `WebViewByteRange` are the exchange (relocated here in 0.8.0 by D2a); on top of them:
   `IWebViewInterceptor` (`RangeDelivery` + `Use(middleware)` → `IDisposable`), the
@@ -354,7 +354,7 @@ changes, noting them in `CHANGELOG.md`).
   **This is what makes `<video>`, `<audio>` and `<img>` work with no media package at all** — a file the
   platform cannot decode simply errors in the element, and deciding what to do about that is
   `Shenora.Media`'s job as a further middleware.
-- **`Shenora.Core`'s mission-scheduling layer (0.3.0, `Missions/` + `Files/`)** — the EXECUTION half of
+- **`Shenora`'s mission-scheduling layer (0.3.0, `Missions/` + `Files/`)** — the EXECUTION half of
   long-running work, portable and with no DI, storage or reporting dependency of its own:
   `IMissionScheduler`/`MissionScheduler(+Options)` (`SubmitAsync`, `Lane(name)`, `GlobalLane`, `PendingCount`/
   `RunningCount`, `IsActive(MissionKey)`, `Snapshot()`, `Reevaluate()`, `RecoverAsync(rehydrate)`;
@@ -438,11 +438,11 @@ changes, noting them in `CHANGELOG.md`).
   models; (3) nothing
   in `Shenora.Ipc` implements `IMissionObserver`, so wiring execution to the operation registry is the
   app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionOperationObserver.cs` is the worked
-  example — and `Shenora.Core` stays free of any reporting dependency either way (D19/D20). That
+  example — and `Shenora` stays free of any reporting dependency either way (D19/D20). That
   adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
   cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
   work observes the one handed to `SubmitAsync`.
-- **`Shenora.Core`'s media layer — the translation layer for the web (`Shenora.Media` namespace, D52/D53),
+- **`Shenora`'s media layer — the translation layer for the web (`Shenora.Media` namespace, D52/D53),
   read as a PIPELINE.** The folders are the
   stages, and the surface is grouped the same way. The scope test the whole package answers to: *would a
   normal file the user already has fail to play, and is this the least we can do about it?*
@@ -464,7 +464,7 @@ changes, noting them in `CHANGELOG.md`).
   by `MediaStreamKind` to match `IMediaCapability`) is the APP's — **the kit ships no default set**, because Android's
   codec support is vendor-declared per device and a baked-in list is one app's guess frozen into everyone's
   planner (D42).
-  **`Serve/` — handing the result to the page.** Both are middleware over `Shenora.Core`'s
+  **`Serve/` — handing the result to the page.** Both are middleware over `Shenora`'s
   `IWebViewInterceptor`, returning an `IDisposable` registration, and neither implements interception
   itself (D45). `interceptor.UseMediaConversion(MediaConversionOptions)` converts a source to ONE finished
   file: `Resolve` maps a URL to a source, the app's `Convert` delegate does the work inside an
@@ -497,7 +497,7 @@ changes, noting them in `CHANGELOG.md`).
   writing `video:0KiB` and exiting 0. "Has a video stream" is the wrong test too — MPEG-TS names streams in
   the PMT, so a picture-less segment still declares one; what is missing is the SIZE. ⚠ `Dispose` on a run
   must KILL it: a rolling window that leaks a process leaks a CPU and a file handle, on a phone, invisibly.
-- **`Shenora.IO` — the file-operation engine (the `Files/` folder inside `Shenora.Core`; its OWN package
+- **`Shenora.IO` — the file-operation engine (the `Files/` folder inside `Shenora`; its OWN package
   only between 2026-08-05 and 2026-08-07, D48 → D55).** Portable `net10.0`, and it pairs with the scheduler above without
   depending on it: missions compute in parallel, this lands their results one at a time.
   **The file-update queue (2026-08-02), independent of the scheduler.**
@@ -535,7 +535,7 @@ changes, noting them in `CHANGELOG.md`).
   `IOException` becomes a name. Empty means "cannot tell", never "nobody". Over a share, leases work
   provided the lock directory is ON the share, and a crash-released lease returns when the SMB session
   times out rather than instantly.
-  ⚠ **`IFileLockInspector` + `FileLockHolder` stayed in `Shenora.Core`** when the rest moved out (D48),
+  ⚠ **`IFileLockInspector` + `FileLockHolder` stayed in `Shenora`** when the rest moved out (D48),
   and the asymmetry is the layering rule rather than an oversight: "who holds this file open?" has a
   genuinely different answer per platform (Windows asks the Restart Manager), so it is a portable
   CONTRACT with a shell implementation — exactly like `IFileDialogs` — and a shell must be able to
@@ -643,7 +643,7 @@ changes, noting them in `CHANGELOG.md`).
   own-STA-thread pumps, per-name `IWindowStateStore` geometry, activate-on-existing,
   non-blocking close); `TrayIcon(+Options)`/`TrayMenuColors` (NotifyIcon + composed menu,
   double-click restore, close-to-tray, optional app-colored renderer);
-  `RestartManagerLockInspector` — the Windows implementation of `Shenora.Core`'s
+  `RestartManagerLockInspector` — the Windows implementation of `Shenora`'s
   `IFileLockInspector`, answering "who is holding this file?" through the Restart Manager API (the one
   an installer uses to say "close these applications"). Here rather than in `Core` because it is
   Win32; returns empty for a remote holder over a share, because that answer only exists on the server.
@@ -664,7 +664,7 @@ changes, noting them in `CHANGELOG.md`).
   allowlist, guarded renderer-crash reload); `IWebViewResourceProvider` seam +
   `EmbeddedResourceProvider(+Options)` (assembly+prefix, lazy-with-warmup, file-fallback mode,
   path→name lookups) — the no-cache-HTML / immutable-hashed-asset header policy lives in
-  `Shenora.Core`'s `WebViewContentTypes` (public since D45, because every shell's interceptor needs a
+  `Shenora`'s `WebViewContentTypes` (public since D45, because every shell's interceptor needs a
   MIME map) and is applied by `WebViewHost` when it serves; **`WebViewHost.Interceptor`** — the desktop
   half of the D45 contract (`WebView2Interceptor`, `RangeDelivery = Sliced`, measured by the sample's
   `InterceptorProbe`), wired into the host's ONE `WebResourceRequested` subscription rather than a second
@@ -685,10 +685,15 @@ changes, noting them in `CHANGELOG.md`).
   `ContentLoading` so overlay lifetime follows the DOCUMENT, never the ready handshake, which used to
   race the page that was registering; events on `IEventBus`) + `DropZoneFacade` (module `SHENORA.DROPZONE`:
   REGISTER/UPDATE/UNREGISTER/SHOW).
-- `Shenora.Core` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
+- `Shenora` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
   where an escaping exception is fatal rather than catchable (a UI-thread event handler, a timer tick, a
-  posted body, a dispose path). Public because `Shenora.Windows`, `Shenora.Windows` and
-  `Shenora.Windows` all consume it and a `ProjectReference` grants no `internal` access (D19/D20).
+  posted body, a dispose path). Public because `Shenora.Windows` and the two mobile shells (via the
+  shared `Shenora.Mobile` source) all consume it and a `ProjectReference` grants no `internal` access
+  (D19/D20). ⚠ This sentence named `Shenora.Windows` THREE TIMES until 2026-08-07 — the D37 merge
+  rewrote all three old Windows ids to the new one and nobody read the result. `doc-drift` is blind to
+  it by construction (the retired names are gone, so nothing is left to match), which is why the rule
+  after a rename sweep is to READ THE DIFF. Four instances of this shape have now been found: this one,
+  `AppCallback`'s XML, `WindowCommandFacade`'s, and `REVIEW-GUIDE.md`'s own (fixed 2026-08-05).
 - `Shenora.Windows` — auxiliary browser sessions (D14: browser work outside the
   app's own UI, kept out of the core hosting package): `SessionBrowser(+Options)` (the ONE
   auxiliary-WebView2 configuration path — per-profile environment, quiet-start +
@@ -977,7 +982,7 @@ changes, noting them in `CHANGELOG.md`).
   `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on `Core`.
 - **Execution and reporting compose; they do not merge.** `Core`'s `Work/` layer must never learn what
   an operation is — a mission body reports into `Shenora.Ipc`'s operation registry, and the seam pointing
-  that way is `IMissionObserver`. `Shenora.Ipc` may depend on `Shenora.Core`, never the reverse (D19/D20),
+  that way is `IMissionObserver`. `Shenora.Ipc` may depend on `Shenora`, never the reverse (D19/D20),
   which is also why the scheduler ships no storage dependency: `IMissionQueueStore` is a seam, not an
   implementation.
 - **Windows is ONE package, and D19's edge is now internal (2026-08-02).** D19 established that the
@@ -991,7 +996,7 @@ changes, noting them in `CHANGELOG.md`).
   own, already sharing `Microsoft.Web.WebView2`.
   The internal direction still matters and the folders carry it: `Shell/` must never depend on
   `WebView/`, which would be the cycle D19 forbade.
-- **Portable contracts live in `Shenora.Core` (D20):** `IUiDispatcher`/`UiTargetState`,
+- **Portable contracts live in `Shenora` (D20):** `IUiDispatcher`/`UiTargetState`,
   `IFileDialogs`/`IFileDialogPathStore` + `FileDialogOptions`/`Filter`/`Result`, `IClipboardService`,
   and the portable bases `IUrlLauncher`/`IUiInteraction`, plus `ShellCapability` — the shared
   capability vocabulary (`windowChrome`, `dropZones`, `filePicker`, `folderPicker`, `savePicker`,
