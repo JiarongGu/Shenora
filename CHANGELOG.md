@@ -183,6 +183,19 @@ at the first list and missed five more breaking changes.
   - ⚠ **Background playback additionally needs the APP's `AVAudioSession` and `UIBackgroundModes: [audio]`.**
     The kit plays; the app decides whether it may mix, duck or interrupt someone else's audio — the same
     division `MobilePlaybackSession` already draws.
+  - 🔴 **`MediaPlayer` + `IMediaRenderTarget` — the interceptor's media route is now the PLAYER's output
+    pipe, not a parallel feature (D58).** `MediaPlayer` owns probe → plan → resolve-the-URL and hands the
+    result to a render target; the page's `<video>`/`<audio>` element is that target. So a media request
+    reaching the interceptor is a question **.NET** answers, and the page never decides anything about
+    format — it renders what it is handed.
+    - **This is what makes a consumer's own converter reusable by the player.** The resolved URL points at
+      the conversion route, so the pipeline an app already extends (`MediaConversionOptions.Convert`,
+      `IMediaAudioConversion`, `IMediaContainerWriter`) serves the player too. Nobody writes a second
+      converter to get a player.
+    - Before this, `MediaConversionOptions` said in its own remarks that whether a source needs converting
+      was **the app's** decision, made before it built the URL — so every adopter wired that chain by hand.
+    - ⚠ **The page-side binding is NOT built.** `IMediaRenderTarget` has no implementation in the kit yet;
+      an app writes the element driver and its IPC route. Next piece, and it belongs in `@shenora/react`.
   - **`player.ReportTo(session)` keeps the OS transport surface honest.** Before the host owned a player,
     `IPlaybackSession` published whatever the app CLAIMED, so a lock screen could say "playing" while the
     audio had stalled, ended or failed — and nothing reconciled the two. One line now does.

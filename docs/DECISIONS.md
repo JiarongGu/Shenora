@@ -1872,3 +1872,33 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       `{path, size, sha256}` manifest triple — D15's two-consumer bar met on evidence, not direction.
     - **The offline-mobile blocker is on the ADOPTER's side, not the kit's:** transport coupling in the
       app, not anything missing from the shell. Nothing to build here until an app is actually decoupled.
+
+- **D58 — the interceptor's media route is the PLAYER's output pipe, not a parallel feature. There is one
+  media-play layer in .NET and the webview is one of its surfaces.** (Owner, 2026-08-07: *"everything from
+  the interceptor for media, is actually saying we going to .net right?"* — yes, and *"the .net one is a
+  proper player but using web as its display and sound"*.)
+  - **What was wrong before this.** `Media/Serve/` handed bytes to an element the PAGE drove, and
+    `Media/Play/` was a native player. They shared a namespace and nothing else, and the split showed in the
+    surface: `MediaConversionOptions` said in its own remarks that *"whether a source needs converting is
+    the APP's decision, made before it builds the URL"*. Every adopter therefore wired probe → plan → URL
+    by hand, and got a different answer.
+  - **The join is `MediaPlayer`**, which owns exactly that chain and hands the result to an
+    `IMediaRenderTarget`. So a media request arriving at the interceptor is a question **.NET** answers —
+    the file as-is, a remux, a transcode, a segment window — and the page never decides anything about
+    format. It renders what it is handed.
+  - 🔴 **This is what makes a consumer's own converter reusable, which was the owner's second requirement.**
+    The URL the player resolves points at the conversion route, so the pipeline an app already extends
+    (`MediaConversionOptions.Convert`, `IMediaAudioConversion`, `IMediaContainerWriter`) serves the player
+    too. **Nobody writes a second converter to get a player.** That is the D53/D55 "one whole" argument
+    applied inside a subsystem rather than across the package set.
+  - **Named `MediaPlayer`, NOT `WebMediaPlayer`** (owner: *"you can just call it MediaPlayer, since the
+    hybrid is our feature"*). A `Web` prefix frames rendering-through-the-page as a variant of some purer
+    thing; in a hybrid framework it is the NORMAL case, and the native player is the special one. ⚠ The
+    lexicon gate agreed by accident and it is worth noting: `Web` was the only questionable word in the
+    original name, and removing it made the gate pass without an edit.
+  - **`IMediaRenderTarget` is the seam, and it RENDERS rather than decides.** Told which URL to load, when
+    to play, where to seek; it reports position and state back, and it is the only clock — the element is
+    the thing actually advancing, so anything the player computed itself would be a second, worse one.
+  - ⚠ **What is NOT built:** the page-side binding. `IMediaRenderTarget` has no implementation in the kit
+    yet, so an app writes the element driver and the IPC route itself. That is the next piece, and it
+    belongs in `@shenora/react` where the element lives.

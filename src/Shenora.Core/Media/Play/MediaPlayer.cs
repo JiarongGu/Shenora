@@ -1,218 +1,313 @@
 namespace Shenora.Media;
 
 /// <summary>
-/// What the player is doing. Deliberately the same vocabulary as <see cref="Core.PlaybackState"/> —
-/// they describe the same thing at two levels (what the engine is doing vs what the OS should say), and
-/// two different spellings would guarantee they drift.
+/// How <see cref="MediaPlayer"/> decides what a surface should actually load.
 /// </summary>
-public enum MediaPlayerState
+public sealed class MediaPlayerOptions
 {
-    /// <summary>No source. Nothing to play, no position.</summary>
-    Empty,
+    /// <summary>
+    /// Read the source's container and streams. Return <c>null</c> for "I cannot tell", which is treated as
+    /// "play it directly and let the surface decide" — the honest fallback, since a surface refusing a file
+    /// is a real answer and a probe that guessed would be a worse one.
+    /// <para>
+    /// Leave it unset to skip probing entirely: every source is then loaded as-is, which is exactly the
+    /// behaviour an app had before this type existed.
+    /// </para>
+    /// </summary>
+    public Func<string, CancellationToken, Task<MediaProbeResult?>>? Probe { get; init; }
 
-    /// <summary>A source is loading — opening, parsing headers, resolving tracks.</summary>
-    Opening,
+    /// <summary>
+    /// What the surface can play natively. Only consulted when <see cref="Probe"/> returned something.
+    /// <para>
+    /// ⚠ <b>The kit ships no codec list (D42)</b> — build this from <see cref="IMediaCapability"/>, which
+    /// asks the DEVICE, rather than hard-coding a set that is wrong on some phone you do not own.
+    /// </para>
+    /// </summary>
+    public MediaPlaybackPolicy? Policy { get; init; }
 
-    /// <summary>Ready and held at a position.</summary>
-    Paused,
+    /// <summary>
+    /// Turn a source and its plan into the URL the surface loads. Required.
+    /// <para>
+    /// <b>This is the join the framework was missing, and the reason this type exists.</b> A plan of
+    /// <see cref="MediaPlaybackAction.Direct"/> returns a plain file URL; anything else returns the
+    /// interceptor's conversion route for that source — so the SAME pipeline a consumer already extends
+    /// (<see cref="MediaConversionOptions.Convert"/>, <see cref="IMediaAudioConversion"/>,
+    /// <see cref="IMediaContainerWriter"/>) serves the player too. A consumer who wrote their own converter
+    /// does not write a second one to use a player.
+    /// </para>
+    /// <para>
+    /// ⚠ The plan is <c>null</c> when nothing was probed or no policy was supplied. Treat that as "play it
+    /// directly"; it is not an error.
+    /// </para>
+    /// </summary>
+    public required Func<string, MediaPlaybackPlan?, string> ResolveUri { get; init; }
 
-    /// <summary>Advancing.</summary>
-    Playing,
-
-    /// <summary>Ready but waiting on data; the position is not moving.</summary>
-    Buffering,
-
-    /// <summary>Reached the end of the source. The position stays at the end so a UI can show it.</summary>
-    Ended,
-
-    /// <summary>The source could not be opened or playback failed — see <see cref="MediaPlayerStatus.Error"/>.</summary>
-    Failed,
+    /// <summary>Diagnostics. Guarded — a throwing sink never escapes into a callback.</summary>
+    public Action<string>? Log { get; init; }
 }
 
 /// <summary>
-/// A player's state at one instant.
+/// <b>The kit's media player.</b> Its lifecycle lives in .NET; its display and sound are a page element —
+/// the shape the owner named on 2026-08-07: *"the .net one is a proper player but using web as its display
+/// and sound"*.
 /// <para>
-/// <b>⚠ Position is a SNAPSHOT, not a subscription.</b> Reading it is cheap and asking the platform is
-/// how you get a true answer; a host that pushes it to the page every frame is paying IPC to tell React
-/// something it could have asked for. The kit therefore raises
-/// <see cref="IMediaPlayer.StateChanged"/> on real transitions and leaves polling to whoever is drawing
-/// a scrubber — at the rate that scrubber actually redraws.
+/// <b>It is called <c>MediaPlayer</c> and not <c>WebMediaPlayer</c> deliberately</b> (owner, same day:
+/// *"you can just call it MediaPlayer, since the hybrid is our feature"*). A <c>Web</c> prefix would frame
+/// rendering-through-the-page as a variant of some purer thing. It is not: **a hybrid framework rendering
+/// through the page IS the normal case**, and the native player is the special one, reached for when a
+/// platform will not let the page do its job.
+/// </para>
+/// <para>
+/// <b>What .NET owns here is the part React cannot do well</b>, which is the D54 test applied to playback
+/// rather than to a format: probing a container, deciding against a DEVICE capability query whether it can
+/// be played as-is, driving a conversion when it cannot, and holding the state machine across it all. What
+/// the page owns is drawing pixels and making sound, which is the one part it is genuinely better at.
+/// </para>
+/// <para>
+/// <b>⚠ It does NOT replace <c>MobileMediaPlayer</c>; the two answer different questions.</b> A page
+/// element cannot play while iOS has the app backgrounded — that is the gap a native player exists for.
+/// This one wins everywhere else: it renders into the app's own layout, it costs no native surface, and it
+/// reuses the conversion pipeline. **Both are <see cref="IMediaPlayer"/>**, so an app can hold one field
+/// and swap which it points at — and <c>ReportTo(session)</c> keeps Now Playing honest for either.
+/// </para>
+/// <para>
+/// Not registered by any shell. An app constructs it with the surface it wants driven, because only the
+/// app knows which element in its own page that is.
 /// </para>
 /// </summary>
-public sealed record MediaPlayerStatus
+public sealed class MediaPlayer : IMediaPlayer, IDisposable
 {
-    /// <summary>What the player is doing.</summary>
-    public required MediaPlayerState State { get; init; }
+    private readonly IMediaRenderTarget _target;
+    private readonly MediaPlayerOptions _options;
+    private readonly object _gate = new();
 
-    /// <summary>Where it has got to. <see cref="TimeSpan.Zero"/> when there is no source.</summary>
-    public TimeSpan Position { get; init; }
+    private MediaPlayerStatus _status = new() { State = MediaPlayerState.Empty };
+    private TaskCompletionSource? _opening;
+    private double _rate = 1.0;
+    private bool _disposed;
+
+    /// <param name="target">Where output lands.</param>
+    /// <param name="options">How to decide what the target loads.</param>
+    public MediaPlayer(IMediaRenderTarget target, MediaPlayerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.ResolveUri);
+
+        _target = target;
+        _options = options;
+        _target.Reported += OnReported;
+    }
+
+    /// <inheritdoc />
+    public event Action<MediaPlayerStatus>? StateChanged;
+
+    /// <inheritdoc />
+    public MediaPlayerStatus Status { get { lock (_gate) return _status; } }
+
+    /// <inheritdoc />
+    public double Rate
+    {
+        get { lock (_gate) return _rate; }
+        set
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Rate must be greater than zero.");
+            lock (_gate) { _rate = value; _status = _status with { Rate = value }; }
+            // Fire-and-forget by design: a rate change is advisory and a surface that has nothing loaded
+            // simply ignores it. Awaiting here would make a property setter block on IPC.
+            _ = Guarded(() => _target.SetRateAsync(value), nameof(Rate));
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (string.IsNullOrWhiteSpace(source.Uri)) throw new MediaPlayerException("Media source URI is empty.");
+
+        TaskCompletionSource opening = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_gate)
+        {
+            // A second Open supersedes the first: its waiter is cancelled rather than left hanging, which
+            // is what a user rapidly switching tracks actually does.
+            _opening?.TrySetCanceled();
+            _opening = opening;
+            _status = new MediaPlayerStatus { State = MediaPlayerState.Opening, Rate = _rate };
+        }
+        Raise();
+
+        // PROBE → PLAN → URL. All three are optional in the sense that each degrades to "play it directly",
+        // and that chain is the whole point of this class: the app asks for a source, not for a decision.
+        MediaProbeResult? probe = null;
+        if (_options.Probe is { } read)
+        {
+            try
+            {
+                probe = await read(source.Uri, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                // A probe that throws is NOT fatal: the surface may well play the file anyway, and refusing
+                // here would make the player stricter than the thing it is driving.
+                Log(() => $"[Shenora.Media] probe failed, playing directly ({ex.GetType().Name}).");
+            }
+        }
+
+        var plan = probe is not null && _options.Policy is { } policy
+            ? MediaPlaybackPlanner.Plan(probe, policy)
+            : null;
+
+        string uri;
+        try
+        {
+            uri = _options.ResolveUri(source.Uri, plan);
+        }
+        catch (Exception ex)
+        {
+            Fail("The media source could not be resolved.");
+            throw new MediaPlayerException("The media source could not be resolved.", ex);
+        }
+
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            Fail("The media source cannot be played on this device.");
+            throw new MediaPlayerException("The media source cannot be played on this device.");
+        }
+
+        await _target.LoadAsync(uri, source.StartAt, cancellationToken).ConfigureAwait(false);
+
+        // The SURFACE decides when it is ready; this waits for its report rather than assuming.
+        using var registration = cancellationToken.Register(() => opening.TrySetCanceled(cancellationToken));
+        try
+        {
+            await opening.Task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // ⚠ ONLY tear down if this open is still the current one. A cancellation has two causes and
+            // they need opposite handling: the CALLER's token (clean up — nothing else is running) versus
+            // being SUPERSEDED by a later OpenAsync (do nothing — the successor already owns the target,
+            // and unloading here would rip the source out from under it). Found by a test: without this
+            // check, opening a second track while the first was still loading left the surface empty.
+            bool superseded;
+            lock (_gate) superseded = !ReferenceEquals(_opening, opening);
+            if (!superseded)
+            {
+                await Guarded(() => _target.UnloadAsync(CancellationToken.None), nameof(OpenAsync)).ConfigureAwait(false);
+                lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate };
+                Raise();
+            }
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public Task PlayAsync(CancellationToken cancellationToken = default)
+    {
+        RequireLoaded();
+        return _target.PlayAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task PauseAsync(CancellationToken cancellationToken = default)
+    {
+        RequireLoaded();
+        return _target.PauseAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
+    {
+        RequireLoaded();
+        return _target.SeekAsync(position < TimeSpan.Zero ? TimeSpan.Zero : position, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task CloseAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        lock (_gate) { _opening?.TrySetCanceled(); _opening = null; }
+
+        await _target.UnloadAsync(cancellationToken).ConfigureAwait(false);
+        lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate };
+        Raise();
+    }
 
     /// <summary>
-    /// How long the source is, when the platform knows. Null for a live stream and — briefly — while
-    /// <see cref="MediaPlayerState.Opening"/>.
+    /// The surface reported. ⚠ Position and duration come from HERE and nowhere else — the element is the
+    /// thing actually advancing, so anything this class computed itself would be a second, worse clock.
     /// </summary>
-    public TimeSpan? Duration { get; init; }
+    private void OnReported(MediaPlayerStatus reported)
+    {
+        TaskCompletionSource? opening;
+        lock (_gate)
+        {
+            // The rate stays the player's: a surface that does not carry one reports the default, and
+            // taking it verbatim would silently reset a configured 1.5x on the first report.
+            _status = reported with { Rate = _rate };
+            opening = _opening;
 
-    /// <summary>
-    /// Playback speed as a multiplier; 1.0 is normal. Reported as the RATE ASKED FOR, which is not always
-    /// what the hardware does — see <see cref="IMediaPlayer.Rate"/>.
-    /// </summary>
-    public double Rate { get; init; } = 1.0;
+            if (opening is not null && reported.State is not MediaPlayerState.Opening)
+            {
+                _opening = null;
+            }
+            else
+            {
+                opening = null;
+            }
+        }
 
-    /// <summary>
-    /// Why it failed, when <see cref="State"/> is <see cref="MediaPlayerState.Failed"/>; null otherwise.
-    /// <para>
-    /// ⚠ <b>A short, app-safe reason — never the platform's raw exception text.</b> Same rule the IPC
-    /// stack applies to every error path: this string can reach a page, and a native error message is a
-    /// disclosure surface and unactionable to a user in equal measure.
-    /// </para>
-    /// </summary>
-    public string? Error { get; init; }
-}
+        Raise();
 
-/// <summary>
-/// What to play. A file the host can open, or a URL the platform will stream.
-/// <para>
-/// <b>⚠ This is deliberately NOT a stream or a byte source</b>, which is the interesting constraint and
-/// the reason the type exists at all. A native player wants to own the read: it seeks, it reads ahead, it
-/// re-reads on a track switch, and on two of the three platforms it does that on its own threads inside a
-/// process-wide media service. Handing it a managed <c>Stream</c> means marshalling every read across that
-/// boundary, which is exactly the overhead the player exists to avoid.
-/// </para>
-/// </summary>
-public sealed record MediaSource
-{
-    /// <summary>
-    /// An absolute path or URL. A local file path, or an <c>http(s)</c> URL — including one served by the
-    /// app's own in-process host, which is how a source that needs the kit's remux reaches the player.
-    /// </summary>
-    public required string Uri { get; init; }
+        // Settled OUTSIDE the lock: a continuation runs on this thread otherwise, under a lock this class
+        // also takes from its own public methods.
+        if (opening is null) return;
+        if (reported.State == MediaPlayerState.Failed)
+            opening.TrySetException(new MediaPlayerException(reported.Error ?? "The media source could not be played."));
+        else
+            opening.TrySetResult();
+    }
 
-    /// <summary>
-    /// Start here rather than at zero. Applied as part of opening, so a resumed item does not visibly
-    /// start at zero and jump — which is what a caller gets by opening and then seeking.
-    /// </summary>
-    public TimeSpan StartAt { get; init; }
-}
+    private void RequireLoaded()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        lock (_gate)
+        {
+            if (_status.State is MediaPlayerState.Empty) throw new MediaPlayerException("No media source is open.");
+        }
+    }
 
-/// <summary>
-/// A media player owned by the HOST, driven by the page — the capability D54 says this framework exists
-/// to provide, implemented once per shell (D19/D20's law, the same shape as
-/// <see cref="Core.IPlaybackSession"/> and <see cref="Core.IUiDispatcher"/>).
-/// <para>
-/// <b>Why this exists when <c>&lt;video&gt;</c> is right there.</b> Because the element's ceiling is the
-/// webview's, and that ceiling is lower than the platform's in ways an app cannot work around from
-/// JavaScript:
-/// </para>
-/// <list type="bullet">
-///   <item><b>Background playback.</b> iOS pauses a <c>&lt;video&gt;</c> the moment the app leaves the
-///   foreground — the video track cannot render, so the element stops. A native player is not subject to
-///   that, and this is the difference that is impossible rather than merely awkward.</item>
-///   <item><b>One source of truth for the system surfaces.</b> <see cref="Core.IPlaybackSession"/>
-///   publishes Now Playing from whatever the app claims; when the host owns the player, what it publishes
-///   is what is actually happening. Today those two can disagree and nothing reconciles them.</item>
-///   <item><b>Formats.</b> The player takes what the PLATFORM decodes, which is a superset of what the
-///   webview's element accepts.</item>
-/// </list>
-/// <para>
-/// <b>What this does NOT do, on purpose.</b> No queue, no playlist, no gapless, no crossfade, no shuffle —
-/// only the app knows what "next" means, the same reasoning that keeps a queue model out of
-/// <see cref="Core.IPlaybackSession"/>. And no video SURFACE: rendering into the page's layout is a
-/// composition problem per shell, and audio is where the provable gap is (see the remarks on
-/// <see cref="OpenAsync"/>).
-/// </para>
-/// <para>
-/// Registered as a SINGLETON by the shell and injected, like <see cref="Core.IPlaybackSession"/>. There is
-/// no <c>IDisposable</c> here for the same reason: an app disposing an injected singleton would tear down
-/// the shell's player for everyone. Say <see cref="CloseAsync"/>.
-/// </para>
-/// </summary>
-public interface IMediaPlayer
-{
-    /// <summary>
-    /// The player's state right now — cheap, and the honest answer rather than a cached one.
-    /// </summary>
-    MediaPlayerStatus Status { get; }
+    private void Fail(string reason)
+    {
+        lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Failed, Error = reason, Rate = _rate };
+        Raise();
+    }
 
-    /// <summary>
-    /// Playback speed as a multiplier; 1.0 is normal. Setting it while paused is remembered and applied on
-    /// the next <see cref="PlayAsync"/>.
-    /// <para>
-    /// ⚠ <b>A platform may not honour the exact value.</b> Each clamps to its own supported range and some
-    /// refuse rates a codec cannot resample; the kit does not pretend otherwise by silently substituting.
-    /// <see cref="MediaPlayerStatus.Rate"/> reports what was ASKED FOR, so a UI showing "1.5×" shows what
-    /// the user chose.
-    /// </para>
-    /// </summary>
-    double Rate { get; set; }
+    private void Raise()
+    {
+        var handler = StateChanged;
+        if (handler is null) return;
+        var status = Status;
+        Core.AppCallback.Run(() => handler(status),
+            ex => Log(() => $"[Shenora.Media] A player state handler threw ({ex.GetType().Name}: {ex.Message})."));
+    }
 
-    /// <summary>
-    /// Open a source and get ready to play, without starting. Completes when the platform can report a
-    /// duration and accept a seek — which is the point a UI can draw a real scrubber.
-    /// <para>
-    /// ⚠ <b>Opening does not start playback</b>, deliberately: a caller that wants both says so, and one
-    /// that is restoring a session wants a paused player at a saved position, which is the more awkward
-    /// thing to express afterwards.
-    /// </para>
-    /// <para>
-    /// <b>AUDIO is what this promises today.</b> Video decodes and its clock advances, but nothing composites
-    /// a video surface into the page — see the type's remarks. An app playing video should keep using
-    /// <c>&lt;video&gt;</c> in the foreground; this is for the case that element cannot serve.
-    /// </para>
-    /// </summary>
-    /// <param name="source">What to play.</param>
-    /// <param name="cancellationToken">Abandons the open. A cancelled open leaves the player
-    /// <see cref="MediaPlayerState.Empty"/>, not half-loaded.</param>
-    /// <exception cref="MediaPlayerException">The source could not be opened.</exception>
-    Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default);
+    private async Task Guarded(Func<Task> work, string what)
+    {
+        try { await work().ConfigureAwait(false); }
+        catch (Exception ex) { Log(() => $"[Shenora.Media] MediaPlayer.{what} failed ({ex.GetType().Name}: {ex.Message})."); }
+    }
 
-    /// <summary>Start or resume. A no-op if already playing; fails if there is no source.</summary>
-    Task PlayAsync(CancellationToken cancellationToken = default);
+    private void Log(Func<string> message) => Core.AppCallback.Log(_options.Log, message);
 
-    /// <summary>Hold at the current position. A no-op if already paused.</summary>
-    Task PauseAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Move to an absolute position, clamped to the source. Seeking a player that is playing keeps it
-    /// playing; seeking one that is paused leaves it paused.
-    /// </summary>
-    Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Release the source and return to <see cref="MediaPlayerState.Empty"/>.
-    /// <para>
-    /// ⚠ <b>Say this when playback is over.</b> An open player holds a decoder, a file handle and — on the
-    /// mobile shells — a slice of a process-wide media service. It is the counterpart to
-    /// <see cref="Core.IPlaybackSession.Clear"/>, and an app usually wants both.
-    /// </para>
-    /// </summary>
-    Task CloseAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// The player's state changed — a transition, not a tick. Raised on open, play, pause, seek, buffering,
-    /// end and failure; NOT while a position merely advances.
-    /// <para>
-    /// ⚠ <b>Raised on whatever thread the platform uses, which is not the UI thread.</b> Marshal with
-    /// <see cref="Core.IUiDispatcher"/> before touching UI. A throwing handler is caught and logged rather
-    /// than escaping into a platform callback (<see cref="Core.AppCallback"/>) — an exception inside an
-    /// AVFoundation or ExoPlayer callback is not catchable by anyone.
-    /// </para>
-    /// </summary>
-    event Action<MediaPlayerStatus>? StateChanged;
-}
-
-/// <summary>
-/// A player operation failed. Carries an app-safe reason; the platform's own text is logged, never thrown
-/// — the same rule every error path in the IPC stack follows.
-/// </summary>
-public sealed class MediaPlayerException : Exception
-{
-    /// <summary>A player operation failed.</summary>
-    /// <param name="message">App-safe reason.</param>
-    public MediaPlayerException(string message) : base(message) { }
-
-    /// <summary>A player operation failed.</summary>
-    /// <param name="message">App-safe reason.</param>
-    /// <param name="inner">The platform failure. Logged by the shell; not surfaced to a page.</param>
-    public MediaPlayerException(string message, Exception inner) : base(message, inner) { }
+    /// <summary>Stop following the surface. Does not unload it — that is <see cref="CloseAsync"/>.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _target.Reported -= OnReported;
+        lock (_gate) _opening?.TrySetCanceled();
+    }
 }

@@ -87,10 +87,20 @@ Shenora.slnx
 │   │                                                    plus the ISegmentEngine seam for what the kit
 │   │                                                    does not do itself.
 │   │                                            Play/   IMediaPlayer — the HOST plays, the page drives
-│   │                                                    (D54). A portable contract with ONE implementation
-│   │                                                    per shell, the same shape as IPlaybackSession;
-│   │                                                    iOS ships MobileMediaPlayer (AVPlayer) and the
-│   │                                                    other two shells are absent rather than stubbed.
+│   │                                                    (D54). TWO implementations, both portable-facing:
+│   │                                                      · MediaPlayer — the DEFAULT. Lifecycle in .NET,
+│   │                                                        display and sound in a page element through
+│   │                                                        IMediaRenderTarget. It owns the decision the
+│   │                                                        four stages above used to leave to each app:
+│   │                                                        probe → plan → resolve the URL, which is how
+│   │                                                        the interceptor's conversion route becomes
+│   │                                                        this player's OUTPUT PIPE rather than a
+│   │                                                        parallel feature (D58).
+│   │                                                      · MobileMediaPlayer (iOS, AVPlayer) — the native
+│   │                                                        one, for the case a page element cannot serve:
+│   │                                                        iOS pauses a <video> when backgrounded.
+│   │                                                    Android and Windows native players are absent
+│   │                                                    rather than stubbed.
 │   │                                                    ⚠ This BOUNDS the four stages above rather than
 │   │                                                    replacing them: they exist for apps serving bytes
 │   │                                                    to a <video>, and stop being the answer to "the
