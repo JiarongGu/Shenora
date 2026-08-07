@@ -428,6 +428,44 @@ document.getElementById('maud').onclick = () => {
   aud.play().then(() => log('in', 'audio play() resolved')).catch(err => log('err', `audio play() REJECTED: ${err}`));
 };
 if (mediaUrl) aud.src = clipUrl('clip-faststart.mp4');
+
+// ── Keeping playback alive across a background, by HANDING OFF video -> audio ────────────────────
+//
+// This is the pattern a real app wants, and it exists because of a platform rule rather than a
+// preference: iOS PAUSES a <video> when the app is backgrounded (the video track cannot render), while
+// an <audio> already playing keeps going. So the sound survives only if something else is carrying it
+// by the time the app hides.
+//
+// The handoff is: on `visibilitychange` to hidden, copy the playhead onto the <audio>, start it, pause
+// the <video>. On the way back, copy the position back and resume the picture.
+//
+// ⚠ TIMING IS THE WHOLE RISK, and it is worth stating because it decides whether this works at all:
+// iOS restricts STARTING new playback once the app is in the background. `visibilitychange` fires as the
+// app is going hidden, which is intended to be early enough — but "intended to be" is not "measured", so
+// the handoff logs each step and a failure will say which one lost.
+let handedOff = false;
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    if (vid.paused || vid.ended || !vid.currentSrc) return;
+    handedOff = true;
+    const at = vid.currentTime;
+    if (aud.currentSrc !== vid.currentSrc) aud.src = vid.currentSrc;
+    aud.currentTime = at;
+    log('out', `handoff -> audio at ${at.toFixed(2)}s (app hiding)`);
+    aud.play()
+      .then(() => log('in', 'handoff: audio took over'))
+      .catch(err => log('err', `handoff REJECTED: ${err} — iOS refused to start audio this late`));
+    vid.pause();
+  } else if (handedOff) {
+    handedOff = false;
+    const at = aud.currentTime;
+    aud.pause();
+    vid.currentTime = at;
+    log('out', `handback -> video at ${at.toFixed(2)}s (app visible)`);
+    vid.play().catch(err => log('err', `handback REJECTED: ${err}`));
+  }
+});
 document.getElementById('mseek').onclick  = () => {
   log('out', `seeking to 48s (from ${vid.currentTime.toFixed(2)}s, duration=${vid.duration})`);
   vid.currentTime = 48;
