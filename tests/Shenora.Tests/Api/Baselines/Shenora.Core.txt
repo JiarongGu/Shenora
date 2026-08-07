@@ -1005,13 +1005,18 @@ sealed class Shenora.Media.MediaPlayerException : System.Exception
   public .ctor(string message)
   public .ctor(string message, System.Exception inner)
 static class Shenora.Media.MediaPlayerExtensions
+  public static Shenora.Core.ShenoraApplicationBuilder UseMediaPlayer(Shenora.Core.ShenoraApplicationBuilder builder, System.Action<Shenora.Media.MediaPlayerOptions>? configure = null)
   public static System.IDisposable ReportTo(Shenora.Media.IMediaPlayer player, Shenora.Core.IPlaybackSession session)
+  public static System.IDisposable? UseMediaPlayerRoute(Shenora.Core.IWebViewInterceptor interceptor, System.IServiceProvider services)
 sealed class Shenora.Media.MediaPlayerOptions
-  public Shenora.Media.MediaPlaybackPolicy? Policy { get; init; }
+  public .ctor()
+  public Shenora.Media.MediaPlaybackPolicy? Policy { get; set; }
   public System.Action<string>? Log { get; init; }
-  public System.Func<string, System.Threading.CancellationToken, System.Threading.Tasks.Task<Shenora.Media.MediaProbeResult>>? Probe { get; init; }
-  public required System.Func<string, Shenora.Media.MediaPlaybackPlan, string> ResolveUri { get; init; }
+  public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; set; }
+  public System.Func<string, Shenora.Media.MediaPlaybackPlan, string>? ResolveUri { get; set; }
+  public System.Func<string, System.Threading.CancellationToken, System.Threading.Tasks.Task<Shenora.Media.MediaProbeResult>>? Probe { get; set; }
   public string Module { get; init; }
+  public string? CacheRoot { get; set; }
 enum Shenora.Media.MediaPlayerState (int)
   public const Shenora.Media.MediaPlayerState Buffering = 4
   public const Shenora.Media.MediaPlayerState Empty = 0

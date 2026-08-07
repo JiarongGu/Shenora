@@ -267,6 +267,38 @@ public class MediaPlayerTests
         Assert.Contains(session.Reports, r => r.State == PlaybackState.Playing && r.Position == TimeSpan.FromSeconds(9));
     }
 
+    // ── UseMediaPlayer: the zero-config call is the one that has to be right ─────────────────────
+
+    /// <summary>
+    /// 🔴 The owner's shape: *"a single {app}.useMediaPlayer then the system should work."* With no
+    /// configuration the player must pass a source straight through — no probe, no plan, no rewriting.
+    /// </summary>
+    [Fact]
+    public async Task With_no_configuration_a_source_is_passed_straight_through()
+    {
+        var bus = new RecordingBus();
+        using var player = new MediaPlayer(bus, new MediaPlayerOptions());
+
+        await OpenAndSettle(player, bus, "app://files/song.m4a");
+
+        Assert.Equal("app://files/song.m4a", bus.LoadedUri);
+    }
+
+    /// <summary>
+    /// ⚠ <see cref="MediaPlayerOptions.AllowedRoots"/> is the containment boundary, so its DEFAULT must be
+    /// "nothing" rather than anything convenient. Empty also means no conversion route is wired, which is
+    /// what makes the zero-argument call safe to hand anybody.
+    /// </summary>
+    [Fact]
+    public void Conversion_is_off_until_roots_are_named()
+    {
+        var options = new MediaPlayerOptions();
+
+        Assert.Empty(options.AllowedRoots);
+        Assert.Null(options.ResolveUri);
+        Assert.Null(options.CacheRoot);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static async Task OpenAndSettle(MediaPlayer player, RecordingBus bus, string uri)

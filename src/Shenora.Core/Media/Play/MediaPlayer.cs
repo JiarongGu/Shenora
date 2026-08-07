@@ -46,7 +46,7 @@ public sealed class MediaPlayerOptions
     /// behaviour an app had before this type existed.
     /// </para>
     /// </summary>
-    public Func<string, CancellationToken, Task<MediaProbeResult?>>? Probe { get; init; }
+    public Func<string, CancellationToken, Task<MediaProbeResult?>>? Probe { get; set; }
 
     /// <summary>
     /// What the page's element can play natively. Only consulted when <see cref="Probe"/> returned something.
@@ -55,7 +55,7 @@ public sealed class MediaPlayerOptions
     /// asks the DEVICE, rather than hard-coding a set that is wrong on some phone you do not own.
     /// </para>
     /// </summary>
-    public MediaPlaybackPolicy? Policy { get; init; }
+    public MediaPlaybackPolicy? Policy { get; set; }
 
     /// <summary>
     /// Turn a source and its plan into the URL the element loads. Required.
@@ -75,8 +75,34 @@ public sealed class MediaPlayerOptions
     /// ⚠ The plan is <c>null</c> when nothing was probed or no policy was supplied. Treat that as "play it
     /// directly"; it is not an error.
     /// </para>
+    /// <para>
+    /// <b>Leave it unset and the source is passed straight through.</b> That is the right default and not a
+    /// placeholder: a file the device can already decode needs no URL rewriting, and an app whose media
+    /// plays should not have to say so. Set it when there is a conversion route to point at.
+    /// </para>
     /// </summary>
-    public required Func<string, MediaPlaybackPlan?, string> ResolveUri { get; init; }
+    public Func<string, MediaPlaybackPlan?, string>? ResolveUri { get; set; }
+
+    /// <summary>
+    /// Where the conversion route may read from. **Empty means no file-serving conversion is wired**, which
+    /// is the zero-configuration case.
+    /// <para>
+    /// ⚠ <b>The kit cannot default this and deliberately does not try.</b> It is the containment boundary
+    /// that stops a page-supplied path escaping into the rest of the disk, so a default would be the kit
+    /// making a data-access decision on the app's behalf — the same reasoning that keeps a loopback-gate
+    /// helper (D10) and a page-diagnostic facade (D60) out of the surface. **This is why
+    /// <c>UseMediaPlayer()</c> and <c>UseMediaPlayer(x => …)</c> split where they do:** the security
+    /// decision and the ergonomic one are the same decision.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> AllowedRoots { get; set; } = [];
+
+    /// <summary>
+    /// Where converted files are cached. Defaults to a <c>media</c> folder under the app's cache path when
+    /// wired through <c>UseMediaPlayer</c>.
+    /// <para>⚠ Must not be the segment cache root — see <see cref="MediaConversionOptions.CacheRoot"/>.</para>
+    /// </summary>
+    public string? CacheRoot { get; set; }
 
     /// <summary>Module the player's commands are published on. Defaults to <c>MEDIA</c>, matching the conversion route.</summary>
     public string Module { get; init; } = "MEDIA";
@@ -134,7 +160,6 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
     {
         ArgumentNullException.ThrowIfNull(events);
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(options.ResolveUri);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.Module);
 
         _events = events;
@@ -202,7 +227,8 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
         string uri;
         try
         {
-            uri = _options.ResolveUri(source.Uri, plan);
+            // Unset means pass the source straight through — the no-gap case, which is most of them.
+            uri = _options.ResolveUri is { } resolve ? resolve(source.Uri, plan) : source.Uri;
         }
         catch (Exception ex)
         {

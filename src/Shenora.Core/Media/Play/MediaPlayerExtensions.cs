@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shenora.Core;
 
 namespace Shenora.Media;
@@ -7,6 +9,119 @@ namespace Shenora.Media;
 /// </summary>
 public static class MediaPlayerExtensions
 {
+    /// <summary>
+    /// Register the kit's media player. **One call, and playing a file is four lines of app code.**
+    /// <code>
+    /// builder.UseMediaPlayer();                                  // the file plays; nothing else needed
+    /// builder.UseMediaPlayer(x => x.AllowedRoots = [library]);   // …and repair what the webview refuses
+    /// </code>
+    /// <para>
+    /// <b>The zero-argument call is the point, not a convenience.</b> Owner, 2026-08-07: *"unless we need a
+    /// custom decoder, we dont need to have this complex play logic."* A file the device can already decode
+    /// needs no probe, no plan and no URL rewriting, so with no configuration this wires a player that
+    /// passes sources straight through — and the probe/plan/convert machinery stays out of the way until
+    /// something asks for it.
+    /// </para>
+    /// <para>
+    /// 🔴 **Where the two overloads split is a SECURITY line, which is why it is also the right ergonomic
+    /// one.** Everything else can be defaulted — the cache root from
+    /// <see cref="Core.ShenoraApplicationBuilder.Paths"/>, the module name, the converter from whatever
+    /// <see cref="IMediaAudioConversion"/> the shell registered. <see cref="MediaPlayerOptions.AllowedRoots"/>
+    /// cannot: it is the containment boundary, and a kit that chose one would be making a data-access
+    /// decision for the app. So conversion is exactly what you opt into by configuring.
+    /// </para>
+    /// <para>
+    /// <b>It binds the PAGE-BACKED <see cref="MediaPlayer"/>, never the native one, and that is deliberate.</b>
+    /// A hybrid framework rendering through the page is the normal case (D58), and binding
+    /// <c>MobileMediaPlayer</c> here would silently move the audio out of the page's own element — so a
+    /// React UI bound to that element would show nothing playing. **Background playback is opt-in**: it
+    /// needs the app's own <c>AVAudioSession</c> and <c>UIBackgroundModes</c> anyway, so an app that wants
+    /// it resolves the shell's player explicitly.
+    /// </para>
+    /// <para>
+    /// ⚠ **With <see cref="MediaPlayerOptions.AllowedRoots"/> set you also need
+    /// <see cref="UseMediaPlayerRoute"/> once the webview exists** — the interceptor is created with the
+    /// webview and cannot exist at builder time, so the wiring cannot be one call however much it wants to
+    /// be. Said here rather than discovered at runtime.
+    /// </para>
+    /// </summary>
+    /// <param name="builder">The application builder.</param>
+    /// <param name="configure">Optional. Set <see cref="MediaPlayerOptions.AllowedRoots"/> to enable conversion.</param>
+    public static Core.ShenoraApplicationBuilder UseMediaPlayer(
+        this Core.ShenoraApplicationBuilder builder,
+        Action<MediaPlayerOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new MediaPlayerOptions();
+        configure?.Invoke(options);
+
+        // Defaulted after `configure`, so an explicit value wins — and ONLY when conversion is actually
+        // being configured, because DataArea CREATES the directory and the zero-config case has nothing to
+        // put in it.
+        if (options.AllowedRoots.Count > 0 && string.IsNullOrWhiteSpace(options.CacheRoot))
+        {
+            options.CacheRoot = builder.Paths.DataArea("media");
+        }
+
+        builder.Services.TryAddSingleton(options);
+        builder.Services.TryAddSingleton<IMediaPlayer>(services =>
+            new MediaPlayer(services.GetRequiredService<IEventBus>(), services.GetRequiredService<MediaPlayerOptions>()));
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Wire the conversion route the player's URLs point at, and teach the player to point at it.
+    /// <para>
+    /// <b>⚠ Why this is a SECOND call when the whole point was one.</b> The interceptor is created with the
+    /// webview, and the webview does not exist at builder time — so <c>UseMediaPlayer</c> can register a
+    /// player but cannot register a route. Rather than invent a lifecycle hook to hide that, the kit says
+    /// it: call this once you have an interceptor, with the same service provider. **A no-op when
+    /// <see cref="MediaPlayerOptions.AllowedRoots"/> is empty**, so it is safe to call unconditionally.
+    /// </para>
+    /// <para>
+    /// It uses the kit's defaults throughout — <see cref="Mp4Remuxer.ConvertWith"/> fed by whatever
+    /// <see cref="IMediaAudioConversion"/> the shell registered (D59), the cache root
+    /// <c>UseMediaPlayer</c> chose, and a URL convention the player and the route agree on **because both
+    /// are built from the same options object**.
+    /// </para>
+    /// </summary>
+    /// <param name="interceptor">The shell's interceptor, once the webview exists.</param>
+    /// <param name="services">The built provider.</param>
+    /// <returns>Dispose to remove the route. <c>null</c> when no conversion was configured.</returns>
+    public static IDisposable? UseMediaPlayerRoute(this IWebViewInterceptor interceptor, IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(interceptor);
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = services.GetRequiredService<MediaPlayerOptions>();
+        if (options.AllowedRoots.Count == 0) return null;
+
+        // ONE convention, defined once and shared: the route recognises what the player emits, because the
+        // two are configured from the same object. An app wanting its own URL shape sets ResolveUri and
+        // registers UseMediaConversion itself.
+        const string Prefix = "/__shenora/media?src=";
+        options.ResolveUri ??= (source, plan) =>
+            plan is null || plan.Action == MediaPlaybackAction.Direct
+                ? source
+                : Prefix + Uri.EscapeDataString(source);
+
+        return interceptor.UseMediaConversion(
+            services.GetRequiredService<IMissionScheduler>(),
+            services.GetRequiredService<IEventBus>(),
+            new MediaConversionOptions
+            {
+                Resolve = uri => uri.PathAndQuery.StartsWith(Prefix, StringComparison.Ordinal)
+                    ? Uri.UnescapeDataString(uri.PathAndQuery[Prefix.Length..])
+                    : null,
+                Convert = Mp4Remuxer.ConvertWith(services.GetService<IMediaAudioConversion>()),
+                CacheRoot = options.CacheRoot!,
+                AllowedRoots = options.AllowedRoots,
+                Module = options.Module,
+            });
+    }
+
     /// <summary>
     /// Keep the OS transport surface telling the truth: report the PLAYER's own state to
     /// <paramref name="session"/> whenever it changes.
