@@ -17,7 +17,22 @@ namespace Shenora.Media;
 /// Optional to call: a converter with no usable progress simply never reports, and the page sees
 /// <see cref="MediaConversionEvents.Ready"/> when it finishes.
 /// </param>
-public sealed record MediaConversionRequest(string SourcePath, string DestinationPath, IProgress<double> Progress);
+/// <param name="Container">
+/// The container the output must be, as a lowercase extension including the dot (<c>.mp4</c>).
+///
+/// <para>
+/// 🔴 <b>Told, never inferred from <see cref="DestinationPath"/> — and this is a bug the kit actually
+/// caused.</b> The destination is a TEMPORARY path, so its name ends <c>.tmp</c>: an engine that picks its
+/// muxer from the extension sees <c>.m4a.tmp</c>, recognises no format, and refuses before writing a byte.
+/// The first adopter hit exactly that (ffmpeg, exit 234) and reported it. The name belongs to the CALLER,
+/// so the format has to travel separately.
+/// </para>
+/// </param>
+public sealed record MediaConversionRequest(
+    string SourcePath,
+    string DestinationPath,
+    IProgress<double> Progress,
+    string Container = ".mp4");
 
 /// <summary>Event types this middleware publishes, on <see cref="MediaConversionOptions.Module"/>.</summary>
 public static class MediaConversionEvents
@@ -62,7 +77,17 @@ public sealed class MediaConversionOptions
     /// </summary>
     public required Func<MediaConversionRequest, CancellationToken, Task> Convert { get; init; }
 
-    /// <summary>Directory for converted output. Created on demand; safe to delete wholesale, it is a cache.</summary>
+    /// <summary>
+    /// Directory for converted output. Created on demand; safe to delete wholesale, it is a cache.
+    /// <para>
+    /// 🔴 <b>Must NOT be the same directory as <c>SegmentStreamOptions.CacheRoot</c>, and the reason is not
+    /// tidiness.</b> The two have different TENANCY: a conversion backing an offline download has to
+    /// persist, while segments are rebuildable at any time. On iOS <c>Library/Caches</c> may be purged by
+    /// the OS whenever it likes — which is correct for segments and data loss for a conversion. The first
+    /// adopter hit both halves of this: shared roots, then a purged directory that made the route 503
+    /// forever because "the file is missing" read as "the engine failed".
+    /// </para>
+    /// </summary>
     public required string CacheRoot { get; init; }
 
     /// <summary>
@@ -334,7 +359,8 @@ public static class MediaConversionExtensions
         try
         {
             await options.Convert(
-                new MediaConversionRequest(source, replacement.TempPath, progress), cancellationToken);
+                new MediaConversionRequest(source, replacement.TempPath, progress, options.CacheExtension),
+                cancellationToken);
             replacement.Commit();
             events.Emit(options.Module, MediaConversionEvents.Ready, new { source });
             Log(options, () => $"[Shenora.Media] converted -> {Path.GetFileName(cachePath)}");

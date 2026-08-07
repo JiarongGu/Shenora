@@ -61,6 +61,13 @@ at the first list and missed five more breaking changes.
     ⚠ `Mp4RemuxerResult`/`Outcome` are now `MediaRemuxerResult`/`MediaRemuxerOutcome` — the result is the
     writer seam's, not MP4's.
 
+- **`MediaConversionRequest` gained a `Container` parameter** — 🔴 **fixing a bug the kit itself caused.**
+  The destination handed to an engine is a TEMPORARY path ending `.tmp`, so an engine that picks its muxer
+  from the extension sees `.m4a.tmp`, recognises no format, and refuses before writing a byte. The first
+  adopter hit exactly that (ffmpeg, exit 234). The name belongs to the CALLER, so the format now travels
+  separately. Source-compatible, binary-breaking; **migration: recompile**, and if your engine inferred the
+  format from the path, read `Container` instead.
+
 - **`MediaStreamInfo` gained a `SampleRate` parameter.** Source-compatible — it is optional and last, so
   every existing construction and `with` expression still compiles — but **binary-breaking**, so a consumer
   compiled against an older version must be REBUILT rather than swapped.

@@ -681,7 +681,7 @@ sealed class Shenora.Media.MediaConversionOptions
   public string CacheExtension { get; init; }
   public string Module { get; init; }
 sealed class Shenora.Media.MediaConversionRequest : System.IEquatable<Shenora.Media.MediaConversionRequest>
-  public .ctor(string SourcePath, string DestinationPath, System.IProgress<double> Progress)
+  public .ctor(string SourcePath, string DestinationPath, System.IProgress<double> Progress, string Container = ".mp4")
   public Shenora.Media.MediaConversionRequest <Clone>$()
   public System.IProgress<double> Progress { get; init; }
   public bool Equals(Shenora.Media.MediaConversionRequest? other)
@@ -690,9 +690,10 @@ sealed class Shenora.Media.MediaConversionRequest : System.IEquatable<Shenora.Me
   public override string ToString()
   public static bool op_Equality(Shenora.Media.MediaConversionRequest? left, Shenora.Media.MediaConversionRequest? right)
   public static bool op_Inequality(Shenora.Media.MediaConversionRequest? left, Shenora.Media.MediaConversionRequest? right)
+  public string Container { get; init; }
   public string DestinationPath { get; init; }
   public string SourcePath { get; init; }
-  public void Deconstruct(out string SourcePath, out string DestinationPath, out System.IProgress<double> Progress)
+  public void Deconstruct(out string SourcePath, out string DestinationPath, out System.IProgress<double> Progress, out string Container)
 enum Shenora.Media.MediaPlaybackAction (int)
   public const Shenora.Media.MediaPlaybackAction Direct = 0
   public const Shenora.Media.MediaPlaybackAction Remux = 1

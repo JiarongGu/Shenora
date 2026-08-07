@@ -39,6 +39,14 @@ public sealed class SegmentStreamOptions
     /// things; give them two roots.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// 🔴 <b>Give this its OWN directory, never the conversion cache's.</b> Segments are rebuildable and a
+    /// conversion backing an offline download is not, so the two want opposite answers when the OS reclaims
+    /// space — and on iOS <c>Library/Caches</c> is purged whenever the system likes. Sharing a root makes
+    /// that purge either a pointless rebuild or real data loss, depending which file it took.
+    /// ⚠ A purged directory also 503s forever if it is not re-created per restart, because "the file is
+    /// missing" reads as "the engine failed". Both halves were hit by the first adopter.
+    /// </remarks>
     public required string CacheRoot { get; init; }
 
     /// <summary>The URL prefix this route answers. Relative, so one string works on every shell.</summary>
