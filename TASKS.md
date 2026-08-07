@@ -191,21 +191,34 @@ device) and an API 36 AOSP emulator:
   `docs/archive/tasks.md`: `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** (`'prop'` on iOS), and
   a failed query was reporting as a NEGATIVE. The AAC control is what caught it.
 
-- [ ] **Slice 4 — ship the DEFAULT engine** behind `ISegmentEngine`, assembled from slices 2–3 (managed
-  remux + platform codecs). Owner, 2026-08-06: *"we still support for consumer use their own
-  decoder/encoder just if they needed, and we built something that can work by default"* — so an app gets
-  working playback with NOTHING supplied, and implements the seam only for reach the default lacks.
-  ⚠ This narrows D42 rather than reversing it: the objection was always VENDORING (megabytes + a licence
-  every consumer inherits). A default costing zero bytes and zero obligations contradicts neither.
-  - **What slice 3 changed about its shape.** Reach is now known to be per-device, so the engine must not
-    declare a fixed capability — it must ASK the platform and report what it actually got, which is the
-    same discipline `HasRenderedPicture` already enforces one level down. The natural first piece is
-    therefore a **platform-derived `MediaPlaybackPolicy`**: today every adopter hand-writes those codec
-    sets as a guess, while the device can be asked. That keeps D42 intact — the kit still ships no codec
-    LIST, it ships the query — and it makes the planner's verdicts true on the hardware in hand.
-  - ⚠ **Then be honest about the hole:** on a device without an AC-3 decoder the default cannot repair an
-    AC-3 soundtrack at all, and must say `Unsupported` rather than start a transcode it cannot finish.
-    That is the planner's existing `CanEncodeAudio == false` path, and it is already the right answer.
+**Slice 4 — MOSTLY DONE (2026-08-07).** Owner: *"we still support for consumer use their own
+decoder/encoder just if they needed, and we built something that can work by default"*. Shipped:
+
+- **`IMediaCapability`** — asks the DEVICE what it decodes and encodes, implemented on both mobile shells.
+  Every adopter used to hand-write `MediaPlaybackPolicy`'s codec sets as a guess; the kit now ships the
+  QUESTION rather than the answer, which keeps D42 intact. Cross-checked against an independent platform
+  query on the iPhone: `ac3 repairable=True`.
+- **`Mp4Remuxer.ConvertAsync`** — the default `MediaConversionOptions.Convert`. Container repair with no
+  engine, no binary, no licence weight. This is "working playback with NOTHING supplied" for the case D52
+  calls the common one.
+- **`IMediaStreamConversion`** — the transcode tier: picture copied untouched, soundtrack through the
+  device's codecs. Plus **Android's implementation** (chained `MediaCodec` decoder → AAC encoder).
+
+- [ ] **What remains, and the second item is the one that matters.**
+  - **iOS's `IMediaStreamConversion`** (`AudioConverter`, chained the same way). Registered on Android only
+    today; a shell without one gives container repair plus an honest refusal, which is why absence beats a
+    stub that lies. ⚠ iOS is the platform that CAN decode AC-3, so this is where the tier pays off.
+  - 🔴 **NEITHER IMPLEMENTATION HAS RUN A REAL ENCODER.** The muxing is covered by tests against a fake
+    codec — the boxes, the timing, the drained tail, copy-beats-convert — but no device has actually
+    transcoded anything. **"Exit 0 is not evidence" applies hardest here**: this repo has already measured
+    an encoder that accepted every frame, wrote `video:0KiB` and exited 0. Until a device produces a file
+    that PLAYS, the tier is unproven.
+    - ⚠ The awkward part is the fixture: proving it needs a source in a codec the target decodes, and AOSP
+      has no AC-3, so the emulator cannot exercise the interesting path. Either test on a handset that has
+      AC-3, or build a fixture in a codec AOSP does have (vorbis/mp3 → AAC exercises the identical chain).
+  - **Windows has no `IMediaCapability`** — Media Foundation enumeration, and `DolbyDecMFT.dll` is present
+    on this box so it likely decodes AC-3 too. Desktop currently answers nothing rather than answering
+    honestly.
 
 ⚠ **Not planned, and needs a reason before it is:** software video decoders (MPEG-2, VC-1, Xvid, ProRes) —
 per-codec projects, built only for codecs a real library is SHOWN to contain (D52 tier 4).
