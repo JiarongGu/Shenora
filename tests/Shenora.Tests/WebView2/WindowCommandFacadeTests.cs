@@ -137,7 +137,7 @@ public class WindowCommandModuleTests
         });
 
         var refused = await without.HandleMessageAsync(Request("SET_THEME", new { dark = false }));
-        Assert.Equal(IpcErrorCodes.NoHandler, refused.Error!.Code);
+        Assert.Equal(IpcErrorCodes.NoRoute, refused.Error!.Code);
 
         var accepted = await with.HandleMessageAsync(Request("SET_THEME", new { dark = false }));
         Application.DoEvents();
@@ -160,7 +160,7 @@ public class WindowCommandModuleTests
             new { buttons = new[] { new { kind = "maximize", x = 10, y = 0, width = 30, height = 30 } } }));
 
         // Same shape as SET_THEME: an optional route is NO_HANDLER until its callback exists.
-        Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
+        Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public class WindowCommandModuleTests
     }
 
     [Fact]
-    public async Task Unknown_types_answer_structured_no_handler()
+    public async Task Unknown_types_answer_structured_no_route()
     {
         using var form = CreateForm();
         var facade = new WindowCommandModule(new WindowCommandOptions { Window = form });
@@ -272,7 +272,7 @@ public class WindowCommandModuleTests
         var response = await facade.HandleMessageAsync(Request("NOPE"));
 
         Assert.False(response.Success);
-        Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
+        Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
         Assert.Equal(WindowCommandModule.Module, response.Error.Parameters!["module"]);
     }
 }

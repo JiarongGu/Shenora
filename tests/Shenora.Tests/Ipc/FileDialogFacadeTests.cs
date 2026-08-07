@@ -166,6 +166,6 @@ public class FileDialogModuleTests
         var response = await DispatchAsync(new RecordingDialogs(), Request("NOPE"));
 
         Assert.False(response.Success);
-        Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
+        Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
     }
 }

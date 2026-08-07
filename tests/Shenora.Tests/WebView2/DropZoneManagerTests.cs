@@ -191,7 +191,7 @@ public class DropZoneManagerTests
             Assert.Equal(IpcErrorCodes.MissingPayloadValue, missing.Error!.Code);
 
             var unknown = Send("NOPE", new { });
-            Assert.Equal(IpcErrorCodes.NoHandler, unknown.Error!.Code);
+            Assert.Equal(IpcErrorCodes.NoRoute, unknown.Error!.Code);
         }
     }));
 }

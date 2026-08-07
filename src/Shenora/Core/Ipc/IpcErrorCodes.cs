@@ -15,8 +15,29 @@ public static class IpcErrorCodes
     /// </summary>
     public const string UnknownError = "UNKNOWN_ERROR";
 
-    /// <summary>Nothing in the dispatch pipeline handled the request. Parameters: <c>module</c>, <c>type</c>.</summary>
+    /// <summary>
+    /// <b>No MODULE claimed the request</b> — nothing in the dispatch pipeline answers that name.
+    /// Parameters: <c>module</c>, <c>type</c>.
+    /// <para>
+    /// ⚠ <b>Distinct from <see cref="NoRoute"/>, and the split is the whole point.</b> This means the
+    /// module was never registered; <see cref="NoRoute"/> means it WAS, and does not know that type.
+    /// Those are opposite fixes — wire the module up, versus correct a route name — and until
+    /// 2026-08-08 both answered <c>NO_HANDLER</c> with identical parameters, so an adopter debugging a
+    /// dead page could not tell which they had. It was found by a test that tried to USE the
+    /// distinction as its probe and could not.
+    /// </para>
+    /// </summary>
     public const string NoHandler = "NO_HANDLER";
+
+    /// <summary>
+    /// <b>The module answered but has no route of that TYPE.</b> Parameters: <c>module</c>, <c>type</c>.
+    /// <para>
+    /// Raised by <c>ModuleBase.UnknownType</c>. Reaching this is proof the module IS registered and
+    /// mapped, which is exactly what <see cref="NoHandler"/> cannot tell you — so a page seeing this
+    /// has a route-name problem, not a composition problem.
+    /// </para>
+    /// </summary>
+    public const string NoRoute = "NO_ROUTE";
 
     /// <summary>A scope-routed module was called without <see cref="IpcRequest.Scope"/>. Parameters: <c>module</c>.</summary>
     public const string ScopeRequired = "SCOPE_REQUIRED";

@@ -24,7 +24,23 @@ export const HANDSHAKE_TYPE = 'READY';
  */
 export const IpcErrorCodes = {
   unknownError: 'UNKNOWN_ERROR',
+  /**
+   * **No MODULE claimed the request** — nothing on the host answers that name. Parameters:
+   * `module`, `type`.
+   *
+   * ⚠ Distinct from {@link noRoute}, and the split is what makes it actionable: this means the module
+   * was never registered host-side, while `noRoute` means it WAS and does not know that type. Opposite
+   * fixes — wire the module up, versus correct a route name — and until 2026-08-08 both arrived as
+   * `NO_HANDLER` with identical parameters, so a dead page could not be diagnosed from the wire.
+   */
   noHandler: 'NO_HANDLER',
+  /**
+   * **The module answered but has no route of that type.** Parameters: `module`, `type`.
+   *
+   * Seeing this is proof the module IS registered and mapped, which is exactly what {@link noHandler}
+   * cannot tell you — so this is a route-name problem, not a composition problem.
+   */
+  noRoute: 'NO_ROUTE',
   /**
    * A scope-routed module was called without a `scope`. Parameters: `module`.
    *

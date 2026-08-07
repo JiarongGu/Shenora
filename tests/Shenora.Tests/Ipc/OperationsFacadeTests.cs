@@ -199,13 +199,13 @@ public class OperationsModuleTests
     }
 
     [Fact]
-    public async Task An_unknown_type_gets_the_frameworks_NO_HANDLER_shape()
+    public async Task An_unknown_type_gets_the_frameworks_NO_ROUTE_shape()
     {
         var (facade, _) = Build();
 
         var response = await facade.HandleMessageAsync(IpcRequests.Create("SHENORA.OPERATIONS", "NOPE"));
 
-        Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
+        Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
     }
 
     [Fact]

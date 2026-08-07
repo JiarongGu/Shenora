@@ -76,14 +76,23 @@ public abstract class ModuleBase : IIpcModule
     protected static Task<object?> Done() => Task.FromResult<object?>(null);
 
     /// <summary>
-    /// The terminator for an unrecognized request type: a structured <see cref="IpcErrorCodes.NoHandler"/>
-    /// carrying the module and type. Every facade ended its switch with a hand-written copy of this,
+    /// The terminator for an unrecognized request type: a structured <see cref="IpcErrorCodes.NoRoute"/>
+    /// carrying the module and type. Every module ended its switch with a hand-written copy of this,
     /// so every consumer had to know the exact error shape to stay consistent with the framework.
+    /// <para>
+    /// 🔴 <b>It answers <see cref="IpcErrorCodes.NoRoute"/>, NOT <see cref="IpcErrorCodes.NoHandler"/>,
+    /// and the difference is an adopter's debugging time.</b> Reaching here proves the module IS
+    /// registered and mapped — the dispatcher found it and handed the request over. `NO_HANDLER` means
+    /// the opposite: nothing claimed the module name at all. Those need opposite fixes (correct a route
+    /// name, versus wire the module up), and until 2026-08-08 both answered `NO_HANDLER` with identical
+    /// parameters, so the wire could not tell them apart. Found by a test that tried to USE the
+    /// distinction as its probe and discovered there was none.
+    /// </para>
     /// </summary>
     protected OperationException UnknownType(IpcRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return new OperationException(IpcErrorCodes.NoHandler,
+        return new OperationException(IpcErrorCodes.NoRoute,
             new Dictionary<string, string> { ["module"] = ModuleName, ["type"] = request.Type });
     }
 

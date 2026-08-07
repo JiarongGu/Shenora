@@ -85,6 +85,7 @@ static class Shenora.Core.Ipc.IpcErrorCodes
   public const string InvalidPayloadValue = "INVALID_PAYLOAD_VALUE"
   public const string MissingPayloadValue = "MISSING_PAYLOAD_VALUE"
   public const string NoHandler = "NO_HANDLER"
+  public const string NoRoute = "NO_ROUTE"
   public const string OperationCancelled = "OPERATION_CANCELLED"
   public const string ScopeRequired = "SCOPE_REQUIRED"
   public const string UnknownError = "UNKNOWN_ERROR"
