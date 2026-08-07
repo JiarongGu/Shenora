@@ -212,6 +212,10 @@ runs the new assemblies against old sources and proves nothing):
       host share one; `CreateForCurrentThreadAsync` is for secondary windows and nothing calls it at
       startup. So the double-environment reading of `ERROR_BUSY` does not hold — ⚠ and the number
       itself was never observed in these logs, only reported, so do not over-fit to it.
+  - ⚠ **Accumulated .NET hosts are NOT it either** — a plausible reading of Task Manager, tested
+    rather than argued: `dotnet build-server shutdown` took 10 hosts down to 2 (both unrelated,
+    days-old `dotnet run` of other projects) and the sample crashed identically. MSBuild node reuse
+    accumulates workers by design; they hold no WebView2 profile and touch nothing the renderer uses.
   - **Where the crash actually sits, after ~12 experiments:** between `Host initialized` and the first
     page render, with ONE environment, no page, no scheme, no IPC bridge, no probes, no pool. Also not
     document-created script injection — the shell calls `AddScriptToExecuteDocumentCreatedAsync`
