@@ -203,11 +203,21 @@ runs the new assemblies against old sources and proves nothing):
     which also explains the "Device or resource busy" seen on every profile file, and why redirected
     runs stalled with no output (a MODAL error dialog was up, which is also why `CloseMainWindow()`
     could not close the app).
-    - ⚠ Checked and NOT the cause on its own: the main host (`data/webview2`) and the render pool
-      (`data/sessions/render`) use DIFFERENT profiles. But `RenderSessionPool` runs `Capacity = 2`
-      against ONE profile directory, and `SessionBrowser` already carries documented profile-lock
-      scars (P5.5 H2 — an abandoned `await` orphaning a second `CreateAsync` onto the same lock).
-      **That pair is the next thing to test.**
+    - ⚠ **The render pool is NOT it, ruled out by READING rather than a run** (cheaper and more
+      certain): `Capacity` only sizes a semaphore, sessions are created on `LeaseAsync`, and the
+      sample leases only inside its `RENDER`/`PROBE` route — on demand, never at startup. It also uses
+      a different profile from the main host.
+    - ⚠ **And there is no second environment at startup at all**, which the LOGS settle: exactly one
+      `[WebView2] Creating environment` line every run. `GetSharedAsync` caches, so prewarm and the
+      host share one; `CreateForCurrentThreadAsync` is for secondary windows and nothing calls it at
+      startup. So the double-environment reading of `ERROR_BUSY` does not hold — ⚠ and the number
+      itself was never observed in these logs, only reported, so do not over-fit to it.
+  - **Where the crash actually sits, after ~12 experiments:** between `Host initialized` and the first
+    page render, with ONE environment, no page, no scheme, no IPC bridge, no probes, no pool. Also not
+    document-created script injection — the shell calls `AddScriptToExecuteDocumentCreatedAsync`
+    nowhere. **What is left is inside `InitializeAsync`'s WebView2 control setup, or the frameless
+    `OptimizedForm` window setup it happens under** (custom regions, DWM, caption buttons) — which is
+    the one area a plain `Form`-based probe never exercised.
   - **DESIGN POINT raised (owner, 2026-08-08): "the webview2 bundle should be at the application
     location so it should never be shared".** ⚠ **Checked against both desktop siblings before acting,
     and the check SPLITS the question in two:**
