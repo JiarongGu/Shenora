@@ -213,13 +213,25 @@ decoder/encoder just if they needed, and we built something that can work by def
 **This reframes the media work.** It had been drifting toward "make the webview play more", which is a
 treadmill whose ceiling is still the webview. The gap is that **the PAGE owns playback and should not**.
 
-- [ ] **`IMediaPlayer` (or whatever it ends up called) — the host plays, the page drives.** Load, play,
-  pause, seek, rate, position, ended, error, implemented per platform (AVPlayer · ExoPlayer/MediaPlayer ·
-  Media Foundation) and reported over the existing IPC.
-  - **Start with iOS**, because that is where the gap is provable: a `<video>` cannot play backgrounded at
-    all there, and a native player can. Android next, then Windows.
-  - **Wire it to `IPlaybackSession`** so Now Playing reports the player's own state rather than something
-    the page separately claims — today the two can disagree and nothing reconciles them.
+**✅ THE CONTRACT AND THE iOS IMPLEMENTATION ARE IN** (2026-08-07, `dc29b2e` + `fbb2716`).
+`IMediaPlayer` in `Shenora.Core/Media/Play/`, `MobileMediaPlayer` (AVPlayer) on iOS,
+`player.ReportTo(session)` reconciling Now Playing with the player's real state. 1191 tests.
+
+🔴 **WHAT IS NOT PROVEN, and no green gate says otherwise: NOTHING HAS PLAYED A BYTE.** There is no
+managed player, so every test here pins the CONTRACT — `MediaPlayerContractTests` and
+`MediaPlayerReportingTests` (the latter sabotage-verified). The whole claim this feature rests on — that
+AVPlayer keeps playing while the app is backgrounded, where a `<video>` cannot — is a **DEVICE** claim
+and is untested.
+
+- [ ] **Prove it on the iPhone.** The deploy loop exists (`dev.mjs mac device`), so this is a sample-app
+  task, not an infrastructure one: open a local file, play, background the app, confirm audio continues
+  and Now Playing tracks it. ⚠ Needs the APP's `AVAudioSession` + `UIBackgroundModes: [audio]` — the
+  sample already configures both for the `<audio>` probe, so the comparison is available in one build.
+- [ ] **Then Android (ExoPlayer/MediaPlayer) and Windows (Media Foundation).** Absent rather than stubbed
+  today, deliberately — an app without a player keeps using `<video>`.
+- [ ] **Expose it over IPC** so the page can drive it. Not done: the contract is C#-side only, so today an
+  app wires it in its own module. That is the smaller half and it should follow the device proof, not
+  precede it.
   - ⚠ **Does not delete the translation layer, it BOUNDS it.** `Mp4Remuxer` and the conversion pipeline
     stay for apps serving files to a `<video>`; what changes is that they stop being the answer to "the
     webview cannot play this".
