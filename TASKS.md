@@ -181,10 +181,27 @@ runs the new assemblies against old sources and proves nothing):
   - ⚠ **A transient red herring worth not re-chasing:** deleting the profile right after a run fails
     with "Device or resource busy" on every file, which looks like leaked WebView2 processes holding
     it. It is not — they are still shutting down, and a check moments later finds zero orphans.
-  - **The decisive test not yet run:** a MINIMAL WebView2 app on this box. If that crashes too the
-    cause is environmental (runtime 151 / a driver / an injected module) and the kit is uninvolved;
-    if it does not, the cause is in the host or the sample page. ⚠ Everything above says "environmental"
-    but nothing yet PROVES it, and the absent WER event is the oddest fact in the set.
+  - 🔴 **IT IS NOT ENVIRONMENTAL — measured, and it reverses the leading hypothesis.** A minimal
+    WebView2 host with NO Shenora in it runs 30 s, navigates, closes cleanly and reports zero process
+    failures. Adding full resource interception over `https://` — the kit's most distinctive feature —
+    still does not crash it. So the cause is in the HOST or the SAMPLE, not the machine.
+
+    | probe | result |
+    |---|---|
+    | plain WebView2 host | no crash |
+    | + `AddWebResourceRequestedFilter` + `WebResourceRequested` over `https://` | no crash |
+    | the Shenora sample | **crashes** |
+
+  - **Next, and it halves the remaining space in ONE run:** point the sample at a blank document
+    instead of its React bundle. Still crashes → the host (injected scripts, the IPC bridge, frameless
+    chrome/`OptimizedForm`, single-instance, drop zones). Stops → the page. Cheaper than porting the kit
+    into the probe piece by piece, which is the trap to avoid.
+  - ⚠ **Recreate the probe rather than looking for it** — it lived in `devtools/_wv2probe` and is
+    gitignored. Two of its five runs tested NOTHING and the reasons are worth not repeating: an
+    `async void` init handler swallowed its exception until a try/catch printed one, and
+    `CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` is NULL in this SDK, so `.Add` threw a
+    bare NullReferenceException. ⚠ The kit registers no custom scheme at all, so that arm was never
+    the right comparison anyway — the sample serves `https://sample.local` through interception.
 
 ⚠ **After ANY rename sweep in this work: READ THE DIFF.** Three instances of "a thing is not itself" from
 D37's 2026-08-02 merge survived every review until the D65 sweep surfaced them, because `doc-drift` is
