@@ -655,6 +655,33 @@ public class Mp4RemuxerTests
     }
 
     /// <summary>
+    /// 🔴 A convertible soundtrack that declares NO FRAMES must still be reported in <c>Dropped</c>.
+    /// <para>
+    /// The remux succeeds either way and the file plays — with no sound — so <c>Dropped</c> is the only
+    /// channel that can tell a page WHY. The copy path already handled this (an empty track contributes no
+    /// plan, so it falls out of the kept set); the CONVERT path marked the track kept before asking whether
+    /// anything had been written for it, which is the same silent-film outcome one branch over.
+    /// </para>
+    /// <para>
+    /// ⚠ The assertion is on <c>Dropped</c> and NOT on <c>Succeeded</c>: this case is not a failure. The
+    /// picture is carried correctly and the honest result is "it worked, and here is what did not survive".
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_convertible_track_that_holds_no_frames_is_REPORTED_dropped_rather_than_silently_lost()
+    {
+        using var source = Ac3Film();          // the AC-3 track is declared; the cluster carries picture only
+        using var output = new MemoryStream();
+
+        var result = Mp4Remuxer.Remux(source, output, new FakeConversion());
+
+        Assert.True(result.Succeeded, result.Reason);
+        Assert.Equal(1, result.VideoSamples);
+        Assert.Equal(0, result.AudioSamples);
+        Assert.Equal(["ac3"], result.Dropped);
+    }
+
+    /// <summary>
     /// Copying beats converting when both are possible — it is faster, lossless, and cannot fail halfway.
     /// A device offered an AAC track must not transcode it.
     /// </summary>

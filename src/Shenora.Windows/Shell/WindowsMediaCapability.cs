@@ -90,14 +90,27 @@ public sealed class WindowsMediaCapability : IMediaCapability
             .AsTask().GetAwaiter().GetResult();
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 🔴 The UNRECOGNISED ones are logged too, and that is not tidiness. An unknown subtype is dropped,
+        // which reads downstream as "the device does not support it" — indistinguishable from the machine
+        // genuinely lacking the codec (D63's failure mode, in a translation table). Without this line a
+        // missing row here and an absent decoder produce identical evidence, so a device measurement can
+        // never be attributed. This one was written after `MFVideoFormat_HEVC` turned out to be missing
+        // from the table while `H265` was present.
+        var unknown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var codec in codecs)
         {
             foreach (var subtype in codec.Subtypes)
             {
                 if (Normalise(subtype) is { } name) names.Add(name);
+                else unknown.Add(subtype);
             }
         }
         Log(() => $"[Shenora.Windows] {(encode ? "encodable" : "decodable")} {kind}: {string.Join(", ", names)}");
+        if (unknown.Count > 0)
+        {
+            Log(() => $"[Shenora.Windows] {kind} subtypes this table does not name (reported as UNSUPPORTED): "
+                + string.Join(", ", unknown));
+        }
         return names;
     }
 
@@ -125,9 +138,16 @@ public sealed class WindowsMediaCapability : IMediaCapability
         "6c61616c-0000-0010-8000-00aa00389b71" => "alac",
         "704f7075-0000-0010-8000-00aa00389b71" => "opus",
         "8d2fd10b-5841-4a6b-8905-588fec1aded9" => "vorbis",
-        // Video subtypes are FOURCCs in the same GUID shape.
+        // Video subtypes are FOURCCs in the same GUID shape — Data1 is the FOURCC read little-endian, so
+        // 'H264' (48 32 36 34) prints as 34363248.
         "34363248-0000-0010-8000-00aa00389b71" => "h264",
-        "35363248-0000-0010-8000-00aa00389b71" => "hevc",
+        // ⚠ HEVC has THREE registered subtypes and listing only one is how a machine that decodes it gets
+        // reported as not doing so. MFVideoFormat_HEVC is FOURCC 'HEVC' and is what the HEVC Video
+        // Extension advertises; 'H265' and 'HEVS' (elementary stream) are the other two. Only 'H265' was
+        // here, which made "no HEVC on this box" unattributable — see the unknown-subtype log above.
+        "43564548-0000-0010-8000-00aa00389b71" => "hevc",   // 'HEVC'
+        "35363248-0000-0010-8000-00aa00389b71" => "hevc",   // 'H265'
+        "53564548-0000-0010-8000-00aa00389b71" => "hevc",   // 'HEVS' — elementary stream
         "31435657-0000-0010-8000-00aa00389b71" => "vc1",
         "30385056-0000-0010-8000-00aa00389b71" => "vp8",
         "30395056-0000-0010-8000-00aa00389b71" => "vp9",

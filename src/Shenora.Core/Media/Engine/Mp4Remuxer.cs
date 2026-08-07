@@ -362,8 +362,14 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
         // chosen. A successful remux that dropped the soundtrack is the kit's most dangerous outcome —
         // nothing throws, the file plays, and the user hears silence — so the result must be able to say
         // so even though it still says Succeeded.
+        // ⚠ `resolved` ALREADY carries the converted track — Convert() returns a plan whose Source is that
+        // very MatroskaTrack — so the chosen set is exactly this, with nothing to add. An extra
+        // `kept.Add(convert.Number)` used to sit here and was wrong on the one path where it did anything:
+        // a convertible track that declared ZERO frames skips the Convert block above, contributes no plan,
+        // and was then marked kept anyway — so the output had no soundtrack and `Dropped` said everything
+        // survived. Exactly the silent-film outcome this block exists to make reportable, and the copy path
+        // one branch up already handled the same case correctly.
         var kept = new HashSet<ulong>(resolved.Select(r => r.Source.Number));
-        if (convert is not null) kept.Add(convert.Number);
         var dropped = reader.Tracks
             .Where(t => !kept.Contains(t.Number))
             .Select(t => MatroskaProbe.CodecNameOf(t.CodecId) ?? t.CodecId ?? "unknown")
