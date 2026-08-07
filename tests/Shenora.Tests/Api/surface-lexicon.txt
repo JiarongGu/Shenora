@@ -550,3 +550,12 @@ Safe
 Area
 Insets
 Script
+# `System` (2026-08-07) — admitted ONLY as the second half of `FileSystem`, in `FileSystemExtensions`: the
+# one-call registration for the file-update engine, so an adopter meets it the same way they meet
+# `UseMediaPlayer`. It is the platform's own word for the thing — `System.IO`,
+# `java.nio.file.FileSystem` and `Microsoft.Maui.Storage.FileSystem` all call it the file system — which is
+# the `ProfileDirectory` test: genuine mechanism vocabulary the platforms themselves use.
+# ⚠ Watch this one harder than most. As a SUFFIX, `System` is nearly contentless: a `NotificationSystem`,
+# a `PluginSystem` or a `LicensingSystem` would each be a scenario name wearing a mechanism's clothes. It
+# earns its place because "file system" is ONE noun, not a noun with `System` appended.
+System

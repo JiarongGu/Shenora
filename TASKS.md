@@ -535,27 +535,6 @@ committed by the file itself. They are prose now, and they never "complete":
 
 ---
 
-### Rename the `Shenora.IO` namespace — MEASURED, needs one call (2026-08-07)
-
-> DIRECTION (owner): *"this is the same to the IO, so we can call it File instead now"* — right in
-> principle: `IO` was chosen as a PACKAGE-FAMILY name (`Shenora.IO.*`) and D55 made it a folder, so the
-> cryptic name no longer earns anything.
-
-🔴 **Every candidate collides with something, and the collisions were measured, not guessed.** A namespace
-under `Shenora.` shadows a same-named TYPE for all other `Shenora.*` code, because the enclosing namespace's
-members win over `using`-imported types. Adopters are unaffected — their namespaces are not under `Shenora`.
-
-| Candidate | Collides with | Cost |
-|---|---|---|
-| `Shenora.File` | **`System.IO.File`** — CS0234 on every `File.Exists` in the namespace | ❌ impossible; the engine uses `File.*` throughout |
-| `Shenora.FileSystem` | **MAUI's `FileSystem`** (`CacheDirectory`, `OpenAppPackageFileAsync`) | ⚠ 5 sites — but a STANDING tax: it hits `src/Shenora.Mobile`, where MAUI APIs are used most, forever |
-| `Shenora.Files` | the kit's own **`Files`** class (`Files.BeginReplace`, in `Shenora.Core`) | ✅ one-time: 27 call sites, **23 of them in one test file** — but it means renaming a PUBLIC SHIPPED type |
-
-**Recommendation: `Shenora.Files`, renaming the `Files` class** (`AtomicFile`? — needs a lexicon entry).
-The cost is one-time and contained, where `FileSystem`'s is permanent and lands in the mobile shell.
-⚠ **Worth noting what this proves about the current name:** `IO` collides with nothing *because* it is not
-a common type name. The cryptic name was doing real work, which is the argument to weigh against the rename.
-
 ## Later / candidates — deliberately NOT built, kept so the decision is not re-argued
 
 Moved here 2026-08-07 when `docs/ROADMAP.md` was deleted; growth is harvest-driven (D15) and

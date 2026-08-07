@@ -736,6 +736,8 @@ sealed class Shenora.IO.FilePathLockerOptions
   public System.Action<string>? Log { get; init; }
   public System.TimeSpan PollInterval { get; init; }
   public required string LockDirectory { get; init; }
+static class Shenora.IO.FileSystemExtensions
+  public static Shenora.Core.ShenoraApplicationBuilder UseFileSystem(Shenora.Core.ShenoraApplicationBuilder builder, System.Action<Shenora.IO.FileUpdateQueueOptions>? configure = null)
 enum Shenora.IO.FileUndoKind (int)
   public const Shenora.IO.FileUndoKind DeleteCreatedFile = 0
   public const Shenora.IO.FileUndoKind MoveBack = 2
@@ -789,11 +791,11 @@ sealed class Shenora.IO.FileUpdateQueue : Shenora.IO.IFileUpdateQueue
   public System.Threading.Tasks.Task<int> RecoverAsync(System.Threading.CancellationToken cancellationToken = default)
 sealed class Shenora.IO.FileUpdateQueueOptions
   public .ctor()
-  public Shenora.Core.IFileLockInspector? LockInspector { get; init; }
-  public Shenora.IO.IFileUpdateJournal? Journal { get; init; }
-  public Shenora.IO.IPathLocker? Locker { get; init; }
-  public System.Action<string>? Log { get; init; }
-  public System.TimeSpan LeaseTimeout { get; init; }
+  public Shenora.Core.IFileLockInspector? LockInspector { get; set; }
+  public Shenora.IO.IFileUpdateJournal? Journal { get; set; }
+  public Shenora.IO.IPathLocker? Locker { get; set; }
+  public System.Action<string>? Log { get; set; }
+  public System.TimeSpan LeaseTimeout { get; set; }
 sealed class Shenora.IO.FileUpdateResult
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.FileLockHolder> Holders { get; }
   public System.Exception? Error { get; }

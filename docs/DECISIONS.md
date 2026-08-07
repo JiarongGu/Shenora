@@ -1990,3 +1990,29 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     it gets *less* useful the moment the platform fixes its logging.
   - **Revisit trigger:** an adopter that cannot express what it needs over the existing IPC pipe. Wanting a
     ready-made twenty lines is not that — the same bar every other deferred capability is held to (D10).
+
+- **D61 — an adopter meets every capability through ONE `Use…` call, and that is what makes a namespace
+  name a non-issue. `Shenora.IO` keeps its name.** (Owner, 2026-08-07, closing a question they had opened
+  twice: *"its okay as long as the adopter when using get similar treatment as UseMediaPlayer"*, then
+  *"then we dont need to call this IO right?"*)
+  - **What the question really was.** `IO` was a package-family name (`Shenora.IO.*`) and D55 made it a
+    folder, so it looked like a leftover. The proposed fix was a rename; the actual fix was **ergonomic
+    parity** — `builder.UseFileSystem()` beside `builder.UseMediaPlayer()`. Once the entry point is a
+    METHOD, the namespace appears in exactly one `using` line and stops being what an adopter reads.
+  - 🔴 **Every rename candidate was measured against the compiler and every one collided**, because a
+    namespace under `Shenora.` shadows a same-named TYPE for all other `Shenora.*` code (enclosing-namespace
+    members beat `using`-imported types):
+    | Candidate | Shadows | Verdict |
+    |---|---|---|
+    | `Shenora.File` | `System.IO.File` | impossible — the engine uses `File.*` throughout |
+    | `Shenora.FileSystem` | MAUI's `FileSystem` | lands in `src/Shenora.Mobile`; a permanent tax |
+    | `Shenora.Files` | the kit's own `Files` class | 27 sites, but renames a shipped public type |
+    ⚠ **`IO` collides with nothing precisely BECAUSE it is not a common type name.** The obscurity that
+    made it look like a leftover is the property that makes it safe. Adopters are unaffected either way —
+    their namespaces are not under `Shenora`.
+  - **The rule this leaves behind, which outlives the naming question:** *a capability is adopted through
+    one `Use…` call that defaults everything the kit may choose on the app's behalf.* The test for what may
+    be defaulted is **"does this change what the app is EXPOSED to?"** — journal and lock directories are
+    the app's own storage, so `UseFileSystem()` defaults them; `MediaPlayerOptions.AllowedRoots` is a
+    containment boundary, so `UseMediaPlayer()` refuses to (D58). The security line and the ergonomic line
+    are the same line, and that is now true twice.

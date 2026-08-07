@@ -16,20 +16,20 @@ public sealed class FileUpdateQueueOptions
     /// <see cref="LockInspector"/> for that half.
     /// </para>
     /// </summary>
-    public IPathLocker? Locker { get; init; }
+    public IPathLocker? Locker { get; set; }
 
     /// <summary>
     /// How long to wait for leases before giving up on an update. Default 30s. Ignored without a
     /// <see cref="Locker"/>.
     /// </summary>
-    public TimeSpan LeaseTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan LeaseTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Optional. When a change fails, the queue asks this who is holding the path and reports it in
     /// <see cref="FileUpdateResult.Holders"/> — turning "the process cannot access the file" into
     /// something an app can act on or show a user.
     /// </summary>
-    public IFileLockInspector? LockInspector { get; init; }
+    public IFileLockInspector? LockInspector { get; set; }
 
     /// <summary>
     /// Write-ahead journal, which is what makes <see cref="FileAtomicity.AllOrNothing"/> survive the
@@ -47,13 +47,13 @@ public sealed class FileUpdateQueueOptions
     /// nobody replays is a directory that fills up.
     /// </para>
     /// </summary>
-    public IFileUpdateJournal? Journal { get; init; }
+    public IFileUpdateJournal? Journal { get; set; }
 
     /// <summary>
     /// Diagnostics sink, guarded through <see cref="AppCallback.Log"/> — a throwing sink cannot take
     /// the queue down.
     /// </summary>
-    public Action<string>? Log { get; init; }
+    public Action<string>? Log { get; set; }
 }
 
 /// <summary>

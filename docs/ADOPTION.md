@@ -1041,6 +1041,20 @@ What to know before you reach for it:
 
 ## The file-update queue — for when claims are too coarse
 
+**One call, the same as the media player:**
+
+```csharp
+builder.UseFileSystem();     // journalled queue + rollback + cross-process path locks
+```
+
+Inject `IFileUpdateQueue` and you are done. The journal and lock directories default under the app's own
+data path — the kit can choose those because they change nothing the app is exposed to. ⚠ Contrast
+`UseMediaPlayer`, where `AllowedRoots` is *not* defaulted because it is a containment boundary: the test
+each time is **may the kit make this choice without changing what the app is exposed to?**
+
+`builder.UseFileSystem(x => …)` overrides anything — the defaults are applied *after* your lambda, never
+over it. The rest of this section is what the queue does and how to drive it.
+
 This is the **`Shenora.IO`** namespace, inside `Shenora.Core` — no extra package to reference. Still no
 shell/IPC/Windows dependency, and **independent of the scheduler**: usable with it, without it, or before
 you adopt it.
