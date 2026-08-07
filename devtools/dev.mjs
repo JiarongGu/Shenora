@@ -761,11 +761,11 @@ switch (cmd) {
     break;
   }
 
-  // ---- Sample-app loop (Phase 2+; see docs/ROADMAP.md). The capture/input tools below already
+  // ---- Sample-app loop. The capture/input tools below already
   // work against any process named in project.config.mjs once the sample exists.
   case 'sample': {
     const projDir = path.join(repo, ...config.sampleProject.split('/'));
-    if (!fs.existsSync(projDir)) { console.error(`sample project not created yet (${config.sampleProject}) — Phase 2, see docs/ROADMAP.md`); process.exitCode = 1; break; }
+    if (!fs.existsSync(projDir)) { console.error(`sample project not created yet (${config.sampleProject})`); process.exitCode = 1; break; }
     const env = { ...process.env };
     if (args.includes('--dev')) {
       const cdpPort = config.cdpPortBase + Math.floor(Math.random() * 500);
@@ -796,7 +796,7 @@ switch (cmd) {
 
   case 'vite': {
     const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
-    if (!fs.existsSync(webDir)) { console.error(`sample web not created yet (${config.sampleWebDir}) — Phase 2, see docs/ROADMAP.md`); process.exitCode = 1; break; }
+    if (!fs.existsSync(webDir)) { console.error(`sample web not created yet (${config.sampleWebDir})`); process.exitCode = 1; break; }
     // Install the SAMPLE's deps too (it was only ever done for the react package, so a fresh clone
     // got a bare "vite: not found" — P5.5 H5). Its @shenora/react dep is a file: link, so the
     // package must be built first or the sample resolves an empty dist.
@@ -955,7 +955,7 @@ switch (cmd) {
   case 'clean': {
     // Reclaim the BUILD OUTPUT under devtools/_* (and publish/), never the sources. Those scratch
     // folders are gitignored probes — the P6 consumers, the adoption adapters, the P7 profile
-    // proofs — and docs/ROADMAP + task-archive describe them as RE-RUNNABLE, so deleting their
+    // proofs — and they are RE-RUNNABLE, so deleting their
     // sources would quietly destroy the thing those entries point at. Their bin/obj/node_modules is
     // ~60 MB of regenerable weight and is fair game.
     //

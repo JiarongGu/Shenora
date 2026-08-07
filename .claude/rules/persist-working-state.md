@@ -13,7 +13,7 @@ lost the thread of a multi-step rebuild because progress lived only in the chat)
 - **Each kind of state has ONE home:** in-progress status / what's-next / live-run results →
   **`local/PROJECT_NOTES.md`** (private, untracked — the session-to-session file, kept current);
   load-bearing decisions + rationale → **`docs/DECISIONS.md`**; done milestones →
-  **`docs/ROADMAP.md`** (+ remove from `TASKS.md`); invariants/gotchas → **`.claude/rules|knowledge/`**
+  **the COMMIT MESSAGE** (+ delete from `TASKS.md`); invariants/gotchas → **`.claude/rules|knowledge/`**
   via `node devtools/dev.mjs knowledge new`; as-built projects/surface → **`docs/ARCHITECTURE.md`**;
   a reusable procedure → a **`.claude/skills/`** skill. Work involving the sibling repos is
   tracked from `local/PROJECT_NOTES.md` too, so one place tells the whole story.

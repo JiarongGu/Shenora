@@ -105,8 +105,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 
 - **D9 — Repo organization clones the family system**: Sonora's four-layer memory model (short
   `CLAUDE.md` → `docs/README.md` router → two-tier `.claude/rules|knowledge` with
-  `RULES_INDEX.md` → gitignored `local/`), `TASKS.md` ⇄ `docs/ROADMAP.md` conveyor,
-  plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`, design-contract doc).
+  `RULES_INDEX.md` → gitignored `local/`), plus Lyntai's library-repo docs (`DECISIONS.md`,
+  `CHANGELOG.md`).
   🔴 **Amended 2026-08-07 — there is no archive tier at all now, and the reason is worth more than the
   layout.** An archive was added on 2026-08-05 (a fix log + a closed-backlog file) and within two days
   `docs/archive/tasks.md` was the LARGEST doc in the repo at 290 KB — 62% of all doc weight was finished
@@ -175,7 +175,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   profiles, and co-browse streaming (CDP screencast frames out, human input back). Proven in two
   siblings (one's render/login/co-browse stack; another's external-login window). Ships as its
   own later package (working name `Shenora.WebView2.Sessions`, which was merged away by D37) so the
-  core hosting package stays lean — phase P5 in `docs/ROADMAP.md`.
+  core hosting package stays lean (phase P5, long since complete).
   **⚠ Scope narrowed by D39 (2026-08-03): this stack is DESKTOP-ONLY and stays that way.** Both mobile
   shells host a webview, so "port the sessions to mobile" looks obvious and is not — read D39 before
   proposing it. Built and shipped inside `Shenora.Windows` (`Sessions/`) since D37.
@@ -221,8 +221,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   as an acupoint name, and the ending echoes Sonora. Everything renamed in lockstep: packages
   (`Shenora.Core|Ipc|WebView2|WinForms`, `@shenora/react`), namespaces and `Shenora*` type
   names, repo files/docs/rules. Because the rename predates any release or remote, history was
-  restarted as a single bootstrap commit rather than rewritten — the per-phase narrative lives
-  in `docs/ROADMAP.md` `## Done` (the durable record by design), and the pre-rename history is
+  restarted as a single bootstrap commit rather than rewritten — the per-phase narrative is in
+  `git log` and `CHANGELOG.md`, and the pre-rename history is
   kept privately offline. The former name stays out of tracked files and commit messages
   permanently (same discipline as the private sibling names, `sensitive-info`).
 

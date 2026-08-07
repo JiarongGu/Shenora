@@ -194,7 +194,7 @@ had "0.3.0 PUBLISHED (2026-08-01)" typed into a heading by hand.
 
 So (owner, 2026-08-02):
 
-- **Design docs, `DECISIONS.md`, `ARCHITECTURE.md`'s body and `ROADMAP.md` mark time with DATES.**
+- **`DECISIONS.md` and `ARCHITECTURE.md`'s body mark time with DATES.**
   "2026-08-02 — the mission layer", not "0.3.0 — the mission layer".
 - **`CHANGELOG.md` is where work meets a version number**, because that is the release-facing log and
   the workflow stamps its heading.

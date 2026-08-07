@@ -224,12 +224,12 @@ cleanup that removes work silently is worse than one that never runs. Override o
 
 Why: captures are gitignored, transient, and cost a keystroke, so the folder only grows — 53 files /
 7.5 MB by v0.1.0, and no doc referred to any of them. Evidence in this repo is recorded as NUMBERS
-and prose (ROADMAP, FIX-LOG), never as a PNG.
+and prose (commit messages), never as a PNG.
 
 ## Scratch folders (`devtools/_*`)
 
-Gitignored probes — the P6 consumers, the adoption adapters, the P7 profile proofs. `docs/ROADMAP.md`
-describes them as RE-RUNNABLE, so `clean` removes only their regenerable
+Gitignored probes — the P6 consumers, the adoption adapters, the P7 profile proofs. They are
+RE-RUNNABLE, so `clean` removes only their regenerable
 build output and leaves the sources; `--all` is the opt-in destructive reading. (Verified: after a
 `clean` that reclaimed ~60 MB, the profile probe still rebuilt from source and passed.)
 

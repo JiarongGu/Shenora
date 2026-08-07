@@ -23,7 +23,7 @@ the rules — it routes you to them and flags what's already settled.
 > are in git if you need the detail.
 >
 > 1. **The P0–P5 review** (at `130d4cd`) — ~60 findings, executed as batches H1–H8 and now closed;
->    summarised in `docs/ROADMAP.md` `### P5.5`.
+>    summarised in `CHANGELOG.md`.
 > 2. **The whole-codebase review** (2026-08-01, before 0.2.0 was published).
 > 3. **The design pass** (2026-08-01, same day, prompted by the direction above). Its four verdicts are
 >    settled; D24 records the rejection. Don't re-open them without new evidence.
@@ -94,9 +94,9 @@ hooks rather than the product, and every public type is named for its MECHANISM 
 **D37** (ONE shell package per PLATFORM — do not propose re-splitting `Shenora.Windows`, and read the
 measurements that killed the counter-arguments first); **D47** (while one repo fully adopts, the kit
 prefers the correct shape to the compatible one and ships no `[Obsolete]` aliases — so a break with a
-CHANGELOG migration is not a finding); and **D48** (the optional feature packages hang OFF Core).
+CHANGELOG migration is not a finding); and **D55** (there is no optional feature tier — one whole).
 As-built map + full public surface: `docs/ARCHITECTURE.md`. Narrative of what changed and how it was
-verified: `docs/ROADMAP.md` `## Done`.
+verified: `CHANGELOG.md`.
 
 ## 2. What exists (commit-by-commit)
 
@@ -109,8 +109,8 @@ verified: `docs/ROADMAP.md` `## Done`.
 | `4ebb8e0` | P5 | `Shenora.Windows`: session browser, render-session pool, login windows, co-browse streaming |
 
 ⚠ **That table stops at P5 and is kept for the bootstrap history only.** Everything after it — the
-mission layer, the mobile shells, media, file dialogs, the `Shenora.IO` split — is narrated in
-`docs/ROADMAP.md` `## Done` (newest first), which is the list to read for "what exists".
+mission layer, the mobile shells, media, file dialogs, the IO fold — is narrated in `CHANGELOG.md`
+(newest first), which is the list to read for "what exists".
 
 Layout: `src/` (8 packable projects + `Shenora.React/` + `Shenora.Mobile/`, which is SOURCE with no
 csproj, compiled into both mobile packages), `tests/Shenora.Tests` (one project, folders
@@ -193,7 +193,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 - `PayloadHelper` is static; `IpcResponse.category` is lowercase; notifications are always batched —
   all documented deviations from the source shapes.
 
-**P5 phase-review findings already fixed** (full list in `docs/ROADMAP.md` P5-close entry): the
+**P5 phase-review findings already fixed** (full list in `git log`): the
 foreground/background controller split (hold-close no longer vetoes `Application.Exit`); pool
 init-failure/dispose leaks; a `SemaphoreSlim.Dispose()`-races-cancelled-waiter hang
 silent-refresh ownerless modal; loading-splash fallback; drag button state;

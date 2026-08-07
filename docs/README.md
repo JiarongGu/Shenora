@@ -31,7 +31,7 @@ update the relevant entry HERE — this file is the durable index.
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
 | Picking the next piece of work | `TASKS.md` (root — OPEN only, in the owner's work order) |
 | Why a FINISHED decision was made that way | `docs/DECISIONS.md` — and if it is not there, `git log`. There is no closed-backlog file (deleted 2026-08-07) |
-| What shipped already / verifying history | `docs/ROADMAP.md` `## Done`, `CHANGELOG.md` |
+| What shipped already / verifying history | `CHANGELOG.md`, then `git log` |
 | Reviewing the codebase (full/whole-tree review) | `docs/REVIEW-GUIDE.md` (orientation: invariants by area, risk hotspots, settled decisions, coverage map) |
 | Extracting code from a sibling app | `.claude/knowledge/extraction-sources.md` (tracked, de-identified) + `local/EXTRACTION-MAP.md` (private, named) |
 | Keeping the library generic | `.claude/knowledge/generic-library.md` |
@@ -67,7 +67,6 @@ update the relevant entry HERE — this file is the durable index.
 |---|---|---|
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
-| `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |
 | `ADOPTION.md` | The staged adoption guide for an existing app: order, primitive-by-primitive mapping, migration traps, and the permanent "stays yours" list | Keep in sync with the public surface |
 | `RELEASING.md` | How releases are cut and consumed pre-release | Keep in sync with reality |
 | `REVIEW-GUIDE.md` | Orientation for a whole-codebase review: invariants by area, risk hotspots, settled decisions, coverage map | Keep in sync with reality |

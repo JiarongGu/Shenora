@@ -15,7 +15,7 @@ repo: it readies the LIBRARY and writes `docs/ADOPTION.md`; the adopting app's o
    a green gate that wasn't looking at the samples is how the P0–P5 latent defects passed five
    reviews.
 3. **Review** with `/phase-review` — an adversarial pass over the whole diff → fix the real findings
-   → sync docs (`ARCHITECTURE`/`ROADMAP`/`TASKS`/`CHANGELOG`) and rules → then commit.
+   → sync docs (`ARCHITECTURE`/`TASKS`/`CHANGELOG`) and rules → then commit.
 4. **Commit only on explicit user approval.** One commit per logical change; never fold a security
    fix into a structural refactor to honour "one commit".
 

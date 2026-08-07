@@ -68,7 +68,7 @@ export default {
   /** Pack output (gitignored). */
   packagesDir: 'publish/packages',
 
-  // ---- Sample-app desktop loop (wired in Phase 2; see docs/ROADMAP.md) ----
+  // ---- Sample-app desktop loop ----
   /** Sample desktop project — `sample` runs it; capture/input tools target its process. */
   sampleProject: 'samples/Shenora.Sample.Desktop',
   processName: 'Shenora.Sample.Desktop',
@@ -79,7 +79,7 @@ export default {
    *
    * They are gitignored, transient verification artifacts and capture is cheap, so without a cap
    * they only ever grow — 53 files / 7.5 MB by the first release, and no doc referenced any of
-   * them, because evidence here is recorded as NUMBERS and prose (ROADMAP, FIX-LOG), never as a
+   * them, because evidence here is recorded as NUMBERS and prose (commit messages), never as a
    * PNG. Raise it if you are mid-investigation and want a longer trail; `--keep N` overrides once.
    */
   shotRetention: 24,

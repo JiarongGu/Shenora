@@ -3,8 +3,7 @@
 **This file holds OPEN tasks only.** Once a task is fully done (committed + verified) its entry is
 **DELETED**, not checked off in place — so the length of this file is the size of the remaining work,
 which is the whole point of looking at it. Git is the archive (2026-08-07).
-`docs/ROADMAP.md` `## Done` is the narrative of what shipped and why; `CHANGELOG.md` is the
-release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
+`CHANGELOG.md` is the release-facing log of what shipped and why. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
 
 ⚠ **An entry is either OPEN or GONE — never annotated `DONE` in place.** This rule was broken twice on
@@ -20,7 +19,7 @@ live in `CHANGELOG.md`; the current package set is the table at the top of `docs
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
-> SHIPPED is `CHANGELOG.md` and `docs/ROADMAP.md`. The three items below are honest about what is not
+> SHIPPED is `CHANGELOG.md`. The three items below are honest about what is not
 > done: one is a KNOWN unrepaired defect whose next step is a measurement, one is deliberately WAITING on
 > an adopter's harvest (D15 working as intended, not a stall), and one needs a physical device.
 
@@ -492,3 +491,21 @@ committed by the file itself. They are prose now, and they never "complete":
   only stage that touches every module"* — and what justified adopting a kit at all was naming the
   specific bugs a hand-rolled shell tends to have (the DPI-mis-scaled `Screen.WorkingArea` restore;
   `CloseReason.UserClosing` firing for a programmatic `Close()`). Write new stages the same way.
+
+---
+
+## Later / candidates — deliberately NOT built, kept so the decision is not re-argued
+
+Moved here 2026-08-07 when `docs/ROADMAP.md` was deleted; growth is harvest-driven (D15) and
+adoption-driven, so "next" is not a phase.
+
+- **`Shenora.Hosting.AspNetCore`** (SPA static policy, loopback-gated endpoint helpers) — D10.
+- **A mobile transport adapter** speaking the same IPC envelope — D16. The decision point is unchanged
+  (first real mobile adoption), and the .NET-side surface such a shell would implement is enumerated
+  rather than hypothetical: D20's portable contracts in `Shenora.Core` (`IUiDispatcher`, `IFileDialogs`,
+  `IClipboardService`, `IUrlLauncher`, `IUiInteraction`). D16 covers the transport seam, D20 the feature
+  seams; neither ships an implementation until there is a consumer.
+- **Contract codegen (C# ⇄ TS)** — out of initial scope; revisit after adoption feedback. ⚠ Related but
+  distinct: the C#→Swift generator for Live Activities, which is blocked on the devkit's device defect.
+- **Harvest-promotions from ongoing app development** (D15) — anything proven in a sibling gets
+  generalised and lands here as a task before shipping in a minor.

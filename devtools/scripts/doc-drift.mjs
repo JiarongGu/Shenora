@@ -107,7 +107,11 @@ const RETIRED_FILE = path.join(repo, 'devtools', 'retired-names.txt');
 // encodes, so a new archive file is exempt the moment it is created instead of tripping the gate
 // until someone remembers to extend a regex.
 const HISTORY_BY_DEFINITION =
-  /^(devtools\/retired-names\.txt|CHANGELOG\.md|docs\/ROADMAP\.md)$|^docs\/archive\//;
+  // ⚠ Only CHANGELOG.md and the retired-names list remain. `docs/ROADMAP.md` and `docs/archive/` were
+  // both DELETED on 2026-08-07 — and their presence here is what made them deletable: a file the drift
+  // gate treats as history-by-definition is, by the repo's own definition, an archive. That is a useful
+  // test to apply to the next doc that wants an exemption.
+  /^(devtools\/retired-names\.txt|CHANGELOG\.md)$/;
 
 /** `Name  # why it went` per line; blank lines and `#` comments ignored. */
 function retiredNames() {
