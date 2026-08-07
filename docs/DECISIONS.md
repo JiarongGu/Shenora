@@ -2379,3 +2379,19 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     means the page is told *this is taking a while* at roughly the moment that becomes true. A
     declaration-based design cannot get that right, because the module author has to guess at authoring
     time what only the clock knows at run time.
+
+  - 🔴 **THE RESPONSE IS NEVER DELAYED. The grace window suppresses NOTIFICATIONS, never the answer.**
+    (Owner, 2026-08-08: *"request completed within grace window should emit the last response
+    immediately so we don't get blocked by grace period"*.) A 5 ms request answers at 5 ms and the page
+    sees exactly one thing — the response. A 500 ms request answers at 500 ms AND gets a `running`
+    notification at the first flush boundary. **Safe by construction today and worth keeping that way:**
+    `NotificationPump.Enqueue` takes an `IpcNotification` and the file has ZERO references to
+    `IpcResponse`, so the two paths cannot be confused by accident. ⚠ Anyone building the grace period
+    by parking the RESPONSE has inverted it — that would add latency to every fast call in the app to
+    save a notification nobody would have seen.
+  - **The window is one knob and it is already public.** `FlushInterval` is an option, so an app wanting
+    a more fluent feed lowers it — and because the grace period IS that window, lowering it shortens the
+    "taking a while" threshold at the same time. That coupling is correct rather than incidental: an app
+    that wants snappier progress also wants its spinner sooner. ⚠ The trade is the one the option
+    already documents — *"a busy backend can fire hundreds of events a second, and one batched drain
+    beats hundreds of round trips"* — so lowering it buys fluency with IPC volume.
