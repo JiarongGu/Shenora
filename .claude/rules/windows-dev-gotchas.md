@@ -8,6 +8,17 @@
   (2026-08-05); the same script's five-pair target stayed nested and was correct, so more than one case
   hides it. **Bulk text edits go through the Edit tool**; if scripted, `git diff --numstat` before moving
   on — the tell is a diff far larger than the edit.
+- 🔴 **`node -e "…"` in bash EATS every backtick — and it has now bitten FIVE times.** A JS template
+  literal, or any `` `code span` `` inside a string being written to a doc, is command-substituted by the
+  shell and vanishes. The damage is silent and reads as prose that merely lost a word: the 5th one wrote
+  an adopter-facing CHANGELOG migration note with `NO_HANDLER`, `NO_ROUTE` and `@shenora/react` all
+  deleted, plus two bullets run together. **Write the file with the Edit/Write tool.** If it must be
+  scripted, put the script in a `devtools/_*.mjs` FILE (a quoted heredoc, `<<'EOF'`, is safe) and delete
+  it after — never `node -e`.
+  ⚠ **`git diff --numstat` is the SECOND line of defence, not the first.** It caught this one, which is
+  the only reason it did not ship — but by then the damage is written, and on a large diff the anomaly
+  is easy to miss. The counter is in this rule because it lived in a private notes file for its first
+  four occurrences and so protected nobody.
 - **Undo a sabotage with the SAME tool that applied it (Edit/Write), then confirm GREEN.** Both
   restore shortcuts lie, and both were hit live in one session: `Move-Item`/`Copy-Item` preserve
   `LastWriteTime`, so the restored file can be older than the assembly built from the sabotage and
