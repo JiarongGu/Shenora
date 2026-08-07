@@ -100,19 +100,36 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
   `BaseFacade` sat in a package Core may not reference.
 - [x] ~~The main package was RENAMED to `Shenora`~~ — DONE (`adeab6f`). 230 files, 1484 → 1484, empty
   both ways.
-- [ ] **Restructure the folders to the three layers**, and move each feature's IPC module out of the IPC
-  core to sit with its feature. `MediaPlayerFacade` is the last hold-out of the wrong shape —
-  `AddMessageDispatcher` still names it, which is a core knowing a feature.
-- [ ] **Split `Files/`** — atomic replace, path claims, locks and the journaled queue are LOGIC;
-  `UpdateManifest`/`UpdateStage`/`Compression/` are the app-UPDATE feature (its platform half is the
-  native `Launcher`, D50).
-- [ ] **`FileDialogFacade` + `OperationsFacade` register themselves** once they live with their features.
-  ⚠ Defaulting operations from `AddMessageDispatcher` was tried and reverted — `OperationRegistry` needs
-  `IEventBus`, which the IPC core cannot assume. The comment at the site says so; do not retry it there.
-- [ ] **`UseWinForms()` → `UseWindows()`, `UseMobile()` → `UseAndroid()`/`UseIOS()`** (from D64). ⚠ Splits
-  the shared mobile API baseline; accepted, revisit with the build toolkit.
-- [ ] **Rewrite `Shenora.Sample.Desktop`'s composition — the ACCEPTANCE TEST.** When its hand-written
-  `MissionScheduler`/`FileUpdateQueue`/`AddShenora*` block is gone, D64+D65 have landed.
+- [x] ~~Layer folders + each feature owning its IPC module~~ — DONE (`c5b6183`). Zero API impact.
+- [x] ~~Split `Files/`~~ — DONE. Logic keeps the queue and its primitives; the update story is a feature.
+- [x] ~~Shell entry points named for the platform~~ — DONE (`0d6664a`).
+- [x] ~~Delete the sample's framework composition — THE ACCEPTANCE TEST~~ — DONE (`4832840`), and proven
+  by RUNNING it: *"mission scheduler ready (global lane capacity 4, scopes: 1)"* means the app's config
+  reached a scheduler it never registered.
+
+**🔴 WHAT REMAINS OF D65 — the two facades that still need a platform to satisfy them:**
+
+- [ ] **`FileDialogFacade` is registered by each SHELL, which is right, but nothing proves it.** There is
+  no test that a built Windows/mobile app answers `SHENORA.DIALOGS` — the media one got
+  `The_media_module_answers_through_the_DEFAULT_wiring_with_no_app_registration` and this did not.
+  Same D63 shape: a default with no test is indistinguishable from no default.
+- [ ] **Real `IMediaPlayer` on Windows (Media Foundation) and Android (ExoPlayer)** — D64's *"implement
+  it where the platform CAN, refuse only where it cannot"*. Both are absent today, so both platforms
+  silently fall back to `<video>`, which is the outcome D54 exists to remove.
+
+### Pre-existing sample failures, attributed 2026-08-08 and NOT from the rewire
+
+Both reproduce identically at the pre-rewire commit (stash → **rebuild** → run; stashing sources alone
+runs the new assemblies against old sources and proves nothing):
+
+- [ ] **`PLAYBACK SESSION: FAIL — the OS never reported our title`**, with the read-back throwing a bare
+  `COMException`. `WindowsPlaybackSession` publishes to SMTC and the read-back cannot confirm it. Now
+  Playing was verified on all three shells at 0.9.0, so this is either an environment/timing regression
+  or the probe is asking too early. ⚠ The empty exception message is itself a finding — the probe reports
+  `[read-back threw COMException: ]` and says nothing about WHY.
+- [ ] **`RenderProcessExited (reason: Crashed)` on the desktop sample**, twice per run, recovered by the
+  host's own reload (1/3) — so the recovery path works and is worth keeping. The crash itself is not
+  explained.
 
 ⚠ **After ANY rename sweep in this work: READ THE DIFF.** Three instances of "a thing is not itself" from
 D37's 2026-08-02 merge survived every review until the D65 sweep surfaced them, because `doc-drift` is
