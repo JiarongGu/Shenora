@@ -263,6 +263,38 @@ Shenora.slnx
   is shared in `src/Directory.Build.props`; each csproj adds only `PackageId` + `Description`.
 - Central package management: `src/Directory.Packages.props` (root file is an import shim).
 
+## The subsystems, and what KIND each one is
+
+Written 2026-08-07 after the owner asked for the list — *"IPC, Queue/Mission, Media, FileSystem (include
+dropzone?)"*. Naming them exposed that they are not four peers, and that the answer to the DropZone
+question is "no, it is a different category". **Four kinds, not one list:**
+
+| Kind | What it is | Members | How an adopter reaches it |
+|---|---|---|---|
+| **Host** | the application object, its lifecycle and the things every app needs | builder · runner · `ShenoraPaths` · `ShenoraEnvironment` · `IEventBus` · `AppCallback` | `ShenoraApplication.CreateBuilder(…)` |
+| **Shell** | one per PLATFORM; picks who owns the UI loop | `UseWinForms` · `UseMobile` · `UseHeadless` | exactly one, at startup |
+| **Engines** | portable logic with no platform code — the kit's own algorithms | **Missions** (`Missions/`) · **Media** (`Media/`) · **File system** (`Files/`) | one `Use…` call each |
+| **Shell capabilities** | "can this platform do X?" — a portable contract, an implementation per shell | dialogs · clipboard · **drop zones** · tray/windows · `IPlaybackSession` · `ILiveActivities` · safe area · `IUrlLauncher` · `IUiDispatcher` · `IFileLockInspector` · `IMediaCapability` | injected; registered BY the shell |
+
+- 🔴 **DropZone is NOT a peer of the other three — it is a shell capability**, and that is why it has no
+  folder and no `Use…` call. It is a `ShellCapability` declaration + an IPC module + a React hook
+  (`useDropZone`), with the real work in `Shenora.Windows`' overlay. Ask of anything proposed as a
+  subsystem: **does it have portable LOGIC of its own, or is it a platform ability the kit is exposing?**
+  Drop zones are the second. So are clipboard, dialogs and Now Playing.
+- **The engines are the answer to "what does .NET do that React cannot" (D54)** — they are where the kit's
+  own thinking lives, and each is a few thousand lines of portable code the page could not run.
+  ⚠ **All three now register the same way** (`UseMissions` · `UseMediaPlayer` · `UseFileSystem`), which
+  they did not until this pass: missions still made an adopter write `new MissionScheduler(options)` while
+  the other two had one-call registration. Three engines, three ways in, was the inconsistency that naming
+  them found.
+- **There are exactly TWO middleware pipelines, and they share an idiom on purpose** —
+  `IMessageDispatcher` for messages (`UseRoute`/`UseModule`/`UseLogging`/`UseErrorHandler`/`UseScopedRouter`)
+  and `IWebViewInterceptor` for resources (`UseFiles`/`UseMediaConversion`/`UseSegmentStream`/`UseMediaPlayer`).
+  ⚠ **The split between them is the D62 line: messages carry INTENT, resources carry BYTES.** A media file
+  has never travelled through the message pipe, which is why a binary IPC envelope would not speed up media.
+- **IPC is its own PACKAGE** (`Shenora.Ipc`), not a Core folder, because it is the one subsystem a
+  server-backed app might take without a shell at all (D10).
+
 ## Public surface
 
 Gated by the API-surface baseline tests (`tests/Shenora.Tests/Api/Baselines/*.txt` — tracked;

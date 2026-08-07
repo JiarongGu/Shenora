@@ -302,13 +302,13 @@ sealed class Shenora.Core.MissionScheduler : Shenora.Core.IMissionScheduler, Sys
   public void Reevaluate()
 sealed class Shenora.Core.MissionSchedulerOptions
   public .ctor()
-  public Shenora.Core.IMissionPolicy? Policy { get; init; }
-  public Shenora.Core.IMissionQueueStore? QueueStore { get; init; }
-  public System.Action<string>? Log { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IClaimScope> Scopes { get; init; }
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IMissionObserver> Observers { get; init; }
-  public System.Func<Shenora.Core.MissionRecord, Shenora.Core.RecoveryPolicy>? RecoveryPolicyFor { get; init; }
-  public int? GlobalLaneCapacity { get; init; }
+  public Shenora.Core.IMissionPolicy? Policy { get; set; }
+  public Shenora.Core.IMissionQueueStore? QueueStore { get; set; }
+  public System.Action<string>? Log { get; set; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IClaimScope> Scopes { get; set; }
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.IMissionObserver> Observers { get; set; }
+  public System.Func<Shenora.Core.MissionRecord, Shenora.Core.RecoveryPolicy>? RecoveryPolicyFor { get; set; }
+  public int? GlobalLaneCapacity { get; set; }
 struct Shenora.Core.MissionSchedulerState : System.IEquatable<Shenora.Core.MissionSchedulerState>
   public .ctor(int Pending, int Running)
   public bool Equals(Shenora.Core.MissionSchedulerState other)
@@ -338,6 +338,8 @@ sealed class Shenora.Core.MissionStep : System.IEquatable<Shenora.Core.MissionSt
   public static bool op_Inequality(Shenora.Core.MissionStep? left, Shenora.Core.MissionStep? right)
   public string Name { get; init; }
   public void Deconstruct(out string Name, out System.Func<Shenora.Core.MissionExecution, Shenora.Core.IMissionChainContext, System.Threading.CancellationToken, System.Threading.Tasks.Task> Run, out System.Collections.Generic.IReadOnlyList<Shenora.Core.MissionClaim>? Claims, out Shenora.Core.RetryPolicy? Retry)
+static class Shenora.Core.Missions.MissionExtensions
+  public static Shenora.Core.ShenoraApplicationBuilder UseMissions(Shenora.Core.ShenoraApplicationBuilder builder, System.Action<Shenora.Core.MissionSchedulerOptions>? configure = null)
 sealed class Shenora.Core.NestedClaimScope : Shenora.Core.IClaimScope
   public .ctor(string name, char separator, bool ignoreCase = false)
   public bool Conflicts(string normalizedA, string normalizedB)
