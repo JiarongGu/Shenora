@@ -109,13 +109,18 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 
 **🔴 WHAT REMAINS OF D65 — the two facades that still need a platform to satisfy them:**
 
-- [ ] **`FileDialogFacade` is registered by each SHELL, which is right, but nothing proves it.** There is
-  no test that a built Windows/mobile app answers `SHENORA.DIALOGS` — the media one got
-  `The_media_module_answers_through_the_DEFAULT_wiring_with_no_app_registration` and this did not.
-  Same D63 shape: a default with no test is indistinguishable from no default.
+- [x] ~~`FileDialogFacade`'s default wiring had no test~~ — DONE.
+  `UseWindows_registers_the_dialog_ROUTE_so_a_page_can_reach_it` drives a fake `IFileDialogs` end to end
+  (registration → mapping → facade → service), sabotage-verified against the shell's registration line.
 - [ ] **Real `IMediaPlayer` on Windows (Media Foundation) and Android (ExoPlayer)** — D64's *"implement
   it where the platform CAN, refuse only where it cannot"*. Both are absent today, so both platforms
   silently fall back to `<video>`, which is the outcome D54 exists to remove.
+- [ ] 🔎 **"No such MODULE" and "no such ROUTE in a module" are indistinguishable on the wire.**
+  `BaseFacade.UnknownType` and the dispatcher's terminal both answer `NO_HANDLER` with the same
+  `module`/`type` parameters — so an adopter debugging a page cannot tell "I never registered that
+  facade" from "I typo'd the route", which are opposite fixes. Found while writing the test above, whose
+  first version tried to use exactly that distinction as its probe. ⚠ Cheap to fix (a distinct code from
+  the terminal) but it IS wire surface, so it belongs under `### Breaking`.
 
 ### Pre-existing sample failures, attributed 2026-08-08 and NOT from the rewire
 
