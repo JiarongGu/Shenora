@@ -1,6 +1,9 @@
 #if IOS
 using System.Runtime.InteropServices;
 #endif
+// For MediaCapabilityExtensions. An extension method needs the NAMESPACE imported — naming the interface
+// fully-qualified below is not enough, which is what the first build of this file discovered.
+using Shenora.Media;
 
 namespace Shenora.Sample.Maui;
 
@@ -199,4 +202,53 @@ internal static class CodecProbe
 
     /// <summary>What the whole probe is for, in one greppable line.</summary>
     public static string Question => $"[CODEC] the question: can this device DECODE {string.Join('/', Interesting)}?";
+
+    /// <summary>
+    /// Cross-check the KIT's <see cref="Shenora.Media.IMediaCapability"/> against what this probe asked the
+    /// platform directly.
+    ///
+    /// <para>
+    /// 🔴 <b>Two independent routes to the same fact, which is the only reason this is worth running.</b>
+    /// The probe above queries `MediaCodecList`/AudioToolbox itself; the kit's implementation does its own
+    /// query behind a portable contract. If they agree, the contract is carrying the truth. If they
+    /// disagree, one of them is inventing — and a capability set that is confidently wrong is worse than
+    /// none, because the planner will act on it.
+    /// </para>
+    /// <para>
+    /// ⚠ This is NOT the "a sample answering a question a second way cannot detect the kit stopped
+    /// answering it" trap: there the page had a FALLBACK that masked the kit's silence. Here neither route
+    /// feeds the other, and disagreement is the whole signal.
+    /// </para>
+    /// </summary>
+    public static void CrossCheck(Shenora.Media.IMediaCapability device, Action<string> log)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(log);
+
+        try
+        {
+            log($"[CODEC] kit decode audio: {string.Join(' ', device.DecodableAudio.OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit encode audio: {string.Join(' ', device.EncodableAudio.OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit decode video: {string.Join(' ', device.DecodableVideo.OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit encode video: {string.Join(' ', device.EncodableVideo.OrderBy(n => n, StringComparer.Ordinal))}");
+
+            // AAC is the control here for the same reason it is one above: every target decodes it, so a
+            // "no" means the contract is broken rather than that the device lacks it.
+            if (!device.DecodableAudio.Contains("aac"))
+            {
+                log("[CODEC] ⚠ CROSS-CHECK INCONCLUSIVE — the kit reports no AAC decoder, which cannot be "
+                    + "true on any target. Treat the sets above as unmeasured.");
+                return;
+            }
+
+            log($"[CODEC] kit says ac3 repairable={device.CanRepairAudio("ac3")} "
+                + $"eac3 repairable={device.CanRepairAudio("eac3")}");
+            log("[CODEC] CROSS-CHECK: compare the four 'kit' lines against the platform lines above — "
+                + "they are independent queries and must agree.");
+        }
+        catch (Exception ex)
+        {
+            log($"[CODEC] cross-check failed: {ex.GetType().Name}");
+        }
+    }
 }

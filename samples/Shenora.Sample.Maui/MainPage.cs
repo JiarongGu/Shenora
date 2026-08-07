@@ -192,6 +192,9 @@ public sealed class MainPage : ContentPage
 		// support is vendor-declared) and therefore has to be re-askable on whatever hardware turns up.
 		MauiProgram.Log(CodecProbe.Question);
 		CodecProbe.Run(MauiProgram.Log);
+		// And the KIT's answer to the same question, from DI, so the two independent queries can be
+		// compared. A contract that disagrees with the platform is worse than no contract.
+		CodecProbe.CrossCheck(services.GetRequiredService<Shenora.Media.IMediaCapability>(), MauiProgram.Log);
 
 		// The live status surface. Fire-and-forget with a GUARD, never a bare async void — same rule as
 		// the media staging above.
