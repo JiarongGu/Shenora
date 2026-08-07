@@ -98,7 +98,8 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 - [x] ~~`Shenora.Ipc` folds in~~ — DONE (`9a98d12`). Proven pure: 1172 + 312 = 1484, set difference empty
   both ways. **This is what unblocked the rest** — a feature could not own its IPC module while
   `BaseFacade` sat in a package Core may not reference.
-- [x] ~~`Shenora.Core` → `Shenora`~~ — DONE (`adeab6f`). 230 files, 1484 → 1484, empty both ways.
+- [x] ~~The main package was RENAMED to `Shenora`~~ — DONE (`adeab6f`). 230 files, 1484 → 1484, empty
+  both ways.
 - [ ] **Restructure the folders to the three layers**, and move each feature's IPC module out of the IPC
   core to sit with its feature. `MediaPlayerFacade` is the last hold-out of the wrong shape —
   `AddMessageDispatcher` still names it, which is a core knowing a feature.
