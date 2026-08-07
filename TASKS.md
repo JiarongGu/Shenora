@@ -204,7 +204,41 @@ decoder/encoder just if they needed, and we built something that can work by def
 - **`IMediaStreamConversion`** — the transcode tier: picture copied untouched, soundtrack through the
   device's codecs. Plus **Android's implementation** (chained `MediaCodec` decoder → AAC encoder).
 
-- [ ] **What remains, and the second item is the one that matters.**
+### 🔴 THE NEXT THING: a playback LIFECYCLE in .NET — read D54 first (2026-08-07)
+
+> DIRECTION (owner, 2026-08-07): *"our goal is to make web player as good as a regular player, which is
+> th[e] a[r]chitecture lack of, and if the consumer want to build a proper player, we can support that with
+> proper life cycles of media play in .net code (which is more capable than js for this kind [of] work)"*
+> — and on ffmpeg: *"its too big, and its too much for what we want to achieve"*.
+
+**This reframes the media work.** It had been drifting toward "make the webview play more", which is a
+treadmill whose ceiling is still the webview. The gap is that **the PAGE owns playback and should not**.
+
+- [ ] **`IMediaPlayer` (or whatever it ends up called) — the host plays, the page drives.** Load, play,
+  pause, seek, rate, position, ended, error, implemented per platform (AVPlayer · ExoPlayer/MediaPlayer ·
+  Media Foundation) and reported over the existing IPC.
+  - **Start with iOS**, because that is where the gap is provable: a `<video>` cannot play backgrounded at
+    all there, and a native player can. Android next, then Windows.
+  - **Wire it to `IPlaybackSession`** so Now Playing reports the player's own state rather than something
+    the page separately claims — today the two can disagree and nothing reconciles them.
+  - ⚠ **Does not delete the translation layer, it BOUNDS it.** `Mp4Remuxer` and the conversion pipeline
+    stay for apps serving files to a `<video>`; what changes is that they stop being the answer to "the
+    webview cannot play this".
+  - ⚠ **And it bounds segmentation:** a native player opens the file directly, so the kit ships no default
+    segmenter. `ISegmentEngine` stays the seam for progressive streaming, with the sibling's five traps
+    recorded against it (below) rather than designed around.
+
+- **The five traps a sibling paid for, kept because any segmenter must answer them** (their hand-off spec,
+  2026-08-06 — two are FIXED in the kit as of 2026-08-07, three belong to work not yet done):
+  | trap | state |
+  |---|---|
+  | the output filename picks the muxer (`.m4a.tmp` → refuses before writing) | ✅ FIXED — `MediaConversionRequest.Container` |
+  | cache tenancy is two things; iOS purges `Library/Caches` | ✅ FIXED — both `CacheRoot`s document it |
+  | a purged cache dir 503s forever | ⚠ documented; re-create per restart is still the app's to do |
+  | `-c copy` cannot hit a fixed grid, so a synthetic manifest is illegal | open — segmentation only |
+  | the last `#EXTINF` is not full-length; a scrub bar seeks past the end | open — segmentation only |
+
+- [ ] **What remains of slice 4, and the second item is the one that matters.**
   - **iOS's `IMediaStreamConversion`** (`AudioConverter`, chained the same way). Registered on Android only
     today; a shell without one gives container repair plus an honest refusal, which is why absence beats a
     stub that lies. ⚠ iOS is the platform that CAN decode AC-3, so this is where the tier pays off.

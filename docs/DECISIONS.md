@@ -1691,3 +1691,56 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **What is NOT claimed:** that fewer packages is better in general. `Shenora.IO` stays split, and the
     next feature is judged on the same question — *is this shell work, or is it something only some apps
     do?* — rather than on package count.
+
+- **D54 — the goal is a WEB PLAYER AS GOOD AS A NATIVE ONE, and the way there is a playback LIFECYCLE in
+  .NET — not a bigger translation layer.** (Owner, 2026-08-07: *"our goal is to make web player as good as
+  a regular player, which is th[e] a[r]chitect[ure] lack of, and if the consumer want to build a proper
+  player, we can support that with proper life cycles of media play in .net code (which is more capable
+  than js for this kind [of] work)"*.)
+  - **What this REPLACES as the plan.** The media work had been drifting toward "make the webview able to
+    play more" — translate every container, transcode every soundtrack, and eventually segment for HLS.
+    That is a treadmill: each format the `<video>` element refuses becomes another thing the kit converts,
+    and the ceiling is still whatever the webview can do. **The ceiling is the problem, not the formats.**
+  - 🔴 **The architectural gap, stated plainly: the PAGE owns playback and it should not.** Today an app
+    puts a `<video src>` in its React tree and the host only serves bytes. Everything a real player does
+    beyond that is either impossible or awkward, and today's device work measured three of them:
+    - **Background playback.** iOS PAUSES a `<video>` the moment the app leaves the foreground — the video
+      track cannot render. A native player is not subject to that.
+    - **The system surfaces.** `IPlaybackSession` already publishes Now Playing, but it is publishing
+      ABOUT something the page is doing, so the two can disagree and nothing reconciles them.
+    - **Formats.** Anything the webview cannot decode needs a whole translation layer to work around a
+      decoder the platform already has.
+  - **So the seam to ship is a PLAYER lifecycle the host owns and the page drives** — load, play, pause,
+    seek, rate, position, ended, error — implemented per platform (AVPlayer, ExoPlayer/MediaPlayer, Media
+    Foundation) and reported back over the existing IPC. The page stays the UI, which is what React is
+    good at; .NET does the playing, which is what it is good at. That is the same division the kit already
+    makes everywhere else — the page asks, the shell does the platform work.
+  - ⚠ **This does NOT delete the translation layer, it BOUNDS it.** `Mp4Remuxer` and the conversion
+    pipeline stay: an app serving files to a `<video>` is still a legitimate and common shape, and
+    container repair costs nothing. What changes is that the translation layer stops being the answer to
+    *"the webview cannot play this"* — the answer to that is a player that can.
+  - ⚠ **And it bounds the segmentation work specifically.** HLS segmentation existed to feed a webview a
+    format it would accept, piece by piece. A native player opens the file directly, so the kit does not
+    need a segmenter to reach the same outcome. `ISegmentEngine` stays as the seam for an app that wants
+    progressive streaming; the kit does not ship a default segmenter, and the five traps a sibling paid
+    for stay recorded against that seam rather than being designed around.
+  - **The scope test is unchanged and this passes it hard** (D52): *does a React+C# app fail without it?*
+    A media app on iOS cannot play in the background at all today, which is the failure users notice most.
+  - **NOT ffmpeg, and not for licence reasons alone** (owner, same message): *"its too big, and its too
+    much for what we want to achieve"*. Every platform already ships a capable player; the work is exposing
+    its lifecycle portably, not shipping a second implementation of one (D51 also forbids the bytes).
+  - 🔴 **AND THE GENERAL RULE THIS IS AN INSTANCE OF** (owner, same day): *"think we are building a cross
+    platform application framework mainly in .net + react"*. That is the lens for every capability
+    question, and it settles them faster than arguing each on its own merits:
+
+    | | |
+    |---|---|
+    | **.NET does** | the platform work — lifecycles, OS surfaces, files, codecs, background execution, anything needing a real thread or a real handle |
+    | **React does** | the interface — what it is good at, and the reason an app chooses this stack |
+    | **the kit provides** | the SEAM between them: a portable contract, one implementation per shell, and the IPC that carries it |
+
+    Read that way, the player is not a media feature at all — it is the same shape as `IPlaybackSession`,
+    `IFileDialogs`, `IWebViewInterceptor` and the safe-area insets, and it belongs for the same reason.
+    ⚠ **The test to apply to the NEXT capability, before designing it:** *is this the page trying to do
+    something the platform is better at?* If yes, the kit's job is a lifecycle contract, not a workaround —
+    the translation layer was the workaround, and this decision is what bounds it.
