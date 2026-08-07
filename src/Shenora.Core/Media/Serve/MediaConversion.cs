@@ -32,7 +32,25 @@ public sealed record MediaConversionRequest(
     string SourcePath,
     string DestinationPath,
     IProgress<double> Progress,
-    string Container = ".mp4");
+    string Container = ".mp4")
+{
+    /// <summary>
+    /// Codecs the converter could not carry into the output. **A converter APPENDS to this; the route
+    /// reads it and puts it on the <see cref="MediaConversionEvents.Ready"/> event.**
+    /// <para>
+    /// 🔴 <b>It exists because a successful conversion that dropped the soundtrack is this kit's most
+    /// dangerous outcome.</b> Nothing throws, the file plays, and the user hears silence — with no way for
+    /// the page to know the difference between "this film has no audio" and "this device cannot play the
+    /// audio it has". Filling this in turns that into something an app can SAY.
+    /// </para>
+    /// <para>
+    /// A side channel rather than a return value, exactly like <see cref="Progress"/>: it keeps
+    /// <see cref="MediaConversionOptions.Convert"/> a plain <c>Task</c>, so an app that already wrote one
+    /// needs no change and simply reports nothing.
+    /// </para>
+    /// </summary>
+    public IList<string> Dropped { get; } = new List<string>();
+}
 
 /// <summary>Event types this middleware publishes, on <see cref="MediaConversionOptions.Module"/>.</summary>
 public static class MediaConversionEvents
@@ -358,12 +376,16 @@ public static class MediaConversionExtensions
 
         try
         {
-            await options.Convert(
-                new MediaConversionRequest(source, replacement.TempPath, progress, options.CacheExtension),
-                cancellationToken);
+            var request = new MediaConversionRequest(source, replacement.TempPath, progress, options.CacheExtension);
+            await options.Convert(request, cancellationToken);
             replacement.Commit();
-            events.Emit(options.Module, MediaConversionEvents.Ready, new { source });
-            Log(options, () => $"[Shenora.Media] converted -> {Path.GetFileName(cachePath)}");
+            // `dropped` travels with READY so a page can tell a user WHY a film is silent, instead of
+            // leaving them to guess. Empty on the normal path, and a converter that reports nothing simply
+            // sends an empty array — the page's check is the same either way.
+            var dropped = request.Dropped.ToArray();
+            events.Emit(options.Module, MediaConversionEvents.Ready, new { source, dropped });
+            Log(options, () => $"[Shenora.Media] converted -> {Path.GetFileName(cachePath)}"
+                + (dropped.Length == 0 ? "" : $" (dropped: {string.Join(", ", dropped)})"));
         }
         catch (OperationCanceledException)
         {

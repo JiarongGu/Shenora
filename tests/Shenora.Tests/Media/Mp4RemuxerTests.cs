@@ -856,6 +856,40 @@ public class Mp4RemuxerTests
     }
 
     /// <summary>
+    /// 🔴 <b>A film that plays SILENTLY says so.</b> Remuxing an AC-3 film with no conversion succeeds and
+    /// drops the soundtrack — the kit's most dangerous outcome, because nothing throws and the user simply
+    /// hears nothing. The result now names what it lost, so an app can say *"this file's AC-3 soundtrack
+    /// cannot play on this device"* instead of leaving them to guess.
+    /// </summary>
+    [Fact]
+    public void A_dropped_soundtrack_is_named_in_the_result()
+    {
+        using var film = Ac3Film(Frame(1, 32), Frame(2, 48));
+        using var output = new MemoryStream();
+
+        var result = Mp4Remuxer.Remux(film, output);
+
+        Assert.True(result.Succeeded);              // ⚠ succeeded, and silent
+        Assert.Equal(0, result.AudioSamples);
+        Assert.Contains("ac3", result.Dropped);
+    }
+
+    /// <summary>Nothing lost, nothing claimed — the normal path reports an empty list, not a null one.</summary>
+    [Fact]
+    public void A_clean_remux_drops_nothing()
+    {
+        using var film = Mkv(Info(1000),
+            [VideoTrack(config: AvcConfig), AudioTrack(codec: "A_AAC", config: AacConfig)],
+            Cluster(0, [SimpleBlock(1, 0, true, Frame(0, 128)), SimpleBlock(2, 0, true, Frame(1, 32))]));
+        using var output = new MemoryStream();
+
+        var result = Mp4Remuxer.Remux(film, output);
+
+        Assert.True(result.Succeeded, result.Reason);
+        Assert.Empty(result.Dropped);
+    }
+
+    /// <summary>
     /// 🔴 <b>A supplied <see cref="IMediaContainerWriter"/> is actually USED.</b> Until 2026-08-07 it was
     /// not: the interface shipped with an implementation and no consumer, so a consumer who wrote a native
     /// muxer had nowhere to plug it in. Found by auditing every Core contract for "implemented but never

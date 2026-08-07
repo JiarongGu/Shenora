@@ -3,7 +3,17 @@ namespace Shenora.Media;
 /// <summary>Why a remux did not happen. A code the caller branches on, never prose for a user.</summary>
 public enum MediaRemuxerOutcome
 {
-    /// <summary>The output was written and every selected stream was copied into it.</summary>
+    /// <summary>
+    /// The output was written.
+    /// <para>
+    /// ⚠ <b>This does NOT mean every stream survived — check <see cref="MediaRemuxerResult.Dropped"/>.</b>
+    /// A film whose only soundtrack is AC-3, remuxed with no <see cref="IMediaAudioConversion"/>, succeeds
+    /// and plays SILENTLY: the picture is carriable, the audio is not, and dropping it is the only way to
+    /// produce a playable file at all. This member used to say "every selected stream was copied", which
+    /// was false in exactly that case and is how the silence went unnoticed (D63's failure mode: the
+    /// degraded result was indistinguishable from the intended one).
+    /// </para>
+    /// </summary>
     Succeeded,
 
     /// <summary>Not a Matroska file, or one declaring no track at all.</summary>
@@ -47,6 +57,23 @@ public sealed record MediaRemuxerResult(
 {
     /// <summary>True only for <see cref="MediaRemuxerOutcome.Succeeded"/>.</summary>
     public bool Succeeded => Outcome == MediaRemuxerOutcome.Succeeded;
+
+    /// <summary>
+    /// Codecs present in the source that did NOT make it into the output — <c>["ac3"]</c> for a film whose
+    /// only soundtrack MP4 cannot carry and no conversion could rescue.
+    /// <para>
+    /// 🔴 <b>This is the difference between a silent film and a silent film you can explain.</b> A
+    /// successful remux that dropped the audio is the kit's most dangerous outcome: nothing throws, the
+    /// file plays, and the user hears nothing. An app that reads this can say *"this file's AC-3
+    /// soundtrack cannot play on this device"* instead of leaving them to wonder — and the conversion route
+    /// puts it on the <see cref="MediaConversionEvents.Ready"/> event so a page can too.
+    /// </para>
+    /// <para>
+    /// ⚠ Empty is the normal case and means nothing was lost. It is NOT a failure channel — the outcome
+    /// says whether the file is usable; this says what it cost.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> Dropped { get; init; } = [];
 }
 
 /// <summary>
@@ -223,6 +250,10 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
                     // type name, and this kit's error contract is a code plus parameters (`ipc-contracts`).
                     throw new InvalidOperationException($"{result.Outcome}: {result.Reason}");
                 }
+
+                // Report what did not survive. Without this the route has nothing to put on READY, and the
+                // channel would be another extension point nothing fills — the D63 defect, one layer down.
+                foreach (var codec in result.Dropped) request.Dropped.Add(codec);
 
                 request.Progress.Report(1);
             }, cancellationToken);
@@ -405,10 +436,23 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
 
         var writeOrder = Interleave(resolved);
 
+        // ── what did NOT survive ──────────────────────────────────────────────────────────────────────
+        // Computed HERE because this is the only place that knows both what the file offered and what was
+        // chosen. A successful remux that dropped the soundtrack is the kit's most dangerous outcome —
+        // nothing throws, the file plays, and the user hears silence — so the result must be able to say
+        // so even though it still says Succeeded.
+        var kept = new HashSet<ulong>(resolved.Select(r => r.Source.Number));
+        if (convert is not null) kept.Add(convert.Number);
+        var dropped = reader.Tracks
+            .Where(t => !kept.Contains(t.Number))
+            .Select(t => MatroskaProbe.CodecNameOf(t.CodecId) ?? t.CodecId ?? "unknown")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         // ── write ─────────────────────────────────────────────────────────────────────────────────────
         try
         {
-            return Write(source, destination, resolved, writeOrder, cancellationToken);
+            return Write(source, destination, resolved, writeOrder, cancellationToken) with { Dropped = dropped };
         }
         catch (Exception)
         {
