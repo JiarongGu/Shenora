@@ -10,11 +10,19 @@ namespace Shenora.Media;
 public static class MediaPlayerExtensions
 {
     /// <summary>
-    /// Register the kit's media player. **One call, and playing a file is four lines of app code.**
+    /// Register the kit's media player.
     /// <code>
-    /// builder.UseMediaPlayer();                                  // the file plays; nothing else needed
+    /// builder.UseMediaPlayer();                                  // pass sources straight through
     /// builder.UseMediaPlayer(x => x.AllowedRoots = [library]);   // …and repair what the webview refuses
     /// </code>
+    /// <para>
+    /// 🔴 <b>⚠ THIS IS ONE OF THREE PIECES, and the loop does not run without all three.</b> This
+    /// registers the host half. The page half is <c>useMediaPlayer(ref)</c> in <c>@shenora/react</c>. The
+    /// third is <b>yours</b>: an IPC route on <see cref="MediaPlayerOptions.Module"/> that answers
+    /// <c>PLAYER_REPORT</c> by calling <see cref="MediaPlayer.Report"/> — <b>the kit registers no facade
+    /// for it</b>, and without one <see cref="IMediaPlayer.OpenAsync"/> waits on a report that never
+    /// arrives, with no exception and no log line. `docs/ADOPTION.md` carries the route verbatim.
+    /// </para>
     /// <para>
     /// <b>The zero-argument call is the point, not a convenience.</b> Owner, 2026-08-07: *"unless we need a
     /// custom decoder, we dont need to have this complex play logic."* A file the device can already decode

@@ -130,7 +130,12 @@ public sealed class MediaPlayerOptions
 /// </para>
 /// <para>
 /// <b>It talks to the page over <see cref="IEventBus"/>, the same channel the conversion route already
-/// uses</b>, and the page answers by calling <see cref="Report"/> from its IPC route. ⚠ There is
+/// uses</b>, and the page answers by calling <see cref="Report"/> from its IPC route.
+/// 🔴 <b>⚠ That return route is the APP's to write and the kit ships no facade for it</b> — the page
+/// posts <c>PLAYER_REPORT</c> on <see cref="MediaPlayerOptions.Module"/> and something must turn it into
+/// a <see cref="Report"/> call. <see cref="OpenAsync"/> completes on the first non-<c>Opening</c> report
+/// and on nothing else, so an app that skips the route gets an <see cref="OpenAsync"/> that never
+/// returns, with no exception and no log line. `docs/ADOPTION.md` has the four-line route. ⚠ There is
 /// deliberately NO surface interface between the two: an earlier draft had one, and it had exactly one
 /// production implementation — the page element — which is the seam D52 already refused to build for
 /// probing. <see cref="IMediaPlayer"/> is the seam; a second one underneath it was scaffolding.
@@ -337,8 +342,9 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
 
         Raise();
 
-        // Settled OUTSIDE the lock: a continuation runs on this thread otherwise, under a lock this class
-        // also takes from its own public methods.
+        // Settled OUTSIDE the lock. RunContinuationsAsynchronously already keeps the awaiter's continuation
+        // off this thread, so the reason is the SECOND one: a completion runs this class's own StateChanged
+        // subscribers via the awaiting caller, and settling under `_gate` would hold it across app code.
         if (opening is null) return;
         if (status.State == MediaPlayerState.Failed)
             opening.TrySetException(new MediaPlayerException(status.Error ?? "The media source could not be played."));

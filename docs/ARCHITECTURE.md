@@ -11,12 +11,15 @@ EXISTS. There are no dated design docs any more — D57.)
      file dates its claims instead of versioning them, for the same reason. -->
 ## Current state — **v0.10.0 published**; P1–P7 complete (v0.1.0 shipped 2026-07-31)
 
-Eight packable NuGet packages + `@shenora/react` on npm. **Five are the SHELL set, organised BY
+Six packable projects + `@shenora/react` on npm. **Five are the SHELL set, organised BY
 PLATFORM since 0.5.0 (D37)**: `Core`, `Ipc`, `Windows` (the three old Windows ids merged), `Android`
 and `iOS`. All five ship from ONE Windows runner — 0.5.0 published only the first four because `pack`
-skipped iOS on the mistaken belief that it needed a Mac, and 0.5.1 corrected that. **Three are
-OPTIONAL feature packages hanging off `Core`, not layers under it**: `Media` (v0.9.0), and — new since
-2026-08-05, so not in v0.9.1 — `IO` and `IO.Compression` (D48). Since the summary below was written, P5.5
+skipped iOS on the mistaken belief that it needed a Mac, and 0.5.1 corrected that. The sixth is the
+native `Launcher` (D50). ⚠ **There is NO optional-feature tier, and this paragraph used to say there
+was**: `Media`, `IO` and `IO.Compression` were packages of their own until 2026-08-07 and are now
+FOLDERS inside `Core` (D53, D55) — a capability gets a namespace, never a package id, because a
+nuget.org listing of single-domain libraries makes a claim about the product nobody meant. The
+authoritative set is the header table of `docs/DECISIONS.md`, once. Since the summary below was written, P5.5
 landed the
 D19/D20 re-layer (`WebView2` → `WinForms`; portable contracts + `IUiDispatcher` in `Core`, enforced by
 a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 added native caption
@@ -488,8 +491,8 @@ changes, noting them in `CHANGELOG.md`).
   writing `video:0KiB` and exiting 0. "Has a video stream" is the wrong test too — MPEG-TS names streams in
   the PMT, so a picture-less segment still declares one; what is missing is the SIZE. ⚠ `Dispose` on a run
   must KILL it: a rolling window that leaks a process leaks a CPU and a file handle, on a phone, invisibly.
-- **`Shenora.IO` — the file-operation engine (its own package since 2026-08-05, D48; all of it shipped
-  in `Shenora.Core` before that).** Portable `net10.0`, and it pairs with the scheduler above without
+- **`Shenora.IO` — the file-operation engine (the `Files/` folder inside `Shenora.Core`; its OWN package
+  only between 2026-08-05 and 2026-08-07, D48 → D55).** Portable `net10.0`, and it pairs with the scheduler above without
   depending on it: missions compute in parallel, this lands their results one at a time.
   **The file-update queue (2026-08-02), independent of the scheduler.**
   `IFileUpdateQueue`/`FileUpdateQueue(+Options)` serializes filesystem MUTATIONS so missions can

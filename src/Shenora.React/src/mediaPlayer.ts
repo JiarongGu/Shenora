@@ -68,6 +68,17 @@ export interface UseMediaPlayerOptions {
  * it is good at (rendering) and gives up what it was never good at (deciding whether a file can be played
  * at all, which needs a probe and a device capability query).
  *
+ * 🔴 **⚠ THE HOST HALF NEEDS ONE MORE PIECE, and it is not this one.** The reports posted here are an
+ * ordinary IPC message (`PLAYER_REPORT` on {@link MEDIA_PLAYER_MODULE}) and **the kit registers no host
+ * facade for it** — the app writes a four-line route that calls `MediaPlayer.Report(...)`. Until it does,
+ * `IMediaPlayer.OpenAsync` waits on a report that never arrives: the element loads and plays, and the C#
+ * call never returns. See `docs/ADOPTION.md`.
+ *
+ * ⚠ **The element must exist when this effect first runs.** `ref.current` is read once, and a `useRef`
+ * object is stable, so an element rendered CONDITIONALLY (`{ready && <video ref={ref} />}`) mounts after
+ * the effect and never binds — silently. Render the element unconditionally and hide it with CSS, or key
+ * the component so the hook remounts with it.
+ *
  * ⚠ **It reports on TRANSITIONS, never on `timeupdate`.** That event fires ~4×/second and forwarding it
  * would cost battery and IPC to tell the host something it can extrapolate from a position and a rate. If
  * you need a moving scrubber, read `element.currentTime` in your own render loop — locally, at the rate you

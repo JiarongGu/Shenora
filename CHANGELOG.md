@@ -222,9 +222,21 @@ at the first list and missed five more breaking changes.
       converter to get a player.
     - Before this, `MediaConversionOptions` said in its own remarks that whether a source needs converting
       was **the app's** decision, made before it built the URL — so every adopter wired that chain by hand.
-    - ⚠ **The page-side driver is NOT built.** Nothing in the kit subscribes to `MediaPlayerEvents` and
-      drives an element yet, so an app writes that half itself. Next piece, and it belongs in
-      `@shenora/react`.
+  - **`useMediaPlayer(ref)` in `@shenora/react` — the page-side half of D58.** One hook binds a
+    `<video>`/`<audio>` element to the host's player: it subscribes to `MediaPlayerEvents`
+    (`PLAYER_LOAD`/`PLAY`/`PAUSE`/`SEEK`/`RATE`/`UNLOAD`), drives the element, and posts one
+    `PLAYER_REPORT` back per element TRANSITION — never on `timeupdate`, which fires ~4×/second to say
+    something the host can extrapolate. New npm exports: `useMediaPlayer`, `MEDIA_PLAYER_MODULE`,
+    `MEDIA_PLAYER_REPORT`, `MediaPlayerCommands`, and the `MediaPlayerReport` /
+    `MediaPlayerReportState` / `UseMediaPlayerOptions` types.
+    - It reports an autoplay refusal rather than assuming `play()` succeeded, and reads the rejection's
+      `.name` STRUCTURALLY — the value browsers reject with is a `DOMException`, which is not an `Error`
+      subclass everywhere. A `MediaError` becomes a short code (`Decode`, `SourceNotSupported`), never
+      `error.message`, which browsers fill with decoder internals and sometimes the whole URL.
+    - 🔴 **⚠ THE LOOP IS NOT CLOSED YET, and an app must close it.** `PLAYER_REPORT` is an ordinary IPC
+      message on the `MEDIA` module and **the kit registers no facade for it**, so nothing turns it into
+      `MediaPlayer.Report(...)`. Until the app wires that route, `IMediaPlayer.OpenAsync` waits on a
+      report that never arrives — see `docs/ADOPTION.md`, which carries the four-line route.
   - **`player.ReportTo(session)` keeps the OS transport surface honest.** Before the host owned a player,
     `IPlaybackSession` published whatever the app CLAIMED, so a lock screen could say "playing" while the
     audio had stalled, ended or failed — and nothing reconciled the two. One line now does.

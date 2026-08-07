@@ -88,9 +88,50 @@ live in `CHANGELOG.md`; the current package set is the table at the top of `docs
 > (the kit ships the QUESTION, never a codec list), then `D63` (the defect class this subsystem kept
 > producing).** D52 and D53 are still true and are the earlier framing D59 sharpened.
 
-> 🔴 **NEXT SESSION IS A FULL CODE REVIEW + DOC CLEANUP** (owner, 2026-08-07). The media namespace changed
-> shape four times in one session and **nobody has read it end to end since**. `local/PROJECT_NOTES.md`
-> lists where to point a reviewer first, what is measured, and what is still unproven.
+### 🔴 The media player's loop is NOT CLOSED — decide who writes the joint (2026-08-07, from the review)
+
+**The review that `TASKS.md` asked for has run.** The media namespace was read end to end; the code fixes
+and the doc cleanup are committed. What it found that needs a DECISION is this one thing.
+
+**`builder.UseMediaPlayer()` + `useMediaPlayer(ref)` do not make a working player.** The page posts
+`PLAYER_REPORT` on module `MEDIA`; **the kit registers no facade for it**, so nothing turns it into
+`MediaPlayer.Report(...)`. `MediaPlayer.OpenAsync` completes on the first non-`Opening` report and on
+nothing else — so an adopter who wires both halves the kit ships gets an `OpenAsync` that **never
+returns**, with no exception, no log line, and an element that is visibly playing. D63's class exactly, and
+the fourth instance in a fortnight.
+
+- Docs no longer claim otherwise: `ADOPTION.md` carries the four-line route as **piece 3 of 3**, and the
+  XML/JSDoc on `UseMediaPlayer`, `MediaPlayer` and `useMediaPlayer` all say the joint is the app's.
+- [ ] **DECIDE: does the kit ship the facade?** The argument for is D61's rule — *an adopter meets every
+  capability through ONE `Use…` call* — and this is the one capability where following that rule silently
+  hangs. The argument against is placement: a facade registers into the APP's module registry, the module
+  name is configurable (`MediaPlayerOptions.Module`), and an app that already owns a `MEDIA` module would
+  find the kit had claimed it. ⚠ If the answer is yes, the seconds→`TimeSpan` and string→enum mapping is
+  the whole body, and it is where a wire-mirror tripwire belongs.
+- ⚠ **A cheaper half worth costing either way:** `OpenAsync` has no timeout, so "nobody wired the route"
+  and "the file is slow to open" are the same silence. A defaulted `MediaPlayerOptions.OpenTimeout` would
+  turn the whole failure class into a `MediaPlayerException` naming the missing route.
+
+### The rest of the review — fixed, or measured and left honest (2026-08-07)
+
+Fixed in the same pass, each with its root cause in the commit message: a convertible-but-empty audio track
+was marked kept and so never reported in `MediaRemuxerResult.Dropped` (`Mp4Remuxer`, now pinned by a
+sabotage-verified test); `MFVideoFormat_HEVC` and `'HEVS'` were missing from `WindowsMediaCapability`'s
+subtype table while `'H265'` was present, and unrecognised subtypes were dropped SILENTLY — so
+*"no HEVC on this box"* was never attributable; and four docs still described a package set D53/D55
+deleted (`ARCHITECTURE.md`'s and `REVIEW-GUIDE.md`'s opening paragraphs, a shipped XML remark on
+`MediaProbeResult` citing retired D40, and a `CHANGELOG` entry saying the page-side driver was not built
+after it shipped).
+
+- [ ] **iOS's `IMediaAudioConversion` is very likely NON-FUNCTIONAL, and it will not say so.** It decodes
+  AC-3 with `AudioConverterConvertBuffer`, which cannot handle variable-size compressed packets — while
+  `AudioConverterNew` still SUCCEEDS for the pair, which is what `MobileMediaCapability` measures. So
+  `CanConvert` answers yes, the planner says `Transcode`, and every `Push` returns nothing.
+  **The remuxer does catch it** (`NoCarriableStream`, *"the device could not convert ac3 after accepting
+  it"*), so the outcome is an honest failure rather than a silent film — but the tier does not work on the
+  one platform it was built for. **Needs a device run with an AC-3 file before anything else here is
+  designed**; if it is confirmed, the fix is `AudioConverterFillComplexBuffer` with a native input
+  callback, which the file's own remarks already cost out.
 
 ### Device deployment must be the KIT's, not borrowed from an app (2026-08-06)
 

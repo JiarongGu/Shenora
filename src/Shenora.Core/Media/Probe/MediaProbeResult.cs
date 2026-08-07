@@ -56,9 +56,11 @@ public sealed record MediaStreamInfo(
 /// <summary>
 /// What a probe found in a media file: the container, its streams, and whatever else it could report.
 /// <para>
-/// Constructed by whatever the APP uses to probe — ffprobe, a platform metadata reader, an engine, or a
-/// header parser. The kit ships no probe here: probing needs a demuxer, which is exactly the dependency
-/// `Shenora.Media` exists to keep out of `Shenora.Core` (D40).
+/// <b>The shape, not the prober.</b> <see cref="MatroskaProbe"/> fills one in for the container that
+/// actually needs it, and anything else the APP uses fills one in the same way — ffprobe, a platform
+/// metadata reader, an engine, a header parser. There is deliberately no <c>IMediaProbe</c> seam:
+/// <see cref="MediaPlaybackPlanner.Plan"/> takes the RECORD, so a probe is a function that returns one and
+/// needs no interface to be pluggable.
 /// </para>
 /// <para>
 /// ⚠ <b>Nothing here is required.</b> An entirely empty result is legal and

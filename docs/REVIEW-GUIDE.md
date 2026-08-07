@@ -44,12 +44,19 @@ the rules — it routes you to them and flags what's already settled.
 
 ## 1. What Shenora is (the review lens)
 
-Shenora (神阙) is a **reusable library, not an app**: the desktop and mobile "body" (WinForms +
-WebView2 + React hosting on Windows, MAUI `HybridWebView` on Android/iOS, typed IPC, modules, native
-services, auxiliary browser sessions) for a family of apps. Shipped as eight NuGet packages —
-five shells (`Core`, `Ipc`, `Windows`, `Android`, `iOS`; D37) plus three optional feature packages
-hanging off Core (`Media`, `IO`, `IO.Compression`; D40/D48) — and npm `@shenora/react`, versioned in
-lockstep.
+Shenora (神阙) is a **hybrid app development framework — .NET + React**, not an app and not a
+single-domain library: the desktop and mobile "body" (WinForms + WebView2 + React hosting on Windows,
+MAUI `HybridWebView` on Android/iOS, typed IPC, modules, native services, auxiliary browser sessions)
+that React apps boot their logic on. What decides whether a feature is worth building is **D54's
+thesis** — the differentiator is native .NET capability, so the question is never *"is this useful?"*
+but *"can React already do this?"*. Read `CLAUDE.md`'s opening before judging anything load-bearing.
+
+Shipped as **five shell packages** (`Core`, `Ipc`, `Windows`, `Android`, `iOS`; D37) + the native
+`Launcher` (D50) + npm `@shenora/react`, versioned in lockstep. ⚠ **There is no optional-feature tier,
+and this paragraph claimed one until 2026-08-07**: `Media`, `IO` and `IO.Compression` were packages
+until D53/D55 folded them into `Core` as FOLDERS. The set lives in the header table of
+`docs/DECISIONS.md`, once — never reconstruct it from a chain of entries, which is how three of them
+came to state a set that no longer existed, this file included.
 
 > **The owner's standing criterion, in their words (2026-08-01) — this is the review, everything
 > below is detail:** *"make sure this is a library — we're not solving specific business logic.
@@ -112,9 +119,12 @@ verified: `CHANGELOG.md`.
 mission layer, the mobile shells, media, file dialogs, the IO fold — is narrated in `CHANGELOG.md`
 (newest first), which is the list to read for "what exists".
 
-Layout: `src/` (8 packable projects + `Shenora.React/` + `Shenora.Mobile/`, which is SOURCE with no
+Layout: `src/` (6 packable projects + `Shenora.React/` + `Shenora.Mobile/`, which is SOURCE with no
 csproj, compiled into both mobile packages), `tests/Shenora.Tests` (one project, folders
 mirror src), `samples/` (desktop + web + MAUI; the e2e subject), `devtools/` (one-entry dev loop).
+⚠ Since D55 the capability code is FOLDERS inside `Shenora.Core` — `Media/`, `Files/` (namespace
+`Shenora.IO`) and `Files/Compression/` — so a review looking for `src/Shenora.Media/` or
+`src/Shenora.IO/` will find nothing and must not read that as the code being gone.
 Detail per package is in `docs/ARCHITECTURE.md` — this guide does not duplicate it.
 
 ## 3. Invariants by area — where "correct" is DEFINED
@@ -129,7 +139,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 | Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
 | Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
 | Missions (`src/Shenora.Core/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
-| File updates + locking (`src/Shenora.IO/`, its own package since D48) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
+| File updates + locking (`src/Shenora.Core/Files/`, namespace `Shenora.IO`; a package between D48 and D55) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
 | Windows/build/shell | `.claude/rules/windows-dev-gotchas.md` | PS5 UTF-8/BOM traps; `fs.cpSync` avoided; WinForms `AllowDrop`/OLE handle-creation must be on an STA thread (xunit workers are MTA) |
 | Any tracked file / commit message | `.claude/rules/sensitive-info.md` | NO absolute local paths, NO private sibling names, NO personal/network data (this repo goes public) |
 

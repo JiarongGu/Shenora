@@ -1196,18 +1196,66 @@ restages. An applier that scans `staged/` for content instead will eventually ac
 
 ---
 
-## Media playback — not a stage; one line if the file already plays
+## Media playback — not a stage; three pieces if the file already plays
 
-**Most apps need one call.** A media player whose lifecycle lives in .NET, rendering through your page's
-own `<video>`/`<audio>` element:
+A media player whose lifecycle lives in .NET, rendering through your page's own `<video>`/`<audio>`
+element. **Sources are passed straight through** — nothing probed, nothing converted — because a file
+the device can already decode needs none of that. Inject `IMediaPlayer` and call `OpenAsync` /
+`PlayAsync` / `SeekAsync`.
+
+It takes three pieces, and **all three are required for a working loop**:
 
 ```csharp
+// 1. the host half
 builder.UseMediaPlayer();
 ```
 
-That is the whole thing. Sources are passed straight through, nothing is probed, nothing is converted —
-because a file the device can already decode needs none of that. Inject `IMediaPlayer` and call
-`OpenAsync` / `PlayAsync` / `SeekAsync`; the page renders and reports back.
+```tsx
+// 2. the page half — @shenora/react drives your element and reports its state back
+const ref = useRef<HTMLVideoElement>(null);
+useMediaPlayer(ref);
+return <video ref={ref} playsInline />;
+```
+
+```csharp
+// 3. THE JOINT — the route that carries the page's report to the player. The kit ships no facade for
+//    this, so it is yours; four lines, and without it OpenAsync waits forever.
+public sealed class MediaFacade(IMediaPlayer player) : BaseFacade
+{
+    public override string ModuleName => "MEDIA";   // MEDIA_PLAYER_MODULE, and MediaPlayerOptions.Module
+
+    protected override Task<object?> RouteMessageAsync(
+        IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
+    {
+        if (request.Type != "PLAYER_REPORT") throw UnknownType(request);
+
+        // The page reports SECONDS; MediaPlayerStatus is TimeSpan. Nothing converts this for you.
+        var duration = PayloadHelper.GetOptionalValue<double?>(request.Payload, "duration");
+        player.Report(new MediaPlayerStatus
+        {
+            State = Enum.Parse<MediaPlayerState>(
+                PayloadHelper.GetRequiredValue<string>(request.Payload, "state")),
+            Position = TimeSpan.FromSeconds(
+                PayloadHelper.GetOptionalValue<double>(request.Payload, "position")),
+            Duration = duration is { } d ? TimeSpan.FromSeconds(d) : null,
+            Error = PayloadHelper.GetOptionalValue<string>(request.Payload, "error"),
+        });
+        return Done();
+    }
+}
+```
+
+> 🔴 **Piece 3 is the one to get wrong, because nothing tells you.** `MediaPlayer.OpenAsync` completes
+> when the PAGE says the element is ready — the element is the only clock (D58), so the host never
+> guesses a position. If no route carries `PLAYER_REPORT` back, the message is answered with an
+> unknown-module error the page discards and `OpenAsync` simply never returns: no exception, no log line,
+> nothing on screen. **Pass a real `CancellationToken` to `OpenAsync` while you are wiring this up** —
+> a timeout there turns the silence into a signal.
+>
+> ⚠ Why the kit does not ship the facade: the module name is configurable
+> (`MediaPlayerOptions.Module`), a facade is registered into YOUR module registry, and an app that
+> already owns a `MEDIA` module would find the kit had claimed it. It is on the list to reconsider —
+> if you would rather the kit shipped this, say so, because that is the signal it waits for.
 
 **Add conversion only when the device and its webview disagree** — which is the entire job of the media
 pipeline (D59): your hardware decodes AC-3, the `<video>` element will not touch it, and something has to
