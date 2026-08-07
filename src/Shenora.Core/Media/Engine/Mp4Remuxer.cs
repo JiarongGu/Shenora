@@ -192,8 +192,19 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
     /// The device's audio codecs, or <c>null</c> for container repair only. A pipeline is the expected
     /// argument — see <see cref="MediaAudioConversion"/>.
     /// </param>
+    /// <param name="writer">
+    /// The MUXER, or <c>null</c> for this one. Supply an <see cref="IMediaContainerWriter"/> — a native
+    /// <c>AVAssetWriter</c> or Android <c>MediaMuxer</c> wrapper — and it replaces only the muxing stage.
+    /// <para>
+    /// ⚠ <b>This parameter is what makes <see cref="IMediaContainerWriter"/> a real seam.</b> It was added
+    /// 2026-08-07 after an audit found the interface had an implementation and NO consumer: a consumer who
+    /// wrote one had nowhere to plug it in. Same defect class as D59 — the kit offered an extension point
+    /// and then never asked for it.
+    /// </para>
+    /// </param>
     /// <returns>A delegate for <see cref="MediaConversionOptions.Convert"/>.</returns>
-    public static Func<MediaConversionRequest, CancellationToken, Task> ConvertWith(IMediaAudioConversion? conversion)
+    public static Func<MediaConversionRequest, CancellationToken, Task> ConvertWith(
+        IMediaAudioConversion? conversion, IMediaContainerWriter? writer = null)
         => (request, cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -201,7 +212,9 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
             return Task.Run(() =>
             {
                 request.Progress.Report(0);
-                var result = Remux(request.SourcePath, request.DestinationPath, conversion, cancellationToken);
+                var result = writer is null
+                    ? Remux(request.SourcePath, request.DestinationPath, conversion, cancellationToken)
+                    : WriteThrough(writer, request, conversion, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!result.Succeeded)
@@ -244,6 +257,36 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
         {
             // No exception text travels from here. A media path is exactly the kind of detail that must not
             // reach a page, and the caller already knows which file it asked about.
+            return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "source or destination unusable");
+        }
+    }
+
+    /// <summary>
+    /// Run a SUPPLIED muxer over the request's files — the path that makes
+    /// <see cref="IMediaContainerWriter"/> a seam a consumer can actually reach.
+    /// <para>
+    /// The file handling is this class's rather than the writer's, deliberately: opening, disposing and
+    /// swallowing the path in a failure are all things the kit already gets right here, and a consumer
+    /// implementing a muxer should have to think about frames, not about whether a media path can reach a
+    /// page.
+    /// </para>
+    /// </summary>
+    private static MediaRemuxerResult WriteThrough(IMediaContainerWriter writer, MediaConversionRequest request,
+                                                   IMediaAudioConversion? conversion, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var source = File.OpenRead(request.SourcePath);
+            using var destination = File.Create(request.DestinationPath);
+            return writer.Write(source, destination, conversion, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Same rule as the path overload above: no exception text travels from here.
             return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "source or destination unusable");
         }
     }

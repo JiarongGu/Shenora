@@ -1133,7 +1133,7 @@ sealed class Shenora.Media.Mp4Remuxer : Shenora.Media.IMediaContainerWriter
   public static Shenora.Media.MediaRemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, System.Threading.CancellationToken cancellationToken = default)
-  public static System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> ConvertWith(Shenora.Media.IMediaAudioConversion? conversion)
+  public static System.Func<Shenora.Media.MediaConversionRequest, System.Threading.CancellationToken, System.Threading.Tasks.Task> ConvertWith(Shenora.Media.IMediaAudioConversion? conversion, Shenora.Media.IMediaContainerWriter? writer = null)
   public static System.Threading.Tasks.Task ConvertAsync(Shenora.Media.MediaConversionRequest request, System.Threading.CancellationToken cancellationToken)
   public string Container { get; }
 sealed class Shenora.Media.SegmentRunRequest : System.IEquatable<Shenora.Media.SegmentRunRequest>

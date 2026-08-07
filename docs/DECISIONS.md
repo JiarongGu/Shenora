@@ -2042,3 +2042,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     sides. **The bar is a MEASUREMENT**, not a plausible story: no adopter has yet reported an IPC payload
     that hurts, and the kit has an interceptor for anything big enough to matter — which is the first thing
     to reach for before widening the envelope.
+
+- **D63 — "declared but never consulted" is this repo's recurring defect, and it is INVISIBLE by
+  construction. Every extension point must have a socket, and something must ask.** (2026-08-07, after the
+  third instance in two days. Owner: *"lets make this library properly"*.)
+  - **The three, and what they had in common:**
+    | Defect | Symptom | Why nothing caught it |
+    |---|---|---|
+    | `Mp4Remuxer.ConvertAsync` passed `conversion: null` (D59) | AC-3 films played SILENTLY | the remux SUCCEEDED, dropping the soundtrack |
+    | `RestartManagerLockInspector` registered by nothing | "who holds this file?" said *cannot tell* on the one platform that can tell | an empty answer legitimately MEANS "cannot tell" |
+    | `IMediaContainerWriter` implemented, consumed by nothing | a consumer's native muxer had nowhere to plug in | the interface compiled, shipped and was documented |
+    🔴 **None of them threw, logged, or failed a test.** A capability that is ABSENT rather than broken
+    produces no signal at all — the degraded behaviour is indistinguishable from the intended one. That is
+    what makes this class different from an ordinary bug and worth its own entry.
+  - **The rule: an extension point is not done when the interface compiles. It is done when something
+    ASKS for it.** Concretely — the kit resolves it from DI or takes it as a parameter, a default is applied
+    when it is absent, and a test supplies a fake and asserts the fake was USED. Not that it exists.
+  - **How the third one was found, because the method generalises:** enumerate every public contract, then
+    ask of each *"is there an implementation, and does anything consume it?"* Two greps. Most of the 33
+    contracts in `Shenora.Core` are legitimately unregistered — options-supplied collaborators
+    (`IMissionPolicy`), per-webview objects (`IWebViewInterceptor`), app-supplied seams (`IUpdateSource`) —
+    so the signal is narrow: **a kit-built implementation with no consumer**.
+  - ⚠ **It is worth re-running after any pass that adds seams.** All three were added in the same fortnight
+    of media work, by someone (me) who believed each was wired at the time.

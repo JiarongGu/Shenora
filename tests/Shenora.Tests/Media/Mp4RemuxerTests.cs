@@ -856,6 +856,58 @@ public class Mp4RemuxerTests
     }
 
     /// <summary>
+    /// 🔴 <b>A supplied <see cref="IMediaContainerWriter"/> is actually USED.</b> Until 2026-08-07 it was
+    /// not: the interface shipped with an implementation and no consumer, so a consumer who wrote a native
+    /// muxer had nowhere to plug it in. Found by auditing every Core contract for "implemented but never
+    /// consulted" — the same defect class as D59 and the unregistered lock inspector, and the third of them.
+    /// </summary>
+    [Fact]
+    public async Task ConvertWith_uses_a_supplied_container_writer_instead_of_the_built_in_one()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"shenora-writer-{Guid.NewGuid():N}.mkv");
+        var destinationPath = Path.Combine(Path.GetTempPath(), $"shenora-writer-{Guid.NewGuid():N}.mp4");
+
+        try
+        {
+            using (var film = Ac3Film(Frame(1, 32)))
+            {
+                File.WriteAllBytes(sourcePath, film.ToArray());
+            }
+
+            var writer = new RecordingWriter();
+            var request = new MediaConversionRequest(sourcePath, destinationPath, new Progress<double>());
+
+            await Mp4Remuxer.ConvertWith(conversion: null, writer)(request, CancellationToken.None);
+
+            Assert.True(writer.Called);
+            // The kit still owns the FILES — a consumer's muxer thinks about frames, not about whether a
+            // media path can reach a page.
+            Assert.Equal("written by the consumer", File.ReadAllText(destinationPath));
+        }
+        finally
+        {
+            if (File.Exists(sourcePath)) File.Delete(sourcePath);
+            if (File.Exists(destinationPath)) File.Delete(destinationPath);
+        }
+    }
+
+    private sealed class RecordingWriter : IMediaContainerWriter
+    {
+        public bool Called { get; private set; }
+        public string Container => ".mp4";
+        public bool CanCarry(MediaStreamKind kind, string codec) => true;
+
+        public MediaRemuxerResult Write(Stream source, Stream destination, IMediaAudioConversion? conversion,
+                                        CancellationToken cancellationToken = default)
+        {
+            Called = true;
+            var bytes = System.Text.Encoding.UTF8.GetBytes("written by the consumer");
+            destination.Write(bytes, 0, bytes.Length);
+            return new MediaRemuxerResult(MediaRemuxerOutcome.Succeeded, "ok");
+        }
+    }
+
+    /// <summary>
     /// The pipeline, not one implementation, is what gets consulted — which is what "hook it in without
     /// additional code" actually rests on. A converter registered with <c>Use(...)</c> reaches the default.
     /// </summary>

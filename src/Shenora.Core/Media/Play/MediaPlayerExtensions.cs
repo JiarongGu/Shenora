@@ -127,7 +127,12 @@ public static class MediaPlayerExtensions
                 Resolve = uri => uri.PathAndQuery.StartsWith(Prefix, StringComparison.Ordinal)
                     ? Uri.UnescapeDataString(uri.PathAndQuery[Prefix.Length..])
                     : null,
-                Convert = Mp4Remuxer.ConvertWith(services.GetService<IMediaAudioConversion>()),
+                // BOTH seams resolved from DI, so registering one is enough to have it used — the rule
+                // D59 and the lock-inspector defect were both about. A consumer's native muxer replaces
+                // only the muxing stage; their codec replaces only the codec.
+                Convert = Mp4Remuxer.ConvertWith(
+                    services.GetService<IMediaAudioConversion>(),
+                    services.GetService<IMediaContainerWriter>()),
                 CacheRoot = options.CacheRoot!,
                 AllowedRoots = options.AllowedRoots,
                 Module = options.Module,
