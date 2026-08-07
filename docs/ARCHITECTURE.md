@@ -23,7 +23,7 @@ a `net10.0` sample that turns red if a Windows type reaches app logic), P5.6 add
 buttons, P6 readied adoption (`docs/ADOPTION.md`, and six capability gaps found and closed), and P7
 stabilised: every public and protected member documented with CS1591 as an error, the login RECIPE
 moved out of the library to the sample (D21/D22 amended), and the release pipeline hardened. The
-narrative is `docs/ROADMAP.md` `## Done`; the task-level record is `docs/archive/tasks.md`.
+narrative is `docs/ROADMAP.md` `## Done`.
 
 **2026-08-01 — the communication core** (D23, `docs/2026-08-01-shenora-communication-core-design.md`,
 implemented; drafted under the name "0.2.0" and released later that day as part of v0.3.0): the module

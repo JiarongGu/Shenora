@@ -1,8 +1,8 @@
 # TASKS.md — open backlog only
 
 **This file holds OPEN tasks only.** Once a task is fully done (committed + verified) its entry is
-**moved to [`docs/archive/tasks.md`](docs/archive/tasks.md)**, not checked off in place — so the length
-of this file is the size of the remaining work, which is the whole point of looking at it.
+**DELETED**, not checked off in place — so the length of this file is the size of the remaining work,
+which is the whole point of looking at it. Git is the archive (2026-08-07).
 `docs/ROADMAP.md` `## Done` is the narrative of what shipped and why; `CHANGELOG.md` is the
 release-facing log. `> DIRECTION (user):` blockquotes capture the user's steering verbatim and stay
 here as long as they still steer.
@@ -16,8 +16,7 @@ after they shipped.
 on the feed. It added three packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
 safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
 `## Unreleased` carries the Android fragment-reload repair (2026-08-06). Release history and its incidents
-live in `CHANGELOG.md`; the current package set is the table at the top of `docs/DECISIONS.md`; the closed
-backlog is `docs/archive/tasks.md`.
+live in `CHANGELOG.md`; the current package set is the table at the top of `docs/DECISIONS.md`.
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
@@ -99,7 +98,8 @@ backlog is `docs/archive/tasks.md`.
 
 **✅ THE LOOP WORKS END TO END — the sample builds, signs, installs and LAUNCHES on an iPhone 17 Pro**
 (2026-08-07). `dev.mjs mac provision` + `dev.mjs mac device` are the kit's own, with no Capacitor and no
-app-owned Xcode project anywhere in it. Record and the four findings: `docs/archive/tasks.md`; mechanics:
+app-owned Xcode project anywhere in it. The four findings are in `.claude/knowledge/mobile-shells.md`
+("Deploying to a REAL iPhone"); mechanics:
 `devtools/README.md`. What remains open is only the third item — shipping it to ADOPTERS.
 
 - [ ] **Ship it to adopters, per the second direction** — the helper belongs with the package, not only
@@ -168,7 +168,7 @@ designing any of this** — every ⚠ in it is a bug that was actually hit, not 
 **Built so far:** `ResourcePack` (`Shenora.IO.Compression`) · `MatroskaProbe` (`Probe/`) ·
 `MediaPlaybackPlanner` (`Plan/`) · `UseMediaConversion` + `UseSegmentStream` (`Serve/`) · `Mp4Remuxer` +
 the `ISegmentEngine` seam (`Engine/`). **Slices 1 and 2 are CLOSED** (2026-08-07 — the pipeline reshape and
-the remuxer; record in `docs/archive/tasks.md`). The pipeline is **probe → plan → serve → transform**, and
+the remuxer). The pipeline is **probe → plan → serve → transform**, and
 what remains of transform is the AUDIO, which is the half that needs a codec.
 
 **✅ SLICE 3 IS MEASURED (2026-08-07) — and the answer is SPLIT PER PLATFORM, which is the finding.**
@@ -187,8 +187,8 @@ device) and an API 36 AOSP emulator:
 - ⚠ **"AOSP does not" is not "Android does not."** Codec support is vendor-declared per device, which is
   exactly why `MediaCodecList` is a runtime query. A handset may well carry AC-3; this measures the
   emulator. **Never bake either answer in — ask the device.**
-- ⚠ Two probe defects had to be fixed before the number meant anything, both recorded in
-  `docs/archive/tasks.md`: `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** (`'prop'` on iOS), and
+- ⚠ Two probe defects had to be fixed before the number meant anything:
+  `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** (`'prop'` on iOS), and
   a failed query was reporting as a NEGATIVE. The AAC control is what caught it.
 
 **Slice 4 — MOSTLY DONE (2026-08-07).** Owner: *"we still support for consumer use their own
@@ -369,8 +369,8 @@ the useful part — **not "does the kit expose the API" but "how much native cod
 have to write"** — which is the same test D45 passed by moving interception into the shells (an adopting app
 writes `interceptor.UseFiles(...)` and no platform code at all).
 
-**`IPlaybackSession` shipped and is verified on all three shells** (0.9.0/0.9.1). Records in
-`docs/archive/tasks.md`; recipes in `docs/ADOPTION.md`; mechanics in `.claude/knowledge/mobile-shells.md`.
+**`IPlaybackSession` shipped and is verified on all three shells** (0.9.0/0.9.1). Recipes in
+`docs/ADOPTION.md`; mechanics in `.claude/knowledge/mobile-shells.md`.
 
 ### iOS background playback — UNRESOLVED, and my first answer was WRONG (2026-08-07)
 

@@ -106,22 +106,24 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 - **D9 — Repo organization clones the family system**: Sonora's four-layer memory model (short
   `CLAUDE.md` → `docs/README.md` router → two-tier `.claude/rules|knowledge` with
   `RULES_INDEX.md` → gitignored `local/`), `TASKS.md` ⇄ `docs/ROADMAP.md` conveyor,
-  `docs/archive/fix-log.md`, plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`,
-  design-contract doc). Done work is archived narratively in `docs/ROADMAP.md` `## Done` rather than
-  in a separate task-archive file.
-  **⚠ Amended 2026-08-05 — that last sentence stopped being true and `docs/archive/tasks.md` is now the
-  LARGEST doc in the repo (290 KB).** The two archives are not duplicates and the split is worth keeping,
-  so this records which is which rather than pretending one of them does not exist:
-  - **`docs/ROADMAP.md` `## Done` — the NARRATIVE**, newest first: what changed, why, and how it was
-    verified. Milestone-sized. This is what you read to learn what the kit is.
-  - **`docs/archive/tasks.md` — the closed BACKLOG**, entry by entry, with file:line anchors and the
-    judgement calls. This is what you read before re-litigating a finished decision, and several entries
-    carry warnings written deliberately for a future session.
+  plus Lyntai's library-repo docs (`DECISIONS.md`, `CHANGELOG.md`, design-contract doc).
+  🔴 **Amended 2026-08-07 — there is no archive tier at all now, and the reason is worth more than the
+  layout.** An archive was added on 2026-08-05 (a fix log + a closed-backlog file) and within two days
+  `docs/archive/tasks.md` was the LARGEST doc in the repo at 290 KB — 62% of all doc weight was finished
+  work. Owner: *"we dont keep historial since we have git for that"*. Deleted whole.
+  - **What an archive is actually FOR turned out to be two different things wearing one name**, and only
+    one of them survived the deletion: the *narrative* of what happened (git has it, in far more detail,
+    with the diff attached) and the *warnings written for a future session* (which were never history —
+    they are invariants, and they belong in `.claude/knowledge/`). Four iOS deploy traps were harvested
+    into `mobile-shells.md` on the way out, because nothing else held them.
+  - ⚠ **The tell that a doc is really an archive: nobody reads it, and it grows fastest.** Ask what
+    QUESTION a reader arrives with. "Why is it done this way?" → this file. "What is the shape today?"
+    → `ARCHITECTURE.md`. "What is left?" → `TASKS.md`. "What happened on the 5th?" → `git log`.
   - **`TASKS.md` holds ONLY open work** (owner, 2026-08-05: *"this should just be a backlog with active
     task, completed should move to other docs"*). It had grown to 762 lines with eleven closed items
     annotated in place, and **two of those still showed an unchecked `[ ]` a day after they shipped** —
-    the checkbox is the only signal that file gives, and it was wrong twice. **Prune by MOVING an entry
-    out, never by ticking it in place**; the file's length should be the size of the remaining work.
+    the checkbox is the only signal that file gives, and it was wrong twice. **Prune by DELETING an
+    entry, never by ticking it in place**; the file's length should be the size of the remaining work.
 
 - **D10 — Two consumption profiles; server-backed hosting helpers are deferred.** The package
   split (Ipc separate from the shell packages) exists so a Sonora-style app (in-process HTTP
@@ -603,8 +605,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     rejected one such proposal for the chrome. Reopen either only on a real adopter hitting a real
     limit — the same bar as D24, and the same bar the three `TASKS.md` follow-ups are held to.
   - **Verified live, not asserted** (2026-08-02, `dev.mjs sample`): both exercised by hand on the
-    running desktop sample. That session also exposed the stale-bundle defect in `docs/archive/fix-log.md` —
-    worth remembering that the hands-on test found something eight green `verify` runs did not.
+    running desktop sample. That session also exposed the stale-bundle defect — worth remembering that
+    the hands-on test found something eight green `verify` runs did not.
 
 - **D26 — the kit's DESKTOP scope is Windows only. Linux is served by the SERVER-BACKED profile, not by
   a native Linux shell.** (Owner, 2026-08-02, asked whether MAUI could cover Linux + Windows.)
@@ -1807,3 +1809,36 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - ⚠ **The count in this file's header block is the thing that goes stale** — it has now done so twice.
     `node devtools/dev.mjs doctor` prints the real number; `doc-drift` failed this change until the table
     matched, which is the only reason it is right.
+
+- **D56 — the deploy/update TOOLING is product, not devtools. Under D54's framing it is one of the most
+  load-bearing parts of the kit, and it is currently the least finished.** (Owner, 2026-08-07, on being
+  shown the D55 package set: *"from this scope, the launcher, platform testing/deployment tools kind
+  become more needed"*.)
+  - **The competitive read that makes this obvious.** D54 says the differentiator is native .NET
+    capability, which is true about the RUNTIME — but it is not the whole of what Capacitor and Electron
+    actually sell. Capacitor's moat is `npx cap sync` / `cap run ios`: the thing that takes a web app and
+    puts it on a phone. Electron's is `electron-builder` + the auto-updater + signing. **An adopter meets
+    the tooling before they meet the runtime**, and a framework whose deploy story is "read our docs and
+    write your own MSBuild" loses to one where a single command installs on a device — regardless of which
+    has the better capability ceiling.
+  - **It passes D54's own test cleanly, which is why it belongs.** *"Can React already do this?"* No: a
+    React toolchain cannot mint a provisioning profile, sign an `.appex`, install to a connected iPhone, or
+    apply a staged update over files the OS is holding open. .NET and the platform SDKs can. That is the
+    same gap `IMediaPlayer` sits in, and it is *wider* — every adopter hits deployment, while only some
+    hit media.
+  - **What this reclassifies, concretely.** These exist and work; what changes is that they are no longer
+    scratch:
+    | Today | Under this decision |
+    |---|---|
+    | `devtools/dev.mjs mac device \| provision \| device-log \| appex-check`, `android` — written this session to get the KIT onto a phone | the `cap run ios` equivalent, owed to adopters |
+    | `Shenora.Launcher` — framed as a niche extra for framework-dependent self-updaters | the app-lifecycle piece Electron ships as a core feature |
+    | `devtools/ios-provision/` — a kit-owned stub `.xcodeproj` | the answer to "how do I sign without hand-rolling Xcode" |
+  - ⚠ **This is a scope claim, not a finished design.** The hard part is not the commands, it is that they
+    currently assume THIS repo's layout (`devtools/project.config.mjs`, a reachable Mac, paths under
+    `local/`). Shipping them means deciding what an adopter's equivalent is — an MSBuild target set, a
+    `dotnet` tool, or a documented recipe — and that decision is not made here. What IS decided: **the
+    tooling is in scope as product and is judged by the same bar as the runtime surface**, rather than
+    living forever in `devtools/` as the kit's private convenience.
+  - 🔴 **It also raises the stakes on the known-broken Live Activity devkit** (`CHANGELOG.md`
+    `### Known broken`). A devkit whose stated adoption does not hold on a device is a tooling defect, and
+    tooling defects are now product defects.

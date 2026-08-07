@@ -30,12 +30,12 @@ update the relevant entry HERE — this file is the durable index.
 | Changing the module contract / tracking a long operation / hosting on a non-WinForms base | `docs/2026-08-01-shenora-communication-core-design.md` (0.2.0 rationale: `IModuleContext`, the operation registry, `NotificationPump`, the lifecycle bands) |
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
 | Picking the next piece of work | `TASKS.md` (root — OPEN only, in the owner's work order) |
-| Why a FINISHED decision was made that way | `docs/archive/tasks.md` (the closed backlog: plans, file:line anchors, judgement calls) |
+| Why a FINISHED decision was made that way | `docs/DECISIONS.md` — and if it is not there, `git log`. There is no closed-backlog file (deleted 2026-08-07) |
 | What shipped already / verifying history | `docs/ROADMAP.md` `## Done`, `CHANGELOG.md` |
 | Reviewing the codebase (full/whole-tree review) | `docs/REVIEW-GUIDE.md` (orientation: invariants by area, risk hotspots, settled decisions, coverage map) |
 | Extracting code from a sibling app | `.claude/knowledge/extraction-sources.md` (tracked, de-identified) + `local/EXTRACTION-MAP.md` (private, named) |
 | Keeping the library generic | `.claude/knowledge/generic-library.md` |
-| When did this break? | `docs/archive/fix-log.md` (use `/fix-log` to append) |
+| When did this break? | `git log -S "<distinctive token>" -- <path>` — there is no fix log; commit messages carry root causes |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Running the same app logic on MOBILE (a MAUI shell) | `docs/ADOPTION.md` Stage 5 (what transfers, what does not, and the traps already paid for) + `docs/DECISIONS.md` **D32**–**D34** (a second shell is a PEER; absent vs differently-satisfied capabilities; why its API baseline is weaker) + **D36** (the host advertises capabilities in the handshake, so ONE web bundle serves both shells) + **D39** (why the auxiliary-session stack does NOT port, even though both shells host a webview) |
 | Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/2026-08-02-shenora-mission-scheduling-design.md` (the one-scheduler-two-key-kinds claim + what is deliberately not built) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
@@ -46,7 +46,7 @@ update the relevant entry HERE — this file is the durable index.
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
 | Dev loop commands | `devtools/README.md` |
-| Anything FINISHED — closed tasks, shipped phases, past fixes | `docs/archive/` (its `README.md` states what may enter and why the folder exists). **Records, never the present** |
+| Anything FINISHED — closed tasks, shipped phases, past fixes | **`git log`.** There is no archive tier (D9's 2026-08-07 amendment): finished work is deleted, not filed. A doc nobody reads and that grows fastest is an archive wearing another name |
 
 ## Where things live (fast map)
 
@@ -73,14 +73,10 @@ update the relevant entry HERE — this file is the durable index.
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |
-| `archive/fix-log.md` | Notable fixes: symptom / root cause / fix / verify / commit | Append-only |
 | `ADOPTION.md` | The staged adoption guide for an existing app: order, primitive-by-primitive mapping, migration traps, and the permanent "stays yours" list | Keep in sync with the public surface |
 | `RELEASING.md` | How releases are cut and consumed pre-release | Keep in sync with reality |
 | `REVIEW-GUIDE.md` | Orientation for a whole-codebase review: invariants by area, risk hotspots, settled decisions, coverage map | Keep in sync with reality |
 | `../CHANGELOG.md` | Per-version release log (Breaking/Added/Changed/Fixed) | Append per release |
-| `../TASKS.md` | OPEN backlog only — a done entry MOVES to `archive/tasks.md`, it is not checked off in place | Living |
-| `archive/tasks.md` | The completed-task record (P5.5 · P6 · P7 · P1). Several entries carry warnings written for a future session — read before re-litigating a finished decision | Append on close |
-| `archive/README.md` | **What `docs/archive/` is for and what may enter it** — finished records only, appended never rewritten, exempt from `doc-drift` by path | Read before adding a file there |
-| `archive/roadmap-v0.1.0.md` | The P1–P7 narrative (2026-07-30 → 07-31) that produced v0.1.0, split out of `ROADMAP.md` on 2026-08-02 when the closed era had buried the current one | History |
+| `../TASKS.md` | OPEN backlog only — a done entry is DELETED, not checked off in place | Living |
 | `../README.md` | The public front door + package table. **Ships inside every nupkg**; its `## Status` version headline is tool-synced (`dev.mjs pack`/`doctor --fix`) — never hand-edit that line | Keep in sync with reality |
 | `../src/Shenora.React/README.md` | The npm package's own README (shipped to npmjs via `files`) | Keep in sync with the client API |

@@ -453,8 +453,9 @@ Earned across the Android port and the iOS port (both 2026-08-02).
     `_ExtendAppExtensionReferences` (Xamarin.Shared.targets) injects a prebuilt `.appex` into the embed and
     codesign lists, and it is reached from `_CompileToNativeDependsOn`, so it runs on every app build.
     `_CopyAppExtensionsToBundle` dittos it to `.app/PlugIns/`, deletes the stale signature, and re-signs
-    with the app's identity. ⚠ **Check the target is REACHED, not just present** — that distinction is the
-    whole point of the presence-vs-content audit in `docs/archive/tasks.md`.
+    with the app's identity. ⚠ **Check the target is REACHED, not just present** — a target that exists
+    and is skipped looks identical to one that ran, and an incremental check on the wrong Inputs is how it
+    gets skipped (see the `$(ApplicationId)` plist trap below).
     Metadata: `Include` = a directory, `BuildOutput` = a subdirectory under it, `Name` = the appex name
     without extension (the path built is `%(Identity)/%(BuildOutput)/%(Name).appex`), plus optional
     `CodesignEntitlements`.
@@ -518,3 +519,34 @@ Earned across the Android port and the iOS port (both 2026-08-02).
       it on a real device before claiming the Island renders.
     - A device build additionally needs entitlements for the appex — the simulator build logs
       `No entitlements set for …IslandProbe.appex` and that warning is expected there.
+
+## Deploying to a REAL iPhone — four traps, each found by running it rather than writing it
+
+Harvested 2026-08-07 from the closed task record before it was deleted. Under **D56** this is product
+knowledge, not devtool trivia: the deploy loop is part of what the framework sells.
+
+- **⚠ Xcode 16 MOVED where provisioning profiles live.** Classic
+  `~/Library/MobileDevice/Provisioning Profiles/`, current
+  `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`. On Xcode 26.3 minting writes to the NEW
+  path and never creates the old directory at all — so a tool that reads only the classic location reports
+  **"zero provisioning profiles on disk"**, a true statement about the wrong directory that reads as
+  *provisioning has never worked here*. `dev.mjs mac profiles` reads BOTH; anything new must too.
+- 🔴 **`xcodebuild` exits 0 without necessarily minting what you asked for** — it succeeds against a
+  profile it already had. So `mac provision` verifies by reading profiles OFF DISK and matching their
+  `application-identifier`, and that check is what caught the trap above: the run printed "minted ok" twice
+  and then correctly refused to claim success. **Trusting exit status would have reported success and left
+  device builds failing for a reason nothing pointed at.**
+- 🔴 **A target whose output depends on an MSBuild PROPERTY cannot be made incremental on files.** The
+  Live Activity extension's `Info.plist` sat in a target with Inputs = the Swift files, Outputs = the
+  executable — but its content depends on `$(ApplicationId)`, which cannot be an Input, because MSBuild
+  compares FILES not property values. A skipped target left a stale bundle id and the device rejected the
+  install with `AppexBundleIDNotPrefixed`, naming an id the project does not contain.
+  ⚠ **Worse for an adopter than for the kit:** rename your app or reuse an `obj/` and the build succeeds
+  and the **simulator is happy** (it does not enforce the appex prefix) — only a real device rejects it.
+  Second bug of this exact shape in that one target (the first: one architecture's `.a` satisfying
+  another's check). **An incremental check must cover everything the target WRITES.**
+- 🔴 **`xcrun … | tail` makes the pipeline report TAIL's status — always 0.** `mac device` announced
+  "running on the device" after both the install and the launch had failed. `mac.mjs` already documented
+  this trap on its build step and it was reintroduced directly beneath that comment the same day. Name it
+  as a pattern: **a harness that pipes a tool through `tail`/`head` to keep output readable silently
+  converts every failure into a success.** `set -o pipefail`, or check the tool's status before piping.

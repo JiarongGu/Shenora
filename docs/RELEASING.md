@@ -158,7 +158,7 @@ co-development against an unpublished change, or a pre-release smoke test. The r
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
   The tarball works under native Node ESM, not just bundlers (the emitted imports carry explicit
-  `.js` extensions; enforced by the package's NodeNext tsconfig — see `docs/archive/fix-log.md`).
+  `.js` extensions; enforced by the package's NodeNext tsconfig).
 
 > ⚠ **The NuGet GLOBAL cache beats every source, so re-packing the same version is not enough.**
 > `~/.nuget/packages` is keyed on id+VERSION, and a cached copy wins over any feed — including this

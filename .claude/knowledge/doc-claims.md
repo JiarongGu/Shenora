@@ -3,8 +3,7 @@
 Prose is the one surface with no compiler, and `doc-drift` deliberately checks only three exact things
 (retired names, `docs/` links, the dependency graph). A remark that says *what the code does* sits
 below that gate: it can be wrong for a whole release with every check green. This rule is what caught
-three such claims in one pass on 2026-08-02 — two of them in **shipped XML** (`docs/archive/fix-log.md`,
-commit `49bfc0c`).
+three such claims in one pass on 2026-08-02 — two of them in **shipped XML** (commit `49bfc0c`).
 
 ## The rules
 

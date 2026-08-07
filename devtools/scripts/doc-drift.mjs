@@ -224,8 +224,16 @@ function checkRetiredNames() {
 // other two checks this one needs no heuristic at all.
 
 function checkDocLinks() {
-  // `docs/foo.md`, with or without backticks/parens, anywhere in prose or a comment.
-  const reference = /(?<![\w./-])((?:docs|\.claude)\/[A-Za-z0-9._\-/]+\.md)/g;
+  // Any multi-segment path ending in `.md`, with or without backticks/parens, in prose or a comment.
+  // ⚠ It used to require a `docs/` or `.claude/` PREFIX, and that hole was found on 2026-08-07 by
+  // deleting `docs/archive/`: six rows of `docs/README.md`'s own inventory pointed at the deleted
+  // files as `archive/tasks.md` — RELATIVE to the containing directory, the natural way to write a
+  // link in a table of neighbours — and the checker could not see any of them. The router is exactly
+  // where that spelling is most likely and a dangling pointer costs the most.
+  // A segment is still REQUIRED (`foo/bar.md`, not `README.md`) so that generic mentions of a bare
+  // filename do not become candidates; resolution then tries repo-root AND the file's own directory,
+  // because both spellings appear in this repo and both are correct.
+  const reference = /(?<![\w./-])([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\/[A-Za-z0-9._-]+\.md)/g;
   for (const file of walk(repo)) {
     const rel = path.relative(repo, file).replace(/\\/g, '/');
     // Same exemption as the retired-name check, for the same reason: these files RECORD what the
@@ -233,11 +241,12 @@ function checkDocLinks() {
     // history holds the file itself.
     if (HISTORY_BY_DEFINITION.test(rel)) continue;
     const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    const dir = path.dirname(file);
     for (let i = 0; i < lines.length; i++) {
       // A retired doc named in a HISTORY note is fine — that is the point of recording the retirement.
       if (HISTORY.test(lines[i])) continue;
       for (const [, target] of lines[i].matchAll(reference)) {
-        if (fs.existsSync(path.join(repo, target))) continue;
+        if (fs.existsSync(path.join(repo, target)) || fs.existsSync(path.resolve(dir, target))) continue;
         problems.push(
           `${rel}:${i + 1}: points at "${target}", which does not exist.\n` +
           `      ${lines[i].trim().slice(0, 110)}\n` +

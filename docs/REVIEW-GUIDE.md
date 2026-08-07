@@ -12,21 +12,21 @@ the rules — it routes you to them and flags what's already settled.
 > those intentions were right, so a doc asserting a design was treated as context rather than as the
 > claim most worth attacking. So on every pass, spend budget on **§1's lens** as well as §4's hot
 > spots, and ask of anything load-bearing: does this earn its place for the PURPOSE (§1), or only for
-> the design it already committed to? The four findings that came out of asking that (D1–D4,
-> `docs/archive/tasks.md` `### 0.2.0 design pass`) were each bigger than anything the correctness pass
-> found — one cut a whole feature half, one was a REJECTION with a narrower change in its place. Note
-> both directions: "this design is wrong" and "this complaint is fair but the fix is worse" are
-> equally valid outcomes, and only the second needs a `DECISIONS.md` entry so it stays rejected.
+> the design it already committed to? The four findings that came out of asking that (D1–D4) were each
+> bigger than anything the correctness pass found — one cut a whole feature half, one was a REJECTION
+> with a narrower change in its place. Note both directions: "this design is wrong" and "this complaint
+> is fair but the fix is worse" are equally valid outcomes, and only the second needs a `DECISIONS.md`
+> entry so it stays rejected.
 >
-> **Three full reviews have already run. Verify and EXTEND them — do not re-derive them.**
+> **Three full reviews have already run. Verify and EXTEND them — do not re-derive them.** Their verdicts
+> live in `docs/DECISIONS.md`; the working records were deleted with `docs/archive/` on 2026-08-07 and
+> are in git if you need the detail.
 >
 > 1. **The P0–P5 review** (at `130d4cd`) — ~60 findings, executed as batches H1–H8 and now closed;
->    the record is `docs/archive/tasks.md` `### P5.5`, summarised in `docs/ROADMAP.md` `### P5.5`.
-> 2. **The whole-codebase review** (2026-08-01, before 0.2.0 was published) —
->    `docs/archive/tasks.md` `### 0.2.0 — whole-codebase review`.
-> 3. **The design pass** (2026-08-01, same day, prompted by the direction above) —
->    `docs/archive/tasks.md` `### 0.2.0 design pass`. Its four verdicts are settled; D24 records the
->    rejection. Don't re-open them without new evidence.
+>    summarised in `docs/ROADMAP.md` `### P5.5`.
+> 2. **The whole-codebase review** (2026-08-01, before 0.2.0 was published).
+> 3. **The design pass** (2026-08-01, same day, prompted by the direction above). Its four verdicts are
+>    settled; D24 records the rejection. Don't re-open them without new evidence.
 >
 > **What the second one found is the more useful hint about where to spend YOUR budget.** It found
 > nothing in the threading, UI-thread marshalling, resource-ownership or IPC-error-boundary hot spots
@@ -196,7 +196,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 **P5 phase-review findings already fixed** (full list in `docs/ROADMAP.md` P5-close entry): the
 foreground/background controller split (hold-close no longer vetoes `Application.Exit`); pool
 init-failure/dispose leaks; a `SemaphoreSlim.Dispose()`-races-cancelled-waiter hang
-(`docs/archive/fix-log.md`); silent-refresh ownerless modal; loading-splash fallback; drag button state;
+silent-refresh ownerless modal; loading-splash fallback; drag button state;
 cached co-browse viewport; request-filter `about:blank` page-source; init-timeout on env creation;
 sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
