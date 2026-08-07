@@ -130,7 +130,7 @@ public sealed class UpdateStageStatus
 /// <summary>
 /// The staging half of a two-phase update: a running process cannot replace its own executable, so
 /// the app downloads and VERIFIES while it is alive and something that runs before it applies the
-/// result (<c>docs/2026-08-02-shenora-app-update-design.md</c>).
+/// result (<c>docs/DECISIONS.md</c> D57).
 /// <para>
 /// The kit owns the PROTOCOL, not the download. An app fetches the changed files
 /// (<see cref="ManifestDiff"/>) into <see cref="StagedDirectory"/> however it likes — HTTP, a
@@ -413,7 +413,7 @@ public sealed class UpdateStage
     /// manifest dropped, and clear the stage. Portable — no native code and nothing platform-specific.
     /// <para>
     /// <b>Run this from OUTSIDE <paramref name="installRoot"/>, with the app not running.</b> That is
-    /// the topology the design picked (`docs/2026-08-02-shenora-app-update-design.md` §2): a launcher
+    /// the topology the design picked (`docs/DECISIONS.md` D50): a launcher
     /// at <c>{root}/</c> overlaying <c>{root}/app/</c> can never overwrite or delete itself, which
     /// makes four separate self-exclusion guards UNREACHABLE rather than merely handled. Overlay a
     /// tree that contains the running process and you are signing up for all of them.

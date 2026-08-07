@@ -8,7 +8,7 @@ namespace Shenora.IO;
 /// <summary>
 /// One tracked file in an <see cref="UpdateManifest"/>: where it lives, how big it is, and what it
 /// hashes to. The triple two sibling apps arrived at independently
-/// (<c>docs/2026-08-02-shenora-app-update-design.md</c> §0), which is why it is this and not more.
+/// (<c>docs/DECISIONS.md</c> D57), which is why it is this and not more.
 /// </summary>
 public sealed class ManifestFile
 {

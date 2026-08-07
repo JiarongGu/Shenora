@@ -6,8 +6,8 @@ namespace Shenora.Ipc;
 /// <summary>
 /// The transport-neutral half of a host's outbound notification channel: the bounded
 /// drop-oldest queue, the ready gate, batch building, and the guarded per-notification
-/// serialize. Moved out of <c>Shenora.Windows.WebViewIpcBridge</c> (design
-/// <c>docs/2026-08-01-shenora-communication-core-design.md</c> §5) so a second, non-WinForms
+/// serialize. Moved out of <c>Shenora.Windows.WebViewIpcBridge</c>
+/// (<c>docs/DECISIONS.md</c> D23) so a second, non-WinForms
 /// base inherits these already-fixed bugs instead of re-earning them — every one of the
 /// invariants below was a real incident (P5.5 H2/H3) before it was a comment.
 /// <para>

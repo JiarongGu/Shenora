@@ -24,10 +24,10 @@ update the relevant entry HERE — this file is the durable index.
 | Task | Read |
 |---|---|
 | Getting oriented / new session | This file, then `docs/ARCHITECTURE.md` + `local/PROJECT_NOTES.md` (private status) |
-| Understanding what Shenora is and why | `docs/2026-07-30-shenora-design.md` (the design contract) |
+| Understanding what Shenora is and why | `CLAUDE.md`'s opening (the identity + the thesis that decides what is worth building) + `docs/DECISIONS.md` **D53**–**D56** |
 | Package layering / where a contract belongs / mobile-shareable logic | `docs/DECISIONS.md` D19+D20 (one Windows shell layer, portable contracts in Core) + `docs/ARCHITECTURE.md` for the as-built graph |
 | Sending IPC without awaiting / long-running work / correlating streamed results | `docs/DECISIONS.md` D23 (why the event pipe is the default, not request/response) |
-| Changing the module contract / tracking a long operation / hosting on a non-WinForms base | `docs/2026-08-01-shenora-communication-core-design.md` (0.2.0 rationale: `IModuleContext`, the operation registry, `NotificationPump`, the lifecycle bands) |
+| Changing the module contract / tracking a long operation / hosting on a non-WinForms base | `docs/DECISIONS.md` **D23** (`IModuleContext`, the operation registry, `NotificationPump`, the lifecycle bands) + `.claude/knowledge/ipc-contracts.md` |
 | "Why is it done this way?" | `docs/DECISIONS.md` (numbered rationale — don't relitigate, amend) |
 | Picking the next piece of work | `TASKS.md` (root — OPEN only, in the owner's work order) |
 | Why a FINISHED decision was made that way | `docs/DECISIONS.md` — and if it is not there, `git log`. There is no closed-backlog file (deleted 2026-08-07) |
@@ -38,10 +38,10 @@ update the relevant entry HERE — this file is the durable index.
 | When did this break? | `git log -S "<distinctive token>" -- <path>` — there is no fix log; commit messages carry root causes |
 | Adopting Shenora into an existing desktop app | `docs/ADOPTION.md` (stage order, what replaces what, what stays the app's own) |
 | Running the same app logic on MOBILE (a MAUI shell) | `docs/ADOPTION.md` Stage 5 (what transfers, what does not, and the traps already paid for) + `docs/DECISIONS.md` **D32**–**D34** (a second shell is a PEER; absent vs differently-satisfied capabilities; why its API baseline is weaker) + **D36** (the host advertises capabilities in the handshake, so ONE web bundle serves both shells) + **D39** (why the auxiliary-session stack does NOT port, even though both shells host a webview) |
-| Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/2026-08-02-shenora-mission-scheduling-design.md` (the one-scheduler-two-key-kinds claim + what is deliberately not built) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
+| Replacing a hand-rolled file-operation planner, job queue or resource gate | `docs/DECISIONS.md` **D27**–**D31** (the one-scheduler-two-key-kinds claim) + **D57** (why a policy is safe to expose: it chooses among LEGAL moves) + the mission-scheduler section of `docs/ADOPTION.md` (adopter-facing mapping) |
 | Serializing filesystem MUTATIONS, atomic replace, crash-atomicity, cross-process file locks | `docs/DECISIONS.md` **D30**+**D31** (why the file queue is separate from scheduling; why locking is two mechanisms) + **D48**+**D55** (the `Shenora.IO` namespace, inside `Shenora.Core` — a package until 2026-08-07) + `docs/ARCHITECTURE.md` for the surface + the file-queue section of `docs/ADOPTION.md` |
 | Multi-step missions, or where the pending queue lives | `docs/DECISIONS.md` **D28**+**D29** (a chain is ONE queue entry; the queue's store, and the pluggable async queue that was rejected) |
-| Shipping app updates: a staged/two-phase updater, an update manifest, or a native launcher | `docs/2026-08-02-shenora-app-update-design.md` (the evidence from two independent sibling implementations, the topology that deletes a bug class, and what is deliberately not built) |
+| Shipping app updates: a staged/two-phase updater, an update manifest, or a native launcher | `docs/DECISIONS.md` **D50** (the launcher is a library + a template; the topology that deletes a bug class) + **D57** (why two phases at all, and the two-sibling evidence) + **D56** (this is PRODUCT, not devtools) |
 | Probing, planning or **playing a file the webview cannot decode** | `docs/DECISIONS.md` **D52** (what the translation layer IS and the scope test it gives) + **D51** (why no engine byte ever ships) + **D53** (why it lives in `Shenora.Core` and not its own package), then `docs/ARCHITECTURE.md`'s `Shenora.Media` pipeline bullet for the as-built surface |
 | Cutting or consuming a release | `docs/RELEASING.md` |
 | Touching an invariant / gotcha | `.claude/rules/RULES_INDEX.md` — read the matched rule |
@@ -65,11 +65,6 @@ update the relevant entry HERE — this file is the durable index.
 
 | Doc | Holds | Nature |
 |---|---|---|
-| `2026-07-30-shenora-design.md` | The design contract: profiles, packages, IPC contract, phasing. Code cites its `§5` (the threading model) | Keep in sync with reality (dated amendments) |
-| `2026-08-01-shenora-communication-core-design.md` | The 0.2.0 communication core RATIONALE: `IModuleContext`, tracked operations, `NotificationPump`, the lifecycle bands. Code cites its `§4.2/§4.3/§4.6/§5/§5A.*` | Rewritten to the current shape in the 0.2.0 cleanup; as-built surface is `ARCHITECTURE.md` |
-| `2026-08-02-shenora-mission-scheduling-design.md` | **Kept for what only it holds:** §0's harvest evidence (the same two problems solved five times across the donor apps) and `## Amendments` A1–A3 (policy as the app's; designed-for-future; the rename + definition/execution split). Surface → `ARCHITECTURE.md`; WHYs → `DECISIONS.md` D27–D31 | Historical record + amendments; not the surface |
-| `2026-08-02-shenora-mobile-offline-plan.md` | Assessment of an on-device/offline mobile host: the blocker is transport coupling in the ADOPTING app, not the kit | Assessment, not a queue — see `TASKS.md` |
-| `2026-08-02-shenora-app-update-design.md` | Staged application updates: §0's two-independent-implementations evidence, the three-way split (only the apply step is native), the topology choice, and the guards a port must not drop | Design; retire once built (WHYs → `DECISIONS.md`) |
 | `DECISIONS.md` | Numbered load-bearing choices + why | Living, append/amend |
 | `ARCHITECTURE.md` | The as-built map: projects, dependencies, public surface | Keep in sync with reality |
 | `ROADMAP.md` | Done (narrative, newest first) + Remaining (by phase) | Living |

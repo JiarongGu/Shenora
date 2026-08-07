@@ -131,6 +131,19 @@ keeps the library reusable (adopted from the family's other library, where it's 
   CONSUMER experiences? "WinForms without WebView2" did not. "I am building an Android app" does — and
   **that is now the only boundary the package set draws**, since D55 removed the feature tier. A platform
   is the one thing you genuinely pick.
+- **Ask which future changes would be BREAKING rather than additive, and pay for those NOW.** Owner,
+  2026-08-02: *"you have to always think bigger than we currently have… a new application with a new
+  requirement should also fit."* Audit a new surface for the changes that could not be made later without
+  breaking every caller — those are the only ones worth pre-building. Two were found and fixed before the
+  mission scheduler shipped, at a cost of one defaulted parameter each:
+  - `MissionDefinition.Lanes` was `IReadOnlyList<string>`, one permit apiece. A lane is often a BUDGET
+    (memory, VRAM, bandwidth) where items cost different amounts, and adding a cost later changes the
+    property's TYPE. `MissionLane(string Name, int Permits = 1)` from the start.
+  - **Priority**, defaulted to 0 — which IS plain FIFO. Adding an ordering input to a strictly-FIFO
+    scheduler later changes admission semantics for existing callers.
+  ⚠ The test is *breaking vs additive*, not *might be useful*. A new method or a new implementation of a
+  seam is additive and can wait; a type change, a semantic change, or a parameter that must be threaded
+  through cannot. (Harvested from the mission design doc's `A2` when it was retired — D57.)
 - **Options records over magic values.** Every number/color/URL a source app hardcoded (dev port,
   background color, timeouts, batch intervals) becomes a documented option with the family-proven
   default.

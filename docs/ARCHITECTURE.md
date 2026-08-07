@@ -1,8 +1,8 @@
 # ARCHITECTURE.md — the as-built map
 
 Keep in sync with reality: when a project, public type family, or dependency edge changes, update
-this file in the same phase. (Design intent lives in `docs/2026-07-30-shenora-design.md`; this file
-records only what EXISTS.)
+this file in the same phase. (Design intent lives in `docs/DECISIONS.md`; this file records only what
+EXISTS. There are no dated design docs any more — D57.)
 
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`, the same way README.md's
@@ -25,7 +25,7 @@ stabilised: every public and protected member documented with CS1591 as an error
 moved out of the library to the sample (D21/D22 amended), and the release pipeline hardened. The
 narrative is `docs/ROADMAP.md` `## Done`.
 
-**2026-08-01 — the communication core** (D23, `docs/2026-08-01-shenora-communication-core-design.md`,
+**2026-08-01 — the communication core** (D23,
 implemented; drafted under the name "0.2.0" and released later that day as part of v0.3.0): the module
 contract now carries the EVENT path — `IModuleContext` (`Publish`/`Start`/`Run`/`Logger`) is the
 second parameter of `BaseFacade.RouteMessageAsync`, the one breaking change this release makes. A new
@@ -41,7 +41,7 @@ time**, precisely because that story exists: a version is assigned by the releas
 version written into prose is a guess about the future.)
 
 **2026-08-02 — `Shenora.Core`'s mission-scheduling + filesystem-claims layer**
-(`docs/2026-08-02-shenora-mission-scheduling-design.md`): one scheduler whose key spaces are pluggable, so
+(D27–D31): one scheduler whose key spaces are pluggable, so
 a filesystem operation planner (paths conflict by containment) and a job queue (lanes admit N) are the
 same engine — the EXECUTION half of long-running work, composing with `Shenora.Ipc`'s operations
 cluster (the REPORTING half) rather than merging with it. Surface below; adopter-facing mapping in
@@ -478,7 +478,7 @@ changes, noting them in `CHANGELOG.md`).
   implement it without referencing an optional feature package. Advisory leases went the other way for
   the opposite reason: lock files are portable, so contract and implementation ship together.
   **`UpdateManifest`, `ManifestFile`, `ManifestDiff` (2026-08-02)** — the staged-update
-  changeset, and the FIRST piece of `docs/2026-08-02-shenora-app-update-design.md` to ship.
+  changeset, and the FIRST piece of the staged-update design (D57) to ship.
   `ManifestFile` is `{Path, Size, Sha256}` (the triple two sibling apps arrived at independently);
   `UpdateManifest` is `{Version, GeneratedAt?, Files}` with camelCase `Parse`/`ToJson` matching what
   they already emit; `ManifestDiff.Compute(installed, release)` yields `Added`/`Updated`/`Removed` +

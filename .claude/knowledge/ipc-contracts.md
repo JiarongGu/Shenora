@@ -208,7 +208,7 @@ transport, or building the P6 adoption shims.
   after an async fall-through. The transport side interleaves async on the UI thread; never
   `Task.Run`-per-message (the measured pool-starvation freeze).
 
-### 0.2.0 — the communication core (D23, `docs/2026-08-01-shenora-communication-core-design.md`)
+### 0.2.0 — the communication core (D23)
 
 - **`Publish` goes through `IModuleContext`, never a hand-typed module literal, so an emit cannot
   drift from the facade's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`

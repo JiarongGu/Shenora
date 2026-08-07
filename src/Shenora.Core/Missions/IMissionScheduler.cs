@@ -70,7 +70,7 @@ public interface ILane
 /// One engine covers what the family had built five times: a filesystem operation planner is this
 /// with hierarchical path keys (<see cref="PathClaims"/>), a job queue is this with lanes, and an
 /// actor is this with a single exclusive claim. See
-/// <c>docs/2026-08-02-shenora-mission-scheduling-design.md</c>.
+/// <c>docs/DECISIONS.md</c> D27–D31.
 /// </para>
 ///
 /// <para>

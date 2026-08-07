@@ -356,8 +356,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   contract. Recorded as a rule in `.claude/knowledge/generic-library.md`.
 
 - **D23 — The module contract carries the EVENT path, and the kit tracks long-running operations.**
-  (User direction, 2026-08-01, on the first adopter's IPC design review.) Three parts, one design:
-  `docs/2026-08-01-shenora-communication-core-design.md`, shipping as 0.2.0.
+  (User direction, 2026-08-01, on the first adopter's IPC design review.) Three parts, one design,
+  shipped as 0.2.0.
   **(a)** A route receives an `IModuleContext` — `Publish` (module-scoped emit), `Start`/`Run` (tracked
   operations), `Logger` — *in its signature*, because `Shenora.Ipc` had **zero** references to
   `IEventBus` while the kit's own `DropZoneManager` took one as a REQUIRED option. The bus was already
@@ -1407,9 +1407,8 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     nuget.org that does not exist is not.
 
 - **D50 — the native launcher is a LIBRARY plus a template, written in C++, shipped as one binary per
-  platform. Amends the design doc's §5, which said "template only".** (Owner, 2026-08-05.) Design shape:
-  `docs/2026-08-02-shenora-app-update-design.md` §5a. **Nothing is built — this decides the shape so B4 can
-  be picked up without re-arguing it.**
+  platform. Amends the design doc's §5, which said "template only".** (Owner, 2026-08-05.)
+  **Nothing is built — this decides the shape so B4 can be picked up without re-arguing it.**
 
   > *"so it probably need to be template + c++ library"* … *"the only requirement is (compatibale linux+
   > windows for future needs, and small) we can have for different platform use differnt binary too just
@@ -1842,3 +1841,34 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - 🔴 **It also raises the stakes on the known-broken Live Activity devkit** (`CHANGELOG.md`
     `### Known broken`). A devkit whose stated adoption does not hold on a device is a tooling defect, and
     tooling defects are now product defects.
+
+- **D57 — the dated design docs are RETIRED, all five. A design doc is scaffolding: once the thing is
+  built, `ARCHITECTURE.md` says what it is and this file says why, and the third copy is the one that goes
+  stale.** (2026-08-07, applying the 0.2.0 cleanup's own precedent to the docs that outlived it.)
+  - **What triggered the audit rather than the calendar:** `docs/README.md` claimed the 2026-07-30 design
+    contract was load-bearing because *"code cites its `§5`"*. **Zero source files cite it** — the claim was
+    written when it was true and nothing re-checked it. That is `doc-claims.md`'s exact defect class, in
+    the router, about the doc the router calls the design contract.
+  - **Retired:** `2026-07-30-shenora-design.md` (its package set and "desktop body for the family's Windows
+    applications" framing are both superseded — D54/D55, and `CLAUDE.md` now carries the identity),
+    `2026-08-01-shenora-communication-core-design.md` (→ **D23**), `2026-08-02-shenora-app-update-design.md`
+    (→ **D30**/**D31**/**D50**), `2026-08-02-shenora-mission-scheduling-design.md` (→ **D27**–**D31**),
+    `2026-08-02-shenora-mobile-offline-plan.md` (an assessment, not a queue). Six code citations were
+    repointed at D-entries first; git holds the documents.
+  - 🔴 **What ONLY they held, preserved here because it is invariant rather than narrative:**
+    - **A mission policy is consulted only about LEGAL moves, and that is what makes it safe to expose.**
+      By the time `IMissionPolicy.Compare`/`ShouldStart` sees an item it has already passed admission —
+      claims free, lane permits available, fairness satisfied. So a policy chooses among legal moves: it
+      cannot make conflicting work run concurrently, cannot bypass a lane, cannot reorder work that
+      conflicts with something earlier. **The worst a buggy policy can do is DELAY work; it can never
+      corrupt it.** A throwing policy is caught and read as "not now" rather than wedging the scheduler.
+      ⚠ Consequence: a policy deferring on an EXTERNAL condition (clock, load, battery) needs
+      `Reevaluate()`, because dispatch is event-driven and **the kit deliberately owns no timer** —
+      polling belongs to whoever knows what is being polled.
+    - **Why app updates are two phases, in one sentence:** a running process cannot replace its own
+      executable on Windows, so the app downloads and verifies while alive and something that runs
+      *before* it applies the result. Two siblings built this independently and arrived at the same
+      three-file launcher, the same `.update/staged` + `ready.json` contract and the same
+      `{path, size, sha256}` manifest triple — D15's two-consumer bar met on evidence, not direction.
+    - **The offline-mobile blocker is on the ADOPTER's side, not the kit's:** transport coupling in the
+      app, not anything missing from the shell. Nothing to build here until an app is actually decoupled.

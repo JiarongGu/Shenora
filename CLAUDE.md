@@ -25,12 +25,9 @@ folder, never a package. Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
 (postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See
-`docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D49 and growing —
-check the file, not this range; its header carries the current package set) before relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design docs once implemented
-(re-layering → D19/D20, one-way IPC → D23, plus the originating brief): decisions live in
-`DECISIONS.md`, as-built shape in `ARCHITECTURE.md`. One design doc survives —
-`docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the
-code cites its `§` numbers.
+`docs/DECISIONS.md` (numbered; its header carries the current package set) before relitigating anything.
+**There are no design docs and no archive** (D57, D9's 2026-08-07 amendment): why → `DECISIONS.md`,
+as-built → `ARCHITECTURE.md`, what's left → `TASKS.md`, what happened → `git log`.
 
 **Status: v0.10.0 published (2026-08-05)**; the tree is ahead of it. Read `CHANGELOG.md` `## Unreleased`
 before touching the surface — it carries **breaking changes**, including `Shenora.Media` ceasing to be a

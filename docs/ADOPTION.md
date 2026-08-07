@@ -381,8 +381,8 @@ until the page is listening.
   cut before publish because it forced everything to answer "does this entry still have a body?", and
   every way of answering that produced a defect. Keep your checkpoint token in your own store, and on
   restart begin the resumed run as an ordinary `Start()`/`Run()`. Want the pending offer visible while
-  the user decides? `Start()` it and immediately `op.Wait("interrupted")`. See
-  `docs/2026-08-01-shenora-communication-core-design.md` §5A for the full shape.
+  the user decides? `Start()` it and immediately `op.Wait("interrupted")`. See `docs/DECISIONS.md` D23
+  for the rationale.
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.
 
@@ -786,8 +786,7 @@ Two things that only showed up here, and both are about your PAGE rather than th
 parallel) and a **job queue** (bounded concurrency, retry, cancel, durability). They are the same
 engine with different key types — paths conflict when one CONTAINS the other, lanes admit N holders at
 once — and putting only that difference behind a seam is what makes adoption a DELETION rather than a
-translation. Evidence, rationale and the deliberately-not-built list:
-`docs/2026-08-02-shenora-mission-scheduling-design.md`.
+translation. Evidence, rationale and the deliberately-not-built list: `docs/DECISIONS.md` D27–D31 + D57.
 
 **It needs nothing else from the kit.** `IMissionScheduler` is in `Shenora.Core`: no shell, no IPC, no
 Windows, and not even the host builder — `new MissionScheduler(options)`, registered as a singleton in

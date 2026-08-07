@@ -85,8 +85,8 @@ Two properties follow from that and shape every judgement:
   member names, parameter names, csproj `<Description>`s, and the docs — and it says nothing at all
   about the second test above. **A green suite is not evidence that a component earns its place.**
 
-Design contract: `docs/2026-07-30-shenora-design.md` (a dated snapshot — read `ARCHITECTURE.md` for
-what is true now). Load-bearing choices: `docs/DECISIONS.md` (D1–D48 — numbered; don't relitigate,
+What the kit IS: `CLAUDE.md`'s opening + `docs/DECISIONS.md` D53–D56. As-built: `ARCHITECTURE.md`.
+Load-bearing choices: `docs/DECISIONS.md` (numbered; don't relitigate,
 they record *why*; the count grows, so check the file rather than trusting a range written here).
 **The ones most likely to look like violations:** D21 + D22 (a feature ships as primitives + lifecycle
 hooks rather than the product, and every public type is named for its MECHANISM — so
