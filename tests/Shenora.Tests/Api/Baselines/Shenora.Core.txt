@@ -886,14 +886,6 @@ interface Shenora.Media.IMediaPlayer
   public abstract System.Threading.Tasks.Task SeekAsync(System.TimeSpan position, System.Threading.CancellationToken cancellationToken = default)
   public abstract double Rate { get; set; }
   public abstract event System.Action<Shenora.Media.MediaPlayerStatus> StateChanged
-interface Shenora.Media.IMediaRenderTarget
-  public abstract System.Threading.Tasks.Task LoadAsync(string uri, System.TimeSpan startAt, System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task PauseAsync(System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task PlayAsync(System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task SeekAsync(System.TimeSpan position, System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task SetRateAsync(double rate, System.Threading.CancellationToken cancellationToken = default)
-  public abstract System.Threading.Tasks.Task UnloadAsync(System.Threading.CancellationToken cancellationToken = default)
-  public abstract event System.Action<Shenora.Media.MediaPlayerStatus> Reported
 interface Shenora.Media.ISegmentEngine
   public abstract Shenora.Media.ISegmentRun? Start(Shenora.Media.SegmentRunRequest request)
   public abstract System.TimeSpan? DurationOf(string source)
@@ -991,7 +983,7 @@ sealed class Shenora.Media.MediaPlaybackPolicy : System.IEquatable<Shenora.Media
   public static bool op_Equality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
   public static bool op_Inequality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
 sealed class Shenora.Media.MediaPlayer : Shenora.Media.IMediaPlayer, System.IDisposable
-  public .ctor(Shenora.Media.IMediaRenderTarget target, Shenora.Media.MediaPlayerOptions options)
+  public .ctor(Shenora.Core.IEventBus events, Shenora.Media.MediaPlayerOptions options)
   public Shenora.Media.MediaPlayerStatus Status { get; }
   public System.Threading.Tasks.Task CloseAsync(System.Threading.CancellationToken cancellationToken = default)
   public System.Threading.Tasks.Task OpenAsync(Shenora.Media.MediaSource source, System.Threading.CancellationToken cancellationToken = default)
@@ -1001,6 +993,14 @@ sealed class Shenora.Media.MediaPlayer : Shenora.Media.IMediaPlayer, System.IDis
   public double Rate { get; set; }
   public event System.Action<Shenora.Media.MediaPlayerStatus> StateChanged
   public void Dispose()
+  public void Report(Shenora.Media.MediaPlayerStatus status)
+static class Shenora.Media.MediaPlayerEvents
+  public const string Load = "PLAYER_LOAD"
+  public const string Pause = "PLAYER_PAUSE"
+  public const string Play = "PLAYER_PLAY"
+  public const string Rate = "PLAYER_RATE"
+  public const string Seek = "PLAYER_SEEK"
+  public const string Unload = "PLAYER_UNLOAD"
 sealed class Shenora.Media.MediaPlayerException : System.Exception
   public .ctor(string message)
   public .ctor(string message, System.Exception inner)
@@ -1011,6 +1011,7 @@ sealed class Shenora.Media.MediaPlayerOptions
   public System.Action<string>? Log { get; init; }
   public System.Func<string, System.Threading.CancellationToken, System.Threading.Tasks.Task<Shenora.Media.MediaProbeResult>>? Probe { get; init; }
   public required System.Func<string, Shenora.Media.MediaPlaybackPlan, string> ResolveUri { get; init; }
+  public string Module { get; init; }
 enum Shenora.Media.MediaPlayerState (int)
   public const Shenora.Media.MediaPlayerState Buffering = 4
   public const Shenora.Media.MediaPlayerState Empty = 0

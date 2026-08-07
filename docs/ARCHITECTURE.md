@@ -89,9 +89,11 @@ Shenora.slnx
 │   │                                            Play/   IMediaPlayer — the HOST plays, the page drives
 │   │                                                    (D54). TWO implementations, both portable-facing:
 │   │                                                      · MediaPlayer — the DEFAULT. Lifecycle in .NET,
-│   │                                                        display and sound in a page element through
-│   │                                                        IMediaRenderTarget. It owns the decision the
-│   │                                                        four stages above used to leave to each app:
+│   │                                                        display and sound in a page element, driven
+│   │                                                        over IEventBus (MediaPlayerEvents) with the
+│   │                                                        page answering via Report(). It owns the
+│   │                                                        decision the four stages above used to leave
+│   │                                                        to each app:
 │   │                                                        probe → plan → resolve the URL, which is how
 │   │                                                        the interceptor's conversion route becomes
 │   │                                                        this player's OUTPUT PIPE rather than a

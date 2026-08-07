@@ -1896,9 +1896,20 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     thing; in a hybrid framework it is the NORMAL case, and the native player is the special one. ⚠ The
     lexicon gate agreed by accident and it is worth noting: `Web` was the only questionable word in the
     original name, and removing it made the gate pass without an edit.
-  - **`IMediaRenderTarget` is the seam, and it RENDERS rather than decides.** Told which URL to load, when
-    to play, where to seek; it reports position and state back, and it is the only clock — the element is
-    the thing actually advancing, so anything the player computed itself would be a second, worse one.
-  - ⚠ **What is NOT built:** the page-side binding. `IMediaRenderTarget` has no implementation in the kit
-    yet, so an app writes the element driver and the IPC route itself. That is the next piece, and it
-    belongs in `@shenora/react` where the element lives.
+  - 🔴 **CORRECTED WITHIN THE HOUR — the first draft had an `IMediaRenderTarget` interface and it was
+    over-engineering.** (Owner: *"IMediaRenderTarget? isn't that should be just the web? I think we have bit
+    over engineered this."* Right.) It had exactly ONE production implementation — the page element — plus
+    a test fake, which is the seam **D52 already refused to build** for probing. Worse, `IMediaPlayer` is
+    itself the seam that separates the web player from the native one, so this was a second seam underneath
+    the first. Deleted; `MediaPlayer` now talks to the page over **`IEventBus`**, the channel the conversion
+    route already uses, and the page answers by calling `MediaPlayer.Report` from its IPC route.
+    ⚠ **The generalisable tell: an interface whose only implementations are the real one and a test
+    double.** A test fake is not a second consumer — it is the *cost* of the abstraction, not evidence for
+    it. Ask what the second REAL implementation is; if the answer is hypothetical, use the concrete type.
+  - **The page is the only clock.** Position and duration come from `Report` and nowhere else, because the
+    element is the thing actually advancing — anything the player computed itself would be a second, worse
+    one. ⚠ Report on TRANSITIONS: `timeupdate` fires ~4×/second and forwarding it costs battery to tell the
+    host something it can extrapolate.
+  - ⚠ **What is NOT built:** the page-side driver. Nothing in the kit yet subscribes to
+    `MediaPlayerEvents` and drives an element, so an app writes that half itself. It belongs in
+    `@shenora/react`, where the element lives.
