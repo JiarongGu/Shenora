@@ -619,7 +619,28 @@ public sealed class WebViewHost
                 && AppCallbackRan(onFailed, e, nameof(WebViewHostOptions.OnProcessFailed)))
                 return;
 
-            Log(() => $"[Shenora.Windows] Process failed: {e.ProcessFailedKind} (reason: {e.Reason})");
+            // 🔴 EVERYTHING WebView2 KNOWS, not just the kind. "RenderProcessExited (reason: Crashed)"
+            // names the event and nothing about the cause, so an adopter — and this repo — could stare at
+            // it without a next step. The three fields below are the ones that actually identify a crash:
+            // ExitCode (a STATUS_* code names the fault class), ProcessDescription (WHICH utility/GPU
+            // process, since those kinds cover several), and FailureSourceModulePath (the module the
+            // crash came from — usually a codec, a GPU driver or a shell extension injected into the
+            // renderer, and the single most useful field there is).
+            // ⚠ Same defect shape as a WinRT COMException reported without its HRESULT: naming a failure
+            // while withholding its identity reads as a diagnostic and is not one.
+            Log(() =>
+            {
+                var detail = $"[Shenora.Windows] Process failed: {e.ProcessFailedKind} (reason: {e.Reason}"
+                    + $", exitCode: {e.ExitCode})";
+                var description = AppCallback.RunOrDefault(() => e.ProcessDescription, null);
+                if (!string.IsNullOrWhiteSpace(description)) detail += $" process='{description}'";
+                // Guarded and read separately: these are newer members on the args, and an older runtime
+                // can throw rather than return empty — which must not turn a crash REPORT into a second
+                // crash inside the handler.
+                var module = AppCallback.RunOrDefault(() => e.FailureSourceModulePath, null);
+                if (!string.IsNullOrWhiteSpace(module)) detail += $" module='{module}'";
+                return detail;
+            });
             if (!_options.ReloadOnRenderProcessFailure
                 || e.ProcessFailedKind != CoreWebView2ProcessFailedKind.RenderProcessExited) return;
 

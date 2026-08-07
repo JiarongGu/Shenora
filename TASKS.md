@@ -167,9 +167,24 @@ runs the new assemblies against old sources and proves nothing):
     empty message, since WinRT COMExceptions routinely carry none. Adding the HRESULT and the failing
     STEP named the cause on the first run. A diagnostic that names an exception and nothing about it is
     worse than none: it reads as evidence.
-- [ ] **`RenderProcessExited (reason: Crashed)` on the desktop sample**, twice per run, recovered by the
-  host's own reload (1/3) — so the recovery path works and is worth keeping. The crash itself is not
-  explained.
+- [ ] **`RenderProcessExited` on the desktop sample — INVESTIGATED 2026-08-08, four causes eliminated,
+  still unexplained.** Not blocking: the host's auto-reload recovers it and every probe passes on the
+  second cycle, which is the recovery path earning its keep rather than a workaround.
+  - **What is now known**, thanks to the richer diagnostic added in the same pass:
+    `exitCode 0xC0000005` (STATUS_ACCESS_VIOLATION) on the renderer and later on the Storage Service,
+    Network Service and GPU process — **the same code for all four**. `FailureSourceModulePath` is
+    EMPTY and **Windows Error Reporting logs no Application Error at all**, which a genuine
+    access-violation fault normally would. WebView2 Runtime 151.0.4129.72.
+  - **Ruled out by A/B, each rebuilt and re-run:** the playback probe · both seam probes ·
+    GPU acceleration (`--disable-gpu --disable-gpu-compositing`) · a stale or corrupt user-data profile
+    (deleted; a fresh one crashes identically).
+  - ⚠ **A transient red herring worth not re-chasing:** deleting the profile right after a run fails
+    with "Device or resource busy" on every file, which looks like leaked WebView2 processes holding
+    it. It is not — they are still shutting down, and a check moments later finds zero orphans.
+  - **The decisive test not yet run:** a MINIMAL WebView2 app on this box. If that crashes too the
+    cause is environmental (runtime 151 / a driver / an injected module) and the kit is uninvolved;
+    if it does not, the cause is in the host or the sample page. ⚠ Everything above says "environmental"
+    but nothing yet PROVES it, and the absent WER event is the oddest fact in the set.
 
 ⚠ **After ANY rename sweep in this work: READ THE DIFF.** Three instances of "a thing is not itself" from
 D37's 2026-08-02 merge survived every review until the D65 sweep surfaced them, because `doc-drift` is
