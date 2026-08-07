@@ -31,6 +31,35 @@ namespace Shenora.Media;
 /// zero bytes and zero obligations contradicts neither.
 /// </para>
 /// </summary>
+/// <remarks>
+/// 🔴 <b>WHERE THIS SITS relative to the other seams, because "the app plugs in an encoder" describes three
+/// things in this package and they are NOT interchangeable.</b> One primitive, two compositions:
+/// <list type="table">
+/// <item>
+///   <term><see cref="IMediaAudioConversion"/></term>
+///   <description>THE PRIMITIVE. One stream in, one stream out, frame by frame. Knows nothing about
+///   containers, files or routes.</description>
+/// </item>
+/// <item>
+///   <term><c>MediaConversionOptions.Convert</c></term>
+///   <description>ONE FINISHED FILE. A delegate, so an app that wants a native muxer
+///   (<c>AVAssetWriter</c>, <c>MediaMuxer</c>) simply supplies its own.
+///   <c>Mp4Remuxer.ConvertAsync</c> is the kit's DEFAULT for it, built on the primitive above.</description>
+/// </item>
+/// <item>
+///   <term><see cref="ISegmentEngine"/> (this)</term>
+///   <description>A ROLLING WINDOW of numbered pieces, started at an arbitrary index and killed on
+///   dispose. Not a converter: a converter answers when the whole source has been read, and an hour-long
+///   file is an hour-long wait through that shape and a few seconds through this one.</description>
+/// </item>
+/// </list>
+/// <para>
+/// ⚠ <b>So the kit has ONE encoder seam, not two.</b> This interface and the conversion delegate look alike
+/// and are not — they differ in WHEN output is usable, which is the whole reason both exist. A default
+/// segment engine would be a composition of the primitive plus a transport-stream writer; the kit does not
+/// ship one yet, and this stays the escape hatch until it does.
+/// </para>
+/// </remarks>
 public interface ISegmentEngine
 {
     /// <summary>True when an engine is actually present and runnable here. A route is worth registering only when it is.</summary>
