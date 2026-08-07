@@ -86,6 +86,17 @@ Shenora.slnx
 │   │                                                    every frame copied untouched, no codec at all)
 │   │                                                    plus the ISegmentEngine seam for what the kit
 │   │                                                    does not do itself.
+│   │                                            Play/   IMediaPlayer — the HOST plays, the page drives
+│   │                                                    (D54). A portable contract with ONE implementation
+│   │                                                    per shell, the same shape as IPlaybackSession;
+│   │                                                    iOS ships MobileMediaPlayer (AVPlayer) and the
+│   │                                                    other two shells are absent rather than stubbed.
+│   │                                                    ⚠ This BOUNDS the four stages above rather than
+│   │                                                    replacing them: they exist for apps serving bytes
+│   │                                                    to a <video>, and stop being the answer to "the
+│   │                                                    webview cannot play this". Ships no queue,
+│   │                                                    playlist or effects — only the app knows what
+│   │                                                    "next" means, as with IPlaybackSession.
 │   │                                          ⚠ It still implements NO interception. Serving bytes to a
 │   │                                          page configures a WEBVIEW and is a shell capability, so
 │   │                                          IWebViewInterceptor lives in Core and each shell

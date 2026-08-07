@@ -102,6 +102,20 @@ public static class MobileHostExtensions
         });
 #endif
 
+#if IOS || MACCATALYST
+        // The HOST-OWNED PLAYER (D54). ⚠ iOS ONLY for now, and without the #error guard for the same
+        // reason as the transcode tier: this is genuinely optional, not "every shell must answer this".
+        // An app on a shell with no player keeps using <video>, which is what it was doing anyway.
+        //
+        // iOS FIRST because this is where the gap is provable rather than argued — the system pauses a
+        // backgrounded <video> outright, and AVPlayer keeps going. Android (ExoPlayer) and Windows (Media
+        // Foundation) follow; until they exist, absence is the honest answer.
+        //
+        // Singleton to match IPlaybackSession, and for the same reason: it is a handle on a process-wide
+        // facility, so two of them would fight over the audio session and the Now Playing surface.
+        builder.Services.TryAddSingleton<Shenora.Media.IMediaPlayer>(_ => new MobileMediaPlayer());
+#endif
+
         return builder;
     }
 }

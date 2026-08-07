@@ -422,9 +422,38 @@ Writer
 # It is platform vocabulary rather than domain vocabulary: every OS names this surface the same way
 # (AVAudioSession, MediaCodec's `audio/*`, SystemMediaTransportControls), which is the `ProfileDirectory`
 # test — genuine mechanism words the platforms themselves use.
-# ⚠ Watch it the way `Media` is watched. `AudioPlayer`, `AudioLibrary` or an `AudioEffect` would be the kit
-# growing a product; this converts ONE stream so a webview can play it, and nothing more.
+# ⚠ Watch it the way `Media` is watched. `AudioLibrary` or an `AudioEffect` would be the kit growing a
+# product; this converts ONE stream so a webview can play it, and nothing more.
+# ⚠⚠ This note originally listed `AudioPlayer` among the words that would mean the kit had grown a product,
+# and eight days later `IMediaPlayer` was admitted (below). Read the argument there before concluding the
+# gate was simply overridden — the line moved deliberately, and it moved because D54 changed what the kit
+# is FOR, not because the check was inconvenient.
 Audio
+
+# `Player` (2026-08-07) — in `IMediaPlayer`, and admitted only after arguing against the warning THIS FILE
+# had already written about it (see the `Audio` note above, which named `AudioPlayer` as the shape that
+# would mean the kit had grown a product). The gate fired on exactly the word it was built to catch, so the
+# case has to be made rather than waved through.
+#
+# WHAT CHANGED IS THE PRODUCT DEFINITION, not the tolerance for domain words. D54 (owner, 2026-08-07):
+# the kit is a hybrid app framework whose differentiator is native .NET capability, and its job is the
+# translation layer for "what .NET can do and React cannot". A host-owned player is the clearest instance
+# of that: iOS PAUSES a <video> the moment the app backgrounds, and AVPlayer does not. No amount of
+# JavaScript closes that gap.
+#
+# WHY IT IS MECHANISM AND NOT DOMAIN, on the file's own tests:
+#   · The `ProfileDirectory` test — do the platforms themselves use the word? AVPlayer (Apple), ExoPlayer
+#     and MediaPlayer (Android), MediaPlayer (Windows). All three name this surface `Player`. It is
+#     platform vocabulary in the same way `Audio` is.
+#   · It names a MECHANISM: something that opens a source and advances a clock through it. Compare the
+#     names it is NOT — `MediaLibrary`, `Playlist`, `NowPlayingQueue`, `AudioEffect` — every one of which
+#     describes a PRODUCT built ON a player.
+#
+# ⚠ THE LINE, stated so the next contributor does not have to re-derive it. `IMediaPlayer` ships ONE
+# source, open/play/pause/seek/close, and no queue, playlist, gapless, crossfade, shuffle or effects —
+# the same refusal that keeps a queue model out of IPlaybackSession, for the same reason: only the app
+# knows what "next" means. **A `Next()` on this interface is the tell that it has become a product.**
+Player
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher

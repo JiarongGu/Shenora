@@ -877,6 +877,15 @@ interface Shenora.Media.IMediaContainerWriter
   public abstract Shenora.Media.MediaRemuxerResult Write(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public abstract bool CanCarry(Shenora.Media.MediaStreamKind kind, string codec)
   public abstract string Container { get; }
+interface Shenora.Media.IMediaPlayer
+  public abstract Shenora.Media.MediaPlayerStatus Status { get; }
+  public abstract System.Threading.Tasks.Task CloseAsync(System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task OpenAsync(Shenora.Media.MediaSource source, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task PauseAsync(System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task PlayAsync(System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Threading.Tasks.Task SeekAsync(System.TimeSpan position, System.Threading.CancellationToken cancellationToken = default)
+  public abstract double Rate { get; set; }
+  public abstract event System.Action<Shenora.Media.MediaPlayerStatus> StateChanged
 interface Shenora.Media.ISegmentEngine
   public abstract Shenora.Media.ISegmentRun? Start(Shenora.Media.SegmentRunRequest request)
   public abstract System.TimeSpan? DurationOf(string source)
@@ -973,6 +982,31 @@ sealed class Shenora.Media.MediaPlaybackPolicy : System.IEquatable<Shenora.Media
   public override string ToString()
   public static bool op_Equality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
   public static bool op_Inequality(Shenora.Media.MediaPlaybackPolicy? left, Shenora.Media.MediaPlaybackPolicy? right)
+sealed class Shenora.Media.MediaPlayerException : System.Exception
+  public .ctor(string message)
+  public .ctor(string message, System.Exception inner)
+enum Shenora.Media.MediaPlayerState (int)
+  public const Shenora.Media.MediaPlayerState Buffering = 4
+  public const Shenora.Media.MediaPlayerState Empty = 0
+  public const Shenora.Media.MediaPlayerState Ended = 5
+  public const Shenora.Media.MediaPlayerState Failed = 6
+  public const Shenora.Media.MediaPlayerState Opening = 1
+  public const Shenora.Media.MediaPlayerState Paused = 2
+  public const Shenora.Media.MediaPlayerState Playing = 3
+  public int value__
+sealed class Shenora.Media.MediaPlayerStatus : System.IEquatable<Shenora.Media.MediaPlayerStatus>
+  public Shenora.Media.MediaPlayerStatus <Clone>$()
+  public System.TimeSpan Position { get; init; }
+  public System.TimeSpan? Duration { get; init; }
+  public bool Equals(Shenora.Media.MediaPlayerStatus? other)
+  public double Rate { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public required Shenora.Media.MediaPlayerState State { get; init; }
+  public static bool op_Equality(Shenora.Media.MediaPlayerStatus? left, Shenora.Media.MediaPlayerStatus? right)
+  public static bool op_Inequality(Shenora.Media.MediaPlayerStatus? left, Shenora.Media.MediaPlayerStatus? right)
+  public string? Error { get; init; }
 sealed class Shenora.Media.MediaProbeResult : System.IEquatable<Shenora.Media.MediaProbeResult>
   public .ctor()
   public Shenora.Media.MediaProbeResult <Clone>$()
@@ -1011,6 +1045,16 @@ sealed class Shenora.Media.MediaRemuxerResult : System.IEquatable<Shenora.Media.
   public static bool op_Inequality(Shenora.Media.MediaRemuxerResult? left, Shenora.Media.MediaRemuxerResult? right)
   public string Reason { get; init; }
   public void Deconstruct(out Shenora.Media.MediaRemuxerOutcome Outcome, out string Reason, out int VideoSamples, out int AudioSamples, out System.TimeSpan Duration)
+sealed class Shenora.Media.MediaSource : System.IEquatable<Shenora.Media.MediaSource>
+  public Shenora.Media.MediaSource <Clone>$()
+  public System.TimeSpan StartAt { get; init; }
+  public bool Equals(Shenora.Media.MediaSource? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public required string Uri { get; init; }
+  public static bool op_Equality(Shenora.Media.MediaSource? left, Shenora.Media.MediaSource? right)
+  public static bool op_Inequality(Shenora.Media.MediaSource? left, Shenora.Media.MediaSource? right)
 sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.MediaStreamInfo>
   public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null, int? SampleRate = null)
   public Shenora.Media.MediaStreamInfo <Clone>$()

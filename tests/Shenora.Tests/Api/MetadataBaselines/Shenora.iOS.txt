@@ -38,6 +38,17 @@ Shenora.Mobile.MobileMediaCapability
   method .ctor
   method Decodable
   method Encodable
+Shenora.Mobile.MobileMediaPlayer
+  event StateChanged
+  method .ctor
+  method CloseAsync
+  method Dispose
+  method OpenAsync
+  method PauseAsync
+  method PlayAsync
+  method SeekAsync
+  property Rate
+  property Status
 Shenora.Mobile.MobilePlaybackSession
   event CommandReceived
   method .ctor

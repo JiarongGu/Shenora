@@ -167,6 +167,27 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- 🔴 **`IMediaPlayer` — the host plays, the page drives (D54).** A portable contract in `Shenora.Core`
+  (`Shenora.Media` namespace, `Media/Play/`) with **one implementation per shell**, the same shape as
+  `IPlaybackSession`: `OpenAsync`/`PlayAsync`/`PauseAsync`/`SeekAsync`/`CloseAsync`, a `Status` snapshot,
+  a settable `Rate`, and a `StateChanged` event raised on transitions rather than on a timer.
+  - **iOS ships first (`MobileMediaPlayer`, AVPlayer), because that is where the gap is provable rather
+    than argued:** iOS PAUSES a `<video>` the moment the app backgrounds — the video track cannot render —
+    and a native player is not subject to that. No amount of JavaScript closes it.
+  - **Android and Windows are ABSENT, not stubbed.** The contract is genuinely optional (an app without a
+    player keeps using `<video>`, which is what it was doing anyway), so there is no `#error` guard of the
+    kind `IPlaybackSession` uses. Saying so by absence beats registering something that lies.
+  - ⚠ **It ships no queue, playlist, gapless, crossfade, shuffle or effects**, and no video surface. Only
+    the app knows what "next" means — the same refusal that keeps a queue model out of `IPlaybackSession`.
+    Audio is what it promises today; video decodes but nothing composites it into the page.
+  - ⚠ **Background playback additionally needs the APP's `AVAudioSession` and `UIBackgroundModes: [audio]`.**
+    The kit plays; the app decides whether it may mix, duck or interrupt someone else's audio — the same
+    division `MobilePlaybackSession` already draws.
+  - **`Player` was argued into the surface lexicon against a warning that file had already written**
+    (its `Audio` entry named `AudioPlayer` as the shape that would mean the kit had grown a product). The
+    line moved because D54 changed what the kit is FOR, and the argument is recorded next to the word,
+    along with the tell that it has been crossed: **a `Next()` on this interface.**
+
 - **`ResourcePack` + `ResourcePackOptions` (`Shenora.IO.Compression`)** — a named, versioned set of files an
   app needs ON DISK at runtime: a native binary for the current ABI, a model, a font set, a fixture tree.
   Delivered as one archive, extracted under the kit's existing containment and limits, and marked ready
