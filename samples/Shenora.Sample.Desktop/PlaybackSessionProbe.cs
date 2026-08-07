@@ -117,17 +117,40 @@ internal static class PlaybackSessionProbe
     /// </summary>
     private static async Task<string> ReadBackAsync()
     {
+        // Which WinRT call we are inside, so a throw can name it. Three separate calls can fail here and
+        // they mean different things: RequestAsync failing is the session MANAGER being unavailable to
+        // this process at all, while a per-session read failing is one app's session misbehaving.
+        var step = "RequestAsync";
         try
         {
             var manager = await global::Windows.Media.Control
                 .GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            step = "GetSessions";
             var sessions = manager.GetSessions();
             var others = new List<string>();
 
             foreach (var s in sessions)
             {
-                var props = await s.TryGetMediaPropertiesAsync();
-                var status = s.GetPlaybackInfo().PlaybackStatus;
+                // 🔴 PER-SESSION GUARD. The list is every app on the machine, and reading ANOTHER app's
+                // metadata can throw — measured here as 0x80070015 (ERROR_NOT_READY) from a session mid
+                // transition. Without this the loop aborted on the first bad one and OUR session was
+                // never reached, so a perfectly healthy publish reported as "the OS never reported our
+                // title". A probe that walks other processes' state must survive them: their failure is
+                // not our result.
+                global::Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties? props;
+                global::Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus status;
+                try
+                {
+                    step = "TryGetMediaPropertiesAsync";
+                    props = await s.TryGetMediaPropertiesAsync();
+                    step = "GetPlaybackInfo";
+                    status = s.GetPlaybackInfo().PlaybackStatus;
+                }
+                catch (Exception ex)
+                {
+                    others.Add($"{s.SourceAppUserModelId}:<unreadable 0x{ex.HResult:X8}>");
+                    continue;
+                }
                 if (props?.Title == Title)
                 {
                     // Controls, not just metadata: Supported maps onto SMTC button flags through a
@@ -138,6 +161,7 @@ internal static class PlaybackSessionProbe
                     // which is exactly why the duration could go missing while both of those read back
                     // perfectly. Position is printed alongside the end so a clamp is visible rather than
                     // silently indistinguishable from a correct report.
+                    step = "GetTimelineProperties";
                     var timeline = s.GetTimelineProperties();
                     return $"app={s.SourceAppUserModelId}|title={props.Title}|artist={props.Artist}"
                         + $"|album={props.AlbumTitle}|status={status}"
@@ -154,7 +178,17 @@ internal static class PlaybackSessionProbe
         }
         catch (Exception ex)
         {
-            return $"read-back threw {ex.GetType().Name}: {ex.Message}";
+            // 🔴 The HRESULT and the failing STEP, not just the type name. A WinRT COMException
+            // routinely carries an EMPTY Message, so the original line here reported
+            // "read-back threw COMException: " — a diagnostic that names the exception and says nothing
+            // about it, which is worse than none because it reads as evidence. The HResult is the part
+            // that is actually searchable, and `step` says which of the three WinRT calls died
+            // (RequestAsync, TryGetMediaPropertiesAsync, or the info/timeline reads).
+            var hresult = ex is System.Runtime.InteropServices.COMException com
+                ? $" hresult=0x{com.HResult:X8}"
+                : $" hresult=0x{ex.HResult:X8}";
+            var message = string.IsNullOrWhiteSpace(ex.Message) ? "(no message)" : ex.Message;
+            return $"read-back threw {ex.GetType().Name} at {step}:{hresult} {message}";
         }
     }
 }

@@ -156,11 +156,17 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 Both reproduce identically at the pre-rewire commit (stash → **rebuild** → run; stashing sources alone
 runs the new assemblies against old sources and proves nothing):
 
-- [ ] **`PLAYBACK SESSION: FAIL — the OS never reported our title`**, with the read-back throwing a bare
-  `COMException`. `WindowsPlaybackSession` publishes to SMTC and the read-back cannot confirm it. Now
-  Playing was verified on all three shells at 0.9.0, so this is either an environment/timing regression
-  or the probe is asking too early. ⚠ The empty exception message is itself a finding — the probe reports
-  `[read-back threw COMException: ]` and says nothing about WHY.
+- [x] ~~`PLAYBACK SESSION: FAIL`~~ — **RESOLVED 2026-08-08, and the kit was INNOCENT.**
+  `WindowsPlaybackSession` had been publishing correctly all along (title, artist, album,
+  `status=Playing`, ff/rw buttons, timeline). The PROBE was walking every app's SMTC session and
+  aborting on the first one that threw — `0x80070015 ERROR_NOT_READY`, another app's session mid
+  transition — so ours was never reached. Guarded per session; now `PLAYBACK SESSION: PASS`.
+  - 🔴 **The reusable lesson: a probe that walks OTHER PROCESSES' state must survive them. Their failure
+    is not your result.** This one reported a healthy publish as "the OS never reported our title".
+  - ⚠ **It was undiagnosable for a day because the diagnostic said nothing** — `COMException: ` with an
+    empty message, since WinRT COMExceptions routinely carry none. Adding the HRESULT and the failing
+    STEP named the cause on the first run. A diagnostic that names an exception and nothing about it is
+    worse than none: it reads as evidence.
 - [ ] **`RenderProcessExited (reason: Crashed)` on the desktop sample**, twice per run, recovered by the
   host's own reload (1/3) — so the recovery path works and is worth keeping. The crash itself is not
   explained.
