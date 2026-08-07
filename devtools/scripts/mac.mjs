@@ -1488,9 +1488,21 @@ switch (cmd) {
     break;
   }
   case 'devices': {
+    // ⚠ PRINT AVAILABILITY, not just pairing. This listing showed `pairingState` ("paired") while
+    // `pickDevice` filters on `tunnelState` — so a phone that was paired but not currently reachable
+    // listed as if it were ready, `mac device` failed with "no iPhone connected", and that error told you
+    // to check with THIS command, which said everything was fine. A diagnostic that contradicts the thing
+    // it diagnoses is worse than none. Hit live 2026-08-07.
     const found = devices(cfg);
-    if (found.length === 0) console.log('mac: no devices connected.');
-    for (const d of found) console.log(`${d.name}  (${d.model}, iOS ${d.os})  ${d.state}  ${d.id}`);
+    if (found.length === 0) console.log('mac: no devices known to this Mac.');
+    for (const d of found) {
+      const status = d.available ? 'READY' : 'NOT CONNECTED';
+      console.log(`${d.name}  (${d.model}, iOS ${d.os})  ${d.state}/${status}  ${d.id}`);
+    }
+    if (found.length > 0 && !found.some((d) => d.available)) {
+      console.log('\nmac: every device above is PAIRED but none is connected — `mac device` will refuse.\n'
+        + '  Plug it in (or bring it onto the same network for Wi-Fi pairing), unlock it, and keep it awake.');
+    }
     break;
   }
   case 'device-log': {
