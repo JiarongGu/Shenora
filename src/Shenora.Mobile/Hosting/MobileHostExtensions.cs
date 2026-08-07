@@ -92,7 +92,14 @@ public static class MobileHostExtensions
         //
         // NOT a singleton: each Begin() holds two real codec instances, and a device has only a handful.
         // Sharing the FACTORY is fine; sharing a run would not be.
-        builder.Services.TryAddSingleton<Shenora.Media.IMediaAudioConversion>(_ => new MobileMediaAudioConversion());
+        builder.Services.TryAddSingleton<Shenora.Media.IMediaAudioConversion>(_ =>
+        {
+            // The PIPELINE is registered, with this platform is converter already in it. An app adds its
+            // own with pipeline.Use(...) and keeps this one behind it, rather than replacing the lot.
+            var pipeline = new Shenora.Media.MediaAudioConversion();
+            MobileMediaAudioConversion.Use(pipeline);
+            return pipeline;
+        });
 #endif
 
         return builder;

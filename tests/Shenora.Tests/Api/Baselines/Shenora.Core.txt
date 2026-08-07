@@ -630,6 +630,10 @@ interface Shenora.Media.IMediaAudioConversionRun : System.IDisposable
 interface Shenora.Media.IMediaCapability
   public abstract System.Collections.Generic.IReadOnlySet<string> Decodable(Shenora.Media.MediaStreamKind kind)
   public abstract System.Collections.Generic.IReadOnlySet<string> Encodable(Shenora.Media.MediaStreamKind kind)
+interface Shenora.Media.IMediaContainerWriter
+  public abstract Shenora.Media.MediaRemuxerResult Write(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
+  public abstract bool CanCarry(Shenora.Media.MediaStreamKind kind, string codec)
+  public abstract string Container { get; }
 interface Shenora.Media.ISegmentEngine
   public abstract Shenora.Media.ISegmentRun? Start(Shenora.Media.SegmentRunRequest request)
   public abstract System.TimeSpan? DurationOf(string source)
@@ -642,6 +646,16 @@ interface Shenora.Media.ISegmentRun : System.IDisposable
 static class Shenora.Media.MatroskaProbe
   public static Shenora.Media.MediaProbeResult? Read(System.IO.Stream stream, string container = ".mkv")
   public static Shenora.Media.MediaProbeResult? Read(string path)
+sealed class Shenora.Media.MediaAudioConversion : Shenora.Media.IMediaAudioConversion
+  public .ctor()
+  public Shenora.Media.IMediaAudioConversionRun? Begin(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
+  public System.IDisposable Use(Shenora.Media.MediaAudioMiddleware converter)
+  public bool CanConvert(string codec)
+delegate Shenora.Media.MediaAudioMiddleware
+  public .ctor(object object, System.IntPtr method)
+  public virtual Shenora.Media.IMediaAudioConversionRun? EndInvoke(System.IAsyncResult result)
+  public virtual Shenora.Media.IMediaAudioConversionRun? Invoke(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
+  public virtual System.IAsyncResult BeginInvoke(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate, System.AsyncCallback callback, object object)
 static class Shenora.Media.MediaCapabilityExtensions
   public static Shenora.Media.MediaPlaybackPolicy WithDeviceEncoders(Shenora.Media.MediaPlaybackPolicy policy, Shenora.Media.IMediaCapability device)
   public static System.Collections.Generic.IReadOnlySet<string> DecodableAudio(Shenora.Media.IMediaCapability device)
@@ -729,6 +743,30 @@ sealed class Shenora.Media.MediaProbeResult : System.IEquatable<Shenora.Media.Me
   public static bool op_Equality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
   public static bool op_Inequality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
   public string? Container { get; init; }
+enum Shenora.Media.MediaRemuxerOutcome (int)
+  public const Shenora.Media.MediaRemuxerOutcome DestinationUnwritable = 5
+  public const Shenora.Media.MediaRemuxerOutcome MissingDecoderConfig = 3
+  public const Shenora.Media.MediaRemuxerOutcome NoCarriableStream = 2
+  public const Shenora.Media.MediaRemuxerOutcome NotMatroska = 1
+  public const Shenora.Media.MediaRemuxerOutcome SourceUnreadable = 4
+  public const Shenora.Media.MediaRemuxerOutcome Succeeded = 0
+  public int value__
+sealed class Shenora.Media.MediaRemuxerResult : System.IEquatable<Shenora.Media.MediaRemuxerResult>
+  public .ctor(Shenora.Media.MediaRemuxerOutcome Outcome, string Reason, int VideoSamples = 0, int AudioSamples = 0, System.TimeSpan Duration = default)
+  public Shenora.Media.MediaRemuxerOutcome Outcome { get; init; }
+  public Shenora.Media.MediaRemuxerResult <Clone>$()
+  public System.TimeSpan Duration { get; init; }
+  public bool Equals(Shenora.Media.MediaRemuxerResult? other)
+  public bool Succeeded { get; }
+  public int AudioSamples { get; init; }
+  public int VideoSamples { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Media.MediaRemuxerResult? left, Shenora.Media.MediaRemuxerResult? right)
+  public static bool op_Inequality(Shenora.Media.MediaRemuxerResult? left, Shenora.Media.MediaRemuxerResult? right)
+  public string Reason { get; init; }
+  public void Deconstruct(out Shenora.Media.MediaRemuxerOutcome Outcome, out string Reason, out int VideoSamples, out int AudioSamples, out System.TimeSpan Duration)
 sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.MediaStreamInfo>
   public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null, int? SampleRate = null)
   public Shenora.Media.MediaStreamInfo <Clone>$()
@@ -763,36 +801,16 @@ sealed class Shenora.Media.MediaStreamPlan : System.IEquatable<Shenora.Media.Med
   public static bool op_Equality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public static bool op_Inequality(Shenora.Media.MediaStreamPlan? left, Shenora.Media.MediaStreamPlan? right)
   public void Deconstruct(out Shenora.Media.MediaStreamInfo Stream, out bool DecodesNatively, out bool NeedsReEncode)
-static class Shenora.Media.Mp4Remuxer
-  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
-  public static Shenora.Media.Mp4RemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, System.Threading.CancellationToken cancellationToken = default)
-  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
-  public static Shenora.Media.Mp4RemuxerResult Remux(string sourcePath, string destinationPath, System.Threading.CancellationToken cancellationToken = default)
+sealed class Shenora.Media.Mp4Remuxer : Shenora.Media.IMediaContainerWriter
+  public .ctor()
+  public Shenora.Media.MediaRemuxerResult Write(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
+  public bool CanCarry(Shenora.Media.MediaStreamKind kind, string codec)
+  public static Shenora.Media.MediaRemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Media.MediaRemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Media.IMediaAudioConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
+  public static Shenora.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, System.Threading.CancellationToken cancellationToken = default)
   public static System.Threading.Tasks.Task ConvertAsync(Shenora.Media.MediaConversionRequest request, System.Threading.CancellationToken cancellationToken)
-enum Shenora.Media.Mp4RemuxerOutcome (int)
-  public const Shenora.Media.Mp4RemuxerOutcome DestinationUnwritable = 5
-  public const Shenora.Media.Mp4RemuxerOutcome MissingDecoderConfig = 3
-  public const Shenora.Media.Mp4RemuxerOutcome NoCarriableStream = 2
-  public const Shenora.Media.Mp4RemuxerOutcome NotMatroska = 1
-  public const Shenora.Media.Mp4RemuxerOutcome SourceUnreadable = 4
-  public const Shenora.Media.Mp4RemuxerOutcome Succeeded = 0
-  public int value__
-sealed class Shenora.Media.Mp4RemuxerResult : System.IEquatable<Shenora.Media.Mp4RemuxerResult>
-  public .ctor(Shenora.Media.Mp4RemuxerOutcome Outcome, string Reason, int VideoSamples = 0, int AudioSamples = 0, System.TimeSpan Duration = default)
-  public Shenora.Media.Mp4RemuxerOutcome Outcome { get; init; }
-  public Shenora.Media.Mp4RemuxerResult <Clone>$()
-  public System.TimeSpan Duration { get; init; }
-  public bool Equals(Shenora.Media.Mp4RemuxerResult? other)
-  public bool Succeeded { get; }
-  public int AudioSamples { get; init; }
-  public int VideoSamples { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Media.Mp4RemuxerResult? left, Shenora.Media.Mp4RemuxerResult? right)
-  public static bool op_Inequality(Shenora.Media.Mp4RemuxerResult? left, Shenora.Media.Mp4RemuxerResult? right)
-  public string Reason { get; init; }
-  public void Deconstruct(out Shenora.Media.Mp4RemuxerOutcome Outcome, out string Reason, out int VideoSamples, out int AudioSamples, out System.TimeSpan Duration)
+  public string Container { get; }
 sealed class Shenora.Media.SegmentRunRequest : System.IEquatable<Shenora.Media.SegmentRunRequest>
   public .ctor(string SourcePath, string Directory, bool HasPicture, int FirstSegment, double SegmentSeconds, int Attempt)
   public Shenora.Media.SegmentRunRequest <Clone>$()

@@ -220,7 +220,7 @@ public class Mp4RemuxerTests
         return samples;
     }
 
-    private static (byte[] Mp4, Mp4RemuxerResult Result) Remux(Stream source)
+    private static (byte[] Mp4, MediaRemuxerResult Result) Remux(Stream source)
     {
         using var output = new MemoryStream();
         var result = Mp4Remuxer.Remux(source, output);
@@ -385,7 +385,7 @@ public class Mp4RemuxerTests
             Cluster(0, SimpleBlock(2, 0, true, Frame(0, 64))));
 
         var (_, result) = Remux(source);
-        Assert.Equal(Mp4RemuxerOutcome.NoCarriableStream, result.Outcome);
+        Assert.Equal(MediaRemuxerOutcome.NoCarriableStream, result.Outcome);
         Assert.Contains("ac3", result.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -421,7 +421,7 @@ public class Mp4RemuxerTests
             Cluster(0, SimpleBlock(1, 0, true, Frame(0, 64))));
 
         var (_, result) = Remux(source);
-        Assert.Equal(Mp4RemuxerOutcome.MissingDecoderConfig, result.Outcome);
+        Assert.Equal(MediaRemuxerOutcome.MissingDecoderConfig, result.Outcome);
     }
 
     /// <summary>
@@ -645,7 +645,7 @@ public class Mp4RemuxerTests
         // CanConvert says no for everything here.
         var result = Mp4Remuxer.Remux(source, output, new RefusingConversion());
 
-        Assert.Equal(Mp4RemuxerOutcome.NoCarriableStream, result.Outcome);
+        Assert.Equal(MediaRemuxerOutcome.NoCarriableStream, result.Outcome);
     }
 
     private sealed class RefusingConversion : IMediaAudioConversion
@@ -732,7 +732,7 @@ public class Mp4RemuxerTests
                 () => Mp4Remuxer.ConvertAsync(Request(source, destination), CancellationToken.None));
 
             // The OUTCOME name travels, not free prose — the route turns it into a FAILED reason.
-            Assert.Contains(nameof(Mp4RemuxerOutcome.NoCarriableStream), thrown.Message, StringComparison.Ordinal);
+            Assert.Contains(nameof(MediaRemuxerOutcome.NoCarriableStream), thrown.Message, StringComparison.Ordinal);
         }
         finally { dir.Delete(recursive: true); }
     }
@@ -762,10 +762,10 @@ public class Mp4RemuxerTests
     [Fact]
     public void Anything_that_is_not_matroska_is_refused_rather_than_throwing()
     {
-        Assert.Equal(Mp4RemuxerOutcome.NotMatroska, Remux(new MemoryStream([])).Result.Outcome);
-        Assert.Equal(Mp4RemuxerOutcome.NotMatroska,
+        Assert.Equal(MediaRemuxerOutcome.NotMatroska, Remux(new MemoryStream([])).Result.Outcome);
+        Assert.Equal(MediaRemuxerOutcome.NotMatroska,
             Remux(new MemoryStream(Ascii("not a media file"))).Result.Outcome);
-        Assert.Equal(Mp4RemuxerOutcome.NotMatroska,
+        Assert.Equal(MediaRemuxerOutcome.NotMatroska,
             Remux(new MemoryStream([0, 0, 0, 0x18, .. "ftypisom"u8.ToArray()])).Result.Outcome);
     }
 

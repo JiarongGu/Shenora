@@ -21,19 +21,32 @@ namespace Shenora.Mobile;
 /// cannot finish.
 /// </para>
 /// </summary>
-public sealed class MobileMediaAudioConversion : IMediaAudioConversion
+public static class MobileMediaAudioConversion
 {
     private const string AacMime = "audio/mp4a-latm";
 
-    /// <inheritdoc />
-    public bool CanConvert(string codec)
+    /// <summary>
+    /// Register this platform converter into a conversion pipeline. Dispose to remove it.
+    /// <para>
+    /// A MIDDLEWARE rather than an implementation of the whole contract: an app that adds its own converter
+    /// keeps this one behind it, so it only has to handle what it actually wants to improve on.
+    /// </para>
+    /// </summary>
+    public static IDisposable Use(MediaAudioConversion pipeline)
+    {
+        ArgumentNullException.ThrowIfNull(pipeline);
+        return pipeline.Use(Begin);
+    }
+
+    /// <summary>Can this device convert the codec? Exposed so a capability report can ask without starting one.</summary>
+    public static bool CanConvert(string codec)
     {
         var mime = MimeOf(codec);
         return mime is not null && HasCodec(mime, encoder: false) && HasCodec(AacMime, encoder: true);
     }
 
-    /// <inheritdoc />
-    public IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate)
+    /// <summary>The middleware body: answer with a run, or null to let the next converter try.</summary>
+    private static IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Codec is null || MimeOf(source.Codec) is not { } mime) return null;

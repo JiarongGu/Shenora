@@ -404,6 +404,15 @@ Matroska
 # of scope, and `Mp4Transcoder` or a `Decoder` would be that — argue those afresh.
 Mp4
 Remuxer
+# `Writer` (2026-08-07) — in `IMediaContainerWriter`, the MUXER seam. Admitted because it names a MECHANISM
+# and nothing else: something that writes a container. The reasoning for wanting the seam at all is worth
+# recording because it is not the obvious one — `MediaConversionOptions.Convert` already accepts a delegate,
+# but that delegate is ALL-OR-NOTHING: a consumer wanting only their own AAC encoder, or only a native
+# muxer, had to reimplement demux, timing, sample tables and interleave behind it. Cutting the pipeline into
+# replaceable PARTS is the point (owner: "the issue is not the speed, its how to optimize this").
+# ⚠ Watch it the way `Engine` is watched: a `Writer` that starts DECIDING what to encode has become an
+# engine, which D42 puts out of scope. This one is TOLD what to carry and refuses what it cannot.
+Writer
 # `Audio` (2026-08-07) — in `IMediaAudioConversion`, and admitted because the name had to become MORE
 # specific rather than less. It was `IMediaStreamConversion`, which OVER-CLAIMED: its run exposes
 # SampleRate and Channels, so it only ever converted audio, and a name that promises streams while

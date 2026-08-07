@@ -1,7 +1,7 @@
 namespace Shenora.Media;
 
 /// <summary>Why a remux did not happen. A code the caller branches on, never prose for a user.</summary>
-public enum Mp4RemuxerOutcome
+public enum MediaRemuxerOutcome
 {
     /// <summary>The output was written and every selected stream was copied into it.</summary>
     Succeeded,
@@ -38,15 +38,15 @@ public enum Mp4RemuxerOutcome
 /// <param name="VideoSamples">Frames copied into the picture track. 0 when there is none.</param>
 /// <param name="AudioSamples">Frames copied into the sound track. 0 when there is none.</param>
 /// <param name="Duration">The longest track's duration, as written into the output.</param>
-public sealed record Mp4RemuxerResult(
-    Mp4RemuxerOutcome Outcome,
+public sealed record MediaRemuxerResult(
+    MediaRemuxerOutcome Outcome,
     string Reason,
     int VideoSamples = 0,
     int AudioSamples = 0,
     TimeSpan Duration = default)
 {
-    /// <summary>True only for <see cref="Mp4RemuxerOutcome.Succeeded"/>.</summary>
-    public bool Succeeded => Outcome == Mp4RemuxerOutcome.Succeeded;
+    /// <summary>True only for <see cref="MediaRemuxerOutcome.Succeeded"/>.</summary>
+    public bool Succeeded => Outcome == MediaRemuxerOutcome.Succeeded;
 }
 
 /// <summary>
@@ -83,8 +83,31 @@ public sealed record Mp4RemuxerResult(
 /// place only on success, so a failed remux can never leave a half-written file to be served as a cache hit.
 /// </para>
 /// </summary>
-public static class Mp4Remuxer
+public sealed class Mp4Remuxer : IMediaContainerWriter
 {
+    /// <inheritdoc />
+    public string Container => ".mp4";
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// What MP4 can hold WITHOUT re-encoding. Video is H.264 and HEVC (their Matroska form is already the
+    /// length-prefixed one MP4 uses); audio is AAC. Everything else is a refusal, which the transcode tier
+    /// may then repair.
+    /// </remarks>
+    public bool CanCarry(MediaStreamKind kind, string codec) => kind switch
+    {
+        MediaStreamKind.Video => codec is "h264" or "hevc",
+        MediaStreamKind.Audio => codec is "aac",
+        // Subtitles are a FORMAT conversion rather than a container rewrite, and the planner already treats
+        // them as droppable — so this carries none and says so rather than dropping them silently.
+        _ => false,
+    };
+
+    /// <inheritdoc />
+    public MediaRemuxerResult Write(Stream source, Stream destination, IMediaAudioConversion? conversion,
+                                    CancellationToken cancellationToken = default)
+        => Remux(source, destination, conversion, cancellationToken);
+
     /// <summary>Matroska CodecIDs this can carry into MP4, and the boxes each becomes.</summary>
     private static readonly Dictionary<string, (string Entry, string Config)> VideoCodecs = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -157,7 +180,7 @@ public static class Mp4Remuxer
     /// <summary>
     /// Remux <paramref name="sourcePath"/> into <paramref name="destinationPath"/>, overwriting it.
     /// </summary>
-    public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
+    public static MediaRemuxerResult Remux(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
         => Remux(sourcePath, destinationPath, conversion: null, cancellationToken);
 
     /// <summary>
@@ -167,7 +190,7 @@ public static class Mp4Remuxer
     /// refused — on a device whose codecs can do it. Where they cannot, the refusal is unchanged and honest.
     /// </para>
     /// </summary>
-    public static Mp4RemuxerResult Remux(string sourcePath, string destinationPath,
+    public static MediaRemuxerResult Remux(string sourcePath, string destinationPath,
                                          IMediaAudioConversion? conversion, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
@@ -183,7 +206,7 @@ public static class Mp4Remuxer
         {
             // No exception text travels from here. A media path is exactly the kind of detail that must not
             // reach a page, and the caller already knows which file it asked about.
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "source or destination unusable");
+            return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "source or destination unusable");
         }
     }
 
@@ -191,11 +214,11 @@ public static class Mp4Remuxer
     /// Remux one open stream into another. <paramref name="source"/> must be seekable — the sample table has
     /// to be built before the media is copied, so the frames are visited twice.
     /// </summary>
-    public static Mp4RemuxerResult Remux(Stream source, Stream destination, CancellationToken cancellationToken = default)
+    public static MediaRemuxerResult Remux(Stream source, Stream destination, CancellationToken cancellationToken = default)
         => Remux(source, destination, conversion: null, cancellationToken);
 
     /// <summary>Remux one open stream into another, transcoding an uncarriable soundtrack when it can.</summary>
-    public static Mp4RemuxerResult Remux(Stream source, Stream destination,
+    public static MediaRemuxerResult Remux(Stream source, Stream destination,
                                          IMediaAudioConversion? conversion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -207,16 +230,16 @@ public static class Mp4Remuxer
         }
         catch (Exception)
         {
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "malformed source");
+            return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "malformed source");
         }
     }
 
-    private static Mp4RemuxerResult Run(Stream source, Stream destination, IMediaAudioConversion? conversion, CancellationToken cancellationToken)
+    private static MediaRemuxerResult Run(Stream source, Stream destination, IMediaAudioConversion? conversion, CancellationToken cancellationToken)
     {
-        if (!source.CanSeek) return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "source is not seekable");
+        if (!source.CanSeek) return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "source is not seekable");
 
         var reader = new MatroskaSampleReader(source);
-        if (!reader.ReadHeader()) return new Mp4RemuxerResult(Mp4RemuxerOutcome.NotMatroska, "no Matroska header or no tracks");
+        if (!reader.ReadHeader()) return new MediaRemuxerResult(MediaRemuxerOutcome.NotMatroska, "no Matroska header or no tracks");
 
         // ── choose the streams ────────────────────────────────────────────────────────────────────────
         // The first of each kind MP4 can carry. Deliberately not "every track": a film with four dubs would
@@ -243,7 +266,7 @@ public static class Mp4Remuxer
         if (video is null && audio is null && convert is null)
         {
             var codecs = string.Join(" + ", reader.Tracks.Select(t => $"{t.Kind}:{t.CodecId ?? "?"}"));
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.NoCarriableStream,
+            return new MediaRemuxerResult(MediaRemuxerOutcome.NoCarriableStream,
                 $"no stream MP4 can carry without re-encoding: {codecs}");
         }
 
@@ -251,14 +274,14 @@ public static class Mp4Remuxer
         if (video is not null)
         {
             var entry = BuildVideoEntry(video);
-            if (entry is null) return new Mp4RemuxerResult(Mp4RemuxerOutcome.MissingDecoderConfig,
+            if (entry is null) return new MediaRemuxerResult(MediaRemuxerOutcome.MissingDecoderConfig,
                 $"video track {video.Number} ({video.CodecId}) carries no decoder configuration");
             plans.Add(new PendingTrack(video, IsVideo: true, entry).Placeholder());
         }
         if (audio is not null)
         {
             var entry = BuildAudioEntry(audio);
-            if (entry is null) return new Mp4RemuxerResult(Mp4RemuxerOutcome.MissingDecoderConfig,
+            if (entry is null) return new MediaRemuxerResult(MediaRemuxerOutcome.MissingDecoderConfig,
                 $"audio track {audio.Number} ({audio.CodecId}) carries no decoder configuration");
             plans.Add(new PendingTrack(audio, IsVideo: false, entry).Placeholder());
         }
@@ -268,12 +291,12 @@ public static class Mp4Remuxer
         if (convert is not null) wanted.Add(convert.Number);
         if (!reader.ReadSamples(wanted))
         {
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "malformed or unbounded clusters");
+            return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "malformed or unbounded clusters");
         }
 
         if (plans.All(p => p.Source.Samples.Count == 0) && (convert is null || convert.Samples.Count == 0))
         {
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "the file declares tracks but holds no frames");
+            return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "the file declares tracks but holds no frames");
         }
 
         // ── resolve timing ────────────────────────────────────────────────────────────────────────────
@@ -291,13 +314,13 @@ public static class Mp4Remuxer
             var converted = Convert(source, convert, convertCodec, conversion!, cancellationToken);
             if (converted is null)
             {
-                return new Mp4RemuxerResult(Mp4RemuxerOutcome.NoCarriableStream,
+                return new MediaRemuxerResult(MediaRemuxerOutcome.NoCarriableStream,
                     $"the device could not convert {convertCodec} after accepting it");
             }
             resolved.Add(converted);
         }
 
-        if (resolved.Count == 0) return new Mp4RemuxerResult(Mp4RemuxerOutcome.SourceUnreadable, "no frames for any carriable track");
+        if (resolved.Count == 0) return new MediaRemuxerResult(MediaRemuxerOutcome.SourceUnreadable, "no frames for any carriable track");
 
         var writeOrder = Interleave(resolved);
 
@@ -308,7 +331,7 @@ public static class Mp4Remuxer
         }
         catch (Exception)
         {
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.DestinationUnwritable, "the output could not be written");
+            return new MediaRemuxerResult(MediaRemuxerOutcome.DestinationUnwritable, "the output could not be written");
         }
     }
 
@@ -455,7 +478,7 @@ public static class Mp4Remuxer
     /// <summary>One frame in the order it will be written, and which track's byte source it comes from.</summary>
     private readonly record struct WriteItem(int Track, int Index, MatroskaSample Sample, double Seconds);
 
-    private static Mp4RemuxerResult Write(Stream source, Stream destination,
+    private static MediaRemuxerResult Write(Stream source, Stream destination,
                                           List<Mp4TrackPlan> tracks, WriteItem[] writeOrder,
                                           CancellationToken cancellationToken)
     {
@@ -474,7 +497,7 @@ public static class Mp4Remuxer
         {
             // Unreachable by construction, and asserted rather than assumed: if it ever fires, every chunk
             // offset in the file is wrong by the difference and the output would be silently unplayable.
-            return new Mp4RemuxerResult(Mp4RemuxerOutcome.DestinationUnwritable,
+            return new MediaRemuxerResult(MediaRemuxerOutcome.DestinationUnwritable,
                 "the sample table changed size between passes");
         }
 
@@ -499,8 +522,8 @@ public static class Mp4Remuxer
         CopySamples(source, destination, tracks, writeOrder, cancellationToken);
 
         var duration = tracks.Max(t => t.Timescale == 0 ? 0d : (double)t.Duration / t.Timescale);
-        return new Mp4RemuxerResult(
-            Mp4RemuxerOutcome.Succeeded,
+        return new MediaRemuxerResult(
+            MediaRemuxerOutcome.Succeeded,
             $"remuxed {tracks.Count} stream(s), {mediaBytes} media byte(s) copied",
             tracks.FirstOrDefault(t => t.IsVideo)?.Samples.Length ?? 0,
             tracks.FirstOrDefault(t => !t.IsVideo)?.Samples.Length ?? 0,

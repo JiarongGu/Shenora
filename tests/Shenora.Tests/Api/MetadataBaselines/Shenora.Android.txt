@@ -35,9 +35,8 @@ Shenora.Mobile.MobileLiveActivities
   method Update
   property Unavailable
 Shenora.Mobile.MobileMediaAudioConversion
-  method .ctor
-  method Begin
   method CanConvert
+  method Use
 Shenora.Mobile.MobileMediaCapability
   method .ctor
   method Decodable

@@ -48,6 +48,18 @@ at the first list and missed five more breaking changes.
     methods, and `CanRepair(kind, codec)` generalises `CanRepairAudio`.
   - An implementation answers an unknown kind with an EMPTY set rather than throwing: *"I know of none"* is
     honest and is the safe direction for a planner reading it.
+  - 🔴 **Conversion is a MIDDLEWARE PIPELINE, not a replaceable implementation** — `MediaAudioConversion`
+    with `Use(MediaAudioMiddleware)`, the same shape `IWebViewInterceptor` already has. An app that supplies
+    its own converter **adds it to the chain and keeps the kit's behind it**, so a consumer who only wanted
+    a better DTS decoder does not have to re-provide AC-3, AAC and everything else the device already did
+    for free. Later registrations are asked FIRST (adding one means to override), and disposing a
+    registration removes just that link.
+  - **`IMediaContainerWriter`** — the MUXER as its own seam, with `Mp4Remuxer` as the default. Together with
+    the codec seam this cuts the pipeline into the parts a consumer actually wants to replace: supply a
+    native muxer and keep the kit's demuxing and timing, or supply a codec and keep the kit's muxing.
+    `MediaConversionOptions.Convert` remains the whole-job delegate for an app replacing everything.
+    ⚠ `Mp4RemuxerResult`/`Outcome` are now `MediaRemuxerResult`/`MediaRemuxerOutcome` — the result is the
+    writer seam's, not MP4's.
 
 - **`MediaStreamInfo` gained a `SampleRate` parameter.** Source-compatible — it is optional and last, so
   every existing construction and `with` expression still compiles — but **binary-breaking**, so a consumer

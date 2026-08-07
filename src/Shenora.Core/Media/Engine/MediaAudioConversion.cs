@@ -21,9 +21,103 @@ namespace Shenora.Media;
 /// <para>
 /// ⚠ <b>What the kit still does not do:</b> pick codecs, choose bitrates, or ship an encoder. This asks the
 /// platform for the one conversion the web needs and refuses anything it cannot do — a device that cannot
-/// decode AC-3 answers false from <see cref="CanConvert"/> and the planner says
+/// decode AC-3 answers false from <see cref="IMediaAudioConversion.CanConvert"/> and the planner says
 /// <see cref="MediaPlaybackAction.Unsupported"/> rather than starting work that cannot finish. Measured
 /// 2026-08-07: an iPhone decodes AC-3, an AOSP Android does not, so both answers are real.
+/// </para>
+/// </summary>
+/// <summary>
+/// One converter in the chain: answer with a run, or return null to DECLINE and let the next try.
+///
+/// <para>
+/// The same shape as <c>WebViewResourceMiddleware</c>, deliberately — this kit already has a middleware
+/// idiom and a second, different one for the same kind of job would be a thing to learn twice.
+/// </para>
+/// </summary>
+/// <param name="source">What the stream is. Rate and channels CONFIGURE a platform codec; a wrong rate
+/// produces audio at the wrong speed rather than an error.</param>
+/// <param name="codecPrivate">The container's initialisation data. Empty is legal and common.</param>
+public delegate IMediaAudioConversionRun? MediaAudioMiddleware(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate);
+
+/// <summary>
+/// The conversion pipeline: a chain of converters, asked in registration order.
+///
+/// <para>
+/// 🔴 <b>Middleware, not replacement, and that is the whole point of the shape.</b> An app that supplies its
+/// own converter ADDS it to the chain — the kit's built-in platform converter stays behind it and still
+/// answers everything the app's does not. Replacing an implementation wholesale would mean a consumer who
+/// only wanted, say, a better DTS decoder had to re-provide AC-3, AAC and everything else the device
+/// already did for free (owner, 2026-08-07: *"so the consumer can also reuse our built in convertor"*).
+/// </para>
+/// <para>
+/// Registration order is try order, and later registrations are asked FIRST — an app adding a converter
+/// means to override, not to be consulted after the default has already said yes.
+/// </para>
+/// </summary>
+public sealed class MediaAudioConversion : IMediaAudioConversion
+{
+    private readonly List<MediaAudioMiddleware> _chain = [];
+    private readonly Lock _gate = new();
+
+    /// <summary>
+    /// Add a converter. Dispose the return value to remove it.
+    /// <para>
+    /// ⚠ Removable for the same reason a route is: a converter that outlives the feature it served would
+    /// answer for the next one, which is the bug class the interceptor's <c>Use</c> already documents.
+    /// </para>
+    /// </summary>
+    public IDisposable Use(MediaAudioMiddleware converter)
+    {
+        ArgumentNullException.ThrowIfNull(converter);
+        lock (_gate) _chain.Add(converter);
+        return new Registration(this, converter);
+    }
+
+    /// <inheritdoc />
+    public bool CanConvert(string codec)
+    {
+        // Asked of the chain rather than tracked separately: a converter that can BEGIN is the only
+        // definition of "can convert" that cannot drift from what actually happens.
+        if (string.IsNullOrWhiteSpace(codec)) return false;
+        var probe = new MediaStreamInfo(MediaStreamKind.Audio, codec);
+        using var run = Begin(probe, ReadOnlyMemory<byte>.Empty);
+        return run is not null;
+    }
+
+    /// <inheritdoc />
+    public IMediaAudioConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        MediaAudioMiddleware[] snapshot;
+        lock (_gate) snapshot = [.. _chain];
+
+        // Last registered, first asked — an app that adds one means to override the default.
+        for (var i = snapshot.Length - 1; i >= 0; i--)
+        {
+            var run = snapshot[i](source, codecPrivate);
+            if (run is not null) return run;
+        }
+        return null;
+    }
+
+    private sealed class Registration(MediaAudioConversion owner, MediaAudioMiddleware converter) : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (owner._gate) owner._chain.Remove(converter);
+        }
+    }
+}
+
+/// <summary>
+/// What a CONSUMER of conversion sees: ask whether a codec can be handled, and begin one.
+///
+/// <para>
+/// Deliberately smaller than <see cref="MediaAudioConversion"/>, which additionally lets converters be
+/// ADDED. The remuxer and the planner only ever ask, so they take this; an app composing the chain takes
+/// the pipeline. Splitting them means a caller cannot accidentally mutate a pipeline it was only meant to
+/// consult.
 /// </para>
 /// </summary>
 public interface IMediaAudioConversion

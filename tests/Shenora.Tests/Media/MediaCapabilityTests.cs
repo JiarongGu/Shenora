@@ -145,4 +145,80 @@ public class MediaCapabilityTests
     {
         Assert.True(Iphone.CanRepairAudio("AC3"));
     }
+
+    // ── the conversion PIPELINE ───────────────────────────────────────────────────────────────────────
+
+    private sealed class Stub(string codec) : IMediaAudioConversionRun
+    {
+        public string Codec { get; } = codec;
+        public ReadOnlyMemory<byte> OutputConfig => new byte[] { 0x11, 0x90 };
+        public int OutputFramesPerPacket => 1024;
+        public int OutputSampleRate => 48000;
+        public int OutputChannels => 2;
+        public IReadOnlyList<ReadOnlyMemory<byte>> Push(ReadOnlyMemory<byte> frame) => [];
+        public IReadOnlyList<ReadOnlyMemory<byte>> Drain() => [];
+        public void Dispose() { }
+    }
+
+    /// <summary>A converter that handles exactly one codec and declines everything else.</summary>
+    private static MediaAudioMiddleware Handles(string codec, string tag) =>
+        (source, _) => string.Equals(source.Codec, codec, StringComparison.OrdinalIgnoreCase) ? new Stub(tag) : null;
+
+    /// <summary>
+    /// 🔴 <b>The reason this is a pipeline rather than a replaceable implementation.</b> An app that adds a
+    /// converter keeps the kit's built-in one behind it — so a consumer who only wanted a better DTS decoder
+    /// does not have to re-provide AC-3 and everything else the device already did for free.
+    /// </summary>
+    [Fact]
+    public void A_consumers_converter_is_ADDED_to_the_chain_not_a_replacement()
+    {
+        var pipeline = new MediaAudioConversion();
+        pipeline.Use(Handles("ac3", "built-in"));      // the kit's platform converter
+        pipeline.Use(Handles("dts", "the app's"));     // what a consumer adds
+
+        Assert.True(pipeline.CanConvert("ac3"));       // still there
+        Assert.True(pipeline.CanConvert("dts"));       // and the new one works
+        Assert.False(pipeline.CanConvert("truehd"));   // neither claims this
+    }
+
+    /// <summary>
+    /// Later registrations are asked FIRST: an app adding a converter for a codec the default already
+    /// handles means to OVERRIDE it, not to be consulted after the default has said yes.
+    /// </summary>
+    [Fact]
+    public void A_later_converter_overrides_an_earlier_one_for_the_same_codec()
+    {
+        var pipeline = new MediaAudioConversion();
+        pipeline.Use(Handles("ac3", "built-in"));
+        pipeline.Use(Handles("ac3", "the app's"));
+
+        using var run = pipeline.Begin(new MediaStreamInfo(MediaStreamKind.Audio, "ac3"), default);
+        Assert.Equal("the app's", Assert.IsType<Stub>(run).Codec);
+    }
+
+    /// <summary>
+    /// Removable for the same reason a route is: a converter outliving the feature it served would answer
+    /// for the next one.
+    /// </summary>
+    [Fact]
+    public void Disposing_a_registration_removes_that_converter_and_leaves_the_rest()
+    {
+        var pipeline = new MediaAudioConversion();
+        pipeline.Use(Handles("ac3", "built-in"));
+        var extra = pipeline.Use(Handles("dts", "the app's"));
+
+        Assert.True(pipeline.CanConvert("dts"));
+        extra.Dispose();
+
+        Assert.False(pipeline.CanConvert("dts"));
+        Assert.True(pipeline.CanConvert("ac3"), "removing one converter must not disturb the others");
+    }
+
+    [Fact]
+    public void An_empty_pipeline_declines_everything_rather_than_throwing()
+    {
+        var pipeline = new MediaAudioConversion();
+        Assert.False(pipeline.CanConvert("ac3"));
+        Assert.Null(pipeline.Begin(new MediaStreamInfo(MediaStreamKind.Audio, "ac3"), default));
+    }
 }
