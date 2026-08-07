@@ -1007,7 +1007,7 @@ sealed class Shenora.Media.MediaPlayerException : System.Exception
 static class Shenora.Media.MediaPlayerExtensions
   public static Shenora.Core.ShenoraApplicationBuilder UseMediaPlayer(Shenora.Core.ShenoraApplicationBuilder builder, System.Action<Shenora.Media.MediaPlayerOptions>? configure = null)
   public static System.IDisposable ReportTo(Shenora.Media.IMediaPlayer player, Shenora.Core.IPlaybackSession session)
-  public static System.IDisposable? UseMediaPlayerRoute(Shenora.Core.IWebViewInterceptor interceptor, System.IServiceProvider services)
+  public static System.IDisposable? UseMediaPlayer(Shenora.Core.IWebViewInterceptor interceptor, System.IServiceProvider services)
 sealed class Shenora.Media.MediaPlayerOptions
   public .ctor()
   public Shenora.Media.MediaPlaybackPolicy? Policy { get; set; }

@@ -39,10 +39,12 @@ public static class MediaPlayerExtensions
     /// it resolves the shell's player explicitly.
     /// </para>
     /// <para>
-    /// ⚠ **With <see cref="MediaPlayerOptions.AllowedRoots"/> set you also need
-    /// <see cref="UseMediaPlayerRoute"/> once the webview exists** — the interceptor is created with the
-    /// webview and cannot exist at builder time, so the wiring cannot be one call however much it wants to
-    /// be. Said here rather than discovered at runtime.
+    /// ⚠ **This CONFIGURES the provider; mounting its route is the second phase.** With
+    /// <see cref="MediaPlayerOptions.AllowedRoots"/> set, call
+    /// <see cref="UseMediaPlayer(IWebViewInterceptor, IServiceProvider)"/> once the webview exists — the
+    /// interceptor is created with the webview, so it cannot exist here. That is the same split ASP.NET
+    /// draws between registering a service and mounting its middleware, and the kit's other route
+    /// providers (<c>UseFiles</c>, <c>UseMediaConversion</c>) already read this way.
     /// </para>
     /// </summary>
     /// <param name="builder">The application builder.</param>
@@ -72,25 +74,35 @@ public static class MediaPlayerExtensions
     }
 
     /// <summary>
-    /// Wire the conversion route the player's URLs point at, and teach the player to point at it.
+    /// **Mount the player's route on the webview.** The second half of the standard two-phase shape:
+    /// configure the provider at builder time, mount it on the pipeline when the pipeline exists.
+    /// <code>
+    /// builder.UseMediaPlayer(x => x.AllowedRoots = [library]);   // configure the provider
+    /// …
+    /// interceptor.UseMediaPlayer(services);                      // mount it
+    /// </code>
     /// <para>
-    /// <b>⚠ Why this is a SECOND call when the whole point was one.</b> The interceptor is created with the
-    /// webview, and the webview does not exist at builder time — so <c>UseMediaPlayer</c> can register a
-    /// player but cannot register a route. Rather than invent a lifecycle hook to hide that, the kit says
-    /// it: call this once you have an interceptor, with the same service provider. **A no-op when
-    /// <see cref="MediaPlayerOptions.AllowedRoots"/> is empty**, so it is safe to call unconditionally.
+    /// <b>Two calls because there are genuinely two phases, not because the API gave up.</b> The
+    /// interceptor is created WITH the webview, so it cannot exist while services are being registered —
+    /// the same reason ASP.NET separates service registration from <c>UseStaticFiles</c>. This sits beside
+    /// <c>UseFiles</c>, <c>UseMediaConversion</c> and <c>UseSegmentStream</c> and reads like all of them:
+    /// a route provider being mounted.
+    /// </para>
+    /// <para>
+    /// **A no-op returning <c>null</c> when <see cref="MediaPlayerOptions.AllowedRoots"/> is empty**, so it
+    /// is safe to call unconditionally — an app that never turns conversion on pays one dictionary lookup.
     /// </para>
     /// <para>
     /// It uses the kit's defaults throughout — <see cref="Mp4Remuxer.ConvertWith"/> fed by whatever
     /// <see cref="IMediaAudioConversion"/> the shell registered (D59), the cache root
     /// <c>UseMediaPlayer</c> chose, and a URL convention the player and the route agree on **because both
-    /// are built from the same options object**.
+    /// read the same options object**, so the emitter and the matcher cannot drift apart.
     /// </para>
     /// </summary>
     /// <param name="interceptor">The shell's interceptor, once the webview exists.</param>
-    /// <param name="services">The built provider.</param>
+    /// <param name="services">The built provider — the same one <c>UseMediaPlayer</c> registered into.</param>
     /// <returns>Dispose to remove the route. <c>null</c> when no conversion was configured.</returns>
-    public static IDisposable? UseMediaPlayerRoute(this IWebViewInterceptor interceptor, IServiceProvider services)
+    public static IDisposable? UseMediaPlayer(this IWebViewInterceptor interceptor, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(interceptor);
         ArgumentNullException.ThrowIfNull(services);

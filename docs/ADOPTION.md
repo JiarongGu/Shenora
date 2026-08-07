@@ -1182,6 +1182,59 @@ restages. An applier that scans `staged/` for content instead will eventually ac
 
 ---
 
+## Media playback — not a stage; one line if the file already plays
+
+**Most apps need one call.** A media player whose lifecycle lives in .NET, rendering through your page's
+own `<video>`/`<audio>` element:
+
+```csharp
+builder.UseMediaPlayer();
+```
+
+That is the whole thing. Sources are passed straight through, nothing is probed, nothing is converted —
+because a file the device can already decode needs none of that. Inject `IMediaPlayer` and call
+`OpenAsync` / `PlayAsync` / `SeekAsync`; the page renders and reports back.
+
+**Add conversion only when the device and its webview disagree** — which is the entire job of the media
+pipeline (D59): your hardware decodes AC-3, the `<video>` element will not touch it, and something has to
+bridge the two.
+
+```csharp
+// 1. configure the provider
+builder.UseMediaPlayer(x => x.AllowedRoots = [libraryDir]);
+
+// 2. mount its route, once the webview exists
+_route = interceptor.UseMediaPlayer(services);
+```
+
+**Two phases because there are genuinely two**, the same split ASP.NET draws between registering a service
+and mounting its middleware: the interceptor is created *with* the webview, so it cannot exist while
+services are being registered. The mount call is a no-op when you named no roots, so it is safe to make
+unconditionally.
+
+> ⚠ **`AllowedRoots` is the one thing the kit will not choose for you.** It is the containment boundary
+> that stops a page-supplied path escaping into the rest of the disk. That is also why it is the switch:
+> the security decision and "do I need conversion?" are the same decision.
+
+**What you get without writing a converter:** container repair (Matroska → MP4, every frame copied
+untouched) plus a soundtrack transcode through *your device's own codecs* where the shell registers them.
+**If you have a better encoder**, add it to the same pipeline and everything above uses it — the default
+converter, the player, the segment engine — with no other change:
+
+```csharp
+pipeline.Use((source, codecPrivate) => source.Codec is "ac3" ? MyDecoder.Begin(source) : null);
+```
+
+⚠ **The kit ships no codec and no engine, ever** (D51) — every byte of decoding is the platform's. Where
+the device cannot decode it either, there is nothing to bridge and the honest answer is a refusal.
+
+> **Need playback while the app is BACKGROUNDED?** A page element cannot do it on iOS — the system pauses
+> a `<video>` the moment the app leaves the foreground. Resolve the shell's native player instead
+> (`MobileMediaPlayer`, iOS only) and give your app `AVAudioSession` + `UIBackgroundModes: [audio]`. Both
+> are `IMediaPlayer`, so only the registration changes.
+
+---
+
 ## What stays yours, permanently
 
 - **Your domain.** Modules, routes, payload schemas, business rules.
