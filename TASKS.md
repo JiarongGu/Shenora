@@ -117,14 +117,17 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
   `<video>`, which is the outcome D54 exists to remove. Windows landed 2026-08-08 (`WindowsMediaPlayer`,
   Media Foundation via `Windows.Media.Playback`), proven by `MEDIA PLAYER: PASS` in the desktop sample and
   sabotage-verified both ways.
-- [ ] ⚠ **The iOS half of the "opt-in everywhere" change is UNVERIFIED — it did not compile here.**
-  `Shenora.Mobile` builds `net10.0-android` on this box; the iOS TFM needs a Mac host, and both edits sit
-  inside `#if IOS || MACCATALYST`: `MobileHostExtensions` registering `MobileMediaPlayer` by its own type
-  instead of as `IMediaPlayer`, and `Sample.Maui/MainPage` resolving it by name. The syntax is trivial and
-  the Android `#else` path compiles clean — but "it should compile" is exactly the claim this repo
-  distrusts. **Build the iOS TFM before the next release**, and re-run the MAUI player probe on a device:
-  it now resolves a different type, so a silent `PLAYER: absent` would be the tell that the registration
-  did not take.
+- [ ] ⚠ **Re-run the MAUI player probe on an iOS device after the "opt-in everywhere" change.** It now
+  resolves `MobileMediaPlayer` by name rather than `IMediaPlayer`, so a silent `PLAYER: absent` is the
+  tell that the registration did not take — and absent-by-design reads identically to quietly-wrong (D63).
+  - **The LIBRARY half is already gated and green**: `Shenora.iOS` is in `Shenora.slnx`, so `dev.mjs
+    verify` compiles the `#if IOS` code on this Windows box — `maui-ios` is installed and only the final
+    link needs a Mac. ⚠ Worth knowing because it is easy to conclude otherwise: there is no
+    `Shenora.Mobile.csproj`: that folder is shared source compiled into `Shenora.Android`/`Shenora.iOS`
+    (D37), so looking for its project file suggests iOS is unbuildable here when `verify` builds it
+    every run.
+  - **The SAMPLE half genuinely cannot build here**: `Sample.Maui` sets `net10.0-ios` only under
+    `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch is unverified by construction.
 - [ ] 🔴 **D66 — fold the "operation" into `IpcRequest`. A long-running request is still a request.**
   Read D66 first; it carries the measurement. `OperationRegistry` mints a fresh GUID unrelated to the
   `IpcRequest.Id` that caused it, so one logical thing has TWO identities and correlating them is the

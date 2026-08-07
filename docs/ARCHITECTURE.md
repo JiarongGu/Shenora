@@ -89,7 +89,12 @@ Shenora.slnx
 │   │                                                    plus the ISegmentEngine seam for what the kit
 │   │                                                    does not do itself.
 │   │                                            Play/   IMediaPlayer — the HOST plays, the page drives
-│   │                                                    (D54). TWO implementations, both portable-facing:
+│   │                                                    (D54). MediaPlayerBase holds the state machine the
+│   │                                                    NATIVE players share — terminal states survive a
+│   │                                                    platform transition, a paused rate is deferred, a
+│   │                                                    cancelled open ends Empty, an abandoned open
+│   │                                                    throws rather than hanging — so a shell writes
+│   │                                                    ~40 lines, not ~150. Implementations:
 │   │                                                      · MediaPlayer — the DEFAULT. Lifecycle in .NET,
 │   │                                                        display and sound in a page element, driven
 │   │                                                        over IEventBus (MediaPlayerEvents) with the

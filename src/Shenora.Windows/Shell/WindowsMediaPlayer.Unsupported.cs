@@ -17,68 +17,53 @@ namespace Shenora.Windows;
 /// into nothing first, which is the silent degradation this kit treats as the worse failure.
 /// </para>
 /// <para>
-/// ⚠ The public shape here MUST match the versioned variant exactly — same type name, same package,
-/// differing only by TFM — so a consumer that retargets finds the same members. That is what
-/// <c>MetadataSurfaceTests</c>' plain-TFM entry is for: two hand-written shapes need a gate.
+/// 🔴 <b>It derives from <see cref="MediaPlayerBase"/> so the two TFM variants cannot DRIFT.</b>
+/// <see cref="WindowsPlaybackSession"/>'s pair are two hand-written shapes kept in step by a test, because
+/// that contract has no base class; here the public surface is inherited on both sides, so "same type name,
+/// same members, different TFM" is structural rather than a promise. The overrides below are all
+/// <c>protected</c> — they are not surface, and nothing can reach them anyway.
 /// </para>
 /// </summary>
-public sealed class WindowsMediaPlayer : IMediaPlayer, IDisposable
+public sealed class WindowsMediaPlayer : MediaPlayerBase
 {
     /// <param name="log">Accepted and unused here, so the two variants construct identically.</param>
     public WindowsMediaPlayer(Action<string>? log = null)
-    {
-        _ = log;
-        throw ShellCapability.NotSupported(
+        : base(log)
+        => throw ShellCapability.NotSupported(
             "The host-owned media player", "net10.0-windows",
             "It needs the WinRT projections, which exist only when the target framework names a Windows SDK "
             + "version. Retarget to net10.0-windows10.0.17763.0 or newer — one line, and nothing else "
             + "changes: that floor is Windows 10 1809 and the rest of Shenora.Windows is identical.");
-    }
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public MediaPlayerStatus Status => throw Unreachable();
+    protected override TimeSpan PositionCore => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public double Rate { get; set; } = 1.0;
+    protected override TimeSpan? DurationCore => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public event Action<MediaPlayerStatus>? StateChanged;
+    protected override void OpenCore(MediaSource source, Uri uri) => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default) => throw Unreachable();
+    protected override void ApplyStartAt(TimeSpan position) => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public Task PlayAsync(CancellationToken cancellationToken = default) => throw Unreachable();
+    protected override void PlayCore(double rate) => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public Task PauseAsync(CancellationToken cancellationToken = default) => throw Unreachable();
+    protected override void PauseCore() => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default) => throw Unreachable();
+    protected override Task SeekCore(TimeSpan position) => throw Unreachable();
 
     /// <inheritdoc />
-    /// <remarks>Unreachable — the constructor refuses first.</remarks>
-    public Task CloseAsync(CancellationToken cancellationToken = default) => throw Unreachable();
+    protected override void ApplyRateCore(double rate) => throw Unreachable();
 
     /// <inheritdoc />
-    public void Dispose() { }
+    protected override void TeardownCore() => throw Unreachable();
 
-    /// <summary>
-    /// Keeps <see cref="StateChanged"/> from being an event nothing ever raises (CS0067, an error here)
-    /// while stating the truth: on this TFM nothing can raise it.
-    /// </summary>
-    private InvalidOperationException Unreachable()
-    {
-        StateChanged?.Invoke(new MediaPlayerStatus { State = MediaPlayerState.Empty });
-        return new InvalidOperationException(
-            "WindowsMediaPlayer cannot be constructed on plain net10.0-windows, so this is unreachable.");
-    }
+    /// <summary>States the truth: on this TFM the constructor refuses, so nothing here can run.</summary>
+    private static InvalidOperationException Unreachable() => new(
+        "WindowsMediaPlayer cannot be constructed on plain net10.0-windows, so this is unreachable.");
 }
 #endif

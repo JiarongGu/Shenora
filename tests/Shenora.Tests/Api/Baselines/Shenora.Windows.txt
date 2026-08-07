@@ -666,17 +666,19 @@ sealed class Shenora.Windows.WindowsMediaCapability : Shenora.Modules.Media.IMed
   public .ctor(System.Action<string>? log = null)
   public System.Collections.Generic.IReadOnlySet<string> Decodable(Shenora.Modules.Media.MediaStreamKind kind)
   public System.Collections.Generic.IReadOnlySet<string> Encodable(Shenora.Modules.Media.MediaStreamKind kind)
-sealed class Shenora.Windows.WindowsMediaPlayer : Shenora.Modules.Media.IMediaPlayer, System.IDisposable
+sealed class Shenora.Windows.WindowsMediaPlayer : Shenora.Modules.Media.MediaPlayerBase
+  protected override System.Threading.Tasks.Task SeekCore(System.TimeSpan position)
+  protected override System.TimeSpan PositionCore { get; }
+  protected override System.TimeSpan? DurationCore { get; }
+  protected override void ApplyRateCore(double rate)
+  protected override void ApplyStartAt(System.TimeSpan position)
+  protected override void DetachCore()
+  protected override void DisposeCore()
+  protected override void OpenCore(Shenora.Modules.Media.MediaSource source, System.Uri uri)
+  protected override void PauseCore()
+  protected override void PlayCore(double rate)
+  protected override void TeardownCore()
   public .ctor(System.Action<string>? log = null)
-  public Shenora.Modules.Media.MediaPlayerStatus Status { get; }
-  public System.Threading.Tasks.Task CloseAsync(System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task OpenAsync(Shenora.Modules.Media.MediaSource source, System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task PauseAsync(System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task PlayAsync(System.Threading.CancellationToken cancellationToken = default)
-  public System.Threading.Tasks.Task SeekAsync(System.TimeSpan position, System.Threading.CancellationToken cancellationToken = default)
-  public double Rate { get; set; }
-  public event System.Action<Shenora.Modules.Media.MediaPlayerStatus> StateChanged
-  public void Dispose()
 sealed class Shenora.Windows.WindowsPlaybackSession : Shenora.Modules.Platform.IPlaybackSession, System.IDisposable
   public .ctor(System.Action<string>? log = null)
   public Shenora.Modules.Platform.PlaybackCommands Supported { get; set; }

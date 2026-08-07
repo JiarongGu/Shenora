@@ -1047,6 +1047,34 @@ sealed class Shenora.Modules.Media.MediaPlayer : Shenora.Modules.Media.IMediaPla
   public event System.Action<Shenora.Modules.Media.MediaPlayerStatus> StateChanged
   public void Dispose()
   public void Report(Shenora.Modules.Media.MediaPlayerStatus status)
+abstract class Shenora.Modules.Media.MediaPlayerBase : Shenora.Modules.Media.IMediaPlayer, System.IDisposable
+  protected .ctor(System.Action<string>? log = null)
+  protected Shenora.Modules.Media.MediaPlayerState State { get; }
+  protected abstract System.Threading.Tasks.Task SeekCore(System.TimeSpan position)
+  protected abstract System.TimeSpan PositionCore { get; }
+  protected abstract System.TimeSpan? DurationCore { get; }
+  protected abstract void ApplyRateCore(double rate)
+  protected abstract void ApplyStartAt(System.TimeSpan position)
+  protected abstract void OpenCore(Shenora.Modules.Media.MediaSource source, System.Uri uri)
+  protected abstract void PauseCore()
+  protected abstract void PlayCore(double rate)
+  protected abstract void TeardownCore()
+  protected virtual void DetachCore()
+  protected virtual void DisposeCore()
+  protected void Log(System.Func<string> message)
+  protected void OnEnded()
+  protected void OnFailed(string reason)
+  protected void OnOpened()
+  protected void OnPlatformState(Shenora.Modules.Media.MediaPlayerState state)
+  public Shenora.Modules.Media.MediaPlayerStatus Status { get; }
+  public System.Threading.Tasks.Task CloseAsync(System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task OpenAsync(Shenora.Modules.Media.MediaSource source, System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task PauseAsync(System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task PlayAsync(System.Threading.CancellationToken cancellationToken = default)
+  public System.Threading.Tasks.Task SeekAsync(System.TimeSpan position, System.Threading.CancellationToken cancellationToken = default)
+  public double Rate { get; set; }
+  public event System.Action<Shenora.Modules.Media.MediaPlayerStatus> StateChanged
+  public void Dispose()
 static class Shenora.Modules.Media.MediaPlayerEvents
   public const string Load = "PLAYER_LOAD"
   public const string Pause = "PLAYER_PAUSE"

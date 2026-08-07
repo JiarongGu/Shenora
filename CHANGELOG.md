@@ -357,6 +357,20 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`MediaPlayerBase` — the `IMediaPlayer` state machine, with the platform left abstract.** A shell now
+  writes ~40 lines (a handle, four transport verbs, position/duration) instead of ~150. **Extracted from
+  two shipping implementations rather than designed ahead of them**: `MobileMediaPlayer` (AVPlayer) and
+  `WindowsMediaPlayer` (Media Foundation) were written independently and converged on the same bookkeeping.
+  - **Four invariants now live in one place, because both implementations had to learn them separately and
+    each is invisible when wrong:** a terminal state is never overwritten by a platform transition (every
+    platform reports "paused" straight after ending or failing, which erases the outcome microseconds after
+    it is raised); a rate set while paused is remembered, not applied (on AVFoundation rate *is* the
+    transport, so pushing it would start a paused player); a cancelled open leaves the player `Empty`
+    rather than half-loaded; and an abandoned open completes exceptionally rather than hanging forever.
+  - Android/ExoPlayer inherits all of it rather than rediscovering it.
+  - Not breaking: both players expose exactly the same public members, now inherited. The desktop sample's
+    `MEDIA PLAYER: PASS` reports identical numbers before and after the extraction.
+
 - 🔴 **`IMediaPlayer` — the host plays, the page drives (D54).** A portable contract in `Shenora.Core`
   (`Shenora.Media` namespace, `Media/Play/`) with **one implementation per shell**, the same shape as
   `IPlaybackSession`: `OpenAsync`/`PlayAsync`/`PauseAsync`/`SeekAsync`/`CloseAsync`, a `Status` snapshot,

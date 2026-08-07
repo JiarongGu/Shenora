@@ -675,16 +675,16 @@ Shenora.Windows.WindowsMediaCapability
   method Decodable
   method Encodable
 Shenora.Windows.WindowsMediaPlayer
-  event StateChanged
   method .ctor
-  method CloseAsync
-  method Dispose
-  method OpenAsync
-  method PauseAsync
-  method PlayAsync
-  method SeekAsync
-  property Rate
-  property Status
+  method ApplyRateCore
+  method ApplyStartAt
+  method OpenCore
+  method PauseCore
+  method PlayCore
+  method SeekCore
+  method TeardownCore
+  property DurationCore
+  property PositionCore
 Shenora.Windows.WindowsPlaybackSession
   event CommandReceived
   method .ctor
