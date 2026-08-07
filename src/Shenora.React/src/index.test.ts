@@ -60,6 +60,11 @@ const EXPECTED_EXPORTS = [
   'HANDSHAKE_TYPE',
   'IpcCategories',
   'IpcErrorCodes',
+  // The host-owned player (D58). These three are a WIRE contract duplicated in C# as MediaPlayerEvents —
+  // exported so an adopter asserts against them rather than retyping the strings.
+  'MEDIA_PLAYER_MODULE',
+  'MEDIA_PLAYER_REPORT',
+  'MediaPlayerCommands',
   'OperationError',
   'OperationEventTypes',
   'OperationModuleName',
@@ -83,6 +88,7 @@ const EXPECTED_EXPORTS = [
   'mediaUrl',
   'useDropZone',
   'useFileDialogs',
+  'useMediaPlayer',
   'useShellInfo',
   'useShenora',
   'useShenoraEvent',

@@ -116,3 +116,14 @@ export {
 // Addressing local content the page cannot reach itself. A pure function, not a hook — building the URL
 // needs no React, and a `useMediaSource` can follow if an adopter wants load/error state.
 export { mediaUrl, encodeMediaPayload, decodeMediaPayload } from './media.js';
+// The HOST-owned player (D58): .NET holds the lifecycle, the page's element is the display and the sound.
+// One hook, and the page stops deciding anything about formats.
+export {
+  useMediaPlayer,
+  MEDIA_PLAYER_MODULE,
+  MEDIA_PLAYER_REPORT,
+  MediaPlayerCommands,
+  type MediaPlayerReport,
+  type MediaPlayerReportState,
+  type UseMediaPlayerOptions,
+} from './mediaPlayer.js';
