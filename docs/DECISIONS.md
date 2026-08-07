@@ -2357,3 +2357,25 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     every library owns (`Exchange`, `Progress`, and `Operation` itself), and the reason none fitted is
     that the concept should not exist. ⚠ A naming problem that resists every candidate is worth reading
     as a design smell, not as a vocabulary shortage.
+
+  ### EVERY request can take a while — the grace period replaces the declaration (owner, 2026-08-08)
+
+  *"we can treat all request can take a while, and use some grace period logic to optimize — say if its
+  shorter than 50ms (which is the event bundle timing?) we only take the last state"*. **Yes, and the
+  50 ms is not a new number:** `NotificationPumpOptions.FlushInterval` is already
+  `TimeSpan.FromMilliseconds(50)`, documented as *"the family's measured sweet spot"*. The grace period
+  IS the flush window the kit already runs on.
+  - 🔴 **This removes the last piece of dualism.** With a grace period there is nothing to DECLARE —
+    no `Run()` versus a plain return, no "is this one long-running?" for a module author to get wrong.
+    Every request has a lifecycle; a fast one simply never emits an intermediate state because it
+    finished inside the window.
+  - ⚠ **The pump BATCHES but does not COALESCE, and that is the piece that has to be built.** Measured:
+    `NotificationPump` accumulates and flushes together, so today a 5 ms request would still deliver
+    `running` AND `completed` — in one message, but both. Coalescing must be keyed by REQUEST ID,
+    last-write-wins within the window, which is also exactly what a progress feed wants (a hundred
+    ticks in 50 ms collapse to the one the page would have rendered).
+  - **And the boundary is the right one for a HUMAN, not only for the wire.** ~50 ms is below the
+    threshold where anyone wants a spinner, so "emit nothing until a request outlives one flush window"
+    means the page is told *this is taking a while* at roughly the moment that becomes true. A
+    declaration-based design cannot get that right, because the module author has to guess at authoring
+    time what only the clock knows at run time.

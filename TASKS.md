@@ -120,6 +120,11 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
   `IpcRequest.Id` that caused it, so one logical thing has TWO identities and correlating them is the
   adopter's problem. The fix is not a rename — three candidates were rejected for being words every
   library owns, and the reason none fitted is that the concept should not exist separately.
+  - **EVERY request can take a while — there is nothing to declare.** A grace period replaces
+    `Run()`: a request that finishes inside one notification flush window (already 50 ms) emits no
+    intermediate state at all. ⚠ **The build is one piece: the pump BATCHES but does not COALESCE**, so
+    a 5 ms request would still deliver `running` AND `completed` today. Coalesce keyed by REQUEST ID,
+    last-write-wins within the window — which is also what a progress feed wants.
   - **Decide `waiting`/`resume` FIRST.** A parked, resumable request is the part XHR has no analogue
     for, and it decides whether "request" stretches far enough or whether parked work belongs with the
     host-initiated case below.
