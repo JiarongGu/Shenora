@@ -565,8 +565,14 @@ public static class Mp4Remuxer
     private static Mp4TrackPlan? Convert(Stream source, MatroskaTrack track, string codec,
                                          IMediaStreamConversion conversion, CancellationToken cancellationToken)
     {
-        using var run = conversion.Begin(new MediaStreamInfo(
-            MediaStreamKind.Audio, codec, Channels: track.Channels > 0 ? track.Channels : null));
+        // Everything the platform codec must be configured with, from what Matroska declared: a decoder
+        // told the wrong rate produces audio at the wrong SPEED rather than an error, and one told no
+        // CodecPrivate produces silence for the codecs that need it.
+        using var run = conversion.Begin(
+            new MediaStreamInfo(MediaStreamKind.Audio, codec,
+                Channels: track.Channels > 0 ? track.Channels : null,
+                SampleRate: track.SampleRate > 0 ? (int)Math.Round(track.SampleRate) : null),
+            track.CodecPrivate ?? ReadOnlyMemory<byte>.Empty);
         if (run is null) return null;
 
         var spool = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,

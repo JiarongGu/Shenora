@@ -623,7 +623,7 @@ interface Shenora.Media.IMediaCapability
   public abstract System.Collections.Generic.IReadOnlySet<string> EncodableAudio { get; }
   public abstract System.Collections.Generic.IReadOnlySet<string> EncodableVideo { get; }
 interface Shenora.Media.IMediaStreamConversion
-  public abstract Shenora.Media.IMediaStreamConversionRun? Begin(Shenora.Media.MediaStreamInfo source)
+  public abstract Shenora.Media.IMediaStreamConversionRun? Begin(Shenora.Media.MediaStreamInfo source, System.ReadOnlyMemory<byte> codecPrivate)
   public abstract bool CanConvert(string codec)
 interface Shenora.Media.IMediaStreamConversionRun : System.IDisposable
   public abstract System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>> Drain()
@@ -727,11 +727,12 @@ sealed class Shenora.Media.MediaProbeResult : System.IEquatable<Shenora.Media.Me
   public static bool op_Inequality(Shenora.Media.MediaProbeResult? left, Shenora.Media.MediaProbeResult? right)
   public string? Container { get; init; }
 sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.MediaStreamInfo>
-  public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null)
+  public .ctor(Shenora.Media.MediaStreamKind Kind, string? Codec = null, string? Profile = null, int? Channels = null, int? SampleRate = null)
   public Shenora.Media.MediaStreamInfo <Clone>$()
   public Shenora.Media.MediaStreamKind Kind { get; init; }
   public bool Equals(Shenora.Media.MediaStreamInfo? other)
   public int? Channels { get; init; }
+  public int? SampleRate { get; init; }
   public override bool Equals(object? obj)
   public override int GetHashCode()
   public override string ToString()
@@ -739,7 +740,7 @@ sealed class Shenora.Media.MediaStreamInfo : System.IEquatable<Shenora.Media.Med
   public static bool op_Inequality(Shenora.Media.MediaStreamInfo? left, Shenora.Media.MediaStreamInfo? right)
   public string? Codec { get; init; }
   public string? Profile { get; init; }
-  public void Deconstruct(out Shenora.Media.MediaStreamKind Kind, out string? Codec, out string? Profile, out int? Channels)
+  public void Deconstruct(out Shenora.Media.MediaStreamKind Kind, out string? Codec, out string? Profile, out int? Channels, out int? SampleRate)
 enum Shenora.Media.MediaStreamKind (int)
   public const Shenora.Media.MediaStreamKind Audio = 2
   public const Shenora.Media.MediaStreamKind Subtitle = 3

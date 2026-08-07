@@ -40,6 +40,10 @@ Shenora.Mobile.MobileMediaCapability
   property DecodableVideo
   property EncodableAudio
   property EncodableVideo
+Shenora.Mobile.MobileMediaStreamConversion
+  method .ctor
+  method Begin
+  method CanConvert
 Shenora.Mobile.MobilePlaybackSession
   event CommandReceived
   method .ctor

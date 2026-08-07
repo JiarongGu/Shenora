@@ -220,7 +220,8 @@ internal static class CodecProbe
     /// feeds the other, and disagreement is the whole signal.
     /// </para>
     /// </summary>
-    public static void CrossCheck(Shenora.Media.IMediaCapability device, Action<string> log)
+    public static void CrossCheck(Shenora.Media.IMediaCapability device,
+                                  Shenora.Media.IMediaStreamConversion? conversion, Action<string> log)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(log);
@@ -243,6 +244,24 @@ internal static class CodecProbe
 
             log($"[CODEC] kit says ac3 repairable={device.CanRepairAudio("ac3")} "
                 + $"eac3 repairable={device.CanRepairAudio("eac3")}");
+
+            // The TRANSCODE tier's own answer, which must agree with the capability above: a device that
+            // can repair a codec must also accept converting it, and one that cannot must refuse. A
+            // disagreement here means the planner would promise work the engine then declines.
+            if (conversion is not null)
+            {
+                foreach (var codec in new[] { "ac3", "eac3", "dts", "vorbis", "mp3", "flac" })
+                {
+                    var accepts = conversion.CanConvert(codec);
+                    var repairable = device.CanRepairAudio(codec);
+                    var agree = accepts == repairable ? "" : "  ⚠ DISAGREES with the capability";
+                    log($"[CODEC] convert {codec}: accepted={accepts} repairable={repairable}{agree}");
+                }
+            }
+            else
+            {
+                log("[CODEC] no IMediaStreamConversion registered on this shell — container repair only");
+            }
             log("[CODEC] CROSS-CHECK: compare the four 'kit' lines against the platform lines above — "
                 + "they are independent queries and must agree.");
         }

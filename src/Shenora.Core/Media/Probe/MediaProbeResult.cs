@@ -41,11 +41,17 @@ public enum MediaStreamKind
 /// </param>
 /// <param name="Channels">Audio channel count, when known. A 5.1 track can need downmixing even when its
 /// codec is supported.</param>
+/// <param name="SampleRate">
+/// Audio sample rate in Hz, when known. Needed to CONFIGURE a decoder — a platform codec is told the rate
+/// and channel count before it is fed anything, and guessing 48 kHz for a 44.1 kHz track produces audio
+/// that plays at the wrong speed rather than failing.
+/// </param>
 public sealed record MediaStreamInfo(
     MediaStreamKind Kind,
     string? Codec = null,
     string? Profile = null,
-    int? Channels = null);
+    int? Channels = null,
+    int? SampleRate = null);
 
 /// <summary>
 /// What a probe found in a media file: the container, its streams, and whatever else it could report.

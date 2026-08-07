@@ -83,6 +83,18 @@ public static class MobileHostExtensions
         // runs.
         builder.Services.TryAddSingleton<Shenora.Media.IMediaCapability>(_ => new MobileMediaCapability());
 
+#if ANDROID
+        // The transcode tier. ⚠ Registered on ANDROID ONLY for now, and deliberately WITHOUT the #error
+        // guard the playback session uses: that guard means "every shell must answer this", and this
+        // contract is genuinely optional — Mp4Remuxer takes it as a nullable, and an app on a shell that
+        // does not register one gets container repair and an honest refusal for anything else. iOS is next
+        // (AudioConverter), and until it exists saying so by absence beats registering a stub that lies.
+        //
+        // NOT a singleton: each Begin() holds two real codec instances, and a device has only a handful.
+        // Sharing the FACTORY is fine; sharing a run would not be.
+        builder.Services.TryAddSingleton<Shenora.Media.IMediaStreamConversion>(_ => new MobileMediaStreamConversion());
+#endif
+
         return builder;
     }
 }

@@ -46,7 +46,21 @@ public interface IMediaStreamConversion
     /// catch as well.
     /// </para>
     /// </summary>
-    IMediaStreamConversionRun? Begin(MediaStreamInfo source);
+    /// <param name="source">
+    /// What the stream IS. <see cref="MediaStreamInfo.SampleRate"/> and <see cref="MediaStreamInfo.Channels"/>
+    /// are not decoration here — a platform codec is CONFIGURED with them before it is fed anything, and a
+    /// wrong rate produces audio at the wrong speed rather than an error.
+    /// </param>
+    /// <param name="codecPrivate">
+    /// The codec's initialisation data as the container stored it — Matroska's <c>CodecPrivate</c>, which is
+    /// an <c>avcC</c>, an AudioSpecificConfig, or a Vorbis header set depending on the codec.
+    /// <para>
+    /// ⚠ <b>Empty is legal and common</b> (AC-3 needs none), but for the codecs that DO need it a decoder
+    /// configured without it produces silence or refuses — so it is passed rather than left for the
+    /// implementation to hunt for.
+    /// </para>
+    /// </param>
+    IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate);
 }
 
 /// <summary>

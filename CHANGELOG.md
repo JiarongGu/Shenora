@@ -37,6 +37,17 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- **`MediaStreamInfo` gained a `SampleRate` parameter.** Source-compatible — it is optional and last, so
+  every existing construction and `with` expression still compiles — but **binary-breaking**, so a consumer
+  compiled against an older version must be REBUILT rather than swapped.
+
+  **Migration: recompile.** No code changes.
+
+  It is there because a platform decoder is CONFIGURED with the rate before it is fed anything, and a
+  decoder told 48 kHz for a 44.1 kHz track produces audio at the wrong SPEED rather than an error — so the
+  transcode tier could not be correct without it. `MatroskaProbe` already read the value and was throwing
+  it away.
+
 - 🔴 **`Shenora.Media` is no longer a package. Its whole surface moved into `Shenora.Core`, and the
   NAMESPACE is unchanged.**
 

@@ -548,7 +548,7 @@ public class Mp4RemuxerTests
         public int OutputChannels => channels;
 
         public bool CanConvert(string codec) => codec is "ac3" or "eac3" or "dts";
-        public IMediaStreamConversionRun? Begin(MediaStreamInfo source) => this;
+        public IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate) => this;
 
         public IReadOnlyList<ReadOnlyMemory<byte>> Push(ReadOnlyMemory<byte> frame)
         {
@@ -651,7 +651,7 @@ public class Mp4RemuxerTests
     private sealed class RefusingConversion : IMediaStreamConversion
     {
         public bool CanConvert(string codec) => false;
-        public IMediaStreamConversionRun? Begin(MediaStreamInfo source) => null;
+        public IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate) => null;
     }
 
     /// <summary>
