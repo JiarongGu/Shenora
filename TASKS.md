@@ -88,6 +88,35 @@ live in `CHANGELOG.md`; the current package set is the table at the top of `docs
 > (the kit ships the QUESTION, never a codec list), then `D63` (the defect class this subsystem kept
 > producing).** D52 and D53 are still true and are the earlier framing D59 sharpened.
 
+### 🔴 D65 — THREE LAYERS. The two folds are DONE; the restructure is not (2026-08-07)
+
+**Read D65 first.** Core is the CONTRACT (IPC · EventBus · RouteInterceptor) · logic is the BRAIN
+(missions, safe file mutation) · features BRIDGE .NET to the web (media, dialogs, update). The
+membership test: *must both sides agree on it?* → core. *Pure computation the page never sees?* → logic.
+*Carries a .NET capability to the page?* → feature.
+
+- [x] ~~`Shenora.Ipc` folds in~~ — DONE (`9a98d12`). Proven pure: 1172 + 312 = 1484, set difference empty
+  both ways. **This is what unblocked the rest** — a feature could not own its IPC module while
+  `BaseFacade` sat in a package Core may not reference.
+- [x] ~~`Shenora.Core` → `Shenora`~~ — DONE (`adeab6f`). 230 files, 1484 → 1484, empty both ways.
+- [ ] **Restructure the folders to the three layers**, and move each feature's IPC module out of the IPC
+  core to sit with its feature. `MediaPlayerFacade` is the last hold-out of the wrong shape —
+  `AddMessageDispatcher` still names it, which is a core knowing a feature.
+- [ ] **Split `Files/`** — atomic replace, path claims, locks and the journaled queue are LOGIC;
+  `UpdateManifest`/`UpdateStage`/`Compression/` are the app-UPDATE feature (its platform half is the
+  native `Launcher`, D50).
+- [ ] **`FileDialogFacade` + `OperationsFacade` register themselves** once they live with their features.
+  ⚠ Defaulting operations from `AddMessageDispatcher` was tried and reverted — `OperationRegistry` needs
+  `IEventBus`, which the IPC core cannot assume. The comment at the site says so; do not retry it there.
+- [ ] **`UseWinForms()` → `UseWindows()`, `UseMobile()` → `UseAndroid()`/`UseIOS()`** (from D64). ⚠ Splits
+  the shared mobile API baseline; accepted, revisit with the build toolkit.
+- [ ] **Rewrite `Shenora.Sample.Desktop`'s composition — the ACCEPTANCE TEST.** When its hand-written
+  `MissionScheduler`/`FileUpdateQueue`/`AddShenora*` block is gone, D64+D65 have landed.
+
+⚠ **After ANY rename sweep in this work: READ THE DIFF.** Three instances of "a thing is not itself" from
+D37's 2026-08-02 merge survived every review until the D65 sweep surfaced them, because `doc-drift` is
+blind to the class by construction — the retired name is gone, so nothing is left to match.
+
 ### 🔴 D64 — MAKE THE FRAMEWORK ON BY DEFAULT. In flight (2026-08-07)
 
 > DIRECTION (owner, 2026-08-07): *"this is a full react+.net application framework, media, filesystem

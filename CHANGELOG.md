@@ -172,6 +172,37 @@ at the first list and missed five more breaking changes.
 - **`MissionScheduler` now implements `IDisposable` as well as `IAsyncDisposable`.** Additive for callers,
   listed here because it changes what `using var app = …` does. See `### Fixed` — it was a crash.
 
+- 🔴 **`Shenora.Core` is now `Shenora`, and `Shenora.Ipc` no longer exists (D65).** The package set is
+  **`Shenora` + one shell + `@shenora/react`**, plus the native `Launcher` — five packable projects.
+
+  **Migration, and it is small:**
+  ```diff
+  - <PackageReference Include="Shenora.Core" Version="…" />
+  - <PackageReference Include="Shenora.Ipc"  Version="…" />
+  + <PackageReference Include="Shenora"      Version="…" />
+
+  - using Shenora.Core;
+  + using Shenora;
+  ```
+  `using Shenora.Ipc;` is **unchanged** — the namespace stayed when the package folded, exactly as
+  `Shenora.Media` and `Shenora.IO` did (D53/D55). Short-form `Core.X` qualifiers inside other `Shenora.*`
+  namespaces lose their prefix (`Core.IPlaybackSession` → `IPlaybackSession`).
+
+  - **Why `Shenora`:** the package IS the framework, not a component of one.
+  - **Why IPC folded:** it is a CORE — the contract both sides agree on — and a separate package id said
+    "optional", the claim D53/D55 already killed for Media and IO. The old justification ("a server-backed
+    app might take IPC without a shell", D10) quietly imagined a WEB consumer, and Shenora is a desktop +
+    mobile app framework, not a web one.
+  - **Both proven PURE**, the way D53/D55 were: the fold took the baseline 1172 → 1484 with
+    `Shenora.Ipc.txt`'s 312 lines accounted for and the set difference empty in both directions; the
+    rename kept 1484 → 1484, likewise empty once normalised. Not one symbol added, changed or lost by
+    either.
+
+- **The layers now have names (D65).** Core is the CONTRACT (IPC · EventBus · RouteInterceptor), logic is
+  the BRAIN (missions, safe file mutation), features BRIDGE .NET to the web (media, dialogs, update).
+  Nothing moved for this yet beyond the two folds above — it is the map the remaining restructure follows,
+  and it is worth reading before judging where anything belongs.
+
 - 🔴 **EVERY kit module moved onto a reserved `SHENORA.` prefix.** A WIRE break: both halves must move
   together or they fail with `UNKNOWN_MODULE` while compiling perfectly on each side.
 
