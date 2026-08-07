@@ -65,8 +65,8 @@ describe('operations store', () => {
     const { store, bus } = harness([info({})]);
     store.subscribe(() => {});
 
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 40 } }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 80 } }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 40 } }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 80 } }));
 
     expect(store.getState().byId['op-1']!.progress).toEqual({ value: 80 });
     expect(Object.keys(store.getState().byId)).toHaveLength(1);
@@ -75,8 +75,8 @@ describe('operations store', () => {
   it('exposes running work separately from finished history', async () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({}));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({}));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
 
     expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
   });
@@ -90,7 +90,7 @@ describe('operations store', () => {
     expect(transport.lastRequest().module).toBe('MY_OPS');
 
     // A delta on the DEFAULT module must not reach a store bound to the renamed one, and vice versa.
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'wrong-module' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'wrong-module' }));
     bus.emit('MY_OPS', 'OPERATION_UPDATED', info({ id: 'op-2' }));
 
     expect(store.getState().byId['wrong-module']).toBeUndefined();
@@ -138,11 +138,11 @@ describe('operations store', () => {
   it('OPERATION_REMOVED deletes the named ids from local state, regardless of status', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'waiting' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'waiting' }));
 
-    bus.emit('OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['op-2', 'op-3'] });
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['op-2', 'op-3'] });
 
     expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
   });
@@ -151,9 +151,9 @@ describe('operations store', () => {
   it('OPERATION_REMOVED naming an unknown id is a harmless no-op', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({}));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({}));
 
-    bus.emit('OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['no-such-id'] });
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['no-such-id'] });
 
     expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
   });
@@ -166,8 +166,8 @@ describe('operations store', () => {
   it('clearFinished does not locally mutate state — only the hosts OPERATION_REMOVED does', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
 
     store.actions.clearFinished();
 
@@ -177,7 +177,7 @@ describe('operations store', () => {
   it('resume does not locally mutate state — only the hosts OPERATION_REMOVED does', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'waiting' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'waiting' }));
 
     store.actions.resume('op-1');
 
@@ -189,7 +189,7 @@ describe('operations store', () => {
     // undocumented carve-out with no coverage is how a later cleanup silently changes behaviour.
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'waiting' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'waiting' }));
 
     expect(store.getState().running).toEqual([]);
     expect(store.getState().finished).toEqual([]);
@@ -206,8 +206,8 @@ describe('operations store', () => {
   it('exposes waiting operations separately from running and finished', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'waiting' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'waiting' }));
 
     expect(store.getState().waiting.map((o) => o.id)).toEqual(['op-2']);
     expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
@@ -226,7 +226,7 @@ describe('operations store', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
     statuses.forEach((status, i) => {
-      bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ id: `op-${i}`, status }));
+      bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: `op-${i}`, status }));
     });
 
     const state = store.getState();
@@ -271,7 +271,7 @@ describe('operations store', () => {
   it('wait posts the WAIT route with the operation id and does not touch local state', () => {
     const { store, transport, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
+    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
 
     store.actions.wait('op-1');
 

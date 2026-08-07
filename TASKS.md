@@ -143,7 +143,7 @@ app.Run();
   since `UseMissions` shipped. **A reference app that writes the framework's own composition is the whole
   finding**; when that block is gone, D64 has landed.
 - [ ] **Every kit module moves onto the reserved `SHENORA.` prefix** (owner's call): `SHENORA.MEDIA`,
-  `SHENORA.FILES`, `SHENORA.OPERATIONS`, `SHENORA.DIALOGS`. **`OPERATIONS` and `FILE_DIALOGS` move too** —
+  `SHENORA.FILES`, `SHENORA.OPERATIONS`, `SHENORA.DIALOGS`. **The two already shipped were renamed too** —
   no grandfathering, because one rule with two permanent exceptions is a rule nobody applies from memory.
   The prefix is what frees the app to own `MEDIA`/`FILES` itself, and it is what makes registering the kit's
   facades by default safe. ⚠ A WIRE break: `@shenora/react` names these strings, so the TS half and the

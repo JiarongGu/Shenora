@@ -670,14 +670,14 @@ changes, noting them in `CHANGELOG.md`).
   notification queue buffering from construction + ~50 ms batch flush after the reserved
   `SHENORA`/`READY` client handshake, optional `IEventBus` wildcard forwarding,
   `SendNotification`, `OnClientReady` per-handshake callback); `WindowCommandFacade` + `WindowCommandOptions`
-  (module `WINDOW`: MINIMIZE/TOGGLE_MAXIMIZE/CLOSE/IS_MAXIMIZED/START_DRAG/START_RESIZE +
+  (module `SHENORA.WINDOW`: MINIMIZE/TOGGLE_MAXIMIZE/CLOSE/IS_MAXIMIZED/START_DRAG/START_RESIZE +
   optional SET_THEME; `ToggleMaximize`/`IsMaximized` delegate seams for frameless apps — here
   because the commands arrive over the bridge and need Ipc, which WinForms doesn't reference);
   the drop-zone stack — `DropZoneManager(+Options)` (transparent overlays over page elements
   capture real OS paths incl. background drags; non-blocking UI marshalling, activation sync,
   DOM occlusion checks, per-monitor `DeviceDpi` conversion + `DpiChanged` re-apply; zones cleared on
   `ContentLoading` so overlay lifetime follows the DOCUMENT, never the ready handshake, which used to
-  race the page that was registering; events on `IEventBus`) + `DropZoneFacade` (module `DROP_ZONE`:
+  race the page that was registering; events on `IEventBus`) + `DropZoneFacade` (module `SHENORA.DROPZONE`:
   REGISTER/UPDATE/UNREGISTER/SHOW).
 - `Shenora.Core` also owns `AppCallback` — the ONE guard for invoking app-supplied code from a place
   where an escaping exception is fatal rather than catchable (a UI-thread event handler, a timer tick, a
@@ -785,7 +785,7 @@ changes, noting them in `CHANGELOG.md`).
   resolving them on first dispatch — not through `TryClaimModule`, because claiming needs the module
   NAMES and reading those means resolving the facades, which inside the `IMessageDispatcher` singleton
   factory is the silent `StackOverflow` P5.5 H2 fixed. Two consequences: `IsModuleMapped("OPERATIONS")`
-  is `false` while `OPERATIONS` is routed, and a plug-in offering a name a DI facade already owns gets
+  is `false` while `SHENORA.OPERATIONS` is routed, and a plug-in offering a name a DI facade already owns gets
   `true` from `TryMapModule` and then never runs, because the lazy middleware is composed earlier and
   answers first. Precedence is the one you want (the app's own modules win); the honesty is not.
   Closing it needs either a name-reservation seam the registry does not have or re-opening the
@@ -839,12 +839,12 @@ changes, noting them in `CHANGELOG.md`).
   throttled. `OperationEvents`
   (`Updated` = `OPERATION_UPDATED`, `ResumeRequested` = `OPERATION_RESUME_REQUESTED`,
   `WaitRequested` = `OPERATION_WAIT_REQUESTED`, `Removed` = `OPERATION_REMOVED`),
-  `OperationsFacade` (module `OPERATIONS` by default, shared with the registry via one
+  `OperationsFacade` (module `SHENORA.OPERATIONS` by default, shared with the registry via one
   `OperationRegistryOptions` instance so the two can never drift apart:
   `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`), `AddShenoraOperations` (opt-in DI
   wiring; an app with no long-running work pays nothing).
   **The file-dialog cluster** (2026-08-05) — the page's route to whichever `IFileDialogs` the SHELL
-  registered, so a picker needs no app-written route: `FileDialogFacade` (module `FILE_DIALOGS`, a fixed
+  registered, so a picker needs no app-written route: `FileDialogFacade` (module `SHENORA.DIALOGS`, a fixed
   const because this facade publishes nothing for a configurable name to stay in step with —
   `OPEN_FILE`/`OPEN_FOLDER`/`SAVE_FILE`/`SAVE_TEXT`) + `AddShenoraFileDialogs` (opt-in). `SAVE_TEXT` is the
   PORTABLE save — the host does the writing, so it works on every shell — and carries text rather than

@@ -8,7 +8,7 @@ public sealed class OperationRegistryOptions
     /// from the OWNING module carried inside each <see cref="OperationInfo"/>. One subscription,
     /// one snapshot source, one place for a client-side filter to allow or deny.
     /// </summary>
-    public string ModuleName { get; init; } = "OPERATIONS";
+    public string ModuleName { get; init; } = "SHENORA.OPERATIONS";
 
     /// <summary>
     /// The progress-report frame rate: at most one emission per window, plus a trailing emit so

@@ -49,7 +49,7 @@ public sealed class FileDialogFacade : BaseFacade
     /// from options because the registry EMITS events under the same module and the two must not drift;
     /// this facade publishes nothing, so a knob would be a public member earning nothing.
     /// </remarks>
-    public const string Module = "FILE_DIALOGS";
+    public const string Module = "SHENORA.DIALOGS";
 
     /// <summary>Route: pick an existing file. Payload <c>{ options? }</c>.</summary>
     public const string OpenFileType = "OPEN_FILE";

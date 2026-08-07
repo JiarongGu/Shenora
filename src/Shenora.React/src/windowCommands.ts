@@ -46,7 +46,7 @@ interface WindowRequests {
  */
 export class WindowCommands extends BaseModuleService<WindowRequests> {
   constructor(bridge?: ShenoraBridge) {
-    super('WINDOW', bridge);
+    super('SHENORA.WINDOW', bridge);
   }
 
   minimize(): Promise<void> {

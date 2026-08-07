@@ -114,7 +114,7 @@ public class MediaConversionTests : IDisposable
             Scopes = [PathClaims.Scope],
         });
         var bus = new EventBus();
-        bus.Subscribe("MEDIA", MediaConversionEvents.Ready, _ => { ready.TrySetResult(); return Task.CompletedTask; });
+        bus.Subscribe("SHENORA.MEDIA", MediaConversionEvents.Ready, _ => { ready.TrySetResult(); return Task.CompletedTask; });
         var interceptor = new FakeInterceptor();
         interceptor.UseMediaConversion(scheduler, bus, Options(async (conversion, ct) =>
             await File.WriteAllTextAsync(conversion.DestinationPath, "converted-bytes", ct)));
@@ -144,7 +144,7 @@ public class MediaConversionTests : IDisposable
             Scopes = [PathClaims.Scope],
         });
         var bus = new EventBus();
-        bus.Subscribe("MEDIA", MediaConversionEvents.Failed, _ => { failed.TrySetResult(); return Task.CompletedTask; });
+        bus.Subscribe("SHENORA.MEDIA", MediaConversionEvents.Failed, _ => { failed.TrySetResult(); return Task.CompletedTask; });
         var interceptor = new FakeInterceptor();
         interceptor.UseMediaConversion(scheduler, bus, Options(async (conversion, ct) =>
         {
@@ -178,7 +178,7 @@ public class MediaConversionTests : IDisposable
         var bus = new EventBus();
         // READY, not the delegate — see the cache-hit test for why signalling from inside Convert races
         // the atomic commit it precedes.
-        bus.Subscribe("MEDIA", MediaConversionEvents.Ready, _ => { round.TrySetResult(); return Task.CompletedTask; });
+        bus.Subscribe("SHENORA.MEDIA", MediaConversionEvents.Ready, _ => { round.TrySetResult(); return Task.CompletedTask; });
         var interceptor = new FakeInterceptor();
         interceptor.UseMediaConversion(scheduler, bus, Options(async (conversion, ct) =>
         {
@@ -194,7 +194,7 @@ public class MediaConversionTests : IDisposable
 
         // Same PATH, different content — a path-only key would serve the stale conversion here.
         var second = new TaskCompletionSource();
-        bus.Subscribe("MEDIA", MediaConversionEvents.Ready, _ => { second.TrySetResult(); return Task.CompletedTask; });
+        bus.Subscribe("SHENORA.MEDIA", MediaConversionEvents.Ready, _ => { second.TrySetResult(); return Task.CompletedTask; });
         await File.WriteAllTextAsync(source, "second-and-longer");
         File.SetLastWriteTimeUtc(source, DateTime.UtcNow.AddMinutes(1));
 

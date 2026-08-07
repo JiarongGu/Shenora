@@ -194,7 +194,7 @@ public sealed class MediaConversionOptions
     public Func<Uri, bool>? AllowRemoteSource { get; init; }
 
     /// <summary>Module the progress events are published on. Defaults to <c>MEDIA</c>.</summary>
-    public string Module { get; init; } = "MEDIA";
+    public string Module { get; init; } = "SHENORA.MEDIA";
 
     /// <summary>Diagnostics. Guarded — a throwing sink must not break serving.</summary>
     public Action<string>? Log { get; init; }

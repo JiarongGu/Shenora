@@ -95,7 +95,7 @@ export {
   useShellInfo,
   type ShenoraQueryResult,
 } from './hooks.js';
-// Native dialogs, capability-gated. The client half of the host's FILE_DIALOGS module.
+// Native dialogs, capability-gated. The client half of the host's SHENORA.DIALOGS module.
 export {
   FileDialogs,
   useFileDialogs,

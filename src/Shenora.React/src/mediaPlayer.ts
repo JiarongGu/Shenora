@@ -5,8 +5,11 @@ import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js
 /**
  * The module the player speaks on. Matches `MediaPlayerOptions.Module` on the host, which defaults to
  * the same string — change one and you must change the other.
+ *
+ * ⚠ The `SHENORA.` prefix is RESERVED for the kit's own modules (D64), beside the handshake's bare
+ * `SHENORA`. It exists so your app stays free to own a module called plainly `MEDIA`.
  */
-export const MEDIA_PLAYER_MODULE = 'MEDIA';
+export const MEDIA_PLAYER_MODULE = 'SHENORA.MEDIA';
 
 /**
  * Commands the host sends. **A wire contract**: these strings are duplicated in C# as

@@ -81,7 +81,7 @@ public sealed class WindowCommandOptions
 public sealed class WindowCommandFacade : BaseFacade
 {
     /// <summary>The reserved module name (mirrored by the client's <c>WindowCommands</c>).</summary>
-    public const string Module = "WINDOW";
+    public const string Module = "SHENORA.WINDOW";
 
     // Borderless-window drag/resize: hand off to the OS window-move/-size loop — the reliable
     // WebView2 technique (the page can't drive native drag itself).

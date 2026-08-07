@@ -93,7 +93,7 @@ export const OperationRoutes = {
  * Default `Shenora.Ipc.OperationRegistryOptions.ModuleName` — pinned by
  * `WireMirrorTests.The_default_operations_module_name_matches_the_host`.
  */
-export const OperationModuleName = 'OPERATIONS';
+export const OperationModuleName = 'SHENORA.OPERATIONS';
 
 /**
  * Mirrors `Shenora.Ipc.OperationLabel` — human-facing text the HOST never renders itself: an

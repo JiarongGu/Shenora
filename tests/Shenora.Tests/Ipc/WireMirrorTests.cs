@@ -330,7 +330,12 @@ public class WireMirrorTests
     {
         var source = ClientSource("fileDialogs.ts");
 
-        var module = Regex.Match(source, @"super\('(?<module>[A-Z_]+)'");
+        // ⚠ The dot is part of the character class because the kit's own modules carry the RESERVED
+        // `SHENORA.` prefix (D64). Without it this pattern silently stopped matching when the names moved
+        // — which the gate reported honestly as "could not find the call", not as a mismatch. A wire
+        // tripwire whose PARSER can fail to find its subject needs that failure to be loud, which is why
+        // the Assert.True below exists and why it is worth keeping.
+        var module = Regex.Match(source, @"super\('(?<module>[A-Z_.]+)'");
         Assert.True(module.Success, "could not find the FileDialogs `super('MODULE'` call");
         Assert.Equal(FileDialogFacade.Module, module.Groups["module"].Value);
 

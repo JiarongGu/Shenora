@@ -65,7 +65,7 @@ sealed class Shenora.Windows.DropZoneFacade : Shenora.Ipc.BaseFacade
   public override string ModuleName { get; }
 sealed class Shenora.Windows.DropZoneManager : System.IDisposable
   public .ctor(Shenora.Windows.DropZoneManagerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.DropZoneManager>? logger = null)
-  public const string Module = "DROP_ZONE"
+  public const string Module = "SHENORA.DROPZONE"
   public void ClearAll()
   public void Dispose()
   public void RegisterZone(string zoneId, int cssX, int cssY, int cssWidth, int cssHeight)
@@ -615,7 +615,7 @@ sealed class Shenora.Windows.WinFormsUiDispatcher : Shenora.Core.IUiDispatcher
 sealed class Shenora.Windows.WindowCommandFacade : Shenora.Ipc.BaseFacade
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.Windows.WindowCommandOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Windows.WindowCommandFacade>? logger = null)
-  public const string Module = "WINDOW"
+  public const string Module = "SHENORA.WINDOW"
   public override string ModuleName { get; }
 sealed class Shenora.Windows.WindowCommandOptions
   public System.Action<System.Collections.Generic.IReadOnlyList<Shenora.Windows.CaptionButtonRegion>>? SetCaptionButtons { get; init; }

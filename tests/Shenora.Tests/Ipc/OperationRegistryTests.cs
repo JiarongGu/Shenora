@@ -29,7 +29,7 @@ public class OperationRegistryTests
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Scope = "prod" });
 
         var message = Assert.Single(events);
-        Assert.Equal("OPERATIONS", message.Module);
+        Assert.Equal("SHENORA.OPERATIONS", message.Module);
         Assert.Equal(OperationEvents.Updated, message.Type);
         Assert.Equal("prod", message.Scope);
         var info = Payload(message);

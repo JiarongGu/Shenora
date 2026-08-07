@@ -172,6 +172,31 @@ at the first list and missed five more breaking changes.
 - **`MissionScheduler` now implements `IDisposable` as well as `IAsyncDisposable`.** Additive for callers,
   listed here because it changes what `using var app = …` does. See `### Fixed` — it was a crash.
 
+- 🔴 **EVERY kit module moved onto a reserved `SHENORA.` prefix.** A WIRE break: both halves must move
+  together or they fail with `UNKNOWN_MODULE` while compiling perfectly on each side.
+
+  | was | now |
+  |---|---|
+  | `FILE_DIALOGS` | `SHENORA.DIALOGS` |
+  | `OPERATIONS` | `SHENORA.OPERATIONS` |
+  | `WINDOW` | `SHENORA.WINDOW` |
+  | `DROP_ZONE` | `SHENORA.DROPZONE` |
+  | `MEDIA` | `SHENORA.MEDIA` |
+
+  - **Migration:** update any hard-coded module string. If you use `@shenora/react`'s clients
+    (`FileDialogs`, `useDropZone`, `useWindowCommands`, `useMediaPlayer`, `OperationModuleName`) you
+    change nothing — they carry the names. The handshake's bare `SHENORA` is unchanged.
+  - **The point is what it gives BACK: those plain names are now yours.** An app is free to own a module
+    called `MEDIA` or `OPERATIONS`; the kit used to take them. That is also what makes registering the
+    kit's own facades by default safe (D64) — a reserved prefix cannot collide with an app's.
+  - ⚠ **No grandfathering, deliberately.** `OPERATIONS` and `FILE_DIALOGS` were already shipped and moved
+    anyway: one rule with two permanent exceptions is a rule nobody applies from memory, and those two
+    are the ones an adopter meets first.
+  - The old spellings are now in `devtools/retired-names.txt`, a category that file did not previously
+    watch. **It found four stale JSDoc sites on its first run** — the exact failure it exists for, since
+    an adopter copying a module string out of a recipe gets a runtime `UNKNOWN_MODULE` from two halves
+    that both compile.
+
 ### Fixed
 
 - 🔴 **`ServiceProvider.Dispose()` threw on any app holding a `MissionScheduler` — and D64 was about to make
@@ -282,10 +307,13 @@ at the first list and missed five more breaking changes.
       `.name` STRUCTURALLY — the value browsers reject with is a `DOMException`, which is not an `Error`
       subclass everywhere. A `MediaError` becomes a short code (`Decode`, `SourceNotSupported`), never
       `error.message`, which browsers fill with decoder internals and sometimes the whole URL.
-    - 🔴 **⚠ THE LOOP IS NOT CLOSED YET, and an app must close it.** `PLAYER_REPORT` is an ordinary IPC
-      message on the `MEDIA` module and **the kit registers no facade for it**, so nothing turns it into
-      `MediaPlayer.Report(...)`. Until the app wires that route, `IMediaPlayer.OpenAsync` waits on a
-      report that never arrives — see `docs/ADOPTION.md`, which carries the four-line route.
+    - ✅ **The loop is closed by `MediaPlayerFacade`, registered by default with the dispatcher (D64).**
+      For a few hours of this unreleased version it was NOT: the kit shipped `useMediaPlayer` on the page
+      and no host route for the reports it posts, so `IMediaPlayer.OpenAsync` — which completes on the
+      page's first report and on nothing else — waited forever. No exception, no log line, an element
+      visibly playing. **Nothing an adopter can hit, since both halves ship together here**; recorded
+      because the failure mode is the one this repo keeps producing (D63) and because the fix carries the
+      seconds→`TimeSpan` mapping every adopter would otherwise write.
   - **`player.ReportTo(session)` keeps the OS transport surface honest.** Before the host owned a player,
     `IPlaybackSession` published whatever the app CLAIMED, so a lock screen could say "playing" while the
     audio had stalled, ended or failed — and nothing reconciled the two. One line now does.

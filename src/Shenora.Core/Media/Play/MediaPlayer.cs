@@ -104,8 +104,17 @@ public sealed class MediaPlayerOptions
     /// </summary>
     public string? CacheRoot { get; set; }
 
-    /// <summary>Module the player's commands are published on. Defaults to <c>MEDIA</c>, matching the conversion route.</summary>
-    public string Module { get; init; } = "MEDIA";
+    /// <summary>
+    /// Module the player's commands are published on. Defaults to <c>SHENORA.MEDIA</c>, matching the
+    /// conversion route.
+    /// <para>
+    /// ⚠ <b>The <c>SHENORA.</c> prefix is RESERVED for the kit's own modules (D64)</b>, alongside the
+    /// handshake's bare <c>SHENORA</c>. It exists so an app stays free to own a module called plainly
+    /// <c>MEDIA</c> — which the kit used to take. Change this only to run a second, app-owned player
+    /// alongside the kit's; the page's <c>useMediaPlayer</c> must then be told the same name.
+    /// </para>
+    /// </summary>
+    public string Module { get; init; } = "SHENORA.MEDIA";
 
     /// <summary>Diagnostics. Guarded — a throwing sink never escapes into a callback.</summary>
     public Action<string>? Log { get; init; }

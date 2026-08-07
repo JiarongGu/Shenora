@@ -106,6 +106,14 @@ MediaRangeServer         # -> Core.WebViewFiles.Serve + interceptor.UseFiles(…
 MediaBodyMode            # -> Core.WebViewRangeDelivery, read off the interceptor
 MediaAccess              # -> Core.WebViewFiles.ResolveContained; the IsRemoteAllowed half was dropped
 MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived artefact, not a media one
+# --- 2026-08-07, D64: every kit module moved onto the reserved `SHENORA.` prefix -------------------
+# These are WIRE names, which is a category this file did not previously watch and the one where a stale
+# doc costs the most: an adopter copies a module string out of a recipe and gets UNKNOWN_MODULE at
+# runtime, with both halves compiling perfectly. The prefix exists so an app stays free to own the plain
+# names, so the old spellings now belong to CONSUMERS — which is exactly why the kit's docs must never
+# state them as its own.
+FILE_DIALOGS     # -> SHENORA.DIALOGS
+DROP_ZONE        # -> SHENORA.DROPZONE
 MediaAudioConversion   # 2026-08-07 -> MediaAudioPipeline (the class; IMediaAudioConversion the INTERFACE is current)
 VideoCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Video]
 AudioCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Audio]

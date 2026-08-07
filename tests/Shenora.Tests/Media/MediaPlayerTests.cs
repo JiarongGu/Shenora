@@ -192,7 +192,7 @@ public class MediaPlayerTests
         Assert.Contains(bus.Sent, e => e.Type == MediaPlayerEvents.Play);
         Assert.Contains(bus.Sent, e => e.Type == MediaPlayerEvents.Pause);
         Assert.Contains(bus.Sent, e => e.Type == MediaPlayerEvents.Seek);
-        Assert.All(bus.Sent, e => Assert.Equal("MEDIA", e.Module));
+        Assert.All(bus.Sent, e => Assert.Equal("SHENORA.MEDIA", e.Module));
     }
 
     [Fact]

@@ -22,7 +22,7 @@ public class OperationsFacadeTests
         registry.Start("SCAN", new OperationOptions { Kind = "FILES" });
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "LIST", payload: new { module = "DEPLOY" }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "LIST", payload: new { module = "DEPLOY" }));
 
         Assert.True(response.Success);
         var operations = Assert.IsAssignableFrom<IReadOnlyList<OperationInfo>>(response.Data);
@@ -36,7 +36,7 @@ public class OperationsFacadeTests
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH", Cancellable = true });
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "CANCEL", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "CANCEL", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.True(operation.CancellationToken.IsCancellationRequested);
@@ -58,7 +58,7 @@ public class OperationsFacadeTests
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" }); // Cancellable defaults to false
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "CANCEL", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "CANCEL", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success); // the REQUEST still succeeds — only the cancel itself is honestly false
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("cancelled").GetBoolean());
@@ -73,7 +73,7 @@ public class OperationsFacadeTests
         var running = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
         registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" }).Complete();
 
-        var response = await facade.HandleMessageAsync(IpcRequests.Create("OPERATIONS", "CLEAR_FINISHED"));
+        var response = await facade.HandleMessageAsync(IpcRequests.Create("SHENORA.OPERATIONS", "CLEAR_FINISHED"));
 
         Assert.True(response.Success);
         Assert.Equal(running.Id, registry.GetAll().Single().Id);
@@ -95,7 +95,7 @@ public class OperationsFacadeTests
         devDone.Complete();
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "CLEAR_FINISHED", payload: new { scope = "prod" }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "CLEAR_FINISHED", payload: new { scope = "prod" }));
 
         Assert.True(response.Success);
         var remaining = registry.GetAll();
@@ -111,7 +111,7 @@ public class OperationsFacadeTests
         operation.Wait("credentials");
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "RESUME", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
@@ -126,7 +126,7 @@ public class OperationsFacadeTests
         var (facade, _) = Build();
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "RESUME", payload: new { operationId = "whatever" }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "RESUME", payload: new { operationId = "whatever" }));
 
         Assert.True(response.Success);   // the REQUEST still succeeds — only the resume itself is honestly false
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
@@ -141,7 +141,7 @@ public class OperationsFacadeTests
         operation.Wait("dns");
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
@@ -160,7 +160,7 @@ public class OperationsFacadeTests
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
@@ -175,7 +175,7 @@ public class OperationsFacadeTests
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
@@ -190,7 +190,7 @@ public class OperationsFacadeTests
         operation.Wait("dns");
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
 
         Assert.True(response.Success);
         Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
@@ -201,7 +201,7 @@ public class OperationsFacadeTests
     {
         var (facade, _) = Build();
 
-        var response = await facade.HandleMessageAsync(IpcRequests.Create("OPERATIONS", "NOPE"));
+        var response = await facade.HandleMessageAsync(IpcRequests.Create("SHENORA.OPERATIONS", "NOPE"));
 
         Assert.Equal(IpcErrorCodes.NoHandler, response.Error!.Code);
     }

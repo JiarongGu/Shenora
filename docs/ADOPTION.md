@@ -354,7 +354,7 @@ until the page is listening.
   background body (a start outside the block, several failure branches, a resumable session).
   Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
   you do) and it ships `OperationsFacade` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`
-  under module `OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
+  under module `SHENORA.OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
   no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
   progress strip that mounts mid-run isn't empty), folds `OPERATION_UPDATED` by id afterward, and
@@ -1196,87 +1196,50 @@ restages. An applier that scans `staged/` for content instead will eventually ac
 
 ---
 
-## Media playback — not a stage; three pieces if the file already plays
+## Media playback — not a stage, and not a wiring job
 
 A media player whose lifecycle lives in .NET, rendering through your page's own `<video>`/`<audio>`
 element. **Sources are passed straight through** — nothing probed, nothing converted — because a file
-the device can already decode needs none of that. Inject `IMediaPlayer` and call `OpenAsync` /
-`PlayAsync` / `SeekAsync`.
+the device can already decode needs none of that.
 
-It takes three pieces, and **all three are required for a working loop**:
-
-```csharp
-// 1. the host half
-builder.UseMediaPlayer();
-```
+**The host half is already there** (D64): `ShenoraApplication.CreateBuilder(...).Build()` registers
+`IMediaPlayer` and the route that carries the page's reports back. Inject it and call `OpenAsync` /
+`PlayAsync` / `SeekAsync`. The only thing you write is the page half:
 
 ```tsx
-// 2. the page half — @shenora/react drives your element and reports its state back
 const ref = useRef<HTMLVideoElement>(null);
 useMediaPlayer(ref);
 return <video ref={ref} playsInline />;
 ```
 
-```csharp
-// 3. THE JOINT — the route that carries the page's report to the player. The kit ships no facade for
-//    this, so it is yours; four lines, and without it OpenAsync waits forever.
-public sealed class MediaFacade(IMediaPlayer player) : BaseFacade
-{
-    public override string ModuleName => "MEDIA";   // MEDIA_PLAYER_MODULE, and MediaPlayerOptions.Module
+That is the whole integration. The element becomes the display and the sound; .NET owns the lifecycle,
+decides whether a file can play as-is, and points at a conversion when it cannot.
 
-    protected override Task<object?> RouteMessageAsync(
-        IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
-    {
-        if (request.Type != "PLAYER_REPORT") throw UnknownType(request);
-
-        // The page reports SECONDS; MediaPlayerStatus is TimeSpan. Nothing converts this for you.
-        var duration = PayloadHelper.GetOptionalValue<double?>(request.Payload, "duration");
-        player.Report(new MediaPlayerStatus
-        {
-            State = Enum.Parse<MediaPlayerState>(
-                PayloadHelper.GetRequiredValue<string>(request.Payload, "state")),
-            Position = TimeSpan.FromSeconds(
-                PayloadHelper.GetOptionalValue<double>(request.Payload, "position")),
-            Duration = duration is { } d ? TimeSpan.FromSeconds(d) : null,
-            Error = PayloadHelper.GetOptionalValue<string>(request.Payload, "error"),
-        });
-        return Done();
-    }
-}
-```
-
-> 🔴 **Piece 3 is the one to get wrong, because nothing tells you.** `MediaPlayer.OpenAsync` completes
-> when the PAGE says the element is ready — the element is the only clock (D58), so the host never
-> guesses a position. If no route carries `PLAYER_REPORT` back, the message is answered with an
-> unknown-module error the page discards and `OpenAsync` simply never returns: no exception, no log line,
-> nothing on screen. **Pass a real `CancellationToken` to `OpenAsync` while you are wiring this up** —
-> a timeout there turns the silence into a signal.
->
-> ⚠ Why the kit does not ship the facade: the module name is configurable
-> (`MediaPlayerOptions.Module`), a facade is registered into YOUR module registry, and an app that
-> already owns a `MEDIA` module would find the kit had claimed it. It is on the list to reconsider —
-> if you would rather the kit shipped this, say so, because that is the signal it waits for.
+> ⚠ **This used to be three pieces and the third was yours.** Until 2026-08-07 the kit shipped both ends
+> and no joint: the page posted its reports to a module nothing answered, and `OpenAsync` — which
+> completes on the page's first report and on nothing else — simply never returned. No exception, no log
+> line, and an element that was visibly playing. If you wrote that route yourself against an earlier
+> build, **delete it**; `MediaPlayerFacade` now answers on `SHENORA.MEDIA` and yours would collide.
 
 **Add conversion only when the device and its webview disagree** — which is the entire job of the media
 pipeline (D59): your hardware decodes AC-3, the `<video>` element will not touch it, and something has to
 bridge the two.
 
 ```csharp
-// 1. configure the provider
+// name the roots it may read from…
 builder.UseMediaPlayer(x => x.AllowedRoots = [libraryDir]);
-
-// 2. mount its route, once the webview exists
+// …and mount the route, once the webview exists
 _route = interceptor.UseMediaPlayer(services);
 ```
+
+> ⚠ **`AllowedRoots` is the one thing the kit will not choose for you**, which is why conversion is what
+> you opt into. It is the containment boundary that stops a page-supplied path escaping into the rest of
+> the disk — the security decision and "do I need conversion?" are the same decision (D61).
 
 **Two phases because there are genuinely two**, the same split ASP.NET draws between registering a service
 and mounting its middleware: the interceptor is created *with* the webview, so it cannot exist while
 services are being registered. The mount call is a no-op when you named no roots, so it is safe to make
 unconditionally.
-
-> ⚠ **`AllowedRoots` is the one thing the kit will not choose for you.** It is the containment boundary
-> that stops a page-supplied path escaping into the rest of the disk. That is also why it is the switch:
-> the security decision and "do I need conversion?" are the same decision.
 
 **What you get without writing a converter:** container repair (Matroska → MP4, every frame copied
 untouched) plus a soundtrack transcode through *your device's own codecs* where the shell registers them.

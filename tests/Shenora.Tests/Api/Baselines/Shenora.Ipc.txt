@@ -9,7 +9,7 @@ abstract class Shenora.Ipc.BaseFacade : Shenora.Ipc.IModuleFacade
 sealed class Shenora.Ipc.FileDialogFacade : Shenora.Ipc.BaseFacade
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.Core.IFileDialogs dialogs, Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.FileDialogFacade>? logger = null)
-  public const string Module = "FILE_DIALOGS"
+  public const string Module = "SHENORA.DIALOGS"
   public const string OpenFileType = "OPEN_FILE"
   public const string OpenFolderType = "OPEN_FOLDER"
   public const string SaveFileType = "SAVE_FILE"
@@ -124,6 +124,11 @@ static class Shenora.Ipc.IpcServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddModuleFacade<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Ipc.IModuleFacade
   public static Shenora.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
   public static Shenora.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
+sealed class Shenora.Ipc.MediaPlayerFacade : Shenora.Ipc.BaseFacade
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Ipc.IpcRequest request, Shenora.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
+  public .ctor(Shenora.Media.IMediaPlayer? player, Shenora.Media.MediaPlayerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.MediaPlayerFacade>? logger = null)
+  public const string ReportType = "PLAYER_REPORT"
+  public override string ModuleName { get; }
 sealed class Shenora.Ipc.MessageDispatcher : Shenora.Ipc.IMessageDispatcher, Shenora.Ipc.IModuleRegistry
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Ipc.MessageDispatcher>? logger = null)
   public Shenora.Ipc.MessageDispatcher Use(Shenora.Ipc.MessageMiddleware middleware)

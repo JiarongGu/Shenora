@@ -48,7 +48,7 @@ public sealed class DropZoneManagerOptions
 public sealed class DropZoneManager : IDisposable
 {
     /// <summary>The reserved module name (mirrored by the client's <c>useDropZone</c>).</summary>
-    public const string Module = "DROP_ZONE";
+    public const string Module = "SHENORA.DROPZONE";
 
     private readonly DropZoneManagerOptions _options;
     private readonly ILogger<DropZoneManager> _logger;

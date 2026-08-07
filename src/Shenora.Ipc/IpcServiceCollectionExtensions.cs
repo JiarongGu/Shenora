@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Shenora.Media;
 
 namespace Shenora.Ipc;
 
@@ -131,6 +133,33 @@ public static class IpcServiceCollectionExtensions
         this IServiceCollection services, Action<IServiceProvider, IMessageDispatcher>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // 🔴 THE KIT'S OWN MODULES COME WITH THE DISPATCHER (D64). If you are composing IPC at all, the
+        // framework's routes are part of what you are composing — the same reason
+        // `WebApplication.CreateBuilder` brings Kestrel. They are inert until the page posts to them, so
+        // there is nothing to opt out of, and they answer on RESERVED `SHENORA.` module names that cannot
+        // collide with an app's own.
+        //
+        // ⚠ `MediaPlayerFacade` is the one that was MISSING rather than merely opt-in, and its absence was
+        // silent: the kit shipped `useMediaPlayer` on the page and no host route for the reports it posts,
+        // so `IMediaPlayer.OpenAsync` waited forever on a message nothing answered. TryAddEnumerable
+        // rather than AddModuleFacade so registering it twice cannot map the module twice — which the
+        // dispatcher rejects outright as a duplicate.
+        //
+        // ⚠ Both dependencies are resolved OPTIONALLY. This lives in `Shenora.Ipc`, which cannot assume
+        // anyone called `ShenoraApplicationBuilder.Build()` — composing IPC over a bare ServiceCollection
+        // is a legitimate shape and the kit's own IPC tests are exactly that. A default registration that
+        // threw on resolve would turn "the framework is on" into "the framework fell over".
+        // ⚠ The two-type overload, NOT `Singleton<IModuleFacade>(factory)`: `TryAddEnumerable` refuses a
+        // descriptor whose implementation type is the SERVICE type, because it has nothing to compare for
+        // duplicates ("indistinguishable from other services registered for IModuleFacade"). Naming
+        // MediaPlayerFacade as the implementation is what makes the try-add idempotent at all.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IModuleFacade, MediaPlayerFacade>(sp =>
+            new MediaPlayerFacade(
+                sp.GetService<IMediaPlayer>(),
+                sp.GetService<MediaPlayerOptions>() ?? new MediaPlayerOptions(),
+                sp.GetService<ILogger<MediaPlayerFacade>>())));
+
         services.AddSingleton<IMessageDispatcher>(sp =>
         {
             IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>());
