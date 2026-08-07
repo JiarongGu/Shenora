@@ -35,6 +35,21 @@ at the first list and missed five more breaking changes.
   Tracked in `TASKS.md` with the two options (the kit owns a generated widget target, or adopters own
   theirs). Several real defects were fixed underneath it — see `### Fixed` — but none of them was the cause.
 
+### Fixed
+
+- 🔴 **A registered `IMediaAudioConversion` was never consulted by the kit's default converter, and
+  nothing said so (D59).** `Mp4Remuxer.ConvertAsync` — the overload every adoption example wires,
+  documented as "the kit's default" — passed `conversion: null`. So a shell that had registered a working
+  device codec (Android's `MediaCodec` one ships in the box) got no benefit from it.
+  - ⚠ **The symptom was SILENCE, not an error.** The remux succeeded and dropped the soundtrack, so an
+    AC-3 film played as video with no audio. A capability that is absent rather than broken produces no
+    exception, no log line and no failing test — every gate was green throughout.
+  - **Fix: `Mp4Remuxer.ConvertWith(conversion)`**, which is now the overload to wire.
+    `Mp4Remuxer.ConvertAsync` stays as container-repair-only and its remarks say so.
+  - What gets consulted is the `MediaAudioConversion` **pipeline**, not any one implementation — so an
+    adopter with a better decoder calls `Use(...)` and it serves the default converter, the segment engine
+    and the player alike, with no other change.
+
 ### Breaking
 
 - 🔴 **`Shenora.IO` and `Shenora.IO.Compression` are no longer packages.** Both folded into

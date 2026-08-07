@@ -805,4 +805,72 @@ public class Mp4RemuxerTests
         source.Position = 0;
         Assert.True(Remux(source).Result.Succeeded);
     }
+
+    // ── the DEFAULT converter reaches the device's codecs ─────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The value the kit claims, pinned: an adopter's decoder reaches the DEFAULT converter.</b>
+    /// Owner, 2026-08-07: *"the default convertor is actually bridging the gap between the device hardware
+    /// to its webview, and if a better encoder/decoder comes in by adopter app, they can hook that into the
+    /// same pipeline without additional code."*
+    /// <para>
+    /// ⚠ This was FALSE until the day it was written. <c>ConvertAsync</c> — the overload every adoption
+    /// example wires — passed <c>conversion: null</c>, so a shell that had registered a working
+    /// <c>IMediaAudioConversion</c> never had it called and AC-3 kept being refused on a device that could
+    /// decode it. Nothing failed; the capability was silently absent.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ConvertWith_lets_a_supplied_codec_rescue_a_soundtrack_MP4_cannot_carry()
+    {
+        var frames = new[] { Frame(1, 32), Frame(2, 48), Frame(3, 40) };
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"shenora-convert-{Guid.NewGuid():N}.mkv");
+        var destinationPath = Path.Combine(Path.GetTempPath(), $"shenora-convert-{Guid.NewGuid():N}.mp4");
+
+        try
+        {
+            using (var film = Ac3Film(frames))
+            {
+                File.WriteAllBytes(sourcePath, film.ToArray());
+            }
+
+            var request = new MediaConversionRequest(sourcePath, destinationPath, new Progress<double>());
+
+            // ⚠ Without a conversion the default SUCCEEDS and drops the soundtrack — it does not refuse.
+            // So the user-visible symptom of the missing capability is a SILENT FILM, not an error, which
+            // is the worse failure mode and the reason this test asserts track COUNT rather than a throw.
+            await Mp4Remuxer.ConvertAsync(request, CancellationToken.None);
+            Assert.Single(Children(Find(File.ReadAllBytes(destinationPath), "moov")!), b => b.Type == "trak");
+
+            // With one — an adopter's, or the shell's — the same call on the same file keeps the audio.
+            await Mp4Remuxer.ConvertWith(new FakeConversion())(request, CancellationToken.None);
+
+            var mp4 = File.ReadAllBytes(destinationPath);
+            Assert.Equal(2, Children(Find(mp4, "moov")!).Count(b => b.Type == "trak"));
+        }
+        finally
+        {
+            if (File.Exists(sourcePath)) File.Delete(sourcePath);
+            if (File.Exists(destinationPath)) File.Delete(destinationPath);
+        }
+    }
+
+    /// <summary>
+    /// The pipeline, not one implementation, is what gets consulted — which is what "hook it in without
+    /// additional code" actually rests on. A converter registered with <c>Use(...)</c> reaches the default.
+    /// </summary>
+    [Fact]
+    public void ConvertWith_accepts_a_pipeline_so_a_registered_converter_is_consulted()
+    {
+        var pipeline = new MediaAudioConversion();
+        pipeline.Use((source, _) => source.Codec is "ac3" ? new FakeConversion() : null);
+
+        using var film = Ac3Film(Frame(1, 32), Frame(2, 48));
+        using var output = new MemoryStream();
+
+        var result = Mp4Remuxer.Remux(film, output, pipeline);
+
+        Assert.True(result.Succeeded, result.Reason);
+        Assert.Equal(2, result.AudioSamples);
+    }
 }

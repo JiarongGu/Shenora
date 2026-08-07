@@ -141,9 +141,16 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
     /// interceptor.UseMediaConversion(new MediaConversionOptions
     /// {
     ///     Resolve = MyRoute, CacheRoot = cacheDir, AllowedRoots = [libraryDir],
-    ///     Convert = Mp4Remuxer.ConvertAsync,   // the kit's default
+    ///     Convert = Mp4Remuxer.ConvertAsync,   // container repair only — see ConvertWith
     /// });
     /// </code>
+    /// <para>
+    /// ⚠ <b>This overload passes NO audio conversion, so a soundtrack MP4 cannot carry is DROPPED — the
+    /// film plays silently — even on a device whose codecs could have transcoded it.</b> Silence, not an
+    /// error: the remux still succeeds because the picture survived. If the shell registered an
+    /// <see cref="IMediaAudioConversion"/>, use <see cref="ConvertWith"/> and hand it in, or the capability
+    /// is simply absent with nothing to say so.
+    /// </para>
     /// <para>
     /// ⚠ <b>It THROWS when it cannot help, and that is required rather than unfriendly.</b> The route runs
     /// this inside <c>Files.BeginReplace</c>, which publishes the output only if the delegate returns
@@ -157,25 +164,56 @@ public sealed class Mp4Remuxer : IMediaContainerWriter
     /// </para>
     /// </summary>
     public static Task ConvertAsync(MediaConversionRequest request, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
+        => ConvertWith(conversion: null)(request, cancellationToken);
 
-        return Task.Run(() =>
+    /// <summary>
+    /// The kit's default converter, wired to the DEVICE's codecs — container repair PLUS a soundtrack
+    /// transcode for anything MP4 cannot carry.
+    /// <code>
+    /// Convert = Mp4Remuxer.ConvertWith(services.GetService&lt;IMediaAudioConversion&gt;()),
+    /// </code>
+    /// <para>
+    /// <b>This is the line that closes the gap between what the DEVICE can decode and what its WEBVIEW will
+    /// accept</b> — which is the whole job (D52). The device's hardware decodes AC-3; the webview's
+    /// <c>&lt;video&gt;</c> will not touch it; the shell's <see cref="IMediaAudioConversion"/> bridges the
+    /// two. Hand it in here and an adopter's own encoder — registered into the same
+    /// <see cref="MediaAudioConversion"/> pipeline with <c>Use(...)</c> — serves this converter with **no
+    /// other change**, because the pipeline is what gets consulted, not any one implementation.
+    /// </para>
+    /// <para>
+    /// ⚠ <b><see cref="ConvertAsync"/> is this with <c>null</c>, and that difference is easy to miss</b> —
+    /// it was, until 2026-08-07: every adoption example wired <c>ConvertAsync</c>, so a shell that had
+    /// registered a perfectly good <see cref="IMediaAudioConversion"/> never had it called, and AC-3 kept
+    /// being refused on a device that could decode it. Prefer this overload; pass <c>null</c> only when you
+    /// deliberately want container repair alone.
+    /// </para>
+    /// </summary>
+    /// <param name="conversion">
+    /// The device's audio codecs, or <c>null</c> for container repair only. A pipeline is the expected
+    /// argument — see <see cref="MediaAudioConversion"/>.
+    /// </param>
+    /// <returns>A delegate for <see cref="MediaConversionOptions.Convert"/>.</returns>
+    public static Func<MediaConversionRequest, CancellationToken, Task> ConvertWith(IMediaAudioConversion? conversion)
+        => (request, cancellationToken) =>
         {
-            request.Progress.Report(0);
-            var result = Remux(request.SourcePath, request.DestinationPath, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(request);
 
-            if (!result.Succeeded)
+            return Task.Run(() =>
             {
-                // The OUTCOME, not free text: the route turns this into a FAILED event whose reason is a
-                // type name, and this kit's error contract is a code plus parameters (`ipc-contracts`).
-                throw new InvalidOperationException($"{result.Outcome}: {result.Reason}");
-            }
+                request.Progress.Report(0);
+                var result = Remux(request.SourcePath, request.DestinationPath, conversion, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
 
-            request.Progress.Report(1);
-        }, cancellationToken);
-    }
+                if (!result.Succeeded)
+                {
+                    // The OUTCOME, not free text: the route turns this into a FAILED event whose reason is a
+                    // type name, and this kit's error contract is a code plus parameters (`ipc-contracts`).
+                    throw new InvalidOperationException($"{result.Outcome}: {result.Reason}");
+                }
+
+                request.Progress.Report(1);
+            }, cancellationToken);
+        };
 
     /// <summary>
     /// Remux <paramref name="sourcePath"/> into <paramref name="destinationPath"/>, overwriting it.

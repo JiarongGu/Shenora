@@ -1913,3 +1913,30 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - ⚠ **What is NOT built:** the page-side driver. Nothing in the kit yet subscribes to
     `MediaPlayerEvents` and drives an element, so an app writes that half itself. It belongs in
     `@shenora/react`, where the element lives.
+
+- **D59 — the converter's job, stated exactly: it bridges what the DEVICE's hardware can decode to what
+  that device's WEBVIEW will accept. Nothing wider.** (Owner, 2026-08-07: *"what we solve here is the
+  streaming and the connection, and the default convertor is actually bridging the gap between the device
+  hardware to its webview, and if a better encoder/decoder comes in by adopter app, they can hook that into
+  the same pipeline without additional code."*)
+  - **This is sharper than D52's framing and supersedes how it was being read.** "Make a file the webview
+    cannot play, play" invited a treadmill of formats. The real target is a DELTA between two measurable
+    things, and both are already in the code: `IMediaCapability` asks the device what it decodes, and
+    `MediaPlaybackPolicy` says what the element accepts. **The converter's whole job is the gap between
+    them.** Where the device cannot decode it either, there is nothing to bridge and refusing is correct —
+    which is also why the kit ships no engine (D51): an engine would be claiming to beat the hardware.
+  - 🔴 **The claim was FALSE when it was made, and the defect was invisible.** `Mp4Remuxer.ConvertAsync` —
+    the overload every adoption example wires, documented as "the kit's default" — passed
+    `conversion: null`. So a shell that had registered a perfectly good `IMediaAudioConversion` (Android's
+    `MediaCodec` one ships in the box) never had it called. **Nothing failed:** the remux succeeded and
+    dropped the soundtrack, so the symptom was a film that played SILENTLY. Fixed by
+    `Mp4Remuxer.ConvertWith(conversion)`, with `ConvertAsync` kept as container-repair-only and its remarks
+    now saying so.
+    ⚠ **Worth the entry for the failure MODE, not the fix.** A capability that is absent rather than broken
+    produces no error, no log line and no failing test — the gates were green throughout. When a feature is
+    "supplied by the app and consulted by the kit", the test that matters is *does the kit actually call
+    it?*, and that test did not exist.
+  - **"Without additional code" is a claim about the PIPELINE, and it holds.** What gets consulted is
+    `MediaAudioConversion` — a middleware chain, last-registered-first — not any one implementation. An
+    adopter with a better decoder calls `Use(...)` and it serves the default converter, the segment engine
+    and the player alike. Pinned by `ConvertWith_accepts_a_pipeline_so_a_registered_converter_is_consulted`.
