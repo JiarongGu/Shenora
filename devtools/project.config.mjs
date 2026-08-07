@@ -25,7 +25,8 @@ export default {
   /** Packable .NET projects (lockstep version; `pack` runs dotnet pack on each). */
   packableProjects: [
     'src/Shenora.Core',
-    'src/Shenora.Ipc',
+    // ⚠ Shenora.Ipc is NOT here either: it folded into Core on 2026-08-07 (D65). IPC is a CORE — the
+    // contract both sides agree on — and a separate package id said 'optional', the claim D53/D55 killed.
     // ⚠ Shenora.IO and Shenora.IO.Compression are NOT here: they folded into Core on 2026-08-07
     // (D55), the same call as Media. Their namespaces live on inside Core, so nothing here needs a
     // rename — the packages simply stopped existing.

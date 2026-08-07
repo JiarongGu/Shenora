@@ -64,7 +64,6 @@ stack (persistent per-account profiles, silent refresh, clear-on-logout), and co
 Shenora.slnx
 ├── src/
 │   ├── Shenora.Core        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
-│   ├── Shenora.Ipc         net10.0          — deps: Shenora.Core
 │   │                                        ── Media/ (namespace Shenora.Media; a PACKAGE until D53,
 │   │                                          2026-08-07, now shell work inside Core)
 │   │                                          The TRANSLATION LAYER for the web (D52): the minimum
@@ -185,7 +184,7 @@ Shenora.slnx
 │   │                                          surface, so it declares <NoManagedSurface>true</> and
 │   │                                          MetadataSurfaceTests exempts it BY THAT DECLARATION —
 │   │                                          delete the line and the baseline gate turns back on.
-│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Web.WebView2
+│   ├── Shenora.Windows     net10.0-windows  — deps: Shenora.Core, Microsoft.Web.WebView2
 │   │                                          The Windows shell, WHOLE (merged 2026-08-02 from
 │   │                                          WinForms + WebView2 + WebView2.Sessions). Three folders
 │   │                                          keep the areas legible: Shell/ (primitives — bootstrap,
@@ -200,7 +199,7 @@ Shenora.slnx
 │   │                                          there is deliberately no Shenora.Mobile on nuget.org.
 │   │                                          Ipc/ Threading/ Services/ Hosting/, compiled INTO both
 │   │                                          platform packages by Shenora.Mobile.props.
-│   ├── Shenora.Android     net10.0-android  — deps: Shenora.Core, Shenora.Ipc, Microsoft.Maui.Controls
+│   ├── Shenora.Android     net10.0-android  — deps: Shenora.Core, Microsoft.Maui.Controls
 │   ├── Shenora.iOS         net10.0-ios      — same deps, same source, and it builds on WINDOWS: a
 │   │                                          net10.0-ios LIBRARY needs only the maui-ios workload,
 │   │                                          never Xcode. Only an iOS APP needs a Mac.
@@ -295,8 +294,15 @@ question is "no, it is a different category". **Four kinds, not one list:**
   and `IWebViewInterceptor` for resources (`UseFiles`/`UseMediaConversion`/`UseSegmentStream`/`UseMediaPlayer`).
   ⚠ **The split between them is the D62 line: messages carry INTENT, resources carry BYTES.** A media file
   has never travelled through the message pipe, which is why a binary IPC envelope would not speed up media.
-- **IPC is its own PACKAGE** (`Shenora.Ipc`), not a Core folder, because it is the one subsystem a
-  server-backed app might take without a shell at all (D10).
+- **IPC is a CORE, and it is a FOLDER inside `Shenora.Core` (D65, 2026-08-07).** It used to be its own
+  package on the argument that a server-backed app might take it without a shell (D10) — which was a
+  LAYERING answer to a question nobody was asking, the same shape D55 rejected for `Shenora.IO`. What
+  decides a package boundary is what the package SET says the product is, and a separate `Shenora.Ipc`
+  said "optional". It is the opposite: **IPC is one of the three cores** — the contract both sides agree
+  on — so it ships with the framework or the framework does not work.
+  ⚠ The fold was proven exact rather than asserted: `Shenora.Core`'s baseline went 1172 → 1484 lines,
+  `Shenora.Ipc.txt` was 312, and the set difference between the sum and the result is EMPTY in both
+  directions. Namespace `Shenora.Ipc` is unchanged, so adopters delete a `PackageReference` and no code.
 
 ## Public surface
 

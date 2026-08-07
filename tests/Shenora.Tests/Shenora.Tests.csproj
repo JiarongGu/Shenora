@@ -45,7 +45,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
     <!-- The file-operation engine and its zip half arrive through Shenora.Core: Shenora.IO and
          Shenora.IO.Compression stopped being packages on 2026-08-07 (D55). The NAMESPACES are
          unchanged, so every test using them still compiles untouched. -->

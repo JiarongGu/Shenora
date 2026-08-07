@@ -78,7 +78,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
-    <ProjectReference Include="..\Shenora.Ipc\Shenora.Ipc.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>
 

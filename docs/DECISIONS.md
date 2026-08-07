@@ -14,28 +14,30 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 > **A SUPERSEDED entry keeps its number and becomes a tombstone** pointing at what replaced it (see
 > `D40 · D41`), so a citation always lands somewhere that explains itself.
 
-> **The package set lives HERE, once** (2026-08-05). Seven entries have moved it — D2 drew it, D37
+> **The package set lives HERE, once** (2026-08-05). Eight entries have moved it — D2 drew it, D37
 > reorganised it by platform, D40 added an optional feature package, D48 added a family of them, D50
-> added the native launcher, **D53 folded media back into Core** and **D55 folded the IO family in after
-> it** — and reconstructing it from that chain is how three of them ended up stating a set that no longer
-> existed.
-> **As of 2026-08-07 there are SIX packable projects + npm:**
+> added the native launcher, **D53 folded media back into Core**, **D55 folded the IO family in after
+> it**, and **D65 folded IPC in as well** — and reconstructing it from that chain is how three of them
+> ended up stating a set that no longer existed.
+> **As of 2026-08-07 there are 5 packable projects + npm:**
 >
 > | | | |
 > |---|---|---|
-> | **shells** (D37) | `Shenora.Core` · `Shenora.Ipc` · `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform |
+> | **the framework** | `Shenora.Core` | the three CORES (IPC · EventBus · RouteInterceptor), the logic layer, and the features — D65 |
+> | **shells** (D37) | `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform; each implements the cores and its features' platform halves |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
 > | **npm** | `@shenora/react` | |
 >
-> 🔴 **There is no longer an "optional features" tier at all** (D55, 2026-08-07). The framework is ONE
-> whole: `Shenora.Core` + a shell + `@shenora/react`. A capability that grows big enough to look like a
-> library gets a FOLDER, not a package.
+> 🔴 **There is no longer an "optional features" tier at all** (D55). The framework is ONE whole:
+> `Shenora.Core` + a shell + `@shenora/react`. A capability that grows big enough to look like a library
+> gets a FOLDER, not a package. ⚠ **`Shenora.Core` is itself renamed to `Shenora` by D65** — it is the
+> framework, not a component of one; until that lands this table names the current id.
 >
-> ⚠ **`Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` are no longer packages (D53, D55) — but
-> all three are still live NAMESPACES inside `Shenora.Core`.** The ids are retired and the namespaces are
-> current, which is why those names are deliberately NOT in `devtools/retired-names.txt`: the gate matches
-> names and cannot tell a package id from a namespace, so registering them would fire on every correct
-> sentence in the repo.
+> ⚠ **`Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression` and `Shenora.Ipc` are no longer packages
+> (D53, D55, D65) — but all four are still live NAMESPACES inside `Shenora.Core`.** The ids are retired
+> and the namespaces are current, which is why those names are deliberately NOT in
+> `devtools/retired-names.txt`: the gate matches names and cannot tell a package id from a namespace, so
+> registering them would fire on every correct sentence in the repo.
 >
 > `docs/ARCHITECTURE.md` is the as-built map and `doc-drift` gates it against the csproj files. **When an
 > entry below names a package set, read it as the set AT ITS DATE.**
@@ -2235,17 +2237,35 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   this is more like Shenora (itself), core is the main underlying messaging pipeline, on top of that is
   pure logic layer, like Mission, Files, and then we have what we call 'features' Media, Dialog"*.)
 
+  **In one line each** (owner's own framing, and the form worth remembering):
+  **core is the CONTRACT · logic is the BRAIN · features BRIDGE the gap between .NET and the web.**
+
   | Layer | What it is | Members |
   |---|---|---|
-  | **Core — the wire** | the messaging pipelines between .NET and the web. **Per-platform implementations are EXPECTED here** (WebView2 `postMessage` vs HybridWebView `SendRawMessage`), which is what makes it core rather than a feature | IPC · EventBus · RouteInterceptor |
-  | **Logic** | pure portable algorithm. No platform half, no IPC surface | Missions · safe file mutation |
-  | **Features** | has a platform half and/or an IPC surface | Media · Dialogs · Update |
+  | **Core — the contract** | what both sides AGREE ON: the envelope, the module, the event, the route. **Per-platform implementations are EXPECTED here** (WebView2 `postMessage` vs HybridWebView `SendRawMessage`) — the contract is core, and each platform implements it, which is D19/D20's law applied to the wire itself | IPC · EventBus · RouteInterceptor |
 
-  - 🔴 **The membership test, so the boundary is decided rather than argued each time:** *does it have a
-    platform half or an IPC surface?* Yes → feature. Neither → logic. **Is it the wire itself?** → core.
-    That test is what moves Media OUT of "engine", where `ARCHITECTURE.md` filed it beside Missions: media
-    has three platform halves (`IMediaCapability`, `IMediaAudioConversion`, `MobileMediaPlayer`) and a
-    route. Missions has neither and stays logic.
+  🔴 **Core holds TWO KINDS of wire, and that is why there are three members rather than two** (owner,
+  2026-08-07: *"event + ipc is kind the main method we use to wire communication, interceptor is to wire
+  default web calls into the .net"*):
+  - **IPC + EventBus — EXPLICIT communication.** The app deliberately talks across the boundary:
+    request/response one way, batched events the other. Page code has to ask.
+  - **RouteInterceptor — IMPLICIT.** The page does ORDINARY WEB THINGS — `<video src>`, `<img src>`,
+    `fetch` — and .NET answers them. **It needs no page cooperation at all**, which is what makes it the
+    highest-leverage wire the kit has: a file the webview could never open becomes an ordinary `src`
+    attribute. It is also why serving belongs in the shells (D45) and why the bytes were never on the IPC
+    pipe (D62).
+  | **Logic — the brain** | pure portable algorithm with no counterpart on the web side. The page never needs to know it exists | Missions · safe file mutation |
+  | **Features — the bridge** | a .NET capability carried across to the page. **This is D54's thesis made structural**: a feature exists because .NET can do something React cannot, and the feature is what makes it reachable | Media · Dialogs · Update |
+
+  - 🔴 **The membership test follows from the one-liners, which is why they are worth stating:**
+    *must both sides agree on it?* → core. *Is it pure computation the page never sees?* → logic.
+    *Does it carry a .NET capability to the page?* → feature.
+
+  - **Read mechanically, the same test is "platform half and/or IPC surface"** — a bridge needs one or
+    both, a brain needs neither. That is what moves Media OUT of "engine", where `ARCHITECTURE.md` filed
+    it beside Missions: media has three platform halves (`IMediaCapability`, `IMediaAudioConversion`,
+    `MobileMediaPlayer`) and a route. Missions has neither and stays logic — nothing on the page asks it
+    anything, which is the brain test passing.
     - ⚠ **An OPTIONAL collaborator is not a platform half.** The file engine consults `IFileLockInspector`,
       which does have a Windows implementation — and the engine works without it. Stating this explicitly
       because it is the one edge that will otherwise be re-argued: the question is whether the thing NEEDS
