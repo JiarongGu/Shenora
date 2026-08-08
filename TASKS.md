@@ -221,6 +221,20 @@ and this is the second time it has been argued.
   - ⚠ Same question applies to `UseFileSystem`, `UseMissions` and `UseShenoraRequests`, so decide it once
     and apply it across all of them rather than per feature.
 
+**✅ DONE (2026-08-08)** — `(options, services)` overloads on `UseMissions`, `UseFileSystem` and
+`UseMediaPlayer`. That shape won over "the options carry the factory" because it needs no per-service
+anticipation and is uniform. Purely additive: the options-only overloads delegate to it.
+
+⚠ **A doc claim was corrected BY SABOTAGE before it shipped.** The first version said the callback running
+BEFORE the kit's registrations was the guarantee. It is not — Microsoft DI resolves the LAST descriptor,
+so an app wins from either side of a `TryAdd`, and moving the callback to run last left all five tests
+green. What ordering actually buys is a SINGLE registration, with no kit default left shadowed behind the
+app's; that is the only order-sensitive property and it now has its own assertion.
+
+- [ ] **`UseShenoraRequests` and `UseShenoraFileDialogs` do not have the overload.** Both live on
+  `IServiceCollection`, where the caller already HAS the container, so the argument for adding it is much
+  weaker than it was for the builder-level three. Decide it rather than doing it by symmetry.
+
 **DONE (2026-08-08): the pipeline surface is on `ShenoraApplication`.** `app.UseFiles(…)`,
 `app.UseMediaPlayer()`, `app.MapModule<T>()` and the raw `app.Use(…)`, over a `WebViewPipeline` the builder
 registers. The semantic was adopted as written — a step describes the pipeline for EVERY webview the app

@@ -501,6 +501,7 @@ sealed class Shenora.Engine.Files.FileReplacement : System.IDisposable
   public void Commit()
   public void Dispose()
 static class Shenora.Engine.Files.FileSystemExtensions
+  public static Shenora.ShenoraApplicationBuilder UseFileSystem(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Files.FileUpdateQueueOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
   public static Shenora.ShenoraApplicationBuilder UseFileSystem(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Files.FileUpdateQueueOptions>? configure = null)
 enum Shenora.Engine.Files.FileUndoKind (int)
   public const Shenora.Engine.Files.FileUndoKind DeleteCreatedFile = 0
@@ -693,6 +694,7 @@ struct Shenora.Engine.Missions.MissionExecution : System.IEquatable<Shenora.Engi
   public string? Kind { get; init; }
   public void Deconstruct(out string MissionId, out string? Kind, out int Priority, out System.DateTimeOffset QueuedUtc, out long Sequence, out int Attempt, out bool IsRunning)
 static class Shenora.Engine.Missions.MissionExtensions
+  public static Shenora.ShenoraApplicationBuilder UseMissions(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Missions.MissionSchedulerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
   public static Shenora.ShenoraApplicationBuilder UseMissions(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Missions.MissionSchedulerOptions>? configure = null)
 struct Shenora.Engine.Missions.MissionKey : System.IEquatable<Shenora.Engine.Missions.MissionKey>
   public .ctor(string Value)
@@ -1061,6 +1063,7 @@ sealed class Shenora.Modules.Media.MediaPlayerException : System.Exception
   public .ctor(string message, System.Exception inner)
 static class Shenora.Modules.Media.MediaPlayerExtensions
   public static Shenora.ShenoraApplication UseMediaPlayer(Shenora.ShenoraApplication app)
+  public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
   public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions>? configure = null)
   public static System.IDisposable ReportTo(Shenora.Modules.Media.IMediaPlayer player, Shenora.Modules.Platform.IPlaybackSession session)
   public static System.IDisposable? UseMediaPlayer(Shenora.Core.WebView.IWebViewInterceptor interceptor, System.IServiceProvider services)

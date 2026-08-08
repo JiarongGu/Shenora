@@ -44,9 +44,30 @@ public static class FileSystemExtensions
         Action<FileUpdateQueueOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        return builder.UseFileSystem((options, _) => configure?.Invoke(options));
+    }
+
+    /// <summary>
+    /// Configure the file queue AND substitute any of its collaborators, in one place — e.g. an
+    /// <see cref="IFileLockInspector"/> or an <see cref="IPathLocker"/> of the app's own.
+    /// <para>
+    /// 🔴 <b>The guarantee is that YOUR registration wins</b> — see <c>UseMissions</c>'s overload for the
+    /// full reasoning, including why ORDERING turned out not to be the mechanism. The rule is the same for
+    /// every capability and is restated per entry point deliberately, because an adopter reads the one
+    /// they are calling.
+    /// </para>
+    /// </summary>
+    /// <param name="builder">The application builder.</param>
+    /// <param name="configure">Receives the options and the container, before the kit registers anything.</param>
+    public static ShenoraApplicationBuilder UseFileSystem(
+        this ShenoraApplicationBuilder builder,
+        Action<FileUpdateQueueOptions, IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
 
         var options = new FileUpdateQueueOptions();
-        configure?.Invoke(options);
+        configure(options, builder.Services);
 
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddSingleton<IFileUpdateQueue>(provider =>

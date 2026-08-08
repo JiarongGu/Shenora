@@ -72,10 +72,52 @@ public static class MediaPlayerExtensions
         Action<MediaPlayerOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        return builder.UseMediaPlayer((options, _) => configure?.Invoke(options));
+    }
+
+    /// <summary>
+    /// Configure the player AND substitute its collaborators, in one place — most usefully the
+    /// <see cref="IMediaPlayer"/> itself:
+    /// <code>
+    /// builder.UseMediaPlayer((x, services) =>
+    /// {
+    ///     x.AllowedRoots = [libraryDir];
+    ///     services.AddSingleton&lt;IMediaPlayer&gt;(sp => sp.GetRequiredService&lt;WindowsMediaPlayer&gt;());
+    /// });
+    /// </code>
+    /// <para>
+    /// 🔴 <b>The guarantee is that YOUR registration wins — not the ordering, which was measured and turned
+    /// out not to be load-bearing.</b> Microsoft DI resolves the LAST descriptor for a service, and
+    /// everything the kit adds is <c>TryAdd</c>, so an app's registration wins whether it lands before the
+    /// kit's (which then no-ops) or after it (which then loses the resolve). What the callback removes is
+    /// having to KNOW any of that.
+    /// </para>
+    /// <para>
+    /// The callback still runs FIRST, and that buys the other half: exactly ONE registration exists, so
+    /// <c>GetServices&lt;IMediaPlayer&gt;()</c> returns your player alone and the kit's default factory is
+    /// never even built. Registering afterwards would leave the kit's default SHADOWED but present, which
+    /// anything enumerating the service would still see.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Substituting the player is the sanctioned way to get the NATIVE one, and it is opt-in for a
+    /// reason.</b> The default binds the page-backed <see cref="MediaPlayer"/> deliberately (D58): a
+    /// shell's native player moves the audio out of the page's own element, so a React UI bound to that
+    /// element would show nothing playing. An app that wants background playback needs its own
+    /// <c>AVAudioSession</c>/<c>UIBackgroundModes</c> anyway, so it is already making that decision.
+    /// </para>
+    /// </summary>
+    /// <param name="builder">The application builder.</param>
+    /// <param name="configure">Receives the options and the container, before the kit registers anything.</param>
+    public static ShenoraApplicationBuilder UseMediaPlayer(
+        this ShenoraApplicationBuilder builder,
+        Action<MediaPlayerOptions, IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
 
         var options = new MediaPlayerOptions();
-        configure?.Invoke(options);
         var paths = builder.Paths;
+        configure(options, builder.Services);
 
         builder.Services.TryAddSingleton(options);
 

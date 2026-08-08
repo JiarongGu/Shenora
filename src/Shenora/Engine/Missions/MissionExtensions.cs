@@ -56,9 +56,42 @@ public static class MissionExtensions
         Action<MissionSchedulerOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        return builder.UseMissions((options, _) => configure?.Invoke(options));
+    }
+
+    /// <summary>
+    /// Configure the scheduler AND substitute any of its collaborators, in one place.
+    /// <code>
+    /// builder.UseMissions((x, services) =>
+    /// {
+    ///     x.GlobalLaneCapacity = 4;
+    ///     services.AddSingleton&lt;IMissionQueueStore, MyStore&gt;();   // wins over the kit's default
+    /// });
+    /// </code>
+    /// <para>
+    /// 🔴 <b>The guarantee is that YOUR registration wins.</b> An app could always have registered on
+    /// <c>builder.Services</c> itself — what it could not do is KNOW that, which took reading the kit's
+    /// source to learn these are <c>TryAdd</c>. Owner, 2026-08-08: <i>"the service should be override
+    /// inside <c>useXX(s =&gt; {})</c> config instead"</i>.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Ordering is NOT what makes it work, which was measured rather than assumed.</b> Microsoft DI
+    /// resolves the LAST descriptor, so an app wins from either side of the kit's <c>TryAdd</c>. Running
+    /// the callback first buys the other half: exactly ONE registration, so nothing enumerating the
+    /// service also finds the kit's default sitting shadowed behind yours.
+    /// </para>
+    /// </summary>
+    /// <param name="builder">The application builder.</param>
+    /// <param name="configure">Receives the options and the container, before the kit registers anything.</param>
+    public static ShenoraApplicationBuilder UseMissions(
+        this ShenoraApplicationBuilder builder,
+        Action<MissionSchedulerOptions, IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
 
         var options = new MissionSchedulerOptions();
-        configure?.Invoke(options);
+        configure(options, builder.Services);
 
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddSingleton<IMissionScheduler>(provider =>

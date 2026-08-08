@@ -521,6 +521,24 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`UseMissions`, `UseFileSystem` and `UseMediaPlayer` gain an `(options, services)` overload — configure
+  a capability and SUBSTITUTE its collaborators in one place.**
+  ```csharp
+  builder.UseMediaPlayer((x, services) =>
+  {
+      x.AllowedRoots = [libraryDir];
+      services.AddSingleton<IMediaPlayer>(sp => sp.GetRequiredService<WindowsMediaPlayer>());
+  });
+  ```
+  - **Why:** substituting a kit default already worked — an app registered its own on `builder.Services`
+    and won. What it could not do is KNOW that, which took reading the kit's source to learn these are
+    `TryAdd`. Owner: *"the service should be override inside `useXX(s => {})` config instead."*
+  - ⚠ **The guarantee is that YOUR registration wins; ORDERING is not the mechanism**, which was measured
+    rather than assumed. Microsoft DI resolves the last descriptor, so an app wins from either side of the
+    kit's `TryAdd`. Running the callback first buys the other half: exactly ONE registration, so nothing
+    enumerating the service also finds the kit's default shadowed behind yours. That single-registration
+    property is the only order-sensitive part, and it has its own assertion.
+  - Purely additive — the existing options-only overloads delegate to these and behave identically.
 - 🔴 **`app.UseFiles(…)`, `app.UseMediaPlayer()`, `app.MapModule<T>()` and `app.Use(…)` — the pipeline
   phase moves onto the built application (D64).** This is ASP.NET's minimal-hosting shape completed:
   `CreateBuilder` brings the framework, `Build()` returns the app, and the app declares its pipeline.
