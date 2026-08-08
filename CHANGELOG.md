@@ -75,6 +75,19 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **`MobileWebViewInterceptor` now takes the app's `WebViewPipeline` as a REQUIRED second constructor
+  argument.** Migration: `new MobileWebViewInterceptor(webView, app.Pipeline, log)`. Pass a fresh
+  `new WebViewPipeline()` for a webview that must deliberately serve nothing (a probe, an isolated
+  session browser).
+  - **Required rather than optional on purpose, and the desktop's equivalent is NOT — the asymmetry is
+    deliberate.** `WebViewHostOptions.Pipeline` is a nullable property because the app already constructs
+    that options object, so nothing breaks and isolation stays expressible. Mobile apps call this
+    constructor directly, where an optional parameter would be a line every adopter had to remember on
+    every window — the shape that left request tracking inert for a whole release. Required means the
+    compiler names every site instead.
+  - ⚠ **No gate catches this one.** The mobile API baselines are NAME-level (they cannot see a
+    signature-only change) and the mobile samples do not build on a Windows host, so this entry is the
+    only warning an adopter gets. It was found by the compiler naming the sample's own probe.
 - **`ModuleBase`'s third constructor parameter (`IIpcRequestTracker? requests`) is GONE.** Migration:
   delete the argument and the injected dependency — `base(logger, events, requests)` becomes
   `base(logger, events)`. Nothing else changes, and a module that used it gains tracking rather than
@@ -495,6 +508,27 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- 🔴 **`app.UseFiles(…)`, `app.UseMediaPlayer()`, `app.MapModule<T>()` and `app.Use(…)` — the pipeline
+  phase moves onto the built application (D64).** This is ASP.NET's minimal-hosting shape completed:
+  `CreateBuilder` brings the framework, `Build()` returns the app, and the app declares its pipeline.
+  ```csharp
+  using var app = builder.Build();
+  app.UseFiles(new WebViewFileOptions { … });   // order matters, like app.UseAuthentication()
+  app.UseMediaPlayer();                          // no `services` argument
+  app.Run();
+  ```
+  - **It deletes the call the docs apologised for.** `interceptor.UseMediaPlayer(services)` had the
+    caller fetch an inner object and hand the service provider BACK in; `ADOPTION.md` spent a paragraph
+    defending it. The two PHASES were always right — an interceptor is created with its webview — but
+    ASP.NET's second phase is `app.Use*()`, where the app already holds the provider.
+  - 🔴 **A real change in meaning, adopted deliberately: a step describes the pipeline for EVERY webview
+    the app hosts.** Secondary windows and auxiliary session browsers previously got nothing unless the
+    app wired each one again by hand — invisible, because a window serving no routes looks exactly like a
+    window whose routes were never needed. The per-interceptor overloads stay for one webview that must
+    genuinely differ.
+  - **`WebViewPipeline` FREEZES on first use by a webview.** A step declared afterwards could not reach
+    the windows already built, so it would serve some and not others; it now throws with a message naming
+    the fix instead. A window opened later still gets every step — the list is frozen, not emptied.
 - **`EventMessage.CoalesceKey` / `IpcNotification.CoalesceKey` — an event may declare that it SUPERSEDES
   an earlier undelivered one** with the same module, type, scope and key. `NotificationPump` applies it
   when it drains, last-write-wins, and the survivor keeps its own later position.

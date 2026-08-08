@@ -30,6 +30,47 @@ public class WebView2InterceptorTests
         Assert.Equal(WebViewRangeDelivery.Sliced, host.Interceptor.RangeDelivery);
     }
 
+    /// <summary>
+    /// 🔴 The desktop half of the app-level pipeline (D64): a route the app declared once with
+    /// <c>app.UseFiles(…)</c> reaches THIS host's interceptor, because it travelled with the options.
+    /// Applied during CONSTRUCTION, before anything can navigate — and before <c>InitializeAsync</c>,
+    /// which is why the interceptor exists on the host from construction in the first place.
+    /// <para>
+    /// This is the whole reason a secondary window is covered now: it is built from the same options, so
+    /// it gets the same routes without the app wiring each window by hand.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void An_app_level_pipeline_reaches_the_hosts_interceptor()
+    {
+        var applied = new List<IWebViewInterceptor>();
+        var pipeline = new WebViewPipeline();
+        pipeline.Use(applied.Add);
+
+        var host = new WebViewHost(new Microsoft.Web.WebView2.WinForms.WebView2(), new WebViewHostOptions
+        {
+            Environment = new WebViewEnvironmentOptions { UserDataFolder = Path.GetTempPath() },
+            Pipeline = pipeline,
+        });
+
+        Assert.Same(host.Interceptor, Assert.Single(applied));
+    }
+
+    /// <summary>
+    /// A host given no pipeline serves only its own routes — the deliberately isolated case (a session
+    /// browser). It must not throw, because <c>Pipeline</c> is nullable precisely so that stays expressible.
+    /// </summary>
+    [Fact]
+    public void A_host_with_no_pipeline_is_left_exactly_as_it_was()
+    {
+        var host = new WebViewHost(new Microsoft.Web.WebView2.WinForms.WebView2(), new WebViewHostOptions
+        {
+            Environment = new WebViewEnvironmentOptions { UserDataFolder = Path.GetTempPath() },
+        });
+
+        Assert.NotNull(host.Interceptor);
+    }
+
     [Fact]
     public void Production_needs_no_extra_filter_because_the_bundle_already_registers_the_page_origin()
         => Assert.Empty(WebView2Interceptor.ExtraFilters(isDevelopment: false, devUrl: "http://localhost:3517"));

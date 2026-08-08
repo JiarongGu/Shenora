@@ -82,7 +82,11 @@ internal sealed class MediaRangeProbe : IDisposable
 		}
 
 		_root = root;
-		_interceptor = new MobileWebViewInterceptor(webView, _log);
+		// A FRESH, empty pipeline on purpose: this probe owns an isolated webview and measures exactly the
+		// one route it registers below, so inheriting the app's `app.Use…()` declarations would change what
+		// is being measured. An ordinary window passes `app.Pipeline` instead — and the parameter is
+		// required precisely so that choice has to be made rather than forgotten.
+		_interceptor = new MobileWebViewInterceptor(webView, new WebViewPipeline(), _log);
 
 		// THE WHOLE WIRING. No BodyMode, no content-type table, no range arithmetic, no containment check —
 		// UseFiles reads the platform's delivery rule off the interceptor so it cannot be passed in wrong.

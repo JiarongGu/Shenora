@@ -27,12 +27,31 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
     private bool _disposed;
 
     /// <param name="webView">The webview to intercept. Its <c>WebResourceRequested</c> is subscribed here.</param>
+    /// <param name="pipeline">
+    /// The app-level pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied to this
+    /// interceptor now — routes are read per request, so this is early enough for the first document.
+    /// Pass <c>app.Pipeline</c>.
+    /// <para>
+    /// 🔴 <b>REQUIRED, and the desktop's equivalent is not — the asymmetry is deliberate.</b>
+    /// <c>WebViewHostOptions</c> is an object the app already constructs, so a nullable property there
+    /// breaks no existing site and a genuinely isolated webview can opt out. Here the app calls this
+    /// constructor DIRECTLY, and an optional parameter would be a line every adopter had to remember on
+    /// every window — the exact shape that left request tracking inert for a whole release (D63). Making
+    /// it required means the compiler names every site instead. Pass a fresh
+    /// <see cref="WebViewPipeline"/> for a webview that must serve nothing.
+    /// </para>
+    /// </param>
     /// <param name="log">Optional diagnostics. Guarded — a throwing sink must not break serving.</param>
-    public MobileWebViewInterceptor(HybridWebView webView, Action<string>? log = null)
+    public MobileWebViewInterceptor(HybridWebView webView, WebViewPipeline pipeline, Action<string>? log = null)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
+        ArgumentNullException.ThrowIfNull(pipeline);
         _log = log;
         _webView.WebResourceRequested += OnWebResourceRequested;
+
+        // Not guarded: a throwing step is a composition mistake and must fail loudly rather than produce
+        // a webview that silently serves nothing.
+        pipeline.ApplyTo(this);
     }
 
     /// <inheritdoc />

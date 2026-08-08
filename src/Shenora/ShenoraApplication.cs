@@ -75,6 +75,35 @@ public sealed class ShenoraApplication : IDisposable, IAsyncDisposable
     /// <summary>The application's root service provider.</summary>
     public IServiceProvider Services => _provider;
 
+    /// <summary>
+    /// The resource pipeline every webview this app hosts receives — the second phase of the ASP.NET
+    /// minimal-hosting shape (D64). Declare it on the BUILT app, before the first window exists:
+    /// <code>
+    /// using var app = builder.Build();
+    /// app.UseFiles(new WebViewFileOptions { … });   // order matters, like app.UseAuthentication()
+    /// app.UseMediaPlayer();                          // no `services` argument — the app holds the provider
+    /// app.Run();
+    /// </code>
+    /// <para>
+    /// A shell hands this to each webview as it builds one, so an app never calls
+    /// <see cref="Core.WebView.WebViewPipeline.ApplyTo"/> itself. On the desktop it travels through
+    /// <c>WebViewHostOptions.Pipeline</c>; on mobile the interceptor takes it directly.
+    /// </para>
+    /// </summary>
+    public Core.WebView.WebViewPipeline Pipeline =>
+        _provider.GetRequiredService<Core.WebView.WebViewPipeline>();
+
+    /// <summary>
+    /// Append a raw step to <see cref="Pipeline"/> — the primitive behind <c>app.UseFiles(…)</c> and the
+    /// escape hatch for a route the kit ships no helper for. Returns the app, so calls chain.
+    /// </summary>
+    public ShenoraApplication Use(Action<Core.WebView.IWebViewInterceptor> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        Pipeline.Use(configure);
+        return this;
+    }
+
     /// <summary>Create a builder from the process arguments with default options.</summary>
     public static ShenoraApplicationBuilder CreateBuilder(string[]? args = null) =>
         CreateBuilder(new ShenoraApplicationOptions { Args = args });

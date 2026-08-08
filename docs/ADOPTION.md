@@ -161,14 +161,21 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
   the same three lines on all three shells** (D45). Prefer this over a custom scheme for anything that is a
   file on disk: it is portable, and the containment check comes with it.
   ```csharp
-  host.Interceptor.UseFiles(new WebViewFileOptions
+  using var app = builder.Build();
+  app.UseFiles(new WebViewFileOptions
   {
       AllowedRoots = [libraryDir],                    // EMPTY means nothing is servable — fail-closed
       Resolve = uri => uri.AbsolutePath.EndsWith("/media")   // your route; null = "not mine"
           ? Path.Combine(libraryDir, DecodeYourPayload(uri.Query))
           : null,
   });
+  app.Run();
   ```
+  Declared on the BUILT app, before the first window exists, so **every** webview the app hosts serves it —
+  secondary windows and session browsers included (D64). `host.Interceptor.UseFiles(…)` still exists for the
+  one webview that must genuinely differ; it serves that interceptor only. ⚠ Declaring a step after a window
+  already exists THROWS rather than half-applying, because a route that reached some windows and not others
+  is invisible from the outside.
   From the page, build the URL with the shipped helper so the two halves cannot drift:
   `import { mediaUrl } from '@shenora/react'` → `<video src={mediaUrl({ src: name }, 'media')} />`. It
   returns a **relative** URL on the page's own origin, which is the one form intercepted on every shell
@@ -1214,8 +1221,11 @@ bridge the two.
 ```csharp
 // name the roots it may read from…
 builder.UseMediaPlayer(x => x.AllowedRoots = [libraryDir]);
-// …and mount the route, once the webview exists
-_route = interceptor.UseMediaPlayer(services);
+
+using var app = builder.Build();
+// …and mount the route on every webview the app hosts
+app.UseMediaPlayer();
+app.Run();
 ```
 
 > ⚠ **`AllowedRoots` is the one thing the kit will not choose for you**, which is why conversion is what
@@ -1226,6 +1236,17 @@ _route = interceptor.UseMediaPlayer(services);
 and mounting its middleware: the interceptor is created *with* the webview, so it cannot exist while
 services are being registered. The mount call is a no-op when you named no roots, so it is safe to make
 unconditionally.
+
+> ⚠ **The second phase moved, and if you adopted an earlier build you must change one line.** It used to
+> be `_route = interceptor.UseMediaPlayer(services)` — you fetched the shell's interceptor and handed the
+> provider back in. It is `app.UseMediaPlayer()` now, with no argument, because the app already holds the
+> provider (D64). **The phases were always right; the receiver was not.** The per-interceptor overload
+> still exists for one webview that must genuinely differ from the rest of the app.
+>
+> 🔴 **It also means MORE than it used to.** `app.Use…()` describes the pipeline for **every** webview the
+> app hosts — secondary windows and auxiliary session browsers included. Those previously got nothing
+> unless you wired each one again by hand, which was invisible: a window serving no routes looks exactly
+> like a window whose routes were never needed.
 
 **What you get without writing a converter:** container repair (Matroska → MP4, every frame copied
 untouched) plus a soundtrack transcode through *your device's own codecs* where the shell registers them.

@@ -370,6 +370,17 @@ changes, noting them in `CHANGELOG.md`).
   `WebViewRangeDelivery` (`Sliced`/`Unsliced`) is a property of the INTERCEPTION rather than of the
   content: Android's webview applies the `Range` start to whatever body it receives, WebView2's and iOS's
   send it verbatim (D44, measured on each).
+  🔴 **`WebViewPipeline` is the APP-LEVEL half of the same seam** (D64, 2026-08-08): the app declares its
+  routes ONCE on the built application — `app.UseFiles(…)`, `app.UseMediaPlayer()`, `app.Use(…)` — and every
+  webview it hosts receives them. Registered by `ShenoraApplicationBuilder.Build`, reached as
+  `ShenoraApplication.Pipeline`, and handed to each webview by the shell: the desktop travels through
+  `WebViewHostOptions.Pipeline` (nullable, so a deliberately isolated host stays expressible), mobile through
+  a REQUIRED `MobileWebViewInterceptor` constructor argument (the app calls that constructor directly, so
+  only the compiler can stop the line being forgotten). It FREEZES on first application — a step declared
+  after a window exists could not reach it, and serving some windows and not others is invisible from
+  outside, so it throws instead. This replaced `interceptor.UseMediaPlayer(services)`, where the caller
+  fetched an inner object and handed the provider back in; the two PHASES were always right, the receiver
+  was not. The per-interceptor overloads remain for one webview that must differ.
   Serving files is `WebViewFileOptions` + `WebViewFiles.ResolveContained`/`Serve` +
   `interceptor.UseFiles(…)` — an extension over the interceptor so `RangeDelivery` is READ from the
   platform and cannot be passed in wrong. Fail-closed: no allowed roots means nothing is servable, `..`

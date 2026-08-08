@@ -5,6 +5,7 @@ using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Shenora.Modules.Media;
 
 namespace Shenora.Sample.Desktop;
 
@@ -65,6 +66,9 @@ internal static class Program
         builder.Services.AddSingleton(sp => new WebViewHostOptions
         {
             Environment = sp.GetRequiredService<WebViewEnvironmentOptions>(),
+            // Every window built from these options serves the app's `app.Use…()` routes (D64), including
+            // the secondary windows — which previously got nothing unless wired again by hand.
+            Pipeline = sp.GetRequiredService<Shenora.Core.WebView.WebViewPipeline>(),
             // Must match samples/Shenora.Sample.Web/vite.config.ts (unique per app — family rule).
             DevUrl = "http://localhost:3900",
             VirtualHost = "sample.local",
@@ -142,6 +146,21 @@ internal static class Program
         });
 
         using var app = builder.Build();
+
+        // 🔴 THE PIPELINE PHASE (D64) — declared on the BUILT app, before any window exists, exactly like
+        // ASP.NET's `app.UseStaticFiles()`. Every webview this app hosts gets these routes, so the
+        // secondary windows are covered too; previously each construction site had to wire its own
+        // interceptor, and a window that missed out looked identical to one that needed nothing.
+        //
+        // This is also the ACCEPTANCE TEST for the move: the probe below fetches through the REAL browser,
+        // so `INTERCEPTOR: PASS` in the sample's output means an app-level declaration reached the main
+        // window's interceptor — which is the whole claim.
+        app.Use(interceptor => InterceptorProbe.Register(
+            interceptor, Path.Combine(app.Paths.DataArea("probe"), "files")));
+
+        // No `services` argument, and no fetching an inner object to hand the provider back to.
+        app.UseMediaPlayer();
+
         app.Run();
     }
 }

@@ -218,13 +218,39 @@ public static class WebViewFiles
 public static class WebViewInterceptorExtensions
 {
     /// <summary>
-    /// Serve local files through <paramref name="interceptor"/>: the app supplies its route and roots, and
-    /// this supplies containment, ranges and content types.
+    /// Serve local files through EVERY webview the app hosts — the <c>app.Use*()</c> phase (D64).
+    /// <code>
+    /// using var app = builder.Build();
+    /// app.UseFiles(new WebViewFileOptions { … });
+    /// app.Run();
+    /// </code>
+    /// <para>
+    /// Prefer this over the per-interceptor overload below. That one serves ONE webview, so a secondary
+    /// window or an auxiliary session browser silently gets nothing — and a window serving no routes looks
+    /// exactly like a window whose routes were never needed. Reach for the per-interceptor call only when
+    /// one webview is genuinely meant to differ.
+    /// </para>
+    /// </summary>
+    /// <returns>The app, so calls chain.</returns>
+    public static ShenoraApplication UseFiles(this ShenoraApplication app, WebViewFileOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(options);
+        return app.Use(interceptor => interceptor.UseFiles(options));
+    }
+
+    /// <summary>
+    /// Serve local files through ONE <paramref name="interceptor"/>: the app supplies its route and roots,
+    /// and this supplies containment, ranges and content types.
     /// <para>
     /// An extension over the interceptor rather than a middleware the app constructs itself, so
     /// <see cref="IWebViewInterceptor.RangeDelivery"/> is read from the platform and CANNOT be passed in
     /// wrong. That value is a measured platform fact, and the failure mode of getting it wrong is silent —
     /// every faststart file plays and every other one does not (D44).
+    /// </para>
+    /// <para>
+    /// Prefer the <see cref="UseFiles(ShenoraApplication, WebViewFileOptions)"/> overload unless this
+    /// webview is genuinely meant to serve something different from the rest of the app.
     /// </para>
     /// </summary>
     /// <returns>Dispose to remove the route.</returns>

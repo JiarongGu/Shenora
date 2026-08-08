@@ -208,18 +208,29 @@ app.UseMediaPlayer();                          // no `services` argument: the ap
 app.Run();
 ```
 
-- [ ] 🔴 **Fix the `Add*` / `Use*` category error.** `Use*` means MIDDLEWARE in .NET and lives on the built
-  app; this kit put it on the BUILDER for pure service registration (`UseMissions`, `UseFileSystem`,
-  `UseMediaPlayer`). What survives D64 is a configure overload, and it belongs on `Services` as `Add*`.
-- [ ] 🔴 **Move the pipeline surface onto `ShenoraApplication`** — `app.UseFiles()`, `app.UseMediaPlayer()`,
-  `app.MapModule<T>()`. This deletes `interceptor.UseMediaPlayer(services)`, the two-phase call
-  `ADOPTION.md` currently spends a paragraph defending: the constraint is real (the interceptor is created
-  WITH the webview) and is exactly ASP.NET's split, but ASP.NET's second phase is `app.Use*()` where the
-  app holds the provider, not an inner object handed it back.
-  - ⚠ **Decide the semantic deliberately: `app.Use*()` should describe the pipeline for EVERY webview the
-    app hosts**, the way an ASP.NET pipeline serves every request. Better than today — secondary windows
-    and session browsers currently get nothing unless wired again by hand — and a real change in meaning.
-    Keep the per-interceptor call for the case that genuinely wants one pipeline to differ.
+🔴 **DO NOT "fix the `Add*`/`Use*` category error" — it was tried, and the owner reverted it.** This entry
+used to sit here demanding that `UseMissions`/`UseFileSystem`/`UseMediaPlayer` move to `Services.AddShenora*`
+on the ASP.NET DI-versus-pipeline reading. **D64 records the whole round trip**: the rename landed, it was
+reverted, and the reason is that these behave like middleware and `Use*` is already this kit's word for a
+pipeline stage (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`). **The analogy settles WHICH
+OBJECT owns the call, never the prefix** — which is the item below, and the only part of it that was ever
+real. Left as a tombstone rather than deleted, because the argument is persuasive enough to be re-derived
+by the next person who reads the ASP.NET table.
+
+**DONE (2026-08-08): the pipeline surface is on `ShenoraApplication`.** `app.UseFiles(…)`,
+`app.UseMediaPlayer()`, `app.MapModule<T>()` and the raw `app.Use(…)`, over a `WebViewPipeline` the builder
+registers. The semantic was adopted as written — a step describes the pipeline for EVERY webview the app
+hosts — and the pipeline FREEZES on first application, so a step declared too late throws instead of
+reaching some windows and not others. Proven on the desktop sample, not just in tests:
+`INTERCEPTOR SEAM: PASS … routeHits=4` means a route declared with `app.Use(…)` served real requests
+through real WebView2. What remains of it is only the follow-up below.
+
+- [ ] **Give the mobile shells the same `app.Use…()` proof the desktop now has.** The mechanism is wired
+  (`MobileWebViewInterceptor` takes the pipeline as a required argument) and it COMPILES for both, but no
+  device run has exercised an app-level route on Android or iOS — and the mobile API baselines are
+  name-level, so they cannot see that constructor change either. Fold it into the next device pass;
+  `MediaRangeProbe` is the natural subject, since it already serves a file route through the real webview.
+
 ⚠ **The rule that survives from the platform sweep, because it decides the NEXT capability too:**
 *"can this platform do it?"*, never *"have we written it yet?"* — an unwritten implementation is a TASK,
 and filing it as a refusal freezes a gap into the surface and makes it look decided. A refusal stays

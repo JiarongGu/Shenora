@@ -29,6 +29,28 @@ public static class IpcServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Map an IPC module onto the built app's dispatcher — the <c>app.MapControllers()</c> of this kit
+    /// (D64). <typeparamref name="TModule"/> is resolved from the app's provider, so a module with
+    /// dependencies needs no factory here.
+    /// <para>
+    /// ⚠ <b>Use this for a module that could not be registered before the app was built</b> — the classic
+    /// case being one that needs the live window, which is why LATE MAPPING is supported and the pipeline
+    /// is thread-safe. A module with no such constraint is better registered at build time with
+    /// <see cref="AddIpcModule{TFacade}"/>, where the duplicate-module guard runs at composition instead
+    /// of on first dispatch.
+    /// </para>
+    /// </summary>
+    /// <returns>The app, so calls chain.</returns>
+    public static ShenoraApplication MapModule<TModule>(this ShenoraApplication app)
+        where TModule : notnull, IIpcModule
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        app.Services.GetRequiredService<IMessageDispatcher>()
+            .MapModule(app.Services.GetRequiredService<TModule>());
+        return app;
+    }
+
+    /// <summary>
     /// Map every DI-registered <see cref="IIpcModule"/> onto the dispatcher, in registration order.
     /// Resolves the facades NOW — safe from application code that already holds a built provider, but
     /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="AddMessageDispatcher"/>

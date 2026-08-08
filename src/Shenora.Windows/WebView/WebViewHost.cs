@@ -43,6 +43,14 @@ public sealed class WebViewHost
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = options.Log ?? options.Environment.Log;
 
+        // The app-level pipeline (D64), applied BEFORE anything can navigate — routes are read per
+        // request, so registering here is early enough for the first document. This is what makes
+        // `app.UseFiles(…)` reach a SECONDARY window too: it travels with the options, so every host
+        // built from them serves the same routes instead of the app re-wiring each window by hand.
+        // Not guarded: a throwing step is a composition mistake and must fail the window loudly rather
+        // than produce one that silently serves nothing.
+        options.Pipeline?.ApplyTo(_interceptor);
+
         // Fail at COMPOSITION rather than degrading to silence (the P5.5 H3 convention). A deferred
         // scheme gets a WebResourceRequested filter below, but WebView2 accepts the SCHEME itself only
         // at environment-creation time — so an unregistered custom scheme is rejected by the network

@@ -568,6 +568,7 @@ Shenora.Windows.WebViewHostOptions
   property OnProcessFailed
   property OpenExternalLinksInSystemBrowser
   property PermittedPermissions
+  property Pipeline
   property PreventDefaultFileDrop
   property ProductionUrl
   property ReloadOnRenderProcessFailure

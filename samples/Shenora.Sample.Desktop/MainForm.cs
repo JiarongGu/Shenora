@@ -375,19 +375,14 @@ public sealed class MainForm : OptimizedForm
             },
         });
 
+        // The pipeline the APP declared (Program.cs, after Build()) is already on this host's interceptor:
+        // it travelled with `hostOptions.Pipeline` and was applied during construction, before anything
+        // can navigate. The probe's file route used to be registered HERE, per window — which is what
+        // `app.Use…()` replaced (D64), and why this line is now the whole of it.
         _host = new WebViewHost(_webView, hostOptions);
-
-        // The D45 interceptor route, registered BEFORE InitializeAsync — which is the point of the
-        // interceptor existing on the host from construction: an app composes its routes where it composes
-        // everything else, not from inside a webview callback.
-        _interceptorRoute = InterceptorProbe.Register(_host.Interceptor,
-            Path.Combine(paths.DataArea("probe"), "files"));
 
         Load += OnLoadAsync;
     }
-
-    /// <summary>The probe's file route. Disposed with the form, as an app's own routes would be.</summary>
-    private readonly IDisposable _interceptorRoute;
 
     /// <summary>
     /// Set once the page has taken over reporting its own caption-button rects. Until then the host
@@ -507,7 +502,6 @@ public sealed class MainForm : OptimizedForm
             // Stop the flush timer + detach before the WebView goes down (the source app's
             // transport once kept posting into a torn-down WebView for the process lifetime).
             _tickTimer.Dispose();
-            _interceptorRoute.Dispose();
             _dropZones.Dispose();
             _bridge.Dispose();
             _tray.Dispose();

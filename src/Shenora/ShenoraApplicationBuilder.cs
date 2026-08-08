@@ -126,6 +126,12 @@ public sealed class ShenoraApplicationBuilder
         Services.AddShenoraRequests();
         Services.AddMessageDispatcher();
 
+        // The webview pipeline every window this app hosts will receive (D64). Registered here rather
+        // than by a shell because it is PORTABLE — the same declarations serve the desktop host and both
+        // mobile interceptors — and because `app.Use…()` must work before any shell has been asked for a
+        // window. TryAdd, so an app that registered its own still wins.
+        Services.TryAddSingleton<Core.WebView.WebViewPipeline>();
+
         return new ShenoraApplication(ApplicationName, Args, Environment, Paths,
             Services.BuildServiceProvider());
     }

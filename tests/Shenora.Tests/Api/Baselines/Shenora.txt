@@ -202,6 +202,7 @@ static class Shenora.Core.Ipc.IpcServiceCollectionExtensions
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<System.IServiceProvider, Shenora.Core.Ipc.IMessageDispatcher>? configure = null)
   public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
   public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
+  public static Shenora.ShenoraApplication MapModule<TModule>(Shenora.ShenoraApplication app) where TModule : Shenora.Core.Ipc.IIpcModule
 sealed class Shenora.Core.Ipc.MessageDispatcher : Shenora.Core.Ipc.IMessageDispatcher, Shenora.Core.Ipc.IModuleRegistry
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.Ipc.MessageDispatcher>? logger = null, Shenora.Core.Ipc.IIpcRequestTracker? requests = null)
   public Shenora.Core.Ipc.MessageDispatcher Use(Shenora.Core.Ipc.MessageMiddleware middleware)
@@ -357,7 +358,12 @@ static class Shenora.Core.WebView.WebViewFiles
   public static Shenora.Core.WebView.WebViewResourceResponse Serve(Shenora.Core.WebView.WebViewResourceRequest request, string path, string contentType, Shenora.Core.WebView.WebViewRangeDelivery delivery)
   public static string? ResolveContained(string? requestedPath, System.Collections.Generic.IReadOnlyList<string> allowedRoots)
 static class Shenora.Core.WebView.WebViewInterceptorExtensions
+  public static Shenora.ShenoraApplication UseFiles(Shenora.ShenoraApplication app, Shenora.Core.WebView.WebViewFileOptions options)
   public static System.IDisposable UseFiles(Shenora.Core.WebView.IWebViewInterceptor interceptor, Shenora.Core.WebView.WebViewFileOptions options)
+sealed class Shenora.Core.WebView.WebViewPipeline
+  public .ctor()
+  public Shenora.Core.WebView.WebViewPipeline Use(System.Action<Shenora.Core.WebView.IWebViewInterceptor> step)
+  public void ApplyTo(Shenora.Core.WebView.IWebViewInterceptor interceptor)
 enum Shenora.Core.WebView.WebViewRangeDelivery (int)
   public const Shenora.Core.WebView.WebViewRangeDelivery Sliced = 0
   public const Shenora.Core.WebView.WebViewRangeDelivery Unsliced = 1
@@ -1054,6 +1060,7 @@ sealed class Shenora.Modules.Media.MediaPlayerException : System.Exception
   public .ctor(string message)
   public .ctor(string message, System.Exception inner)
 static class Shenora.Modules.Media.MediaPlayerExtensions
+  public static Shenora.ShenoraApplication UseMediaPlayer(Shenora.ShenoraApplication app)
   public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions>? configure = null)
   public static System.IDisposable ReportTo(Shenora.Modules.Media.IMediaPlayer player, Shenora.Modules.Platform.IPlaybackSession session)
   public static System.IDisposable? UseMediaPlayer(Shenora.Core.WebView.IWebViewInterceptor interceptor, System.IServiceProvider services)
@@ -1421,6 +1428,8 @@ sealed class Shenora.Modules.Update.UpdateStageStatus
   public required bool Pending { get; init; }
   public string? Version { get; init; }
 sealed class Shenora.ShenoraApplication : System.IAsyncDisposable, System.IDisposable
+  public Shenora.Core.WebView.WebViewPipeline Pipeline { get; }
+  public Shenora.ShenoraApplication Use(System.Action<Shenora.Core.WebView.IWebViewInterceptor> configure)
   public Shenora.ShenoraEnvironment Environment { get; }
   public Shenora.ShenoraPaths Paths { get; }
   public System.Collections.Generic.IReadOnlyList<string> Args { get; }

@@ -136,6 +136,29 @@ public static class MediaPlayerExtensions
     /// read the same options object**, so the emitter and the matcher cannot drift apart.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// **Mount the player's route on every webview the app hosts** — the <c>app.Use*()</c> phase (D64),
+    /// and the call an adopter should write:
+    /// <code>
+    /// using var app = builder.Build();
+    /// app.UseMediaPlayer();      // no `services` argument: the app already holds the provider
+    /// app.Run();
+    /// </code>
+    /// <para>
+    /// 🔴 <b>This is what the two-phase shape below was apologising for.</b> The second phase was
+    /// <c>interceptor.UseMediaPlayer(services)</c> — the caller fetching an inner object and handing the
+    /// provider BACK in. The PHASES were always right (an interceptor is created with its webview); the
+    /// receiver was not. ASP.NET's second phase is <c>app.Use*()</c>, where the app holds the provider,
+    /// and now so is this. The per-interceptor overload stays for one webview that must differ.
+    /// </para>
+    /// </summary>
+    /// <returns>The app, so calls chain.</returns>
+    public static ShenoraApplication UseMediaPlayer(this ShenoraApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(interceptor => interceptor.UseMediaPlayer(app.Services));
+    }
+
     /// <param name="interceptor">The shell's interceptor, once the webview exists.</param>
     /// <param name="services">The built provider — the same one <c>UseMediaPlayer</c> registered into.</param>
     /// <returns>Dispose to remove the route. <c>null</c> when no conversion was configured.</returns>
