@@ -10,20 +10,26 @@ export interface RunResult {
 export const q = (s: string): string => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /**
- * Run a shell command and return its status and combined output.
- *
  * 🔴 `set -o pipefail` is prepended to anything containing a pipe, and it is NOT decoration. Without it
  * a pipeline reports the LAST command's status — `| tail` is always 0 — so a REJECTED install sails
  * through, the launch runs against an app that was never installed, and the tool finishes by cheerfully
  * printing "running on the device". Measured on this kit's first real device run, then reintroduced on a
  * second step the same day, which is why it is applied here once instead of remembered per call site.
+ *
+ * Split out from {@link sh} so it is TESTABLE OFF macOS: `sh` shells out to `/bin/sh`, which does not
+ * exist on the Windows box where the gate runs, and a guarantee only asserted on the machine that rarely
+ * runs the suite is a guarantee nobody is watching.
  */
+export function withPipefail(command: string): string {
+  return command.includes('|') ? `set -o pipefail\n${command}` : command;
+}
+
+/** Run a shell command and return its status and combined output. */
 export function sh(
   command: string,
   { cwd, timeoutMs = 30 * 60_000, quiet = false }: { cwd?: string; timeoutMs?: number; quiet?: boolean } = {},
 ): RunResult {
-  const script = command.includes('|') ? `set -o pipefail\n${command}` : command;
-  const r = spawnSync('/bin/sh', ['-c', script], {
+  const r = spawnSync('/bin/sh', ['-c', withPipefail(command)], {
     cwd,
     encoding: 'utf8',
     timeout: timeoutMs,

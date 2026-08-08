@@ -179,7 +179,7 @@ function checkExtensions(app: string): { checked: number; problems: string[] } {
  * silence the mismatch for everyone who clones the repo, permanently — including whoever hits it when it
  * is the real problem. On the command line it stays visible and per-machine.
  */
-function splitArgs(args: readonly string[]): { own: string[]; extra: string } {
+export function splitArgs(args: readonly string[]): { own: string[]; extra: string } {
   const i = args.indexOf('--');
   if (i < 0) return { own: [...args], extra: '' };
   const rest = args.slice(i + 1);

@@ -603,8 +603,13 @@ switch (cmd) {
         && step('dotnet test', () => run('dotnet', ['test', config.solution, '-v', 'minimal', '--nologo'], { env: testEnv }))
         && ok;
     }
-    if (which === 'all' || which === 'npm')
+    if (which === 'all' || which === 'npm') {
       ok = (ensureNpmDeps(npmDirAbs) && step('vitest (react package)', () => runNpm('test', { cwd: npmDirAbs }))) && ok;
+      // BOTH npm packages have suites now. `@shenora/cli`'s covers the decisions that fail SILENTLY —
+      // pipefail (a rejected install reported as success) and the `--` split (a build property read as a
+      // simulator name). Both sabotage-verified in each direction on 2026-08-09.
+      ok = (ensureNpmDeps(cliDirAbs) && step('vitest (cli package)', () => runNpm('test', { cwd: cliDirAbs }))) && ok;
+    }
     process.exitCode = ok ? 0 : 1;
     break;
   }
@@ -635,9 +640,10 @@ switch (cmd) {
         // something type-checks them (P5.5 H6).
         return runNpm('run typecheck', { cwd: path.join(repo, ...config.npmDir.split('/')) });
       }],
-      // The CLI's own strict pass. `build` already compiles it, but this is the config that would also
-      // cover tests when it has them — kept as its own step so adding one never silently goes unchecked,
-      // which is exactly how the React package's test typecheck came to be inert for five phases.
+      // The CLI's own strict pass, and it now DOES cover tests (added 2026-08-09) — `tsconfig.json`
+      // includes them while `tsconfig.build.json` excludes them, so this is the only thing type-checking
+      // the suite. Kept as its own step for exactly the reason it earned: the React package's equivalent
+      // was inert for five phases because nothing ran it.
       ['cli typecheck', () => ensureNpmDeps(cliDirAbs) && runNpm('run typecheck', { cwd: cliDirAbs })],
       ['sample web typecheck', () => {
         // The e2e subject's TS was never type-checked by any gate (P5.5 H5). Skipped only when the
