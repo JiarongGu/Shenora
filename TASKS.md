@@ -322,7 +322,7 @@ after it shipped).
 
 - [ ] **iOS's `IMediaAudioConversion` is very likely NON-FUNCTIONAL, and it will not say so.** It decodes
   AC-3 with `AudioConverterConvertBuffer`, which cannot handle variable-size compressed packets — while
-  `AudioConverterNew` still SUCCEEDS for the pair, which is what `MobileMediaCapability` measures. So
+  `AudioConverterNew` still SUCCEEDS for the pair, which is what `IosMediaCapability` measures. So
   `CanConvert` answers yes, the planner says `Transcode`, and every `Push` returns nothing.
   **The remuxer does catch it** (`NoCarriableStream`, *"the device could not convert ac3 after accepting
   it"*), so the outcome is an honest failure rather than a silent film — but the tier does not work on the
@@ -443,8 +443,9 @@ decoder/encoder just if they needed, and we built something that can work by def
 - **`Mp4Remuxer.ConvertAsync`** — the default `MediaConversionOptions.Convert`. Container repair with no
   engine, no binary, no licence weight. This is "working playback with NOTHING supplied" for the case D52
   calls the common one.
-- **`IMediaStreamConversion`** — the transcode tier: picture copied untouched, soundtrack through the
-  device's codecs. Plus **Android's implementation** (chained `MediaCodec` decoder → AAC encoder).
+- **`IMediaAudioConversion`** (+ `IMediaAudioConversionRun`) — the transcode tier: picture copied
+  untouched, soundtrack through the device's codecs. Both mobile shells implement it (Android chains a
+  `MediaCodec` decoder → AAC encoder; iOS uses AudioToolbox).
 
 ### 🔴 THE NEXT THING: a playback LIFECYCLE in .NET — read D54 first (2026-08-07)
 
@@ -457,7 +458,7 @@ decoder/encoder just if they needed, and we built something that can work by def
 treadmill whose ceiling is still the webview. The gap is that **the PAGE owns playback and should not**.
 
 **✅ THE CONTRACT AND THE iOS IMPLEMENTATION ARE IN** (2026-08-07, `dc29b2e` + `fbb2716`).
-`IMediaPlayer` in `Shenora/Media/Play/`, `MobileMediaPlayer` (AVPlayer) on iOS,
+`IMediaPlayer` in `Shenora/Modules/Media/Play/`, `IosMediaPlayer` (AVPlayer) on iOS,
 `player.ReportTo(session)` reconciling Now Playing with the player's real state. 1191 tests.
 
 🔴 **WHAT IS NOT PROVEN, and no green gate says otherwise: NOTHING HAS PLAYED A BYTE.** There is no

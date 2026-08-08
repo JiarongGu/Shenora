@@ -82,7 +82,7 @@ describe('requests store', () => {
   });
 
   it('binds to a renamed module for both the snapshot request and the event subscription', () => {
-    // The default-bound store can never reach a host that renamed OperationRegistryOptions.ModuleName
+    // The default-bound store can never reach a host that renamed IpcRequestTrackerOptions.ModuleName
     // (review finding): `module` must flow into both halves, not just be accepted and ignored.
     const { store, transport, bus } = harness([], { module: 'MY_OPS' });
     store.subscribe(() => {});
@@ -98,7 +98,7 @@ describe('requests store', () => {
   });
 
   it('threads scope into the LIST snapshot payload, not just the subscription', () => {
-    // OperationsModule reads its scope filter from the PAYLOAD (see RouteMessageAsync), not the
+    // IpcRequestsModule reads its scope filter from the PAYLOAD (see RouteMessageAsync), not the
     // envelope — asserting on the resulting state would pass even if the payload were empty, since
     // an unfiltered LIST returns a superset that just happens to still contain the scoped rows.
     const { store, transport } = harness([], { scope: 'tenant-1' });

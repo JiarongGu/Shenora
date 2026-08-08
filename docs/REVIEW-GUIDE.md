@@ -185,7 +185,11 @@ a finding that contradicts one of these is either a real regression or a rule th
 - `Shenora` depends on the Microsoft DI *implementation* package, not just abstractions (D17 —
   the builder needs `BuildServiceProvider`).
 - `WindowCommandModule` / the drop-zone stack live in `Shenora.Windows/WebView/` (not `Shell/`)
-  because they need `Shenora.Ipc`, which the primitives half deliberately does not reference.
+  because they need the IPC core (`Shenora.Core.Ipc`), which the primitives half deliberately does not
+  reference. ⚠ This said `Shenora.Ipc` until 2026-08-08 — a PACKAGE D65 folded into `Shenora`. The
+  stale-scan cannot catch that one: `Shenora.Ipc` is deliberately absent from `retired-names.txt`
+  because the id went while a namespace of nearly the same name stayed (see that file's header). **The
+  tool narrows the reading; it does not replace it.**
 - ⚠ **The three Windows packages are ONE package now (D37, 0.5.0): `Shenora.Windows`.** What used to
   be `Shenora.WinForms` → `Shenora.WebView2` → `Shenora.WebView2.Sessions` is `Shell/` → `WebView/` →
   `Sessions/` inside it, and D19's rule survives one level down: `Shell/` must never depend on

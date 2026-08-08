@@ -183,7 +183,7 @@ function makeState(byId: Record<string, IpcRequestStatus>): RequestsState {
 export interface RequestsStoreOptions {
   /**
    * The request/event module this store talks to. Must match the host's
-   * `OperationRegistryOptions.ModuleName` — default `'OPERATIONS'` on both sides — when an app
+   * `IpcRequestTrackerOptions.ModuleName` — default `'SHENORA.REQUESTS'` on both sides — when an app
    * renamed it to avoid a collision with one of its own module names (the duplicate-module guard
    * `IpcRequestsModule`'s own docs describe). A store bound to the default name cannot reach a
    * renamed host at all, which is exactly the gap this field closes.
@@ -204,10 +204,10 @@ export interface RequestsStoreOptions {
 }
 
 /**
- * Build a store instance over the operations module — the factory {@link useShenoraRequests}
+ * Build a store instance over the requests module — the factory {@link useShenoraRequests}
  * itself is built from. Exposed (rather than only the ready-made hook) for the same reason
  * `WindowCommands` takes an optional bridge: a test needs a fake bridge/bus
- * (`operations.test.ts`), an app that renamed the host's `OperationRegistryOptions.ModuleName`
+ * (`requests.test.ts`), an app that renamed the host's `IpcRequestTrackerOptions.ModuleName`
  * needs a store bound to that name instead of the unreachable default, and an app running a
  * secondary window or auxiliary session needs its own scope-filtered instance instead of being
  * stuck with the shared, unscoped default.
