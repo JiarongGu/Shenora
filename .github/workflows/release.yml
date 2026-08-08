@@ -10,7 +10,8 @@ name: Release
 #  - NuGet uses Trusted Publishing (OIDC) — no stored API key. Setup (once): on nuget.org,
 #    Account -> Trusted Publishing -> add a policy for this repository and workflow file
 #    `release.yml`, scoped to the Shenora.* package glob.
-#  - npm publishes with provenance. Configure npm Trusted Publishing (OIDC) for @shenora/react on
+#  - npm publishes with provenance, TWO packages (@shenora/react + the build-time @shenora/cli, D67).
+#    Configure npm Trusted Publishing (OIDC) for BOTH of them on
 #    npmjs.com (package -> Settings -> Trusted publisher -> this repo + release.yml); until that
 #    exists, set a granular NPM_TOKEN repo secret and the publish step uses it instead.
 #
@@ -324,7 +325,11 @@ jobs:
       # after both pushes — a rejected bump commit, a tag push race — leaves every re-run stuck at
       # this step, unable to ever complete the bump or the tag. The two registries cannot be made
       # atomic; what they can be is re-runnable.
-      - name: Publish npm (@shenora/react)
+      # 🔴 EVERY npm package, and the skip guard applies PER PACKAGE. `@shenora/cli` (D67) made this a
+      # loop: with a single hardcoded tarball a second package silently never ships, and with a shared
+      # guard a re-run after react succeeded and cli failed would skip out before reaching cli — the
+      # precise half-landed state the guard exists to recover from.
+      - name: Publish npm (@shenora/react, @shenora/cli)
         if: ${{ !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -334,19 +339,26 @@ jobs:
           npm install -g npm@latest
 
           $v = '${{ steps.version.outputs.version }}'
-          $tgz = Get-ChildItem 'publish/packages' -Filter 'shenora-react-*.tgz' | Select-Object -First 1
-          if (-not $tgz) { throw "no @shenora/react tarball in publish/packages - did Pack run?" }
+          $packages = @(
+            @{ Name = '@shenora/react'; Filter = 'shenora-react-*.tgz' },
+            @{ Name = '@shenora/cli';   Filter = 'shenora-cli-*.tgz'   }
+          )
 
-          # A missing package (the FIRST publish) makes `npm view` exit non-zero; that is "not
-          # published", not an error. Only an exact version match means skip.
-          $live = npm view "@shenora/react@$v" version 2>$null
-          if ($LASTEXITCODE -eq 0 -and $live -eq $v) {
-            Write-Host "@shenora/react@$v is already published - skipping (matches --skip-duplicate)"
-          } else {
+          foreach ($p in $packages) {
+            $tgz = Get-ChildItem 'publish/packages' -Filter $p.Filter | Select-Object -First 1
+            if (-not $tgz) { throw "no $($p.Name) tarball in publish/packages - did Pack run?" }
+
+            # A missing package (the FIRST publish) makes `npm view` exit non-zero; that is "not
+            # published", not an error. Only an exact version match means skip.
+            $live = npm view "$($p.Name)@$v" version 2>$null
+            if ($LASTEXITCODE -eq 0 -and $live -eq $v) {
+              Write-Host "$($p.Name)@$v is already published - skipping (matches --skip-duplicate)"
+              continue
+            }
             $global:LASTEXITCODE = 0
             Write-Host "publishing $($tgz.Name)"
             npm publish $tgz.FullName --provenance --access public
-            if ($LASTEXITCODE -ne 0) { throw "npm publish failed" }
+            if ($LASTEXITCODE -ne 0) { throw "npm publish failed for $($p.Name)" }
           }
 
       - name: Commit version bump

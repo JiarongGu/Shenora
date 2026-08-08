@@ -742,6 +742,12 @@ switch (cmd) {
       ok = ok && ensureNpmDeps(npmDirAbs);
       ok = ok && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
       ok = ok && step('npm pack (react package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: npmDirAbs }));
+      // 🔴 BOTH npm packages, or the second one silently never ships. `@shenora/cli` (D67) was added on
+      // 2026-08-08 and this loop packed only the React package for its first two days — `doctor` held the
+      // version in lockstep the whole time, which is exactly what made the gap invisible: every check said
+      // "consistent" about a tarball that was never produced.
+      ok = ok && buildCliPackage();
+      ok = ok && step('npm pack (cli package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: cliDirAbs }));
     }
     if (ok) ok = step('evict stale Shenora.* from the NuGet global cache', () => evictGlobalCache());
     if (ok) {

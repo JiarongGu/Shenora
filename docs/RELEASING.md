@@ -86,18 +86,22 @@ burns no version:
    it, then a `stale-scan` pass, and a `### Breaking` line with its migration if an adopter could have
    named it. **A break is cheap here (D47) but never silent.** Not folded into `verify` because it needs
    tags and CI clones are not always deep.
-3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + the npm tarball
-   (npm `package.json` version and the README headline synced from `VersionPrefix`), each with its
-   sha256 printed.
+3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + **two** npm tarballs
+   (`@shenora/react` and the build-time `@shenora/cli`, D67 — both `package.json` versions and the README
+   headline synced from `VersionPrefix`), each with its sha256 printed.
 4. **Publish NuGet** — Trusted Publishing (OIDC): `NuGet/login@v1` mints a short-lived key; no
    stored secret. One-time setup on nuget.org: Account → Trusted Publishing → policy for the
    repo + `release.yml`, scoped to the `Shenora.*` package glob. `--skip-duplicate` makes a re-run safe.
-5. **Publish npm** — `npm publish publish/packages/shenora-react-X.Y.Z.tgz --provenance --access public`.
+5. **Publish npm — BOTH tarballs**: `npm publish publish/packages/shenora-react-X.Y.Z.tgz --provenance
+   --access public`, then the same for `shenora-cli-X.Y.Z.tgz`.
    Note it publishes the tarball **Pack produced**, not a rebuild: `npm publish` from the package
    directory would re-run `prepublishOnly` and ship a second artifact, so the thing whose sha256 step 3
    printed would not be the thing that shipped. Uses npm Trusted Publishing (OIDC) once the publisher
-   policy is configured on npmjs.com for `@shenora/react` + this repo/workflow; until then set a
-   granular `NPM_TOKEN` repo secret (the workflow uses it when present).
+   policy is configured on npmjs.com for `@shenora/react` **and `@shenora/cli`** + this repo/workflow;
+   until then set a granular `NPM_TOKEN` repo secret (the workflow uses it when present).
+   ⚠ **A second package doubles the ways a release half-lands.** The skip-if-already-published guard below
+   must be applied per package, not once — otherwise a re-run after the react publish succeeded and the cli
+   publish failed will stop at the first one and never reach the second.
    The step **skips when that exact version is already on the registry**, because npm has no
    `--skip-duplicate` and fails hard otherwise. That matters: the two registries can never be made
    atomic, so the goal is re-runnability — without the guard, any failure after both pushes (a

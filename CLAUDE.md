@@ -19,7 +19,8 @@ them: what .NET can do and React cannot.** So the question for any feature is no
 `.NET does the platform work · React does the interface · the kit owns the seam and the IPC.`
 
 Shipped as NuGet packages (`Shenora|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 — plus
-the native `Launcher`, D50) + npm (`@shenora/react`), all versioned in lockstep. **There is no optional
+the native `Launcher`, D50) + npm (`@shenora/react`, plus the build-time `@shenora/cli` — D67), all
+versioned in lockstep. **There is no optional
 feature tier: media, IO and IO.Compression are NAMESPACES inside Core** (D53/D55) — a capability gets a
 folder, never a package. Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI

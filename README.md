@@ -35,12 +35,12 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
 | `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Media` — probe, plan, serve, remux), file operations (`Shenora.IO` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.IO.Compression`). |
-| `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
 | `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
 | `@shenora/react` | npm | ES2022 / ESM | The client half — bridge, event bus, store, hooks. |
+| `@shenora/cli` | npm | Node 20+ | **Build-time only, a `devDependency`** (D67). The `shenora` binary: take a built app onto a simulator or a real iPhone, with no Xcode project of your own. Ships inside nothing you deploy. |
 
 The TFM column is here so an adopter can tell whether a package fits without downloading the nupkg to
 inspect it. **One shell package per platform** — you reference the one you are building for, and the

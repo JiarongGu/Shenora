@@ -19,18 +19,21 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
 > added the native launcher, **D53 folded media back into Core**, **D55 folded the IO family in after
 > it**, and **D65 folded IPC in as well** — and reconstructing it from that chain is how three of them
 > ended up stating a set that no longer existed.
-> **As of 2026-08-07 there are 5 packable projects + npm:**
+> **As of 2026-08-08 there are 5 packable projects + 2 npm:**
 >
 > | | | |
 > |---|---|---|
 > | **the framework** | `Shenora` | the three CORES (IPC · EventBus · RouteInterceptor), the logic layer, and the features — D65 |
 > | **shells** (D37) | `Shenora.Windows` · `Shenora.Android` · `Shenora.iOS` | one per platform; each implements the cores and its features' platform halves |
 > | **native** (D50) | `Shenora.Launcher` | C++ sources + per-RID binaries; NO managed surface |
-> | **npm** | `@shenora/react` | |
+> | **npm** | `@shenora/react` | what the app imports |
+> | **npm** (D67) | `@shenora/cli` | build-time only — the `shenora` binary, a `devDependency`, in NO shipped artifact |
 >
 > 🔴 **There is no longer an "optional features" tier at all** (D55). The framework is ONE whole:
 > `Shenora` + a shell + `@shenora/react`. A capability that grows big enough to look like a library
-> gets a FOLDER, not a package. ⚠ **`Shenora` is itself renamed to `Shenora` by D65** — it is the
+> gets a FOLDER, not a package. ⚠ **`@shenora/cli` is not an exception to that** — the rule governs what
+> ships INSIDE an app, and the CLI ships inside nothing (D67). The question for a new id is *"does the
+> adopter's app carry this at RUN TIME?"*, not *"is it separate?"*. ⚠ **`Shenora` is itself renamed to `Shenora` by D65** — it is the
 > framework, not a component of one; until that lands this table names the current id.
 >
 > ⚠ **`Shenora.Media`, `Shenora.IO`, `Shenora.IO.Compression` and `Shenora.Ipc` are no longer packages
@@ -2454,3 +2457,41 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     that wants snappier progress also wants its spinner sooner. ⚠ The trade is the one the option
     already documents — *"a busy backend can fire hundreds of events a second, and one batched drain
     beats hundreds of round trips"* — so lowering it buys fluency with IPC volume.
+
+- **D67 — the DEVICE LOOP is part of the framework, so the kit ships a CLI: `@shenora/cli`, second npm
+  package, binary `shenora`.** (Owner, 2026-08-08: *"the deploy helper should also be built too (can be
+  an npm package)"* → *"the set can just call shenora (similar as electron/capacitor)"* → *"since our kit
+  should be a full set of development, so the deploy to sim/iphone should be able to finish with cli, this
+  is not xcode project issue or not"*.)
+  - 🔴 **It does not contradict D53/D55, and the distinction is the whole entry.** "A capability gets a
+    FOLDER, never a package" is a rule about what ships **INSIDE the app** — a feature tier lets an
+    adopter believe media or IO is optional when the framework is one whole. A CLI ships inside nothing:
+    it is a `devDependency` that runs on the developer's machine at build time and is absent from every
+    artifact the user installs. **The two live on opposite sides of the runtime boundary**, so the
+    argument that killed `Shenora.Media` does not reach here. ⚠ The test for any future package is
+    therefore *"does an adopter's app carry this at run time?"* — not *"is it a separate id?"*.
+  - **Nor can it be a folder in `@shenora/react`, which is the shape that looks cheaper.** That package
+    is browser code that goes through an adopter's bundler; the CLI is `node:child_process`, `node:fs`
+    and a `bin`. Folding them together puts Node built-ins in a module graph headed for a browser, and
+    the failure is a bundler error in the ADOPTER's build of code they never imported.
+  - **Why it earns its keep against the kit's own thesis (D54):** *can React already do this?* No —
+    reaching a real iPhone is `xcrun`, `devicectl`, codesigning and provisioning, none of which the web
+    platform touches. And the ceiling argument cuts the other way for once: **Capacitor and Electron
+    both ship a CLI**, so a hybrid framework without one is missing a table stake, not adding a luxury.
+  - **The scope is the LAST MILE only** — take a built app onto a simulator or a phone. It does not build
+    web bundles, run tests, or manage a native project (there isn't one; that is why `cap add/open/ls`
+    have no counterpart). `src/Shenora.Cli/README.md` carries the parity table against `cap`.
+  - 🔴 **Every check in it is one this repo hit on real hardware**, which is the only reason to trust
+    them: a piped install reporting `tail`'s exit code so a REJECTED install "succeeded"; an app
+    extension that installs happily and never launches because it is provisioned separately — **which a
+    simulator cannot catch, since it does not enforce signing**; a device picker that silently takes the
+    first of two phones; a log tail that is ~99 % platform chatter without a filter.
+  - ⚠ **The config describes the PROJECT; the command line describes the MACHINE.** Proven on the first
+    real run: this Mac's Xcode is newer than the installed workload accepts, and the fix
+    (`-p:ValidateXcodeVersion=false`) is true of one machine. It goes after `--`, never into a committed
+    field — a config that records machine facts silences the mismatch for everyone who clones the repo,
+    including whoever hits it when it is the real problem. Same reasoning as `loadConfig`'s existing
+    refusal to store an Xcode path, a signing identity or a device id.
+  - **Lockstep versioning covers it** like every other package: `doctor` fails naming
+    `src/Shenora.Cli/package.json` when its version drifts from `VersionPrefix`, sabotage-verified in
+    both directions on 2026-08-08.

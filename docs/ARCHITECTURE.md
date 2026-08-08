@@ -626,7 +626,8 @@ changes, noting them in `CHANGELOG.md`).
   "installed minus release" and a manifest that failed to load would delete everything just written.
   A self-contained app needs no native code; a framework-dependent one still wants a launcher to
   bootstrap the runtime and call this.
-- **`Shenora.IO.Compression` — archives, safely (2026-08-05).** `ZipExtraction.ExtractTo` +
+- **`Shenora.IO.Compression` — archives, safely (2026-08-05; a NAMESPACE inside `Shenora`, its own
+  package until D55).** `ZipExtraction.ExtractTo` +
   `ExtractionLimits`/`ExtractionResult`: every entry is containment-checked against the destination
   **plus a separator** (so `data-evil` is not a child of `data`), a refused entry is SKIPPED and NAMED
   rather than throwing, and total-bytes / entry-count limits (1 GiB / 100k) throw — the zip-bomb bound,
@@ -778,7 +779,8 @@ changes, noting them in `CHANGELOG.md`).
   hook. The LIFECYCLE is the contract — started / navigated / frames / ended-or-faulted; the transport,
   viewer UI, hover affordances and what any of it is FOR belong to the app (D21/D22), which is what the
   sample's `STREAM` route + `StreamViewer` demonstrate).
-- `Shenora.Ipc` — the transport-neutral wire contract (design §5, D11/D16; names pinned with
+- **`Shenora.Ipc` — the transport-neutral wire contract (the `Ipc/` folder inside `Shenora`; its OWN
+  package until D65 folded it in — the NAMESPACE is unchanged)** (design §5, D11/D16; names pinned with
   `JsonPropertyName` so envelopes hold under any serializer options): `IpcRequest`
   (`{id, module, type, scope?, payload?, timestamp}` — `scope` is the app-defined routing
   field), `IpcResponse` (`{category:"ipc", id, success, data?, error?}` + `CreateSuccess`/
@@ -949,16 +951,34 @@ changes, noting them in `CHANGELOG.md`).
   (`Object.values(state.byId).filter(r => r.module === 'X')`), and shipping indexes for it would be
   duplicated derived state for no gain. react ≥18 required peer.
 
+- **`@shenora/cli` — the `shenora` binary (D67, 2026-08-08).** The second npm package and the only one
+  that is **build-time only**: a `devDependency` running on the developer's machine, in no artifact a
+  user installs. TypeScript compiled to ESM (`tsconfig.build.json` emits; `tsconfig.json` is the
+  `noEmit` check), no runtime dependencies. `init` · `copy`/`sync` · `ios doctor|devices|simulators|
+  deploy|log|shot`; `shenora.deploy.json` describes the PROJECT and is searched upward from the cwd, so
+  a monorepo runs it from anywhere. ⚠ **It holds no machine facts** — no Xcode path, signing identity or
+  device id — those are asked at run time, and a per-machine MSBuild override goes after `--`
+  (`deploy --simulator -- -p:ValidateXcodeVersion=false`). ⚠ **NOT covered by the API-surface
+  baselines**, which are per NuGet package; its contract is the command set above and this doc.
+  Verified end-to-end 2026-08-08 on a real Mac: build → install → launch on the simulator, screenshot
+  taken through `ios shot`. The DEVICE half is proven by `devtools/dev.mjs mac` on hardware but has not
+  yet been driven through the CLI (no phone attached at the time).
+
 
 ## Dependency rules (enforced by review)
 
-- `Core` depends only on Microsoft.Extensions DI (implementation — the builder needs
-  `BuildServiceProvider`, D17) + logging abstractions. Everything else depends downward on `Core`.
-- **Execution and reporting compose; they do not merge.** `Core`'s `Work/` layer must never learn what
-  an operation is — a mission body reports into `Shenora.Ipc`'s operation registry, and the seam pointing
-  that way is `IMissionObserver`. `Shenora.Ipc` may depend on `Shenora`, never the reverse (D19/D20),
-  which is also why the scheduler ships no storage dependency: `IMissionQueueStore` is a seam, not an
-  implementation.
+- `Shenora` depends only on Microsoft.Extensions DI (implementation — the builder needs
+  `BuildServiceProvider`, D17) + logging abstractions. Every shell depends downward on it.
+- **Execution and reporting compose; they do not merge.** The `Work/` layer must never learn what a
+  long-running request is — a mission body reports through `IMissionObserver`, and that seam is the only
+  thing pointing at the IPC side. ⚠ **This is now an INTERNAL direction, not a package edge** (D65 folded
+  `Shenora.Ipc` into `Shenora`; the namespace stayed). It survived the fold because the compiler was never
+  what enforced it: the rule is *feature → logic → wire*, discovered by reading the edges rather than
+  imposed, and a reviewer checks it by asking which namespace names which. It is also why the scheduler
+  ships no storage dependency: `IMissionQueueStore` is a seam, not an implementation.
+  🔴 **A folded package cannot be cited as a boundary.** This bullet said "`Shenora.Ipc` may depend on
+  `Shenora`, never the reverse (D19/D20)" until 2026-08-08 — an edge between two ids that are one
+  package, which a reviewer would have enforced against a boundary the build no longer has.
 - **Windows is ONE package, and D19's edge is now internal (2026-08-02).** D19 established that the
   Windows primitives and the web hosting on top of them are one layer rather than two peers — decided
   on evidence, after the UI-thread marshal pattern had been hand-rolled 14 times with five

@@ -52,7 +52,8 @@ thesis** — the differentiator is native .NET capability, so the question is ne
 but *"can React already do this?"*. Read `CLAUDE.md`'s opening before judging anything load-bearing.
 
 Shipped as **`Shenora`** (the framework itself) + three shell packages (`Windows`, `Android`, `iOS`;
-D37) + the native `Launcher` (D50) + npm `@shenora/react`, versioned in lockstep. **Read D65 before
+D37) + the native `Launcher` (D50) + npm `@shenora/react` and the build-time `@shenora/cli` (D67),
+versioned in lockstep. **Read D65 before
 judging any placement**: core is the CONTRACT (IPC · EventBus · RouteInterceptor), logic is the BRAIN
 (missions, safe file mutation), features BRIDGE .NET to the web (media, dialogs, update).
 ⚠ **There is no optional-feature tier, and this paragraph has now been wrong TWICE**: it claimed one

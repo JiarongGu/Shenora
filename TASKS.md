@@ -11,14 +11,17 @@ here as long as they still steer.
 length stops tracking the remaining work. Two of the stale entries still showed an unchecked `[ ]` a day
 after they shipped.
 
-**Status: 0.10.0 is PUBLISHED (2026-08-05)** — nine NuGet packages + `@shenora/react`, all nine confirmed
-on the feed. It added three packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
-safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
+**Status: 0.10.0 is PUBLISHED (2026-08-05)** — that release shipped nine NuGet packages + `@shenora/react`,
+all nine confirmed on the feed, and **that count is now HISTORY**: D53/D55/D65 folded four of them away and
+D67 added a second npm package. 🔴 **The current set is the table at the top of `docs/DECISIONS.md` — five
+packable projects + two npm — and nowhere else.**
 🔴 **`## Unreleased` is LARGE and mostly BREAKING** — D64/D65/D66 all landed in it: the framework on by
 default, the three layers, operations merged into `IpcRequest`, request tracking moved to the dispatch
 boundary, the pipeline surface on `ShenoraApplication`, and the `Use`-versus-`Add` rule. Read
-`CHANGELOG.md`'s `### Breaking` before touching the surface; the current package set is the table at the
-top of `docs/DECISIONS.md` (0.10.0's nine is history — D53/D55 folded three of them).
+`CHANGELOG.md`'s `### Breaking` before touching the surface.
+**The release is deliberately ON HOLD** (owner, 2026-08-08: *"im still holding the release since currenly
+stage this is not a proper version for app to use yet"*) — so correctness beats cosmetics here, and a
+half-finished surface is a reason to keep working rather than to cut.
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
@@ -91,61 +94,23 @@ top of `docs/DECISIONS.md` (0.10.0's nine is history — D53/D55 folded three of
 > (the kit ships the QUESTION, never a codec list), then `D63` (the defect class this subsystem kept
 > producing).** D52 and D53 are still true and are the earlier framing D59 sharpened.
 
-### 🔴 D65 — THREE LAYERS. The two folds are DONE; the restructure is not (2026-08-07)
+### D65/D66 leftovers — the restructure is otherwise CLOSED (2026-08-08)
 
 **Read D65 first.** Core is the CONTRACT (IPC · EventBus · RouteInterceptor) · logic is the BRAIN
 (missions, safe file mutation) · features BRIDGE .NET to the web (media, dialogs, update). The
 membership test: *must both sides agree on it?* → core. *Pure computation the page never sees?* → logic.
 *Carries a .NET capability to the page?* → feature.
 
-- [x] ~~`Shenora.Ipc` folds in~~ — DONE (`9a98d12`). Proven pure: 1172 + 312 = 1484, set difference empty
-  both ways. **This is what unblocked the rest** — a feature could not own its IPC module while
-  `BaseFacade` sat in a package Core may not reference.
-- [x] ~~The main package was RENAMED to `Shenora`~~ — DONE (`adeab6f`). 230 files, 1484 → 1484, empty
-  both ways.
-- [x] ~~Layer folders + each feature owning its IPC module~~ — DONE (`c5b6183`). Zero API impact.
-- [x] ~~Split `Files/`~~ — DONE. Logic keeps the queue and its primitives; the update story is a feature.
-- [x] ~~Shell entry points named for the platform~~ — DONE (`0d6664a`).
-- [x] ~~Delete the sample's framework composition — THE ACCEPTANCE TEST~~ — DONE (`4832840`), and proven
-  by RUNNING it: *"mission scheduler ready (global lane capacity 4, scopes: 1)"* means the app's config
-  reached a scheduler it never registered.
-
-**🔴 WHAT REMAINS OF D65 — the two facades that still need a platform to satisfy them:**
-
-**✅ BOTH iOS ITEMS ARE CLOSED (2026-08-08) — the simulator links and the player passes.**
-
-`PLAYER: PASS — the host decoded a real file and advanced a real clock`, position `1.43s -> 2.94s`,
-on the iOS simulator with `IosMediaPlayer` on `MediaPlayerBase`. All three shells now have a proven
-player. `mac build` is green including the no-devkit link check.
-
-🔴 **The link failure was STALE `obj/` INTERMEDIATES, and `dotnet workload repair` was NOT the fix** —
-it was run first, changed nothing, and the identical error came back. `rm -rf obj bin` then building
-succeeded immediately. The full method record is in `.claude/knowledge/mobile-shells.md`; the short
-version is that the kit was innocent and so was the SDK.
-
-- **The SAMPLE half still cannot build on Windows**: `Sample.Maui` sets `net10.0-ios` only under
-  `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch is unverified here by
-  construction — it needs the Mac, which is why `mac build` exists.
 - [ ] **`OperationException` still carries the old word.** The last D66 leftover. It is the general IPC
   structured-error type, not part of the request subsystem — rename it with the next error-path pass, and
   note that it is wire-adjacent surface, so it belongs under `### Breaking` with its migration.
 
-### Pre-existing sample failures, attributed 2026-08-08 and NOT from the rewire
+**Standing constraint, not a task:** `Sample.Maui` sets `net10.0-ios` only under
+`$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch **cannot** be verified on Windows by
+construction. That is why `mac build` — and now `shenora ios deploy` (D67) — exist.
 
-Both reproduce identically at the pre-rewire commit (stash → **rebuild** → run; stashing sources alone
-runs the new assemblies against old sources and proves nothing):
+### Open sample decisions
 
-- [x] ~~`PLAYBACK SESSION: FAIL`~~ — **RESOLVED 2026-08-08, and the kit was INNOCENT.**
-  `WindowsPlaybackSession` had been publishing correctly all along (title, artist, album,
-  `status=Playing`, ff/rw buttons, timeline). The PROBE was walking every app's SMTC session and
-  aborting on the first one that threw — `0x80070015 ERROR_NOT_READY`, another app's session mid
-  transition — so ours was never reached. Guarded per session; now `PLAYBACK SESSION: PASS`.
-  - 🔴 **The reusable lesson: a probe that walks OTHER PROCESSES' state must survive them. Their failure
-    is not your result.** This one reported a healthy publish as "the OS never reported our title".
-  - ⚠ **It was undiagnosable for a day because the diagnostic said nothing** — `COMException: ` with an
-    empty message, since WinRT COMExceptions routinely carry none. Adding the HRESULT and the failing
-    STEP named the cause on the first run. A diagnostic that names an exception and nothing about it is
-    worse than none: it reads as evidence.
 - [ ] **Ship a fixed-version WebView2 bundle, or stay Evergreen — decide it on its merits.**
   Raised by the owner 2026-08-08 as "the webview2 bundle should be at the application location so it
   should never be shared". Checked against both desktop siblings, and the check SPLITS the question:
@@ -173,11 +138,6 @@ blind to the class by construction — the retired name is gone, so nothing is l
 one: none of these capabilities does anything until the frontend asks, so opt-in gating buys nothing while
 containment still fails closed.
 
-- [x] **Lazy construction, the PRECONDITION for any of it.** `UseFileSystem` built its journal and locker at
-  `Use…` time and `Paths.DataArea` CREATES the directory — so as a default it would have provisioned
-  `journal/` and `locks/` in every app that never mutates a file. Both now build inside the DI factory;
-  `UseMediaPlayer`'s cache root likewise. The test asserts the directory does NOT exist until
-  `IFileUpdateQueue` is resolved. ⚠ Defaults land on the DI-resolved options, never the captured instance.
 **The target shape, which is ASP.NET Core's minimal hosting model** (owner: *"think about this should be
 like how .net webapp build setup style"*). D64's table maps every call; the short version:
 
@@ -291,18 +251,21 @@ after it shipped).
 > one"*. **Right on all three.** A kit whose measure is *how little native code an adopting app writes*
 > cannot require the adopter to own an Xcode project just to reach a device.
 
-**✅ THE LOOP WORKS END TO END — the sample builds, signs, installs and LAUNCHES on an iPhone 17 Pro**
-(2026-08-07). `dev.mjs mac provision` + `dev.mjs mac device` are the kit's own, with no Capacitor and no
-app-owned Xcode project anywhere in it. The four findings are in `.claude/knowledge/mobile-shells.md`
-("Deploying to a REAL iPhone"); mechanics:
-`devtools/README.md`. What remains open is only the third item — shipping it to ADOPTERS.
+**✅ BOTH DIRECTIONS ARE ANSWERED.** The loop works end to end on an iPhone 17 Pro (2026-08-07,
+`dev.mjs mac provision` + `mac device` — no Capacitor, no app-owned Xcode project), and **shipping it to
+adopters is `@shenora/cli` (D67, 2026-08-08)**: the shape question ("a `buildTransitive` target? a recipe
+in `ADOPTION.md`?") was settled as a build-time npm package with a `shenora` binary, the same shape
+`cap`/`electron` adopters already expect. The device findings live in `.claude/knowledge/mobile-shells.md`
+("Deploying to a REAL iPhone"); the 7-day personal-profile expiry and the trust-the-certificate step are
+in the CLI's own README, where an adopter will actually meet them.
 
-- [ ] **Ship it to adopters, per the second direction** — the helper belongs with the package, not only
-  in this repo's devtools. Decide the shape deliberately (a `buildTransitive` target? a documented recipe in
-  `ADOPTION.md`?) against `generic-library.md`, since "ships a build helper" is new surface area.
-- ⚠ **Known, and it must be honest in the docs:** a free/personal team profile expires after **7 days**, and
-  a first install needs the certificate trusted ON THE PHONE (Settings → General → VPN & Device Management).
-  Neither is automatable and both belong in whatever recipe ships.
+- [ ] **Drive the DEVICE half through the CLI once.** The simulator path is proven end to end
+  (build → install → launch → screenshot, 2026-08-08); `ios deploy --device` shares its code but has not
+  been run with a phone attached — none was connected. ⚠ **It is the half that can fail alone**: extension
+  provisioning is only enforced on hardware, which is exactly what `checkExtensions` exists to catch.
+- [ ] **Wire the second npm package into the release.** `doctor` already holds its version in lockstep
+  (sabotage-verified both ways), but publishing is not wired — see `docs/RELEASING.md`, which still
+  describes one npm package.
 
 ### The iOS half of the fragment-reload defect — KNOWN BROKEN, unrepaired, and SILENT (2026-08-06)
 
@@ -462,11 +425,15 @@ Playing with the player's real state.
 ⚠ **Not planned, and needs a reason before it is:** software video decoders (MPEG-2, VC-1, Xvid, ProRes) —
 per-codec projects, built only for codecs a real library is SHOWN to contain (D52 tier 4).
 
-<details><summary>The original hand-off entry (kept — its "what not to lift" reasoning still holds)</summary>
+<details><summary>The original hand-off entry — REFERENCE, not open work (its "what not to lift" reasoning still holds)</summary>
 
-- [x] ~~**The resource pack.**~~ DONE — `ResourcePack` in `Shenora.IO.Compression`.
+⚠ **Deliberately checkbox-free.** All three shipped; they are kept for the porting reasoning, not as tasks,
+because a `[x]` here would count against the open-work length this file exists to measure. If this block
+grows further it should move to `.claude/knowledge/extraction-sources.md`, which is its real home.
 
-- [x] ~~**Lift the segment stream.**~~ DONE. `SegmentStream.cs` (719 lines, **8 app-specific references** — it was
+- **The resource pack** — shipped as `ResourcePack` in `Shenora.IO.Compression`.
+
+- **The segment stream** — lifted. `SegmentStream.cs` (719 lines, **8 app-specific references** — it was
   written portable and is the bulk of the value), `ISegmentEngine` (122, already kit-shaped and its own doc
   references `Shenora.Media`), `ConvertedMedia` (51). Suggested shape from the spec:
   `interceptor.UseSegmentStream(options)` beside the existing `UseMediaConversion`, taking an app-supplied
@@ -486,7 +453,7 @@ per-codec projects, built only for codecs a real library is SHOWN to contain (D5
     policy (⚠ `alac` is listed only under `#if IOS`, because WebKit decodes Apple Lossless and Chromium
     does not — a kit-side list could not express that), or the build script.
 
-- [x] ~~**Ship an MIT-COMPATIBLE engine for adoption.**~~ SETTLED as **D51** + **D52**; the build order is
+- **An MIT-COMPATIBLE engine for adoption** — SETTLED as **D51** + **D52**; the build order is
   the slice list above. Owner, 2026-08-06: *"sonora currently is close
   sourced, but we are on MIT so we should build one compatible with MIT"*. **Settled as D51 — read it
   first.** The source app's LGPL ffmpeg is fine *for that app* and must NOT be redistributed from an MIT

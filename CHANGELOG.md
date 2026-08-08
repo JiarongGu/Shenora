@@ -1,6 +1,6 @@
 # Changelog
 
-All packages (NuGet `Shenora.*` + npm `@shenora/react`) version in lockstep from
+All packages (NuGet `Shenora.*` + npm `@shenora/react` and `@shenora/cli`) version in lockstep from
 `src/Directory.Build.props` (`VersionPrefix`). From 1.0, SemVer 2.0 applies, gated by the
 API-surface baseline tests; while every consumer is one of the author's own applications, a
 **documented** break may ship in a MINOR release — always called out under a `### Breaking`
@@ -72,6 +72,73 @@ at the first list and missed five more breaking changes.
   - What gets consulted is the `MediaAudioConversion` **pipeline**, not any one implementation — so an
     adopter with a better decoder calls `Use(...)` and it serves the default converter, the segment engine
     and the player alike, with no other change.
+- 🔴 **`ServiceProvider.Dispose()` threw on any app holding a `MissionScheduler` — and D64 was about to make
+  that every app.** Microsoft DI's SYNCHRONOUS dispose refuses a captured singleton that implements only
+  `IAsyncDisposable`, and the scheduler was exactly that shape, so the documented
+  `using var app = builder.Build(); app.Run();` shutdown threw `InvalidOperationException` once anything had
+  resolved `IMissionScheduler`.
+  - ⚠ **This kit had already paid for this bug once**, in P5.5 H2, where `RenderSession`/`StreamingSession`
+    produced "a crash dialog on every clean quit with no way for a consumer to work around it". The hazard
+    was even documented on `ShenoraApplication.Dispose` — as advice to *prefer* `DisposeAsync`, which is not
+    protection once the KIT is the one registering the async-only singleton.
+  - **Fix:** a synchronous `Dispose()` that cancels queued missions and signals shutdown **without awaiting
+    in-flight bodies** — deliberately a weaker guarantee than `DisposeAsync`, which still awaits them.
+    Awaiting here would be a blocking wait on whatever thread disposes, routinely the UI thread.
+    **Prefer `await using var app = …` when a mission may be mid-write.**
+  - **Found by writing a tripwire for the new default**, not by the existing suite: 1226 tests passed
+    identically before and after the defaults landed, because every one of them either called `Use…`
+    explicitly or never asked for an engine. A default with no test is indistinguishable from no default.
+
+- 🔴 **`Shenora.iOS`: the Live Activity shim was written to the wrong place and built once per APP instead of
+  once per ARCHITECTURE — so a DEVICE build linked the simulator's `x86_64` archive into an `arm64` app.**
+  Two bugs in one line of the `buildTransitive` targets, both invisible until an actual device build:
+  - The path used `IntermediateOutputPath`, which is **not yet defined** where a consumer imports this file
+    (the SDK targets that define it are imported after the project body). It was empty, so the shim landed
+    in the consumer's project ROOT as `./shenora-liveactivity/` rather than under `obj/`.
+  - With no RID in the path, one architecture's `.a` satisfied another's incremental check — the build
+    logged *"Skipping target ShenoraBuildLiveActivityShim because all output files are up-to-date"* and
+    linked the wrong slice.
+
+  ⚠ **The symptom is a decoy**: `Undefined symbols for architecture arm64: _shenora_activity_end …` is
+  character-for-character the 0.9.0 packaging defect that was fixed by building the shim unconditionally, so
+  it invites re-fixing something that is already correct. It is not that — the shim target is right and
+  simply never ran. **If you hit this, delete any `shenora-liveactivity/` folder in your project root**; it
+  is litter from the old path and nothing reads it any more.
+
+- **Safe-area insets are now re-read when the device ROTATES.** Rotation moves an inset to a different
+  EDGE rather than resizing it — a cutout that is `top` in portrait becomes `left` or `right` in landscape
+  — so a shell that reads once publishes the wrong SHAPE for the rest of the session and the page reserves
+  a strip along the top while the notch is down the side. `MobileSafeArea` now re-reads on MAUI's
+  `SizeChanged` and again across the rotation animation (the size change is reported when the animation
+  BEGINS, and iOS still reports the old orientation's insets at that moment).
+  - ⚠ **iOS was affected worse than the symptom suggested: it had never published a real inset at all.**
+    Its single read happened before layout and returned zeros, which are correctly declined in favour of
+    `SafeAreaOptions.Default` — so an iOS app was laying out against its own default guess in every
+    orientation. Android was already correct. **If you set a `Default` that looked right, this is the fix
+    that makes the real numbers arrive.**
+  - The shell now logs its measured insets when they change, so the capability can be observed from the
+    host rather than inferred from what the page ended up with.
+
+- **`Shenora.Android` now repairs a MAUI defect that broke RELOADING any hash-routed page.** A top-level
+  navigation to `https://host/#/library` reached MAUI's request→asset mapping with the fragment still
+  attached; it strips a query string and not a fragment, so it looked for an asset literally named
+  `#/library`, answered 404 with no body and no MIME type, and Chromium turned that into
+  `net::ERR_INVALID_RESPONSE` — the webview's error page instead of the app. **An adopting app writes
+  nothing**: `MobileWebViewInterceptor` answers the request with `HybridRoot/DefaultFile`, the same bytes
+  the platform serves for the fragment-free URL, so the page boots exactly as it does on a first load and
+  its router reads the fragment off `location` as usual.
+  - It runs **after** the app's own middleware (an app that serves its own document is untouched) and
+    **also when no middleware is registered at all** — the defect is the platform's, and it reproduces with
+    the kit entirely absent.
+  - It **declines rather than 404s** when the bundle cannot be read, so an app that serves its document
+    some other way is left exactly as it was.
+  - ⚠ **Android only, and iOS is deliberately NOT repaired.** iOS has the same trigger and different
+    machinery: the reload simply never produces a second document, and WKWebView keeps the previous page on
+    screen — so the failure is invisible in a screenshot. Applying this repair there was measured to make it
+    worse, so nothing speculative ships; the mobile sample measures it instead.
+  - Reported by the first adopter, who also did the attribution that cleared the kit: an A/B on one binary
+    showed the failure with the interceptor absent entirely, and a fragment/query comparison isolated the
+    trigger to a single character.
 
 ### Breaking
 
@@ -462,76 +529,6 @@ at the first list and missed five more breaking changes.
     an adopter copying a module string out of a recipe gets a runtime `UNKNOWN_MODULE` from two halves
     that both compile.
 
-### Fixed
-
-- 🔴 **`ServiceProvider.Dispose()` threw on any app holding a `MissionScheduler` — and D64 was about to make
-  that every app.** Microsoft DI's SYNCHRONOUS dispose refuses a captured singleton that implements only
-  `IAsyncDisposable`, and the scheduler was exactly that shape, so the documented
-  `using var app = builder.Build(); app.Run();` shutdown threw `InvalidOperationException` once anything had
-  resolved `IMissionScheduler`.
-  - ⚠ **This kit had already paid for this bug once**, in P5.5 H2, where `RenderSession`/`StreamingSession`
-    produced "a crash dialog on every clean quit with no way for a consumer to work around it". The hazard
-    was even documented on `ShenoraApplication.Dispose` — as advice to *prefer* `DisposeAsync`, which is not
-    protection once the KIT is the one registering the async-only singleton.
-  - **Fix:** a synchronous `Dispose()` that cancels queued missions and signals shutdown **without awaiting
-    in-flight bodies** — deliberately a weaker guarantee than `DisposeAsync`, which still awaits them.
-    Awaiting here would be a blocking wait on whatever thread disposes, routinely the UI thread.
-    **Prefer `await using var app = …` when a mission may be mid-write.**
-  - **Found by writing a tripwire for the new default**, not by the existing suite: 1226 tests passed
-    identically before and after the defaults landed, because every one of them either called `Use…`
-    explicitly or never asked for an engine. A default with no test is indistinguishable from no default.
-
-- 🔴 **`Shenora.iOS`: the Live Activity shim was written to the wrong place and built once per APP instead of
-  once per ARCHITECTURE — so a DEVICE build linked the simulator's `x86_64` archive into an `arm64` app.**
-  Two bugs in one line of the `buildTransitive` targets, both invisible until an actual device build:
-  - The path used `IntermediateOutputPath`, which is **not yet defined** where a consumer imports this file
-    (the SDK targets that define it are imported after the project body). It was empty, so the shim landed
-    in the consumer's project ROOT as `./shenora-liveactivity/` rather than under `obj/`.
-  - With no RID in the path, one architecture's `.a` satisfied another's incremental check — the build
-    logged *"Skipping target ShenoraBuildLiveActivityShim because all output files are up-to-date"* and
-    linked the wrong slice.
-
-  ⚠ **The symptom is a decoy**: `Undefined symbols for architecture arm64: _shenora_activity_end …` is
-  character-for-character the 0.9.0 packaging defect that was fixed by building the shim unconditionally, so
-  it invites re-fixing something that is already correct. It is not that — the shim target is right and
-  simply never ran. **If you hit this, delete any `shenora-liveactivity/` folder in your project root**; it
-  is litter from the old path and nothing reads it any more.
-
-- **Safe-area insets are now re-read when the device ROTATES.** Rotation moves an inset to a different
-  EDGE rather than resizing it — a cutout that is `top` in portrait becomes `left` or `right` in landscape
-  — so a shell that reads once publishes the wrong SHAPE for the rest of the session and the page reserves
-  a strip along the top while the notch is down the side. `MobileSafeArea` now re-reads on MAUI's
-  `SizeChanged` and again across the rotation animation (the size change is reported when the animation
-  BEGINS, and iOS still reports the old orientation's insets at that moment).
-  - ⚠ **iOS was affected worse than the symptom suggested: it had never published a real inset at all.**
-    Its single read happened before layout and returned zeros, which are correctly declined in favour of
-    `SafeAreaOptions.Default` — so an iOS app was laying out against its own default guess in every
-    orientation. Android was already correct. **If you set a `Default` that looked right, this is the fix
-    that makes the real numbers arrive.**
-  - The shell now logs its measured insets when they change, so the capability can be observed from the
-    host rather than inferred from what the page ended up with.
-
-- **`Shenora.Android` now repairs a MAUI defect that broke RELOADING any hash-routed page.** A top-level
-  navigation to `https://host/#/library` reached MAUI's request→asset mapping with the fragment still
-  attached; it strips a query string and not a fragment, so it looked for an asset literally named
-  `#/library`, answered 404 with no body and no MIME type, and Chromium turned that into
-  `net::ERR_INVALID_RESPONSE` — the webview's error page instead of the app. **An adopting app writes
-  nothing**: `MobileWebViewInterceptor` answers the request with `HybridRoot/DefaultFile`, the same bytes
-  the platform serves for the fragment-free URL, so the page boots exactly as it does on a first load and
-  its router reads the fragment off `location` as usual.
-  - It runs **after** the app's own middleware (an app that serves its own document is untouched) and
-    **also when no middleware is registered at all** — the defect is the platform's, and it reproduces with
-    the kit entirely absent.
-  - It **declines rather than 404s** when the bundle cannot be read, so an app that serves its document
-    some other way is left exactly as it was.
-  - ⚠ **Android only, and iOS is deliberately NOT repaired.** iOS has the same trigger and different
-    machinery: the reload simply never produces a second document, and WKWebView keeps the previous page on
-    screen — so the failure is invisible in a screenshot. Applying this repair there was measured to make it
-    worse, so nothing speculative ships; the mobile sample measures it instead.
-  - Reported by the first adopter, who also did the attribution that cleared the kit: an A/B on one binary
-    showed the failure with the interceptor absent entirely, and a fragment/query comparison isolated the
-    trigger to a single character.
-
 ### Added
 
 - **`UseMissions`, `UseFileSystem` and `UseMediaPlayer` gain an `(options, services)` overload — configure
@@ -839,6 +836,32 @@ at the first list and missed five more breaking changes.
   - **What the unit tests prove is the BYTES** — box order, frames recovered byte-identically *through* the
     sample table the way a player addresses them, sync tables, composition tables. They cannot prove
     PLAYBACK on a real decoder; that needs a device and is tracked as open.
+
+- 🔴 **`@shenora/cli` — a SECOND npm package, and the `shenora` binary (D67).** Take a built app onto a
+  simulator or a real iPhone with **no Xcode project of your own**, in the shape `cap`/`electron` adopters
+  already expect. `npm i -D @shenora/cli`, then `shenora init` · `copy`/`sync` ·
+  `ios doctor|devices|simulators|deploy|log|shot`. Configuration is `shenora.deploy.json`, searched upward
+  from the cwd so a monorepo runs it from anywhere.
+  - **It is a `devDependency` and ships inside NOTHING you deploy**, which is why it does not contradict
+    D53/D55's "a capability gets a folder, never a package": that rule governs what an adopter's app
+    carries at RUN TIME. It also cannot live inside `@shenora/react` — that package is browser code headed
+    for a bundler, and this one is `node:child_process` + `node:fs`.
+  - **Every check in it was earned on real hardware.** A piped command reports `tail`'s exit status, so
+    without `set -o pipefail` a REJECTED install reports success and the tool cheerfully announces the app
+    is running; app extensions are verified BEFORE install, because an extension is provisioned separately
+    and one that cannot launch installs perfectly happily and then does nothing — **a simulator cannot
+    catch that, it does not enforce signing**; two connected phones is an error rather than a guess; the
+    log filters before it tails, since a process-wide predicate is ~99 % platform chatter.
+  - ⚠ **The config describes your PROJECT; the command line describes your MACHINE.** Anything after `--`
+    is passed to `dotnet build` — the case that forced it is a workload refusing the installed Xcode
+    (`-p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly`). It is deliberately not a config field: a
+    committed override silences that mismatch for everyone who clones the repo.
+  - **Not here:** `build` (a distributable — use `dotnet publish` for now) and Android, where `adb`
+    already does most of it. `cap add/open/ls/migrate` have no counterpart by design; they manage a native
+    project you edit, and there isn't one. Versioned in lockstep like every other package.
+  - Verified end to end on a real Mac (2026-08-08): build → install → launch on the simulator, screenshot
+    through `ios shot`. **The `--device` path shares this code but has not yet been driven through the CLI
+    with a phone attached** — it is proven only via `devtools/dev.mjs mac`.
 
 ## 0.10.0 — 2026-08-05
 
