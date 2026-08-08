@@ -120,6 +120,20 @@ public static class MediaCapabilityExtensions
     /// can encode nothing cannot repair a soundtrack, and a device that encodes AAC but cannot decode AC-3
     /// cannot either. The answer is per CODEC, which is why it is a method and not a flag.
     /// </para>
+    /// <para>
+    /// 🔴 <b>This answers about the DEVICE, not about the kit — and the two differ on purpose.</b> A
+    /// <c>true</c> here does NOT promise that <see cref="IMediaAudioConversion.CanConvert"/> will accept
+    /// the same codec: the kit's converters implement only the inputs the web actually needs, so on iOS
+    /// today <c>flac</c> and <c>alac</c> answer true here and are declined there, and <c>aac</c> is
+    /// declined DELIBERATELY because MP4 carries it already and converting would be a lossy round-trip
+    /// for nothing.
+    /// <b>To decide whether a file can be repaired, ask <see cref="IMediaAudioConversion.CanConvert"/></b>
+    /// — that one starts a real codec, so it cannot drift from what happens. Use this one to report what
+    /// the hardware is capable of, which is a different and genuinely useful question (D42: the kit ships
+    /// the QUESTION, never a codec list).
+    /// ⚠ The sample's own cross-check asserted these two must agree and flagged the design as a defect;
+    /// only the <c>CanConvert &amp;&amp; !CanRepair</c> direction is actually broken.
+    /// </para>
     /// </summary>
     public static bool CanRepair(this IMediaCapability device, MediaStreamKind kind, string codec)
     {

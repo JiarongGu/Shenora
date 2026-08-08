@@ -255,12 +255,28 @@ internal static class CodecProbe
             // disagreement here means the planner would promise work the engine then declines.
             if (conversion is not null)
             {
-                foreach (var codec in new[] { "ac3", "eac3", "dts", "vorbis", "mp3", "flac" })
+                // ⚠ `aac` and `alac` are in this list ON PURPOSE — they are the cases that prove the check
+                // below is not crying wolf. See the direction rule in the loop.
+                foreach (var codec in new[] { "ac3", "eac3", "dts", "vorbis", "mp3", "flac", "alac", "aac" })
                 {
                     var accepts = conversion.CanConvert(codec);
                     var repairable = device.CanRepairAudio(codec);
-                    var agree = accepts == repairable ? "" : "  ⚠ DISAGREES with the capability";
-                    log($"[CODEC] convert {codec}: accepted={accepts} repairable={repairable}{agree}");
+
+                    // 🔴 ONE DIRECTION IS A DEFECT AND THE OTHER IS THE DESIGN, and asserting equality
+                    // here was wrong — it fired on iOS for `flac` and would have fired for `aac` too.
+                    //
+                    // accepts && !repairable  → BROKEN. The converter claims a codec the DEVICE cannot
+                    //   decode, so the planner would start work that cannot finish.
+                    // !accepts && repairable  → EXPECTED. The device could, and the kit's converter
+                    //   declines anyway: either it never needs to (`aac` is excluded deliberately —
+                    //   MP4 carries it already, so converting is a lossy round-trip for nothing) or it
+                    //   simply implements no input for that codec (`flac`, `alac` on iOS today).
+                    //   `IMediaCapability` answers about the DEVICE; `CanConvert` answers about the KIT.
+                    //   They are different questions and the kit's answer is deliberately the narrower.
+                    var verdict = accepts && !repairable
+                        ? "  ⚠ BROKEN — the converter accepts a codec this device cannot decode"
+                        : "";
+                    log($"[CODEC] convert {codec}: accepted={accepts} repairable={repairable}{verdict}");
                 }
             }
             else
