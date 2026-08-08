@@ -300,33 +300,34 @@ transport, or building the P6 adoption shims.
   `READY`→`Open`, `ProcessFailed`→`Close`) and `PostWebMessageAsString`, and calls
   `TryDrainBatch` on its own schedule. A second, non-WinForms base gets every one of the pump's
   already-paid-for bug fixes (P5.5 H2/H3) by construction instead of re-earning them.
-- **`Cancel` refuses an operation that never opted into `Cancellable` — flipping its status while
-  the body runs on would be a lie to the UI.** `OperationRegistry.Start` allocates a
-  `CancellationTokenSource` for every operation regardless of `Cancellable`, so a token is not what a
-  non-cancellable operation lacks; what the flag actually gates is whether `Cancel()` is allowed to
-  signal it at all. Honoring a cancel on an operation that opted out would report `Cancelled` to
-  every subscriber while the background body kept running to its own `Complete()`/`Fail()` —
-  observable state that no longer describes reality. Same honest-refusal shape as an unknown or
-  already-terminal id: `Cancel` returns `false` and changes nothing, rather than pretending to
-  succeed. **This refusal is ONLY on the public, by-id `IOperationRegistry.Cancel(string id)`** — the
-  route an external CLIENT's `CANCEL` request goes through, where the permission question is real.
-  `IOperation.Cancel()` (the handle held by the operation's own owner, and what `Run`'s catch calls
-  when the body itself ends in `OperationCanceledException`) is deliberately unconditional: the work
-  is over, and refusing to RECORD that — regardless of `Cancellable` — is data loss, not honesty. A
-  whole-branch review found this conflated: `Run`'s catch used to call through the by-id route,
-  refusing on the DEFAULT `Cancellable = false` and stranding the entry `Running` forever (no
-  terminal transition, never evictable by `ClearFinished`, its CTS never disposed) — reachable any
-  time a body's cancellation isn't a client's `CANCEL` request at all (an `HttpClient` timeout, a
-  linked shutdown token: `TaskCanceledException` derives from `OperationCanceledException`).
+- **`Cancel` refuses an unknown or already-finished id, rather than pretending to succeed.**
+  `IIpcRequestTracker.Cancel(requestId)` signals the request's token FIRST — so a body observing it
+  unwinds instead of racing a finished-then-cancelled flip — then records `Cancelled`, and returns
+  whether it actually transitioned. There is no opt-in: **every request is cancellable**, because the
+  scope's token is the one the whole pipeline runs under.
+  ⚠ **There USED to be a `Cancellable` flag that `Cancel` refused without**, and the reasoning behind it
+  is worth knowing only as the shape of a bug: a by-id cancel that honoured the flag stranded entries
+  `Running` forever whenever a body's cancellation was not a client's `CANCEL` at all (an `HttpClient`
+  timeout, a linked shutdown token — `TaskCanceledException` derives from `OperationCanceledException`).
+  D66 removed the flag along with the whole second entity. **The surviving rule is the general one: a
+  refusal must be honest, and a terminal transition must never be refused as a permission question.**
 - **`GetAll`'s `scope` filter follows the SAME rule as `IEventBus`, not strict equality** — no
-  requested scope matches every scope, AND an operation started with no `Scope` of its own (a global
-  operation) matches ANY requested scope. Both event buses already apply exactly this (a scope-less
-  event still reaches scoped subscribers), so a `GetAll` that instead required strict equality
-  disagreed with the deltas a scoped store folds afterward: it never SAW an unscoped operation in a
-  scoped `LIST` snapshot but DID receive its `OPERATION_UPDATED` deltas, so a scoped store's contents
-  silently depended on whether it mounted before or after the work started.
-- **Every non-terminal state must have a sanctioned exit to a terminal one — this generalises past
-  operations, and it is enforced by a test, not by reviewer attention** (§5A.1, the D23 amendment
+  requested scope matches every scope, AND a request with no `Scope` of its own (a global one) matches
+  ANY requested scope. Both event buses already apply exactly this (a scope-less event still reaches
+  scoped subscribers), so a `GetAll` that instead required strict equality would disagree with the
+  deltas a scoped store folds afterward: it would never SEE an unscoped request in a scoped `LIST`
+  snapshot but WOULD receive its `REQUEST_UPDATED` deltas, so a scoped store's contents would silently
+  depend on whether it mounted before or after the work started.
+- <!-- doc-drift:history --> **Every non-terminal state must have a sanctioned exit to a terminal one —
+  the REUSABLE half, and it is enforced by a test rather than by reviewer attention.**
+  🔴 **READ THE NAMES BELOW AS HISTORY.** Everything from here to the end of this bullet describes the
+  OPERATIONS REGISTRY, which D66 deleted: `IOperationRegistry`, `OperationStatus`, `Waiting`,
+  `Dismiss`, `RegisterWaiting`, `ResumePayload`. Today there is one non-terminal state (`Running`) and
+  three terminals, so the invariant is satisfied by construction and the sweep is trivial. **What still
+  applies is the TEST SHAPE** — enumerate the LIVE enum by reflection, require a registered exit per
+  non-terminal value, and assert `ContainsKey` by name so a new status with no exit fails LOUDLY
+  instead of silently checking nothing. Any future state machine here (a session lifecycle, a
+  connection state) should get that shape. The incident stack that earned it follows (§5A.1, the D23 amendment
   before 0.2.0 merged). The bug that named the rule: a crash-checkpoint offer (its own status,
   `Interrupted`, at the time — since collapsed into `OperationStatus.Waiting`, see the amendment
   below) could only be removed by *resuming* it — `Validate` hard-coded `Status == Running` for every

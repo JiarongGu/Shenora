@@ -117,8 +117,8 @@ public sealed class ShenoraApplicationBuilder
         this.UseMissions();
         this.UseFileSystem();
         this.UseMediaPlayer();
-        // The IPC core and the operations feature. Both are portable — the dispatcher is a core, and
-        // `OperationRegistry` needs only `IEventBus`, registered a few lines up — so neither needs a
+        // The IPC core and request tracking. Both are portable — the dispatcher is a core, and the
+        // request tracker needs only `IEventBus`, registered a few lines up — so neither needs a
         // platform and neither waits to be asked. ⚠ Anything that DOES need a platform is registered by
         // that platform's shell instead (`UseWindows`/`UseAndroid`/`UseIOS`), because only a shell knows
         // whether it can satisfy it; a platform that cannot registers nothing and the page learns that

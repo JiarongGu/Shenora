@@ -351,18 +351,25 @@ until the page is listening.
   event vocabulary isn't knowable up front — plug-in-contributed types, a diagnostics tap, the legacy
   firehose above.
 - **Long-running work** (a ten-minute deploy, a render, a model download — the case "always produces
-  a response" leaves undefined, 0.2.0/D23): a route that starts one calls `context.Run(new
-  OperationOptions { Kind = "DEPLOY", Cancellable = true }, async (op, ct) => { … op.Report(new
-  OperationProgress(40, 100, "percent")); … })` — `Value`/`Total`/`Unit` in the APP's own terms (bytes
-  transferred against a known total, items against a known total, an absolute count with no known
-  total, or a genuine percent — the kit never assumes which), passed through unchanged (no clamp, no
-  validation) — and returns `new { operationId = … }` immediately — that IS the response for the
-  long case. `context.Start` is the lower-level primitive if your lifecycle doesn't fit one
-  background body (a start outside the block, several failure branches, a resumable session).
-  Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
-  you do) and it ships `OperationsModule` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`
-  under module `SHENORA.OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
-  no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraRequests()`
+  a response" leaves undefined, 0.2.0/D23): **you declare nothing.** Every request is tracked from the
+  moment it is dispatched (D66), so a slow route is just a route:
+  ```csharp
+  protected override async Task<object?> RouteMessageAsync(
+      IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
+  {
+      context.Report(new IpcProgress(40, 100, "percent"));   // as often as you like
+      await DoTheLongThingAsync(cancellationToken);           // ct is cancellable by the page
+      return new { ok = true };                               // the ordinary response
+  }
+  ```
+  `Value`/`Total`/`Unit` are in the APP's own terms (bytes against a known total, items, an absolute
+  count with no denominator, or a genuine percent — the kit never assumes which) and are passed through
+  unchanged: no clamp, no validation.
+  **Nothing to register and nothing to enable** — request tracking is part of the application
+  (`Build()` sets it up), and `builder.UseRequests(x => …)` only CONFIGURES it. It ships
+  `IpcRequestsModule` (`LIST`/`CANCEL`/`CLEAR_FINISHED` under module `SHENORA.REQUESTS`), so there is no
+  hand-rolled `…PROGRESS`/`…DONE` event pair per feature and no per-app re-agreement of what "cancel
+  this" means. Client side, `useShenoraRequests()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
   progress strip that mounts mid-run isn't empty), folds `REQUEST_UPDATED` by id afterward, and
   folds `REQUEST_REMOVED { requestIds }` by deleting those ids — the one authoritative signal for
