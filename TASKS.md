@@ -258,10 +258,9 @@ calls `UseMediaPlayer` for every app. The placement objection was answered rathe
 module name stays configurable through `MediaPlayerOptions.Module`, so an app that already owns a
 `MEDIA` module renames the kit's instead of colliding with it.
 
-- [ ] ⚠ **The cheaper half is still open and still worth costing:** `OpenAsync` has no timeout, so
-  "nobody wired the route" and "the file is slow to open" remain the same silence. A defaulted
-  `MediaPlayerOptions.OpenTimeout` would turn that whole failure class into a `MediaPlayerException`
-  that names the missing route. Cheap, and it is the diagnostic the original hang needed.
+**✅ AND THE DIAGNOSTIC HALF IS IN TOO (2026-08-08):** `MediaPlayerOptions.OpenTimeout` (30 s) turns
+"nobody wired the route" from an await that never returns into a `MediaPlayerException` naming
+`PLAYER_REPORT`, the module, and the knob. A caller's own cancellation still reads as cancellation.
 
 ### The rest of the review — fixed, or measured and left honest (2026-08-07)
 

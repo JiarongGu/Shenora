@@ -60,6 +60,27 @@ public sealed class MediaPlayerOptions
     public MediaPlaybackPolicy? Policy { get; set; }
 
     /// <summary>
+    /// How long <see cref="MediaPlayer.OpenAsync"/> waits for the page's first report before failing with
+    /// a <see cref="MediaPlayerException"/> that NAMES the likely cause. 30 s by default;
+    /// <see cref="TimeSpan.Zero"/> waits forever.
+    /// <para>
+    /// 🔴 <b>This exists to make one specific silence attributable.</b> <c>OpenAsync</c> completes on the
+    /// page's first non-<c>Opening</c> report and on nothing else, so an app whose <c>PLAYER_REPORT</c>
+    /// route is missing or mis-named gets an await that NEVER RETURNS — no exception, no log line, and an
+    /// element that is visibly playing. "Nobody wired the route" and "the file is slow to open" were the
+    /// same silence, and only one of them is a bug. A bounded wait turns the first into a message that
+    /// says what to check.
+    /// </para>
+    /// <para>
+    /// ⚠ The timeout is not a correctness boundary and must not be read as one: a genuinely slow source
+    /// on a cold network can exceed any default. Raise it for those, or set
+    /// <see cref="TimeSpan.Zero"/> and accept the original behaviour — the failure it removes is a WIRING
+    /// mistake, which is a build-time fact rather than a runtime one.
+    /// </para>
+    /// </summary>
+    public TimeSpan OpenTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Turn a source and its plan into the URL the element loads. Required.
     /// <para>
     /// <b>This is the join the framework was missing, and the reason this type exists (D58).</b> A plan of
@@ -260,8 +281,17 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
 
         Send(MediaPlayerEvents.Load, new { uri, startAt = source.StartAt.TotalSeconds });
 
-        // The PAGE decides when it is ready; this waits for its report rather than assuming.
-        using var registration = cancellationToken.Register(() => opening.TrySetCanceled(cancellationToken));
+        // The PAGE decides when it is ready; this waits for its report rather than assuming — but BOUNDED,
+        // so a missing PLAYER_REPORT route fails with a message instead of hanging forever (OpenTimeout).
+        using var expiry = _options.OpenTimeout > TimeSpan.Zero
+            ? new CancellationTokenSource(_options.OpenTimeout)
+            : null;
+        using var linked = expiry is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
+        var waitToken = linked?.Token ?? cancellationToken;
+
+        using var registration = waitToken.Register(() => opening.TrySetCanceled(waitToken));
         try
         {
             await opening.Task.ConfigureAwait(false);
@@ -280,6 +310,20 @@ public sealed class MediaPlayer : IMediaPlayer, IDisposable
                 Send(MediaPlayerEvents.Unload);
                 lock (_gate) _status = new MediaPlayerStatus { State = MediaPlayerState.Empty, Rate = _rate };
                 Raise();
+            }
+
+            // ⚠ The TIMEOUT is a different outcome from the caller cancelling, and it must not be reported
+            // as one: a cancel is the app's own decision and needs no explanation, while this is almost
+            // always a missing route. Checked in this order because a caller cancelling DURING the timeout
+            // window is still a cancel — the caller's intent wins.
+            if (expiry is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
+            {
+                Fail("The page never reported on the media source.");
+                throw new MediaPlayerException(
+                    $"The page did not report on the media source within {_options.OpenTimeout.TotalSeconds:0.#}s. " +
+                    $"The usual cause is that nothing routes the page's '{MediaPlayerModule.ReportType}' message on " +
+                    $"module '{_options.Module}' to MediaPlayer.Report — see docs/ADOPTION.md. " +
+                    "Raise MediaPlayerOptions.OpenTimeout if the source is genuinely this slow.");
             }
             throw;
         }

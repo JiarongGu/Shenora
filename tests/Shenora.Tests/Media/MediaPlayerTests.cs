@@ -50,6 +50,74 @@ public class MediaPlayerTests
         Assert.Equal("app://convert?src=C:/media/film.mkv", bus.LoadedUri);
     }
 
+    /// <summary>
+    /// 🔴 The failure this bound exists for: nothing ever reports, because the app's `PLAYER_REPORT` route
+    /// is missing. Before `OpenTimeout` that awaited FOREVER — no exception, no log line, and an element
+    /// visibly playing, so the symptom read as "my C# await hangs while the video works". The test asserts
+    /// the MESSAGE, not just that it threw: a timeout that says "timed out" would leave the adopter exactly
+    /// where they started, and naming the route is the entire value.
+    /// </summary>
+    [Fact]
+    public async Task An_open_that_nothing_reports_on_FAILS_naming_the_missing_route()
+    {
+        var bus = new RecordingBus();
+        using var player = new MediaPlayer(bus, new MediaPlayerOptions
+        {
+            OpenTimeout = TimeSpan.FromMilliseconds(150),
+        });
+
+        var error = await Assert.ThrowsAsync<MediaPlayerException>(
+            () => player.OpenAsync(new MediaSource { Uri = "C:/media/film.mp4" }));
+
+        Assert.Contains("PLAYER_REPORT", error.Message);
+        Assert.Contains("SHENORA.MEDIA", error.Message);       // the module to route it on
+        Assert.Contains("OpenTimeout", error.Message);          // and the knob, if it is genuinely slow
+        Assert.Equal(MediaPlayerState.Failed, player.Status.State);
+    }
+
+    /// <summary>
+    /// The bound must not fire on the ordinary path — a report arriving before it expires wins. Otherwise
+    /// the fix would trade a silent hang for a spurious failure, which is worse: one is a wiring mistake
+    /// the adopter can find, the other is the kit lying about their working code.
+    /// </summary>
+    [Fact]
+    public async Task A_source_that_reports_in_time_is_unaffected_by_the_bound()
+    {
+        var bus = new RecordingBus();
+        using var player = new MediaPlayer(bus, new MediaPlayerOptions
+        {
+            OpenTimeout = TimeSpan.FromSeconds(30),
+        });
+
+        var open = player.OpenAsync(new MediaSource { Uri = "C:/media/film.mp4" });
+        await bus.LoadedAsync();
+        player.Report(new MediaPlayerStatus { State = MediaPlayerState.Paused });
+
+        await open;   // no throw
+        Assert.Equal(MediaPlayerState.Paused, player.Status.State);
+    }
+
+    /// <summary>
+    /// The caller's own cancellation is NOT a timeout and must not be dressed up as one: it is the app's
+    /// decision and needs no explanation. Checked because both paths land in the same `catch`.
+    /// </summary>
+    [Fact]
+    public async Task A_caller_cancelling_still_surfaces_as_cancellation_not_as_the_timeout_message()
+    {
+        var bus = new RecordingBus();
+        using var player = new MediaPlayer(bus, new MediaPlayerOptions
+        {
+            OpenTimeout = TimeSpan.FromSeconds(30),
+        });
+        using var cts = new CancellationTokenSource();
+
+        var open = player.OpenAsync(new MediaSource { Uri = "C:/media/film.mp4" }, cts.Token);
+        await bus.LoadedAsync();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => open);
+    }
+
     [Fact]
     public async Task With_no_probe_configured_the_plan_is_null_and_the_source_plays_directly()
     {

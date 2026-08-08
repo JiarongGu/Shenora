@@ -1082,6 +1082,7 @@ sealed class Shenora.Modules.Media.MediaPlayerOptions
   public System.Collections.Generic.IReadOnlyList<string> AllowedRoots { get; set; }
   public System.Func<string, Shenora.Modules.Media.MediaPlaybackPlan, string>? ResolveUri { get; set; }
   public System.Func<string, System.Threading.CancellationToken, System.Threading.Tasks.Task<Shenora.Modules.Media.MediaProbeResult>>? Probe { get; set; }
+  public System.TimeSpan OpenTimeout { get; set; }
   public string Module { get; init; }
   public string? CacheRoot { get; set; }
 enum Shenora.Modules.Media.MediaPlayerState (int)

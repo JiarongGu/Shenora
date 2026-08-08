@@ -552,6 +552,17 @@ at the first list and missed five more breaking changes.
     enumerating the service also finds the kit's default shadowed behind yours. That single-registration
     property is the only order-sensitive part, and it has its own assertion.
   - Purely additive — the existing options-only overloads delegate to these and behave identically.
+- **`MediaPlayerOptions.OpenTimeout` (30 s) — `OpenAsync` no longer hangs forever when nothing reports.**
+  It completes on the page's first non-`Opening` report and on nothing else, so an app whose
+  `PLAYER_REPORT` route is missing or mis-named got an await that never returned: no exception, no log
+  line, and an element visibly playing. The symptom read as *"my C# await hangs while the video works"*.
+  - The failure now names its own likely cause — the message cites `PLAYER_REPORT`, the module to route
+    it on, and the knob to raise if the source really is that slow. **A timeout that only said "timed
+    out" would leave an adopter exactly where they started**, so the test asserts the MESSAGE, not just
+    that it threw.
+  - ⚠ A caller's own cancellation still surfaces as cancellation, not as the timeout message — both land
+    in the same `catch`, and dressing up a deliberate cancel as a wiring fault would be its own lie.
+  - `TimeSpan.Zero` restores the unbounded wait.
 - 🔴 **`app.UseFiles(…)`, `app.UseMediaPlayer()`, `app.MapModule<T>()` and `app.Use(…)` — the pipeline
   phase moves onto the built application (D64).** This is ASP.NET's minimal-hosting shape completed:
   `CreateBuilder` brings the framework, `Build()` returns the app, and the app declares its pipeline.
