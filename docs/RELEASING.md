@@ -77,6 +77,15 @@ burns no version:
    perfect. Everything protecting the artifact still runs (dotnet build + tests, npm build + tests,
    typechecks, `check-sensitive --tree`, `doc-drift` — the README it checks ships in every nupkg —
    and `doctor`).
+2b. **Account for every REMOVAL**: `node devtools/dev.mjs retired-audit <previous tag>` — which public
+   types left the shipped surface with no `retired-names.txt` entry. **`verify` cannot answer this**:
+   `doc-drift` and `stale-scan` both READ that file, so a name that never reached it is invisible to
+   both, and the compiler is no help either because every remaining call site compiles.
+   Measured 2026-08-08 against v0.10.0: 19 types had left and SIX were unregistered — one whole rename
+   family (`*Facade` → `*Module`) plus D66's deletions. Each finding needs an entry saying what replaced
+   it, then a `stale-scan` pass, and a `### Breaking` line with its migration if an adopter could have
+   named it. **A break is cheap here (D47) but never silent.** Not folded into `verify` because it needs
+   tags and CI clones are not always deep.
 3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + the npm tarball
    (npm `package.json` version and the README headline synced from `VersionPrefix`), each with its
    sha256 printed.

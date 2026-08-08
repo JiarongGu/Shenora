@@ -1013,6 +1013,13 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'stale-scan.mjs'), ...args]);
     break;
 
+  // retired-audit [tag] — which public types left the SHIPPED surface without a retired-names entry.
+  // The question BEFORE stale-scan's: not "is this name still described as current?" but "is this
+  // removal recorded at all?" Release step, not part of verify — it needs tags.
+  case 'retired-audit':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'retired-audit.mjs'), ...args]);
+    break;
+
   case 'install-hooks':
     // Point git at the tracked hooks dir so the sensitive-info pre-commit guard runs (a clone only
     // needs this once — core.hooksPath is local config, the hook script itself is versioned).

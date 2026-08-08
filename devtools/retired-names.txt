@@ -157,6 +157,12 @@ UseMobile                # -> UseAndroid / UseIOS — a category name serving tw
 BaseFacade               # -> ModuleBase
 IModuleFacade            # -> IIpcModule
 AddModuleFacade          # -> AddIpcModule
+# The concrete facades renamed with them. Found 2026-08-08 by diffing the SHIPPED v0.10.0 API baselines
+# against HEAD: 19 public types had left the surface and 6 were unregistered — all of them this family.
+# A rename sweep that misses the family it is renaming is the easy mistake, because each site compiles.
+DropZoneFacade           # -> DropZoneModule
+FileDialogFacade         # -> FileDialogModule
+WindowCommandFacade      # -> WindowCommandModule
 
 # --- 2026-08-07, D65: the main package is `Shenora`, and IPC folded into it ------------------------
 # ⚠ `Shenora.Core` WAS listed here for one day and has been REMOVED, which is the rule working rather
@@ -200,7 +206,11 @@ IOperationRegistry     # -> IIpcRequestTracker
 OperationRegistry      # -> IpcRequestTracker
 OperationRegistryOptions # -> IpcRequestTrackerOptions
 OperationsModule       # -> IpcRequestsModule
+OperationsFacade       # -> the same module, under its pre-D65 name
 AddShenoraOperations   # -> AddShenoraRequests
+OperationServiceCollectionExtensions # -> IpcRequestExtensions
+IOperation             # -> nothing. The HANDLE went with the entity: a request needs no second
+                       #    identity to report against, so IModuleContext.Report replaced it.
 OperationStatus        # -> IpcRequestState
 OperationInfo          # -> IpcRequestStatus
 OperationProgress      # -> IpcProgress
