@@ -109,36 +109,20 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 
 **🔴 WHAT REMAINS OF D65 — the two facades that still need a platform to satisfy them:**
 
-- [x] ~~`FileDialogFacade`'s default wiring had no test~~ — DONE.
-  `UseWindows_registers_the_dialog_ROUTE_so_a_page_can_reach_it` drives a fake `IFileDialogs` end to end
-  (registration → mapping → facade → service), sabotage-verified against the shell's registration line.
-- [ ] 🔴 **The iOS SIMULATOR build fails to LINK on the Mac, and it is not our code.**
-  `Undefined symbols for architecture x86_64: "_xamarin_gc_pump", referenced from xamarin_setup_impl() in
-  main.x86_64.o` — both of those are the iOS SDK's OWN generated `main.m` and its runtime library, so the
-  app's managed half compiled clean and the failure is inside `Microsoft.iOS.Sdk.net10.0_26.0/26.0.11017`
-  on an Intel Mac targeting `iossimulator-x64`. Nothing in the sample sets an interpreter or GC option
-  that would ask for it.
-  - **Next step is one command, and it needs the owner's nod because it changes that machine:**
-    `dotnet workload repair` (or reinstalling `maui-ios`) on the Mac. Do NOT start by editing the sample —
-    the managed build is already proven green.
-  - ⚠ **Unknown whether this predates 2026-08-08.** A `mac push` of an older commit would settle it in
-    ~30 s, since the failing build only took 28 s.
-- [ ] ⚠ **Then re-run the MAUI player probe on iOS**, blocked by the link failure above. It now resolves
-  `IosMediaPlayer` by name rather than `IMediaPlayer`, so a silent `PLAYER: absent` is the tell that the
-  registration did not take — and absent-by-design reads identically to quietly-wrong (D63).
-  - **Android is DONE and proven on hardware**: `AndroidMediaPlayer` (the platform's own
-    `android.media.MediaPlayer`, not ExoPlayer — D51 forbids shipping an engine) reported
-    `PLAYER: PASS — the host decoded a real file and advanced a real clock`, position `0.97s -> 2.48s`,
-    with `c2.android.aac.decoder` visible in logcat on the `shenora-a36` emulator. Windows landed the same
-    day. iOS is the only shell whose player has never been re-run since it moved onto `MediaPlayerBase`.
-  - **The LIBRARY half is already gated and green**: `Shenora.iOS` is in `Shenora.slnx`, so `dev.mjs
-    verify` compiles the `#if IOS` code on this Windows box — `maui-ios` is installed and only the final
-    link needs a Mac. ⚠ Worth knowing because it is easy to conclude otherwise: there is no
-    `Shenora.Mobile.csproj`: that folder is shared source compiled into `Shenora.Android`/`Shenora.iOS`
-    (D37), so looking for its project file suggests iOS is unbuildable here when `verify` builds it
-    every run.
-  - **The SAMPLE half genuinely cannot build here**: `Sample.Maui` sets `net10.0-ios` only under
-    `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch is unverified by construction.
+**✅ BOTH iOS ITEMS ARE CLOSED (2026-08-08) — the simulator links and the player passes.**
+
+`PLAYER: PASS — the host decoded a real file and advanced a real clock`, position `1.43s -> 2.94s`,
+on the iOS simulator with `IosMediaPlayer` on `MediaPlayerBase`. All three shells now have a proven
+player. `mac build` is green including the no-devkit link check.
+
+🔴 **The link failure was STALE `obj/` INTERMEDIATES, and `dotnet workload repair` was NOT the fix** —
+it was run first, changed nothing, and the identical error came back. `rm -rf obj bin` then building
+succeeded immediately. The full method record is in `.claude/knowledge/mobile-shells.md`; the short
+version is that the kit was innocent and so was the SDK.
+
+- **The SAMPLE half still cannot build on Windows**: `Sample.Maui` sets `net10.0-ios` only under
+  `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch is unverified here by
+  construction — it needs the Mac, which is why `mac build` exists.
 - [ ] **`OperationException` still carries the old word.** The last D66 leftover. It is the general IPC
   structured-error type, not part of the request subsystem — rename it with the next error-path pass, and
   note that it is wire-adjacent surface, so it belongs under `### Breaking` with its migration.

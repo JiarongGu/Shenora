@@ -183,6 +183,30 @@ Earned across the Android port and the iOS port (both 2026-08-02).
 
 ## Gotchas / traps
 
+- 🔴 **An iOS link error naming the SDK's OWN symbols usually means STALE `obj/`, not a broken SDK — and
+  `dotnet workload repair` is not the fix.** Measured 2026-08-08. The simulator build failed with
+  `Undefined symbols for architecture x86_64: "_xamarin_gc_pump", referenced from xamarin_setup_impl() in
+  main.x86_64.o`. Both names belong to the iOS SDK's own generated `main.m` and its runtime library, which
+  is exactly what makes it read as "their bug, not ours" — and the task list had recorded
+  `dotnet workload repair` as the next step for a day on that reading.
+  **`rm -rf obj bin` then rebuilding fixed it. Repair had already been run and changed nothing.**
+  - **Why it happens:** `main.m` is GENERATED into `obj/` and compiled to `main.x86_64.o`. Two iOS SDK
+    generations were installed side by side (`26.0.11017` and `26.5.10301`), and `xamarin_gc_pump` exists
+    only in 26.0's *debug* static lib — it is absent from both of 26.5's. So a `main.o` left over from an
+    earlier resolution keeps demanding a symbol the current one no longer supplies. **The iOS incremental
+    check does not cover the generated `main.m`.** This repo had already been bitten by the same class
+    once: a stale appex plist whose incremental check covered only the executable.
+  - **The elimination order that worked, and each step was cheap:** confirm the pack is not corrupt
+    (`lipo -info` → both slices x86_64; `nm -gU` → the symbol IS in 26.0's debug `.a`), then check the
+    OTHER installed generation (absent from both 26.5 libs → the symbol was removed, so a mixed
+    resolution explains everything), then look at the actual link line — `grep` the `-v diag` log for the
+    lines mentioning `main.x86_64.o` and count `libxamarin-dotnet.a` vs `libxamarin-dotnet-debug.a`.
+    **Neither appeared: no xamarin archive was on the link line at all**, which is what finally pointed
+    away from "wrong variant linked" and toward "these objects are not from this build".
+  - ⚠ **Do not start by editing the sample or the harness flags.** `MtouchLink=SdkOnly` was suspected and
+    cleared by one build without it; the managed half had been compiling clean throughout.
+  - **The generalisable tell:** when the undefined symbol is the TOOLCHAIN'S own and its managed half
+    builds, suspect your intermediates before their SDK. A clean build is 90 seconds and settles it.
 - **A device-log command must FILTER BEFORE IT TAILS.** Written down for Android (`logcat -t N`
   applies `-t` to the RAW buffer, so a filterspec after it prints nothing) — and then rebuilt from
   scratch in the iOS harness, where a process-wide predicate is ~99% WebKit lifecycle chatter and
