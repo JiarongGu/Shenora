@@ -2217,6 +2217,21 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
       than the answer: a `TASKS.md` entry demanding the opposite outlived the decision that killed it and
       was nearly executed on 2026-08-08. A task that changes public surface must cite its `D<n>`, and that
       entry must be read before the task is done.
+  - **A CORE module is CONFIGURED by the application's setup, never added to it** (owner, 2026-08-08:
+    *"more like a webapp config as .net … this entire framework cannot work without those core modules"*).
+    `Build()` performs the registration unconditionally, so exposing an "add" offers a choice that does not
+    exist. Request tracking's `IServiceCollection` registration is therefore `internal` and the app-facing
+    surface is `builder.UseRequests(x => …)`, beside `UseMissions`/`UseFileSystem`/`UseMediaPlayer`.
+    - **Each of those also takes an `(options, services)` overload** so one call CONFIGURES and SUBSTITUTES
+      (owner: *"the service should be override inside `useXX(s => {})` config instead"*). The guarantee is
+      that the app's registration wins; ⚠ ORDERING is NOT the mechanism — Microsoft DI resolves the LAST
+      descriptor, so an app wins from either side of a `TryAdd`. Running the callback first buys a SINGLE
+      registration, with no kit default left shadowed behind the app's. Measured by sabotage: moving the
+      callback to run last left every test green, which is how the first doc claim was caught being wrong.
+    - ⚠ **`AddShenoraFileDialogs` is the opposite answer to the same question**, and deciding them
+      separately is what produced two answers: it is SHELL wiring called from `Shenora.Windows` AND
+      `Shenora.Mobile`, so it stays PUBLIC (a `ProjectReference` grants no `internal` access) and a
+      configure callback would have no caller.
   - 🔴 **It fixes the two-phase call this repo apologises for.** `interceptor.UseMediaPlayer(services)`
     exists because the interceptor is created WITH the webview and cannot exist at registration time —
     which is a real constraint and exactly the split ASP.NET draws. But ASP.NET's second phase is

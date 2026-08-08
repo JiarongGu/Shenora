@@ -14,14 +14,17 @@ after they shipped.
 **Status: 0.10.0 is PUBLISHED (2026-08-05)** — nine NuGet packages + `@shenora/react`, all nine confirmed
 on the feed. It added three packages (`Shenora.IO`, `Shenora.IO.Compression`, `Shenora.Launcher`), the
 safe-area shell capability, and **five breaking changes**, each with its migration under `### Breaking`.
-`## Unreleased` carries the Android fragment-reload repair (2026-08-06). Release history and its incidents
-live in `CHANGELOG.md`; the current package set is the table at the top of `docs/DECISIONS.md`.
+🔴 **`## Unreleased` is LARGE and mostly BREAKING** — D64/D65/D66 all landed in it: the framework on by
+default, the three layers, operations merged into `IpcRequest`, request tracking moved to the dispatch
+boundary, the pipeline surface on `ShenoraApplication`, and the `Use`-versus-`Add` rule. Read
+`CHANGELOG.md`'s `### Breaking` before touching the surface; the current package set is the table at the
+top of `docs/DECISIONS.md` (0.10.0's nine is history — D53/D55 folded three of them).
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
-> SHIPPED is `CHANGELOG.md`. The entries below are honest about what is not done: one is blocked on
-> another team's SDK (the iOS simulator link failure), several are deliberately WAITING on an adopter's
-> harvest (D15 working as intended, not a stall), and one needs a physical device.
+> SHIPPED is `CHANGELOG.md`. The entries below are honest about what is not done: several are deliberately
+> WAITING on an adopter's harvest (D15 working as intended, not a stall), and two need a HUMAN with a
+> device — iOS background playback, and the Live Activity decision.
 
 ### Release mechanics that still steer
 
@@ -211,55 +214,6 @@ OBJECT owns the call**, never the prefix. Kept as a tombstone: this is the third
 > DIRECTION (owner, 2026-08-08): *"the service should be override inside `useXX(s => {})` config
 > instead"* — so **the `Use*` configure callback is the ONE place an app configures OR SUBSTITUTES**, and
 > an app should not have to reach into `builder.Services` separately to swap an implementation.
-
-- [ ] **Make the `Use*` callback able to OVERRIDE the implementation, not just set options.** Today
-  `UseMediaPlayer(x => …)` hands back only `MediaPlayerOptions`; substituting the `IMediaPlayer` means a
-  separate `builder.Services.AddSingleton<IMediaPlayer>(…)` BEFORE the call, relying on the `TryAdd`
-  ordering to win. That works and is invisible — an adopter has to know the kit uses `TryAdd` and that
-  registration order decides it, which is exactly the kind of knowledge a surface should not require.
-  - The shape to settle: does the callback receive the options plus a way to register (`(options,
-    services)`), or do the options themselves carry the instance/factory? The second reads better at the
-    call site and keeps ONE argument; the first is more general. **Check both against a real override**
-    (an app supplying its own player) before choosing.
-  - ⚠ Same question applies to `UseFileSystem`, `UseMissions` and `AddShenoraRequests`, so decide it once
-    and apply it across all of them rather than per feature.
-
-**✅ DONE (2026-08-08)** — `(options, services)` overloads on `UseMissions`, `UseFileSystem` and
-`UseMediaPlayer`. That shape won over "the options carry the factory" because it needs no per-service
-anticipation and is uniform. Purely additive: the options-only overloads delegate to it.
-
-⚠ **A doc claim was corrected BY SABOTAGE before it shipped.** The first version said the callback running
-BEFORE the kit's registrations was the guarantee. It is not — Microsoft DI resolves the LAST descriptor,
-so an app wins from either side of a `TryAdd`, and moving the callback to run last left all five tests
-green. What ordering actually buys is a SINGLE registration, with no kit default left shadowed behind the
-app's; that is the only order-sensitive property and it now has its own assertion.
-
-**DECIDED (owner, 2026-08-08): NEITHER needs the overload, and for different reasons.** Owner: *"1 should
-be setup by default, 2 both kind related to platform build anyway."* Checked against every call site:
-
-- **`AddShenoraRequests` is a DEFAULT.** Its only caller in the repo is `ShenoraApplicationBuilder.Build`.
-  No app, sample or shell calls it. Configuring it does not need the method either — registering an
-  `IpcRequestTrackerOptions` before `Build()` wins through `TryAdd`, which is what
-  `IpcRequestDispatchTests` already does and documents. An overload would add surface to something an app
-  should rarely call at all.
-- **`AddShenoraFileDialogs` is SHELL wiring.** `WinFormsHost` and `MobileHostExtensions` call it — two
-  packages, so it must stay PUBLIC (`generic-library.md`: cross-package consumption inside the kit is a
-  consumer scenario; a `ProjectReference` grants no `internal` access). A shell has no app options to
-  configure, so a configure callback would have no caller.
-
-**✅ ANSWERED, and the framing came from the owner rather than from the call-site count.** *"Think about
-this is more like a webapp config as .net so you can have a setup for the application itself, because this
-entire framework cannot work without those core modules."*
-
-That reframes it: a CORE module is not something an app ADDS, so the question was never "public or
-internal" — it was **which surface an app should meet it through.** `WebApplication.CreateBuilder` gives
-you Kestrel and you configure it; nobody calls `AddKestrel()`. So request tracking's `IServiceCollection`
-registration went `internal`, and the app-facing surface is **`builder.UseRequests(x => …)`** beside the
-other three. `IpcRequestServiceCollectionExtensions` → `IpcRequestExtensions`.
-
-⚠ **`AddShenoraFileDialogs` stays PUBLIC and unchanged** — it is shell wiring called from two packages,
-and a `ProjectReference` grants no `internal` access. Same question, opposite answer, which is why the two
-were worth separating rather than deciding by symmetry.
 
 **DONE (2026-08-08): the pipeline surface is on `ShenoraApplication`.** `app.UseFiles(…)`,
 `app.UseMediaPlayer()`, `app.MapModule<T>()` and the raw `app.Use(…)`, over a `WebViewPipeline` the builder
@@ -457,29 +411,17 @@ decoder/encoder just if they needed, and we built something that can work by def
 **This reframes the media work.** It had been drifting toward "make the webview play more", which is a
 treadmill whose ceiling is still the webview. The gap is that **the PAGE owns playback and should not**.
 
-**✅ THE CONTRACT AND THE iOS IMPLEMENTATION ARE IN** (2026-08-07, `dc29b2e` + `fbb2716`).
-`IMediaPlayer` in `Shenora/Modules/Media/Play/`, `IosMediaPlayer` (AVPlayer) on iOS,
-`player.ReportTo(session)` reconciling Now Playing with the player's real state. 1191 tests.
+**✅ SHIPPED AND PROVEN ON ALL THREE SHELLS.** `IMediaPlayer` + `MediaPlayerBase`, with
+`WindowsMediaPlayer` (Media Foundation), `AndroidMediaPlayer` (the platform's OWN
+`android.media.MediaPlayer` — **not ExoPlayer**, which D51 forbids) and `IosMediaPlayer` (AVPlayer). Each
+reported `PLAYER: PASS — the host decoded a real file and advanced a real clock` on its own platform, so
+the claim the feature rests on is measured rather than asserted. `player.ReportTo(session)` reconciles Now
+Playing with the player's real state.
 
-🔴 **WHAT IS NOT PROVEN, and no green gate says otherwise: NOTHING HAS PLAYED A BYTE.** There is no
-managed player, so every test here pins the CONTRACT — `MediaPlayerContractTests` and
-`MediaPlayerReportingTests` (the latter sabotage-verified). The whole claim this feature rests on — that
-AVPlayer keeps playing while the app is backgrounded, where a `<video>` cannot — is a **DEVICE** claim
-and is untested.
-
-**✅ PROVEN ON THE IPHONE (2026-08-07).** `PLAYER: 1.13s -> 2.63s state=Playing` → `PLAYER: PASS — the
-host decoded a real file and advanced a real clock`, on an iPhone 17 Pro / iOS 26.5.2. AVPlayer opened a
-staged MP4 and moved a real clock; the claim `IMediaPlayer` rests on is no longer untested.
-⚠ **Background survival is STILL unproven** — nothing in the harness can make the app leave the
-foreground. Press home while it plays and watch `mac device-log`. That is the one claim the NATIVE player
-exists for, and it is the only part left.
-
-**✅ ALL THREE SHELLS HAVE A PROVEN PLAYER (2026-08-08).** `WindowsMediaPlayer` (Media Foundation),
-`AndroidMediaPlayer` and `IosMediaPlayer`, each reporting `PLAYER: PASS — the host decoded a real file and
-advanced a real clock` on its own platform. ⚠ Android uses the platform's OWN `android.media.MediaPlayer`,
-**not ExoPlayer** — this entry used to say "ExoPlayer/MediaPlayer", which D51 forbids (the kit ships no
-engine). Background survival on iOS is still the one unproven claim; it needs a human to background the app.
-
+- [ ] 🔴 **Background survival is the ONE claim still unproven, and it is the reason the native player
+  exists.** Nothing in the harness can make an app leave the foreground, so this needs a human: press home
+  while it plays, then read `mac device-log`. A `<video>` element cannot survive that; if AVPlayer does
+  not either, the feature's premise is wrong and we should know.
 - [ ] **Expose it over IPC** so the page can drive it. Not done: the contract is C#-side only, so today an
   app wires it in its own module. That is the smaller half and it should follow the device proof, not
   precede it.
