@@ -65,7 +65,7 @@ public static class IpcRequestExtensions
 
         var options = new IpcRequestTrackerOptions();
         configure(options, builder.Services);
-        builder.Services.UseShenoraRequests(options);
+        builder.Services.AddShenoraRequests(options);
         return builder;
     }
 
@@ -91,7 +91,7 @@ public static class IpcRequestExtensions
     /// kit's other options types are consumed the same way, and an <c>init</c>-only record behind a
     /// callback makes <c>o => o.ModuleName = "…"</c> a compile error.
     /// </param>
-    internal static IServiceCollection UseShenoraRequests(
+    internal static IServiceCollection AddShenoraRequests(
         this IServiceCollection services, IpcRequestTrackerOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(services);

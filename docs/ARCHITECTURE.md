@@ -815,7 +815,7 @@ changes, noting them in `CHANGELOG.md`).
   `OnScopeCreated`, single-flight creation, `MapModule<TFacade>` declarations, structured
   `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`
   (on `ScopedContainerRouterExtensions`); composition helpers
-  `UseIpcModule<TFacade>`/`MapRegisteredModules`/`UseMessageDispatcher` on
+  `AddIpcModule<TFacade>`/`MapRegisteredModules`/`UseMessageDispatcher` on
   `IpcServiceCollectionExtensions` (error handler → app middleware → DI-registered facades, mapped
   LAZILY so the singleton is cached before the provider is enumerated); and
   `MessageDispatcherExtensions`, which carries the composition helpers as extensions over the

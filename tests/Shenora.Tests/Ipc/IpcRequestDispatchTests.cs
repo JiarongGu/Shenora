@@ -269,7 +269,7 @@ public class IpcRequestDispatchTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IEventBus, EventBus>();
-        services.UseShenoraRequests(new IpcRequestTrackerOptions
+        services.AddShenoraRequests(new IpcRequestTrackerOptions
         {
             GracePeriod = TimeSpan.FromMilliseconds(50),
             TimeProvider = clock,
@@ -295,7 +295,7 @@ public class IpcRequestDispatchTests
     /// tracker along; this proves the builder puts one there in the first place, which is the half an
     /// adopter depends on and never writes.
     /// <para>
-    /// The options are registered BEFORE <c>Build()</c> on purpose — <c>UseShenoraRequests</c> is
+    /// The options are registered BEFORE <c>Build()</c> on purpose — <c>AddShenoraRequests</c> is
     /// <c>TryAdd</c> throughout, so an app that configures its own wins, which is also the only way to get
     /// a fake clock in here.
     /// </para>

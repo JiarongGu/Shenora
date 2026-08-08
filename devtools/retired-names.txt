@@ -112,13 +112,15 @@ MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived 
 # both mobile shells register one. Missing from this file is WHY doc-drift stayed green — the same half
 # the D45 block above complains about, one comment further down the same file.
 IMediaStreamConversion   # -> IMediaAudioConversion / IMediaAudioConversionRun
-# --- 2026-08-08, D64 amendment: ONE verb for a pipeline stage, and it is `Use` --------------------
-# Owner: "we should be use `use` since this is more like middleware/interceptor as in its actual
-# logic". The kit had both prefixes for the same KIND of thing. Receivers did NOT move — see D64.
+# --- 2026-08-08, D64 amendment: `Use` CONFIGURES A PIPELINE; `Add` only registers ------------------
+# Owner: "Use means a wider configuration including its pipeline interceptor, and Add only means the
+# service collection level."
+# ⚠ ONE name moved, not four. The first pass renamed all four Add* to Use* on the coarser reading
+# ("these are all middleware-ish"), and three of them were WRONG and were reverted the same day:
+# AddIpcModule, AddShenoraFileDialogs and AddShenoraRequests are plain DI registration and keep `Add`.
+# UseMessageDispatcher earns `Use` because it COMPOSES the dispatcher pipeline (UseErrorHandler +
+# configure + MapRegisteredModulesLazily), which is the "includes its pipeline" half of the rule.
 AddMessageDispatcher     # -> UseMessageDispatcher
-AddShenoraRequests       # -> UseShenoraRequests
-AddShenoraFileDialogs    # -> UseShenoraFileDialogs
-AddIpcModule             # -> UseIpcModule
 # --- 2026-08-08: a CORE module is configured, never added -----------------------------------------
 # Owner: "more like a webapp config as .net … this entire framework cannot work without those core
 # modules". So request tracking's IServiceCollection registration went INTERNAL and the app-facing

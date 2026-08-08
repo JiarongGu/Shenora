@@ -106,11 +106,11 @@ public static class MauiProgram
 		// THE POINT OF THIS SAMPLE: the same facade the desktop sample hosts, from the same net10.0
 		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,
 		// this line would not compile.
-		shenora.Services.UseIpcModule<PortableSampleModule>();
+		shenora.Services.AddIpcModule<PortableSampleModule>();
 		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
 		// state arrives as TEXT rather than as pixels. See PageDiagModule.
-		shenora.Services.UseIpcModule<PageDiagModule>();
+		shenora.Services.AddIpcModule<PageDiagModule>();
 		// ⚠ NOTHING here registers the kit's dialog routes, the dispatcher or the operations registry —
 		// Build() and UseAndroid/UseIOS do (D64/D65). What the page still learns from the handshake is
 		// which of the four dialog routes THIS shell will honour; two of them are desktop-only (D35).

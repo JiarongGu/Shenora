@@ -35,10 +35,10 @@ public static class FileDialogServiceCollectionExtensions
     /// for a configurable name to keep in step with — the reason <c>IpcRequestsModule</c> needs one.
     /// </para>
     /// </summary>
-    public static IServiceCollection UseShenoraFileDialogs(this IServiceCollection services)
+    public static IServiceCollection AddShenoraFileDialogs(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        // ⚠ TryAddEnumerable, not UseIpcModule: the SHELL calls this now (D64), and an app that also
+        // ⚠ TryAddEnumerable, not AddIpcModule: the SHELL calls this now (D64), and an app that also
         // calls it — every app written before that did — would otherwise register a SECOND
         // FileDialogModule, and two facades claiming one module name is a duplicate the dispatcher
         // rejects. So the old explicit call stays valid and becomes a harmless no-op, which is what makes

@@ -122,10 +122,10 @@ internal static class Program
             scheduler.Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2;
         });
 
-        builder.Services.UseIpcModule<SampleModule>();
+        builder.Services.AddIpcModule<SampleModule>();
         // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
         // resolves the same implementations through their platform-neutral contracts.
-        builder.Services.UseIpcModule<Shenora.Sample.Logic.PortableSampleModule>();
+        builder.Services.AddIpcModule<Shenora.Sample.Logic.PortableSampleModule>();
 
         builder.Services.AddSingleton<MainForm>();
 

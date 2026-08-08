@@ -91,19 +91,16 @@ at the first list and missed five more breaking changes.
     way you configure it changed. There is deliberately still no way to disable it: a request finishing
     inside the grace period already costs no event, no history entry and no wire traffic, so an "off"
     switch would save nothing that exists.
-- 🔴 **ONE verb for a pipeline stage, and it is `Use`.** Four entry points renamed:
-  `AddMessageDispatcher`→`UseMessageDispatcher`, `AddShenoraRequests`→`UseShenoraRequests`,
-  `AddShenoraFileDialogs`→`UseShenoraFileDialogs`, `AddIpcModule<T>`→`UseIpcModule<T>`. Migration is the
-  rename and nothing else — **no receiver moved and no signature changed**, so `services.AddIpcModule<T>()`
-  becomes `services.UseIpcModule<T>()` and the compiler names every site.
-  - **Why:** the kit had both prefixes for the same KIND of thing. Every one of these contributes a stage
-    to a pipeline (the dispatcher's middleware chain, or a module mapped into it), and `Use*` is already
-    this kit's word for that (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`). The test is what
-    the thing IS, not which phase registers it. Full reasoning and the earlier round trip: **D64**.
-  - ⚠ **The receivers deliberately did NOT move.** `IShenoraModule.ConfigureServices` receives only an
-    `IServiceCollection`, and composing IPC over a bare `ServiceCollection` with no builder is a supported
-    shape — moving these onto the builder would have deleted it. The verb is uniform; the receiver still
-    follows whether a capability needs the builder's context.
+- **`AddMessageDispatcher` → `UseMessageDispatcher`.** One rename; no receiver moved and no signature
+  changed, so the compiler names every site.
+  - **The rule it applies** (owner): ***`Use` means a wider configuration INCLUDING its pipeline /
+    interceptor; `Add` only means the service-collection level.*** `UseMessageDispatcher` earns `Use`
+    because it composes the dispatcher pipeline — error handler, then the app's configure callback, then
+    the lazy module mapper. It does not merely register a service.
+  - ⚠ **`AddIpcModule<T>`, `AddShenoraFileDialogs` and `AddShenoraRequests` keep `Add` and are
+    unchanged** — each is plain DI registration, and the pipeline stage is installed later by the
+    dispatcher. They were briefly renamed to `Use*` on a coarser reading ("these are all middleware-ish")
+    and reverted the same day, before release. Full reasoning: **D64**.
 - 🔴 **`MobileWebViewInterceptor` now takes the app's `WebViewPipeline` as a REQUIRED second constructor
   argument.** Migration: `new MobileWebViewInterceptor(webView, app.Pipeline, log)`. Pass a fresh
   `new WebViewPipeline()` for a webview that must deliberately serve nothing (a probe, an isolated

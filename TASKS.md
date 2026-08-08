@@ -198,12 +198,15 @@ This entry used to sit here demanding that `UseMissions`/`UseFileSystem`/`UseMed
 rename landed, the owner reverted it, and it was re-confirmed on 2026-08-08 in their own words —
 > *"we should be use `use` since this is more like middleware/interceptor as in its actual logic"*
 
-**The test is what the thing IS, not which phase registers it.** These are middleware/interceptor stages,
-and `Use*` is already this kit's word for one (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`,
-`WebViewResourcePipeline.Use`). The ASP.NET analogy settles **WHICH OBJECT owns the call** — the item
-below, and the only part of this that was ever real — and says nothing about the prefix. Kept as a
-tombstone rather than deleted: the analogy is persuasive enough that the next reader will re-derive it,
-and this is the second time it has been argued.
+**THE TEST, sharpened by the owner the same day and now the rule in D64:**
+> *"`Use` means a wider configuration including its pipeline interceptor, and `Add` only means the
+> service collection level."*
+
+So `Use*` is right for anything that touches a PIPELINE, and `Add*` is right for plain container
+registration. ⚠ **The first pass renamed all four `Add*` and three were reverted** — a module
+REGISTRATION is not a pipeline stage, even though a stage is built from it later. Only
+`AddMessageDispatcher` moved (it composes the dispatch pipeline). The ASP.NET analogy settles **WHICH
+OBJECT owns the call**, never the prefix. Kept as a tombstone: this is the third time it has been argued.
 
 > DIRECTION (owner, 2026-08-08): *"the service should be override inside `useXX(s => {})` config
 > instead"* — so **the `Use*` configure callback is the ONE place an app configures OR SUBSTITUTES**, and
@@ -218,7 +221,7 @@ and this is the second time it has been argued.
     services)`), or do the options themselves carry the instance/factory? The second reads better at the
     call site and keeps ONE argument; the first is more general. **Check both against a real override**
     (an app supplying its own player) before choosing.
-  - ⚠ Same question applies to `UseFileSystem`, `UseMissions` and `UseShenoraRequests`, so decide it once
+  - ⚠ Same question applies to `UseFileSystem`, `UseMissions` and `AddShenoraRequests`, so decide it once
     and apply it across all of them rather than per feature.
 
 **✅ DONE (2026-08-08)** — `(options, services)` overloads on `UseMissions`, `UseFileSystem` and
@@ -234,12 +237,12 @@ app's; that is the only order-sensitive property and it now has its own assertio
 **DECIDED (owner, 2026-08-08): NEITHER needs the overload, and for different reasons.** Owner: *"1 should
 be setup by default, 2 both kind related to platform build anyway."* Checked against every call site:
 
-- **`UseShenoraRequests` is a DEFAULT.** Its only caller in the repo is `ShenoraApplicationBuilder.Build`.
+- **`AddShenoraRequests` is a DEFAULT.** Its only caller in the repo is `ShenoraApplicationBuilder.Build`.
   No app, sample or shell calls it. Configuring it does not need the method either — registering an
   `IpcRequestTrackerOptions` before `Build()` wins through `TryAdd`, which is what
   `IpcRequestDispatchTests` already does and documents. An overload would add surface to something an app
   should rarely call at all.
-- **`UseShenoraFileDialogs` is SHELL wiring.** `WinFormsHost` and `MobileHostExtensions` call it — two
+- **`AddShenoraFileDialogs` is SHELL wiring.** `WinFormsHost` and `MobileHostExtensions` call it — two
   packages, so it must stay PUBLIC (`generic-library.md`: cross-package consumption inside the kit is a
   consumer scenario; a `ProjectReference` grants no `internal` access). A shell has no app options to
   configure, so a configure callback would have no caller.
@@ -254,7 +257,7 @@ you Kestrel and you configure it; nobody calls `AddKestrel()`. So request tracki
 registration went `internal`, and the app-facing surface is **`builder.UseRequests(x => …)`** beside the
 other three. `IpcRequestServiceCollectionExtensions` → `IpcRequestExtensions`.
 
-⚠ **`UseShenoraFileDialogs` stays PUBLIC and unchanged** — it is shell wiring called from two packages,
+⚠ **`AddShenoraFileDialogs` stays PUBLIC and unchanged** — it is shell wiring called from two packages,
 and a `ProjectReference` grants no `internal` access. Same question, opposite answer, which is why the two
 were worth separating rather than deciding by symmetry.
 

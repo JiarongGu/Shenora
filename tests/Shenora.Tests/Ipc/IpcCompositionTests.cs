@@ -87,8 +87,8 @@ public class IpcCompositionTests
     public async Task UseMessageDispatcher_maps_every_registered_facade()
     {
         using var provider = new ServiceCollection()
-            .UseIpcModule<AlphaFacade>()
-            .UseIpcModule<BetaFacade>()
+            .AddIpcModule<AlphaFacade>()
+            .AddIpcModule<BetaFacade>()
             .UseMessageDispatcher()
             .BuildServiceProvider();
 
@@ -103,7 +103,7 @@ public class IpcCompositionTests
     {
         var order = new List<string>();
         using var provider = new ServiceCollection()
-            .UseIpcModule<AlphaFacade>()
+            .AddIpcModule<AlphaFacade>()
             .UseMessageDispatcher((_, dispatcher) => dispatcher.Use(async (_, next, _) =>
             {
                 order.Add("app-middleware");
@@ -157,7 +157,7 @@ public class IpcCompositionTests
     public async Task A_facade_that_injects_the_dispatcher_resolves_instead_of_killing_the_process()
     {
         using var provider = new ServiceCollection()
-            .UseIpcModule<SelfDispatchingFacade>()
+            .AddIpcModule<SelfDispatchingFacade>()
             .UseMessageDispatcher()
             .BuildServiceProvider();
 
@@ -179,8 +179,8 @@ public class IpcCompositionTests
         // unreachable with nothing logged anywhere. On the eager path the composition now refuses
         // outright, naming both facades.
         using var provider = new ServiceCollection()
-            .UseIpcModule<DupOneFacade>()
-            .UseIpcModule<DupTwoFacade>()   // both claim "DUP"
+            .AddIpcModule<DupOneFacade>()
+            .AddIpcModule<DupTwoFacade>()   // both claim "DUP"
             .BuildServiceProvider();
 
         var error = Assert.Throws<InvalidOperationException>(
@@ -200,8 +200,8 @@ public class IpcCompositionTests
         // fix here is "diagnosable instead of silent", not "fails at startup" — worth being precise
         // about, because the eager path above genuinely does fail at composition.
         using var provider = new ServiceCollection()
-            .UseIpcModule<DupOneFacade>()
-            .UseIpcModule<DupTwoFacade>()
+            .AddIpcModule<DupOneFacade>()
+            .AddIpcModule<DupTwoFacade>()
             .UseMessageDispatcher()
             .BuildServiceProvider();
 

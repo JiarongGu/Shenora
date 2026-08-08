@@ -198,7 +198,7 @@ sealed class Shenora.Core.Ipc.IpcResponse
   public static Shenora.Core.Ipc.IpcResponse CreateError(string id, string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
   public static Shenora.Core.Ipc.IpcResponse CreateSuccess(string id, object? data = null)
 static class Shenora.Core.Ipc.IpcServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection UseIpcModule<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Core.Ipc.IIpcModule
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddIpcModule<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Core.Ipc.IIpcModule
   public static Microsoft.Extensions.DependencyInjection.IServiceCollection UseMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<System.IServiceProvider, Shenora.Core.Ipc.IMessageDispatcher>? configure = null)
   public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
   public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
@@ -856,7 +856,7 @@ sealed class Shenora.Modules.FileDialog.FileDialogResult
   public static Shenora.Modules.FileDialog.FileDialogResult Selected(string path)
   public string? FilePath { get; init; }
 static class Shenora.Modules.FileDialog.FileDialogServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection UseShenoraFileDialogs(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraFileDialogs(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 interface Shenora.Modules.FileDialog.IFileDialogPathStore
   public abstract System.Threading.Tasks.Task SavePathAsync(string key, string path)
   public abstract System.Threading.Tasks.Task<string> GetPathAsync(string key)

@@ -124,7 +124,7 @@ public static class WindowsHostExtensions
         // the platform implementation exists (D64). A capability's facade belongs with the shell that can
         // satisfy it: a shell without native dialogs registers neither, and the page learns that from the
         // ready handshake's capability list (D36) instead of from a route that answers nothing.
-        builder.Services.UseShenoraFileDialogs();
+        builder.Services.AddShenoraFileDialogs();
 
         // The system media transport surface, registered LAZILY like everything else here — a
         // WindowsPlaybackSession creates a MediaPlayer in its constructor, and an app that never plays

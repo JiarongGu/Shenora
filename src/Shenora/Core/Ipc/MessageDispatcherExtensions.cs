@@ -212,7 +212,7 @@ public static class MessageDispatcherExtensions
     /// pipeline and answers first. The PRECEDENCE is the intended one (the app's own modules win);
     /// the honest answer is what is missing. So map anything a plug-in must be able to collide with
     /// through <see cref="MapModule(IMessageDispatcher, IIpcModule)"/> or this method explicitly,
-    /// rather than through <c>UseIpcModule</c>. Recorded rather than solved: closing it needs
+    /// rather than through <c>AddIpcModule</c>. Recorded rather than solved: closing it needs
     /// either a name-reservation seam the registry does not have, or re-opening that deadlock.
     /// </para>
     /// <para>
