@@ -1254,7 +1254,7 @@ pipeline.Use((source, codecPrivate) => source.Codec is "ac3" ? MyDecoder.Begin(s
 the device cannot decode it either, there is nothing to bridge and the honest answer is a refusal.
 
 > **Need playback the page element cannot give you?** Resolve the shell's NATIVE player instead —
-> `MobileMediaPlayer` on iOS, `WindowsMediaPlayer` on the desktop. On iOS the gap is absolute: the system
+> `IosMediaPlayer` on iOS, `AndroidMediaPlayer` on Android, `WindowsMediaPlayer` on the desktop. On iOS the gap is absolute: the system
 > pauses a `<video>` the moment the app backgrounds, so background audio also needs your app's own
 > `AVAudioSession` + `UIBackgroundModes: [audio]`. On Windows it is narrower — playback that survives the
 > webview, and the platform's whole codec set rather than the webview's subset.

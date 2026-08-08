@@ -152,7 +152,7 @@ public sealed class MediaPlayerOptions
 /// probing. <see cref="IMediaPlayer"/> is the seam; a second one underneath it was scaffolding.
 /// </para>
 /// <para>
-/// <b>⚠ It does NOT replace <c>MobileMediaPlayer</c>; the two answer different questions.</b> A page
+/// <b>⚠ It does NOT replace <c>IosMediaPlayer</c>/<c>AndroidMediaPlayer</c>; the two answer different questions.</b> A page
 /// element cannot play while iOS has the app backgrounded — that is the gap a native player exists for.
 /// This one wins everywhere else: it renders into the app's own layout, it costs no native surface, and it
 /// reuses the conversion pipeline. **Both are <see cref="IMediaPlayer"/>**, so an app can hold one field

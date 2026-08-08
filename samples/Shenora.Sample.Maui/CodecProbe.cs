@@ -65,7 +65,7 @@ internal static class CodecProbe
 
         // RegularCodecs is the set an app may actually use — it excludes the vendor-hidden ones a
         // capability check would otherwise count and then fail to instantiate.
-        var list = new Android.Media.MediaCodecList(Android.Media.MediaCodecListKind.RegularCodecs);
+        var list = new global::Android.Media.MediaCodecList(global::Android.Media.MediaCodecListKind.RegularCodecs);
         foreach (var codec in list.GetCodecInfos() ?? [])
         {
             foreach (var type in codec.GetSupportedTypes() ?? [])
@@ -75,8 +75,12 @@ internal static class CodecProbe
             }
         }
 
-        log($"[CODEC] platform=Android api={(int)Android.OS.Build.VERSION.SdkInt} "
-            + $"device={Android.OS.Build.Manufacturer}/{Android.OS.Build.Model}");
+        // ⚠ PARENTHESISED, and they are load-bearing. Inside an interpolation hole a `:` starts the FORMAT
+        // specifier, so `{global::Android.OS.Build.Model}` parses as the expression `global` with the format
+        // string `:Android.OS.Build.Model` — CS0103, "the name 'global' does not exist". Balanced parens
+        // make the parser read the whole thing as one expression.
+        log($"[CODEC] platform=Android api={((int)global::Android.OS.Build.VERSION.SdkInt)} "
+            + $"device={(global::Android.OS.Build.Manufacturer)}/{(global::Android.OS.Build.Model)}");
         log($"[CODEC] decode: {string.Join(' ', decoders)}");
         log($"[CODEC] encode: {string.Join(' ', encoders)}");
 

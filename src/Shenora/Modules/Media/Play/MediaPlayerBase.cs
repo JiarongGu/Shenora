@@ -7,11 +7,12 @@ namespace Shenora.Modules.Media;
 /// the part that is genuinely its own.
 /// <para>
 /// <b>Extracted from two shipping implementations, not designed ahead of them</b> (owner, 2026-08-08).
-/// <c>MobileMediaPlayer</c> (AVPlayer) and <c>WindowsMediaPlayer</c> (Media Foundation) were written
+/// <c>IosMediaPlayer</c> (AVPlayer) and <c>WindowsMediaPlayer</c> (Media Foundation) were written
 /// independently and converged on the same ~150 lines of bookkeeping: a lock around five fields, a status
 /// snapshot, a deferred rate, an open that completes on a platform callback, and guarded event raising.
-/// What differs between them is about forty lines each. This holds the common half so the next shell —
-/// Android/ExoPlayer — inherits it rather than rediscovering it.
+/// What differs between them is about forty lines each. This holds the common half, and it paid for itself
+/// immediately: <c>AndroidMediaPlayer</c> landed the same day and inherited all of it rather than
+/// rediscovering it.
 /// </para>
 /// <para>
 /// 🔴 <b>Four invariants live here because BOTH implementations had to learn them separately, and each is

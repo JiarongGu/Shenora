@@ -1,9 +1,8 @@
 using Shenora.Modules.Media;
 
-#if IOS || MACCATALYST
 using System.Runtime.InteropServices;
 
-namespace Shenora.Mobile;
+namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="IMediaCapability"/> — answered by asking AudioToolbox to BUILD a converter, which
@@ -29,7 +28,7 @@ namespace Shenora.Mobile;
 /// cannot perform rather than promising one.
 /// </para>
 /// </summary>
-public sealed class MobileMediaCapability : IMediaCapability
+public sealed class IosMediaCapability : IMediaCapability
 {
     private const string AudioToolbox = "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox";
 
@@ -143,4 +142,3 @@ public sealed class MobileMediaCapability : IMediaCapability
         }
     }
 }
-#endif

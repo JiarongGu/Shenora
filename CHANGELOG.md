@@ -52,6 +52,42 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **The mobile shells stop pretending two implementations are one type.** `src/Shenora.Mobile/` exists
+  because both mobile shells are MAUI, and that reusability is real — the HybridWebView IPC transport, the
+  UI dispatcher, the safe area, the interceptor, the host composition. It was **not** a place for two
+  bodies behind an `#if` (owner, 2026-08-08: *"the mobile project exists because both mobile use MAUI, for
+  that kind of reusability — not for an `#if` split"*).
+  - **Five types were exactly that** — one NAME with two separate bodies that never compiled together, so
+    the shared name claimed an abstraction that did not exist. They now live in
+    `src/Shenora.<Platform>/Services/`, named and namespaced for their platform, exactly as
+    `WindowsMediaPlayer` is:
+
+    | was | now |
+    |---|---|
+    | `Shenora.Mobile.MobileMediaPlayer` | `Shenora.Android.AndroidMediaPlayer` · `Shenora.iOS.IosMediaPlayer` |
+    | `Shenora.Mobile.MobilePlaybackSession` | `Shenora.Android.AndroidPlaybackSession` · `Shenora.iOS.IosPlaybackSession` |
+    | `Shenora.Mobile.MobileMediaCapability` | `Shenora.Android.AndroidMediaCapability` · `Shenora.iOS.IosMediaCapability` |
+    | `Shenora.Mobile.MobileMediaAudioConversion` | `Shenora.Android.AndroidMediaAudioConversion` · `Shenora.iOS.IosMediaAudioConversion` |
+    | `Shenora.Mobile.MobileLiveActivities` | `Shenora.Android.AndroidLiveActivities` · `Shenora.iOS.IosLiveActivities` |
+
+  - **`MobileFileDialogs` was a PARTIAL class and is now an abstraction** (owner: *"use abstraction or
+    composition, do not use partial class — that is a code-generation pattern"*). It genuinely had a shared
+    half, so it became `MobileFileDialogsBase` (abstract, in `Shenora.Mobile`) with `AndroidFileDialogs` /
+    `IosFileDialogs` overriding `SaveAsync`. The property the partial method was chosen for survives: an
+    unimplemented `abstract` member is still a compile error, so a third platform cannot ship a silent stub.
+    Its temp-file helpers (`NewTempPath`, `DiscardTemp`, `SuggestedName`) are `protected` now, because the
+    subclasses live in different assemblies.
+  - **Ten `#if` guards deleted outright.** Each shell is a SINGLE-TFM project, so the build already selects
+    the file. The `Platforms/<Platform>/` sub-folder went with them — that is a MAUI convention for projects
+    which MULTI-TARGET, and here it only restated the project's own name.
+  - **Migrate:** resolve the platform type by name. Everything else is identical — same contracts, same
+    members, same behaviour.
+  - ⚠ **Two traps this surfaced, both now documented in the code.** Inside `namespace Shenora.Android`, a
+    bare `Android.Media.X` binds to `Shenora.Android.Media` and fails with a confusing CS0234 — the same
+    shadowing `Shenora.Windows` documents for `Windows.Media`, fixed the same way with `global::`. And
+    inside an interpolation hole a `:` starts the FORMAT specifier, so `{global::Android.OS.Build.Model}`
+    parses as the expression `global`; parentheses are required.
+
 - **A shell's NATIVE media player is no longer registered as `IMediaPlayer`** — resolve it by its own type
   (owner, 2026-08-08: *"opt-in everywhere"*). `UseIOS()` used to bind `MobileMediaPlayer` to the contract,
   so on that shell `IMediaPlayer` resolved to the native player and the page-backed one was unreachable.
@@ -65,6 +101,19 @@ at the first list and missed five more breaking changes.
     changes — it still implements the contract, so every call site is identical.
   - `IMediaPlayer` now means the page-backed player on **every** shell, which is what D58 says the normal
     case is.
+
+- **New: `AndroidMediaPlayer`** — the last shell without a native player has one, so all three now do.
+  **The platform's own `android.media.MediaPlayer`, deliberately NOT ExoPlayer**: D51 says the kit ships no
+  codec and no engine, and ExoPlayer is an engine — a third-party library with its own extractors and a
+  transitive AndroidX graph, landing in every consumer of `Shenora.Android` whether they play anything or
+  not. The platform player is already in the SDK and decodes through the same `MediaCodec` layer
+  `AndroidMediaCapability` reports on. What that costs, stated plainly: adaptive streaming (DASH, smooth
+  HLS) is where ExoPlayer is genuinely better, and the contract promises neither — and an app that needs it
+  now derives from `MediaPlayerBase` in about forty lines rather than being stuck.
+  - Proven on hardware: `PLAYER: PASS — the host decoded a real file and advanced a real clock`, position
+    `0.97s -> 2.48s`, with `c2.android.aac.decoder` in logcat on an API 36 emulator.
+  - Speed needs `PlaybackParams` (API 23) against a floor of 21, so below that a non-default rate is logged
+    and dropped — which the contract already allows, since `Rate` reports what was ASKED FOR.
 
 - **New: `WindowsMediaPlayer`** — the desktop's native player, Media Foundation through
   `Windows.Media.Playback`. Registered by `UseWindows()` **by its own type**, under the rule above. It is

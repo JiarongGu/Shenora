@@ -1,8 +1,7 @@
 using Shenora.Modules.Media;
 
-#if ANDROID
 
-namespace Shenora.Mobile;
+namespace Shenora.Android;
 
 /// <summary>
 /// Android's <see cref="IMediaCapability"/> — what THIS device's <c>MediaCodecList</c> declares.
@@ -21,7 +20,7 @@ namespace Shenora.Mobile;
 /// AC-3 file becomes "Direct" and plays silent.
 /// </para>
 /// </summary>
-public sealed class MobileMediaCapability : IMediaCapability
+public sealed class AndroidMediaCapability : IMediaCapability
 {
     private readonly Lazy<Sets> _sets = new(Read, isThreadSafe: true);
 
@@ -63,7 +62,7 @@ public sealed class MobileMediaCapability : IMediaCapability
             // RegularCodecs, not ALL: the wider set includes codecs an app may not instantiate, so counting
             // them would report a capability that fails the moment it is used — the same "advertised but
             // does nothing" shape `ISegmentEngine.HasRenderedPicture` exists for one layer down.
-            var list = new Android.Media.MediaCodecList(Android.Media.MediaCodecListKind.RegularCodecs);
+            var list = new global::Android.Media.MediaCodecList(global::Android.Media.MediaCodecListKind.RegularCodecs);
             foreach (var codec in list.GetCodecInfos() ?? [])
             {
                 foreach (var mime in codec.GetSupportedTypes() ?? [])
@@ -127,4 +126,3 @@ public sealed class MobileMediaCapability : IMediaCapability
         _ => null,
     };
 }
-#endif

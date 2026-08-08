@@ -7,6 +7,35 @@ using Shenora.Modules.FileDialog;
 using Shenora.Modules.Media;
 using Shenora.Core.Shell;
 
+// 🔴 THE ONE PLATFORM-SPECIFIC THING IN THIS FILE, deliberately gathered into a single block.
+//
+// This file is SHARED source: it compiles into both Shenora.Android and Shenora.iOS, because MAUI hosting
+// is genuinely the same on each — that is what `Shenora.Mobile` is FOR (owner, 2026-08-08). The
+// implementations it registers are NOT the same, and they no longer pretend to be: each lives in its own
+// shell project under `Platforms/<Platform>/`, in its own namespace, named for its platform, exactly as
+// `WindowsMediaPlayer` is.
+//
+// Aliasing them here keeps every registration below platform-agnostic and readable. The alternative —
+// an `#if` around each `TryAddSingleton` — would put six conditionals through the middle of the
+// composition and hide what is actually one substitution.
+#if ANDROID
+
+using PlatformFileDialogs = Shenora.Android.AndroidFileDialogs;
+using PlatformLiveActivities = Shenora.Android.AndroidLiveActivities;
+using PlatformMediaAudioConversion = Shenora.Android.AndroidMediaAudioConversion;
+using PlatformMediaCapability = Shenora.Android.AndroidMediaCapability;
+using PlatformMediaPlayer = Shenora.Android.AndroidMediaPlayer;
+using PlatformPlaybackSession = Shenora.Android.AndroidPlaybackSession;
+#elif IOS || MACCATALYST
+
+using PlatformFileDialogs = Shenora.iOS.IosFileDialogs;
+using PlatformLiveActivities = Shenora.iOS.IosLiveActivities;
+using PlatformMediaAudioConversion = Shenora.iOS.IosMediaAudioConversion;
+using PlatformMediaCapability = Shenora.iOS.IosMediaCapability;
+using PlatformMediaPlayer = Shenora.iOS.IosMediaPlayer;
+using PlatformPlaybackSession = Shenora.iOS.IosPlaybackSession;
+#endif
+
 namespace Shenora.Mobile;
 
 /// <summary>Registers the MAUI shell services on a <see cref="ShenoraApplicationBuilder"/>.</summary>
@@ -62,7 +91,7 @@ public static class MobileHostExtensions
     // Shenora.Android and Shenora.iOS and nothing else, so a third target reaching here means someone
     // added a platform without naming its entry point — and a category-named shim (which is what this
     // used to be) would let that ship looking deliberate. Same fail-closed choice as
-    // MobilePlaybackSession's guard a few lines down.
+    // PlatformPlaybackSession's guard a few lines down.
 #error Shenora.Mobile: this platform has no shell entry point. Add a Use<Platform>() arm above (D65).
 #endif
     {
@@ -73,7 +102,7 @@ public static class MobileHostExtensions
         builder.Services.TryAddSingleton<IClipboardService, MobileClipboardService>();
         builder.Services.TryAddSingleton<IUrlLauncher>(_ => new MobileUrlLauncher(onError));
         builder.Services.TryAddSingleton<IUiInteraction, MobileUiInteraction>();
-        builder.Services.TryAddSingleton<IFileDialogs, MobileFileDialogs>();
+        builder.Services.TryAddSingleton<IFileDialogs, PlatformFileDialogs>();
         // The page's ROUTE to them, registered where the platform implementation is (D64). ⚠ Two of the
         // four routes are DESKTOP capabilities and refuse here with CapabilityNotSupported (D35) — which
         // is why the facade ships on this shell at all rather than being withheld: the page asks the
@@ -98,15 +127,15 @@ public static class MobileHostExtensions
         // A hard COMPILE error rather than a missing registration: without this a fourth shell would build
         // clean and fail at the INJECTION SITE, with nothing naming which platform forgot to implement it.
         // Same fail-closed choice as MobileWebViewInterceptor's undeclared range delivery.
-#error Shenora.Mobile: this platform has no MobilePlaybackSession. Add one under Services/, or register a stub that throws ShellCapability.NotSupported.
+#error Shenora.Mobile: this platform has no PlatformPlaybackSession. Add one under Services/, or register a stub that throws ShellCapability.NotSupported.
 #endif
-        builder.Services.TryAddSingleton<IPlaybackSession>(_ => new MobilePlaybackSession());
+        builder.Services.TryAddSingleton<IPlaybackSession>(_ => new PlatformPlaybackSession());
 
         // The live status surface. Registered on BOTH shells even though only iOS can do it, because the
         // contract carries its own "cannot" channel (`Unavailable`) — so portable logic asks and branches
         // instead of catching, and Android answers with a reason rather than failing at the injection site
         // with a message about a missing service.
-        builder.Services.TryAddSingleton<ILiveActivities>(_ => new MobileLiveActivities());
+        builder.Services.TryAddSingleton<ILiveActivities>(_ => new PlatformLiveActivities());
 
         // What THIS DEVICE can decode and encode. Registered on both shells because the answer differs
         // between them AND between devices of the same platform — Android codec support is vendor-declared,
@@ -116,7 +145,7 @@ public static class MobileHostExtensions
         // Singleton because both implementations cache: the Android walk allocates a Java object per codec
         // and the iOS one builds a converter per candidate, and neither answer can change while the process
         // runs.
-        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(_ => new MobileMediaCapability());
+        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(_ => new PlatformMediaCapability());
 
 #if ANDROID || IOS || MACCATALYST
         // The transcode tier — the soundtrack half of D59's device→webview gap. Registered on BOTH mobile
@@ -135,19 +164,20 @@ public static class MobileHostExtensions
             // The PIPELINE is registered, with this platform is converter already in it. An app adds its
             // own with pipeline.Use(...) and keeps this one behind it, rather than replacing the lot.
             var pipeline = new Shenora.Modules.Media.MediaAudioPipeline();
-            MobileMediaAudioConversion.Use(pipeline);
+            PlatformMediaAudioConversion.Use(pipeline);
             return pipeline;
         });
 #endif
 
-#if IOS || MACCATALYST
-        // The HOST-OWNED PLAYER (D54). ⚠ iOS ONLY for now, and without the #error guard for the same
-        // reason as the transcode tier: this is genuinely optional, not "every shell must answer this".
-        // An app on a shell with no player keeps using <video>, which is what it was doing anyway.
+#if IOS || MACCATALYST || ANDROID
+        // The HOST-OWNED PLAYER (D54). BOTH mobile shells now, and the type name is the same on each —
+        // AVPlayer behind it on iOS, android.media.MediaPlayer on Android, and MediaPlayerBase holding the
+        // state machine they share.
         //
-        // iOS FIRST because this is where the gap is provable rather than argued — the system pauses a
-        // backgrounded <video> outright, and AVPlayer keeps going. Android (ExoPlayer) and Windows (Media
-        // Foundation) follow; until they exist, absence is the honest answer.
+        // iOS came FIRST because that is where the gap is provable rather than argued — the system pauses a
+        // backgrounded <video> outright, and AVPlayer keeps going. Android's gap is narrower but real: the
+        // platform decodes a superset of what the webview does (PlatformMediaCapability reports which), and
+        // playback outlives the page. Windows landed the same week (WindowsMediaPlayer).
         //
         // Singleton to match IPlaybackSession, and for the same reason: it is a handle on a process-wide
         // facility, so two of them would fight over the audio session and the Now Playing surface.
@@ -161,8 +191,8 @@ public static class MobileHostExtensions
         // this kit treats as the worse outcome, and it also made MediaPlayerExtensions' own documentation
         // false on this shell.
         //
-        //     var player = services.GetRequiredService<MobileMediaPlayer>();   // opt in by name
-        builder.Services.TryAddSingleton(_ => new MobileMediaPlayer());
+        //     var player = services.GetRequiredService<PlatformMediaPlayer>();   // opt in by name
+        builder.Services.TryAddSingleton(_ => new PlatformMediaPlayer());
 #endif
 
         return builder;

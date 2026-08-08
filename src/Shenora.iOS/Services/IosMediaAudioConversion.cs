@@ -1,10 +1,9 @@
 using Shenora.Modules.Media;
 
-#if IOS || MACCATALYST
 using System.Runtime.InteropServices;
 using Shenora;
 
-namespace Shenora.Mobile;
+namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="IMediaAudioConversion"/> — AudioToolbox's <c>AudioConverter</c>, chained decoder →
@@ -17,7 +16,7 @@ namespace Shenora.Mobile;
 /// </para>
 /// <para>
 /// ⚠ <b>It converts what the DEVICE decodes and MP4 can carry — nothing wider.</b> Ask
-/// <see cref="MobileMediaCapability"/> first; the middleware DECLINES (returns null) for anything else
+/// <see cref="IosMediaCapability"/> first; the middleware DECLINES (returns null) for anything else
 /// rather than producing a file that opens and plays silence.
 /// </para>
 /// <para>
@@ -27,7 +26,7 @@ namespace Shenora.Mobile;
 /// <see cref="MediaRemuxerResult.Dropped"/>. Honest, but silent. This makes the film play.
 /// </para>
 /// </summary>
-public static class MobileMediaAudioConversion
+public static class IosMediaAudioConversion
 {
     private const string AudioToolbox = "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox";
 
@@ -237,7 +236,7 @@ public static class MobileMediaAudioConversion
 
             if (status != 0 || outputSize == 0)
             {
-                if (status != 0) Log(() => $"[Shenora.Mobile] AudioConverter returned {status}.");
+                if (status != 0) Log(() => $"[Shenora.iOS] AudioConverter returned {status}.");
                 return [];
             }
             return output[..(int)outputSize];
@@ -300,4 +299,3 @@ public static class MobileMediaAudioConversion
         BytesPerPacket = (uint)(channels * 2),
     };
 }
-#endif

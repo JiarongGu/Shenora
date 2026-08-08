@@ -1,6 +1,5 @@
 using Shenora.Modules.Platform;
 
-#if ANDROID
 using Android.Media;
 using Android.Media.Session;
 using Shenora;
@@ -10,7 +9,7 @@ using Shenora;
 using AndroidState = Android.Media.Session.PlaybackState;
 using PortableState = Shenora.Modules.Platform.PlaybackState;
 
-namespace Shenora.Mobile;
+namespace Shenora.Android;
 
 /// <summary>
 /// Android's <see cref="IPlaybackSession"/> — a platform <c>MediaSession</c>, which is what routes
@@ -31,7 +30,7 @@ namespace Shenora.Mobile;
 /// where that line sits.
 /// </para>
 /// </summary>
-public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
+public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
 {
     /// <summary>
     /// The tag Android shows for this session — in <c>dumpsys</c>, in bug reports, and to a car head unit
@@ -48,10 +47,10 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
-    public MobilePlaybackSession(Action<string>? log = null)
+    public AndroidPlaybackSession(Action<string>? log = null)
     {
         _log = log;
-        _session = new MediaSession(Android.App.Application.Context, SessionTag);
+        _session = new MediaSession(global::Android.App.Application.Context, SessionTag);
         _session.SetCallback(new CommandCallback(this));
         // Active marks this as a CURRENT session — the flag the system reads when choosing which one to
         // surface and to route hardware buttons to.
@@ -146,9 +145,9 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
                 // returns null rather than throwing, so a malformed image quietly means "no artwork"
                 // instead of taking the metadata with it.
                 var bytes = info.Artwork.ToArray();
-                var bitmap = Android.Graphics.BitmapFactory.DecodeByteArray(bytes, 0, bytes.Length);
+                var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(bytes, 0, bytes.Length);
                 if (bitmap is not null) builder.PutBitmap(MediaMetadata.MetadataKeyAlbumArt, bitmap);
-                else Log(() => "[Shenora.Mobile] Playback artwork could not be decoded; metadata still published.");
+                else Log(() => "[Shenora.Android] Playback artwork could not be decoded; metadata still published.");
             }
 
             _session.SetMetadata(builder.Build());
@@ -259,7 +258,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         // The ONE guard. These run on the session's handler thread, where an escaping exception has no
         // caller and takes the process with it.
         AppCallback.Run(() => handler(request),
-            ex => Log(() => $"[Shenora.Mobile] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
+            ex => Log(() => $"[Shenora.Android] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
     }
 
     private void Try(Action action, string what)
@@ -267,7 +266,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         try { action(); }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Mobile] MediaSession.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"[Shenora.Android] MediaSession.{what} failed ({ex.GetType().Name}: {ex.Message}).");
         }
     }
 
@@ -293,7 +292,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
     /// stereo asked for; there is no <c>OnTogglePlayPause</c> because the platform resolves a toggle into
     /// <see cref="OnPlay"/>/<see cref="OnPause"/> itself.
     /// </summary>
-    private sealed class CommandCallback(MobilePlaybackSession owner) : MediaSession.Callback
+    private sealed class CommandCallback(AndroidPlaybackSession owner) : MediaSession.Callback
     {
         public override void OnPlay() => owner.Raise(PlaybackCommand.Play);
 
@@ -317,4 +316,3 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
             owner.Raise(PlaybackCommand.SkipBackward, interval: owner.SkipInterval);
     }
 }
-#endif

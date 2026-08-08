@@ -138,3 +138,15 @@ VideoCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Vide
 AudioCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Audio]
 CanEncodeVideo   # 2026-08-07 -> MediaPlaybackPolicy.CanEncode(MediaStreamKind.Video)
 CanEncodeAudio   # 2026-08-07 -> MediaPlaybackPolicy.CanEncode(MediaStreamKind.Audio)
+
+# The 2026-08-08 mobile restructure. `Shenora.Mobile` is shared source because both mobile shells are MAUI
+# — it is NOT a place for two implementations behind an `#if`. Five types were exactly that: one NAME with
+# two bodies that never compiled together, which is why they read as an abstraction that did not exist.
+# They now live in `src/Shenora.<Platform>/Services/`, named and namespaced for their platform, exactly as
+# `WindowsMediaPlayer` is.
+MobileMediaPlayer         # 2026-08-08 -> AndroidMediaPlayer / IosMediaPlayer
+MobilePlaybackSession     # 2026-08-08 -> AndroidPlaybackSession / IosPlaybackSession
+MobileMediaCapability     # 2026-08-08 -> AndroidMediaCapability / IosMediaCapability
+MobileMediaAudioConversion # 2026-08-08 -> AndroidMediaAudioConversion / IosMediaAudioConversion
+MobileLiveActivities      # 2026-08-08 -> AndroidLiveActivities / IosLiveActivities
+MobileFileDialogs         # 2026-08-08 -> MobileFileDialogsBase (abstract) + AndroidFileDialogs / IosFileDialogs

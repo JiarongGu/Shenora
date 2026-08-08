@@ -1,15 +1,55 @@
+Shenora.Android.AndroidFileDialogs
+  method .ctor
+  method SaveAsync
+Shenora.Android.AndroidLiveActivities
+  method .ctor
+  method End
+  method Start
+  method Update
+  property Unavailable
+Shenora.Android.AndroidMediaAudioConversion
+  method CanConvert
+  method Use
+Shenora.Android.AndroidMediaCapability
+  method .ctor
+  method Decodable
+  method Encodable
+Shenora.Android.AndroidMediaPlayer
+  method .ctor
+  method ApplyRateCore
+  method ApplyStartAt
+  method OpenCore
+  method PauseCore
+  method PlayCore
+  method SeekCore
+  method TeardownCore
+  property DurationCore
+  property PositionCore
+Shenora.Android.AndroidPlaybackSession
+  event CommandReceived
+  method .ctor
+  method Clear
+  method Dispose
+  method Publish
+  method Report
+  property SessionToken
+  property SkipInterval
+  property Supported
 Shenora.Mobile.MobileClipboardService
   method .ctor
   method GetTextAsync
   method SetImageFromFileAsync
   method SetTextAsync
   method TrySaveImageToFileAsync
-Shenora.Mobile.MobileFileDialogs
+Shenora.Mobile.MobileFileDialogsBase
   method .ctor
+  method DiscardTemp
+  method NewTempPath
   method OpenFileAsync
   method OpenFolderAsync
   method SaveAsync
   method SaveFileAsync
+  method SuggestedName
 Shenora.Mobile.MobileHostExtensions
   method UseAndroid
 Shenora.Mobile.MobileIpcBridge
@@ -28,29 +68,6 @@ Shenora.Mobile.MobileIpcBridgeOptions
   property NotificationInterval
   property OnClientReady
   property Shell
-Shenora.Mobile.MobileLiveActivities
-  method .ctor
-  method End
-  method Start
-  method Update
-  property Unavailable
-Shenora.Mobile.MobileMediaAudioConversion
-  method CanConvert
-  method Use
-Shenora.Mobile.MobileMediaCapability
-  method .ctor
-  method Decodable
-  method Encodable
-Shenora.Mobile.MobilePlaybackSession
-  event CommandReceived
-  method .ctor
-  method Clear
-  method Dispose
-  method Publish
-  method Report
-  property SessionToken
-  property SkipInterval
-  property Supported
 Shenora.Mobile.MobileSafeArea
   method .ctor
   method Dispose

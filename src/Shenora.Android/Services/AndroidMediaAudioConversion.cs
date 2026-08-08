@@ -1,9 +1,8 @@
 using Shenora.Modules.Media;
 
-#if ANDROID
 using Android.Media;
 
-namespace Shenora.Mobile;
+namespace Shenora.Android;
 
 /// <summary>
 /// Android's <see cref="IMediaAudioConversion"/> — a platform decoder feeding a platform AAC encoder.
@@ -22,7 +21,7 @@ namespace Shenora.Mobile;
 /// cannot finish.
 /// </para>
 /// </summary>
-public static class MobileMediaAudioConversion
+public static class AndroidMediaAudioConversion
 {
     private const string AacMime = "audio/mp4a-latm";
 
@@ -315,4 +314,3 @@ public static class MobileMediaAudioConversion
         }
     }
 }
-#endif

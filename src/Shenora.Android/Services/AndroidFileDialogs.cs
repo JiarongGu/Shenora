@@ -8,10 +8,12 @@ using Shenora.Modules.FileDialog;
 using Shenora.Core.Shell;
 using Shenora.Engine.Files;
 
-namespace Shenora.Mobile;
+using Shenora.Mobile;
+
+namespace Shenora.Android;
 
 /// <summary>
-/// The Android half of <see cref="MobileFileDialogs"/>: saving through the Storage Access Framework's
+/// The Android half of <see cref="MobileFileDialogsBase"/>: saving through the Storage Access Framework's
 /// <c>ACTION_CREATE_DOCUMENT</c>, reached via AndroidX's <c>CreateDocument</c> contract.
 /// <para>
 /// MAUI Essentials has no save picker, and the obvious third-party one (<c>FileSaver</c>) lives in
@@ -19,16 +21,16 @@ namespace Shenora.Mobile;
 /// platform code, which is exactly what <c>Platforms/</c> exists for.
 /// </para>
 /// </summary>
-public sealed partial class MobileFileDialogs
+public sealed class AndroidFileDialogs : MobileFileDialogsBase
 {
     // A registry key must be unique per in-flight request: two concurrent saves sharing one would have
     // the second overwrite the first's callback and the first caller would wait forever.
     private static int _saveRequests;
 
     /// <inheritdoc />
-    // No `= default` here: the default belongs to the DEFINING declaration in the shared source, and
-    // repeating it on the implementing half is CS1066.
-    public partial async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
+    // No `= default` here: the default belongs to the base declaration, and repeating it on an
+    // override is CS1066.
+    public override async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                                           Func<Stream, CancellationToken, Task> write,
                                                           CancellationToken cancellationToken)
     {

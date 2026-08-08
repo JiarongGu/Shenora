@@ -1,13 +1,12 @@
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
-#if IOS || MACCATALYST
 using Foundation;
 using MediaPlayer;
 using Shenora;
 using PortableState = Shenora.Modules.Platform.PlaybackState;
 
-namespace Shenora.Mobile;
+namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="IPlaybackSession"/> — <c>MPNowPlayingInfoCenter</c> for what is playing and
@@ -26,7 +25,7 @@ namespace Shenora.Mobile;
 /// so the kit publishes and stays out of it.
 /// </para>
 /// </summary>
-public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
+public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
 {
     private readonly Action<string>? _log;
     private readonly object _gate = new();
@@ -37,7 +36,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
-    public MobilePlaybackSession(Action<string>? log = null)
+    public IosPlaybackSession(Action<string>? log = null)
     {
         _log = log;
         // Every command is wired ONCE here and enabled/disabled by `Supported` afterwards. Adding and
@@ -144,7 +143,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
                 else
                 {
                     // Decoration only — never let a bad image take the metadata with it.
-                    Log(() => "[Shenora.Mobile] Playback artwork could not be decoded; metadata still published.");
+                    Log(() => "[Shenora.iOS] Playback artwork could not be decoded; metadata still published.");
                 }
             }
 
@@ -242,7 +241,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         if (handler is null) return;
         var request = new PlaybackCommandRequest { Command = command, Position = position, Interval = interval };
         AppCallback.Run(() => handler(request),
-            ex => Log(() => $"[Shenora.Mobile] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
+            ex => Log(() => $"[Shenora.iOS] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
     }
 
     private void Try(Action action, string what)
@@ -250,7 +249,7 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         try { action(); }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Mobile] NowPlaying.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"[Shenora.iOS] NowPlaying.{what} failed ({ex.GetType().Name}: {ex.Message}).");
         }
     }
 
@@ -266,10 +265,9 @@ public sealed class MobilePlaybackSession : IPlaybackSession, IDisposable
         foreach (var (command, target) in _targets)
         {
             try { command.RemoveTarget(target); }
-            catch (Exception ex) { Log(() => $"[Shenora.Mobile] RemoveTarget: {ex.Message}"); }
+            catch (Exception ex) { Log(() => $"[Shenora.iOS] RemoveTarget: {ex.Message}"); }
         }
         _targets.Clear();
         Clear();
     }
 }
-#endif

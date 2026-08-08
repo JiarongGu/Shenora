@@ -62,6 +62,15 @@ Json
 # Gated by MetadataSurfaceTests rather than SurfaceVocabularyTests — the Windows test project cannot
 # reference a net10.0-android assembly — so both gates read this one lexicon.
 Mobile
+
+# `Android` and `Ios` (2026-08-08) are the peers of `Windows` above, and they arrived when the mobile
+# shells stopped pretending two implementations were one type. `Shenora.Mobile` is shared source because
+# both shells are MAUI; code that is NOT shared — AVPlayer vs android.media.MediaPlayer, MPNowPlayingInfo
+# vs MediaSession — now lives in src/Shenora.<Platform>/Services/ and is named for the platform it talks
+# to. A platform is a MECHANISM in D22's sense for exactly the reason `Windows` always was: it names the
+# API surface being spoken to, not a scenario someone wants to enable.
+Android
+Ios
 Path
 Paths
 Shell

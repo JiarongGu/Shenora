@@ -54,7 +54,7 @@ internal static class PlaybackSessionProbe
             // half does anything alone, and the symptom of missing either is identical — plays fine in the
             // foreground, stops the instant the app is backgrounded. Measured on a device, 2026-08-07.
             //
-            // The kit deliberately stays out of this (see MobilePlaybackSession's remarks): the CATEGORY,
+            // The kit deliberately stays out of this (see IosPlaybackSession/AndroidPlaybackSession remarks): the CATEGORY,
             // whether it mixes with other audio, and what happens on an interruption are product decisions
             // — `.Playback` here means "this is the point of the app, stop the music app". A sample has to
             // make that choice like any other app, which is exactly why it is shown rather than hidden.

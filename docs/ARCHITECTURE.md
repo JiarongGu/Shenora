@@ -105,9 +105,11 @@ Shenora.slnx
 │   │                                                        the interceptor's conversion route becomes
 │   │                                                        this player's OUTPUT PIPE rather than a
 │   │                                                        parallel feature (D58).
-│   │                                                      · MobileMediaPlayer (iOS, AVPlayer) — a native
-│   │                                                        one, for the case a page element cannot serve:
-│   │                                                        iOS pauses a <video> when backgrounded.
+│   │                                                      · IosMediaPlayer (AVPlayer) — for the case a
+│   │                                                        page element cannot serve: iOS pauses a
+│   │                                                        <video> when backgrounded.
+│   │                                                      · AndroidMediaPlayer (android.media.MediaPlayer,
+│   │                                                        NOT ExoPlayer — D51 ships no engine).
 │   │                                                      · WindowsMediaPlayer (Media Foundation, via
 │   │                                                        Windows.Media.Playback) — the desktop native
 │   │                                                        one: playback that survives the webview, and
@@ -212,8 +214,14 @@ Shenora.slnx
 │   │                                          webview kit; D19's package edge is now internal.
 │   ├── Shenora.Mobile/     (SOURCE, no csproj) — the mobile shell's shared code; NOT a package, and
 │   │                                          there is deliberately no Shenora.Mobile on nuget.org.
-│   │                                          Ipc/ Threading/ Services/ Hosting/, compiled INTO both
-│   │                                          platform packages by Shenora.Mobile.props.
+│   │                                          Ipc/ Threading/ Services/ Hosting/ WebView/, compiled
+│   │                                          INTO both platform packages by Shenora.Mobile.props.
+│   │                                          🔴 IT HOLDS WHAT IS GENUINELY SHARED, which is real
+│   │                                          because both shells are MAUI: the HybridWebView IPC
+│   │                                          transport, the UI dispatcher, the safe area, the
+│   │                                          interceptor, the host composition. It is NOT a place
+│   │                                          for two implementations behind an #if — five types
+│   │                                          were exactly that until 2026-08-08 and moved out.
 │   ├── Shenora.Android     net10.0-android  — deps: Shenora, Microsoft.Maui.Controls
 │   ├── Shenora.iOS         net10.0-ios      — same deps, same source, and it builds on WINDOWS: a
 │   │                                          net10.0-ios LIBRARY needs only the maui-ios workload,
@@ -224,10 +232,12 @@ Shenora.slnx
 │   │                                          substrate is already portable, so this is the
 │   │                                          HybridWebView adapter, a UI dispatcher and the
 │   │                                          Essentials-backed Core contracts.
-│   │                                          Both PROVEN on device/simulator, and neither needed a
-│   │                                          single #if. Divergence goes in each project's
-│   │                                          Platforms/ folder (MAUI SDK includes per TFM, verified
-│   │                                          in BOTH directions for these single-TFM libraries).
+│   │                                          Both PROVEN on device/simulator. Divergence goes in
+│   │                                          each project's OWN Services/ folder, named and
+│   │                                          namespaced for its platform (AndroidMediaPlayer,
+│   │                                          IosMediaPlayer) exactly as WindowsMediaPlayer is —
+│   │                                          and needing no #if, because each shell is single-TFM
+│   │                                          so the build already selects it.
 │   │                                          Since 2026-08-03 there IS some: SaveAsync, because SAF
 │   │                                          and UIDocumentPicker have nothing in common. It is a
 │   │                                          `partial` method, so a THIRD platform cannot compile

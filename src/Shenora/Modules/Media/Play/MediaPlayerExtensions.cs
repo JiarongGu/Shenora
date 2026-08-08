@@ -51,7 +51,7 @@ public static class MediaPlayerExtensions
     /// <para>
     /// <b>It binds the PAGE-BACKED <see cref="MediaPlayer"/>, never the native one, and that is deliberate.</b>
     /// A hybrid framework rendering through the page is the normal case (D58), and binding
-    /// <c>MobileMediaPlayer</c> here would silently move the audio out of the page's own element — so a
+    /// a shell's native player here would silently move the audio out of the page's own element — so a
     /// React UI bound to that element would show nothing playing. **Background playback is opt-in**: it
     /// needs the app's own <c>AVAudioSession</c> and <c>UIBackgroundModes</c> anyway, so an app that wants
     /// it resolves the shell's player explicitly.
@@ -189,7 +189,7 @@ public static class MediaPlayerExtensions
     /// <see cref="IPlaybackSession.Publish"/>, deliberately.</b> A player knows a position, a rate and a
     /// duration; it does not know a title, a subtitle or artwork. <c>Publish</c> takes a WHOLE
     /// <see cref="PlaybackInfo"/>, so a bridge that published what it knows would blank the metadata the
-    /// app had already set — the exact trap <c>MobilePlaybackSession</c> documents for partial updates.
+    /// app had already set — the exact trap <c>IosPlaybackSession</c> documents for partial updates.
     /// Metadata stays the app's to publish; this carries state and position only.
     /// </para>
     /// <para>

@@ -1,12 +1,11 @@
 using Shenora.Modules.Platform;
 
-#if IOS || MACCATALYST
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Shenora;
 
-namespace Shenora.Mobile;
+namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="ILiveActivities"/> — ActivityKit, reached through the kit's own Swift shim.
@@ -35,7 +34,7 @@ namespace Shenora.Mobile;
 /// the OS reports activities as available regardless.
 /// </para>
 /// </summary>
-public sealed class MobileLiveActivities : ILiveActivities
+public sealed class IosLiveActivities : ILiveActivities
 {
     private const string Lib = "__Internal";
 
@@ -48,7 +47,7 @@ public sealed class MobileLiveActivities : ILiveActivities
     private readonly Action<string>? _log;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a native callback.</param>
-    public MobileLiveActivities(Action<string>? log = null) => _log = log;
+    public IosLiveActivities(Action<string>? log = null) => _log = log;
 
     [DllImport(Lib, EntryPoint = "shenora_activity_unavailable")]
     private static extern IntPtr NativeUnavailable();
@@ -103,7 +102,7 @@ public sealed class MobileLiveActivities : ILiveActivities
                 // promised to report exactly that, which a LINK-time failure could never deliver. What can
                 // still fail is the call itself, and a reason is worth returning rather than throwing at an
                 // app that asked a simple question.
-                Log(() => $"[Shenora.Mobile] Live activity probe failed ({ex.GetType().Name}: {ex.Message}).");
+                Log(() => $"[Shenora.iOS] Live activity probe failed ({ex.GetType().Name}: {ex.Message}).");
                 return $"The live-activity shim could not be reached ({ex.GetType().Name}).";
             }
         }
@@ -119,7 +118,7 @@ public sealed class MobileLiveActivities : ILiveActivities
         // caller's `is null` check is the whole error contract.
         if (result is null || result.StartsWith('!'))
         {
-            Log(() => $"[Shenora.Mobile] Live activity refused: {result?[1..] ?? "no response"}");
+            Log(() => $"[Shenora.iOS] Live activity refused: {result?[1..] ?? "no response"}");
             return null;
         }
         return result;
@@ -133,7 +132,7 @@ public sealed class MobileLiveActivities : ILiveActivities
         var result = Call(() => Take(NativeUpdate(handle, JsonSerializer.Serialize(state, Json))),
             nameof(Update));
         if (result is { Length: > 0 } && result.StartsWith('!'))
-            Log(() => $"[Shenora.Mobile] Live activity update refused: {result[1..]}");
+            Log(() => $"[Shenora.iOS] Live activity update refused: {result[1..]}");
     }
 
     /// <inheritdoc />
@@ -153,11 +152,10 @@ public sealed class MobileLiveActivities : ILiveActivities
         try { return call(); }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Mobile] LiveActivities.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"[Shenora.iOS] LiveActivities.{what} failed ({ex.GetType().Name}: {ex.Message}).");
             return null;
         }
     }
 
     private void Log(Func<string> message) => AppCallback.Log(_log, message);
 }
-#endif

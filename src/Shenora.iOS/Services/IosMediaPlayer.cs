@@ -1,12 +1,11 @@
 using Shenora.Modules.Media;
 
-#if IOS || MACCATALYST
 using AVFoundation;
 using CoreMedia;
 using Foundation;
 using Shenora;
 
-namespace Shenora.Mobile;
+namespace Shenora.iOS;
 
 /// <summary>
 /// iOS's <see cref="IMediaPlayer"/> — <c>AVPlayer</c> over an <c>AVPlayerItem</c>. The state machine is
@@ -19,13 +18,13 @@ namespace Shenora.Mobile;
 /// </para>
 /// <para>
 /// ⚠ <b>Playing in the background additionally needs two things this class deliberately does not do</b>,
-/// because both are the APP's policy and the same division <see cref="MobilePlaybackSession"/> already
+/// because both are the APP's policy and the same division <see cref="IosPlaybackSession"/> already
 /// draws for the audio session: an <c>AVAudioSession</c> activated with a playback category, and
 /// <c>UIBackgroundModes: [audio]</c> in the app's <c>Info.plist</c>. The kit plays; the app decides whether
 /// it is allowed to mix, duck, or interrupt someone else's audio.
 /// </para>
 /// </summary>
-public sealed class MobileMediaPlayer : MediaPlayerBase
+public sealed class IosMediaPlayer : MediaPlayerBase
 {
     private AVPlayer? _player;
     private AVPlayerItem? _item;
@@ -35,8 +34,8 @@ public sealed class MobileMediaPlayer : MediaPlayerBase
     private IDisposable? _likelyToKeepUpObserver;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into an AVFoundation callback.</param>
-    public MobileMediaPlayer(Action<string>? log = null)
-        : base(log is null ? null : message => log($"[Shenora.Mobile] {message}"))
+    public IosMediaPlayer(Action<string>? log = null)
+        : base(log is null ? null : message => log($"[Shenora.iOS] {message}"))
     {
     }
 
@@ -133,7 +132,7 @@ public sealed class MobileMediaPlayer : MediaPlayerBase
     /// <inheritdoc />
     /// <remarks>
     /// The completion overload, not <c>Seek(CMTime)</c> — that one is obsolete since iOS 11 and the analyser
-    /// fails the build on it (CA1422), the same trap <see cref="MobilePlaybackSession"/> hit with
+    /// fails the build on it (CA1422), the same trap <see cref="IosPlaybackSession"/> hit with
     /// <c>MPMediaItemArtwork</c>. Nothing waits on the completion: positioning is best-effort before the item
     /// is handed over, and a caller needing a guaranteed position seeks.
     /// </remarks>
@@ -178,7 +177,7 @@ public sealed class MobileMediaPlayer : MediaPlayerBase
     /// <remarks>
     /// ⚠ The KVO observers and the notification observer are registered against the ITEM; releasing the
     /// player without removing them leaves them firing into a dead handler, which is the same leak
-    /// <see cref="MobilePlaybackSession"/> documents for command targets.
+    /// <see cref="IosPlaybackSession"/> documents for command targets.
     /// </remarks>
     protected override void TeardownCore()
     {
@@ -204,4 +203,3 @@ public sealed class MobileMediaPlayer : MediaPlayerBase
     /// </summary>
     private const int TimeScale = 600;
 }
-#endif

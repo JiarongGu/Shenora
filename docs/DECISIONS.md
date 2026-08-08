@@ -2288,7 +2288,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **Read mechanically, the same test is "platform half and/or IPC surface"** — a bridge needs one or
     both, a brain needs neither. That is what moves Media OUT of "engine", where `ARCHITECTURE.md` filed
     it beside Missions: media has three platform halves (`IMediaCapability`, `IMediaAudioConversion`,
-    `MobileMediaPlayer`) and a route. Missions has neither and stays logic — nothing on the page asks it
+    `IosMediaPlayer`) and a route. Missions has neither and stays logic — nothing on the page asks it
     anything, which is the brain test passing.
     - ⚠ **An OPTIONAL collaborator is not a platform half.** The file engine consults `IFileLockInspector`,
       which does have a Windows implementation — and the engine works without it. Stating this explicitly

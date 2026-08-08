@@ -6,7 +6,8 @@ namespace Shenora.Sample.Maui;
 /// Does the HOST-OWNED player actually play? (D54.)
 /// <para>
 /// ⚠ <b>Nothing else can answer this.</b> There is no managed player — every implementation is a shell
-/// talking to AVFoundation — so the unit tests pin the CONTRACT and cannot decode a byte.
+/// talking to a platform pipeline (AVFoundation on iOS, <c>android.media.MediaPlayer</c> on Android) — so
+/// the unit tests pin the CONTRACT and cannot decode a byte.
 /// </para>
 /// <para>
 /// <b>Note how little there is here, and that it is the POINT.</b> Playing a file the device can already
@@ -20,7 +21,7 @@ public static class MediaPlayerProbe
     /// Open the staged clip, play it, and report whether the position MOVED.
     /// <para>
     /// The position is the assertion, deliberately: <c>PlayAsync</c> completing proves a message reached
-    /// AVFoundation and nothing more — the same mistake this sample's <c>MEDIA: PASS</c> made when it
+    /// the platform and nothing more — the same mistake this sample's <c>MEDIA: PASS</c> made when it
     /// asserted bytes rather than pixels.
     /// </para>
     /// </summary>

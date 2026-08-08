@@ -112,14 +112,14 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 - [x] ~~`FileDialogFacade`'s default wiring had no test~~ — DONE.
   `UseWindows_registers_the_dialog_ROUTE_so_a_page_can_reach_it` drives a fake `IFileDialogs` end to end
   (registration → mapping → facade → service), sabotage-verified against the shell's registration line.
-- [ ] **Real `IMediaPlayer` on Android (ExoPlayer)** — D64's *"implement it where the platform CAN, refuse
-  only where it cannot"*. Android is the last shell with no native player, so it still falls back to
-  `<video>`, which is the outcome D54 exists to remove. Windows landed 2026-08-08 (`WindowsMediaPlayer`,
-  Media Foundation via `Windows.Media.Playback`), proven by `MEDIA PLAYER: PASS` in the desktop sample and
-  sabotage-verified both ways.
-- [ ] ⚠ **Re-run the MAUI player probe on an iOS device after the "opt-in everywhere" change.** It now
-  resolves `MobileMediaPlayer` by name rather than `IMediaPlayer`, so a silent `PLAYER: absent` is the
-  tell that the registration did not take — and absent-by-design reads identically to quietly-wrong (D63).
+- [ ] ⚠ **Re-run the MAUI player probe on an iOS DEVICE after the 2026-08-08 changes.** It now resolves
+  `IosMediaPlayer` by name rather than `IMediaPlayer`, so a silent `PLAYER: absent` is the tell that the
+  registration did not take — and absent-by-design reads identically to quietly-wrong (D63).
+  - **Android is DONE and proven on hardware**: `AndroidMediaPlayer` (the platform's own
+    `android.media.MediaPlayer`, not ExoPlayer — D51 forbids shipping an engine) reported
+    `PLAYER: PASS — the host decoded a real file and advanced a real clock`, position `0.97s -> 2.48s`,
+    with `c2.android.aac.decoder` visible in logcat on the `shenora-a36` emulator. Windows landed the same
+    day. iOS is the only shell whose player has never been re-run since it moved onto `MediaPlayerBase`.
   - **The LIBRARY half is already gated and green**: `Shenora.iOS` is in `Shenora.slnx`, so `dev.mjs
     verify` compiles the `#if IOS` code on this Windows box — `maui-ios` is installed and only the final
     link needs a Mac. ⚠ Worth knowing because it is easy to conclude otherwise: there is no

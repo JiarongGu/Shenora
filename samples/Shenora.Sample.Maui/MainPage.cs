@@ -172,12 +172,12 @@ public sealed class MainPage : ContentPage
 			// send one. Absent-by-design and quietly-wrong look identical from the outside (D63), so the
 			// probe must name the type it means.
 			//
-			// GetService, not GetRequiredService: the native player is deliberately ABSENT on Android and
-			// Windows-under-MAUI, and the probe reports that as a fact rather than a failure.
+			// GetService, not GetRequiredService: a shell may ship no native player, and the probe reports
+			// that as a fact rather than a failure.
 			try
 			{
-#if IOS || MACCATALYST
-				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Mobile.MobileMediaPlayer>(), MauiProgram.Log);
+#if IOS || MACCATALYST || ANDROID
+				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
 #else
 				await MediaPlayerProbe.RunAsync(null, MauiProgram.Log);
 #endif

@@ -5,25 +5,27 @@ using UIKit;
 using Shenora.Modules.FileDialog;
 using Shenora.Core.Shell;
 
-namespace Shenora.Mobile;
+using Shenora.Mobile;
+
+namespace Shenora.iOS;
 
 /// <summary>
-/// The iOS half of <see cref="MobileFileDialogs"/>: saving through
+/// The iOS half of <see cref="MobileFileDialogsBase"/>: saving through
 /// <see cref="UIDocumentPickerViewController"/> in its export-a-copy form.
 /// <para>
 /// The ORDER is forced here and it is the one real difference from Android. iOS has no
 /// "create an empty document and give me a handle" picker — the export picker hands over a file that
 /// already exists — so the content must be produced BEFORE the user chooses, and a cancel therefore
 /// wastes the work. Android asks first precisely because it can. The shared declaration on
-/// <c>MobileFileDialogs.SaveAsync</c> documents this for callers rather than leaving it to be
+/// <c>MobileFileDialogsBase.SaveAsync</c> documents this for callers rather than leaving it to be
 /// discovered.
 /// </para>
 /// </summary>
-public sealed partial class MobileFileDialogs
+public sealed class IosFileDialogs : MobileFileDialogsBase
 {
     // No `= default` on the implementing half (CS1066) — the default lives on the shared declaration.
     /// <inheritdoc />
-    public partial async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
+    public override async Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
                                                           Func<Stream, CancellationToken, Task> write,
                                                           CancellationToken cancellationToken)
     {

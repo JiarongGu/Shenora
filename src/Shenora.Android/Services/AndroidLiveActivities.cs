@@ -1,10 +1,9 @@
 using Shenora.Modules.Platform;
 using Shenora.Core.Shell;
 
-#if ANDROID
 using Shenora;
 
-namespace Shenora.Mobile;
+namespace Shenora.Android;
 
 /// <summary>
 /// Android's <see cref="ILiveActivities"/>: an honest "not here", not a silent no-op.
@@ -25,7 +24,7 @@ namespace Shenora.Mobile;
 /// needs a NON-media progress surface here.
 /// </para>
 /// </summary>
-public sealed class MobileLiveActivities : ILiveActivities
+public sealed class AndroidLiveActivities : ILiveActivities
 {
     /// <inheritdoc />
     public string? Unavailable =>
@@ -47,4 +46,3 @@ public sealed class MobileLiveActivities : ILiveActivities
     /// <inheritdoc />
     public void End(string handle) { }
 }
-#endif
