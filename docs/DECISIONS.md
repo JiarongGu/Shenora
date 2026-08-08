@@ -2349,10 +2349,26 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     modelled as what it is (an event stream, which `IEventBus` already provides), not squeezed into a
     request-shaped hole. **The current design's real fault is that it made these two cases share one
     bucket, which is why neither had a good name.**
-  - ⚠ **`waiting`/`resume` needs deciding before this is built.** An operation can park awaiting a
-    decision and resume later, which XHR has no analogue for. Either a request id survives that (and
-    "request" stretches further than the word implies), or parked work is the host-initiated case above
-    wearing a different hat.
+  - 🔴 **SETTLED 2026-08-08: `waiting`/`resume` LEAVES the request model.** It was the one part XHR did
+    not answer — a request there is in flight or done, never parked — so the tie-breaker was usage, not
+    taste, and the answer was unambiguous. **The only code in the repo that drives `Wait`/`Resume` is
+    `samples/Shenora.Sample.Logic/MissionOperationObserver.cs`**: app code that calls
+    `operation.Wait("queued")` for a queued MISSION and `Resume()` when it starts, so the sample's UI can
+    show *"2 running, the rest queued"*. Nothing else uses it. `WAIT`/`RESUME`/`DISMISS` ship as routes
+    with a client half in `@shenora/react`, and outside the kit's own tests **no adopter drives any of
+    them**.
+    - So the single thing `waiting` models is a **mission queue** — host-initiated work, which the bullet
+      above already says does not fold. That is why the state never sat comfortably beside
+      `running`/`completed`: it was never describing a request. A request is in flight or done.
+    - **It goes out with D66** rather than being modelled: D15's bar is that a capability nobody drives
+      is speculation, and keeping it would make "request" cover something that outlives the page that
+      sent it and has to survive a reload — a large cost carried by every request for a case that is not
+      one. Missions keep what they already are, an event stream with a cancel handle, and the sample's
+      observer moves onto that instead of borrowing an operation handle.
+    - ⚠ **This is the widest part of the wire break**: `OperationStatus.Waiting`, `IOperation.Wait`/
+      `Resume`, `IOperationRegistry.RequestResume`/`RequestWait`, the `WAIT`/`RESUME`/`DISMISS` routes and
+      their client half all go. Worth doing in one cut, because a half-removed state is exactly the
+      ambiguity this entry exists to end.
   - **Why this is recorded rather than named:** three replacement names were rejected for being words
     every library owns (`Exchange`, `Progress`, and `Operation` itself), and the reason none fitted is
     that the concept should not exist. ⚠ A naming problem that resists every candidate is worth reading

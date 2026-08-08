@@ -138,23 +138,16 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
     intermediate state at all. ⚠ **The build is one piece: the pump BATCHES but does not COALESCE**, so
     a 5 ms request would still deliver `running` AND `completed` today. Coalesce keyed by REQUEST ID,
     last-write-wins within the window — which is also what a progress feed wants.
-- [ ] 🔴 **DECIDE FIRST, because it shapes D66: what is `waiting`/`resume`?** A request can park awaiting
-  a decision and be resumed, dismissed, or completed later. **XHR has no analogue** — a request there is
-  in flight or done, never parked — so this is the one part of the model the framing does not answer, and
-  building D66 without settling it would bake in whichever reading happened to be convenient.
-  - **(a) A request stretches that far.** A parked request is still that request: same id, same handle,
-    resumed in place. Honest if a park is short and the page is still watching. ⚠ It makes "request"
-    cover something that can outlive the page that sent it, and a resumed one has to survive a reload.
-  - **(b) Parked work is HOST-INITIATED work wearing a hat.** The moment nobody is waiting on the reply,
-    it stops being a request and becomes the same category as a scheduled mission — an event stream with
-    a cancel handle. Consistent with the split D66 already draws, and it explains why `waiting` never
-    fitted alongside `running`/`completed`.
-  - ⚠ **Check who actually uses it before deciding.** `WAIT`/`RESUME`/`DISMISS` are shipped routes with
-    a client half in `@shenora/react`; if no adopter drives them, the cheap answer is to cut the state
-    with D66 rather than model it (D15's bar — a capability nobody needs is speculation).
-  - **Host-initiated work does NOT fold** — a scheduled or recovered mission has no request behind it.
-    Inside the kit every operation comes from a request; the only counter-example is app code (the
-    sample's `MissionOperationObserver`). Model it as the event stream it already is.
+  - **`waiting`/`resume` is CUT, not modelled** — the blocker, settled 2026-08-08 by usage (owner chose
+    option (b); reasoning in D66). The only driver in the repo is `MissionOperationObserver.cs`, app code
+    wrapping a queued MISSION, and no adopter drives `WAIT`/`RESUME`/`DISMISS`. So it described
+    host-initiated work all along, which is why it never fitted beside `running`/`completed`. Remove
+    `OperationStatus.Waiting`, `IOperation.Wait`/`Resume`, `IOperationRegistry.RequestResume`/`RequestWait`,
+    the three routes and their client half — in ONE cut, because a half-removed state is the ambiguity this
+    is meant to end.
+  - **Host-initiated work does NOT fold** — a scheduled or recovered mission has no request behind it,
+    which is exactly what that decision turns on. Model it as the event stream it already is, and move the
+    sample's `MissionOperationObserver` onto that so nothing regresses for the one real use case.
   - ⚠ Wide wire break when it lands: `SHENORA.OPERATIONS`, `OPERATION_UPDATED`/`_REMOVED`, the
     `OperationStatus` values, `IModuleContext.Run`, and `createOperationsStore` in `@shenora/react`.
 - [ ] 🔎 **"No such MODULE" and "no such ROUTE in a module" are indistinguishable on the wire.**
