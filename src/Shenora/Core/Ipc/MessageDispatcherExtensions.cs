@@ -200,7 +200,7 @@ public static class MessageDispatcherExtensions
     /// </para>
     /// <para>
     /// <b>KNOWN LIMIT: this does not see facades registered through DI.</b>
-    /// <see cref="IpcServiceCollectionExtensions.AddMessageDispatcher"/> maps those through
+    /// <see cref="IpcServiceCollectionExtensions.UseMessageDispatcher"/> maps those through
     /// <see cref="IpcServiceCollectionExtensions.MapRegisteredModulesLazily"/> — ONE terminal
     /// middleware that resolves them on the first dispatch — rather than through
     /// <see cref="IModuleRegistry.TryClaimModule"/>, because claiming needs the module NAMES and
@@ -212,7 +212,7 @@ public static class MessageDispatcherExtensions
     /// pipeline and answers first. The PRECEDENCE is the intended one (the app's own modules win);
     /// the honest answer is what is missing. So map anything a plug-in must be able to collide with
     /// through <see cref="MapModule(IMessageDispatcher, IIpcModule)"/> or this method explicitly,
-    /// rather than through <c>AddIpcModule</c>. Recorded rather than solved: closing it needs
+    /// rather than through <c>UseIpcModule</c>. Recorded rather than solved: closing it needs
     /// either a name-reservation seam the registry does not have, or re-opening that deadlock.
     /// </para>
     /// <para>

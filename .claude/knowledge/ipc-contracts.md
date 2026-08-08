@@ -57,7 +57,7 @@ transport, or building the P6 adoption shims.
   belongs to whoever built it — usually DI).
   **KNOWN LIMIT the registry does NOT cover, and it is the composition path most apps use:
   DI-registered facades are invisible to it** (whole-codebase review, 2026-08-01).
-  `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` — one terminal middleware
+  `UseMessageDispatcher` maps them through `MapRegisteredModulesLazily` — one terminal middleware
   resolving them on the first dispatch — precisely because claiming a name needs to READ the names,
   and resolving facades inside the `IMessageDispatcher` singleton factory is the silent
   `StackOverflow` the bullet further down describes. So `IsModuleMapped("OPERATIONS")` is `false`
@@ -134,7 +134,7 @@ transport, or building the P6 adoption shims.
   stopped working). Keep the interface at the four things a dispatcher IS — dispatch, two sends,
   compose — so a decorator has four members to write and every helper works on it for free. Anything
   requiring the live window is mapped LATE, from wherever the window is created; a doc that says to do it
-  in `AddMessageDispatcher`'s configure callback is wrong, because that runs before any form exists.
+  in `UseMessageDispatcher`'s configure callback is wrong, because that runs before any form exists.
 - **LATE MAPPING is supported, so the pipeline must be thread-safe** — "configure then serve" is not a
   safe assumption here (the WinForms host maps its window facades after the form exists). `Use` was a
   `Lazy` reassignment over a mutable `List<T>` with no synchronization: a dispatch could read the OLD
@@ -179,7 +179,7 @@ transport, or building the P6 adoption shims.
   timer, so one event carrying a cyclic object graph (parent/child entities), a `Type`/delegate
   member, or a throwing getter is an unhandled UI-thread exception AND the whole drained batch is
   lost. Guard per-notification (one bad event must not kill its batch) plus a catch-all in `Flush`.
-- **A DI singleton factory must never enumerate the provider it is building.** `AddMessageDispatcher`
+- **A DI singleton factory must never enumerate the provider it is building.** `UseMessageDispatcher`
   resolved `IModuleFacade`s inside the `IMessageDispatcher` singleton factory, so any facade whose
   graph injects `IMessageDispatcher` — the documented cross-module `SendAsync` seam — re-enters the
   same factory. MS DI's cycle detection is call-site-based and cannot see a factory delegate

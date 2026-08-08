@@ -106,6 +106,19 @@ MediaRangeServer         # -> Core.WebViewFiles.Serve + interceptor.UseFiles(…
 MediaBodyMode            # -> Core.WebViewRangeDelivery, read off the interceptor
 MediaAccess              # -> Core.WebViewFiles.ResolveContained; the IsRemoteAllowed half was dropped
 MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived artefact, not a media one
+# --- 2026-08-08: the transcode tier's contract, found by a TASKS.md-vs-code sweep ------------------
+# TASKS.md still described "iOS's IMediaStreamConversion ... Registered on Android only today" as
+# current work. No such type exists: the seam is IMediaAudioConversion (+ IMediaAudioConversionRun), and
+# both mobile shells register one. Missing from this file is WHY doc-drift stayed green — the same half
+# the D45 block above complains about, one comment further down the same file.
+IMediaStreamConversion   # -> IMediaAudioConversion / IMediaAudioConversionRun
+# --- 2026-08-08, D64 amendment: ONE verb for a pipeline stage, and it is `Use` --------------------
+# Owner: "we should be use `use` since this is more like middleware/interceptor as in its actual
+# logic". The kit had both prefixes for the same KIND of thing. Receivers did NOT move — see D64.
+AddMessageDispatcher     # -> UseMessageDispatcher
+AddShenoraRequests       # -> UseShenoraRequests
+AddShenoraFileDialogs    # -> UseShenoraFileDialogs
+AddIpcModule             # -> UseIpcModule
 # --- 2026-08-07, D65: the shell entry points are named for the PLATFORM ---------------------------
 # D37 made the package set one-per-platform in 0.5.0 and the ENTRY POINTS never followed: the calls
 # were still named for a UI framework and for a category. A platform is the one thing an adopter

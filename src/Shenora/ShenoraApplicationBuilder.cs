@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 // The framework's own layers, defaulted in Build() (D64/D65). ⚠ The COMPOSITION ROOT is the one place
 // allowed to reach every layer — that is what a composition root IS. Nothing else crosses upward: a core
-// never names a module, which is why `AddMessageDispatcher` lists no facade.
+// never names a module, which is why `UseMessageDispatcher` lists no facade.
 using Shenora.Core.Events;            // core — the event pipeline
 using Shenora.Core.Ipc;               // core — the message contract
 using Shenora.Engine.Files;           // engine — the file queue
@@ -123,8 +123,8 @@ public sealed class ShenoraApplicationBuilder
         // that platform's shell instead (`UseWindows`/`UseAndroid`/`UseIOS`), because only a shell knows
         // whether it can satisfy it; a platform that cannot registers nothing and the page learns that
         // from the ready handshake's capability list (D36) rather than from silence.
-        Services.AddShenoraRequests();
-        Services.AddMessageDispatcher();
+        Services.UseShenoraRequests();
+        Services.UseMessageDispatcher();
 
         // The webview pipeline every window this app hosts will receive (D64). Registered here rather
         // than by a shell because it is PORTABLE — the same declarations serve the desktop host and both

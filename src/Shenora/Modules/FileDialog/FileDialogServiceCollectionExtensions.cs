@@ -15,7 +15,7 @@ public static class FileDialogServiceCollectionExtensions
     /// Register the file-dialog route module. OPT-IN: an app whose page never picks a file should not
     /// carry the routes, and D21 says the kit ships the primitive rather than the product.
     /// <para>
-    /// ⚠ It used to cite <see cref="IpcRequestServiceCollectionExtensions.AddShenoraRequests"/> as the
+    /// ⚠ It used to cite <see cref="IpcRequestServiceCollectionExtensions.UseShenoraRequests"/> as the
     /// comparable opt-in, which stopped being true when D64 made the framework default-on —
     /// <c>ShenoraApplicationBuilder.Build</c> calls that one for every app. What keeps THIS one opt-in is
     /// its dependency: the routes need an <see cref="IFileDialogs"/> only a shell can supply.
@@ -33,10 +33,10 @@ public static class FileDialogServiceCollectionExtensions
     /// for a configurable name to keep in step with — the reason <c>IpcRequestsModule</c> needs one.
     /// </para>
     /// </summary>
-    public static IServiceCollection AddShenoraFileDialogs(this IServiceCollection services)
+    public static IServiceCollection UseShenoraFileDialogs(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        // ⚠ TryAddEnumerable, not AddIpcModule: the SHELL calls this now (D64), and an app that also
+        // ⚠ TryAddEnumerable, not UseIpcModule: the SHELL calls this now (D64), and an app that also
         // calls it — every app written before that did — would otherwise register a SECOND
         // FileDialogModule, and two facades claiming one module name is a duplicate the dispatcher
         // rejects. So the old explicit call stays valid and becomes a harmless no-op, which is what makes

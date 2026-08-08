@@ -815,7 +815,7 @@ changes, noting them in `CHANGELOG.md`).
   `OnScopeCreated`, single-flight creation, `MapModule<TFacade>` declarations, structured
   `SCOPE_REQUIRED`, `GetScopeServices`/`InvalidateScope`/`ActiveScopes`) + `UseScopedRouter`
   (on `ScopedContainerRouterExtensions`); composition helpers
-  `AddIpcModule<TFacade>`/`MapRegisteredModules`/`AddMessageDispatcher` on
+  `UseIpcModule<TFacade>`/`MapRegisteredModules`/`UseMessageDispatcher` on
   `IpcServiceCollectionExtensions` (error handler → app middleware → DI-registered facades, mapped
   LAZILY so the singleton is cached before the provider is enumerated); and
   `MessageDispatcherExtensions`, which carries the composition helpers as extensions over the
@@ -830,7 +830,7 @@ changes, noting them in `CHANGELOG.md`).
   was stale from the release that added `TryReleaseModule`, and contradicted this same sentence's
   own member list.)
   **Known limit, recorded rather than solved: the registry does not see DI-registered facades.**
-  `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` — ONE terminal middleware
+  `UseMessageDispatcher` maps them through `MapRegisteredModulesLazily` — ONE terminal middleware
   resolving them on first dispatch — not through `TryClaimModule`, because claiming needs the module
   NAMES and reading those means resolving the facades, which inside the `IMessageDispatcher` singleton
   factory is the silent `StackOverflow` P5.5 H2 fixed. Two consequences: `IsModuleMapped("OPERATIONS")`

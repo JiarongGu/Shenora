@@ -22,7 +22,7 @@ public static class IpcRequestServiceCollectionExtensions
     /// </para>
     /// <para>
     /// 🔴 <b><c>TryAdd</c> throughout, because this is called BOTH by an app configuring options and by
-    /// <c>AddMessageDispatcher</c> defaulting it.</b> With <c>AddSingleton</c> the second call would
+    /// <c>UseMessageDispatcher</c> defaulting it.</b> With <c>AddSingleton</c> the second call would
     /// register a SECOND module, and two modules claiming one name is a duplicate the dispatcher rejects —
     /// so an app that configured its options would have broken its own routes by doing so. Idempotence is
     /// the precondition for defaulting anything.
@@ -34,7 +34,7 @@ public static class IpcRequestServiceCollectionExtensions
     /// kit's other options types are consumed the same way, and an <c>init</c>-only record behind a
     /// callback makes <c>o => o.ModuleName = "…"</c> a compile error.
     /// </param>
-    public static IServiceCollection AddShenoraRequests(
+    public static IServiceCollection UseShenoraRequests(
         this IServiceCollection services, IpcRequestTrackerOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -43,7 +43,7 @@ public static class IpcRequestServiceCollectionExtensions
 
         // A single GetRequiredService<IEventBus>(), not an enumeration of the provider — the ordinary
         // "resolve one dependency" shape, not the GetServices<IIpcModule>()-inside-a-singleton-factory
-        // pattern that once caused a silent StackOverflow in AddMessageDispatcher.
+        // pattern that once caused a silent StackOverflow in UseMessageDispatcher.
         services.TryAddSingleton<IIpcRequestTracker>(sp =>
             new IpcRequestTracker(sp.GetRequiredService<IEventBus>(),
                                   sp.GetRequiredService<IpcRequestTrackerOptions>()));

@@ -259,7 +259,7 @@ public class IpcRequestDispatchTests
     /// <summary>
     /// 🔴 THE DEFAULT-WIRING TEST (D63): the tracker reaches the dispatcher through the KIT's own
     /// composition, not because this test handed it over. Sabotage it by dropping the tracker argument in
-    /// <c>AddMessageDispatcher</c> and this is the test that fails.
+    /// <c>UseMessageDispatcher</c> and this is the test that fails.
     /// </summary>
     [Fact]
     public async Task The_standard_composition_tracks_requests_with_the_app_asking_for_nothing()
@@ -269,12 +269,12 @@ public class IpcRequestDispatchTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IEventBus, EventBus>();
-        services.AddShenoraRequests(new IpcRequestTrackerOptions
+        services.UseShenoraRequests(new IpcRequestTrackerOptions
         {
             GracePeriod = TimeSpan.FromMilliseconds(50),
             TimeProvider = clock,
         });
-        services.AddMessageDispatcher((_, dispatcher) =>
+        services.UseMessageDispatcher((_, dispatcher) =>
             dispatcher.MapModule("SLOW", routes => routes.RouteAsync("WORK", async (_, _) => await gate.Task)));
 
         using var provider = services.BuildServiceProvider();
@@ -291,11 +291,11 @@ public class IpcRequestDispatchTests
     /// <summary>
     /// 🔴 THE ACCEPTANCE TEST, through the composition a real app actually writes:
     /// <c>ShenoraApplication.CreateBuilder(…).Build()</c>, a module registered the ordinary way, and NOT
-    /// ONE line about tracking anywhere. The test above proves <c>AddMessageDispatcher</c> passes the
+    /// ONE line about tracking anywhere. The test above proves <c>UseMessageDispatcher</c> passes the
     /// tracker along; this proves the builder puts one there in the first place, which is the half an
     /// adopter depends on and never writes.
     /// <para>
-    /// The options are registered BEFORE <c>Build()</c> on purpose — <c>AddShenoraRequests</c> is
+    /// The options are registered BEFORE <c>Build()</c> on purpose — <c>UseShenoraRequests</c> is
     /// <c>TryAdd</c> throughout, so an app that configures its own wins, which is also the only way to get
     /// a fake clock in here.
     /// </para>

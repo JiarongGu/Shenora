@@ -166,7 +166,7 @@ public sealed class SettingsFacade : BaseFacade
 }
 
 services.AddModuleFacade<SettingsFacade>();
-services.AddMessageDispatcher();          // error handler → logging → your middleware → facades
+services.UseMessageDispatcher();          // error handler → logging → your middleware → facades
 ```
 
 **Raw exception text never crosses the wire.** An `OperationException` carries the app's own code,

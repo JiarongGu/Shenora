@@ -10,7 +10,7 @@ namespace Shenora.Windows;
 /// REGISTRATION: map it LATE, from wherever the window is created —
 /// <c>dispatcher.MapModule(new DropZoneModule(manager))</c> on the plain
 /// <see cref="IMessageDispatcher"/> resolved from DI (no cast; late mapping is safe while requests
-/// are in flight). This doc used to add "or through <c>AddMessageDispatcher</c>'s configure callback
+/// are in flight). This doc used to add "or through <c>UseMessageDispatcher</c>'s configure callback
 /// once the manager exists", which CANNOT work and is the same wrong advice
 /// <c>WindowCommandModule</c>'s doc already records having carried (P5.5 H6): that callback runs at
 /// provider-build time, and a <see cref="DropZoneManager"/> requires a live <c>WebView2</c> control

@@ -8,7 +8,7 @@ namespace Shenora.Core.Ipc;
 
 /// <summary>
 /// The standard IPC composition, formalizing the pattern the sample app proved: modules
-/// contribute facades through DI (<see cref="AddIpcModule{TFacade}"/> from their
+/// contribute facades through DI (<see cref="UseIpcModule{TFacade}"/> from their
 /// <c>IShenoraModule.ConfigureServices</c>), and the dispatcher is registered once with the
 /// family's §5 pipeline order encoded — error handler → app middleware → registered facades.
 /// This replaces the source app's static mutable service registry with plain DI enumeration.
@@ -17,10 +17,10 @@ public static class IpcServiceCollectionExtensions
 {
     /// <summary>
     /// Register a module facade for dispatch. Facades registered this way are mapped
-    /// automatically by <see cref="AddMessageDispatcher"/> (or explicitly via
+    /// automatically by <see cref="UseMessageDispatcher"/> (or explicitly via
     /// <see cref="MapRegisteredModules"/>).
     /// </summary>
-    public static IServiceCollection AddIpcModule<TFacade>(this IServiceCollection services)
+    public static IServiceCollection UseIpcModule<TFacade>(this IServiceCollection services)
         where TFacade : class, IIpcModule
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -36,7 +36,7 @@ public static class IpcServiceCollectionExtensions
     /// ⚠ <b>Use this for a module that could not be registered before the app was built</b> — the classic
     /// case being one that needs the live window, which is why LATE MAPPING is supported and the pipeline
     /// is thread-safe. A module with no such constraint is better registered at build time with
-    /// <see cref="AddIpcModule{TFacade}"/>, where the duplicate-module guard runs at composition instead
+    /// <see cref="UseIpcModule{TFacade}"/>, where the duplicate-module guard runs at composition instead
     /// of on first dispatch.
     /// </para>
     /// </summary>
@@ -53,7 +53,7 @@ public static class IpcServiceCollectionExtensions
     /// <summary>
     /// Map every DI-registered <see cref="IIpcModule"/> onto the dispatcher, in registration order.
     /// Resolves the facades NOW — safe from application code that already holds a built provider, but
-    /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="AddMessageDispatcher"/>
+    /// see <see cref="MapRegisteredModulesLazily"/> for the version <see cref="UseMessageDispatcher"/>
     /// must use.
     /// </summary>
     public static IMessageDispatcher MapRegisteredModules(this IMessageDispatcher dispatcher, IServiceProvider services)
@@ -152,7 +152,7 @@ public static class IpcServiceCollectionExtensions
     /// type — and taking it here would have kept propagating the very downcast this change removes.
     /// </para>
     /// </summary>
-    public static IServiceCollection AddMessageDispatcher(
+    public static IServiceCollection UseMessageDispatcher(
         this IServiceCollection services, Action<IServiceProvider, IMessageDispatcher>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -161,7 +161,7 @@ public static class IpcServiceCollectionExtensions
         // must not know the names of the features built on it.** The dispatcher composes whatever
         // `IIpcModule`s are REGISTERED; which ones exist is each feature's own business, registered
         // from the feature itself (`UseMediaPlayer`) or from the shell that can satisfy it
-        // (`AddShenoraFileDialogs`, called by the shells because only a platform knows whether it has
+        // (`UseShenoraFileDialogs`, called by the shells because only a platform knows whether it has
         // native dialogs).
         //
         // ⚠ It briefly did the opposite, and BOTH attempts are worth not repeating. Hardcoding
@@ -178,7 +178,7 @@ public static class IpcServiceCollectionExtensions
         {
             // GetService, not GetRequiredService: composing IPC over a bare ServiceCollection with no
             // IEventBus behind it is a legitimate shape (five composition tests do it), and the tracker
-            // needs a bus. An app that registered one — AddShenoraRequests, which Build() calls for every
+            // needs a bus. An app that registered one — UseShenoraRequests, which Build() calls for every
             // app — gets tracking; one that did not, dispatches untracked exactly as before.
             IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>(),
                                                                   sp.GetService<IIpcRequestTracker>());

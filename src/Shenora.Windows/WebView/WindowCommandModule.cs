@@ -68,7 +68,7 @@ public sealed class WindowCommandOptions
 /// </code>
 /// <c>dispatcher</c> there is the plain <see cref="IMessageDispatcher"/> resolved from DI; no cast is
 /// needed, and late mapping is safe while requests are in flight. This doc previously pointed at
-/// <c>AddMessageDispatcher</c>'s configure callback, which CANNOT work: that callback runs at
+/// <c>UseMessageDispatcher</c>'s configure callback, which CANNOT work: that callback runs at
 /// provider-build time, before any form exists (P5.5 H6). It also required a downcast to
 /// <c>MessageDispatcher</c> until the mapping helpers moved onto the interface.
 ///

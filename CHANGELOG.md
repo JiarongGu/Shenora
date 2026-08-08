@@ -75,6 +75,19 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **ONE verb for a pipeline stage, and it is `Use`.** Four entry points renamed:
+  `AddMessageDispatcher`→`UseMessageDispatcher`, `AddShenoraRequests`→`UseShenoraRequests`,
+  `AddShenoraFileDialogs`→`UseShenoraFileDialogs`, `AddIpcModule<T>`→`UseIpcModule<T>`. Migration is the
+  rename and nothing else — **no receiver moved and no signature changed**, so `services.AddIpcModule<T>()`
+  becomes `services.UseIpcModule<T>()` and the compiler names every site.
+  - **Why:** the kit had both prefixes for the same KIND of thing. Every one of these contributes a stage
+    to a pipeline (the dispatcher's middleware chain, or a module mapped into it), and `Use*` is already
+    this kit's word for that (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`). The test is what
+    the thing IS, not which phase registers it. Full reasoning and the earlier round trip: **D64**.
+  - ⚠ **The receivers deliberately did NOT move.** `IShenoraModule.ConfigureServices` receives only an
+    `IServiceCollection`, and composing IPC over a bare `ServiceCollection` with no builder is a supported
+    shape — moving these onto the builder would have deleted it. The verb is uniform; the receiver still
+    follows whether a capability needs the builder's context.
 - 🔴 **`MobileWebViewInterceptor` now takes the app's `WebViewPipeline` as a REQUIRED second constructor
   argument.** Migration: `new MobileWebViewInterceptor(webView, app.Pipeline, log)`. Pass a fresh
   `new WebViewPipeline()` for a webview that must deliberately serve nothing (a probe, an isolated

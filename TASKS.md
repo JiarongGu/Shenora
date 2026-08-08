@@ -192,14 +192,34 @@ app.UseMediaPlayer();                          // no `services` argument: the ap
 app.Run();
 ```
 
-🔴 **DO NOT "fix the `Add*`/`Use*` category error" — it was tried, and the owner reverted it.** This entry
-used to sit here demanding that `UseMissions`/`UseFileSystem`/`UseMediaPlayer` move to `Services.AddShenora*`
-on the ASP.NET DI-versus-pipeline reading. **D64 records the whole round trip**: the rename landed, it was
-reverted, and the reason is that these behave like middleware and `Use*` is already this kit's word for a
-pipeline stage (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`). **The analogy settles WHICH
-OBJECT owns the call, never the prefix** — which is the item below, and the only part of it that was ever
-real. Left as a tombstone rather than deleted, because the argument is persuasive enough to be re-derived
-by the next person who reads the ASP.NET table.
+🔴 **SETTLED: `Use*` STAYS. Do not "fix the `Add*`/`Use*` category error" — it was tried and reverted.**
+This entry used to sit here demanding that `UseMissions`/`UseFileSystem`/`UseMediaPlayer` move to
+`Services.AddShenora*` on the ASP.NET DI-versus-pipeline reading. **D64 records the whole round trip**: the
+rename landed, the owner reverted it, and it was re-confirmed on 2026-08-08 in their own words —
+> *"we should be use `use` since this is more like middleware/interceptor as in its actual logic"*
+
+**The test is what the thing IS, not which phase registers it.** These are middleware/interceptor stages,
+and `Use*` is already this kit's word for one (`IMessageDispatcher.UseModule`, `IWebViewInterceptor.Use`,
+`WebViewResourcePipeline.Use`). The ASP.NET analogy settles **WHICH OBJECT owns the call** — the item
+below, and the only part of this that was ever real — and says nothing about the prefix. Kept as a
+tombstone rather than deleted: the analogy is persuasive enough that the next reader will re-derive it,
+and this is the second time it has been argued.
+
+> DIRECTION (owner, 2026-08-08): *"the service should be override inside `useXX(s => {})` config
+> instead"* — so **the `Use*` configure callback is the ONE place an app configures OR SUBSTITUTES**, and
+> an app should not have to reach into `builder.Services` separately to swap an implementation.
+
+- [ ] **Make the `Use*` callback able to OVERRIDE the implementation, not just set options.** Today
+  `UseMediaPlayer(x => …)` hands back only `MediaPlayerOptions`; substituting the `IMediaPlayer` means a
+  separate `builder.Services.AddSingleton<IMediaPlayer>(…)` BEFORE the call, relying on the `TryAdd`
+  ordering to win. That works and is invisible — an adopter has to know the kit uses `TryAdd` and that
+  registration order decides it, which is exactly the kind of knowledge a surface should not require.
+  - The shape to settle: does the callback receive the options plus a way to register (`(options,
+    services)`), or do the options themselves carry the instance/factory? The second reads better at the
+    call site and keeps ONE argument; the first is more general. **Check both against a real override**
+    (an app supplying its own player) before choosing.
+  - ⚠ Same question applies to `UseFileSystem`, `UseMissions` and `UseShenoraRequests`, so decide it once
+    and apply it across all of them rather than per feature.
 
 **DONE (2026-08-08): the pipeline surface is on `ShenoraApplication`.** `app.UseFiles(…)`,
 `app.UseMediaPlayer()`, `app.MapModule<T>()` and the raw `app.Use(…)`, over a `WebViewPipeline` the builder
@@ -413,8 +433,12 @@ staged MP4 and moved a real clock; the claim `IMediaPlayer` rests on is no longe
 foreground. Press home while it plays and watch `mac device-log`. That is the one claim the NATIVE player
 exists for, and it is the only part left.
 
-- [ ] **Then Android (ExoPlayer/MediaPlayer) and Windows (Media Foundation).** Absent rather than stubbed
-  today, deliberately — an app without a player keeps using `<video>`.
+**✅ ALL THREE SHELLS HAVE A PROVEN PLAYER (2026-08-08).** `WindowsMediaPlayer` (Media Foundation),
+`AndroidMediaPlayer` and `IosMediaPlayer`, each reporting `PLAYER: PASS — the host decoded a real file and
+advanced a real clock` on its own platform. ⚠ Android uses the platform's OWN `android.media.MediaPlayer`,
+**not ExoPlayer** — this entry used to say "ExoPlayer/MediaPlayer", which D51 forbids (the kit ships no
+engine). Background survival on iOS is still the one unproven claim; it needs a human to background the app.
+
 - [ ] **Expose it over IPC** so the page can drive it. Not done: the contract is C#-side only, so today an
   app wires it in its own module. That is the smaller half and it should follow the device proof, not
   precede it.
@@ -436,9 +460,11 @@ exists for, and it is the only part left.
   | the last `#EXTINF` is not full-length; a scrub bar seeks past the end | open — segmentation only |
 
 - [ ] **What remains of slice 4, and the second item is the one that matters.**
-  - **iOS's `IMediaStreamConversion`** (`AudioConverter`, chained the same way). Registered on Android only
-    today; a shell without one gives container repair plus an honest refusal, which is why absence beats a
-    stub that lies. ⚠ iOS is the platform that CAN decode AC-3, so this is where the tier pays off.
+  - ✅ **BOTH mobile shells register an `IMediaAudioConversion`** (the seam is `IMediaAudioConversion` +
+    `IMediaAudioConversionRun`; this entry called it `IMediaStreamConversion`, a name that never existed
+    in the shipped surface, and said iOS had none). Measured on the iOS simulator 2026-08-08:
+    `convert ac3: accepted=True`, `convert eac3: accepted=True`. **What is still open is whether iOS's
+    actually WORKS** — see the `AudioConverterConvertBuffer` entry above; accepting is not converting.
   - 🔴 **NEITHER IMPLEMENTATION HAS RUN A REAL ENCODER.** The muxing is covered by tests against a fake
     codec — the boxes, the timing, the drained tail, copy-beats-convert — but no device has actually
     transcoded anything. **"Exit 0 is not evidence" applies hardest here**: this repo has already measured

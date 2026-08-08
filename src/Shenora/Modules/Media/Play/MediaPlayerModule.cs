@@ -28,7 +28,7 @@ namespace Shenora.Modules.Media;
 /// </para>
 ///
 /// <para>
-/// <b>Registered by default</b> with <c>AddMessageDispatcher()</c> (D64) and it costs nothing until the
+/// <b>Registered by default</b> with <c>UseMessageDispatcher()</c> (D64) and it costs nothing until the
 /// page posts: a module nothing routes to is inert. It answers on
 /// <see cref="MediaPlayerOptions.Module"/> — <c>SHENORA.MEDIA</c> by default, a RESERVED prefix, so an
 /// app remains free to own a module called plainly <c>MEDIA</c>.

@@ -2086,7 +2086,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     (`AllowedRoots`, `WebViewFileOptions`), which stays fail-closed and is unaffected by this.
   - **What it replaces.** Three portable engines had three ways in (`UseMissions`, `UseFileSystem`,
     `UseMediaPlayer`) and the kit's own IPC modules had two more (`AddShenoraOperations`,
-    `AddShenoraFileDialogs`). `UseMissions`'s own remarks already named the smell — *"three engines, three
+    `UseShenoraFileDialogs`). `UseMissions`'s own remarks already named the smell — *"three engines, three
     ways in, was the inconsistency"* — and answered it one level too low. The answer is zero ways in.
   - **The rule, stated so it can be checked:** *registration is free; construction is lazy; nothing touches
     a disk, a thread or a handle until something asks.* This is not a style preference — it is the
@@ -2180,7 +2180,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   | `WebApplication.CreateBuilder(args)` brings Kestrel, logging, config, DI — you never call `AddKestrel()` | `CreateBuilder` brings a paths object and an event bus | brings **the framework**: the engines, the kit's modules, the dispatcher |
   | `var app = builder.Build()` | same ✅ | same |
   | `app.Use*()` = the request PIPELINE, on the built app, order significant | `interceptor.UseFiles(…)` / `interceptor.UseMediaPlayer(services)` — on an inner object, with the provider handed BACK in | `app.Use*()` — the app already holds the provider |
-  | `app.MapControllers()` = endpoints | `builder.Services.AddIpcModule<T>()` — a route registered as a service | `app.MapModule<T>()` |
+  | `app.MapControllers()` = endpoints | `builder.Services.UseIpcModule<T>()` — a route registered as a service | `app.MapModule<T>()` |
   | `app.Run()` | same ✅ | same |
 
   - ⚠ **What the analogy does NOT settle is the PREFIX**, and reading it that way was a wrong turn worth
@@ -2189,6 +2189,25 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     `Services.AddShenora*`. **The owner reverted it, correctly** — these behave like middleware, so
     `Use*` is the honest prefix and it is already the kit's vocabulary for a pipeline stage. **The real
     lesson of the analogy is about WHICH OBJECT owns the call**, below.
+  - 🔴 **SETTLED 2026-08-08, and the kit was made CONSISTENT with it rather than left half-renamed.**
+    Owner: *"we should be use `use` since this is more like middleware/interceptor as in its actual
+    logic."* The kit still had both prefixes for the same KIND of thing, so the four survivors were
+    renamed: `AddMessageDispatcher`→`UseMessageDispatcher`, `AddShenoraRequests`→`UseShenoraRequests`,
+    `AddShenoraFileDialogs`→`UseShenoraFileDialogs`, `AddIpcModule`→`UseIpcModule`.
+    **The test is what the thing IS, not which phase registers it** — every one of these contributes a
+    stage to a pipeline (the dispatcher's middleware chain, or a module mapped into it).
+    - ⚠ **The RECEIVERS deliberately did not move, and two hard constraints say so.**
+      `IShenoraModule.ConfigureServices` receives only an `IServiceCollection`, so `UseIpcModule` must
+      stay reachable there; and composing IPC over a bare `ServiceCollection` with NO builder is a
+      supported shape that five composition tests exercise, so `UseMessageDispatcher` must stay an
+      `IServiceCollection` extension. Moving them onto the builder would have deleted a shape the kit
+      documents. **So: the VERB is uniform, and the receiver follows a capability's real dependency** —
+      builder-level when it needs `builder.Paths`/`Environment` (`UseMediaPlayer` needs the cache root),
+      `IServiceCollection` otherwise.
+    - ⚠ **This is the THIRD time the prefix has been argued**, which is why it is written here rather
+      than in `TASKS.md`: a task demanding the opposite outlived the decision that killed it and was
+      nearly executed on 2026-08-08. A `TASKS.md` entry that changes public surface must cite its `D<n>`,
+      and that entry must be read before the task is done.
   - 🔴 **It fixes the two-phase call this repo apologises for.** `interceptor.UseMediaPlayer(services)`
     exists because the interceptor is created WITH the webview and cannot exist at registration time —
     which is a real constraint and exactly the split ASP.NET draws. But ASP.NET's second phase is
@@ -2252,7 +2271,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **A module's root type is `XxxModule`, not `XxxFacade`** (owner, 2026-08-08: *"they actually the module
     root rn, so just xxxModule sounds consistant"*). "Facade" described a thin front over something else;
     these ARE the module. `BaseFacade` → `ModuleBase`, `IModuleFacade` → `IIpcModule`,
-    `AddModuleFacade` → `AddIpcModule`. ⚠ The lexicon gate caught `Facade` going unused the moment the
+    `AddModuleFacade` → `UseIpcModule`. ⚠ The lexicon gate caught `Facade` going unused the moment the
     last one was renamed — an allow-list that only grows reviews nothing.
   - **⚠ `Operations` sits UNDER `Core/Ipc/`, not beside it, and that was measured rather than assumed.**
     The question is whether anything but IPC uses it; inside `src/` the answer is no — its consumers are
@@ -2311,7 +2330,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     "optional" — the claim D53/D55 killed for Media and IO. The direction already allows it (`Ipc → Core`,
     mechanically identical to D55's `IO → Core`). 🔴 **That fold is also what unblocks everything else:**
     a feature could not own its own IPC module while `ModuleBase` lived in a package `Core` may not
-    reference, which is exactly why D64's facades ended up registered from inside `AddMessageDispatcher` —
+    reference, which is exactly why D64's facades ended up registered from inside `UseMessageDispatcher` —
     a core knowing the name of every feature built on it.
   - **`Shenora` → `Shenora`.** It is the framework, not a component of one. The id is free.
     ⚠ **Fold first, rename second, each with its own green gate** — landing a namespace sweep on top of a
@@ -2320,9 +2339,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
     and the journaled mutation queue are LOGIC; `UpdateManifest`, `UpdateStage` and `Compression/` are the
     app-UPDATE story, which is a FEATURE — it has a platform half in the native `Launcher` (D50).
   - **What this leaves for IPC registration, which is the question that started it:** a feature owns its
-    module and registers it; `AddMessageDispatcher` knows the name of none of them. D64 shipped the
+    module and registers it; `UseMessageDispatcher` knows the name of none of them. D64 shipped the
     opposite as an interim (the dispatcher hardcoding `MediaPlayerModule`, shells calling
-    `AddShenoraFileDialogs`) and this entry is what deletes it.
+    `UseShenoraFileDialogs`) and this entry is what deletes it.
 
 - **D66 — a long-running request IS A REQUEST. The "operation" is a second identity for one thing and
   should collapse into the IPC contract.** (Owner, 2026-08-08, after settling that operations is *"an

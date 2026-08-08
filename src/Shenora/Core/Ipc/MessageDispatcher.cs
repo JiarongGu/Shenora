@@ -52,7 +52,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// <param name="logger">Diagnostics.</param>
     /// <param name="requests">
     /// Request tracking. Optional, because composing IPC over a bare <c>ServiceCollection</c> with no
-    /// <c>IEventBus</c> behind it is a legitimate shape — but <c>AddMessageDispatcher</c> supplies it,
+    /// <c>IEventBus</c> behind it is a legitimate shape — but <c>UseMessageDispatcher</c> supplies it,
     /// so every composed app has it. Null means requests are dispatched untracked: no
     /// <see cref="IpcRequestEvents.Updated"/>, no <c>LIST</c> entries, no cancellable token.
     /// </param>

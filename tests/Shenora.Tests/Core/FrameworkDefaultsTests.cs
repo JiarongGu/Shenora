@@ -112,7 +112,7 @@ public class FrameworkDefaultsTests
             ApplicationName = "probe",
             Paths = new ShenoraPathsOptions { ExplicitRoot = root.Path },
         });
-        builder.Services.AddMessageDispatcher();
+        builder.Services.UseMessageDispatcher();
         using var app = builder.Build();
 
         var response = await app.Services.GetRequiredService<IMessageDispatcher>().DispatchAsync(

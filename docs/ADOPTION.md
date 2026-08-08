@@ -456,8 +456,8 @@ var shenora = ShenoraApplication.CreateBuilder(new ShenoraApplicationOptions
     Paths = new ShenoraPathsOptions { ExplicitRoot = FileSystem.AppDataDirectory },
 });
 shenora.UseAndroid`/`UseIOS(Dispatcher.GetForCurrentThread()!, ex => Log(ex.ToString()));
-shenora.Services.AddIpcModule<YourPortableFacade>();
-shenora.Services.AddMessageDispatcher();
+shenora.Services.UseIpcModule<YourPortableFacade>();
+shenora.Services.UseMessageDispatcher();
 var app = shenora.Build();
 ```
 
@@ -836,7 +836,7 @@ regression hides on the one box with two cores.
 | A `maxConcurrency` constructor argument | `MissionSchedulerOptions.GlobalLaneCapacity` | Every request draws one permit from the global lane. ⚠ It is also a CEILING over every named lane — see "Known gaps" #5. (Renamed from `DefaultLaneCapacity`; rename the assignment, nothing else changes.) |
 | A static gate/semaphore singleton over a scarce resource (one GPU, a rate-limited endpoint) | `scheduler.Lane("gpu").Capacity = 1` + `Lanes = [new MissionLane("gpu")]` on the request | Removes the singleton, so it is testable and there can be more than one. A lane that is a BUDGET rather than a slot count takes weighted permits: `new MissionLane("vram", 4)`. |
 | A live "max active" slider | the `ILane.Capacity` setter | Lowering it never cancels running work — the surplus is swallowed as items finish. Proven in both directions: `Lowering_lane_capacity_throttles_new_work_without_killing_running_work` and `A_lowered_capacity_is_enforced_once_the_surplus_drains`. The setter enforces a floor of 1 and no ceiling, so clamp to your own maximum before assigning. |
-| A hand-written IPC route that opens a file/folder/save dialog for the page | `services.AddShenoraFileDialogs()` + `useFileDialogs()` from `@shenora/react` | The kit ships the routes and the typed client. `canPickFile`/`canPickFolder`/`canPickSavePath` come from the ready handshake, so ONE bundle hides the controls a shell cannot honour rather than calling and catching. Keep your own route only when you have logic AROUND the dialog (a slow interruptible write, app validation) — not for a plain picker. |
+| A hand-written IPC route that opens a file/folder/save dialog for the page | `services.UseShenoraFileDialogs()` + `useFileDialogs()` from `@shenora/react` | The kit ships the routes and the typed client. `canPickFile`/`canPickFolder`/`canPickSavePath` come from the ready handshake, so ONE bundle hides the controls a shell cannot honour rather than calling and catching. Keep your own route only when you have logic AROUND the dialog (a slow interruptible write, app validation) — not for a plain picker. |
 | A capacity governor that suspends work under system load | `ILane.Hold()` / `Release()` (re-entrant), and `IMissionScheduler.GlobalLane` to move the total bound | The kit ships the mechanism and no policy: load probes, hysteresis and debounce stay yours. This is the difference between "yield the GPU while the user games" and "kill the user's transcode". ⚠ A governor that RESTORES as well as throttles must raise `GlobalLane.Capacity` too — see "Known gaps" #5. |
 | Dedup of an identical pending operation; a batch merge of work accumulated during a slow plan | `MissionDefinition.Key` (+ `IsActive(key)` so you can skip building an expensive request you know would only be deduplicated) | A matching submission completes eagerly against the existing item with `MissionOutcome.Deduplicated`, and the body runs once. |
 | `MAX_RETRY_ATTEMPTS` / `RETRY_DELAY_MS` constants | `RetryPolicy` | Same defaults as the family's measured value: 3 attempts, 500 ms × attempt, `IOException` only. `RetryPolicy.None` opts out; `Retry = null` already means none. |

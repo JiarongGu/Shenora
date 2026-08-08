@@ -34,7 +34,7 @@ after the facade compiles. Walk it in this order and none of them surprises you.
    emits, awaits, or fails in a new way.
 5. **Register.** Plain DI composition → `services.AddModuleFacade<XFacade>()`. Needs the live
    window → map LATE from where the form exists (`dispatcher.MapModule(facade)` in `MainForm`),
-   never inside `AddMessageDispatcher`'s configure callback, which runs before any form. An opt-in
+   never inside `UseMessageDispatcher`'s configure callback, which runs before any form. An opt-in
    kit cluster gets its own `AddShenoraX(this IServiceCollection, XOptions? options = null)` taking
    the options RECORD — a configure callback cannot assign `init`-only properties (CS8852).
 6. **The client half, only if the kit ships it.** `src/Shenora.React/src/x.ts`: a
