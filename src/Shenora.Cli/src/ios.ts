@@ -169,30 +169,63 @@ function checkExtensions(app: string): { checked: number; problems: string[] } {
   return { checked, problems };
 }
 
-function build(cfg: DeployConfig, rid: string, signing: string): boolean {
+/**
+ * Anything after a bare `--` is passed straight to `dotnet build`.
+ *
+ * 🔴 IT IS A COMMAND-LINE FLAG AND NOT A CONFIG FIELD, deliberately. The case that forced it is an Xcode
+ * whose version the installed .NET-for-iOS workload refuses ("requires Xcode 26.0, the current version is
+ * 26.3"), cleared with `-p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly`. **Which Xcode a machine
+ * happens to have is a fact about THAT MACHINE**, so writing the override into a committed file would
+ * silence the mismatch for everyone who clones the repo, permanently — including whoever hits it when it
+ * is the real problem. On the command line it stays visible and per-machine.
+ */
+function splitArgs(args: readonly string[]): { own: string[]; extra: string } {
+  const i = args.indexOf('--');
+  if (i < 0) return { own: [...args], extra: '' };
+  const rest = args.slice(i + 1);
+  // ⚠ `own` MUST stop at the separator. `argValue` scans for a flag and takes the next token, so with a
+  // single flat array `deploy --simulator -- -p:Foo=1` reads the simulator's NAME as `-p:Foo=1` and then
+  // tries to boot a device by that name. Splitting once, here, is why the flag readers can stay naive.
+  return { own: args.slice(0, i), extra: rest.length ? ` ${rest.join(' ')}` : '' };
+}
+
+function build(cfg: DeployConfig, rid: string, signing: string, extra: string): boolean {
+  if (extra) console.log(`shenora: extra build args:${extra}`);
   console.log(`shenora: building ${cfg.project} (${cfg.tfm}, ${rid})…`);
   const r = sh(
     `dotnet build ${q(path.join(cfg.root, cfg.project))} -c ${q(cfg.configuration)} `
-    + `-f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${signing} 2>&1 | tail -40`,
+    + `-f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${signing}${extra} 2>&1 | tail -40`,
     { cwd: cfg.root },
   );
-  return r.status === 0 ? true : fail('the build failed — see the output above.');
+  if (r.status === 0) return true;
+  // The Xcode gate is common enough, and its message specific enough, to name the escape hatch here
+  // rather than leave an adopter to find it. Detected from the SDK's own wording.
+  if (/requires Xcode/i.test(r.out)) {
+    console.error('\nshenora: that is the .NET-for-iOS workload refusing this machine\'s Xcode version.');
+    console.error('  Match the pair (install the Xcode it names, or a workload built for the one you have),');
+    console.error('  or override per-machine:');
+    console.error('    shenora ios deploy --simulator -- -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly');
+    console.error('  ⚠ Both flags are needed — the first clears the up-front gate, the second clears MT0180');
+    console.error('    from the linker step. It is a dev-loop unblock, NOT a shipping configuration.');
+  }
+  return fail('the build failed — see the output above.');
 }
 
 export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
   if (!assertMac()) return;
   if (!requireFields(cfg, ['project', 'bundleId'])) return;
-  if (args.includes('--simulator')) deployToSimulator(cfg, args);
-  else deployToDevice(cfg, args);
+  const { own, extra } = splitArgs(args);
+  if (own.includes('--simulator')) deployToSimulator(cfg, own, extra);
+  else deployToDevice(cfg, own, extra);
 }
 
 /**
  * The simulator half — no signing, no provisioning, no 7-day profile. This is the loop most work should
  * use; hardware is for what only hardware can answer (background playback, real codecs, thermals).
  */
-function deployToSimulator(cfg: DeployConfig, args: string[]): void {
+function deployToSimulator(cfg: DeployConfig, args: string[], extra: string): void {
   const rid = simulatorRid();
-  if (!build(cfg, rid, '')) return;
+  if (!build(cfg, rid, '', extra)) return;
 
   const app = findApp(cfg, rid);
   if (!app) {
@@ -219,13 +252,14 @@ function deployToSimulator(cfg: DeployConfig, args: string[]): void {
   console.log('\nshenora: running in the simulator. Screenshot it with `shenora ios shot`.');
 }
 
-function deployToDevice(cfg: DeployConfig, args: string[]): void {
+function deployToDevice(cfg: DeployConfig, args: string[], extra: string): void {
   const target = resolveTarget(argValue(args, '--device'));
   if (!target) return;
 
   // CodesignProvision=Automatic + an Apple Development key is what lets an adopter reach a phone with NO
   // Xcode project of their own — the whole point of this command.
-  if (!build(cfg, 'ios-arm64', ` -p:CodesignProvision=Automatic -p:CodesignKey=${q('Apple Development')}`)) return;
+  const signing = ` -p:CodesignProvision=Automatic -p:CodesignKey=${q('Apple Development')}`;
+  if (!build(cfg, 'ios-arm64', signing, extra)) return;
 
   const app = findApp(cfg, 'ios-arm64');
   if (!app) {

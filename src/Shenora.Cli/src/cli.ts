@@ -24,6 +24,9 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
   shenora ios log [-n <lines>] the app's own output
   shenora ios shot [-o <file>] screenshot the booted simulator
 
+Anything after \`--\` goes straight to \`dotnet build\`, for what is true of YOUR machine only:
+  shenora ios deploy --simulator -- -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly
+
 Config: ${CONFIG_FILE}, found here or in any parent directory.
 `;
 
