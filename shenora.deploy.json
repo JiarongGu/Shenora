@@ -1,0 +1,6 @@
+{
+  "project": "samples/Shenora.Sample.Maui/Shenora.Sample.Maui.csproj",
+  "tfm": "net10.0-ios",
+  "bundleId": "com.shenora.sample.maui",
+  "configuration": "Debug"
+}

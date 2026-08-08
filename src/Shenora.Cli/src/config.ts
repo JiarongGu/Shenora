@@ -49,7 +49,18 @@ export function loadConfig(startDir: string = process.cwd()): DeployConfig | nul
   for (;;) {
     const candidate = path.join(dir, CONFIG_FILE);
     if (fs.existsSync(candidate)) {
-      const raw = JSON.parse(fs.readFileSync(candidate, 'utf8')) as Partial<DeployConfig>;
+      let raw: Partial<DeployConfig>;
+      try {
+        raw = JSON.parse(fs.readFileSync(candidate, 'utf8')) as Partial<DeployConfig>;
+      } catch (e) {
+        // ⚠ Unhandled, this surfaced as a bare Node ESM stack trace with the parse error buried in it —
+        // which reads as "the CLI is broken" rather than "your config has a typo". Found by writing a
+        // malformed file on purpose while testing on a real Mac.
+        console.error(`\nshenora: ${candidate} is not valid JSON.`);
+        console.error(`  ${(e as Error).message}`);
+        process.exitCode = 1;
+        return null;
+      }
       return { ...DEFAULTS, ...raw, root: dir, file: candidate };
     }
     const parent = path.dirname(dir);
