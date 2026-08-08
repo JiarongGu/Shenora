@@ -915,11 +915,13 @@ never the reverse (D19/D20). `IMissionObserver` is the seam: `OnQueued`/`OnStart
 item, each call guarded so a throwing observer cannot fail the work it was only watching.
 
 **The adapter is yours to write. It is about 35 lines** — measured, not estimated: the kit's own
-sample now carries one (`samples/Shenora.Sample.Logic/MissionOperationObserver.cs`), a
-`ConcurrentDictionary<string, IOperation>` plus the three methods. Copy it. No mission body opens an
-operation by hand again, which is the boilerplate the family's apps repeated at every call site and
-occasionally forgot, leaving operations stuck "running" forever. The same seam is where metrics and
-tracing attach.
+sample carries one (`samples/Shenora.Sample.Logic/MissionEventPublisher.cs`). Copy it. No mission body
+reports progress by hand again, which is the boilerplate the family's apps repeated at every call site
+and occasionally forgot. The same seam is where metrics and tracing attach.
+> ⚠ **A mission is NOT a request, and that is why this is an adapter rather than a kit feature** (D66).
+> Host-initiated work — a scheduled or recovered mission — has no request behind it and nobody waiting on
+> a reply, so it reports on its OWN event stream. Squeezing it into a request-shaped hole is what gave the
+> old design two unrelated things in one bucket.
 
 Two things that adapter learned the moment it ran, both of which you will hit:
 

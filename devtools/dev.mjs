@@ -1006,6 +1006,13 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), ...args]);
     break;
 
+  // stale-scan [path] — every retired name, WITHOUT doc-drift's history suppression. A review tool,
+  // never a gate: it is deliberately noisy and the triage is a human's. Run it in the same commit as
+  // a rename — see the script header for the three commits that shipped a deleted API without it.
+  case 'stale-scan':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'stale-scan.mjs'), ...args]);
+    break;
+
   case 'install-hooks':
     // Point git at the tracked hooks dir so the sensitive-info pre-commit guard runs (a clone only
     // needs this once — core.hooksPath is local config, the hook script itself is versioned).

@@ -49,6 +49,16 @@ should ignore (a version guard that had never run DURING a release; a size budge
 on a CRLF checkout; a `warning CS` filter that had never met a non-CS analyser warning). Ask: **when
 should this stay silent, and where does it execute?** Then try those.
 
+🔴 **A RENAME OR REMOVAL IS THREE STEPS, AND THE THIRD IS THE ONE THAT GETS SKIPPED.** (1) change the
+code, (2) add the old name to `devtools/retired-names.txt`, (3) **run `node devtools/dev.mjs stale-scan`
+IN THE SAME COMMIT and triage its worklist.** Step 3 exists because the gate fed by step 2 *cannot* find
+the prose you just invalidated: `doc-drift` suppresses any match within 6 lines of a history word, and
+this repo's docs are amendment stacks by design — so a stale claim hides exactly where the suppression is
+active (proven by sabotage 2026-08-08: a planted claim stayed green in `TASKS.md` AND `ARCHITECTURE.md`).
+D66 did steps 1 and 2, and `docs/ADOPTION.md` told adopters to call a deleted API for three commits with
+every gate green. `stale-scan` never fails a build — it is noisy on purpose, because most hits are correct
+past tense and **only a human can tell those from a live lie**. That triage IS the deliverable.
+
 **A fix records its ROOT CAUSE in the commit message** (there is no fix log — git is the history; trace
 with `git log -S "<token>" -- <path>`). ⚠ **A reusable invariant is a RULE, not a message**:
 `dev.mjs knowledge new <name>`.

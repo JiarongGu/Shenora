@@ -10,6 +10,16 @@
 # current, months of amendment prose around them was correct history, and nothing could tell the two
 # apart. This file is what tells them apart now.
 #
+# 🔴 ADDING THE NAME IS HALF THE JOB. The other half is `node devtools/dev.mjs stale-scan`, IN THE SAME
+# COMMIT — because the gate that reads this file CANNOT find the prose you just invalidated. doc-drift
+# suppresses any match within 6 lines of a history word (was/replaced/used to/…), and this repo's docs
+# are amendment stacks by design, so a stale claim hides exactly where the suppression is active.
+# Measured 2026-08-08: a planted claim stayed GREEN in TASKS.md and in ARCHITECTURE.md.
+# That is not hypothetical either — D66 added its names here and skipped the scan, and docs/ADOPTION.md
+# went on telling adopters to call `services.AddShenoraOperations()`, a deleted API, for three commits.
+# `stale-scan` never fails a build: it prints the worklist, and YOU triage it (most hits are correct
+# past tense and must stay).
+#
 # ADD A NAME HERE THE MOMENT YOU DELETE OR RENAME ONE. The cost of forgetting is a doc that quietly
 # describes a kit that no longer exists — which is not hypothetical, it is what this gate was built
 # after finding. CHANGELOG.md, docs/archive/tasks.md and docs/archive/fix-log.md are exempt by construction:
