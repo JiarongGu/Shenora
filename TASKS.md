@@ -208,10 +208,6 @@ app.UseMediaPlayer();                          // no `services` argument: the ap
 app.Run();
 ```
 
-- [ ] **`CreateBuilder` brings the framework**, the way `WebApplication.CreateBuilder` brings Kestrel — the
-  engines, the kit's IPC modules and the dispatcher. Register by calling the same methods an app would, so
-  the default path and the explicit path stay literally the same code (they already `TryAdd`, so an
-  explicit earlier call still wins).
 - [ ] 🔴 **Fix the `Add*` / `Use*` category error.** `Use*` means MIDDLEWARE in .NET and lives on the built
   app; this kit put it on the BUILDER for pure service registration (`UseMissions`, `UseFileSystem`,
   `UseMediaPlayer`). What survives D64 is a configure overload, and it belongs on `Services` as `Add*`.
@@ -224,35 +220,11 @@ app.Run();
     app hosts**, the way an ASP.NET pipeline serves every request. Better than today — secondary windows
     and session browsers currently get nothing unless wired again by hand — and a real change in meaning.
     Keep the per-interceptor call for the case that genuinely wants one pipeline to differ.
-- [ ] **Rewrite `Shenora.Sample.Desktop`'s composition to the new shape, and treat it as the acceptance
-  test.** It currently hand-constructs `MissionScheduler` and `FileUpdateQueue` inside `AddSingleton`
-  lambdas — with a comment claiming the kit *"ships no DI extension for it, and it needs none"*, untrue
-  since `UseMissions` shipped. **A reference app that writes the framework's own composition is the whole
-  finding**; when that block is gone, D64 has landed.
-- [x] ~~Every kit module onto the reserved `SHENORA.` prefix~~ — DONE (`9a8067f`). Five moved, including
-  the two already shipped. `retired-names.txt` learned WIRE names and found four stale JSDoc sites on its
-  first run.
-- [x] ~~The kit's media facade registers by default~~ — DONE. `MediaPlayerFacade` ships with
-  `AddMessageDispatcher`, so the player loop closes with no app wiring. **⚠ `FileDialogFacade` and
-  `OperationsFacade` are still opt-in**, because each needs a dependency the kit cannot guarantee
-  (`IFileDialogs` from a shell, `IOperationRegistry` from `AddShenoraOperations`). Finishing them means
-  deciding what an absent dependency DOES — the honest answer is a `CapabilityNotSupported` refusal, which
-  is D64's own rule, not an absent registration.
-- [ ] 🔴 **Implement the real thing wherever the platform CAN — a refusal is the last resort.** (Owner:
-  *"we should try to implement a default if the platform can support this is to close the web gap"*.) This
-  REPLACES the refusal-stub sweep this task first proposed: a stub that declines on two of three platforms
-  leaves the app on `<video>`, which is the outcome D54 exists to remove. Concretely:
-  - [ ] **`IMediaPlayer` on Windows — Media Foundation.** Absent today.
-  - [ ] **`IMediaPlayer` on Android — ExoPlayer/MediaPlayer.** Absent today.
-  - [ ] **`IMediaCapability` on Windows** already lands this pass (`CodecQuery`).
-  - An explicit refusal stays correct where the platform genuinely cannot. ⚠ The test is *"can this
-    platform do it?"*, never *"have we written it yet?"* — an unwritten implementation is a TASK, and
-    filing it as a refusal freezes a gap into the surface and makes it look decided.
-- [ ] **`UseWinForms()` → `UseWindows()`, `UseMobile()` → `UseAndroid()` / `UseIOS()`.** D37's law never
-  reached the method names. ⚠ It splits the shared mobile API baseline (identical surfaces are what let the
-  Android baseline gate iOS from a Windows host). **Accepted, not worked around** — owner: *"we will also
-  build build toolkit so this will be different anyway"*, so revisit the arrangement WITH that toolkit
-  rather than engineering around today's packaging.
+⚠ **The rule that survives from the platform sweep, because it decides the NEXT capability too:**
+*"can this platform do it?"*, never *"have we written it yet?"* — an unwritten implementation is a TASK,
+and filing it as a refusal freezes a gap into the surface and makes it look decided. A refusal stays
+correct only where the platform genuinely cannot.
+
 - [ ] **`### Breaking` entry**, two parts: the module renames above, and the fact that modules the kit
   registered only on request now appear in the ready handshake — so a page branching on
   `shell.capabilities` sees more than before.
@@ -271,15 +243,16 @@ the fourth instance in a fortnight.
 
 - Docs no longer claim otherwise: `ADOPTION.md` carries the four-line route as **piece 3 of 3**, and the
   XML/JSDoc on `UseMediaPlayer`, `MediaPlayer` and `useMediaPlayer` all say the joint is the app's.
-- [ ] **DECIDE: does the kit ship the facade?** The argument for is D61's rule — *an adopter meets every
-  capability through ONE `Use…` call* — and this is the one capability where following that rule silently
-  hangs. The argument against is placement: a facade registers into the APP's module registry, the module
-  name is configurable (`MediaPlayerOptions.Module`), and an app that already owns a `MEDIA` module would
-  find the kit had claimed it. ⚠ If the answer is yes, the seconds→`TimeSpan` and string→enum mapping is
-  the whole body, and it is where a wire-mirror tripwire belongs.
-- ⚠ **A cheaper half worth costing either way:** `OpenAsync` has no timeout, so "nobody wired the route"
-  and "the file is slow to open" are the same silence. A defaulted `MediaPlayerOptions.OpenTimeout` would
-  turn the whole failure class into a `MediaPlayerException` naming the missing route.
+**DECIDED, and shipped: the kit ships the module.** `UseMediaPlayer` registers `MediaPlayerModule`
+itself (D65 — a feature owns its IPC module, so a core never learns a feature's name), and `Build()`
+calls `UseMediaPlayer` for every app. The placement objection was answered rather than overruled: the
+module name stays configurable through `MediaPlayerOptions.Module`, so an app that already owns a
+`MEDIA` module renames the kit's instead of colliding with it.
+
+- [ ] ⚠ **The cheaper half is still open and still worth costing:** `OpenAsync` has no timeout, so
+  "nobody wired the route" and "the file is slow to open" remain the same silence. A defaulted
+  `MediaPlayerOptions.OpenTimeout` would turn that whole failure class into a `MediaPlayerException`
+  that names the missing route. Cheap, and it is the diagnostic the original hang needed.
 
 ### The rest of the review — fixed, or measured and left honest (2026-08-07)
 
