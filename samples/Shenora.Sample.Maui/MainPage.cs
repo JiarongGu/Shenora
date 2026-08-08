@@ -176,8 +176,14 @@ public sealed class MainPage : ContentPage
 			// that as a fact rather than a failure.
 			try
 			{
-#if IOS || MACCATALYST || ANDROID
+				// ⚠ ONE ARM PER PLATFORM, not one arm for "mobile". The types are genuinely different now
+				// (D66-era restructure), so a shared arm naming either of them fails to compile on the
+				// other — which is exactly what a blanket rename did here, and what building on the Mac
+				// caught. There is no shared name left to reach for, and that is the point.
+#if ANDROID
 				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
+#elif IOS || MACCATALYST
+				await MediaPlayerProbe.RunAsync(services.GetService<Shenora.iOS.IosMediaPlayer>(), MauiProgram.Log);
 #else
 				await MediaPlayerProbe.RunAsync(null, MauiProgram.Log);
 #endif
