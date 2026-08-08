@@ -9,7 +9,7 @@ namespace Shenora.Sample.Desktop;
 
 /// <summary>
 /// The sample backend module — the shape an app's facades take: one class per module, services
-/// from DI, expected failures as structured <see cref="OperationException"/>s, payload reads
+/// from DI, expected failures as structured <see cref="ShenoraException"/>s, payload reads
 /// through <see cref="PayloadHelper"/>.
 /// </summary>
 internal sealed class SampleModule(
@@ -55,7 +55,7 @@ internal sealed class SampleModule(
 
             // Structured-error demo: the client sees { code: "SAMPLE_FAILURE", parameters: { reason } }.
             case "FAIL":
-                throw new OperationException("SAMPLE_FAILURE", "reason", "requested by the client");
+                throw new ShenoraException("SAMPLE_FAILURE", "reason", "requested by the client");
 
             // Native file dialog (P4.3) — a human picks; not driven by the automated e2e.
             case "PICK_FILE":

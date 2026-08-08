@@ -101,10 +101,6 @@ half-finished surface is a reason to keep working rather than to cut.
 membership test: *must both sides agree on it?* → core. *Pure computation the page never sees?* → logic.
 *Carries a .NET capability to the page?* → feature.
 
-- [ ] **`OperationException` still carries the old word.** The last D66 leftover. It is the general IPC
-  structured-error type, not part of the request subsystem — rename it with the next error-path pass, and
-  note that it is wire-adjacent surface, so it belongs under `### Breaking` with its migration.
-
 **Standing constraint, not a task:** `Sample.Maui` sets `net10.0-ios` only under
 `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch **cannot** be verified on Windows by
 construction. That is why `mac build` — and now `shenora ios deploy` (D67) — exist.

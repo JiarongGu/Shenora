@@ -148,20 +148,20 @@ public class ScopedContainerRouterTests
         using var router = CreateRouter(configureScope: (scopeId, services) =>
         {
             if (Interlocked.Increment(ref attempts) == 1)
-                throw new OperationException("SCOPE_NOT_FOUND", "scope", scopeId);
+                throw new ShenoraException("SCOPE_NOT_FOUND", "scope", scopeId);
             services.AddSingleton(new ScopedFacade(scopeId));
         });
 
-        Assert.Throws<OperationException>(() => router.GetScopeServices("s1"));
+        Assert.Throws<ShenoraException>(() => router.GetScopeServices("s1"));
         Assert.NotNull(router.GetScopeServices("s1")); // retry succeeds — no poisoned Lazy
     }
 
     [Fact]
     public async Task Scope_validation_errors_reach_the_wire_structured()
     {
-        // ConfigureScope throwing OperationException flows through UseErrorHandler unleaked.
+        // ConfigureScope throwing ShenoraException flows through UseErrorHandler unleaked.
         using var router = CreateRouter(configureScope: (scopeId, _) =>
-            throw new OperationException("SCOPE_NOT_FOUND", "scope", scopeId, "no such profile on disk"));
+            throw new ShenoraException("SCOPE_NOT_FOUND", "scope", scopeId, "no such profile on disk"));
         var dispatcher = new MessageDispatcher()
             .UseErrorHandler()
             .UseScopedRouter(router);

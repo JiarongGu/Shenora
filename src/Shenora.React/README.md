@@ -30,7 +30,7 @@ const { data, loading, refetch } = useShenoraQuery<Note[]>('NOTES', 'GET_ALL');
 useShenoraEvent<Note>('NOTES', 'ADDED', (note) => refetch());
 ```
 
-Failed calls reject with `OperationError` — a structured `code` (an i18n key: translate
+Failed calls reject with `ShenoraError` — a structured `code` (an i18n key: translate
 `errors.{code}`) plus interpolation `parameters`, never raw host exception text.
 
 ### Long-running work: post, then read a store

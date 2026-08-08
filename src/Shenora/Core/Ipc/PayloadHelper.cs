@@ -6,7 +6,7 @@ namespace Shenora.Core.Ipc;
 /// Reads typed values out of an <see cref="IpcRequest.Payload"/>. Ported from the primary
 /// desktop sibling with three deliberate changes: it is static (the source's DI interface
 /// wrapped a stateless helper — the type didn't earn its keep); failures throw
-/// <see cref="OperationException"/> (<see cref="IpcErrorCodes.MissingPayloadValue"/> /
+/// <see cref="ShenoraException"/> (<see cref="IpcErrorCodes.MissingPayloadValue"/> /
 /// <see cref="IpcErrorCodes.InvalidPayloadValue"/>) instead of <see cref="ArgumentException"/>,
 /// so payload misuse reaches the client structured and i18n-ready; and JSON <c>null</c> counts
 /// as missing — the family wire convention omits nulls (<see cref="IpcJson.Options"/>), so an
@@ -15,14 +15,14 @@ namespace Shenora.Core.Ipc;
 public static class PayloadHelper
 {
     /// <summary>
-    /// Read a required value. Throws <see cref="OperationException"/> when the key is absent
+    /// Read a required value. Throws <see cref="ShenoraException"/> when the key is absent
     /// (or JSON null) or the value cannot convert to <typeparamref name="T"/>.
     /// </summary>
     public static T GetRequiredValue<T>(JsonElement? payload, string key)
     {
         if (!TryGetValue(payload, key, out var value))
         {
-            throw new OperationException(IpcErrorCodes.MissingPayloadValue, "key", key,
+            throw new ShenoraException(IpcErrorCodes.MissingPayloadValue, "key", key,
                 $"Missing required payload value '{key}'.");
         }
 
@@ -34,7 +34,7 @@ public static class PayloadHelper
         {
             // The serializer's message (CLR type names, JSON paths) stays host-side in the inner
             // exception — the wire message must not carry raw exception text (design §5).
-            throw new OperationException(IpcErrorCodes.InvalidPayloadValue,
+            throw new ShenoraException(IpcErrorCodes.InvalidPayloadValue,
                 new Dictionary<string, string> { ["key"] = key },
                 $"Invalid payload value '{key}'.", ex);
         }

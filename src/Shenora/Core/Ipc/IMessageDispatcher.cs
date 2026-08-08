@@ -35,7 +35,7 @@ public interface IMessageDispatcher
 
     /// <summary>
     /// Send a programmatic request and get typed response data. A failed response throws its
-    /// structured error as an <see cref="OperationException"/>.
+    /// structured error as an <see cref="ShenoraException"/>.
     /// </summary>
     Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null,
                           CancellationToken cancellationToken = default);

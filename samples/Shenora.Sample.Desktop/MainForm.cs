@@ -154,7 +154,7 @@ public sealed class MainForm : OptimizedForm
                 using var leaseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                 RenderSession session;
                 try { session = await _renderPool.LeaseAsync(leaseTimeout.Token); }
-                catch (OperationCanceledException) { throw new OperationException("RENDER_BUSY", "url", url); }
+                catch (OperationCanceledException) { throw new ShenoraException("RENDER_BUSY", "url", url); }
                 await using (session)
                 {
                     try
@@ -165,7 +165,7 @@ public sealed class MainForm : OptimizedForm
                     {
                         // The guard (or the http/https gate) refused the data-driven URL — cross
                         // the bridge as a structured error, not as leaked exception text.
-                        throw new OperationException("RENDER_REFUSED", "url", url);
+                        throw new ShenoraException("RENDER_REFUSED", "url", url);
                     }
                     var html = await session.GetHtmlAsync() ?? "";
                     var titleJson = await session.ExecuteScriptAsync("document.title") ?? "\"\"";
@@ -188,7 +188,7 @@ public sealed class MainForm : OptimizedForm
                 .RouteAsync("START", async (request, ct) =>
                 {
                     var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
-                    if (_stream is not null) throw new OperationException("STREAM_ALREADY_RUNNING");
+                    if (_stream is not null) throw new ShenoraException("STREAM_ALREADY_RUNNING");
 
                     var session = await StreamingSession.StartAsync(new StreamingSessionOptions
                     {
@@ -252,7 +252,7 @@ public sealed class MainForm : OptimizedForm
                         // undiagnosable from either end. Raw exception text still must not cross the
                         // wire (ipc-contracts), so the detail goes here and the page gets the code.
                         Console.WriteLine($"[sample] STREAM/START failed for '{url}': {ex}");
-                        throw new OperationException("STREAM_REFUSED", "url", url);
+                        throw new ShenoraException("STREAM_REFUSED", "url", url);
                     }
 
                     _stream = session;
@@ -281,13 +281,13 @@ public sealed class MainForm : OptimizedForm
                 })
                 .RouteAsync("INPUT", async (request, ct) =>
                 {
-                    if (_stream is null) throw new OperationException("STREAM_NOT_RUNNING");
+                    if (_stream is null) throw new ShenoraException("STREAM_NOT_RUNNING");
                     // The client speaks the kit's legacy wire shape here ON PURPOSE: it exercises
                     // the documented adoption shim, which is the migration path a real consumer
                     // takes. A greenfield app would build SessionInput records directly.
                     var json = PayloadHelper.GetRequiredValue<string>(request.Payload, "input");
                     if (!SessionInput.TryParseLegacyJson(json, out var input))
-                        throw new OperationException("STREAM_BAD_INPUT");
+                        throw new ShenoraException("STREAM_BAD_INPUT");
                     await _stream.DispatchAsync(input!);
                     return null;
                 })

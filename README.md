@@ -169,9 +169,9 @@ services.AddIpcModule<SettingsModule>();
 services.UseMessageDispatcher();          // error handler → logging → your middleware → modules
 ```
 
-**Raw exception text never crosses the wire.** An `OperationException` carries the app's own code,
+**Raw exception text never crosses the wire.** An `ShenoraException` carries the app's own code,
 parameters and message; anything else becomes `UNKNOWN_ERROR` plus the exception's type name, with
-the detail in the host log. The one sharp edge: an `OperationException`'s message crosses **verbatim**
+the detail in the host log. The one sharp edge: an `ShenoraException`'s message crosses **verbatim**
 — so never build one from `ex.Message`, which would turn the sanctioned channel into a bypass.
 
 **`IModuleContext` is the route's world: who it is, how it emits, how it starts long work.**

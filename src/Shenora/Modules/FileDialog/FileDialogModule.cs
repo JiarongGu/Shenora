@@ -159,7 +159,7 @@ public sealed class FileDialogModule : ModuleBase
     /// </summary>
     /// <remarks>
     /// ⚠ The message is the KIT's own words plus the capability NAME — never
-    /// <c>ex.Message</c>. Wrapping a caught exception's text in an <see cref="OperationException"/> is a
+    /// <c>ex.Message</c>. Wrapping a caught exception's text in an <see cref="ShenoraException"/> is a
     /// complete bypass of the error boundary, because that message crosses the wire verbatim
     /// (<c>.claude/knowledge/ipc-contracts.md</c>); the real exception goes to the host log through the
     /// inner-exception channel instead. A refusal is an EXPECTED outcome here — the shell genuinely has no
@@ -174,7 +174,7 @@ public sealed class FileDialogModule : ModuleBase
         }
         catch (NotSupportedException ex)
         {
-            throw new OperationException(IpcErrorCodes.CapabilityNotSupported,
+            throw new ShenoraException(IpcErrorCodes.CapabilityNotSupported,
                 new Dictionary<string, string> { ["capability"] = capability },
                 $"This shell has no '{capability}'. Read ShellInfo.Capabilities from the ready handshake "
                 + "and hide the control instead of calling it.", ex);

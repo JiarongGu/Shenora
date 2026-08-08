@@ -142,6 +142,30 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **`OperationException` → `ShenoraException`, and `OperationError` → `ShenoraError` — the last of
+  D66's vocabulary.** The type is the framework's ONE structured error: a code plus optional
+  interpolation parameters, the only exception whose details cross the bridge. It never had anything to
+  do with the "operation" concept D66 deleted; it simply inherited the word from the subsystem it was
+  first written beside.
+  - **Migration is a rename and nothing else.** Both keep their shape, members and behaviour —
+    `Code`/`code`, `Parameters`/`parameters`, `ToError()`, and the same unsealed/extendable base so an
+    app's own error types still derive from it and are still caught at the dispatch boundary.
+    ```diff
+    - throw new OperationException("IMPORT_FAILED", "file", name);
+    + throw new ShenoraException("IMPORT_FAILED", "file", name);
+    - catch (err) { if (err instanceof OperationError) show(t(`errors.${err.code}`)); }
+    + catch (err) { if (err instanceof ShenoraError) show(t(`errors.${err.code}`)); }
+    ```
+  - **Why not `IpcException`/`IpcError`, which is the name everyone reaches for first:** `IpcError` is
+    already the WIRE type on both sides — the DTO this exception produces via `ToError()`. Taking that
+    name for the throwable would either collide outright (TypeScript, where the class and the interface
+    would both be exported as `IpcError`) or leave the two halves named differently, which is precisely
+    the mirror the kit refuses to break. The stem moves and the language-idiomatic suffix stays, which is
+    the convention the pair already documented in its own doc comment.
+  - ⚠ **`error.name` changes too** (`'OperationError'` → `'ShenoraError'`), so any client code matching
+    on the name STRING rather than `instanceof` needs updating. Matching on `code` was always the
+    intended path and is unaffected.
+
 - 🔴 **A CORE module is CONFIGURED by the application's setup, never added to it.** Request tracking's
   `IServiceCollection` registration is now `internal`; the app-facing surface is
   **`builder.UseRequests(x => …)`**, beside `UseMissions`/`UseFileSystem`/`UseMediaPlayer`. The class

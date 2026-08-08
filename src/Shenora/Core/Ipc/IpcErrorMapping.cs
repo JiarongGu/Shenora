@@ -7,7 +7,7 @@ namespace Shenora.Core.Ipc;
 /// The ONE implementation of the kit's most load-bearing invariant: <b>an exception becomes a
 /// structured wire error, and its text never crosses the bridge</b>.
 /// <para>
-/// This existed as four byte-identical <c>catch (OperationException) / catch (Exception)</c> pairs —
+/// This existed as four byte-identical <c>catch (ShenoraException) / catch (Exception)</c> pairs —
 /// two in <see cref="MessageDispatcher"/> (its transport entry point and
 /// <see cref="MessageDispatcherExtensions.UseErrorHandler"/>), one in <see cref="ModuleBase"/>, and a partial
 /// one in the WebView2 bridge. Four copies of the rule that must never be broken is how it
@@ -16,7 +16,7 @@ namespace Shenora.Core.Ipc;
 /// connection string to the page. Collapsed in P5.5 H4.5.
 /// </para>
 /// <para>
-/// Only two things ever reach the client: an <see cref="OperationException"/>'s own structured error
+/// Only two things ever reach the client: an <see cref="ShenoraException"/>'s own structured error
 /// (the app chose those words deliberately, and the code is the client's i18n key), or
 /// <see cref="IpcErrorCodes.UnknownError"/> plus the exception's TYPE NAME. The message, the stack
 /// and any inner exception stay host-side in the log.
@@ -51,11 +51,11 @@ public static class IpcErrorMapping
         var where = module ?? "-";
         var what = type ?? "-";
 
-        if (exception is OperationException operation)
+        if (exception is ShenoraException operation)
         {
             // Expected failure the app described itself — pass its code/parameters through verbatim.
             // NOTE the sharp edge this creates, and do not "helpfully" round off: the MESSAGE crosses
-            // too, because these are the app's own words. So never construct an OperationException
+            // too, because these are the app's own words. So never construct an ShenoraException
             // from `ex.Message` of an arbitrary exception — that turns the one sanctioned channel into
             // a bypass of the whole boundary (P6.4; there is a knowledge rule and a probe for it).
             log.LogWarning(operation, "Operation error {Context} {Module}/{Type}: [{Code}]",
@@ -67,7 +67,7 @@ public static class IpcErrorMapping
         // UNKNOWN_ERROR, so a client could not tell "you cancelled this" from "something broke" — and a
         // cancel is the one failure a UI should NOT show an error for. The reference composition had
         // already hand-rolled this arm, which is the tell that every adopting app would have to.
-        // Checked AFTER OperationException on purpose: an app that models cancellation with its own code
+        // Checked AFTER ShenoraException on purpose: an app that models cancellation with its own code
         // keeps its own words.
         if (exception is OperationCanceledException)
         {

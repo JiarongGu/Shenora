@@ -13,9 +13,9 @@ public class ModuleBaseTests
         {
             "PING" => Task.FromResult<object?>("pong"),
             "NONE" => Task.FromResult<object?>(null),
-            "FAIL" => throw new OperationException("ECHO_FAILED", "reason", "test"),
+            "FAIL" => throw new ShenoraException("ECHO_FAILED", "reason", "test"),
             "BOOM" => throw new InvalidOperationException("secret detail"),
-            _ => throw new OperationException(IpcErrorCodes.NoHandler),
+            _ => throw new ShenoraException(IpcErrorCodes.NoHandler),
         };
     }
 

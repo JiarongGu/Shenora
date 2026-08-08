@@ -45,7 +45,7 @@ public sealed class IpcResponse
     /// <summary>
     /// A failure response built from the error parts (see <see cref="IpcError"/>).
     /// <para>
-    /// Parameter order matches <see cref="OperationException"/>'s — <c>code</c>, then
+    /// Parameter order matches <see cref="ShenoraException"/>'s — <c>code</c>, then
     /// <c>parameters</c>, then <c>message</c> (P5.5 H6). The two are siblings: they build the same
     /// structured error from the same three pieces, and they used to disagree about the order of the
     /// last two, so which one you were calling decided what a positional third argument meant. The

@@ -138,7 +138,7 @@ a finding that contradicts one of these is either a real regression or a rule th
 
 | Area (files) | Invariant source | What to check |
 |---|---|---|
-| IPC stack (`src/Shenora.Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.claude/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `OperationException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
+| IPC stack (`src/Shenora.Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.claude/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `ShenoraException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
 | WebView2 hosting/serving (`src/Shenora.Windows/`) | `.claude/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
 | Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
 | Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
@@ -159,7 +159,7 @@ a finding that contradicts one of these is either a real regression or a rule th
    here — see §5 — but this is the standing hotspot.)
 2. **The IPC error boundary.** The single most important contract: raw exception text must never
    reach the client. Trace every `catch` in the dispatcher, facades, the bridge, and the sample
-   routes — expected failures become `OperationException`/structured codes; unknowns become
+   routes — expected failures become `ShenoraException`/structured codes; unknowns become
    `UNKNOWN_ERROR` with details kept host-side only.
 3. **WebView2 lifecycle & resource ownership.** Controls, forms, CTS, `SemaphoreSlim`, channels,
    and event subscriptions (`WebMessageReceived`, `NavigationCompleted`, DevTools receivers,

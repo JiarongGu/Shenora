@@ -11,7 +11,7 @@ public sealed class ScopedContainerRouterOptions
     /// <summary>
     /// Populates a NEW scope's service collection — called once per scope id, on first use.
     /// The scope id is app-defined (<see cref="IpcRequest.Scope"/>: a profile, a workspace, a
-    /// document…). Validate the id here and throw <see cref="OperationException"/> (e.g. a
+    /// document…). Validate the id here and throw <see cref="ShenoraException"/> (e.g. a
     /// SCOPE_NOT_FOUND code) to reject unknown scopes — the pipeline's error mapping turns it
     /// into the structured wire error. Keep it fast: requests for the scope wait on it (the
     /// source app blocked here deliberately, for message ordering); heavy initialization

@@ -22,7 +22,7 @@ public class PayloadHelperTests
     [Fact]
     public void Required_missing_key_throws_structured()
     {
-        var ex = Assert.Throws<OperationException>(
+        var ex = Assert.Throws<ShenoraException>(
             () => PayloadHelper.GetRequiredValue<string>(Payload("""{"other":1}"""), "name"));
 
         Assert.Equal(IpcErrorCodes.MissingPayloadValue, ex.Code);
@@ -33,7 +33,7 @@ public class PayloadHelperTests
     public void Required_treats_json_null_as_missing()
     {
         // The wire convention omits nulls (IpcJson), so an explicit null means the same as absent.
-        var ex = Assert.Throws<OperationException>(
+        var ex = Assert.Throws<ShenoraException>(
             () => PayloadHelper.GetRequiredValue<string>(Payload("""{"name":null}"""), "name"));
 
         Assert.Equal(IpcErrorCodes.MissingPayloadValue, ex.Code);
@@ -42,7 +42,7 @@ public class PayloadHelperTests
     [Fact]
     public void Required_with_no_payload_at_all_throws_structured()
     {
-        var ex = Assert.Throws<OperationException>(
+        var ex = Assert.Throws<ShenoraException>(
             () => PayloadHelper.GetRequiredValue<string>(null, "name"));
 
         Assert.Equal(IpcErrorCodes.MissingPayloadValue, ex.Code);
@@ -51,7 +51,7 @@ public class PayloadHelperTests
     [Fact]
     public void Required_unconvertible_value_throws_structured_with_cause()
     {
-        var ex = Assert.Throws<OperationException>(
+        var ex = Assert.Throws<ShenoraException>(
             () => PayloadHelper.GetRequiredValue<int>(Payload("""{"count":"not-a-number"}"""), "count"));
 
         Assert.Equal(IpcErrorCodes.InvalidPayloadValue, ex.Code);

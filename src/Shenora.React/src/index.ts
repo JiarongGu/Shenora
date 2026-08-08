@@ -17,7 +17,7 @@ export {
   ShellCapabilities,
   type ShellInfo,
 } from './types.js';
-export { OperationError } from './errors.js';
+export { ShenoraError } from './errors.js';
 export {
   isShenoraAvailable,
   createHostTransport,

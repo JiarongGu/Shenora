@@ -86,16 +86,16 @@ transport, or building the P6 adoption shims.
   the test HANGS instead of failing — the worst outcome here, and the reason the dotnet suite runs
   serially at all (parallelism once masked a 17-second hang). Found by sabotage: swallowing the token
   in `BuildPipeline` hung the whole run; with the bound, five tests failed in five seconds.
-- **An `OperationException`'s MESSAGE crosses the wire verbatim — so never build one from
+- **An `ShenoraException`'s MESSAGE crosses the wire verbatim — so never build one from
   `ex.Message`.** The no-raw-exception-text rule above has exactly one sanctioned channel through it:
-  `OperationException` is the app describing an EXPECTED failure in its own words, and
+  `ShenoraException` is the app describing an EXPECTED failure in its own words, and
   `IpcErrorMapping` passes its code, parameters and message through untouched. That makes
-  `catch (Exception ex) { throw new OperationException(code, message: ex.Message); }` a complete
+  `catch (Exception ex) { throw new ShenoraException(code, message: ex.Message); }` a complete
   bypass of the boundary — and it is the natural line to write when porting a host whose dispatcher
   did `$"{action} failed: {ex.Message}"`, which is how the P6.4 adapter probe found it (sabotage:
   with the wrapper in place a planted connection string reached the client; without it, the response
   carried only `UNKNOWN_ERROR` + the exception type name). Let unexpected exceptions ESCAPE to the
-  boundary; reserve `OperationException` for failures the app can name.
+  boundary; reserve `ShenoraException` for failures the app can name.
 - **The client event bus mirrors the host's `IEventBus` in BREADTH, not just in the wire types.**
   Three levels — exact `(module, type)`, `subscribeToModule`, `subscribeToAll` — because an observer
   that cannot enumerate the vocabulary up front (plug-in-contributed events, a diagnostics tap, an
@@ -143,7 +143,7 @@ transport, or building the P6 adoption shims.
   invalidate-then-rebuild.
 - **Cancellation is a NORMAL outcome and gets its own code** (`OPERATION_CANCELLED`), not
   `UNKNOWN_ERROR` — it is the one failure a UI should stay silent about, and a client could not tell it
-  from a real fault. Map it AFTER `OperationException` so an app that models cancellation in its own
+  from a real fault. Map it AFTER `ShenoraException` so an app that models cancellation in its own
   words keeps them. Same shape for a scope invalidated mid-request: that is a race with a documented
   app-facing call, so retry once rather than reporting a fault.
 - **`ConfigureAwait(false)` does NOT belong in the dispatch path — and "the dispatch path" is a
@@ -160,7 +160,7 @@ transport, or building the P6 adoption shims.
   the never-`Task.Run`-per-message rule below — that is about the TRANSPORT spawning per inbound
   message (a measured pool-starvation freeze), not a handler offloading one long operation.
 - **The dispatch boundary never throws and never returns null** (`DispatchAsync`): unhandled →
-  `NO_HANDLER` (+`{module,type}` params), `OperationException` → its structured error, else →
+  `NO_HANDLER` (+`{module,type}` params), `ShenoraException` → its structured error, else →
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so
   `WebViewIpcBridge.HandleIncomingAsync` still wraps dispatch + serialize (an unserializable
   handler result once escaped through the async-void handler = process death; found in review).
@@ -285,7 +285,7 @@ transport, or building the P6 adoption shims.
   name, so it has its own tripwire (`WireMirrorTests.IpcProgress_fields_match_the_host`) rather than
   trusting the two sides to stay in step by inspection.
 - **A failure obeys the same no-raw-exception-text boundary as any request/response failure.**
-  `ModuleBase` maps an `OperationException` to its structured error and anything else to
+  `ModuleBase` maps an `ShenoraException` to its structured error and anything else to
   `IpcErrorCodes.UnknownError` plus the exception type name, with the detail logged host-side only —
   one boundary, and `IpcRequestStatus.Error` carries the same shape. A second copy of the policy is
   exactly how the `ex.Message`-in-a-wrapper bypass gets re-earned.

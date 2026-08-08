@@ -431,6 +431,9 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   Placement (D19/D20): operations live in `Shenora.Ipc`, not `Shenora`, so they reuse
   `IpcError`/`OperationException` rather than duplicating a structured-error type in Core; both packages
   are `net10.0`, so portability is satisfied either way.
+  *(Both premises have since gone: D65 folded `Shenora.Ipc` into `Shenora`, so there are no longer two
+  packages to place anything between, and `OperationException` is `ShenoraException` as of 2026-08-09.
+  The conclusion — one structured-error type, never a duplicate — is what survived.)*
   Cost accepted: `RouteMessageAsync` gains a parameter, which breaks every override — mechanical, and
   taken deliberately pre-1.0 rather than shipped as a second migration later.
   **AMENDED 2026-08-01 (before 0.2.0 merged, user direction) — the operation lifecycle is completed to

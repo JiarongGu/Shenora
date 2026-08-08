@@ -224,7 +224,7 @@ delegate Shenora.Core.Ipc.MessageMiddleware
   public virtual System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> Invoke(Shenora.Core.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse>> next, System.Threading.CancellationToken cancellationToken)
 abstract class Shenora.Core.Ipc.ModuleBase : Shenora.Core.Ipc.IIpcModule
   protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.Events.IEventBus? events = null)
-  protected Shenora.Core.Ipc.OperationException UnknownType(Shenora.Core.Ipc.IpcRequest request)
+  protected Shenora.Core.Ipc.ShenoraException UnknownType(Shenora.Core.Ipc.IpcRequest request)
   protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   protected static System.Threading.Tasks.Task<object> Done()
   public System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> HandleMessageAsync(Shenora.Core.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
@@ -256,12 +256,6 @@ sealed class Shenora.Core.Ipc.NotificationPumpOptions : System.IEquatable<Shenor
   public override string ToString()
   public static bool op_Equality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
   public static bool op_Inequality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
-class Shenora.Core.Ipc.OperationException : System.Exception
-  public .ctor(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null, System.Exception? innerException = null)
-  public .ctor(string code, string paramKey, string paramValue, string? message = null)
-  public Shenora.Core.Ipc.IpcError ToError()
-  public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; }
-  public string Code { get; }
 static class Shenora.Core.Ipc.PayloadHelper
   public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)
   public static T GetRequiredValue<T>(System.Text.Json.JsonElement? payload, string key)
@@ -282,6 +276,12 @@ sealed class Shenora.Core.Ipc.ScopedContainerRouterOptions
 sealed class Shenora.Core.Ipc.ShellInfo
   public System.Collections.Generic.IReadOnlyList<string> Capabilities { get; init; }
   public required string Name { get; init; }
+class Shenora.Core.Ipc.ShenoraException : System.Exception
+  public .ctor(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null, System.Exception? innerException = null)
+  public .ctor(string code, string paramKey, string paramValue, string? message = null)
+  public Shenora.Core.Ipc.IpcError ToError()
+  public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; }
+  public string Code { get; }
 interface Shenora.Core.Shell.IClipboardService
   public abstract System.Threading.Tasks.Task SetImageFromFileAsync(string imagePath)
   public abstract System.Threading.Tasks.Task SetTextAsync(string text)

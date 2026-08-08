@@ -787,7 +787,7 @@ changes, noting them in `CHANGELOG.md`).
   `CreateError`), `IpcError` (`{code, message?, parameters?}` — code is the client-side i18n
   key), `IpcNotification`/`IpcNotificationBatch` (`{category:"notification", id, payload:[…],
   timestamp}` — always-batched host→client push; the same envelope any transport carries),
-  `IpcCategories`, `OperationException` (the one exception whose details cross the bridge;
+  `IpcCategories`, `ShenoraException` (the one exception whose details cross the bridge;
   `ToError()`), `IpcErrorCodes` (framework-reserved codes), `PayloadHelper`
   (`GetRequiredValue`/`GetOptionalValue` with structured errors; JSON null == absent), `IpcJson`
   (frozen camelCase/camelCase-enum/null-omitting wire serializer defaults, plus
@@ -809,7 +809,7 @@ changes, noting them in `CHANGELOG.md`).
   `UseErrorHandler` + `MapRoute`/`MapModule(name, routes)`/`MapModule(facade)`; `DispatchAsync`
   transport entry: never throws, never null — `NO_HANDLER`/structured/`UNKNOWN_ERROR` mapping
   with details kept host-side; programmatic `SendAsync`/`SendAsync<T>` over the same pipeline,
-  typed failures rethrow `OperationException`), `MessageMiddleware` delegate,
+  typed failures rethrow `ShenoraException`), `MessageMiddleware` delegate,
   `ModuleRouteBuilder`, `IIpcModule` (carries `ModuleName` — facade objects route via DI +
   `MapModule`, no static registry) / `ModuleBase` (standardized error boundary) /
   `IpcErrorMapping` (that boundary as public surface: `ToError`/`ToErrorResponse`, for an app whose
@@ -913,7 +913,7 @@ changes, noting them in `CHANGELOG.md`).
   existing option names (`NotificationInterval`, `MaxQueuedNotifications`, forwarded to the pump's
   `FlushInterval`/`MaxQueued`) and gains `NotificationFilter`.
 - `@shenora/react` — the client side of the contract: wire types mirroring `Shenora.Ipc`
-  name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `OperationError`
+  name-for-name (+ `IpcCategories`/`IpcErrorCodes`/handshake constants), `ShenoraError`
   (structured code + parameters; client-side `TIMEOUT`/`NO_TRANSPORT` reject the same way),
   `ShenoraTransport` seam + `createWebView2Transport` (D16 pluggability) +
   `isShenoraAvailable`, `ShenoraBridge` (correlated `invoke` + timeout, one-way `post` +

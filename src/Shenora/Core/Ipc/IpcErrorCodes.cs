@@ -10,7 +10,7 @@ namespace Shenora.Core.Ipc;
 public static class IpcErrorCodes
 {
     /// <summary>
-    /// An unhandled (non-<see cref="OperationException"/>) exception reached the dispatch
+    /// An unhandled (non-<see cref="ShenoraException"/>) exception reached the dispatch
     /// boundary. Details stay in the host log; the client learns nothing but the code.
     /// </summary>
     public const string UnknownError = "UNKNOWN_ERROR";

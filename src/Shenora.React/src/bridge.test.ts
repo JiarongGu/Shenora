@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge, configureBridge, getBridge } from './bridge.js';
-import { OperationError } from './errors.js';
+import { ShenoraError } from './errors.js';
 import { ShenoraEventBus } from './eventBus.js';
 import { IpcCategories, HANDSHAKE_MODULE, HANDSHAKE_TYPE, IpcErrorCodes, type EventMessage, type IpcRequest } from './types.js';
 import { FakeTransport } from './testing/fakeTransport.js';
@@ -40,7 +40,7 @@ describe('ShenoraBridge', () => {
     await expect(promise).resolves.toEqual({ count: 2 });
   });
 
-  it('rejects a failed response as a structured OperationError', async () => {
+  it('rejects a failed response as a structured ShenoraError', async () => {
     const { transport, bridge } = createBridge();
 
     const promise = bridge.invoke('APP', 'FAIL');
@@ -53,9 +53,9 @@ describe('ShenoraBridge', () => {
 
     const error = await promise.then(
       () => { throw new Error('should have rejected'); },
-      (e: unknown) => e as OperationError,
+      (e: unknown) => e as ShenoraError,
     );
-    expect(error).toBeInstanceOf(OperationError);
+    expect(error).toBeInstanceOf(ShenoraError);
     expect(error.code).toBe('IMPORT_FAILED');
     expect(error.parameters).toEqual({ name: 'x' });
   });
@@ -200,7 +200,7 @@ describe('ShenoraBridge', () => {
     const promise = bridge.invoke('APP', 'PING');
     bridge.dispose();
 
-    await expect(promise).rejects.toBeInstanceOf(OperationError);
+    await expect(promise).rejects.toBeInstanceOf(ShenoraError);
     expect(transport.subscribed).toBe(false);
   });
 

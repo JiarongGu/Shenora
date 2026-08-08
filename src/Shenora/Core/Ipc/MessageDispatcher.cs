@@ -92,7 +92,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// <summary>
     /// Run a request through the pipeline. Never throws and never returns null: an unhandled
     /// request becomes a structured <see cref="IpcErrorCodes.NoHandler"/> error, an escaped
-    /// <see cref="OperationException"/> becomes its structured error, and any other exception
+    /// <see cref="ShenoraException"/> becomes its structured error, and any other exception
     /// becomes <see cref="IpcErrorCodes.UnknownError"/> with the details kept host-side — raw
     /// exceptions never cross the bridge (design contract §5; the source leaked
     /// <c>ex.Message</c> here).
@@ -139,7 +139,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
             }
 
             // A structured failure the pipeline RETURNED rather than threw — an app's own
-            // OperationException already mapped by UseErrorHandler, or the NO_HANDLER above. Recorded
+            // ShenoraException already mapped by UseErrorHandler, or the NO_HANDLER above. Recorded
             // with the same error the client gets, so the in-flight list and the response never
             // disagree about why something failed.
             if (!response.Success && response.Error is { } failure) FailTracking(scope, failure);
@@ -268,7 +268,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// <summary>
     /// Send a programmatic request and get typed response data. DEVIATION from the source
     /// (which threw <c>InvalidOperationException</c> with a flattened message): a failed
-    /// response is rethrown as its structured <see cref="OperationException"/>, so a
+    /// response is rethrown as its structured <see cref="ShenoraException"/>, so a
     /// programmatic caller sees exactly the failure a client would.
     /// </summary>
     public async Task<T?> SendAsync<T>(string module, string type, string? scope = null, object? payload = null,
@@ -279,7 +279,7 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
         if (!response.Success)
         {
             var error = response.Error;
-            throw new OperationException(error?.Code ?? IpcErrorCodes.UnknownError, error?.Parameters, error?.Message);
+            throw new ShenoraException(error?.Code ?? IpcErrorCodes.UnknownError, error?.Parameters, error?.Message);
         }
 
         return ConvertData<T>(response.Data);

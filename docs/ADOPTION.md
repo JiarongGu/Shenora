@@ -313,7 +313,7 @@ Both were written against this surface and run before this guide claimed they co
   all-or-nothing per event.
 
 > ⚠ **The trap that quietly undoes the error boundary.** Do NOT wrap a caught exception as
-> `throw new OperationException(code, message: ex.Message)`. An `OperationException`'s message crosses
+> `throw new ShenoraException(code, message: ex.Message)`. An `ShenoraException`'s message crosses
 > the wire VERBATIM by design — it is *your* words for an expected failure — so that one line puts raw
 > exception text (paths, connection strings) back on the page. It is exactly the line you would port
 > if your old dispatcher emitted `$"{action} failed: {ex.Message}"`. Let the exception escape instead:

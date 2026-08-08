@@ -148,7 +148,7 @@ public class FileDialogModuleTests
     [Fact]
     public async Task A_refusal_never_carries_the_exception_s_own_text_across_the_wire()
     {
-        // The standing boundary rule, and the one an OperationException can bypass: its message crosses
+        // The standing boundary rule, and the one an ShenoraException can bypass: its message crosses
         // VERBATIM, so building one from ex.Message would leak whatever the shell put there. The refusal
         // that the shell throws is planted with a marker the response must not contain.
         var dialogs = new RecordingDialogs { RefuseSave = true };

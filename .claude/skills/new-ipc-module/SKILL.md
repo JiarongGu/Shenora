@@ -27,7 +27,7 @@ after the facade compiles. Walk it in this order and none of them surprises you.
    `RouteMessageAsync(request, context, ct)`. Read payloads with `PayloadHelper.GetRequiredValue<T>`
    /`GetOptionalValue<T>`, return `Done()` from a void route, and end the switch with
    `throw UnknownType(request)` — the base owns that shape. Expected failures are an
-   `OperationException`, **never one built from `ex.Message`**: its message crosses the wire
+   `ShenoraException`, **never one built from `ex.Message`**: its message crosses the wire
    verbatim, so that wrapper bypasses the whole error boundary. A route name the client also types
    becomes a `public const string` (see `IpcRequestsModule.ListType`).
 4. **Emit through `context.Publish(type, payload, scope)`**, never a hand-typed module literal.

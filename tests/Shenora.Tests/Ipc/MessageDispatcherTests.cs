@@ -68,10 +68,10 @@ public class MessageDispatcherTests
     [Fact]
     public async Task An_app_that_models_cancellation_itself_keeps_its_own_code()
     {
-        // The cancellation arm sits AFTER OperationException on purpose: an app that describes the
+        // The cancellation arm sits AFTER ShenoraException on purpose: an app that describes the
         // outcome in its own words must not have them replaced by ours.
         var dispatcher = new MessageDispatcher();
-        dispatcher.UseRoute("APP", "SLOW", (_, _) => throw new OperationException("IMPORT_ABORTED"));
+        dispatcher.UseRoute("APP", "SLOW", (_, _) => throw new ShenoraException("IMPORT_ABORTED"));
 
         var response = await dispatcher.DispatchAsync(Request("APP", "SLOW"));
 
@@ -166,7 +166,7 @@ public class MessageDispatcherTests
     {
         var dispatcher = new MessageDispatcher()
             .UseErrorHandler()
-            .MapRoute("APP", "FAIL", _ => throw new OperationException("APP_FAILED", "name", "x"));
+            .MapRoute("APP", "FAIL", _ => throw new ShenoraException("APP_FAILED", "name", "x"));
 
         var response = await dispatcher.DispatchAsync(Request("APP", "FAIL"));
 
@@ -194,7 +194,7 @@ public class MessageDispatcherTests
     public async Task Dispatch_without_an_error_handler_still_never_throws()
     {
         var dispatcher = new MessageDispatcher()
-            .MapRoute("APP", "FAIL", _ => throw new OperationException("APP_FAILED"))
+            .MapRoute("APP", "FAIL", _ => throw new ShenoraException("APP_FAILED"))
             .MapRoute("APP", "BOOM", _ => throw new InvalidOperationException("secret detail"));
 
         var failed = await dispatcher.DispatchAsync(Request("APP", "FAIL"));
@@ -247,9 +247,9 @@ public class MessageDispatcherTests
     {
         var dispatcher = new MessageDispatcher()
             .UseErrorHandler()
-            .MapRoute("APP", "FAIL", _ => throw new OperationException("APP_FAILED", "name", "x"));
+            .MapRoute("APP", "FAIL", _ => throw new ShenoraException("APP_FAILED", "name", "x"));
 
-        var ex = await Assert.ThrowsAsync<OperationException>(
+        var ex = await Assert.ThrowsAsync<ShenoraException>(
             () => dispatcher.SendAsync<Item>("APP", "FAIL"));
 
         Assert.Equal("APP_FAILED", ex.Code);

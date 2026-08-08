@@ -223,3 +223,5 @@ SHENORA.OPERATIONS     # -> SHENORA.REQUESTS
 OPERATION_UPDATED      # -> REQUEST_UPDATED
 OPERATION_REMOVED      # -> REQUEST_REMOVED
 MissionOperationObserver # -> MissionEventPublisher (the sample's; missions report as an EVENT stream)
+OperationException     # -> ShenoraException (the LAST D66 leftover; general IPC structured error, never request-scoped)
+OperationError         # -> ShenoraError (its client mirror — same stem, language-idiomatic suffix)

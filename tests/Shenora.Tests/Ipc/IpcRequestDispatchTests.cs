@@ -84,7 +84,7 @@ public class IpcRequestDispatchTests
 
         var dispatch = dispatcher.DispatchAsync(Request(id: "req-2"));
         clock.Advance(TimeSpan.FromMilliseconds(50));
-        gate.SetException(new OperationException("DEPLOY_REJECTED",
+        gate.SetException(new ShenoraException("DEPLOY_REJECTED",
             new Dictionary<string, string> { ["env"] = "prod" }));
 
         var response = await Bounded(dispatch);
@@ -112,7 +112,7 @@ public class IpcRequestDispatchTests
 
         var dispatch = dispatcher.DispatchAsync(Request(id: "req-3", module: "GATED"));
         clock.Advance(TimeSpan.FromMilliseconds(50));
-        gate.SetException(new OperationException("MODULE_SAID_NO"));
+        gate.SetException(new ShenoraException("MODULE_SAID_NO"));
 
         Assert.False((await Bounded(dispatch)).Success);
         var status = tracker.GetAll().Single();
@@ -346,7 +346,7 @@ public class IpcRequestDispatchTests
         var dispatcher = new MessageDispatcher(requests: new ThrowingTracker(throwOnBegin))
             .MapModule("APP", routes => routes
                 .RouteAsync("PING", (_, _) => Task.FromResult<object?>("pong"))
-                .RouteAsync("BOOM", (_, _) => throw new OperationException("APP_SAID_NO")));
+                .RouteAsync("BOOM", (_, _) => throw new ShenoraException("APP_SAID_NO")));
 
         var ok = await Bounded(dispatcher.DispatchAsync(Request(module: "APP", type: "PING")));
         Assert.True(ok.Success);

@@ -99,7 +99,7 @@ public static class MessageDispatcherExtensions
 
     /// <summary>
     /// Middleware that converts downstream exceptions into structured error responses — register it
-    /// FIRST so it wraps everything after it. <see cref="OperationException"/> crosses as its structured
+    /// FIRST so it wraps everything after it. <see cref="ShenoraException"/> crosses as its structured
     /// error; cancellation crosses as <see cref="IpcErrorCodes.OperationCancelled"/>; anything else is
     /// logged host-side and crosses only as <see cref="IpcErrorCodes.UnknownError"/> plus the exception
     /// type name. <see cref="MessageDispatcher.DispatchAsync"/> keeps a last-resort copy of this mapping

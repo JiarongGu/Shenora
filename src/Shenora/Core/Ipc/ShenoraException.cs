@@ -13,7 +13,7 @@ namespace Shenora.Core.Ipc;
 /// <see cref="ToError"/> — the structured object now travels as the response's <c>error</c>
 /// field directly.
 /// </summary>
-public class OperationException : Exception
+public class ShenoraException : Exception
 {
     /// <summary>Error code / i18n key (e.g. <c>"IMPORT_FAILED"</c>).</summary>
     public string Code { get; }
@@ -25,7 +25,7 @@ public class OperationException : Exception
     /// <param name="parameters">Optional interpolation values.</param>
     /// <param name="message">Optional untranslated message for host logs; defaults to the code.</param>
     /// <param name="innerException">Optional cause, preserved for host logs.</param>
-    public OperationException(
+    public ShenoraException(
         string code,
         IReadOnlyDictionary<string, string>? parameters = null,
         string? message = null,
@@ -37,7 +37,7 @@ public class OperationException : Exception
     }
 
     /// <summary>Convenience for the common single-parameter case.</summary>
-    public OperationException(string code, string paramKey, string paramValue, string? message = null)
+    public ShenoraException(string code, string paramKey, string paramValue, string? message = null)
         : this(code, new Dictionary<string, string> { [paramKey] = paramValue }, message)
     {
     }

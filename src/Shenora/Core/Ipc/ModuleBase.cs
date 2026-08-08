@@ -8,11 +8,11 @@ namespace Shenora.Core.Ipc;
 /// <summary>
 /// Base class for module facades, ported from the primary desktop sibling: routes each request
 /// to the implementation and standardizes the error boundary — an
-/// <see cref="OperationException"/> crosses as its structured error, anything else is logged
+/// <see cref="ShenoraException"/> crosses as its structured error, anything else is logged
 /// host-side and crosses only as <see cref="IpcErrorCodes.UnknownError"/> plus the exception
 /// type name (the source leaked raw exception messages here; design contract §5 forbids that).
 /// A facade owns its whole module namespace: every request for the module gets a response from
-/// it, so unknown types should throw an <see cref="OperationException"/> rather than fall
+/// it, so unknown types should throw an <see cref="ShenoraException"/> rather than fall
 /// through.
 /// </summary>
 public abstract class ModuleBase : IIpcModule
@@ -101,16 +101,16 @@ public abstract class ModuleBase : IIpcModule
     /// distinction as its probe and discovered there was none.
     /// </para>
     /// </summary>
-    protected OperationException UnknownType(IpcRequest request)
+    protected ShenoraException UnknownType(IpcRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return new OperationException(IpcErrorCodes.NoRoute,
+        return new ShenoraException(IpcErrorCodes.NoRoute,
             new Dictionary<string, string> { ["module"] = ModuleName, ["type"] = request.Type });
     }
 
     /// <summary>
     /// Route the request to the module's handler and return the response data (null when the
-    /// operation returns nothing). Throw <see cref="OperationException"/> for every expected
+    /// operation returns nothing). Throw <see cref="ShenoraException"/> for every expected
     /// failure.
     /// <para>
     /// <paramref name="context"/> is how a route EMITS (<see cref="IModuleContext.Publish"/>) — the
