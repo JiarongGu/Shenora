@@ -720,8 +720,25 @@ ones is listed on the implementation.
 Everything above applies unchanged — that is the finding, not a hedge. The shell compiles for
 `net10.0-ios` with **no platform directive anywhere in the package**, the iOS head is three template
 files (`AppDelegate`, `Program`, `Info.plist`), and the same page got the same `ShellInfo` back.
-Build it with `node devtools/dev.mjs mac` (see `devtools/README.md`); iOS needs a Mac, so the TFM is
-conditioned on the build host and a Windows `pack` is android-only.
+**Getting it onto a simulator or a phone is `@shenora/cli`** (D67) — the part of the loop you would
+otherwise write yourself:
+
+```bash
+npm i -D @shenora/cli
+npx shenora init              # write shenora.deploy.json (project + bundleId)
+npx shenora ios doctor        # can this Mac build, sign and install? names what is missing
+npx shenora ios deploy --simulator
+npx shenora ios deploy        # a real iPhone: build → SIGN → verify extensions → install → launch
+```
+
+iOS needs a Mac, so the TFM is conditioned on the build host and a Windows `pack` is android-only. ⚠ Two
+things are yours and no tool can do them: a **free/personal team profile expires after 7 days**
+(re-deploy to refresh), and a first install needs the certificate TRUSTED on the phone (Settings →
+General → VPN & Device Management). If your machine's Xcode and the installed workload disagree, pass the
+override after `--` (`npx shenora ios deploy --simulator -- -p:ValidateXcodeVersion=false`).
+
+*(This repo's own loop is `node devtools/dev.mjs mac` — see `devtools/README.md`. That is a maintainer
+tool and is not shipped; `@shenora/cli` is the adopter-facing half of the same work.)*
 
 Two things that only showed up here, and both are about your PAGE rather than the kit:
 
