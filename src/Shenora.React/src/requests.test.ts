@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ShenoraBridge } from './bridge.js';
 import { ShenoraEventBus } from './eventBus.js';
-import { createOperationsStore, OperationStatuses } from './operations.js';
+import { createRequestsStore, IpcRequestStates } from './requests.js';
 import { FakeTransport } from './testing/fakeTransport.js';
 
 /**
@@ -14,7 +14,7 @@ function harness(initialList: unknown[], storeOptions: { module?: string; scope?
   const transport = new FakeTransport();
   const realBus = new ShenoraEventBus();
   const bridge = new ShenoraBridge({ transport, eventBus: realBus });
-  const store = createOperationsStore({ bridge, bus: realBus, ...storeOptions });
+  const store = createRequestsStore({ bridge, bus: realBus, ...storeOptions });
 
   return {
     store,
@@ -48,11 +48,11 @@ function harness(initialList: unknown[], storeOptions: { module?: string; scope?
   };
 }
 
-const info = (over: Partial<{ id: string; status: string; progress: { value: number; total?: number; unit?: string } }>) => ({
-  id: 'op-1', module: 'DEPLOY', kind: 'PUSH', status: 'running', ...over,
+const info = (over: Partial<{ id: string; state: string; progress: { value: number; total?: number; unit?: string } }>) => ({
+  id: 'op-1', module: 'DEPLOY', type: 'PUSH', state: 'running', ...over,
 });
 
-describe('operations store', () => {
+describe('requests store', () => {
   it('loads the snapshot on first subscribe', async () => {
     const { store, bridge } = harness([info({}), info({ id: 'op-2' })]);
     store.subscribe(() => {});
@@ -65,8 +65,8 @@ describe('operations store', () => {
     const { store, bus } = harness([info({})]);
     store.subscribe(() => {});
 
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 40 } }));
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ progress: { value: 80 } }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ progress: { value: 40 } }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ progress: { value: 80 } }));
 
     expect(store.getState().byId['op-1']!.progress).toEqual({ value: 80 });
     expect(Object.keys(store.getState().byId)).toHaveLength(1);
@@ -75,8 +75,8 @@ describe('operations store', () => {
   it('exposes running work separately from finished history', async () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({}));
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({}));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ id: 'op-2', state: 'completed' }));
 
     expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
   });
@@ -90,8 +90,8 @@ describe('operations store', () => {
     expect(transport.lastRequest().module).toBe('MY_OPS');
 
     // A delta on the DEFAULT module must not reach a store bound to the renamed one, and vice versa.
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'wrong-module' }));
-    bus.emit('MY_OPS', 'OPERATION_UPDATED', info({ id: 'op-2' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ id: 'wrong-module' }));
+    bus.emit('MY_OPS', 'REQUEST_UPDATED', info({ id: 'op-2' }));
 
     expect(store.getState().byId['wrong-module']).toBeUndefined();
     expect(store.getState().byId['op-2']).toBeDefined();
@@ -131,68 +131,68 @@ describe('operations store', () => {
    * (`OPERATION_UPDATED` only ever adds/updates an id), so `clearFinished`/`resume` each carried a
    * hand-written optimistic local prune to guess at what the host had removed — one of which
    * (`resume`) shipped with a bug this very release (pruning a `paused` row the host deliberately
-   * keeps). `OPERATION_REMOVED` replaces both guesses with one authoritative event: the client folds
+   * keeps). `REQUEST_REMOVED` replaces both guesses with one authoritative event: the client folds
    * it by deleting exactly the named ids, regardless of their status — the host decided, not a local
    * status rule.
    */
-  it('OPERATION_REMOVED deletes the named ids from local state, regardless of status', () => {
+  it('REQUEST_REMOVED deletes the named ids from local state, regardless of status', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-3', status: 'waiting' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ state: 'running' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ id: 'op-2', state: 'completed' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ id: 'op-3', state: 'cancelled' }));
 
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['op-2', 'op-3'] });
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_REMOVED', { requestIds: ['op-2', 'op-3'] });
 
     expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
   });
 
   /** An id the store never had is a harmless no-op — the same shape as deleting an absent key. */
-  it('OPERATION_REMOVED naming an unknown id is a harmless no-op', () => {
+  it('REQUEST_REMOVED naming an unknown id is a harmless no-op', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({}));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({}));
 
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_REMOVED', { operationIds: ['no-such-id'] });
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_REMOVED', { requestIds: ['no-such-id'] });
 
     expect(Object.keys(store.getState().byId)).toEqual(['op-1']);
   });
 
   /**
    * `clearFinished`/`resume` no longer locally mutate state at all (Finding 4) — the host's
-   * `OPERATION_REMOVED` is the ONLY thing that removes a row now, so calling either action must not
+   * `REQUEST_REMOVED` is the ONLY thing that removes a row now, so calling either action must not
    * change anything by itself, however the host eventually answers.
    */
-  it('clearFinished does not locally mutate state — only the hosts OPERATION_REMOVED does', () => {
+  it('clearFinished does not locally mutate state — only the hosts REQUEST_REMOVED does', () => {
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'completed' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ state: 'running' }));
+    bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ id: 'op-2', state: 'completed' }));
 
     store.actions.clearFinished();
 
     expect(Object.keys(store.getState().byId).sort()).toEqual(['op-1', 'op-2']);
   });
 
-  it('every live status belongs to exactly one band: running or finished', () => {
-    const statuses = Object.values(OperationStatuses);
+  it('every request state belongs to exactly one band: in flight or finished', () => {
+    const states = Object.values(IpcRequestStates);
     const { store, bus } = harness([]);
     store.subscribe(() => {});
-    statuses.forEach((status, i) => {
-      bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: `op-${i}`, status }));
+    states.forEach((state, i) => {
+      bus.emit('SHENORA.REQUESTS', 'REQUEST_UPDATED', info({ id: `req-${i}`, state }));
     });
 
-    const state = store.getState();
+    const snapshot = store.getState();
     const bandsOf = (id: string): string[] => {
       const bands: string[] = [];
-      if (state.running.some((o: { id: string }) => o.id === id)) bands.push('running');
-      if (state.finished.some((o: { id: string }) => o.id === id)) bands.push('finished');
+      if (snapshot.running.some((r: { id: string }) => r.id === id)) bands.push('running');
+      if (snapshot.finished.some((r: { id: string }) => r.id === id)) bands.push('finished');
       return bands;
     };
 
-    statuses.forEach((status, i) => {
-      const bands = bandsOf(`op-${i}`);
-      expect(bands, `status '${status}' landed in bands [${bands.join(', ')}], expected exactly 1`).toHaveLength(1);
+    states.forEach((state, i) => {
+      const bands = bandsOf(`req-${i}`);
+      expect(bands, `state '${state}' landed in bands [${bands.join(', ')}], expected exactly 1`).toHaveLength(1);
     });
   });
 

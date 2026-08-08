@@ -52,6 +52,43 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **"Operations" is MERGED INTO `IpcRequest` and no longer exists** (D66, complete). Not a rename — a
+  rename would have kept the parallel entity alive under a better spelling. The whole point is that the
+  entity was duplicating the request that caused it:
+
+  | `OperationInfo` had | already on `IpcRequest` |
+  |---|---|
+  | `Id` — a fresh `Guid` | `Id` — **the two identities, and the defect** |
+  | `Kind` — app-declared | `Type` — the action already says what kind of work it is |
+  | `Scope`, `StartedAt` | `Scope`, `Timestamp` |
+
+  - **Deleted outright:** `OperationOptions`, `IOperation`, `IOperationRegistry`, `OperationRegistry`,
+    `OperationEvents`, `OperationsModule`, `AddShenoraOperations`, and `IModuleContext.Start`/`Run`.
+    Nothing in the repo ever called `Start` or `Run` — a declared extension point with no consumer, which
+    is the pattern D63 names and is why the merge cost so much less than the line count suggested.
+  - **What replaces them** is only the genuinely-new part, the LIVE STATE of a request: `IpcRequestState`,
+    `IpcRequestStatus`, `IpcProgress`, `IpcLabel`, `IIpcRequestTracker`, `IpcRequestsModule`,
+    `AddShenoraRequests`. Wire: `SHENORA.REQUESTS`, `REQUEST_UPDATED`/`REQUEST_REMOVED`, and `CANCEL`
+    carries a **`requestId`** — the id the page already had when it sent the request.
+  - **`IModuleContext` is now PER REQUEST** (its own name always said "the world a route runs in") and
+    gains `RequestId` + `Report(progress, detail)`. A route reports progress with no id, because there is
+    only one.
+  - 🔴 **THE GRACE PERIOD replaces the declaration.** Every request is tracked automatically and
+    **nothing is emitted at all** unless one outlives `IpcRequestTrackerOptions.GracePeriod` (50 ms — the
+    notification pump's own flush interval, and roughly the threshold below which a human does not want a
+    spinner). A request that finishes inside the window leaves no event, no history entry and no wire
+    traffic. That is what makes tracking everything affordable, and what removes a judgement a module
+    author had to make at authoring time about something only the clock knows at run time.
+    ⚠ It never delays the RESPONSE — it suppresses notifications only.
+  - **Migrate:** delete the `OperationOptions` and the `Run(...)` wrapper; just `await` the work in the
+    route and call `context.Report(...)`. Observe the route's own `cancellationToken` — `CANCEL` now
+    targets it. Client: `useShenoraOperations` → `useShenoraRequests`, `createOperationsStore` →
+    `createRequestsStore`, `status` → `state`, `kind` → `type`; `title` and `cancellable` are gone (every
+    request is abortable, and the page knows what it asked for).
+  - **Host-initiated work got its own home rather than being squeezed in:** the sample's mission observer
+    now publishes a `MISSION_UPDATED` event stream, and the web sample folds it with `useShenoraEvent`.
+    Queue depth belongs to the scheduler, which is where the answer actually lives.
+
 - 🔴 **The operations WAITING band is gone — a request is IN FLIGHT or DONE** (D66, first slice). The
   model is being folded into `IpcRequest` and sharpened toward `XMLHttpRequest`, which has no parked
   state: one object, a state that advances, progress events, `abort()`.

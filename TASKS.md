@@ -139,28 +139,19 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
     every run.
   - **The SAMPLE half genuinely cannot build here**: `Sample.Maui` sets `net10.0-ios` only under
     `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch is unverified by construction.
-- [ ] 🔴 **D66 — fold the "operation" into `IpcRequest`. A long-running request is still a request.**
-  Read D66 first; it carries the measurement. `OperationRegistry` mints a fresh GUID unrelated to the
-  `IpcRequest.Id` that caused it, so one logical thing has TWO identities and correlating them is the
-  adopter's problem. The fix is not a rename — three candidates were rejected for being words every
-  library owns, and the reason none fitted is that the concept should not exist separately.
-  - **EVERY request can take a while — there is nothing to declare.** A grace period replaces
-    `Run()`: a request that finishes inside one notification flush window (already 50 ms) emits no
-    intermediate state at all. ⚠ **The build is one piece: the pump BATCHES but does not COALESCE**, so
-    a 5 ms request would still deliver `running` AND `completed` today. Coalesce keyed by REQUEST ID,
-    last-write-wins within the window — which is also what a progress feed wants.
-  - **`waiting`/`resume` is CUT, not modelled** — the blocker, settled 2026-08-08 by usage (owner chose
-    option (b); reasoning in D66). The only driver in the repo is `MissionOperationObserver.cs`, app code
-    wrapping a queued MISSION, and no adopter drives `WAIT`/`RESUME`/`DISMISS`. So it described
-    host-initiated work all along, which is why it never fitted beside `running`/`completed`. Remove
-    `OperationStatus.Waiting`, `IOperation.Wait`/`Resume`, `IOperationRegistry.RequestResume`/`RequestWait`,
-    the three routes and their client half — in ONE cut, because a half-removed state is the ambiguity this
-    is meant to end.
-  - **Host-initiated work does NOT fold** — a scheduled or recovered mission has no request behind it,
-    which is exactly what that decision turns on. Model it as the event stream it already is, and move the
-    sample's `MissionOperationObserver` onto that so nothing regresses for the one real use case.
-  - ⚠ Wide wire break when it lands: `SHENORA.OPERATIONS`, `OPERATION_UPDATED`/`_REMOVED`, the
-    `OperationStatus` values, `IModuleContext.Run`, and `createOperationsStore` in `@shenora/react`.
+- [ ] **D66 leftovers — coalescing, and the pump.** The merge landed (2026-08-08): the operation entity
+  is gone, `IpcRequest.Id` is the only identity, `IModuleContext` is per-request with `Report`, and the
+  GRACE PERIOD replaced the `Run()` declaration — a request finishing inside 50 ms emits nothing at all.
+  What is still open:
+  - **The pump BATCHES but does not COALESCE.** With the grace period doing the suppressing this is no
+    longer a correctness problem, but a request reporting a hundred times inside one flush window still
+    sends a hundred notifications in one message. Coalesce keyed by REQUEST ID, last-write-wins.
+    `IpcRequestTrackerOptions.ProgressInterval` throttles per request today, which is the cheap half.
+  - **Tracking starts in `ModuleBase`, not the dispatcher**, so a module that does not derive from it is
+    not tracked. Same coverage as before the merge, but the honest place is the dispatch path.
+  - **`OperationException` still carries the old word.** It is the general IPC structured-error type, not
+    part of this subsystem — rename it with the next error-path pass, not this one.
+
 - [ ] 🔎 **"No such MODULE" and "no such ROUTE in a module" are indistinguishable on the wire.**
   `BaseFacade.UnknownType` and the dispatcher's terminal both answer `NO_HANDLER` with the same
   `module`/`type` parameters — so an adopter debugging a page cannot tell "I never registered that

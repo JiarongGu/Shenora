@@ -1,7 +1,6 @@
 using Shenora;   // the portable contracts (IFileDialogs, IUrlLauncher…) live here since D20
 using Shenora.Windows;
 using Shenora.Modules.FileDialog;
-using Shenora.Modules.Operations;
 using Shenora.Core.Events;
 using Shenora.Core.Shell;
 using Shenora.Core.Ipc;
@@ -18,9 +17,9 @@ internal sealed class SampleModule(
     IShellLauncher shell,
     SecondaryWindows windows,
     IEventBus events,
-    IOperationRegistry operations,
     MainForm mainForm,
-    IUiDispatcher ui) : ModuleBase(events: events, operations: operations)
+    IUiDispatcher ui,
+    IIpcRequestTracker requests) : ModuleBase(events: events, requests: requests)
 {
     /// <summary>
     /// The SLOW route's independent "it actually started" signal — a substring of the native
@@ -113,46 +112,40 @@ internal sealed class SampleModule(
                 // ctx.Run's own Start() call is synchronous, so this still runs on the UI thread.
                 mainForm.Text = $"Shenora Sample - {RunningTitleMarker} (stream)";
 
-                // The right shape, now one call: Run owns the handoff, the guarded body, the terminal
-                // transition and the token. What the sample used to hand-roll here — Task.Run, a catch
-                // that existed only to stop an unobserved fault, ConfigureAwait(false) and a hardcoded
-                // "SAMPLE" literal — is the kit's job as of 0.2.0 (D23).
+                // 🔴 THE WHOLE ROUTE NOW — and what is NOT here is D66 (2026-08-08). There is no
+                // handoff, no options record, no second id to return, and nothing that declares this
+                // route "long-running". It is an ordinary await, and the request simply takes a while.
                 //
-                // The body gets the OPERATION's own token (via `operation`/`ct`), never the request's:
-                // this route still does not observe `cancellationToken` (the request's lifetime) —
-                // work handed off outlives the request by design, and capturing the request token would
-                // kill a long operation the moment the page navigated. Using the operation's own token
-                // also means the CANCEL route (OperationsModule) can now actually stop this work, which
-                // the old hand-rolled version could not offer.
-                var operationId = context.Run(
-                    new OperationOptions { Kind = "SLOW", Cancellable = true, Title = new OperationLabel(Text: "Slow work") },
-                    async (operation, ct) =>
+                // The token is the REQUEST's, which is now the right one to observe rather than a
+                // trap: CANCEL targets the request id, so aborting from the page cancels exactly this.
+                // The old shape had to invent an operation token precisely because the request's own
+                // died with the response — the merge removed that gap instead of working around it.
+                //
+                // Nothing is emitted at all unless this outlives the grace period, so the fast case
+                // stays silent without the route knowing anything about it.
+                try
+                {
+                    const int steps = 6;
+                    for (var step = 1; step <= steps; step++)
                     {
-                        // finally, not just a trailing statement after the loop: this body can also
-                        // exit via OperationCanceledException (a CANCEL request) or a fault, and the
-                        // title must not stick at "running" forever on either of those paths either.
-                        // Off the UI thread here (ConfigureAwait(false) below, per D23/ipc-contracts),
-                        // so the reset is marshalled through the ONE seam rather than touching the
-                        // Form directly from a background thread.
-                        try
-                        {
-                            const int steps = 6;
-                            for (var step = 1; step <= steps; step++)
-                            {
-                                await Task.Delay(totalMs / steps, ct).ConfigureAwait(false);
-                                // The general shape, not the percent special case (adopters copy this
-                                // sample): Value/Total/Unit in the app's own terms — a UI renders a
-                                // ratio because Total is set, never because the kit assumed percent.
-                                operation.Report(new OperationProgress(step, steps, "steps"),
-                                    new OperationLabel(Text: $"step {step}/{steps} (onUiThread: {Application.MessageLoop})"));
-                            }
-                        }
-                        finally
-                        {
-                            ui.Post(() => mainForm.Text = "Shenora Sample");
-                        }
-                    });
-                return new { Mode = mode, RanOnUiThread = onUiThread, OperationId = operationId };
+                        await Task.Delay(totalMs / steps, cancellationToken).ConfigureAwait(false);
+                        // The general shape, not the percent special case (adopters copy this sample):
+                        // Value/Total/Unit in the app's own terms — a UI renders a ratio because Total
+                        // is set, never because the kit assumed percent.
+                        context.Report(new IpcProgress(step, steps, "steps"),
+                            new IpcLabel(Text: $"step {step}/{steps} (onUiThread: {Application.MessageLoop})"));
+                    }
+                }
+                finally
+                {
+                    // finally, not a trailing statement: this body can also exit via cancellation or a
+                    // fault, and the title must not stick at "running" on either path. Marshalled
+                    // through the ONE seam rather than touching the Form from a background thread.
+                    ui.Post(() => mainForm.Text = "Shenora Sample");
+                }
+
+                // ONE id, and it is the request's own — the page already has it.
+                return new { Mode = mode, RanOnUiThread = onUiThread, RequestId = context.RequestId };
 
             default:
                 // ModuleBase owns the unknown-type shape now — an app no longer retypes it.

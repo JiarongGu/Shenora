@@ -3,6 +3,7 @@ using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
+using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Desktop;
@@ -109,8 +110,8 @@ internal static class Program
         {
             var scheduler = app.Services.GetRequiredService<IMissionScheduler>();
             app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
-                [new Shenora.Sample.Logic.MissionOperationObserver(
-                    app.Services.GetRequiredService<IOperationRegistry>(),
+                [new Shenora.Sample.Logic.MissionEventPublisher(
+                    app.Services.GetRequiredService<IEventBus>(),
                     Shenora.Sample.Logic.PortableSampleModule.Module)];
             // Lane capacities are configured ONCE, at startup, by name — an unknown name is created at
             // the default capacity rather than rejected, so a typo silently costs the budget you meant.

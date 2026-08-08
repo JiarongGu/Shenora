@@ -4,7 +4,20 @@ using Shenora.Core.Events;
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// The world a route runs in: which module it speaks for, where it logs, and how it EMITS.
+/// The world ONE REQUEST runs in: which module it speaks for, which request it is, where it logs, and
+/// how it EMITS.
+/// <para>
+/// 🔴 <b>PER REQUEST since D66 — it used to be built once per module and reused.</b> That is what lets
+/// <see cref="Report"/> take no id: the context already knows which request it belongs to, because there
+/// is only one identity now. The type's own name said "the world a route runs in" the whole time; it
+/// simply was not true yet.
+/// </para>
+/// <para>
+/// <b>What went, and why nothing replaced it:</b> <c>Start(OperationOptions)</c> and
+/// <c>Run(options, work)</c>. They minted a SECOND identity — a fresh <c>Guid</c> unrelated to the request
+/// that caused it — carrying a <c>Kind</c>, a <c>Scope</c> and a <c>StartedAt</c> the request already had,
+/// leaving the page to correlate the two. Nothing in the repo ever called either of them.
+/// </para>
 /// <para>
 /// This exists because the module contract carried the request path and not the event path
 /// (D23): <c>Shenora.Ipc</c> had zero references to <see cref="Shenora.Core.Events.IEventBus"/> while
@@ -33,26 +46,23 @@ public interface IModuleContext
     void Publish(string type, object? payload = null, string? scope = null);
 
     /// <summary>
-    /// Start a tracked operation owned by this module and get its handle — for work whose lifecycle
-    /// does not match <see cref="Run"/> 1:1 (a start outside the background body, several failure
-    /// branches, a resumable session). This is the real primitive; <see cref="Run"/> is the sugar.
+    /// The id of the request being handled — <see cref="IpcRequest.Id"/>, the one identity this request
+    /// has anywhere: in the response, in every progress snapshot, and in a cancel that targets it.
     /// </summary>
-    IOperation Start(OperationOptions options);
+    string RequestId { get; }
 
     /// <summary>
-    /// Start the operation, hand <paramref name="work"/> OFF to the background, and finish it:
-    /// <c>Complete</c> on success, <c>Cancel</c> on <see cref="OperationCanceledException"/>,
-    /// <c>Fail</c> otherwise. Returns the operation id IMMEDIATELY — a route that awaits long work
-    /// blocks the dispatch, and the dispatch is on the UI thread.
+    /// Report progress on THIS request — the <c>progress</c> event of the XHR model, keyed by the request
+    /// id automatically.
     /// <para>
-    /// The work gets the OPERATION's token, never the request's: work handed off outlives the
-    /// request, and capturing the request token kills it the moment the page navigates.
-    /// </para>
-    /// <para>
-    /// A body that returns without throwing COMPLETES the operation — there is no third outcome now
-    /// that the waiting band is gone (D66). Work that parks awaiting a human is host-initiated work,
-    /// not a request, and belongs on the event stream a mission already has.
+    /// ⚠ <b>Nothing to declare, and usually nothing to see.</b> A request that finishes inside the grace
+    /// period (<see cref="IpcRequestTrackerOptions.GracePeriod"/>, 50 ms) emits NOTHING — not this, not a
+    /// running snapshot, not a completion. The values are still KEPT, so the first snapshot of a request
+    /// that does outlive the window carries the latest of them. Calling this on a fast path is therefore
+    /// free rather than wasteful, which is what makes "report progress everywhere" a safe habit.
     /// </para>
     /// </summary>
-    string Run(OperationOptions options, Func<IOperation, CancellationToken, Task> work);
+    /// <param name="progress">How far along, in the app's own unit. Null leaves the last value.</param>
+    /// <param name="detail">Optional human-facing label, i18n-ready. Null leaves the last one.</param>
+    void Report(IpcProgress? progress = null, IpcLabel? detail = null);
 }

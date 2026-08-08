@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shenora;
-using Shenora.Modules.Operations;
+using Shenora.Modules.Requests;
 using Shenora.Core.Ipc;
 
 namespace Shenora.Modules.FileDialog;
@@ -12,7 +12,7 @@ namespace Shenora.Modules.FileDialog;
 public static class FileDialogServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the file-dialog route module. OPT-IN, like <see cref="OperationServiceCollectionExtensions.AddShenoraOperations"/>:
+    /// Register the file-dialog route module. OPT-IN, like <see cref="IpcRequestServiceCollectionExtensions.AddShenoraRequests"/>:
     /// an app whose page never picks a file should not carry the routes, and D21 says the kit ships the
     /// primitive rather than the product.
     /// <para>

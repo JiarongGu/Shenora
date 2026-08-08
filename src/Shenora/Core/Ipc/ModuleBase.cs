@@ -19,28 +19,22 @@ public abstract class ModuleBase : IIpcModule
 {
     private readonly ILogger _logger;
     private readonly IEventBus? _events;
-    private readonly IOperationRegistry? _operations;
-    private IModuleContext? _context;
+    private readonly IIpcRequestTracker? _requests;
 
     /// <summary>
-    /// The logger is optional so composition works without <c>AddLogging</c>; the bus and the
-    /// operations registry are optional so a facade that never publishes / never starts tracked
-    /// operations (and every unit test that constructs one bare) still works. A facade that DOES use
-    /// one without it being supplied fails loudly at the call site — see <see cref="ModuleContext"/>.
-    /// Neither is exposed as protected surface: the sanctioned accessor for a route is
-    /// <see cref="Context"/> (<c>Publish</c>/<c>Start</c>/<c>Run</c>), and a subclass that captured
-    /// either dependency directly already holds it from its own constructor — so a protected property
-    /// here would be SemVer surface with no consumer scenario.
+    /// The logger is optional so composition works without <c>AddLogging</c>; the bus and the request
+    /// tracker are optional so a facade that never publishes (and every unit test that constructs one
+    /// bare) still works. A facade that publishes WITHOUT a bus fails loudly at the call site; a missing
+    /// tracker is a silent no-op, and <see cref="ModuleContext.Report"/> explains why the two differ.
+    /// Neither is exposed as protected surface: the sanctioned accessor for a route is the
+    /// <c>context</c> parameter of <see cref="RouteMessageAsync"/>.
     /// </summary>
-    protected ModuleBase(ILogger? logger = null, IEventBus? events = null, IOperationRegistry? operations = null)
+    protected ModuleBase(ILogger? logger = null, IEventBus? events = null, IIpcRequestTracker? requests = null)
     {
         _logger = logger ?? NullLogger.Instance;
         _events = events;
-        _operations = operations;
+        _requests = requests;
     }
-
-    /// <summary>Built lazily: ModuleName is an abstract property, so it is not readable from the ctor.</summary>
-    protected IModuleContext Context => _context ??= new ModuleContext(ModuleName, _logger, _events, _operations);
 
     /// <inheritdoc />
     public abstract string ModuleName { get; }
@@ -53,14 +47,24 @@ public abstract class ModuleBase : IIpcModule
         try
         {
             _logger.LogDebug("{Module} handling {Type}", ModuleName, request.Type);
+            // 🔴 TRACKED FROM HERE, with nothing declared (D66). Begin publishes NOTHING; the page hears
+            // about this request only if it outlives the grace period. So the fast path — nearly every
+            // request — costs one dictionary insert and one removal and never reaches the wire.
+            //
+            // The scope's token is what CANCEL targets, so it is the one the route must observe: the
+            // caller's own lifetime is linked into it, not replaced by it.
+            using var scope = _requests?.Begin(request, cancellationToken);
+            var token = scope?.CancellationToken ?? cancellationToken;
+            var context = new ModuleContext(ModuleName, request.Id, _logger, _events, scope);
+
             // NO ConfigureAwait(false) — removed in P5.5 H6. It was the only one in the dispatch path and
             // it CONTRADICTED the documented model: the pipeline preserves the synchronization context on
             // purpose, because a facade routing a WINDOW command touches WinForms and must resume on the
-            // UI thread. Under the WebView2 bridge the request already arrives there, so this discarded
-            // the very context the design guarantees — it survived only because every in-repo facade
-            // happens to marshal internally anyway. See .claude/knowledge/ipc-contracts.md.
-            var data = await RouteMessageAsync(request, Context, cancellationToken);
+            // UI thread.
+            var data = await RouteMessageAsync(request, context, token);
             return IpcResponse.CreateSuccess(request.Id, data);
+            // ⚠ The response is returned BEFORE the scope disposes, which is the ordering D66 insists on:
+            // the grace period suppresses notifications and must never delay the answer.
         }
         catch (Exception ex)
         {

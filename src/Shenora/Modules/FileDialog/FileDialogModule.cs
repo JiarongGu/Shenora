@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Shenora;
-using Shenora.Modules.Operations;
+using Shenora.Modules.Requests;
 using Shenora.Core.WebView;
 using Shenora.Core.Shell;
 using Shenora.Engine.Files;
@@ -50,7 +50,7 @@ public sealed class FileDialogModule : ModuleBase
 {
     /// <summary>The module name this facade answers on.</summary>
     /// <remarks>
-    /// Fixed rather than configurable, unlike <see cref="OperationsModule"/>'s. That one takes its name
+    /// Fixed rather than configurable, unlike <see cref="IpcRequestsModule"/>'s. That one takes its name
     /// from options because the registry EMITS events under the same module and the two must not drift;
     /// this facade publishes nothing, so a knob would be a public member earning nothing.
     /// </remarks>

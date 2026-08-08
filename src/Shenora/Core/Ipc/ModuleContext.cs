@@ -1,55 +1,50 @@
 using Microsoft.Extensions.Logging;
-using Shenora;
 using Shenora.Core.Events;
 
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// The <see cref="IModuleContext"/> a <see cref="ModuleBase"/> builds ONCE and reuses for every
-/// request — rebuilding it per request would allocate on the IPC hot path.
+/// The <see cref="IModuleContext"/> a <see cref="ModuleBase"/> builds FOR ONE REQUEST.
 /// <para>
-/// Built lazily on first use rather than in the facade's constructor: <see cref="IIpcModule.ModuleName"/>
-/// is abstract, so it is not readable from the base constructor (see <c>ModuleBase.Context</c>). The
-/// race is benign — two concurrent first requests may each build one, and both are immutable and
-/// equivalent.
+/// 🔴 <b>It used to be built once per module and reused, explicitly "because rebuilding it per request
+/// would allocate on the IPC hot path".</b> D66 makes that trade the wrong way round: a per-request
+/// context is what lets <see cref="Report"/> take no id, and the allocation it avoided is one small
+/// object next to the <see cref="IpcRequest"/>, its payload and its response — all of which are already
+/// allocated per request. Paying it buys away a whole second identity.
 /// </para>
 /// </summary>
-internal sealed class ModuleContext(string module, ILogger logger, IEventBus? events, IOperationRegistry? operations) : IModuleContext
+internal sealed class ModuleContext(string module, string requestId, ILogger logger,
+                                    IEventBus? events, IIpcRequestScope? scope) : IModuleContext
 {
     public string Module { get; } = module;
 
+    public string RequestId { get; } = requestId;
+
     public ILogger Logger { get; } = logger;
 
-    public void Publish(string type, object? payload = null, string? scope = null)
+    public void Publish(string type, object? payload = null, string? eventScope = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(type);
-        // LOUD, not silent. A no-op here would drop an app's progress stream with no error and no
-        // log line — the same shape as MaxQueuedNotifications = 0 discarding every notification.
+        // LOUD, not silent. A no-op here would drop an app's event stream with no error and no log line.
         // The message names the fix, because the error is a COMPOSITION mistake, not a code bug.
         if (events is null)
             throw new InvalidOperationException(
                 $"Module '{Module}' called IModuleContext.Publish but no IEventBus was supplied to " +
                 "ModuleBase. Pass one (ShenoraApplication.CreateBuilder registers an IEventBus by default, " +
                 "so inject IEventBus into the facade and forward it: base(logger, events)).");
-        events.Emit(Module, type, payload, scope);
+        events.Emit(Module, type, payload, eventScope);
     }
 
-    public IOperation Start(OperationOptions options) =>
-        operations is null ? throw NoOperationsRegistry(nameof(Start)) : operations.Start(Module, options);
-
-    public string Run(OperationOptions options, Func<IOperation, CancellationToken, Task> work) =>
-        operations is null ? throw NoOperationsRegistry(nameof(Run)) : operations.Run(Module, options, work);
-
     /// <summary>
-    /// Same LOUD shape as <see cref="Publish"/>'s missing-bus check: a registry-less
-    /// <see cref="IModuleContext.Start"/>/<see cref="IModuleContext.Run"/> is a COMPOSITION mistake
-    /// (<c>services.AddShenoraOperations()</c> was never called), not a silent no-op. The context is
-    /// the module's context, not an operations entry point — a module that never touches
-    /// <see cref="Start"/>/<see cref="Run"/> pays nothing for this (see <see cref="Publish"/>, which
-    /// has no such dependency at all).
+    /// <inheritdoc />
+    /// <para>
+    /// ⚠ <b>A missing tracker is a silent no-op here, unlike <see cref="Publish"/>'s missing bus — and the
+    /// asymmetry is deliberate.</b> Publishing is the route's OWN output: dropping it loses app data, so it
+    /// must be loud. Progress is the kit's own bookkeeping about a request the kit is tracking; a host
+    /// composed without a tracker simply has no in-flight list to update, and faulting a working route over
+    /// that would turn an optional facility into a required one.
+    /// </para>
     /// </summary>
-    private InvalidOperationException NoOperationsRegistry(string member) =>
-        new($"Module '{Module}' called IModuleContext.{member} but no IOperationRegistry was supplied to " +
-            "ModuleBase. Call services.AddShenoraOperations() and pass the registry to the facade " +
-            "(base(logger, events, operations)).");
+    public void Report(IpcProgress? progress = null, IpcLabel? detail = null) =>
+        scope?.Report(progress, detail);
 }

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Shenora;
 using Shenora.Windows;
 using Shenora.Modules.FileDialog;
-using Shenora.Modules.Operations;
+using Shenora.Modules.Requests;
 using Shenora.Core.Shell;
 using Shenora.Core.Ipc;
 
@@ -164,19 +164,19 @@ public class WireMirrorTests
     }
 
     /// <summary>
-    /// <see cref="OperationStatus"/> (design §4.6/§9.1) crosses the wire as its camelCase name for
+    /// <see cref="IpcRequestState"/> (design §4.6/§9.1) crosses the wire as its camelCase name for
     /// free — <see cref="IpcJson"/> installs a camelCase <c>JsonStringEnumConverter</c> — so the
     /// client's <c>OperationStatuses</c> const object must name exactly the same set of strings.
     /// A status added on one side and not the other must fail THIS test by name, not pass a green
     /// suite that never compared the two sets (the same disease <c>SCOPE_REQUIRED</c> had).
     /// </summary>
     [Fact]
-    public void Every_operation_status_exists_on_both_sides()
+    public void Every_request_state_exists_on_both_sides()
     {
-        var host = Enum.GetNames<OperationStatus>()
+        var host = Enum.GetNames<IpcRequestState>()
             .Select(n => JsonNamingPolicy.CamelCase.ConvertName(n))
             .ToHashSet(StringComparer.Ordinal);
-        var client = ParseConstObject(ClientSource("operations.ts"), "OperationStatuses").Values.ToHashSet(StringComparer.Ordinal);
+        var client = ParseConstObject(ClientSource("requests.ts"), "IpcRequestStates").Values.ToHashSet(StringComparer.Ordinal);
 
         Assert.NotEmpty(host);      // parser self-check: a regex that matched nothing must not pass
         Assert.NotEmpty(client);
@@ -187,19 +187,19 @@ public class WireMirrorTests
     /// ALSO IN THIS BATCH (whole-branch review): the client hardcodes <c>'OPERATION_UPDATED'</c>,
     /// <c>'LIST'</c>, <c>'CANCEL'</c>, <c>'CLEAR_FINISHED'</c>, <c>'RESUME'</c> and the
     /// <c>'OPERATIONS'</c> module name with nothing comparing them against
-    /// <see cref="OperationEvents"/>/<see cref="OperationsModule"/>/
-    /// <see cref="OperationRegistryOptions.ModuleName"/> — a host rename left the suite green and the
+    /// <see cref="IpcRequestEvents"/>/<see cref="IpcRequestsModule"/>/
+    /// <see cref="IpcRequestTrackerOptions.ModuleName"/> — a host rename left the suite green and the
     /// client deaf, the exact disease <see cref="Every_host_error_code_exists_on_the_client_and_vice_versa"/>
     /// already exists to catch for error codes.
     /// </summary>
     [Fact]
-    public void Operation_event_names_match_the_host()
+    public void Request_event_names_match_the_host()
     {
-        var client = ParseConstObject(ClientSource("operations.ts"), "OperationEventTypes");
+        var client = ParseConstObject(ClientSource("requests.ts"), "IpcRequestEventTypes");
 
         Assert.NotEmpty(client);   // parser self-check: a regex that matched nothing must not pass
-        Assert.Equal(OperationEvents.Updated, client["Updated"]);
-        Assert.Equal(OperationEvents.Removed, client["Removed"]);
+        Assert.Equal(IpcRequestEvents.Updated, client["Updated"]);
+        Assert.Equal(IpcRequestEvents.Removed, client["Removed"]);
         // RESUME_REQUESTED / WAIT_REQUESTED went with the waiting band (D66). The client must not keep
         // naming them either, which the ONE-WAY check below enforces: an extra client key is a client
         // still speaking a language the host retired.
@@ -207,14 +207,14 @@ public class WireMirrorTests
     }
 
     [Fact]
-    public void Operation_route_names_match_the_hosts_facade()
+    public void Request_route_names_match_the_hosts_module()
     {
-        var client = ParseConstObject(ClientSource("operations.ts"), "OperationRoutes");
+        var client = ParseConstObject(ClientSource("requests.ts"), "IpcRequestRoutes");
 
         Assert.NotEmpty(client);   // parser self-check
-        Assert.Equal(OperationsModule.ListType, client["List"]);
-        Assert.Equal(OperationsModule.CancelType, client["Cancel"]);
-        Assert.Equal(OperationsModule.ClearFinishedType, client["ClearFinished"]);
+        Assert.Equal(IpcRequestsModule.ListType, client["List"]);
+        Assert.Equal(IpcRequestsModule.CancelType, client["Cancel"]);
+        Assert.Equal(IpcRequestsModule.ClearFinishedType, client["ClearFinished"]);
         // THREE routes, not six. RESUME/WAIT/DISMISS went with the waiting band (D66), and the count
         // assertion is what makes their removal enforceable rather than merely intended — a client
         // still shipping them would otherwise pass this test by simply not being asked about them.
@@ -222,34 +222,34 @@ public class WireMirrorTests
     }
 
     [Fact]
-    public void The_default_operations_module_name_matches_the_host()
+    public void The_default_requests_module_name_matches_the_host()
     {
-        var source = ClientSource("operations.ts");
+        var source = ClientSource("requests.ts");
 
-        Assert.Equal(new OperationRegistryOptions().ModuleName, ParseExportedString(source, "OperationModuleName"));
+        Assert.Equal(new IpcRequestTrackerOptions().ModuleName, ParseExportedString(source, "IpcRequestsModuleName"));
     }
 
     /// <summary>
-    /// <see cref="OperationProgress"/> replaced a bare 0–100 <c>int?</c> (generic-library audit, before
+    /// <see cref="IpcProgress"/> replaced a bare 0–100 <c>int?</c> (generic-library audit, before
     /// publish) — a NEW wire shape both sides name, so it needs its own tripwire. This compares the
     /// SET of field names (camelCased) rather than trusting the two sides to stay in step by
     /// inspection — the exact disease this whole file exists to catch for everything else on this wire.
     /// </summary>
     [Fact]
-    public void OperationProgress_fields_match_the_host()
+    public void IpcProgress_fields_match_the_host()
     {
-        AssertMirroredFields(typeof(OperationProgress), "operations.ts", "OperationProgress");
+        AssertMirroredFields(typeof(IpcProgress), "requests.ts", "IpcProgress");
     }
 
     /// <summary>
-    /// <b><see cref="OperationInfo"/> is the biggest shape on this wire and had NO mirror at all until
+    /// <b><see cref="IpcRequestStatus"/> is the biggest shape on this wire and had NO mirror at all until
     /// the 0.2.0 design pass</b> — it is both the entire <c>OPERATION_UPDATED</c> payload and the
     /// element type of the <c>LIST</c> response, so a field present on one side and not the other is a
     /// silent hole in every operation-driven UI.
     /// <para>
     /// It was missed because of a plausible-sounding claim, which is why this comment records it:
-    /// <see cref="OperationProgress_fields_match_the_host"/>'s own doc used to assert that
-    /// "<c>OperationInfo</c>'s other fields are pinned by <c>[JsonPropertyName]</c> + the API baseline
+    /// <see cref="IpcProgress_fields_match_the_host"/>'s own doc used to assert that
+    /// "<c>IpcRequestStatus</c>'s other fields are pinned by <c>[JsonPropertyName]</c> + the API baseline
     /// on the host side". Both halves are true and together they still prove nothing about the MIRROR —
     /// they pin the HOST's names against the HOST's own baseline, and no test compared them to the TS
     /// interface. The smaller, newer type got a tripwire; the one that actually carries the payload did
@@ -258,9 +258,9 @@ public class WireMirrorTests
     /// </para>
     /// </summary>
     [Fact]
-    public void OperationInfo_fields_match_the_host()
+    public void IpcRequestStatus_fields_match_the_host()
     {
-        AssertMirroredFields(typeof(OperationInfo), "operations.ts", "OperationInfo");
+        AssertMirroredFields(typeof(IpcRequestStatus), "requests.ts", "IpcRequestStatus");
     }
 
     /// <summary>
@@ -375,7 +375,7 @@ public class WireMirrorTests
 
     /// <param name="hostType">The host record. Inherited properties count — they are on the wire too.</param>
     /// <param name="sourceFile">
-    /// Which client module declares it. Explicit rather than defaulted to <c>operations.ts</c>: a default
+    /// Which client module declares it. Explicit rather than defaulted to <c>requests.ts</c>: a default
     /// here is how a later shape gets pointed at the wrong file and mirrors nothing, which is the exact
     /// "tripwire checking nothing" this file exists to prevent.
     /// </param>

@@ -19,13 +19,13 @@ import type {
   OpenFileOptions,
   OpenFolderOptions,
   SaveFileOptions,
-  OperationInfo,
-  OperationLabel,
-  OperationProgress,
-  OperationStatus,
-  OperationsActions,
-  OperationsState,
-  OperationsStoreOptions,
+  IpcRequestStatus,
+  IpcLabel,
+  IpcProgress,
+  IpcRequestState,
+  RequestsActions,
+  RequestsState,
+  RequestsStoreOptions,
   PostFailure,
   PostOptions,
   ShenoraBridgeOptions,
@@ -60,15 +60,15 @@ const EXPECTED_EXPORTS = [
   'HANDSHAKE_TYPE',
   'IpcCategories',
   'IpcErrorCodes',
+  'IpcRequestEventTypes',
+  'IpcRequestStates',
+  'IpcRequestsModuleName',
   // The host-owned player (D58). These three are a WIRE contract duplicated in C# as MediaPlayerEvents —
   // exported so an adopter asserts against them rather than retyping the strings.
   'MEDIA_PLAYER_MODULE',
   'MEDIA_PLAYER_REPORT',
   'MediaPlayerCommands',
   'OperationError',
-  'OperationEventTypes',
-  'OperationModuleName',
-  'OperationStatuses',
   'ShellCapabilities',
   'ShenoraBridge',
   'ShenoraEventBus',
@@ -76,7 +76,7 @@ const EXPECTED_EXPORTS = [
   'configureBridge',
   'createHostTransport',
   'createHybridWebViewTransport',
-  'createOperationsStore',
+  'createRequestsStore',
   'createShenoraStore',
   'createWebView2Transport',
   'decodeMediaPayload',
@@ -92,8 +92,8 @@ const EXPECTED_EXPORTS = [
   'useShellInfo',
   'useShenora',
   'useShenoraEvent',
-  'useShenoraOperations',
   'useShenoraQuery',
+  'useShenoraRequests',
   'useWindowMaximized',
 ] as const;
 
@@ -102,7 +102,7 @@ const EXPECTED_EXPORTS = [
  * `Object.keys(barrel)`, and a type has no runtime binding — so deleting a `type` line from
  * `index.ts` passed both assertions above while breaking every consumer that named it.
  *
- * `OperationProgress` is why this was written. `OperationInfo.progress` is typed as it, so the field's
+ * `IpcProgress` is why this was written. `IpcRequestStatus.progress` is typed as it, so the field's
  * own type was unnameable from outside the package; the tell was that the kit's own sample re-declared
  * the shape inline rather than importing it. Nothing failed.
  *
@@ -116,8 +116,8 @@ type ExportedTypeSurface = [
   CaptionButtonKind, CaptionButtonRect, DropZoneFileDrop, InvokeOptions,
   FileDialogFilter, FileDialogOptions, FileDialogResult, FileDialogsHandle,
   OpenFileOptions, OpenFolderOptions, SaveFileOptions,
-  OperationInfo, OperationLabel, OperationProgress, OperationStatus,
-  OperationsActions, OperationsState, OperationsStoreOptions,
+  IpcRequestStatus, IpcLabel, IpcProgress, IpcRequestState,
+  RequestsActions, RequestsState, RequestsStoreOptions,
   PostFailure, PostOptions, ShellInfo, ShenoraBridgeOptions, ShenoraQueryResult<unknown>, SubscribeOptions,
   ShenoraStore<unknown, unknown>, ShenoraStoreIo, ShenoraStoreOptions<unknown, unknown>,
   ShenoraStoreSnapshot<unknown>, ShenoraTransport, UseDropZoneOptions, WindowResizeEdge,

@@ -37,6 +37,16 @@ interface Shenora.Core.Events.IEventBus
 interface Shenora.Core.Ipc.IIpcModule
   public abstract System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> HandleMessageAsync(Shenora.Core.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
   public abstract string ModuleName { get; }
+interface Shenora.Core.Ipc.IIpcRequestScope : System.IDisposable
+  public abstract System.Threading.CancellationToken CancellationToken { get; }
+  public abstract string RequestId { get; }
+  public abstract void Fail(Shenora.Core.Ipc.IpcError error)
+  public abstract void Report(Shenora.Core.Ipc.IpcProgress? progress = null, Shenora.Core.Ipc.IpcLabel? detail = null)
+interface Shenora.Core.Ipc.IIpcRequestTracker
+  public abstract Shenora.Core.Ipc.IIpcRequestScope Begin(Shenora.Core.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
+  public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.IpcRequestStatus> GetAll(string? module = null, string? scope = null)
+  public abstract bool Cancel(string requestId)
+  public abstract void ClearFinished(string? module = null, string? scope = null)
 interface Shenora.Core.Ipc.IMessageDispatcher
   public abstract Shenora.Core.Ipc.IMessageDispatcher Use(Shenora.Core.Ipc.MessageMiddleware middleware)
   public abstract System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> DispatchAsync(Shenora.Core.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
@@ -44,29 +54,15 @@ interface Shenora.Core.Ipc.IMessageDispatcher
   public abstract System.Threading.Tasks.Task<T> SendAsync<T>(string module, string type, string? scope = null, object? payload = null, System.Threading.CancellationToken cancellationToken = default)
 interface Shenora.Core.Ipc.IModuleContext
   public abstract Microsoft.Extensions.Logging.ILogger Logger { get; }
-  public abstract Shenora.Core.Ipc.IOperation Start(Shenora.Core.Ipc.OperationOptions options)
   public abstract string Module { get; }
-  public abstract string Run(Shenora.Core.Ipc.OperationOptions options, System.Func<Shenora.Core.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
+  public abstract string RequestId { get; }
   public abstract void Publish(string type, object? payload = null, string? scope = null)
+  public abstract void Report(Shenora.Core.Ipc.IpcProgress? progress = null, Shenora.Core.Ipc.IpcLabel? detail = null)
 interface Shenora.Core.Ipc.IModuleRegistry
   public abstract System.Collections.Generic.IReadOnlyCollection<string> MappedModules { get; }
   public abstract bool IsModuleMapped(string module)
   public abstract bool TryClaimModule(Shenora.Core.Ipc.IIpcModule facade)
   public abstract bool TryReleaseModule(string module)
-interface Shenora.Core.Ipc.IOperation
-  public abstract System.Threading.CancellationToken CancellationToken { get; }
-  public abstract string Id { get; }
-  public abstract void Cancel()
-  public abstract void Complete()
-  public abstract void Fail(Shenora.Core.Ipc.OperationException error)
-  public abstract void Fail(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
-  public abstract void Report(Shenora.Core.Ipc.OperationProgress? progress = null, Shenora.Core.Ipc.OperationLabel? detail = null)
-interface Shenora.Core.Ipc.IOperationRegistry
-  public abstract Shenora.Core.Ipc.IOperation Start(string module, Shenora.Core.Ipc.OperationOptions options)
-  public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
-  public abstract bool Cancel(string id)
-  public abstract string Run(string module, Shenora.Core.Ipc.OperationOptions options, System.Func<Shenora.Core.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
-  public abstract void ClearFinished(string? module = null, string? scope = null)
 static class Shenora.Core.Ipc.IpcCategories
   public const string Ipc = "ipc"
   public const string Notification = "notification"
@@ -105,6 +101,19 @@ static class Shenora.Core.Ipc.IpcJson
   public static T Deserialize<T>(string json)
   public static string Serialize<T>(T value)
   public static void AddTypeInfoResolver(System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver resolver)
+sealed class Shenora.Core.Ipc.IpcLabel : System.IEquatable<Shenora.Core.Ipc.IpcLabel>
+  public .ctor(string? Text = null, string? Key = null, System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters = null)
+  public Shenora.Core.Ipc.IpcLabel <Clone>$()
+  public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; init; }
+  public bool Equals(Shenora.Core.Ipc.IpcLabel? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.Ipc.IpcLabel? left, Shenora.Core.Ipc.IpcLabel? right)
+  public static bool op_Inequality(Shenora.Core.Ipc.IpcLabel? left, Shenora.Core.Ipc.IpcLabel? right)
+  public string? Key { get; init; }
+  public string? Text { get; init; }
+  public void Deconstruct(out string? Text, out string? Key, out System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters)
 sealed class Shenora.Core.Ipc.IpcNotification
   [JsonPropertyName("module")] public required string Module { get; init; }
   [JsonPropertyName("payload")] public object? Payload { get; init; }
@@ -115,6 +124,19 @@ sealed class Shenora.Core.Ipc.IpcNotificationBatch
   [JsonPropertyName("id")] public string Id { get; init; }
   [JsonPropertyName("payload")] public required System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.IpcNotification> Payload { get; init; }
   [JsonPropertyName("timestamp")] public System.DateTimeOffset Timestamp { get; init; }
+sealed class Shenora.Core.Ipc.IpcProgress : System.IEquatable<Shenora.Core.Ipc.IpcProgress>
+  public .ctor(double Value, double? Total = null, string? Unit = null)
+  public Shenora.Core.Ipc.IpcProgress <Clone>$()
+  public bool Equals(Shenora.Core.Ipc.IpcProgress? other)
+  public double Value { get; init; }
+  public double? Total { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public static bool op_Equality(Shenora.Core.Ipc.IpcProgress? left, Shenora.Core.Ipc.IpcProgress? right)
+  public static bool op_Inequality(Shenora.Core.Ipc.IpcProgress? left, Shenora.Core.Ipc.IpcProgress? right)
+  public string? Unit { get; init; }
+  public void Deconstruct(out double Value, out double? Total, out string? Unit)
 sealed class Shenora.Core.Ipc.IpcRequest
   [JsonPropertyName("id")] public string Id { get; init; }
   [JsonPropertyName("module")] public required string Module { get; init; }
@@ -122,6 +144,48 @@ sealed class Shenora.Core.Ipc.IpcRequest
   [JsonPropertyName("scope")] public string? Scope { get; init; }
   [JsonPropertyName("timestamp")] public System.DateTimeOffset Timestamp { get; init; }
   [JsonPropertyName("type")] public required string Type { get; init; }
+static class Shenora.Core.Ipc.IpcRequestEvents
+  public const string Removed = "REQUEST_REMOVED"
+  public const string Updated = "REQUEST_UPDATED"
+enum Shenora.Core.Ipc.IpcRequestState (int)
+  public const Shenora.Core.Ipc.IpcRequestState Cancelled = 3
+  public const Shenora.Core.Ipc.IpcRequestState Completed = 1
+  public const Shenora.Core.Ipc.IpcRequestState Failed = 2
+  public const Shenora.Core.Ipc.IpcRequestState Running = 0
+  public int value__
+sealed class Shenora.Core.Ipc.IpcRequestStatus : System.IEquatable<Shenora.Core.Ipc.IpcRequestStatus>
+  public Shenora.Core.Ipc.IpcError? Error { get; init; }
+  public Shenora.Core.Ipc.IpcLabel? Detail { get; init; }
+  public Shenora.Core.Ipc.IpcProgress? Progress { get; init; }
+  public Shenora.Core.Ipc.IpcRequestState State { get; init; }
+  public Shenora.Core.Ipc.IpcRequestStatus <Clone>$()
+  public System.DateTimeOffset StartedAt { get; init; }
+  public System.DateTimeOffset? FinishedAt { get; init; }
+  public bool Equals(Shenora.Core.Ipc.IpcRequestStatus? other)
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public required string Id { get; init; }
+  public required string Module { get; init; }
+  public required string Type { get; init; }
+  public static bool op_Equality(Shenora.Core.Ipc.IpcRequestStatus? left, Shenora.Core.Ipc.IpcRequestStatus? right)
+  public static bool op_Inequality(Shenora.Core.Ipc.IpcRequestStatus? left, Shenora.Core.Ipc.IpcRequestStatus? right)
+  public string? Scope { get; init; }
+sealed class Shenora.Core.Ipc.IpcRequestTracker : Shenora.Core.Ipc.IIpcRequestTracker, System.IDisposable
+  public .ctor(Shenora.Core.Events.IEventBus bus, Shenora.Core.Ipc.IpcRequestTrackerOptions? options = null)
+  public Shenora.Core.Ipc.IIpcRequestScope Begin(Shenora.Core.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
+  public System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.IpcRequestStatus> GetAll(string? module = null, string? scope = null)
+  public bool Cancel(string requestId)
+  public void ClearFinished(string? module = null, string? scope = null)
+  public void Dispose()
+sealed class Shenora.Core.Ipc.IpcRequestTrackerOptions
+  public .ctor()
+  public System.Action<string>? Log { get; set; }
+  public System.TimeProvider TimeProvider { get; set; }
+  public System.TimeSpan GracePeriod { get; set; }
+  public System.TimeSpan ProgressInterval { get; set; }
+  public int MaxHistory { get; set; }
+  public string ModuleName { get; set; }
 sealed class Shenora.Core.Ipc.IpcResponse
   [JsonPropertyName("category")] public string Category { get; }
   [JsonPropertyName("data")] public object? Data { get; init; }
@@ -162,8 +226,7 @@ delegate Shenora.Core.Ipc.MessageMiddleware
   public virtual System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> EndInvoke(System.IAsyncResult result)
   public virtual System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> Invoke(Shenora.Core.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse>> next, System.Threading.CancellationToken cancellationToken)
 abstract class Shenora.Core.Ipc.ModuleBase : Shenora.Core.Ipc.IIpcModule
-  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.Events.IEventBus? events = null, Shenora.Core.Ipc.IOperationRegistry? operations = null)
-  protected Shenora.Core.Ipc.IModuleContext Context { get; }
+  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.Events.IEventBus? events = null, Shenora.Core.Ipc.IIpcRequestTracker? requests = null)
   protected Shenora.Core.Ipc.OperationException UnknownType(Shenora.Core.Ipc.IpcRequest request)
   protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   protected static System.Threading.Tasks.Task<object> Done()
@@ -196,95 +259,12 @@ sealed class Shenora.Core.Ipc.NotificationPumpOptions : System.IEquatable<Shenor
   public override string ToString()
   public static bool op_Equality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
   public static bool op_Inequality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
-static class Shenora.Core.Ipc.OperationEvents
-  public const string Removed = "OPERATION_REMOVED"
-  public const string Updated = "OPERATION_UPDATED"
 class Shenora.Core.Ipc.OperationException : System.Exception
   public .ctor(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null, System.Exception? innerException = null)
   public .ctor(string code, string paramKey, string paramValue, string? message = null)
   public Shenora.Core.Ipc.IpcError ToError()
   public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; }
   public string Code { get; }
-sealed class Shenora.Core.Ipc.OperationInfo : System.IEquatable<Shenora.Core.Ipc.OperationInfo>
-  public Shenora.Core.Ipc.IpcError? Error { get; init; }
-  public Shenora.Core.Ipc.OperationInfo <Clone>$()
-  public Shenora.Core.Ipc.OperationLabel? Detail { get; init; }
-  public Shenora.Core.Ipc.OperationLabel? Title { get; init; }
-  public Shenora.Core.Ipc.OperationProgress? Progress { get; init; }
-  public Shenora.Core.Ipc.OperationStatus Status { get; init; }
-  public System.DateTimeOffset StartedAt { get; init; }
-  public System.DateTimeOffset? FinishedAt { get; init; }
-  public bool Cancellable { get; init; }
-  public bool Equals(Shenora.Core.Ipc.OperationInfo? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public required string Id { get; init; }
-  public required string Kind { get; init; }
-  public required string Module { get; init; }
-  public static bool op_Equality(Shenora.Core.Ipc.OperationInfo? left, Shenora.Core.Ipc.OperationInfo? right)
-  public static bool op_Inequality(Shenora.Core.Ipc.OperationInfo? left, Shenora.Core.Ipc.OperationInfo? right)
-  public string? Scope { get; init; }
-sealed class Shenora.Core.Ipc.OperationLabel : System.IEquatable<Shenora.Core.Ipc.OperationLabel>
-  public .ctor(string? Text = null, string? Key = null, System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters = null)
-  public Shenora.Core.Ipc.OperationLabel <Clone>$()
-  public System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters { get; init; }
-  public bool Equals(Shenora.Core.Ipc.OperationLabel? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.Ipc.OperationLabel? left, Shenora.Core.Ipc.OperationLabel? right)
-  public static bool op_Inequality(Shenora.Core.Ipc.OperationLabel? left, Shenora.Core.Ipc.OperationLabel? right)
-  public string? Key { get; init; }
-  public string? Text { get; init; }
-  public void Deconstruct(out string? Text, out string? Key, out System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters)
-sealed class Shenora.Core.Ipc.OperationOptions : System.IEquatable<Shenora.Core.Ipc.OperationOptions>
-  public Shenora.Core.Ipc.OperationLabel? Title { get; init; }
-  public Shenora.Core.Ipc.OperationOptions <Clone>$()
-  public Shenora.Core.Ipc.OperationProgress? Progress { get; init; }
-  public bool Cancellable { get; init; }
-  public bool Equals(Shenora.Core.Ipc.OperationOptions? other)
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public required string Kind { get; init; }
-  public static bool op_Equality(Shenora.Core.Ipc.OperationOptions? left, Shenora.Core.Ipc.OperationOptions? right)
-  public static bool op_Inequality(Shenora.Core.Ipc.OperationOptions? left, Shenora.Core.Ipc.OperationOptions? right)
-  public string? Scope { get; init; }
-sealed class Shenora.Core.Ipc.OperationProgress : System.IEquatable<Shenora.Core.Ipc.OperationProgress>
-  public .ctor(double Value, double? Total = null, string? Unit = null)
-  public Shenora.Core.Ipc.OperationProgress <Clone>$()
-  public bool Equals(Shenora.Core.Ipc.OperationProgress? other)
-  public double Value { get; init; }
-  public double? Total { get; init; }
-  public override bool Equals(object? obj)
-  public override int GetHashCode()
-  public override string ToString()
-  public static bool op_Equality(Shenora.Core.Ipc.OperationProgress? left, Shenora.Core.Ipc.OperationProgress? right)
-  public static bool op_Inequality(Shenora.Core.Ipc.OperationProgress? left, Shenora.Core.Ipc.OperationProgress? right)
-  public string? Unit { get; init; }
-  public void Deconstruct(out double Value, out double? Total, out string? Unit)
-sealed class Shenora.Core.Ipc.OperationRegistry : Shenora.Core.Ipc.IOperationRegistry, System.IDisposable
-  public .ctor(Shenora.Core.Events.IEventBus bus, Shenora.Core.Ipc.OperationRegistryOptions? options = null)
-  public Shenora.Core.Ipc.IOperation Start(string module, Shenora.Core.Ipc.OperationOptions options)
-  public System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
-  public bool Cancel(string id)
-  public string Run(string module, Shenora.Core.Ipc.OperationOptions options, System.Func<Shenora.Core.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
-  public void ClearFinished(string? module = null, string? scope = null)
-  public void Dispose()
-sealed class Shenora.Core.Ipc.OperationRegistryOptions
-  public .ctor()
-  public System.Action<string>? Log { get; init; }
-  public System.TimeProvider TimeProvider { get; init; }
-  public System.TimeSpan ProgressInterval { get; init; }
-  public int MaxHistory { get; init; }
-  public string ModuleName { get; init; }
-enum Shenora.Core.Ipc.OperationStatus (int)
-  public const Shenora.Core.Ipc.OperationStatus Cancelled = 3
-  public const Shenora.Core.Ipc.OperationStatus Completed = 1
-  public const Shenora.Core.Ipc.OperationStatus Failed = 2
-  public const Shenora.Core.Ipc.OperationStatus Running = 0
-  public int value__
 static class Shenora.Core.Ipc.PayloadHelper
   public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)
   public static T GetRequiredValue<T>(System.Text.Json.JsonElement? payload, string key)
@@ -1232,15 +1212,6 @@ sealed class Shenora.Modules.Media.SegmentStreamOptions
   public required string CacheRoot { get; init; }
   public string ManifestName { get; init; }
   public string RoutePath { get; init; }
-static class Shenora.Modules.Operations.OperationServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraOperations(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Core.Ipc.OperationRegistryOptions? options = null)
-sealed class Shenora.Modules.Operations.OperationsModule : Shenora.Core.Ipc.ModuleBase
-  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
-  public .ctor(Shenora.Core.Ipc.IOperationRegistry registry, Shenora.Core.Ipc.OperationRegistryOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Operations.OperationsModule>? logger = null)
-  public const string CancelType = "CANCEL"
-  public const string ClearFinishedType = "CLEAR_FINISHED"
-  public const string ListType = "LIST"
-  public override string ModuleName { get; }
 interface Shenora.Modules.Platform.ILiveActivities
   public abstract string? Start(Shenora.Modules.Platform.LiveActivityState state)
   public abstract string? Unavailable { get; }
@@ -1357,6 +1328,15 @@ sealed class Shenora.Modules.Platform.SafeAreaOptions
 static class Shenora.Modules.Platform.SafeAreaScript
   public const string DeliveredMarker = "shenora-safe-area"
   public static string Build(Shenora.Modules.Platform.SafeAreaOptions options, Shenora.Modules.Platform.SafeAreaInsets? insets = null)
+static class Shenora.Modules.Requests.IpcRequestServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraRequests(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Shenora.Core.Ipc.IpcRequestTrackerOptions? options = null)
+sealed class Shenora.Modules.Requests.IpcRequestsModule : Shenora.Core.Ipc.ModuleBase
+  protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
+  public .ctor(Shenora.Core.Ipc.IIpcRequestTracker tracker, Shenora.Core.Ipc.IpcRequestTrackerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Requests.IpcRequestsModule>? logger = null)
+  public const string CancelType = "CANCEL"
+  public const string ClearFinishedType = "CLEAR_FINISHED"
+  public const string ListType = "LIST"
+  public override string ModuleName { get; }
 sealed class Shenora.Modules.Update.Compression.ExtractionLimits
   public .ctor()
   public int MaxEntries { get; init; }

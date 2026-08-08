@@ -30,7 +30,7 @@ export {
   eventBus,
   // The options type of all THREE public subscribe methods, and it was unexported until the 2026-08-05
   // review — so an app could call them but could not name what it was passing (no typed wrapper, no
-  // shared const, no signature that mentions it). Identical to the `OperationProgress` gap recorded
+  // shared const, no signature that mentions it). Identical to the `IpcProgress` gap recorded
   // below, which is the point: the barrel is a surface, and shipping a method without its parameter
   // type is shipping half of it.
   type SubscribeOptions,
@@ -53,28 +53,28 @@ export {
 } from './store.js';
 export { BaseModuleService } from './moduleService.js';
 export {
-  OperationStatuses,
-  // The event vocabulary + the default module name. `createOperationsStore` deliberately does NOT
+  IpcRequestStates,
+  // The event vocabulary + the default module name. `createRequestsStore` deliberately does NOT
   // subscribe to RESUME_REQUESTED / WAIT_REQUESTED — those target the OWNING module's own service,
   // not the generic store — so the app writing that handler needs both symbols, and until now had
   // neither: it had to hard-code the literals the wire-mirror tests exist to keep it from doing.
-  OperationEventTypes,
-  OperationModuleName,
-  createOperationsStore,
-  useShenoraOperations,
-  type OperationStatus,
-  type OperationLabel,
-  // `OperationInfo.progress` is typed as this, so leaving it unexported made the field's own type
+  IpcRequestEventTypes,
+  IpcRequestsModuleName,
+  createRequestsStore,
+  useShenoraRequests,
+  type IpcRequestState,
+  type IpcLabel,
+  // `IpcRequestStatus.progress` is typed as this, so leaving it unexported made the field's own type
   // unnameable from outside the package — the kit's OWN sample had to re-declare the shape inline
   // (`samples/Shenora.Sample.Web/src/App.tsx`) to write a one-line formatter. `index.test.ts` could
   // not catch it: that gate compares `Object.keys(barrel)`, and a type has no runtime binding, so
   // the type half of the surface is pinned by the type-only import in that same file instead.
-  type OperationProgress,
-  type OperationInfo,
-  type OperationsState,
-  type OperationsActions,
-  type OperationsStoreOptions,
-} from './operations.js';
+  type IpcProgress,
+  type IpcRequestStatus,
+  type RequestsState,
+  type RequestsActions,
+  type RequestsStoreOptions,
+} from './requests.js';
 export {
   WindowCommands,
   useWindowMaximized,

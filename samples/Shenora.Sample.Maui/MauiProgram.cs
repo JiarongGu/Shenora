@@ -4,6 +4,7 @@ using Shenora.Mobile;
 using Shenora.Sample.Logic;
 using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
+using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Maui;
@@ -99,8 +100,8 @@ public static class MauiProgram
 		// the app's — it is the whole cost of the pairing, and it is the same on both samples.
 		shenora.OnStarting(app =>
 			app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
-				[new MissionOperationObserver(
-					app.Services.GetRequiredService<IOperationRegistry>(), PortableSampleModule.Module)]);
+				[new MissionEventPublisher(
+					app.Services.GetRequiredService<IEventBus>(), PortableSampleModule.Module)]);
 
 		// THE POINT OF THIS SAMPLE: the same facade the desktop sample hosts, from the same net10.0
 		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,

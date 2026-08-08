@@ -167,7 +167,8 @@ Info
 Kind
 Label
 Operation
-Operations
+Requests
+Tracker
 Options
 Progress
 Reason

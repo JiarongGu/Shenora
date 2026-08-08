@@ -8,7 +8,7 @@ using Shenora.Core.Ipc;               // core — the message contract
 using Shenora.Engine.Files;           // engine — the file queue
 using Shenora.Engine.Missions;        // engine — the scheduler
 using Shenora.Modules.Media;          // module — the player
-using Shenora.Modules.Operations;     // module — the operation registry's registration
+using Shenora.Modules.Requests;     // module — the operation registry's registration
 
 namespace Shenora;
 
@@ -123,7 +123,7 @@ public sealed class ShenoraApplicationBuilder
         // that platform's shell instead (`UseWindows`/`UseAndroid`/`UseIOS`), because only a shell knows
         // whether it can satisfy it; a platform that cannot registers nothing and the page learns that
         // from the ready handshake's capability list (D36) rather than from silence.
-        Services.AddShenoraOperations();
+        Services.AddShenoraRequests();
         Services.AddMessageDispatcher();
 
         return new ShenoraApplication(ApplicationName, Args, Environment, Paths,

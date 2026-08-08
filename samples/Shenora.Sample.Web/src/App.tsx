@@ -3,11 +3,11 @@ import {
   isShenoraAvailable,
   useDropZone,
   useShenoraEvent,
-  useShenoraOperations,
+  useShenoraRequests,
   useShenoraQuery,
   useWindowMaximized,
   WindowCommands,
-  type OperationProgress,
+  type IpcProgress,
   type ShellInfo,
 } from '@shenora/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,11 +26,11 @@ declare global {
  * helper (see `@shenora/react`'s README) precisely so this one-liner stays here, not in `src/`.
  *
  * The PARAMETER type is imported, not re-declared. It used to be written out inline
- * (`{ value: number; total?: number; unit?: string }`) — not by choice: `OperationProgress` was
- * missing from the barrel, so the type of `OperationInfo.progress` was unnameable from outside the
+ * (`{ value: number; total?: number; unit?: string }`) — not by choice: `IpcProgress` was
+ * missing from the barrel, so the type of `IpcRequestStatus.progress` was unnameable from outside the
  * package, and the sample quietly duplicating the shape was the only visible symptom.
  */
-function formatProgress(progress?: OperationProgress): string {
+function formatProgress(progress?: IpcProgress): string {
   if (!progress) return 'starting…';
   if (progress.total) return `${Math.round((progress.value / progress.total) * 100)}%`;
   return `${progress.value}${progress.unit ? ` ${progress.unit}` : ''}`;
@@ -121,12 +121,12 @@ function TitleBar({ hosted, commands }: { hosted: boolean; commands: WindowComma
 
 /**
  * The one-way path (P6.3a), now on the kit's own operations primitive (D23/0.2.0): `post` starts
- * the SLOW route, `ctx.Run` hands the work off host-side, and `useShenoraOperations` is the
+ * the SLOW route, `ctx.Run` hands the work off host-side, and `useShenoraRequests` is the
  * shared, HOST-BACKED store that reports its progress — no hand-rolled `SLOW_PROGRESS`/`SLOW_DONE`
  * reducer, no per-app wiring. This is also the sample's adoption example: the supported shape for
  * anything that is not a quick, UI-thread-safe call.
  *
- * ONE subscription is opened no matter how many components read `useShenoraOperations`, and a
+ * ONE subscription is opened no matter how many components read `useShenoraRequests`, and a
  * component mounting mid-run is caught up by the store's `LIST` snapshot. The two buttons drive
  * the SAME route in its two shapes so the difference is visible rather than argued: `block` leaves
  * the work in the route's synchronous segment, which runs on the host's UI thread and freezes the
@@ -138,7 +138,7 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
   // the module + kind the host route sets (SampleModule's SLOW case: Kind = "SLOW"). `s.running` is
   // the store's own shipped selector for "currently running", not a hand-rolled status check — the
   // supported idiom its own doc recommends.
-  const operation = useShenoraOperations((s) => s.running.find((o) => o.module === 'SAMPLE' && o.kind === 'SLOW'));
+  const request = useShenoraRequests((s) => s.running.find((r) => r.module === 'SAMPLE' && r.type === 'SLOW'));
 
   // `post`, not `invoke`: the route's own response carries only an echo (mode/ranOnUiThread/
   // operationId) that this pane does not need — the operation store is the source of truth.
@@ -165,20 +165,23 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
         stream it instead
       </button>
       {' '}
-      <span style={operation ? value : { color: '#9a9a9a' }}>
-        {operation
+      <span style={request ? value : { color: '#9a9a9a' }}>
+        {request
           // `detail.text` already carries "onUiThread: False" from the host's Report() call — the
           // proof the work really left the UI thread, rather than the design merely claiming it does.
-          ? `${formatProgress(operation.progress)} — ${operation.detail?.text ?? 'starting…'}`
+          ? `${formatProgress(request.progress)} — ${request.detail?.text ?? 'starting…'}`
           : 'slow route: idle'}
       </span>
-      {operation?.cancellable && (
+      {/* No `cancellable` flag to check any more (D66): EVERY request can be aborted, so the button
+          appears whenever there is one in flight. The flag existed on the options record a caller
+          passed when STARTING an operation, and that record is gone. */}
+      {request && (
         <>
           {' '}
           <button
             style={{ padding: '0.2rem 0.6rem' }}
             data-testid="btn-slow-cancel"
-            onClick={() => useShenoraOperations.actions.cancel(operation.id)}
+            onClick={() => useShenoraRequests.actions.cancel(request.id)}
           >
             cancel
           </button>
@@ -205,9 +208,22 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
  * kit one.
  */
 function SchedulerPanel({ hosted }: { hosted: boolean }) {
-  const running = useShenoraOperations((s) => s.running.filter((o) => o.module === 'SAMPLE_LOGIC'));
+  // 🔴 MISSION EVENTS, not the request list (D66). A mission is host-initiated work — nobody sent a
+  // request for it — so it reports on its own stream, published by the app's own MissionEventPublisher.
+  // Filtering the request list by module here would now render nothing, forever and silently, which is
+  // exactly the shape of failure the merge exists to stop.
+  const [missions, setMissions] = useState<Record<string, { kind: string; state: string }>>({});
+  useShenoraEvent<{ missionId: string; kind: string; state: string }>(
+    'SAMPLE_LOGIC',
+    'MISSION_UPDATED',
+    (m) => setMissions((all) => ({ ...all, [m.missionId]: { kind: m.kind, state: m.state } })),
+  );
+
+  const live = Object.values(missions);
+  const running = live.filter((m) => m.state === 'running');
+  const queued = live.filter((m) => m.state === 'queued');
   const kinds = (list: { kind: string }[]) =>
-    list.map((o) => o.kind).sort().join(', ') || '—';
+    list.map((m) => m.kind).sort().join(', ') || '—';
 
   return (
     <p style={row} data-testid="scheduler-state">
@@ -231,9 +247,9 @@ function SchedulerPanel({ hosted }: { hosted: boolean }) {
         2 chains (stage ∥, land 1-at-a-time)
       </button>
       {' '}
-      <span style={running.length ? value : { color: '#9a9a9a' }}>
-        {running.length
-          ? `running ${running.length} [${kinds(running)}]`
+      <span style={running.length || queued.length ? value : { color: '#9a9a9a' }}>
+        {running.length || queued.length
+          ? `running ${running.length} [${kinds(running)}] · queued ${queued.length} [${kinds(queued)}]`
           : 'scheduler: idle'}
       </span>
     </p>
