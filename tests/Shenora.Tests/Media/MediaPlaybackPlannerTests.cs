@@ -161,7 +161,8 @@ public class MediaPlaybackPlannerTests
     [Fact]
     public void Video_and_audio_are_checked_against_SEPARATE_sets()
     {
-        // "aac" as a VIDEO codec is nonsense, and that is the point: it appears in AudioCodecs only.
+        // "aac" as a VIDEO codec is nonsense, and that is the point: the browser declares it under the
+        // AUDIO kind only, so a planner that ignored the kind would wrongly call this playable.
         var plan = MediaPlaybackPlanner.Plan(Probe(".mp4", Video("aac")), Browser());
 
         Assert.Equal(MediaPlaybackAction.Transcode, plan.Action);

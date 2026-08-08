@@ -761,11 +761,14 @@ changes, noting them in `CHANGELOG.md`).
   `ExecuteScriptAsync`, origin-scoped `GetCookiesAsync`, `OnMessage`/`OnDownload`/
   `OnNewWindow`/`OnNavigation` taps, `FitToBox` CSS→physical, `SetLoading`, idempotent
   `Reveal`, `WindowClosed`), `SessionResult` (+ `ThrowIfFailed` bridging into the IPC error
-  contract)/`SessionErrorCodes`, and `CookieLoginFlow(+Options)`/
-  `SessionCookie`/`DownloadHit` (the one opt-in REFERENCE DRIVER, which keeps its scenario name on
-  purpose — D22: fresh-set auth-cookie detection against a
-  pre-navigation baseline, so a stale cookie never captures, not even on close; separate
-  `CookieReadUrl` origin; `ReadBlob`); and `StreamingSession(+Options)`/`SessionViewport`
+  contract)/`SessionErrorCodes`, and `SessionCookie`/`DownloadHit` (the payloads the cookie and download
+  taps hand back).
+  ⚠ **The kit ships NO login/auth driver.** This entry listed `CookieLoginFlow(+Options)` as part of the
+  surface until 2026-08-08; P7 moved that driver into the desktop sample as `CookieLoginDriver`, because a
+  scenario RECIPE in a shipped package becomes SemVer surface at 1.0 and makes the kit look like it ships
+  that product (D22, and `generic-library.md`'s placement rule). The primitives it was built from —
+  `SessionController`'s taps, `GetCookiesAsync`, `ReadBlob` — are what the package actually offers.
+  Then `StreamingSession(+Options)`/`SessionViewport`
   (an off-screen browser that STREAMS what it renders and ACCEPTS synthetic input: screencast JPEGs
   into a bounded latest-wins `ChannelReader<SessionFrame>` — each frame carrying the CSS viewport it
   depicts — `DispatchAsync(SessionInput, …)` for typed input (`SessionPointerInput`/`SessionWheelInput`/
@@ -833,8 +836,9 @@ changes, noting them in `CHANGELOG.md`).
   `UseMessageDispatcher` maps them through `MapRegisteredModulesLazily` — ONE terminal middleware
   resolving them on first dispatch — not through `TryClaimModule`, because claiming needs the module
   NAMES and reading those means resolving the facades, which inside the `IMessageDispatcher` singleton
-  factory is the silent `StackOverflow` P5.5 H2 fixed. Two consequences: `IsModuleMapped("OPERATIONS")`
-  is `false` while `SHENORA.OPERATIONS` is routed, and a plug-in offering a name a DI facade already owns gets
+  factory is the silent `StackOverflow` P5.5 H2 fixed. Two consequences:
+  `IsModuleMapped("SHENORA.REQUESTS")`
+  is `false` while `SHENORA.REQUESTS` is routed, and a plug-in offering a name a DI facade already owns gets
   `true` from `TryMapModule` and then never runs, because the lazy middleware is composed earlier and
   answers first. Precedence is the one you want (the app's own modules win); the honesty is not.
   Closing it needs either a name-reservation seam the registry does not have or re-opening the
