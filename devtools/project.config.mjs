@@ -64,8 +64,18 @@ export default {
    * only way to ship an empty native package is to work at it.
    */
   artifactPackableProjects: ['src/Shenora.Launcher'],
-  /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
+  /**
+   * The npm package that has a BUILD and TESTS — `verify` builds and vitests this one, and the sample
+   * web app consumes it. Kept singular because those steps are genuinely about the React client.
+   */
   npmDir: 'src/Shenora.React',
+  /**
+   * EVERY npm package, for the checks that must not miss one: version lockstep against
+   * `<VersionPrefix>`, the shipped LICENSE copy, and `pack`. ⚠ Adding a package and forgetting this list
+   * is how one gets published outside the lockstep — the failure that consumed 0.2.0 without ever
+   * shipping. `@shenora/cli` is pure Node with no build step, which is why it is here but not above.
+   */
+  npmPackages: ['src/Shenora.React', 'src/Shenora.Cli'],
   /** Pack output (gitignored). */
   packagesDir: 'publish/packages',
 

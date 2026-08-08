@@ -1,0 +1,21 @@
+{
+  // Dev/typecheck config — emits NOTHING. All emit settings live in tsconfig.build.json, mirroring
+  // @shenora/react, so a stray `tsc` can never drop output into dist/ (which package.json `files` ships).
+  "compilerOptions": {
+    // A CLI runs on Node, not in a webview: ES2022 both ways, and NO "DOM" lib — pulling it in would let
+    // a `document` reference compile in a process that has none.
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    // NodeNext: the emitted ESM must carry explicit .js extensions. Native Node ESM rejects extensionless
+    // relative imports, and this package IS run by node directly — there is no bundler to be lenient.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "@shenora/cli",
+  "version": "0.10.0",
+  "description": "Take a Shenora app onto an iOS simulator or a real iPhone — build, sign, install, launch — with no Xcode project of your own.",
+  "license": "MIT",
+  "author": "Jiarong Gu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JiarongGu/Shenora.git",
+    "directory": "src/Shenora.Cli"
+  },
+  "homepage": "https://github.com/JiarongGu/Shenora#readme",
+  "keywords": [
+    "shenora",
+    "ios",
+    "deploy",
+    "simulator",
+    "maui",
+    "dotnet",
+    "cli"
+  ],
+  "type": "module",
+  "bin": {
+    "shenora": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "node --eval \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0"
+  }
+}

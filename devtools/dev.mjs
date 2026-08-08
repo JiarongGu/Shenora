@@ -55,6 +55,13 @@ const step = (label, fn) => {
 const npmDirAbs = path.join(repo, ...config.npmDir.split('/'));
 const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'package.json'), 'utf8'));
 
+// `@shenora/cli` is TypeScript with a real build, like the React package — so it is BUILT and
+// TYPE-CHECKED by the gate rather than trusted. A CLI that ships broken output is worse than one that
+// does not ship: the adopter meets it at the moment they are trying to reach a device for the first time.
+const cliDirAbs = path.join(repo, 'src', 'Shenora.Cli');
+const buildCliPackage = () => ensureNpmDeps(cliDirAbs)
+  && step('npm build (cli package)', () => runNpm('run build', { cwd: cliDirAbs }));
+
 // ---- The Android TFM needs a JDK, and the failure without one is unhelpful.
 //
 // Shenora.Mobile targets net10.0-android, so `dotnet build` of the solution shells out to the Android
@@ -261,14 +268,18 @@ function doctor({ fix = false } = {}) {
   let problems = 0;
   const fail = (msg) => { problems++; console.error('  FAIL ' + msg); };
 
-  const pkgPath = path.join(npmDirAbs, 'package.json');
-  const pkg = readNpmPackage();
-  if (pkg.version !== config.version) {
+  // EVERY npm package, not just the first. `@shenora/cli` was added on 2026-08-08 and the version check
+  // read one hardcoded directory — so the new package would have been born outside the lockstep this
+  // repo treats as load-bearing (a hand-bump consumed 0.2.0 outright). One list, checked in a loop.
+  for (const dir of config.npmPackages) {
+    const pkgPath = path.join(repo, ...dir.split('/'), 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    if (pkg.version === config.version) continue;
     if (fix) {
       fs.writeFileSync(pkgPath, fs.readFileSync(pkgPath, 'utf8')
         .replace(/"version":\s*"[^"]+"/, `"version": "${config.version}"`));
-      console.log(`  fixed ${config.npmDir}/package.json version -> ${config.version}`);
-    } else fail(`${config.npmDir}/package.json version ${pkg.version} != VersionPrefix ${config.version}`);
+      console.log(`  fixed ${dir}/package.json version -> ${config.version}`);
+    } else fail(`${dir}/package.json version ${pkg.version} != VersionPrefix ${config.version}`);
   }
 
   const readmePath = path.join(repo, 'README.md');
@@ -302,17 +313,18 @@ function doctor({ fix = false } = {}) {
   // package needs its own copy because npm packs only files under the package directory — so the root
   // LICENSE is the source and this is checked against it, rather than trusting two files to stay equal.
   const rootLicense = path.join(repo, 'LICENSE');
-  const npmLicense = path.join(npmDirAbs, 'LICENSE');
   if (fs.existsSync(rootLicense)) {
     const expected = fs.readFileSync(rootLicense, 'utf8');
-    const actual = fs.existsSync(npmLicense) ? fs.readFileSync(npmLicense, 'utf8') : null;
-    if (actual !== expected) {
+    for (const dir of config.npmPackages) {
+      const npmLicense = path.join(repo, ...dir.split('/'), 'LICENSE');
+      const actual = fs.existsSync(npmLicense) ? fs.readFileSync(npmLicense, 'utf8') : null;
+      if (actual === expected) continue;
       if (fix) {
         // readFileSync/writeFileSync, never fs.cpSync — it hard-crashes Node 24 on this machine
         // (see .claude/rules/windows-dev-gotchas.md).
         fs.writeFileSync(npmLicense, expected);
-        console.log(`  fixed ${config.npmDir}/LICENSE (copied from the root LICENSE)`);
-      } else fail(`${config.npmDir}/LICENSE ${actual === null ? 'is missing' : 'differs from'} the root LICENSE`);
+        console.log(`  fixed ${dir}/LICENSE (copied from the root LICENSE)`);
+      } else fail(`${dir}/LICENSE ${actual === null ? 'is missing' : 'differs from'} the root LICENSE`);
     }
   }
 
@@ -564,7 +576,8 @@ switch (cmd) {
     const ok = buildEnv !== null
       && step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv }))
       && ensureNpmDeps(npmDirAbs)
-      && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
+      && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }))
+      && buildCliPackage();
     process.exitCode = ok ? 0 : 1;
     break;
   }
@@ -622,6 +635,10 @@ switch (cmd) {
         // something type-checks them (P5.5 H6).
         return runNpm('run typecheck', { cwd: path.join(repo, ...config.npmDir.split('/')) });
       }],
+      // The CLI's own strict pass. `build` already compiles it, but this is the config that would also
+      // cover tests when it has them — kept as its own step so adding one never silently goes unchecked,
+      // which is exactly how the React package's test typecheck came to be inert for five phases.
+      ['cli typecheck', () => ensureNpmDeps(cliDirAbs) && runNpm('run typecheck', { cwd: cliDirAbs })],
       ['sample web typecheck', () => {
         // The e2e subject's TS was never type-checked by any gate (P5.5 H5). Skipped only when the
         // sample web app doesn't exist yet.

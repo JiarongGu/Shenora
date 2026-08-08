@@ -7,6 +7,7 @@ obj/
 # npm
 node_modules/
 src/Shenora.React/dist/
+src/Shenora.Cli/dist/
 *.tgz
 
 # Sample packaged frontend (built by `npm run build` in samples/Shenora.Sample.Web)
