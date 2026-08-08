@@ -139,25 +139,9 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
     every run.
   - **The SAMPLE half genuinely cannot build here**: `Sample.Maui` sets `net10.0-ios` only under
     `$([MSBuild]::IsOSPlatform('osx'))`, so `MainPage`'s `#if IOS` branch is unverified by construction.
-- [ ] **D66 leftovers — coalescing, and the pump.** The merge landed (2026-08-08): the operation entity
-  is gone, `IpcRequest.Id` is the only identity, `IModuleContext` is per-request with `Report`, and the
-  GRACE PERIOD replaced the `Run()` declaration — a request finishing inside 50 ms emits nothing at all.
-  What is still open:
-  - **The pump BATCHES but does not COALESCE.** With the grace period doing the suppressing this is no
-    longer a correctness problem, but a request reporting a hundred times inside one flush window still
-    sends a hundred notifications in one message. Coalesce keyed by REQUEST ID, last-write-wins.
-    `IpcRequestTrackerOptions.ProgressInterval` throttles per request today, which is the cheap half.
-  - **Tracking starts in `ModuleBase`, not the dispatcher**, so a module that does not derive from it is
-    not tracked. Same coverage as before the merge, but the honest place is the dispatch path.
-  - **`OperationException` still carries the old word.** It is the general IPC structured-error type, not
-    part of this subsystem — rename it with the next error-path pass, not this one.
-
-- [ ] 🔎 **"No such MODULE" and "no such ROUTE in a module" are indistinguishable on the wire.**
-  `BaseFacade.UnknownType` and the dispatcher's terminal both answer `NO_HANDLER` with the same
-  `module`/`type` parameters — so an adopter debugging a page cannot tell "I never registered that
-  facade" from "I typo'd the route", which are opposite fixes. Found while writing the test above, whose
-  first version tried to use exactly that distinction as its probe. ⚠ Cheap to fix (a distinct code from
-  the terminal) but it IS wire surface, so it belongs under `### Breaking`.
+- [ ] **`OperationException` still carries the old word.** The last D66 leftover. It is the general IPC
+  structured-error type, not part of the request subsystem — rename it with the next error-path pass, and
+  note that it is wire-adjacent surface, so it belongs under `### Breaking` with its migration.
 
 ### Pre-existing sample failures, attributed 2026-08-08 and NOT from the rewire
 

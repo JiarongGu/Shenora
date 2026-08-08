@@ -11,7 +11,17 @@ namespace Shenora.Core.Ipc;
 /// tracked things an app explicitly started, so it needed options, kinds, a minted id and a handle type.
 /// This tracks every request automatically and stays SILENT until one outlives
 /// <see cref="IpcRequestTrackerOptions.GracePeriod"/> — so the fast case, which is nearly every case,
-/// costs one dictionary insert and one removal and reaches the wire not at all.
+/// reaches the wire not at all.
+/// </para>
+/// <para>
+/// ⚠ <b>What that fast case actually costs, stated honestly because it now runs for EVERY request.</b>
+/// <see cref="Begin"/> allocates an entry, a linked <see cref="CancellationTokenSource"/>, a one-shot
+/// grace timer and its state — then <see cref="Finish"/> disposes the timer and the CTS and removes the
+/// entry. It is cheap and it is bounded, but it is not "one dictionary insert", which is what this doc
+/// used to claim while nothing in a composed app ever called it (tracking began in <c>ModuleBase</c>
+/// behind a dependency no module injected). The claim was free to be wrong for exactly as long as the
+/// code was dead. If this ever shows up in a profile, the timer is the piece to attack — one shared
+/// timer wheel rather than one timer per request.
 /// </para>
 /// <para>
 /// State is in-memory only and does not survive a restart, which is correct for a thing whose entire
@@ -260,7 +270,22 @@ public sealed class IpcRequestTracker : IIpcRequestTracker, IDisposable
     private void Publish(Entry entry)
     {
         var status = ToStatus(entry);
-        _bus.Emit(_options.ModuleName, IpcRequestEvents.Updated, status, entry.Scope);
+        _bus.Emit(new EventMessage
+        {
+            Module = _options.ModuleName,
+            Type = IpcRequestEvents.Updated,
+            Payload = status,
+            Scope = entry.Scope,
+            // 🔴 A snapshot supersedes the snapshot before it — the one payload shape in the kit that
+            // may say so. Every transition publishes the WHOLE status and the client folds by id
+            // last-write-wins, so a buffered batch that drops the intermediate ones lands on exactly
+            // the state it would have reached the long way. ProgressInterval already thins a busy
+            // reporter; this bounds what a burst can put in ONE batch, which the throttle cannot.
+            //
+            // ⚠ Deliberately NOT set on Removed: its payload is a batch of ids, and each batch names
+            // DIFFERENT ids, so superseding one with another would silently lose removals.
+            CoalesceKey = entry.Id,
+        });
     }
 
     private static IpcRequestStatus ToStatus(Entry entry) => new()

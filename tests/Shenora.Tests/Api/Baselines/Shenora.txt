@@ -23,6 +23,7 @@ sealed class Shenora.Core.Events.EventMessage
   public required string Module { get; init; }
   public required string Type { get; init; }
   public string Id { get; init; }
+  public string? CoalesceKey { get; init; }
   public string? Scope { get; init; }
 interface Shenora.Core.Events.IEventBus
   public abstract System.IDisposable Subscribe(string module, string type, System.Func<Shenora.Core.Events.EventMessage, System.Threading.Tasks.Task> handler)
@@ -115,6 +116,7 @@ sealed class Shenora.Core.Ipc.IpcLabel : System.IEquatable<Shenora.Core.Ipc.IpcL
   public string? Text { get; init; }
   public void Deconstruct(out string? Text, out string? Key, out System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters)
 sealed class Shenora.Core.Ipc.IpcNotification
+  [JsonIgnore] public string? CoalesceKey { get; init; }
   [JsonPropertyName("module")] public required string Module { get; init; }
   [JsonPropertyName("payload")] public object? Payload { get; init; }
   [JsonPropertyName("scope")] public string? Scope { get; init; }
@@ -201,7 +203,7 @@ static class Shenora.Core.Ipc.IpcServiceCollectionExtensions
   public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
   public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
 sealed class Shenora.Core.Ipc.MessageDispatcher : Shenora.Core.Ipc.IMessageDispatcher, Shenora.Core.Ipc.IModuleRegistry
-  public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.Ipc.MessageDispatcher>? logger = null)
+  public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.Ipc.MessageDispatcher>? logger = null, Shenora.Core.Ipc.IIpcRequestTracker? requests = null)
   public Shenora.Core.Ipc.MessageDispatcher Use(Shenora.Core.Ipc.MessageMiddleware middleware)
   public System.Collections.Generic.IReadOnlyCollection<string> MappedModules { get; }
   public System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> DispatchAsync(Shenora.Core.Ipc.IpcRequest request, System.Threading.CancellationToken cancellationToken = default)
@@ -226,7 +228,7 @@ delegate Shenora.Core.Ipc.MessageMiddleware
   public virtual System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> EndInvoke(System.IAsyncResult result)
   public virtual System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse> Invoke(Shenora.Core.Ipc.IpcRequest request, System.Func<System.Threading.Tasks.Task<Shenora.Core.Ipc.IpcResponse>> next, System.Threading.CancellationToken cancellationToken)
 abstract class Shenora.Core.Ipc.ModuleBase : Shenora.Core.Ipc.IIpcModule
-  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.Events.IEventBus? events = null, Shenora.Core.Ipc.IIpcRequestTracker? requests = null)
+  protected .ctor(Microsoft.Extensions.Logging.ILogger? logger = null, Shenora.Core.Events.IEventBus? events = null)
   protected Shenora.Core.Ipc.OperationException UnknownType(Shenora.Core.Ipc.IpcRequest request)
   protected abstract System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   protected static System.Threading.Tasks.Task<object> Done()

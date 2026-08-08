@@ -849,10 +849,20 @@ changes, noting them in `CHANGELOG.md`).
   `Timestamp`. The predecessor minted a fresh `Guid` unrelated to the request that caused it and carried
   a parallel `Kind`/`Scope`/`StartedAt`, leaving the page to correlate two identities for one thing.
   `IIpcRequestTracker`/`IpcRequestTracker(+Options)` holds one lock over in-memory state: `Begin`
-  (called by `ModuleBase`, returning an `IIpcRequestScope` whose disposal completes the request),
-  `GetAll` (in flight oldest-first, then finished newest-first, filtered by module/scope with
-  `IEventBus`'s scope rule), `Cancel(requestId)` (`XMLHttpRequest.abort()` — signals the token first,
-  then records `Cancelled`) and `ClearFinished`.
+  (returning an `IIpcRequestScope` whose disposal completes the request), `GetAll` (in flight
+  oldest-first, then finished newest-first, filtered by module/scope with `IEventBus`'s scope rule),
+  `Cancel(requestId)` (`XMLHttpRequest.abort()` — signals the token first, then records `Cancelled`)
+  and `ClearFinished`.
+  🔴 **`Begin` is called by `MessageDispatcher.DispatchAsync`, and the dispatch boundary is the only
+  honest place for it** (2026-08-08). Every request passes there however its module was written — a
+  `ModuleBase`, a bare `IIpcModule`, an ad-hoc `MapRoute` lambda — and the OUTCOME is known there and
+  nowhere else, since one `IpcResponse` carries success, an app's structured failure, a cancellation
+  and `NO_HANDLER` alike. The dispatcher also hands the scope's token down the pipeline, which is what
+  makes `Cancel` reach the token a route is actually observing. ⚠ It started in `ModuleBase` until
+  then, from a tracker each facade had to inject and forward — which no kit module did, so `Begin` was
+  never called in a composed app and `Failed` was unreachable (that catch returned an error response
+  while the scope disposed as `Completed`). A route reaches its scope through `IModuleContext.Report`,
+  which resolves it from the ambient scope by matching the request id.
   🔴 **The GRACE PERIOD is what makes tracking everything affordable, and it replaced the declaration.**
   `Begin` publishes NOTHING; a request is announced only if it outlives
   `IpcRequestTrackerOptions.GracePeriod` (50 ms — `NotificationPumpOptions.FlushInterval`'s own default,
@@ -870,7 +880,14 @@ changes, noting them in `CHANGELOG.md`).
   filter exists so a channel gets only its own slice of traffic, and delivering a notification the
   app meant to keep off this channel is the more dangerous failure), the bounded drop-oldest queue,
   the ready gate (`Open`/`Close`), batch building, and the guarded per-notification serialize (one
-  bad payload must not sink its batch). Owns NO timer and NO transport — `TryDrainBatch` is called by
+  bad payload must not sink its batch). **It also COALESCES a batch** (2026-08-08): a notification
+  carrying an `IpcNotification.CoalesceKey` supersedes an earlier undelivered one with the same
+  module/type/scope/key, last-write-wins, the survivor keeping its own later position. The key comes
+  from `EventMessage.CoalesceKey` and is host-side only (`[JsonIgnore]`, absent from the TS mirror) —
+  by the time a batch leaves, the coalescing has happened. ⚠ Strictly opt-in: the pump cannot tell a
+  snapshot from a delta, so only the emitter may declare it; the kit sets it on `REQUEST_UPDATED` and
+  deliberately not on `REQUEST_REMOVED`, whose payload is a batch of different ids. Owns NO timer and
+  NO transport — `TryDrainBatch` is called by
   whatever the base drives its own tick with (a `Forms.Timer` on WinForms; a `PeriodicTimer` on a
   headless base), because which thread may touch a base's client is a base-specific fact.
   `WebViewIpcBridge` is now a thin adapter over it: it keeps only what is WinForms/WebView2 — the

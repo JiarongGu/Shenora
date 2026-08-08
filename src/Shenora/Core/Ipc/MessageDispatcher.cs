@@ -34,6 +34,7 @@ public delegate Task<IpcResponse?> MessageMiddleware(IpcRequest request, Func<Ta
 public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
 {
     private readonly ILogger<MessageDispatcher> _logger;
+    private readonly IIpcRequestTracker? _requests;
 
     // The middleware list and the built pipeline are mutated by Use() and read by every dispatch,
     // concurrently and by design (P5.5 H6). See Use() and Pipeline for why this shape.
@@ -48,9 +49,17 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     private readonly Dictionary<string, MessageMiddleware> _mappedModules = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The logger is optional so composition works without <c>AddLogging</c>.</summary>
-    public MessageDispatcher(ILogger<MessageDispatcher>? logger = null)
+    /// <param name="logger">Diagnostics.</param>
+    /// <param name="requests">
+    /// Request tracking. Optional, because composing IPC over a bare <c>ServiceCollection</c> with no
+    /// <c>IEventBus</c> behind it is a legitimate shape — but <c>AddMessageDispatcher</c> supplies it,
+    /// so every composed app has it. Null means requests are dispatched untracked: no
+    /// <see cref="IpcRequestEvents.Updated"/>, no <c>LIST</c> entries, no cancellable token.
+    /// </param>
+    public MessageDispatcher(ILogger<MessageDispatcher>? logger = null, IIpcRequestTracker? requests = null)
     {
         _logger = logger ?? NullLogger<MessageDispatcher>.Instance;
+        _requests = requests;
     }
 
     /// <summary>
@@ -87,30 +96,153 @@ public sealed class MessageDispatcher : IMessageDispatcher, IModuleRegistry
     /// becomes <see cref="IpcErrorCodes.UnknownError"/> with the details kept host-side — raw
     /// exceptions never cross the bridge (design contract §5; the source leaked
     /// <c>ex.Message</c> here).
+    /// <para>
+    /// 🔴 <b>This is also where a request is TRACKED, and the dispatch boundary is the only honest
+    /// place for it.</b> Two reasons, and the second is the one that was got wrong: every request
+    /// passes here regardless of how its module was written (<see cref="ModuleBase"/>, a bare
+    /// <see cref="IIpcModule"/>, an ad-hoc <c>MapRoute</c> lambda), and the OUTCOME is known here and
+    /// nowhere else — one <see cref="IpcResponse"/> carries success, an app's structured failure, a
+    /// cancellation and <see cref="IpcErrorCodes.NoHandler"/> alike. Tracking used to start inside
+    /// <see cref="ModuleBase"/>, which could see neither: it covered only its own subclasses, and its
+    /// <c>catch</c> returned an error response while the scope disposed as
+    /// <see cref="IpcRequestState.Completed"/> — so <see cref="IpcRequestState.Failed"/> was
+    /// unreachable in practice and a failed request reported success to the page.
+    /// </para>
     /// </summary>
     public async Task<IpcResponse> DispatchAsync(IpcRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        IIpcRequestScope? scope = null;
         try
         {
             // Thrown INSIDE the try on purpose: the catch below maps it, so an already-cancelled
             // token produces the same structured OPERATION_CANCELLED that a handler's own
             // cancellation does. The boundary still never throws to its caller, and the transport
             // has one code to render rather than two shapes for one outcome.
+            // Before Begin, so a request that was dead on arrival is never tracked at all.
             cancellationToken.ThrowIfCancellationRequested();
-            var response = await Pipeline(request, cancellationToken);
-            if (response is not null)
-                return response;
 
-            _logger.LogWarning("No handler for {Module}/{Type}", request.Module, request.Type);
-            return IpcResponse.CreateError(request.Id, IpcErrorCodes.NoHandler, parameters:
-                new Dictionary<string, string> { ["module"] = request.Module, ["type"] = request.Type });
+            // Publishes NOTHING yet: the page hears about this request only if it outlives the grace
+            // period (D66), so the fast path — nearly every request — never reaches the wire at all.
+            scope = BeginTracking(request, cancellationToken);
+
+            // The scope's token is what CANCEL targets, so it is the one the whole pipeline must
+            // observe; the caller's own lifetime is LINKED into it, not replaced by it.
+            var response = await RunTracked(request, scope, cancellationToken);
+
+            if (response is null)
+            {
+                _logger.LogWarning("No handler for {Module}/{Type}", request.Module, request.Type);
+                response = IpcResponse.CreateError(request.Id, IpcErrorCodes.NoHandler, parameters:
+                    new Dictionary<string, string> { ["module"] = request.Module, ["type"] = request.Type });
+            }
+
+            // A structured failure the pipeline RETURNED rather than threw — an app's own
+            // OperationException already mapped by UseErrorHandler, or the NO_HANDLER above. Recorded
+            // with the same error the client gets, so the in-flight list and the response never
+            // disagree about why something failed.
+            if (!response.Success && response.Error is { } failure) FailTracking(scope, failure);
+
+            return response;
         }
         catch (Exception ex)
         {
             // One owner for the error boundary (P5.5 H4.5) — see IpcErrorMapping for why four copies
             // of this rule was a leak waiting to happen.
-            return IpcErrorMapping.ToErrorResponse(request, ex, _logger, "dispatching");
+            var response = IpcErrorMapping.ToErrorResponse(request, ex, _logger, "dispatching");
+            if (response.Error is { } failure) FailTracking(scope, failure);
+            return response;
+        }
+        finally
+        {
+            // Completes the request unless something already finished it — Fail above, or a CANCEL
+            // that transitioned the entry directly. Both the scope and the tracker are idempotent
+            // about that, which is what makes an unconditional end here correct.
+            //
+            // ⚠ The response is fully BUILT before this runs, which is the ordering D66 insists on:
+            // the grace period suppresses notifications and must never delay the answer.
+            EndTracking(scope);
+        }
+    }
+
+    /// <summary>
+    /// 🔴 <b>Tracking is BOOKKEEPING and must never decide a request's fate.</b>
+    /// <see cref="IIpcRequestTracker"/> is a PUBLIC seam — an app may supply its own — and these three
+    /// calls sit on the one boundary the whole kit promises never throws, which every transport relies on
+    /// (<c>WebViewIpcBridge</c> would take an unhandled exception on the UI thread). So a faulty tracker
+    /// costs its own bookkeeping and nothing else: the request still runs, still answers, and the failure
+    /// is logged host-side.
+    /// <para>
+    /// Written as three small methods rather than one guarded delegate on purpose — this is the IPC hot
+    /// path and a closure per call would allocate for every request in the app.
+    /// </para>
+    /// <para>
+    /// ⚠ <b><see cref="IModuleContext.Report"/> is deliberately NOT guarded this way.</b> It runs inside
+    /// the module's own error boundary, so a throwing tracker there degrades to one failed request rather
+    /// than a broken transport — and swallowing it would hide a genuinely broken tracker from the app that
+    /// supplied it. Guard the BOUNDARY, not every call.
+    /// </para>
+    /// </summary>
+    private IIpcRequestScope? BeginTracking(IpcRequest request, CancellationToken cancellationToken)
+    {
+        if (_requests is null) return null;
+        try
+        {
+            return _requests.Begin(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Untracked rather than failed: losing the in-flight entry is a diagnostic loss, and failing
+            // the request would turn it into an outage.
+            _logger.LogError(ex, "Request tracking failed to begin for {Module}/{Type}",
+                             request.Module, request.Type);
+            return null;
+        }
+    }
+
+    /// <inheritdoc cref="BeginTracking"/>
+    private void FailTracking(IIpcRequestScope? scope, IpcError error)
+    {
+        if (scope is null) return;
+        try { scope.Fail(error); }
+        catch (Exception ex) { _logger.LogError(ex, "Request tracking failed to record a failure"); }
+    }
+
+    /// <inheritdoc cref="BeginTracking"/>
+    private void EndTracking(IIpcRequestScope? scope)
+    {
+        if (scope is null) return;
+        try { scope.Dispose(); }
+        catch (Exception ex) { _logger.LogError(ex, "Request tracking failed to end a request"); }
+    }
+
+    /// <summary>
+    /// Run the pipeline with <paramref name="scope"/> as the ambient request scope, so a module can
+    /// report progress without having been handed anything (see <see cref="IpcRequestScopeAccessor"/>).
+    /// <para>
+    /// The <c>finally</c> restore is deliberate but NOT what makes this safe — an async method's builder
+    /// already restores the caller's ExecutionContext, so the write cannot escape upward. See
+    /// <see cref="IpcRequestScopeAccessor"/> for what genuinely needs guarding (a route calling another
+    /// module directly) and how that was measured rather than reasoned about.
+    /// </para>
+    /// </summary>
+    private async Task<IpcResponse?> RunTracked(IpcRequest request, IIpcRequestScope? scope,
+                                                CancellationToken cancellationToken)
+    {
+        // No tracker composed: the caller's own token is still the pipeline's, exactly as before. Passing
+        // CancellationToken.None here would silently disable cancellation for every untracked host.
+        if (scope is null) return await Pipeline(request, cancellationToken);
+
+        var previous = IpcRequestScopeAccessor.Current;
+        IpcRequestScopeAccessor.Current = scope;
+        try
+        {
+            return await Pipeline(request, scope.CancellationToken);
+        }
+        finally
+        {
+            IpcRequestScopeAccessor.Current = previous;
         }
     }
 

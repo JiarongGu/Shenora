@@ -19,21 +19,25 @@ public abstract class ModuleBase : IIpcModule
 {
     private readonly ILogger _logger;
     private readonly IEventBus? _events;
-    private readonly IIpcRequestTracker? _requests;
 
     /// <summary>
-    /// The logger is optional so composition works without <c>AddLogging</c>; the bus and the request
-    /// tracker are optional so a facade that never publishes (and every unit test that constructs one
-    /// bare) still works. A facade that publishes WITHOUT a bus fails loudly at the call site; a missing
-    /// tracker is a silent no-op, and <see cref="ModuleContext.Report"/> explains why the two differ.
-    /// Neither is exposed as protected surface: the sanctioned accessor for a route is the
-    /// <c>context</c> parameter of <see cref="RouteMessageAsync"/>.
+    /// The logger is optional so composition works without <c>AddLogging</c>; the bus is optional so a
+    /// facade that never publishes (and every unit test that constructs one bare) still works. A facade
+    /// that publishes WITHOUT a bus fails loudly at the call site. Neither is exposed as protected
+    /// surface: the sanctioned accessor for a route is the <c>context</c> parameter of
+    /// <see cref="RouteMessageAsync"/>.
+    /// <para>
+    /// ⚠ <b>There used to be a third parameter, an <see cref="IIpcRequestTracker"/>, and REMOVING it is
+    /// the fix rather than a simplification.</b> It made request tracking a wiring obligation on every
+    /// facade author, and not one facade in the kit met it — so <c>Begin</c> was never called anywhere,
+    /// and the entire feature was inert with nothing to see. Tracking is the DISPATCHER's now
+    /// (<see cref="MessageDispatcher.DispatchAsync"/>), which no module can forget to opt into.
+    /// </para>
     /// </summary>
-    protected ModuleBase(ILogger? logger = null, IEventBus? events = null, IIpcRequestTracker? requests = null)
+    protected ModuleBase(ILogger? logger = null, IEventBus? events = null)
     {
         _logger = logger ?? NullLogger.Instance;
         _events = events;
-        _requests = requests;
     }
 
     /// <inheritdoc />
@@ -47,24 +51,28 @@ public abstract class ModuleBase : IIpcModule
         try
         {
             _logger.LogDebug("{Module} handling {Type}", ModuleName, request.Type);
-            // 🔴 TRACKED FROM HERE, with nothing declared (D66). Begin publishes NOTHING; the page hears
-            // about this request only if it outlives the grace period. So the fast path — nearly every
-            // request — costs one dictionary insert and one removal and never reaches the wire.
+
+            // The request's tracking scope, if it was dispatched (D66). This module neither starts nor
+            // ends it — the DISPATCHER owns the whole lifetime, because it is the only place that sees
+            // every module and every outcome. All that happens here is picking it up so
+            // IModuleContext.Report needs no id and no wiring.
             //
-            // The scope's token is what CANCEL targets, so it is the one the route must observe: the
-            // caller's own lifetime is linked into it, not replaced by it.
-            using var scope = _requests?.Begin(request, cancellationToken);
-            var token = scope?.CancellationToken ?? cancellationToken;
-            var context = new ModuleContext(ModuleName, request.Id, _logger, _events, scope);
+            // Matched by id, never taken blindly: HandleMessageAsync is public and every facade unit
+            // test calls it directly, so an unmatched ambient must resolve to "not tracked" rather than
+            // to somebody else's request.
+            //
+            // Captured ONCE, here, rather than read per Report(): work this route hands off to the
+            // background keeps reporting against the request that started it, instead of reading an
+            // ambient that has long since moved on.
+            var context = new ModuleContext(ModuleName, request.Id, _logger, _events,
+                                            IpcRequestScopeAccessor.For(request.Id));
 
             // NO ConfigureAwait(false) — removed in P5.5 H6. It was the only one in the dispatch path and
             // it CONTRADICTED the documented model: the pipeline preserves the synchronization context on
             // purpose, because a facade routing a WINDOW command touches WinForms and must resume on the
             // UI thread.
-            var data = await RouteMessageAsync(request, context, token);
+            var data = await RouteMessageAsync(request, context, cancellationToken);
             return IpcResponse.CreateSuccess(request.Id, data);
-            // ⚠ The response is returned BEFORE the scope disposes, which is the ordering D66 insists on:
-            // the grace period suppresses notifications and must never delay the answer.
         }
         catch (Exception ex)
         {

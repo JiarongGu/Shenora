@@ -38,11 +38,16 @@ internal sealed class ModuleContext(string module, string requestId, ILogger log
     /// <summary>
     /// <inheritdoc />
     /// <para>
-    /// ⚠ <b>A missing tracker is a silent no-op here, unlike <see cref="Publish"/>'s missing bus — and the
+    /// ⚠ <b>An absent scope is a silent no-op here, unlike <see cref="Publish"/>'s missing bus — and the
     /// asymmetry is deliberate.</b> Publishing is the route's OWN output: dropping it loses app data, so it
-    /// must be loud. Progress is the kit's own bookkeeping about a request the kit is tracking; a host
-    /// composed without a tracker simply has no in-flight list to update, and faulting a working route over
-    /// that would turn an optional facility into a required one.
+    /// must be loud. Progress is the kit's own bookkeeping about a request the kit is tracking, and a
+    /// module invoked outside dispatch (which every facade unit test does) has no request to report on —
+    /// faulting a working route over that would turn an optional facility into a required one.
+    /// </para>
+    /// <para>
+    /// Reporting after the request finished is a no-op too, by the same rule the tracker applies to any
+    /// terminal entry — so background work that outlives its request degrades quietly instead of throwing
+    /// on a race it cannot avoid.
     /// </para>
     /// </summary>
     public void Report(IpcProgress? progress = null, IpcLabel? detail = null) =>

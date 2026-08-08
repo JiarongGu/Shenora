@@ -71,6 +71,9 @@ public sealed class NotificationPump : IDisposable
                     Type = message.Type,
                     Payload = message.Payload,
                     Scope = message.Scope,
+                    // Carried, not derived: only the EMITTER knows whether its payload is a whole
+                    // snapshot (safe to supersede) or a delta (never safe). See EventMessage.CoalesceKey.
+                    CoalesceKey = message.CoalesceKey,
                 });
                 return Task.CompletedTask;
             });
@@ -163,6 +166,8 @@ public sealed class NotificationPump : IDisposable
             }
             if (batch.Count == 0) return false;
 
+            batch = Coalesce(batch);
+
             // Payloads are APP-supplied objects, so serialization can throw on data the framework
             // never sees until here: a cyclic object graph (parent/child entities), a
             // Type/delegate member, a throwing getter. The queue is already drained at this
@@ -197,6 +202,52 @@ public sealed class NotificationPump : IDisposable
             Log(() => $"[Shenora.Ipc] Notification batch drain failed: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Drop every notification a later one in the SAME batch supersedes — last-write-wins, keyed by
+    /// (module, type, scope, <see cref="IpcNotification.CoalesceKey"/>). Order is otherwise untouched:
+    /// the survivor keeps the LATEST position, because a superseding snapshot describes "now", not the
+    /// moment the first of its run was queued.
+    /// <para>
+    /// 🔴 <b>The batch already existed; this is what makes it a BATCH rather than a bag.</b> The pump has
+    /// always coalesced ROUND TRIPS — one message instead of a hundred — while still carrying a hundred
+    /// payloads inside it. A request reporting progress in a tight loop therefore cost the page a hundred
+    /// fold operations to render one number, which the flush interval hid rather than solved. It is an
+    /// efficiency fix, not a correctness one: folding all hundred and folding only the last reach the
+    /// same state, which is precisely the property that makes dropping them legal.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Opt-in, and it must stay that way.</b> Un-keyed notifications are never touched, because the
+    /// pump cannot know whether a payload is a snapshot or a delta — and coalescing deltas silently loses
+    /// data. Only the emitter knows, so only the emitter may say (<see cref="Shenora.Core.Events.EventMessage.CoalesceKey"/>).
+    /// </para>
+    /// </summary>
+    private static List<IpcNotification> Coalesce(List<IpcNotification> batch)
+    {
+        // Allocated only if something actually opted in — which, for an app that never sets a key, is
+        // never. The scan itself is one pass over a list already in hand.
+        Dictionary<(string Module, string Type, string? Scope, string Key), int>? lastIndex = null;
+        for (var i = 0; i < batch.Count; i++)
+        {
+            if (batch[i].CoalesceKey is not { } key) continue;
+            (lastIndex ??= [])[(batch[i].Module, batch[i].Type, batch[i].Scope, key)] = i;
+        }
+        if (lastIndex is null) return batch;
+
+        var kept = new List<IpcNotification>(batch.Count);
+        for (var i = 0; i < batch.Count; i++)
+        {
+            var notification = batch[i];
+            // Ordinal on every part, including the module name that routing matches case-INsensitively:
+            // dropping a notification is the destructive direction, so two spellings must fail to
+            // coalesce rather than coalesce by accident.
+            if (notification.CoalesceKey is { } key
+                && lastIndex[(notification.Module, notification.Type, notification.Scope, key)] != i)
+                continue;
+            kept.Add(notification);
+        }
+        return kept;
     }
 
     /// <summary>

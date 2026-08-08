@@ -154,7 +154,12 @@ public static class IpcServiceCollectionExtensions
         // ⚠ The explicit call has to come FIRST for that, which it does: `Build()` defaults last.
         services.TryAddSingleton<IMessageDispatcher>(sp =>
         {
-            IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>());
+            // GetService, not GetRequiredService: composing IPC over a bare ServiceCollection with no
+            // IEventBus behind it is a legitimate shape (five composition tests do it), and the tracker
+            // needs a bus. An app that registered one — AddShenoraRequests, which Build() calls for every
+            // app — gets tracking; one that did not, dispatches untracked exactly as before.
+            IMessageDispatcher dispatcher = new MessageDispatcher(sp.GetService<ILogger<MessageDispatcher>>(),
+                                                                  sp.GetService<IIpcRequestTracker>());
             dispatcher.UseErrorHandler();
             configure?.Invoke(sp, dispatcher);
             // LAZILY — resolving facades here would re-enter this very factory for any facade whose

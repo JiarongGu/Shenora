@@ -37,6 +37,29 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+- 🔴 **Request tracking was INERT in every app: nothing ever called `Begin`, so `LIST` answered empty,
+  `CANCEL` answered false and `REQUEST_UPDATED` never fired.** Tracking started inside `ModuleBase`, from
+  an `IIpcRequestTracker` each facade had to inject and forward through `base(logger, events, requests)` —
+  and not one module in the kit did. `FileDialogModule`, `MediaPlayerModule`, `WindowCommandModule`,
+  `DropZoneModule` and `IpcRequestsModule` all passed `base(logger)`. The only thing in the repo that
+  wired it was the desktop SAMPLE's own module, so the feature appeared to work in exactly the one place
+  anybody looked.
+  - **Fix: the DISPATCHER tracks, so there is nothing left to opt into.** `MessageDispatcher.DispatchAsync`
+    begins the scope, hands the scope's token down the pipeline and disposes it — for every module,
+    including a bare `IIpcModule` and an ad-hoc `MapRoute` lambda, neither of which could have wired
+    anything even if their author wanted to.
+  - ⚠ **The symptom was SILENCE.** Nothing threw, nothing logged, and the tracker's own tests were green
+    throughout because they drove it directly. An absent capability is indistinguishable from a working
+    one (D63) — this is the class's fifth instance and the audit it calls for is what found it.
+- 🔴 **A failed request was recorded as `Completed`, so the in-flight list disagreed with the response the
+  client got.** `IpcRequestState.Failed` was unreachable in practice: `ModuleBase` caught its own
+  exception and RETURNED an error response, after which the tracking scope disposed as a success.
+  `IIpcRequestScope.Fail` had no caller anywhere in the kit. The dispatcher can see the outcome — one
+  `IpcResponse` carries success, an app's structured failure, a cancellation and `NO_HANDLER` alike — so
+  it now records the same structured error the client was given.
+- **`CANCEL` could not cancel anything a route was actually observing.** The token the pipeline ran under
+  was the caller's lifetime, not the scope's, so `IIpcRequestTracker.Cancel` signalled a token nothing
+  was watching. The scope's token is the pipeline's now, which is what the route contract always said.
 - 🔴 **A registered `IMediaAudioConversion` was never consulted by the kit's default converter, and
   nothing said so (D59).** `Mp4Remuxer.ConvertAsync` — the overload every adoption example wires,
   documented as "the kit's default" — passed `conversion: null`. So a shell that had registered a working
@@ -51,6 +74,13 @@ at the first list and missed five more breaking changes.
     and the player alike, with no other change.
 
 ### Breaking
+
+- **`ModuleBase`'s third constructor parameter (`IIpcRequestTracker? requests`) is GONE.** Migration:
+  delete the argument and the injected dependency — `base(logger, events, requests)` becomes
+  `base(logger, events)`. Nothing else changes, and a module that used it gains tracking rather than
+  losing it, because the dispatcher now does the work. Removing it IS the fix above: keeping the
+  parameter would keep a wiring obligation that made a whole feature silently absent whenever it was
+  missed, which was always. The compiler names every site.
 
 - 🔴 **"Operations" is MERGED INTO `IpcRequest` and no longer exists** (D66, complete). Not a rename — a
   rename would have kept the parallel entity alive under a better spelling. The whole point is that the
@@ -464,6 +494,20 @@ at the first list and missed five more breaking changes.
     trigger to a single character.
 
 ### Added
+
+- **`EventMessage.CoalesceKey` / `IpcNotification.CoalesceKey` — an event may declare that it SUPERSEDES
+  an earlier undelivered one** with the same module, type, scope and key. `NotificationPump` applies it
+  when it drains, last-write-wins, and the survivor keeps its own later position.
+  - **Why:** the pump has always coalesced ROUND TRIPS — one message instead of a hundred — while still
+    carrying a hundred payloads inside it. A request reporting progress in a tight loop therefore cost the
+    page a hundred fold operations to render one number. This is an efficiency fix, not a correctness one:
+    folding all hundred and folding only the last reach the same state, which is exactly the property that
+    makes dropping them legal.
+  - ⚠ **Opt-in, and it must stay so.** The pump cannot tell a snapshot from a delta, and coalescing deltas
+    loses data — so only the emitter may set a key. The kit sets one on `REQUEST_UPDATED` (a whole status
+    snapshot) and deliberately NOT on `REQUEST_REMOVED`, whose payload is a batch of different ids.
+  - Host-side only (`[JsonIgnore]`, and absent from the TS mirror): by the time a batch leaves, the
+    coalescing has already happened and a client has nothing left to decide.
 
 - **`MediaPlayerBase` — the `IMediaPlayer` state machine, with the platform left abstract.** A shell now
   writes ~40 lines (a handle, four transport verbs, position/duration) instead of ~150. **Extracted from

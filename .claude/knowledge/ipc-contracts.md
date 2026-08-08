@@ -164,6 +164,15 @@ transport, or building the P6 adoption shims.
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so
   `WebViewIpcBridge.HandleIncomingAsync` still wraps dispatch + serialize (an unserializable
   handler result once escaped through the async-void handler = process death; found in review).
+  ⚠ **The contract extends to every SEAM the boundary itself calls, not just to handlers.** When
+  tracking moved into `DispatchAsync` it called `IIpcRequestTracker.Begin`/`Fail`/`Dispose` bare — and
+  that is a PUBLIC seam an app may implement, with `Fail` in the `catch` and `Dispose` in the `finally`,
+  i.e. the two places an exception escapes or REPLACES the response. Sabotage-verified: a throwing
+  `Dispose` propagated straight out of `DispatchAsync`. Guarded now, and the shape generalises —
+  **bookkeeping must never decide a request's fate**, so a faulty tracker dispatches untracked and logs
+  rather than turning a diagnostic loss into an outage. `IModuleContext.Report` is deliberately left
+  unguarded by contrast: it runs inside the module's own error boundary, so it degrades to one failed
+  request, and swallowing it would hide a broken tracker from the app that supplied it.
 - **An app-supplied payload never serializes unguarded — including on the OUTGOING timer.** The
   rule above covers the incoming path; the notification flush is the twin and was NOT guarded:
   `WebViewIpcBridge.TryBuildBatchJson` DRAINS the queue and then serializes, on a 50 ms WinForms
@@ -177,6 +186,17 @@ transport, or building the P6 adoption shims.
   re-entering the provider, and the cache entry isn't published yet: unbounded recursion, process
   death by StackOverflow, no exception and no log. Resolve lazily (a terminal middleware over a
   `Lazy<IModuleFacade[]>`) so the singleton is cached before enumeration.
+- **A batch COALESCES only what its EMITTER said may be coalesced.** `EventMessage.CoalesceKey` /
+  `IpcNotification.CoalesceKey` declare that a notification supersedes an earlier undelivered one with
+  the same module/type/scope/key; `NotificationPump` applies it at drain, last-write-wins, and the
+  survivor keeps its own later position. ⚠ **Never derive the key inside the pump.** It cannot tell a
+  full snapshot (safe to supersede) from a delta (`+3 bytes` — coalescing two of those loses one), and
+  only the emitter can. The kit sets it on `REQUEST_UPDATED`, whose payload is a whole
+  `IpcRequestStatus` the client already folds last-write-wins by id — that folding rule IS the licence
+  to drop the intermediates — and deliberately NOT on `REQUEST_REMOVED`, whose payload is a batch of
+  DIFFERENT ids, where superseding would silently lose removals. Host-side only (`[JsonIgnore]`, no TS
+  mirror): the coalescing has already happened by the time a batch leaves, so a client has nothing to
+  decide and shipping the key would invite it to re-implement a policy the host applied.
 - **Notifications are ALWAYS a batch** (a single event is a batch of one) — `category` alone
   discriminates, which is what lets the same envelope ride postMessage, WebSocket, or a mobile
   channel (D16). Don't reintroduce a single-notification shape or a synthetic batch module/type.
@@ -218,11 +238,32 @@ transport, or building the P6 adoption shims.
   module, with nothing to grep for.
 - 🔴 **A request's token IS the one a route observes, and CANCEL targets the request id.** Since D66
   there is no separate operation with a separate token: `IpcRequestTracker.Begin` links the caller's
-  lifetime into a scope token, `ModuleBase` hands THAT to the route, and `Cancel(requestId)` signals it.
+  lifetime into a scope token, `MessageDispatcher.DispatchAsync` hands THAT down the pipeline, and
+  `Cancel(requestId)` signals it.
   ⚠ The predecessor deliberately did the opposite — a fresh token per operation — because a request's
   own token died with its response, so capturing it would have killed a ten-minute deploy the moment the
   page navigated. The merge removed that gap instead of working around it: the request now outlives its
   own send, so its token is the right one to observe.
+- 🔴 **TRACKING BELONGS TO THE DISPATCH BOUNDARY, and putting it in `ModuleBase` made the whole feature
+  silently absent for a release** (2026-08-08). `ModuleBase` took an optional `IIpcRequestTracker` that
+  each facade had to inject and forward through `base(logger, events, requests)` — and not one module in
+  the kit did, so the only `Begin` call site in the repo never fired in a composed app. `LIST` answered
+  empty, `CANCEL` answered false, `REQUEST_UPDATED` never went out, nothing threw or logged, and the
+  tracker's own tests stayed green because they called it directly. **D63's class, and its fifth
+  instance.** Two independent reasons the boundary is the honest place, and the second is the one that
+  was missed: the dispatcher sees EVERY module (a bare `IIpcModule` and an ad-hoc `MapRoute` lambda could
+  never have wired anything), and it sees the OUTCOME — one `IpcResponse` carries success, an app's
+  structured failure, a cancellation and `NO_HANDLER` alike. `ModuleBase`'s `catch` could not: it
+  returned an error response and then let the scope dispose as `Completed`, so `IpcRequestState.Failed`
+  was unreachable and `IIpcRequestScope.Fail` had no caller anywhere.
+  **Generalize it:** when a capability needs every implementer to remember one line, the capability is in
+  the wrong place — put it where nothing can decline to opt in, and delete the parameter that asked.
+  ⚠ A route reaches its scope through an AMBIENT (`IpcRequestScopeAccessor`), matched BY REQUEST ID.
+  The id match is not paranoia: a route calling another module's `HandleMessageAsync` directly leaves the
+  outer scope genuinely ambient, and an unguarded read attributes the inner module's progress to the
+  outer request. The ambient does NOT leak upward out of an async method — `AsyncTaskMethodBuilder.Start`
+  restores the caller's ExecutionContext — so the explicit restore is belt-and-braces, not the guarantee.
+  That was measured by sabotage after being asserted the other way round from memory.
 - 🔴 **NOTHING is published until a request outlives the grace period, and that is the whole reason
   every request can be tracked without asking anyone to declare anything.**
   `IpcRequestTrackerOptions.GracePeriod` (50 ms, the notification pump's own flush interval) suppresses

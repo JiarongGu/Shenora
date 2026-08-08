@@ -12,9 +12,14 @@ namespace Shenora.Modules.FileDialog;
 public static class FileDialogServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the file-dialog route module. OPT-IN, like <see cref="IpcRequestServiceCollectionExtensions.AddShenoraRequests"/>:
-    /// an app whose page never picks a file should not carry the routes, and D21 says the kit ships the
-    /// primitive rather than the product.
+    /// Register the file-dialog route module. OPT-IN: an app whose page never picks a file should not
+    /// carry the routes, and D21 says the kit ships the primitive rather than the product.
+    /// <para>
+    /// ⚠ It used to cite <see cref="IpcRequestServiceCollectionExtensions.AddShenoraRequests"/> as the
+    /// comparable opt-in, which stopped being true when D64 made the framework default-on —
+    /// <c>ShenoraApplicationBuilder.Build</c> calls that one for every app. What keeps THIS one opt-in is
+    /// its dependency: the routes need an <see cref="IFileDialogs"/> only a shell can supply.
+    /// </para>
     /// <para>
     /// ⚠ <b>Requires an <see cref="IFileDialogs"/> in the container</b>, which the SHELL registers —
     /// <c>UseWindows</c> on the desktop, <c>UseAndroid</c>/<c>UseIOS</c> on Android/iOS. Call this after the shell, and

@@ -18,9 +18,13 @@ internal sealed class SampleModule(
     SecondaryWindows windows,
     IEventBus events,
     MainForm mainForm,
-    IUiDispatcher ui,
-    IIpcRequestTracker requests) : ModuleBase(events: events, requests: requests)
+    IUiDispatcher ui) : ModuleBase(events: events)
 {
+    // ⚠ This used to take an IIpcRequestTracker and forward it, and the sample was the ONLY thing in the
+    // repo that did — no kit module ever had, so `LIST` and `CANCEL` saw this app's routes and nothing
+    // else. Tracking is the dispatcher's now, so a module gets it by being dispatched at all. That the
+    // parameter could go without a single route changing IS the acceptance evidence.
+
     /// <summary>
     /// The SLOW route's independent "it actually started" signal — a substring of the native
     /// window's TITLE (never the page's HTML title; this app is frameless and draws its own title
