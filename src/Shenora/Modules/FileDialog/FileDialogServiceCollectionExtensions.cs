@@ -15,10 +15,12 @@ public static class FileDialogServiceCollectionExtensions
     /// Register the file-dialog route module. OPT-IN: an app whose page never picks a file should not
     /// carry the routes, and D21 says the kit ships the primitive rather than the product.
     /// <para>
-    /// ⚠ It used to cite <see cref="IpcRequestServiceCollectionExtensions.UseShenoraRequests"/> as the
-    /// comparable opt-in, which stopped being true when D64 made the framework default-on —
-    /// <c>ShenoraApplicationBuilder.Build</c> calls that one for every app. What keeps THIS one opt-in is
-    /// its dependency: the routes need an <see cref="IFileDialogs"/> only a shell can supply.
+    /// ⚠ It used to cite request tracking as the comparable opt-in, which stopped being true when D64 made
+    /// the framework default-on — <c>Build()</c> configures that one for every app, and its registration is
+    /// <c>internal</c> now precisely because there is no add-or-not choice to offer. What keeps THIS one
+    /// opt-in is its dependency: the routes need an <see cref="IFileDialogs"/> only a shell can supply, and
+    /// that is also why it stays PUBLIC — two shell packages call it, and a `ProjectReference` grants no
+    /// `internal` access.
     /// </para>
     /// <para>
     /// ⚠ <b>Requires an <see cref="IFileDialogs"/> in the container</b>, which the SHELL registers —

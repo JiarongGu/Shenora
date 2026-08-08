@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shenora;
+using Shenora.Core.Ipc;
 using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Modules.Media;
+using Shenora.Modules.Requests;
 
 namespace Shenora.Tests.Core;
 
@@ -135,6 +137,43 @@ public class CapabilityOverrideTests
         using var app = builder.Build();
 
         Assert.Equal(3, app.Services.GetRequiredService<MissionSchedulerOptions>().GlobalLaneCapacity);
+    }
+
+    /// <summary>
+    /// 🔴 Request tracking is a CORE module — the framework does not work without it — so the app-facing
+    /// surface CONFIGURES it rather than adding it, the way `WebApplication.CreateBuilder` gives you
+    /// Kestrel and you configure it instead of calling `AddKestrel()`. Owner, 2026-08-08:
+    /// <i>"more like a webapp config as .net … this entire framework cannot work without those core modules."</i>
+    /// <para>
+    /// The point of the test is that the app NEVER asks for tracking and still gets it, configured.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_core_module_is_configured_by_the_app_setup_never_added_by_it()
+    {
+        var builder = Builder();
+        builder.UseRequests(x => x.GracePeriod = TimeSpan.FromMilliseconds(80));
+
+        using var app = builder.Build();
+
+        Assert.Equal(TimeSpan.FromMilliseconds(80),
+                     app.Services.GetRequiredService<IpcRequestTrackerOptions>().GracePeriod);
+        // Still present and still wired, because it is not optional.
+        Assert.NotNull(app.Services.GetRequiredService<IIpcRequestTracker>());
+    }
+
+    /// <summary>
+    /// And an app that configures NOTHING still gets the core module — the half that would make the
+    /// "configure, don't add" framing a lie if it broke.
+    /// </summary>
+    [Fact]
+    public void A_core_module_is_present_even_when_the_app_says_nothing()
+    {
+        using var app = Builder().Build();
+
+        Assert.NotNull(app.Services.GetRequiredService<IIpcRequestTracker>());
+        Assert.Equal(TimeSpan.FromMilliseconds(50),
+                     app.Services.GetRequiredService<IpcRequestTrackerOptions>().GracePeriod);
     }
 
     private sealed class Marker;

@@ -231,9 +231,32 @@ so an app wins from either side of a `TryAdd`, and moving the callback to run la
 green. What ordering actually buys is a SINGLE registration, with no kit default left shadowed behind the
 app's; that is the only order-sensitive property and it now has its own assertion.
 
-- [ ] **`UseShenoraRequests` and `UseShenoraFileDialogs` do not have the overload.** Both live on
-  `IServiceCollection`, where the caller already HAS the container, so the argument for adding it is much
-  weaker than it was for the builder-level three. Decide it rather than doing it by symmetry.
+**DECIDED (owner, 2026-08-08): NEITHER needs the overload, and for different reasons.** Owner: *"1 should
+be setup by default, 2 both kind related to platform build anyway."* Checked against every call site:
+
+- **`UseShenoraRequests` is a DEFAULT.** Its only caller in the repo is `ShenoraApplicationBuilder.Build`.
+  No app, sample or shell calls it. Configuring it does not need the method either — registering an
+  `IpcRequestTrackerOptions` before `Build()` wins through `TryAdd`, which is what
+  `IpcRequestDispatchTests` already does and documents. An overload would add surface to something an app
+  should rarely call at all.
+- **`UseShenoraFileDialogs` is SHELL wiring.** `WinFormsHost` and `MobileHostExtensions` call it — two
+  packages, so it must stay PUBLIC (`generic-library.md`: cross-package consumption inside the kit is a
+  consumer scenario; a `ProjectReference` grants no `internal` access). A shell has no app options to
+  configure, so a configure callback would have no caller.
+
+**✅ ANSWERED, and the framing came from the owner rather than from the call-site count.** *"Think about
+this is more like a webapp config as .net so you can have a setup for the application itself, because this
+entire framework cannot work without those core modules."*
+
+That reframes it: a CORE module is not something an app ADDS, so the question was never "public or
+internal" — it was **which surface an app should meet it through.** `WebApplication.CreateBuilder` gives
+you Kestrel and you configure it; nobody calls `AddKestrel()`. So request tracking's `IServiceCollection`
+registration went `internal`, and the app-facing surface is **`builder.UseRequests(x => …)`** beside the
+other three. `IpcRequestServiceCollectionExtensions` → `IpcRequestExtensions`.
+
+⚠ **`UseShenoraFileDialogs` stays PUBLIC and unchanged** — it is shell wiring called from two packages,
+and a `ProjectReference` grants no `internal` access. Same question, opposite answer, which is why the two
+were worth separating rather than deciding by symmetry.
 
 **DONE (2026-08-08): the pipeline surface is on `ShenoraApplication`.** `app.UseFiles(…)`,
 `app.UseMediaPlayer()`, `app.MapModule<T>()` and the raw `app.Use(…)`, over a `WebViewPipeline` the builder

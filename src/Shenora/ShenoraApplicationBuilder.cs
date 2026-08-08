@@ -123,7 +123,7 @@ public sealed class ShenoraApplicationBuilder
         // that platform's shell instead (`UseWindows`/`UseAndroid`/`UseIOS`), because only a shell knows
         // whether it can satisfy it; a platform that cannot registers nothing and the page learns that
         // from the ready handshake's capability list (D36) rather than from silence.
-        Services.UseShenoraRequests();
+        this.UseRequests();
         Services.UseMessageDispatcher();
 
         // The webview pipeline every window this app hosts will receive (D64). Registered here rather

@@ -119,6 +119,12 @@ AddMessageDispatcher     # -> UseMessageDispatcher
 AddShenoraRequests       # -> UseShenoraRequests
 AddShenoraFileDialogs    # -> UseShenoraFileDialogs
 AddIpcModule             # -> UseIpcModule
+# --- 2026-08-08: a CORE module is configured, never added -----------------------------------------
+# Owner: "more like a webapp config as .net … this entire framework cannot work without those core
+# modules". So request tracking's IServiceCollection registration went INTERNAL and the app-facing
+# surface is builder.UseRequests(...). ⚠ `UseShenoraRequests` is NOT listed: it still exists as an
+# internal method, and listing it would fail the gate on the kit's own call site.
+IpcRequestServiceCollectionExtensions   # -> IpcRequestExtensions (it extends the BUILDER now too)
 # --- 2026-08-07, D65: the shell entry points are named for the PLATFORM ---------------------------
 # D37 made the package set one-per-platform in 0.5.0 and the ENTRY POINTS never followed: the calls
 # were still named for a UI framework and for a category. A platform is the one thing an adopter

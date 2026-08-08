@@ -75,6 +75,22 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **A CORE module is CONFIGURED by the application's setup, never added to it.** Request tracking's
+  `IServiceCollection` registration is now `internal`; the app-facing surface is
+  **`builder.UseRequests(x => …)`**, beside `UseMissions`/`UseFileSystem`/`UseMediaPlayer`. The class
+  `IpcRequestServiceCollectionExtensions` is renamed `IpcRequestExtensions` (it extends the builder now).
+  - Migration: `services.UseShenoraRequests(new IpcRequestTrackerOptions { … })` becomes
+    `builder.UseRequests(x => { … })`. An `(options, services)` overload substitutes collaborators, like
+    the other three.
+  - **Why:** owner, *"think about this is more like a webapp config as .net so you can have a setup for
+    the application itself, because this entire framework cannot work without those core modules."* That
+    is `WebApplication.CreateBuilder`'s model exactly — Kestrel is THERE and you never call
+    `AddKestrel()`. Exposing an "add" for something `Build()` performs unconditionally offered a choice
+    that does not exist.
+  - ⚠ **Nothing is switched off by this.** Tracking was already on for every application (D64); only the
+    way you configure it changed. There is deliberately still no way to disable it: a request finishing
+    inside the grace period already costs no event, no history entry and no wire traffic, so an "off"
+    switch would save nothing that exists.
 - 🔴 **ONE verb for a pipeline stage, and it is `Use`.** Four entry points renamed:
   `AddMessageDispatcher`→`UseMessageDispatcher`, `AddShenoraRequests`→`UseShenoraRequests`,
   `AddShenoraFileDialogs`→`UseShenoraFileDialogs`, `AddIpcModule<T>`→`UseIpcModule<T>`. Migration is the
