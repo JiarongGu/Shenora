@@ -32,14 +32,26 @@ public sealed class MissionOperationObserver(IOperationRegistry operations, stri
     private readonly ConcurrentDictionary<string, IOperation> _live = new();
 
     /// <summary>
-    /// Opens the operation while the item is still QUEUED, then immediately parks it with
-    /// <c>Wait("queued")</c> — the shape <see cref="IOperationRegistry.Start"/> documents for an app
-    /// whose own queue sits in front of the registry. Without it, work waiting behind a claim would
-    /// be invisible until it started, which is exactly when a user asks "is it stuck?".
+    /// 🔴 <b>Deliberately does NOTHING now (D66, 2026-08-08).</b> It used to open the operation here and
+    /// park it with <c>Wait("queued")</c> — and this observer was the ONLY code in the repo that ever
+    /// drove <c>Wait</c>/<c>Resume</c>, which is precisely what settled the decision: a queued mission is
+    /// host-initiated work, not a request, and a request is in flight or done.
+    /// <para>
+    /// So queue depth is the MISSION stream's business, not the request list's. An app that wants to show
+    /// "2 running, the rest queued" reads it from <see cref="IMissionObserver"/> — which it is already
+    /// implementing, right here — rather than borrowing a request handle to hold a state requests do not
+    /// have.
+    /// </para>
     /// </summary>
-    public void OnQueued(in MissionExecution mission)
+    public void OnQueued(in MissionExecution mission) { }
+
+    /// <summary>
+    /// Opens the operation when the work actually STARTS, which is the moment it becomes something in
+    /// flight. Called once per item, not once per retry.
+    /// </summary>
+    public void OnStarted(in MissionExecution mission)
     {
-        var operation = operations.Start(module, new OperationOptions
+        _live[mission.MissionId] = operations.Start(module, new OperationOptions
         {
             Kind = mission.Kind ?? "WORK",
             Title = new OperationLabel { Text = mission.Kind is { } kind ? $"{kind} ({mission.MissionId})" : mission.MissionId },
@@ -47,14 +59,6 @@ public sealed class MissionOperationObserver(IOperationRegistry operations, stri
             // must not advertise a cancel it cannot perform — see IOperationRegistry.Cancel.
             Cancellable = false,
         });
-        operation.Wait("queued");
-        _live[mission.MissionId] = operation;
-    }
-
-    /// <summary>Queued → running, on the same handle. Called once per item, not once per retry.</summary>
-    public void OnStarted(in MissionExecution mission)
-    {
-        if (_live.TryGetValue(mission.MissionId, out var operation)) operation.Resume();
     }
 
     /// <summary>

@@ -52,6 +52,28 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+- 🔴 **The operations WAITING band is gone — a request is IN FLIGHT or DONE** (D66, first slice). The
+  model is being folded into `IpcRequest` and sharpened toward `XMLHttpRequest`, which has no parked
+  state: one object, a state that advances, progress events, `abort()`.
+  - **Decided by usage, not taste.** The only code anywhere driving `Wait`/`Resume` was the sample's
+    `MissionOperationObserver`, wrapping a *queued mission* — host-initiated work, which D66 already
+    says does not fold into a request. No adopter drove `WAIT`/`RESUME`/`DISMISS`; only the kit's own
+    tests did. That is why the state never sat comfortably beside `running`/`completed`.
+  - **Removed, host:** `OperationStatus.Waiting`, `OperationInfo.WaitReason`, `IOperation.Wait`/
+    `Resume`, `IOperationRegistry.Dismiss`/`RequestResume`/`RequestWait`/`Find`, the
+    `OPERATION_RESUME_REQUESTED`/`OPERATION_WAIT_REQUESTED` events, and the `RESUME`/`WAIT`/`DISMISS`
+    routes. `Find` goes because its own doc named those routes as its entire justification.
+  - **Removed, client (`@shenora/react`):** the `waiting` status and state getter, `waitReason`, and the
+    `resume`/`wait`/`dismiss` actions.
+  - **Migrate:** queue depth is the mission stream's business — observe `IMissionObserver` (which an app
+    doing this is already implementing) instead of borrowing a request handle to hold a state requests
+    do not have. Everything else is unchanged: `LIST`, `CANCEL`, `CLEAR_FINISHED`, progress and the
+    terminal statuses all behave exactly as before.
+  - ⚠ **The removal is TESTED, not merely untested.** A theory asserts `RESUME`/`WAIT`/`DISMISS` now
+    answer `NO_ROUTE` and leave the operation untouched, and the wire-mirror test pins the client to
+    three routes and two events by COUNT — so a client still shipping the retired names fails rather
+    than passing by simply not being asked.
+
 - 🔴 **The mobile shells stop pretending two implementations are one type.** `src/Shenora.Mobile/` exists
   because both mobile shells are MAUI, and that reusability is real — the HybridWebView IPC transport, the
   UI dispatcher, the safe area, the interceptor, the host composition. It was **not** a place for two

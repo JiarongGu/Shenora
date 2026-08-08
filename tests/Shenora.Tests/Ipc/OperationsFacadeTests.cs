@@ -105,97 +105,31 @@ public class OperationsModuleTests
         Assert.Contains(remaining, o => o.Id == devDone.Id);
     }
 
-    [Fact]
-    public async Task RESUME_forwards_to_the_registry_and_answers_requested_true()
-    {
-        var (facade, registry) = Build();
-        var operation = registry.Start("SCAN", new OperationOptions { Kind = "ANALYSIS" });
-        operation.Wait("credentials");
-
-        var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("SHENORA.OPERATIONS", "RESUME", payload: new { operationId = operation.Id }));
-
-        Assert.True(response.Success);
-        Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
-        // Still there, still Waiting: RESUME ASKS, it does not act (0.2.0 design pass — this route
-        // used to remove a crash-checkpoint entry, the asymmetry that half of the feature carried).
-        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single(o => o.Id == operation.Id).Status);
-    }
-
-    [Fact]
-    public async Task RESUME_answers_requested_false_for_an_unknown_operation_id()
-    {
-        var (facade, _) = Build();
-
-        var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("SHENORA.OPERATIONS", "RESUME", payload: new { operationId = "whatever" }));
-
-        Assert.True(response.Success);   // the REQUEST still succeeds — only the resume itself is honestly false
-        Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
-    }
-
-    /// <summary>DISMISS mirrors CANCEL's shape (§5A.3, D23 amendment): `{ operationId }` → `{ dismissed }`.</summary>
-    [Fact]
-    public async Task DISMISS_dismisses_a_waiting_operation_by_id()
-    {
-        var (facade, registry) = Build();
-        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Wait("dns");
-
-        var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("SHENORA.OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
-
-        Assert.True(response.Success);
-        Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
-        Assert.Equal(OperationStatus.Cancelled, registry.GetAll().Single().Status);
-    }
-
     /// <summary>
-    /// The honest-refusal shape, same as CANCEL_answers_false_...: the REQUEST still succeeds; only
-    /// the dismiss itself is honestly false, because Dismiss refuses Running on purpose (that is
-    /// CANCEL's job, permission-checked against Cancellable — see IOperationRegistry.Dismiss's doc).
+    /// The WAITING band's three routes are GONE (D66) — and this asserts it rather than merely no longer
+    /// testing them, which is the difference between a removal and a gap.
+    /// <para>
+    /// ⚠ It is the deletion that needs covering, not the deletion's absence. Dropping the old tests would
+    /// have left the suite equally green whether the routes were removed or quietly still answering, and
+    /// a route that still works is a route an adopter can still call.
+    /// </para>
     /// </summary>
-    [Fact]
-    public async Task DISMISS_answers_false_and_leaves_a_running_operation_running()
+    [Theory]
+    [InlineData("RESUME")]
+    [InlineData("WAIT")]
+    [InlineData("DISMISS")]
+    public async Task The_retired_waiting_routes_are_no_longer_answered(string type)
     {
         var (facade, registry) = Build();
         var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
 
         var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("SHENORA.OPERATIONS", "DISMISS", payload: new { operationId = operation.Id }));
+            IpcRequests.Create("SHENORA.OPERATIONS", type, payload: new { operationId = operation.Id }));
 
-        Assert.True(response.Success);
-        Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("dismissed").GetBoolean());
+        Assert.False(response.Success);
+        Assert.Equal(IpcErrorCodes.NoRoute, response.Error!.Code);
+        // And the operation is untouched — a retired route must not half-work on its way out.
         Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);
-    }
-
-    /// <summary>WAIT mirrors RESUME's shape (generic-library audit finding 3, renamed from PAUSE): `{ operationId }` → `{ requested }`.</summary>
-    [Fact]
-    public async Task WAIT_forwards_to_the_registry_and_answers_requested_true_leaving_the_operation_running()
-    {
-        var (facade, registry) = Build();
-        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-
-        var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("SHENORA.OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
-
-        Assert.True(response.Success);
-        Assert.True(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
-        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);   // asking is not acting
-    }
-
-    [Fact]
-    public async Task WAIT_answers_requested_false_for_an_operation_that_is_not_running()
-    {
-        var (facade, registry) = Build();
-        var operation = registry.Start("DEPLOY", new OperationOptions { Kind = "PUSH" });
-        operation.Wait("dns");
-
-        var response = await facade.HandleMessageAsync(
-            IpcRequests.Create("SHENORA.OPERATIONS", "WAIT", payload: new { operationId = operation.Id }));
-
-        Assert.True(response.Success);
-        Assert.False(IpcJson.SerializeToElement(response.Data).GetProperty("requested").GetBoolean());
     }
 
     [Fact]

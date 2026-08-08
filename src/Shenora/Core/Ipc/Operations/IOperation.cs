@@ -41,7 +41,7 @@ public interface IOperation
     /// previous behavior forced <c>Progress = 100</c> unconditionally, which assumed every consumer
     /// measures in percent).
     /// </summary>
-    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Waiting"/> — a waiting operation can still complete once the human unblocks it out of band.</remarks>
+    /// <remarks>Accepts <see cref="OperationStatus.Running"/> — the only non-terminal state a request has.</remarks>
     void Complete();
 
     /// <summary>
@@ -52,11 +52,11 @@ public interface IOperation
     /// <param name="code">Error code / i18n key (e.g. <c>"IMPORT_FAILED"</c>).</param>
     /// <param name="parameters">Optional interpolation values for the client's translation.</param>
     /// <param name="message">Optional untranslated message for host logs only; never sent as the code.</param>
-    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Waiting"/> — a waiting operation can still fail on a deadline.</remarks>
+    /// <remarks>Accepts <see cref="OperationStatus.Running"/> — the only non-terminal state a request has.</remarks>
     void Fail(string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null);
 
     /// <summary>Finish, carrying the app's own structured failure through unchanged. Idempotent.</summary>
-    /// <remarks>Accepts <see cref="OperationStatus.Running"/> OR <see cref="OperationStatus.Waiting"/> — a waiting operation can still fail on a deadline.</remarks>
+    /// <remarks>Accepts <see cref="OperationStatus.Running"/> — the only non-terminal state a request has.</remarks>
     void Fail(OperationException error);
 
     /// <summary>
@@ -78,51 +78,11 @@ public interface IOperation
     /// </para>
     /// <para>
     /// This is also the exit <see cref="OperationRegistry"/>'s owner-path terminal cancel accepts from
-    /// ANY non-terminal status (§5A.2) — not only <see cref="OperationStatus.Running"/> — because a
-    /// <see cref="OperationStatus.Waiting"/> body is still parked on this same token and must be able to
-    /// unwind the same way a running one does.
+    /// any non-terminal status, which since D66 means only <see cref="OperationStatus.Running"/> — a
+    /// request is in flight or done, so there is one live state to unwind from.
     /// </para>
     /// </summary>
     void Cancel();
 
-    /// <summary>
-    /// Wait: <see cref="OperationStatus.Running"/> → <see cref="OperationStatus.Waiting"/> (§5A.3),
-    /// for work that stops progressing WITHOUT crashing — the app names why with
-    /// <paramref name="reason"/>, from a host discovering its own blocker (expired cloud credentials, a
-    /// throttling provider, DNS not yet propagated) to a queue front-end parking a just-started
-    /// operation (<c>"queued"</c>) before real work begins. Called by the operation's OWN owner once it
-    /// has actually stopped — never by the kit itself. Deliberately distinct from
-    /// <see cref="IOperationRegistry.RequestWait"/> (generic-library audit finding 3, renamed from
-    /// <c>RequestPause</c>): that is the client ASKING; this is the state actually changing — the same
-    /// ASK/ACT split <see cref="IOperationRegistry.RequestResume"/> already draws against
-    /// <see cref="Resume"/>. A wait can originate either side of that split: the HOST's own discovery of
-    /// a blocker calls this directly with no ask involved; a human clicking Pause on visible work goes
-    /// through <c>RequestWait</c>/<c>WAIT</c> first, and the owner calls this once it has actually
-    /// honored that ask.
-    /// <para>
-    /// Ignored (logged, no-op) unless the operation is currently <see cref="OperationStatus.Running"/>
-    /// — the same honest-refusal shape as every other transition here.
-    /// </para>
-    /// </summary>
-    /// <param name="reason">
-    /// App-defined, like <see cref="OperationOptions.Kind"/> (e.g. <c>"credentials"</c>/<c>"dns"</c>/
-    /// <c>"queued"</c>/<c>"rate-limited"</c>) — the app's own taxonomy for what its UI offers; the kit
-    /// never interprets it, and ships no reason enum. Optional (generic-library audit finding 5): a
-    /// consumer whose wait is self-evident (the user clicked Pause) has nothing to name and should not
-    /// have to invent a filler string just to call this.
-    /// </param>
-    /// <param name="detail">Optional human-facing detail label, same shape as <see cref="Report"/>'s.</param>
-    void Wait(string? reason = null, OperationLabel? detail = null);
 
-    /// <summary>
-    /// Resume: <see cref="OperationStatus.Waiting"/> → <see cref="OperationStatus.Running"/>, clearing
-    /// <see cref="OperationInfo.WaitReason"/> (§5A.3). Called by the operation's own owner once it has
-    /// ACTUALLY resumed — never by the kit itself. Deliberately distinct from
-    /// <see cref="IOperationRegistry.RequestResume"/>: that is the client ASKING; this is the state
-    /// actually changing, the same split that fixed this branch's only Critical (§5A.4).
-    /// <para>
-    /// Ignored (logged, no-op) unless the operation is currently <see cref="OperationStatus.Waiting"/>.
-    /// </para>
-    /// </summary>
-    void Resume();
 }

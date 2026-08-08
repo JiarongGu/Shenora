@@ -61,16 +61,10 @@ interface Shenora.Core.Ipc.IOperation
   public abstract void Fail(Shenora.Core.Ipc.OperationException error)
   public abstract void Fail(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
   public abstract void Report(Shenora.Core.Ipc.OperationProgress? progress = null, Shenora.Core.Ipc.OperationLabel? detail = null)
-  public abstract void Resume()
-  public abstract void Wait(string? reason = null, Shenora.Core.Ipc.OperationLabel? detail = null)
 interface Shenora.Core.Ipc.IOperationRegistry
   public abstract Shenora.Core.Ipc.IOperation Start(string module, Shenora.Core.Ipc.OperationOptions options)
-  public abstract Shenora.Core.Ipc.IOperation? Find(string id)
   public abstract System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public abstract bool Cancel(string id)
-  public abstract bool Dismiss(string id)
-  public abstract bool RequestResume(string id)
-  public abstract bool RequestWait(string id)
   public abstract string Run(string module, Shenora.Core.Ipc.OperationOptions options, System.Func<Shenora.Core.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public abstract void ClearFinished(string? module = null, string? scope = null)
 static class Shenora.Core.Ipc.IpcCategories
@@ -204,9 +198,7 @@ sealed class Shenora.Core.Ipc.NotificationPumpOptions : System.IEquatable<Shenor
   public static bool op_Inequality(Shenora.Core.Ipc.NotificationPumpOptions? left, Shenora.Core.Ipc.NotificationPumpOptions? right)
 static class Shenora.Core.Ipc.OperationEvents
   public const string Removed = "OPERATION_REMOVED"
-  public const string ResumeRequested = "OPERATION_RESUME_REQUESTED"
   public const string Updated = "OPERATION_UPDATED"
-  public const string WaitRequested = "OPERATION_WAIT_REQUESTED"
 class Shenora.Core.Ipc.OperationException : System.Exception
   public .ctor(string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null, System.Exception? innerException = null)
   public .ctor(string code, string paramKey, string paramValue, string? message = null)
@@ -233,7 +225,6 @@ sealed class Shenora.Core.Ipc.OperationInfo : System.IEquatable<Shenora.Core.Ipc
   public static bool op_Equality(Shenora.Core.Ipc.OperationInfo? left, Shenora.Core.Ipc.OperationInfo? right)
   public static bool op_Inequality(Shenora.Core.Ipc.OperationInfo? left, Shenora.Core.Ipc.OperationInfo? right)
   public string? Scope { get; init; }
-  public string? WaitReason { get; init; }
 sealed class Shenora.Core.Ipc.OperationLabel : System.IEquatable<Shenora.Core.Ipc.OperationLabel>
   public .ctor(string? Text = null, string? Key = null, System.Collections.Generic.IReadOnlyDictionary<string, string>? Parameters = null)
   public Shenora.Core.Ipc.OperationLabel <Clone>$()
@@ -276,12 +267,8 @@ sealed class Shenora.Core.Ipc.OperationProgress : System.IEquatable<Shenora.Core
 sealed class Shenora.Core.Ipc.OperationRegistry : Shenora.Core.Ipc.IOperationRegistry, System.IDisposable
   public .ctor(Shenora.Core.Events.IEventBus bus, Shenora.Core.Ipc.OperationRegistryOptions? options = null)
   public Shenora.Core.Ipc.IOperation Start(string module, Shenora.Core.Ipc.OperationOptions options)
-  public Shenora.Core.Ipc.IOperation? Find(string id)
   public System.Collections.Generic.IReadOnlyList<Shenora.Core.Ipc.OperationInfo> GetAll(string? module = null, string? scope = null)
   public bool Cancel(string id)
-  public bool Dismiss(string id)
-  public bool RequestResume(string id)
-  public bool RequestWait(string id)
   public string Run(string module, Shenora.Core.Ipc.OperationOptions options, System.Func<Shenora.Core.Ipc.IOperation, System.Threading.CancellationToken, System.Threading.Tasks.Task> work)
   public void ClearFinished(string? module = null, string? scope = null)
   public void Dispose()
@@ -297,7 +284,6 @@ enum Shenora.Core.Ipc.OperationStatus (int)
   public const Shenora.Core.Ipc.OperationStatus Completed = 1
   public const Shenora.Core.Ipc.OperationStatus Failed = 2
   public const Shenora.Core.Ipc.OperationStatus Running = 0
-  public const Shenora.Core.Ipc.OperationStatus Waiting = 4
   public int value__
 static class Shenora.Core.Ipc.PayloadHelper
   public static T GetOptionalValue<T>(System.Text.Json.JsonElement? payload, string key)
@@ -1253,10 +1239,7 @@ sealed class Shenora.Modules.Operations.OperationsModule : Shenora.Core.Ipc.Modu
   public .ctor(Shenora.Core.Ipc.IOperationRegistry registry, Shenora.Core.Ipc.OperationRegistryOptions? options = null, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Operations.OperationsModule>? logger = null)
   public const string CancelType = "CANCEL"
   public const string ClearFinishedType = "CLEAR_FINISHED"
-  public const string DismissType = "DISMISS"
   public const string ListType = "LIST"
-  public const string ResumeType = "RESUME"
-  public const string WaitType = "WAIT"
   public override string ModuleName { get; }
 interface Shenora.Modules.Platform.ILiveActivities
   public abstract string? Start(Shenora.Modules.Platform.LiveActivityState state)

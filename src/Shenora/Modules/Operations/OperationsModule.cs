@@ -26,32 +26,18 @@ namespace Shenora.Modules.Operations;
 /// Registered opt-in via <see cref="OperationServiceCollectionExtensions.AddShenoraOperations"/>.
 /// </para>
 /// <para>
-/// <c>RESUME</c> forwards <c>{ operationId }</c> straight to
-/// <see cref="IOperationRegistry.RequestResume"/> and answers <c>{ requested: bool }</c> — the same
-/// honest-bool shape as <c>WAIT</c>, and its exact mirror: the request always succeeds, and the bool
-/// says whether the operation actually was waiting and eligible to be asked. Asking is not acting —
-/// the owning module's own <see cref="IOperation.Resume"/> is what restarts the work.
-/// </para>
-/// <para>
 /// The route types are also public constants (<see cref="ListType"/>/<see cref="CancelType"/>/
-/// <see cref="ClearFinishedType"/>/<see cref="ResumeType"/>/<see cref="DismissType"/>/
-/// <see cref="WaitType"/>), matching <see cref="OperationEvents"/>'s own const shape — an app or
-/// test matches by symbol, and <c>WireMirrorTests</c> pins them against the client's route literals
+/// <see cref="ClearFinishedType"/>), matching <see cref="OperationEvents"/>'s own const shape — an app
+/// or test matches by symbol, and <c>WireMirrorTests</c> pins them against the client's route literals
 /// so a host rename cannot silently leave the client deaf.
 /// </para>
 /// <para>
-/// <c>WAIT</c> (generic-library audit finding 3, renamed from <c>PAUSE</c>) forwards
-/// <c>{ operationId }</c> to <see cref="IOperationRegistry.RequestWait"/> and answers
-/// <c>{ requested: bool }</c> — the same honest-bool shape as <c>RESUME</c>: the request always
-/// succeeds, and the bool says whether the operation actually was running and eligible to be asked.
-/// §5A.3 (D23) reasoned "pausing is the HOST's own knowledge" from ONE app's wait semantics — a host
-/// discovering its own blocker (expired credentials, DNS not yet propagated). That does not hold for
-/// the equally-common shape the kit itself already names as a consumer (a download-manager-style
-/// activity panel, "a download service starting an installer fetch"): a human clicking Pause on
-/// visible work. <c>WAIT</c> asks; it does not act — <see cref="IOperationRegistry.RequestWait"/>
-/// leaves the entry untouched, and the owning module's OWN <see cref="IOperation.Wait"/> is what
-/// actually stops the work and publishes the transition, same split as <c>RESUME</c> vs
-/// <see cref="IOperation.Resume"/>.
+/// 🔴 <b>THREE routes, and the three that went are the point (D66, 2026-08-08).</b> <c>RESUME</c>,
+/// <c>WAIT</c> and <c>DISMISS</c> were the WAITING band's control surface, and the band described
+/// host-initiated work rather than a request — the only code that ever drove them wrapped a queued
+/// MISSION. What is left is what an <c>XMLHttpRequest</c> actually offers: see what is in flight
+/// (<c>LIST</c>), abort one (<c>CANCEL</c>), and forget the finished ones (<c>CLEAR_FINISHED</c>).
+/// A request is in flight or done; there is no parked state to ask about.
 /// </para>
 /// </summary>
 public sealed class OperationsModule : ModuleBase
@@ -65,24 +51,9 @@ public sealed class OperationsModule : ModuleBase
     /// <summary>Route: drop retained finished history.</summary>
     public const string ClearFinishedType = "CLEAR_FINISHED";
 
-    /// <summary>Route: ask the owning module to resume a waiting operation — the mirror of <see cref="WaitType"/>.</summary>
-    public const string ResumeType = "RESUME";
-
-    /// <summary>
-    /// Route: ask the owning module to wait a running operation by id — <see cref="IOperationRegistry.RequestWait"/>.
-    /// Mirrors <see cref="ResumeType"/>'s shape (<c>{ operationId }</c> → <c>{ requested }</c>): the
-    /// request always succeeds, and the bool says whether the operation was actually running and
-    /// eligible to be asked.
-    /// </summary>
-    public const string WaitType = "WAIT";
-
-    /// <summary>
-    /// Route: decline a pending Waiting offer by id — <see cref="IOperationRegistry.Dismiss"/>.
-    /// Mirrors <see cref="CancelType"/>'s shape (<c>{ operationId }</c> → <c>{ dismissed }</c>), a
-    /// separate route rather than <see cref="CancelType"/> accepting more states, for the same reason
-    /// <see cref="IOperationRegistry.Dismiss"/> is a separate member from <see cref="IOperationRegistry.Cancel(string)"/>.
-    /// </summary>
-    public const string DismissType = "DISMISS";
+    // NO `RESUME`/`WAIT`/`DISMISS`. They were the WAITING band's routes and went with it (D66,
+    // 2026-08-08): the only code that ever drove them wrapped a queued MISSION, which is host-initiated
+    // work, not a request. What is left is what a request actually has — list it, cancel it, forget it.
 
     private readonly IOperationRegistry _registry;
     private readonly string _moduleName;
@@ -131,26 +102,6 @@ public sealed class OperationsModule : ModuleBase
                 var clearScope = PayloadHelper.GetOptionalValue<string>(request.Payload, "scope");
                 _registry.ClearFinished(clearModule, clearScope);
                 return Done();
-
-            case ResumeType:
-                var resumeId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
-                var requested = _registry.RequestResume(resumeId);
-                return Task.FromResult<object?>(new { requested });
-
-            case DismissType:
-                var dismissId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
-                // Always a response, honestly, same shape as CANCEL: Dismiss() itself refuses (and
-                // changes nothing) for Running or an unknown/already-terminal id — this route just
-                // forwards that bool rather than assuming success.
-                var dismissed = _registry.Dismiss(dismissId);
-                return Task.FromResult<object?>(new { dismissed });
-
-            case WaitType:
-                var waitId = PayloadHelper.GetRequiredValue<string>(request.Payload, "operationId");
-                // Same honest-bool shape as RESUME: RequestWait() itself refuses (and changes
-                // nothing) for anything not Running — this route just forwards that bool.
-                var waitRequested = _registry.RequestWait(waitId);
-                return Task.FromResult<object?>(new { requested = waitRequested });
 
             default:
                 throw UnknownType(request);   // ModuleBase owns the shape (P5.5 H4.5)

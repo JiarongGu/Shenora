@@ -194,13 +194,18 @@ function SlowPanel({ hosted }: { hosted: boolean }) {
  * kit ships no such adapter: execution must not learn what an operation is (D19/D20).
  *
  * Four items are submitted at once. Two contend for ONE path and can never overlap; two touch
- * disjoint paths and can. A lane of capacity 2 caps the whole batch, so the counts below settle at
- * `2 running` while the rest sit `queued` — which is the app calling `op.Wait("queued")` the instant
- * it opens the operation, so work waiting behind a claim is visible instead of looking stuck.
+ * disjoint paths and can. A lane of capacity 2 caps the whole batch, so the count below settles at
+ * `2 running` while the rest wait their turn.
+ *
+ * ⚠ QUEUED WORK IS NOT LISTED HERE ANY MORE (D66, 2026-08-08). The app used to call `op.Wait("queued")`
+ * the instant it opened the operation, and that was the ONLY code anywhere driving the waiting band —
+ * which is what settled the decision to cut it: a queued mission is host-initiated work, not a request,
+ * and a request is in flight or done. Queue depth belongs to the mission stream the app is already
+ * observing (`IMissionObserver`), not to the request list. Showing it again is a sample task, not a
+ * kit one.
  */
 function SchedulerPanel({ hosted }: { hosted: boolean }) {
   const running = useShenoraOperations((s) => s.running.filter((o) => o.module === 'SAMPLE_LOGIC'));
-  const queued = useShenoraOperations((s) => s.waiting.filter((o) => o.module === 'SAMPLE_LOGIC'));
   const kinds = (list: { kind: string }[]) =>
     list.map((o) => o.kind).sort().join(', ') || '—';
 
@@ -226,9 +231,9 @@ function SchedulerPanel({ hosted }: { hosted: boolean }) {
         2 chains (stage ∥, land 1-at-a-time)
       </button>
       {' '}
-      <span style={running.length || queued.length ? value : { color: '#9a9a9a' }}>
-        {running.length || queued.length
-          ? `running ${running.length} [${kinds(running)}] · queued ${queued.length} [${kinds(queued)}]`
+      <span style={running.length ? value : { color: '#9a9a9a' }}>
+        {running.length
+          ? `running ${running.length} [${kinds(running)}]`
           : 'scheduler: idle'}
       </span>
     </p>

@@ -51,42 +51,11 @@ public class OperationLifecycleInvariantTests
                 registry => registry.Start("TEST", new OperationOptions { Kind = "X", Cancellable = true }).Id,
                 (registry, id) => registry.Cancel(id)),
 
-            // Waiting's sanctioned exit under test is Dismiss — the fix this whole feature exists to
-            // add (§5A.2/§5A.3). Complete/Fail/Cancel(id) are ALSO valid exits (see
-            // OperationRegistryTests), but Dismiss is the one the sabotage below targets.
-            [OperationStatus.Waiting] = (
-                registry =>
-                {
-                    var operation = registry.Start("TEST", new OperationOptions { Kind = "X" });
-                    operation.Wait("reason");
-                    return operation.Id;
-                },
-                (registry, id) => registry.Dismiss(id)),
+            // ONE entry since D66 cut the waiting band, and the test is still worth every line: it
+            // enumerates OperationStatus REFLECTIVELY, so the day someone adds a non-terminal status
+            // without a sanctioned exit, this fails by name rather than stranding every operation that
+            // reaches it. A shrinking map does not weaken a guard that reads the enum itself.
         };
-
-    /// <summary>
-    /// <b>The ASK routes are not exits, and this pins that they never became one.</b>
-    /// <see cref="IOperationRegistry.RequestWait"/> and <see cref="IOperationRegistry.RequestResume"/>
-    /// both return <c>true</c> without moving the operation anywhere — asking is not acting. That
-    /// matters to THIS file specifically: §5A.1's original bug was a status whose only "exit"
-    /// (<c>RequestResume</c>) did not reach a terminal state at all, it merely removed the entry. The
-    /// removal is gone with the crash-checkpoint half (0.2.0 design pass), so the honest statement now
-    /// is that these two routes are not exits and the sweep above must not be able to mistake them for
-    /// one.
-    /// </summary>
-    [Fact]
-    public void The_ask_routes_are_not_exits_they_leave_the_operation_exactly_where_it_was()
-    {
-        var registry = BuildRegistry();
-        var operation = registry.Start("TEST", new OperationOptions { Kind = "X" });
-
-        Assert.True(registry.RequestWait(operation.Id));
-        Assert.Equal(OperationStatus.Running, registry.GetAll().Single().Status);   // still Running: asking ≠ acting
-
-        operation.Wait("reason");                                                    // the OWNER acts
-        Assert.True(registry.RequestResume(operation.Id));
-        Assert.Equal(OperationStatus.Waiting, registry.GetAll().Single().Status);   // still Waiting, and still THERE
-    }
 
     private static OperationRegistry BuildRegistry() =>
         new(new EventBus(), new OperationRegistryOptions { ProgressInterval = TimeSpan.Zero });

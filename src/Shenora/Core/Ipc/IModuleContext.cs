@@ -49,14 +49,9 @@ public interface IModuleContext
     /// request, and capturing the request token kills it the moment the page navigates.
     /// </para>
     /// <para>
-    /// <b>Waiting by returning</b> (§5A.3): <paramref name="work"/> can call <c>op.Wait(reason)</c>
-    /// and then simply RETURN instead of throwing — <c>Run</c> only implicitly completes the
-    /// operation when it is STILL <see cref="OperationStatus.Running"/> once <paramref name="work"/>
-    /// finishes, so a body that waited and returned is left exactly as
-    /// <see cref="OperationStatus.Waiting"/>, with no live body watching it. Resuming it from there is
-    /// the APP's job — the same handle's <c>op.Resume()</c> if the app kept a reference, or its own
-    /// restart path otherwise. This is deliberate: completing it here anyway would be a third lie
-    /// alongside "keep it Running" and "Fail it", the two lies §5A.2 exists to remove.
+    /// A body that returns without throwing COMPLETES the operation — there is no third outcome now
+    /// that the waiting band is gone (D66). Work that parks awaiting a human is host-initiated work,
+    /// not a request, and belongs on the event stream a mission already has.
     /// </para>
     /// </summary>
     string Run(OperationOptions options, Func<IOperation, CancellationToken, Task> work);

@@ -174,54 +174,7 @@ describe('operations store', () => {
     expect(Object.keys(store.getState().byId).sort()).toEqual(['op-1', 'op-2']);
   });
 
-  it('resume does not locally mutate state — only the hosts OPERATION_REMOVED does', () => {
-    const { store, bus } = harness([]);
-    store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'waiting' }));
-
-    store.actions.resume('op-1');
-
-    expect(store.getState().byId['op-1']).toBeDefined();
-  });
-
-  it('keeps a waiting operation out of both running and finished', () => {
-    // `finished` deliberately excludes `waiting` (a pending resume offer, not terminal history) — an
-    // undocumented carve-out with no coverage is how a later cleanup silently changes behaviour.
-    const { store, bus } = harness([]);
-    store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'waiting' }));
-
-    expect(store.getState().running).toEqual([]);
-    expect(store.getState().finished).toEqual([]);
-    expect(store.getState().byId['op-1']).toBeDefined();
-  });
-
-  /**
-   * The `waiting` derived getter (§5A.2, D23 amendment) — the WHOLE waiting band alongside
-   * `running`/`finished`. `OperationStatus` carries only one waiting value now (the former
-   * `paused`/`interrupted` pair collapsed into it, since every host transition already treated them
-   * as one band, and the 0.2.0 design pass then cut the crash-checkpoint way of reaching it too), so
-   * there is exactly one kind of entry in this band and nothing for a consumer to disambiguate.
-   */
-  it('exposes waiting operations separately from running and finished', () => {
-    const { store, bus } = harness([]);
-    store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ id: 'op-2', status: 'waiting' }));
-
-    expect(store.getState().waiting.map((o) => o.id)).toEqual(['op-2']);
-    expect(store.getState().running.map((o) => o.id)).toEqual(['op-1']);
-    expect(store.getState().finished).toEqual([]);
-  });
-
-  /**
-   * The client mirror of the host's `OperationLifecycleInvariantTests` (§5A.1): enumerate the LIVE
-   * `OperationStatuses` object — never a hardcoded list — so a status added later with no band shows
-   * up as a FAILURE here instead of silently belonging nowhere, which is exactly how `interrupted`
-   * went unnoticed before `waiting` existed as its own getter. It must stay green for any future
-   * status too.
-   */
-  it('every live status belongs to exactly one band: running, waiting, or finished', () => {
+  it('every live status belongs to exactly one band: running or finished', () => {
     const statuses = Object.values(OperationStatuses);
     const { store, bus } = harness([]);
     store.subscribe(() => {});
@@ -232,9 +185,8 @@ describe('operations store', () => {
     const state = store.getState();
     const bandsOf = (id: string): string[] => {
       const bands: string[] = [];
-      if (state.running.some((o) => o.id === id)) bands.push('running');
-      if (state.waiting.some((o) => o.id === id)) bands.push('waiting');
-      if (state.finished.some((o) => o.id === id)) bands.push('finished');
+      if (state.running.some((o: { id: string }) => o.id === id)) bands.push('running');
+      if (state.finished.some((o: { id: string }) => o.id === id)) bands.push('finished');
       return bands;
     };
 
@@ -244,40 +196,4 @@ describe('operations store', () => {
     });
   });
 
-  /**
-   * `dismiss` (§5A.3, D23 amendment) mirrors `cancel`'s shape — no optimistic local prune, because
-   * the host's Dismiss transitions the entry to `cancelled` and publishes an ordinary
-   * OPERATION_UPDATED snapshot for it (unlike clearFinished, which removes entries with no
-   * corresponding snapshot of their own and is why OPERATION_REMOVED exists).
-   */
-  it('dismiss posts the DISMISS route with the operation id and does not touch local state', () => {
-    const { store, transport } = harness([]);
-    store.subscribe(() => {});
-
-    store.actions.dismiss('op-1');
-
-    const request = transport.lastRequest<{ operationId: string }>();
-    expect(request.type).toBe('DISMISS');
-    expect(request.payload).toEqual({ operationId: 'op-1' });
-  });
-
-  /**
-   * FINDING 3 (Important, generic-library audit): the kit shipped RESUME/DISMISS but no client route
-   * to ASK the host to wait running work — a real gap for the download-manager/activity-panel shape
-   * the kit itself already names as a consumer. `wait` (renamed from `pause`) mirrors `dismiss`'s
-   * shape exactly: no optimistic local prune, since asking never changes the state by itself (the
-   * owning module's own `IOperation.Wait` is what publishes the transition).
-   */
-  it('wait posts the WAIT route with the operation id and does not touch local state', () => {
-    const { store, transport, bus } = harness([]);
-    store.subscribe(() => {});
-    bus.emit('SHENORA.OPERATIONS', 'OPERATION_UPDATED', info({ status: 'running' }));
-
-    store.actions.wait('op-1');
-
-    const request = transport.lastRequest<{ operationId: string }>();
-    expect(request.type).toBe('WAIT');
-    expect(request.payload).toEqual({ operationId: 'op-1' });
-    expect(store.getState().byId['op-1']?.status).toBe('running');   // unchanged — asking is not acting
-  });
 });

@@ -15,25 +15,9 @@ export const OperationStatuses = {
   Completed: 'completed',
   Failed: 'failed',
   Cancelled: 'cancelled',
-  /**
-   * Not progressing, awaiting a decision — the APP names why via {@link OperationInfo.waitReason}
-   * (e.g. `'credentials'`/`'dns'`/`'queued'`/`'rate-limited'`), never a kit-owned reason enum. Not
-   * one of the terminal statuses in {@link OperationsState.finished}, and never pruned as history —
-   * a waiting entry is a pending offer, not something finished.
-   *
-   * Reached ONE way, and that is the point: the host's `IOperation.Wait` on a live operation. The
-   * body is parked, not gone, so there is always something to resume. Exits via the host's
-   * `IOperation.Resume` (back to `running`), the `DISMISS` route (to `cancelled`), or a direct
-   * complete/fail.
-   *
-   * Two simplifications got it here, both undoing the same mistake — encoding HOW an entry arrived
-   * rather than WHAT state it is in. It was once two values (`paused` and `interrupted`) that every
-   * host transition already treated as one band, and the host once also accepted crash-checkpoint
-   * entries with no live body at all (`RegisterWaiting` + `resumePayload`), which forced every caller
-   * to answer "does this one have a handle?". The checkpoint half was cut in 0.2.0: crash recovery is
-   * the APP's business — it owns the checkpoint, and a resumed run is a fresh `Start()` like any other.
-   */
-  Waiting: 'waiting',
+  // NO 'waiting'. A request is IN FLIGHT or DONE — the XHR model this mirrors has no parked state,
+  // and neither does the host since D66. Work that parks awaiting a human is host-initiated work
+  // (a queued mission), which reports on its own event stream rather than as a request.
 } as const;
 
 /** One of {@link OperationStatuses}. */
@@ -47,7 +31,7 @@ export type OperationStatus = (typeof OperationStatuses)[keyof typeof OperationS
  */
 export const OperationEventTypes = {
   Updated: 'OPERATION_UPDATED',
-  ResumeRequested: 'OPERATION_RESUME_REQUESTED',
+
   /**
    * A client asked to wait a running operation (generic-library audit finding 3, renamed from
    * `PAUSE_REQUESTED`) — the owning module should call the host's `IOperation.Wait` once it has
@@ -55,7 +39,7 @@ export const OperationEventTypes = {
    * {@link ResumeRequested}: it targets the owning module's own service, not the generic operations
    * store.
    */
-  WaitRequested: 'OPERATION_WAIT_REQUESTED',
+
   /**
    * One or more operation ids left the host registry with no corresponding `Updated` snapshot —
    * `MaxHistory` eviction, `CLEAR_FINISHED`, and the interrupted-entry drop on `RESUME` (Finding 4,
@@ -77,16 +61,16 @@ export const OperationRoutes = {
   List: 'LIST',
   Cancel: 'CANCEL',
   ClearFinished: 'CLEAR_FINISHED',
-  Resume: 'RESUME',
+
   /** Decline a pending Waiting offer by id — mirrors {@link Cancel}'s shape. */
-  Dismiss: 'DISMISS',
+
   /**
    * Ask the owning module to wait a running operation by id (generic-library audit finding 3,
    * renamed from `PAUSE`) — mirrors {@link Resume}'s shape (`{ operationId }` → `{ requested }`).
    * Asking is not acting: the owning module's own `IOperation.Wait` is what actually stops the work
    * and publishes the transition, same split as {@link Resume} vs the host's `IOperation.Resume`.
    */
-  Wait: 'WAIT',
+
 } as const;
 
 /**
@@ -135,8 +119,6 @@ export interface OperationInfo {
   progress?: OperationProgress;
   title?: OperationLabel;
   detail?: OperationLabel;
-  /** Why the operation is `'waiting'` — an app-defined string, like `kind`; the kit never interprets it. */
-  waitReason?: string;
   error?: IpcError;
   cancellable: boolean;
   // No `resumePayload` (0.2.0 design pass): an opaque app checkpoint token used to ride here, for
@@ -177,13 +159,6 @@ export interface OperationsState {
   byId: Record<string, OperationInfo>;
   /** Every currently-running operation, in `byId` order. */
   readonly running: OperationInfo[];
-  /**
-   * The WAITING band (design §5A.2): stopped, resumable, awaiting a decision — exactly what
-   * `Dismiss`/`RequestResume` both accept, so a status bar can render "needs you" as one bucket.
-   * Every entry here reached the band the same way (a live `Wait()` on the host), so there is no
-   * sub-case to distinguish — see {@link OperationStatuses.Waiting}.
-   */
-  readonly waiting: OperationInfo[];
   /** Every operation that reached a terminal status (completed/failed/cancelled). */
   readonly finished: OperationInfo[];
 }
@@ -193,13 +168,6 @@ export interface OperationsActions {
   /** `CANCEL { operationId }` — the app-level cancel route `ipc-contracts` prescribes. */
   cancel: (operationId: string) => string;
   /**
-   * `DISMISS { operationId }` — decline a pending `waiting` offer (design §5A.3), mirroring
-   * {@link cancel}'s shape. No optimistic local prune: the host's `Dismiss` transitions the entry to
-   * `cancelled` and publishes an ordinary `OPERATION_UPDATED` snapshot for it (same as a real
-   * cancel), so the store already folds the result from the wire.
-   */
-  dismiss: (operationId: string) => string;
-  /**
    * `CLEAR_FINISHED { scope? }` — drop retained finished history, forwarding this store's own
    * configured scope (generic-library audit finding 1) so a scoped store's "clear completed" cannot
    * wipe another scope's history host-side. No local mutation here: the host's
@@ -208,27 +176,6 @@ export interface OperationsActions {
    * entry, added because removals had no wire event at all; that guess is retired now that one exists.
    */
   clearFinished: () => string;
-  /**
-   * `RESUME { operationId }` — ask the host to resume a waiting operation, mirroring {@link wait}.
-   * No local mutation: asking never changes state by itself — the owning module's own
-   * `IOperation.Resume` publishes the `running` transition, and the store folds it from the wire like
-   * any other `OPERATION_UPDATED`.
-   *
-   * This action carried an optimistic local prune through two designs and was the source of the
-   * release's only Critical — it deleted a row the host deliberately kept, making a still-waiting
-   * operation unreachable. The prune existed because the host's `RequestResume` was ASYMMETRIC
-   * (removing crash-checkpoint entries, keeping live ones). The 0.2.0 design pass cut the checkpoint
-   * half, so the asymmetry is gone at the source and there is nothing left for a client to mirror.
-   */
-  resume: (operationId: string) => string;
-  /**
-   * `WAIT { operationId }` — ask the owning module to wait a running operation (generic-library
-   * audit finding 3, renamed from `pause`), mirroring {@link dismiss}'s shape. No optimistic local
-   * prune: asking never changes the state by itself — the owning module's own `IOperation.Wait` is
-   * what publishes the `waiting` transition, and the store folds it from the wire like any other
-   * `OPERATION_UPDATED`.
-   */
-  wait: (operationId: string) => string;
 }
 
 function index(list: OperationInfo[]): Record<string, OperationInfo> {
@@ -245,9 +192,6 @@ function makeState(byId: Record<string, OperationInfo>): OperationsState {
     byId,
     get running() {
       return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Running);
-    },
-    get waiting() {
-      return Object.values(byId).filter((operation) => operation.status === OperationStatuses.Waiting);
     },
     get finished() {
       return Object.values(byId).filter((operation) => TERMINAL_STATUSES.has(operation.status));
@@ -320,8 +264,6 @@ export function createOperationsStore(
     },
     actions: ({ post }) => ({
       cancel: (operationId: string) => post(OperationRoutes.Cancel, { payload: { operationId } }),
-      dismiss: (operationId: string) => post(OperationRoutes.Dismiss, { payload: { operationId } }),
-      wait: (operationId: string) => post(OperationRoutes.Wait, { payload: { operationId } }),
       clearFinished: () =>
         // Forward THIS store's own configured scope (Finding 1, generic-library audit) — the same
         // key the LIST snapshot payload already carries above. No local mutation here any more
@@ -331,7 +273,6 @@ export function createOperationsStore(
         post(OperationRoutes.ClearFinished, {
           payload: options.scope !== undefined ? { scope: options.scope } : undefined,
         }),
-      resume: (operationId: string) => post(OperationRoutes.Resume, { payload: { operationId } }),
     }),
     scope: options.scope,
     bridge: options.bridge,

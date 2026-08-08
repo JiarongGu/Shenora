@@ -199,11 +199,11 @@ public class WireMirrorTests
 
         Assert.NotEmpty(client);   // parser self-check: a regex that matched nothing must not pass
         Assert.Equal(OperationEvents.Updated, client["Updated"]);
-        Assert.Equal(OperationEvents.ResumeRequested, client["ResumeRequested"]);
-        // Generic-library audit finding 3: WAIT_REQUESTED (renamed from PAUSE_REQUESTED) is new — pin
-        // it the same way, or a host rename leaves the client deaf to it exactly like the others this
-        // test already guards.
-        Assert.Equal(OperationEvents.WaitRequested, client["WaitRequested"]);
+        Assert.Equal(OperationEvents.Removed, client["Removed"]);
+        // RESUME_REQUESTED / WAIT_REQUESTED went with the waiting band (D66). The client must not keep
+        // naming them either, which the ONE-WAY check below enforces: an extra client key is a client
+        // still speaking a language the host retired.
+        Assert.Equal(2, client.Count);
     }
 
     [Fact]
@@ -215,12 +215,10 @@ public class WireMirrorTests
         Assert.Equal(OperationsModule.ListType, client["List"]);
         Assert.Equal(OperationsModule.CancelType, client["Cancel"]);
         Assert.Equal(OperationsModule.ClearFinishedType, client["ClearFinished"]);
-        Assert.Equal(OperationsModule.ResumeType, client["Resume"]);
-        // RESUME/DISMISS are the human's decisions (§5A.3 amendment); WAIT (generic-library audit
-        // finding 3, renamed from PAUSE) is the client ASKING the host to wait — see OperationsModule's
-        // own class doc.
-        Assert.Equal(OperationsModule.DismissType, client["Dismiss"]);
-        Assert.Equal(OperationsModule.WaitType, client["Wait"]);
+        // THREE routes, not six. RESUME/WAIT/DISMISS went with the waiting band (D66), and the count
+        // assertion is what makes their removal enforceable rather than merely intended — a client
+        // still shipping them would otherwise pass this test by simply not being asked about them.
+        Assert.Equal(3, client.Count);
     }
 
     [Fact]

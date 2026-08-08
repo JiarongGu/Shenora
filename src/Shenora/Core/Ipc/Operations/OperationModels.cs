@@ -24,32 +24,15 @@ public enum OperationStatus
     /// <summary>Stopped on request — a normal outcome, not a fault. Terminal.</summary>
     Cancelled,
 
-    /// <summary>
-    /// Not progressing, awaiting a decision — the APP names why via
-    /// <see cref="OperationInfo.WaitReason"/> (e.g. <c>"credentials"</c>/<c>"dns"</c>/
-    /// <c>"queued"</c>/<c>"rate-limited"</c>), never a kit-owned reason enum. Not one of the
-    /// terminal-finish statuses, and never pruned as history — a waiting entry is a pending offer,
-    /// not something finished.
-    /// <para>
-    /// Reached ONE way, and that is the point: <see cref="IOperation.Wait"/> on a live
-    /// <see cref="Running"/> handle. The body is parked, not gone, so there is always something to
-    /// resume. Exits via <see cref="IOperation.Resume"/> (back to <see cref="Running"/>),
-    /// <see cref="IOperationRegistry.Dismiss"/> (to <see cref="Cancelled"/>), or a direct
-    /// <see cref="IOperation.Complete"/>/<see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>
-    /// (a waiting operation can still fail on a deadline).
-    /// </para>
-    /// <para>
-    /// This status has been through two simplifications, both worth knowing because both were driven
-    /// by the same mistake — encoding HOW an entry arrived rather than WHAT state it is in. It was
-    /// once two values (<c>Paused</c> and <c>Interrupted</c>) that every transition already treated as
-    /// one band, and the registry once also accepted a crash-checkpoint entry with no live body at all
-    /// (<c>RegisterWaiting</c> + <c>ResumePayload</c>), which forced every caller to answer "does this
-    /// one have a handle?" — a question that produced a stranded state, then a dropped-live-operation
-    /// bug, before the whole checkpoint half was cut in 0.2.0. Crash recovery is the APP's business:
-    /// it owns the checkpoint, and a resumed run is simply a fresh <see cref="IOperationRegistry.Start"/>.
-    /// </para>
-    /// </summary>
-    Waiting,
+    // 🔴 NO `Waiting`, and its absence is D66's answer rather than an omission (2026-08-08). A request is
+    // IN FLIGHT or DONE — the XHR model this whole subsystem is being folded into has no parked state, and
+    // neither does this one now.
+    //
+    // It went because of what actually used it: the ONLY driver in the repo was app code wrapping a queued
+    // MISSION, and no adopter drove `WAIT`/`RESUME`/`DISMISS` at all. So `waiting` was describing
+    // host-initiated work the whole time, which is exactly the case D66 says does not fold into a request
+    // — and that is why it never sat comfortably beside Running/Completed. Host work keeps the event stream
+    // and cancel handle it already has.
 }
 
 /// <summary>
@@ -160,25 +143,6 @@ public sealed record OperationInfo
 
     /// <summary>The latest label from a progress report, if any.</summary>
     public OperationLabel? Detail { get; init; }
-
-    /// <summary>
-    /// Why the operation is (or WAS) <see cref="OperationStatus.Waiting"/> — an app-defined string,
-    /// like <see cref="Kind"/> (e.g. <c>"credentials"</c>/<c>"dns"</c>/<c>"queued"</c>/
-    /// <c>"rate-limited"</c>): the app's own taxonomy driving what its UI offers, never the kit's.
-    /// Optional — a wait whose cause is self-evident (the user clicked Pause) has nothing to name.
-    /// <para>
-    /// Lifetime (coordinator ruling, D23's lifecycle-completion amendment — stated here so the
-    /// asymmetry reads as intent, not an oversight): set when <see cref="IOperation.Wait"/> runs,
-    /// CLEARED when <see cref="IOperation.Resume"/> runs (back to null), but RETAINED through a
-    /// later terminal transition — <see cref="IOperation.Complete"/>, <see cref="IOperation.Fail(string, IReadOnlyDictionary{string, string}?, string?)"/>,
-    /// or <see cref="IOperationRegistry.Dismiss"/> — reached directly from
-    /// <see cref="OperationStatus.Waiting"/> without an intervening <c>Resume</c>. "Failed while waiting
-    /// on credentials" is useful history for whoever reads the finished entry; only an actual
-    /// <c>Resume</c> means the app has moved past the reason, which is why clearing is <c>Resume</c>'s
-    /// job and not automatic on every exit from <see cref="OperationStatus.Waiting"/>.
-    /// </para>
-    /// </summary>
-    public string? WaitReason { get; init; }
 
     /// <summary>
     /// Structured failure — set only when <see cref="Status"/> is <see cref="OperationStatus.Failed"/>.

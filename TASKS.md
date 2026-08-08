@@ -112,7 +112,18 @@ membership test: *must both sides agree on it?* → core. *Pure computation the 
 - [x] ~~`FileDialogFacade`'s default wiring had no test~~ — DONE.
   `UseWindows_registers_the_dialog_ROUTE_so_a_page_can_reach_it` drives a fake `IFileDialogs` end to end
   (registration → mapping → facade → service), sabotage-verified against the shell's registration line.
-- [ ] ⚠ **Re-run the MAUI player probe on an iOS DEVICE after the 2026-08-08 changes.** It now resolves
+- [ ] 🔴 **The iOS SIMULATOR build fails to LINK on the Mac, and it is not our code.**
+  `Undefined symbols for architecture x86_64: "_xamarin_gc_pump", referenced from xamarin_setup_impl() in
+  main.x86_64.o` — both of those are the iOS SDK's OWN generated `main.m` and its runtime library, so the
+  app's managed half compiled clean and the failure is inside `Microsoft.iOS.Sdk.net10.0_26.0/26.0.11017`
+  on an Intel Mac targeting `iossimulator-x64`. Nothing in the sample sets an interpreter or GC option
+  that would ask for it.
+  - **Next step is one command, and it needs the owner's nod because it changes that machine:**
+    `dotnet workload repair` (or reinstalling `maui-ios`) on the Mac. Do NOT start by editing the sample —
+    the managed build is already proven green.
+  - ⚠ **Unknown whether this predates 2026-08-08.** A `mac push` of an older commit would settle it in
+    ~30 s, since the failing build only took 28 s.
+- [ ] ⚠ **Then re-run the MAUI player probe on iOS**, blocked by the link failure above. It now resolves
   `IosMediaPlayer` by name rather than `IMediaPlayer`, so a silent `PLAYER: absent` is the tell that the
   registration did not take — and absent-by-design reads identically to quietly-wrong (D63).
   - **Android is DONE and proven on hardware**: `AndroidMediaPlayer` (the platform's own
