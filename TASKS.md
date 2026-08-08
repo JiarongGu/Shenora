@@ -181,9 +181,9 @@ like how .net webapp build setup style"*). D64's table maps every call; the shor
 ```csharp
 var builder = ShenoraApplication.CreateBuilder(args);   // the framework is ON — engines, modules, dispatcher
 
-builder.Services.AddShenoraMissions(x => x.GlobalLaneCapacity = 4);  // CONFIGURE, optional
-builder.Services.AddModuleFacade<MyFacade>();                        // the app's own routes
-builder.UseWindows(new WindowsHostOptions { … });                    // the ONE platform call — it INJECTS
+builder.UseMissions(x => x.GlobalLaneCapacity = 4);   // CONFIGURE a core module, optional
+builder.Services.AddIpcModule<MyModule>();            // the app's own routes — container level, so Add
+builder.UseWindows(new WindowsHostOptions { … });     // the ONE platform call — it INJECTS
 
 var app = builder.Build();
 

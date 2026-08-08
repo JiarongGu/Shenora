@@ -33,12 +33,16 @@ public sealed class ShenoraApplicationBuilder
         Environment = environment;
         Paths = paths;
 
-        // 🔴 REGISTERED HERE, not in Build(), and that is what lets a capability be an ordinary
-        // `IServiceCollection` extension (D64). `AddShenoraFileSystem()` and friends need the app's
-        // storage layout to default a directory; with paths available from the moment the builder
-        // exists, they resolve it from DI inside their factory instead of needing a `builder` argument.
-        // That is the difference between `builder.Services.AddX()` — ASP.NET's shape — and a bespoke
-        // `builder.UseX()` that exists only because the extension could not reach `Paths`.
+        // 🔴 REGISTERED HERE, not in Build(), so a capability's DI FACTORY can resolve them. `UseFileSystem`
+        // and `UseMediaPlayer` default a directory from the app's storage layout, and `Paths.DataArea`
+        // CREATES what it names — so they must read it INSIDE the factory, not at `Use…` time, or merely
+        // registering the capability would provision folders in every app that never uses it (D64's lazy
+        // -construction precondition). Available from the moment the builder exists means the factory has it.
+        //
+        // ⚠ This comment used to argue that the above is what lets a capability be a plain
+        // `builder.Services.AddX()` — "ASP.NET's shape" — against a "bespoke `builder.UseX()`". That was
+        // written during the reverted `Add*` rename and is the OPPOSITE of the settled rule: `Use` is the
+        // application's own setup for a capability, `Add` is the container level (D64's table).
         Services.AddSingleton(environment);
         Services.AddSingleton(paths);
     }

@@ -1,6 +1,6 @@
 ---
 name: new-ipc-module
-description: Walk the full chain for adding an IPC module — facade, routes, DI registration, the optional TypeScript half, the wire mirror, the surface gates. Use before writing a new BaseFacade, adding a route the client will name, or wiring a module into the dispatcher.
+description: Walk the full chain for adding an IPC module — the module class, routes, DI registration, the optional TypeScript half, the wire mirror, the surface gates. Use before writing a new ModuleBase subclass, adding a route the client will name, or wiring a module into the dispatcher.
 ---
 
 # new-ipc-module
@@ -17,22 +17,26 @@ after the facade compiles. Walk it in this order and none of them surprises you.
    belongs to an ADOPTING app, this is the wrong skill: that is `docs/ADOPTION.md`, and this repo
    never edits a sibling.
 2. **Copy the closest exemplar** instead of writing from scratch:
-   - kit module + opt-in registration → `src/Shenora.Ipc/Operations/OperationsFacade.cs` +
-     `OperationServiceCollectionExtensions.cs`
+   - kit module + opt-in registration → `src/Shenora/Modules/FileDialog/FileDialogModule.cs` +
+     `FileDialogServiceCollectionExtensions.cs`
+   - kit module that is CORE (configured, never added) → `src/Shenora/Modules/Requests/IpcRequestsModule.cs`
+     + `IpcRequestExtensions.cs`'s `builder.UseRequests(…)`
    - an app's own module → `samples/Shenora.Sample.Desktop/SampleFacade.cs`
    - a few ad-hoc routes, no class → `MainForm.cs`'s `dispatcher.MapModule("RENDER", routes => …)`
-3. **The facade.** `sealed`, `: BaseFacade`, override `ModuleName`, switch inside
+3. **The module class.** `sealed`, `: ModuleBase`, override `ModuleName`, switch inside
    `RouteMessageAsync(request, context, ct)`. Read payloads with `PayloadHelper.GetRequiredValue<T>`
    /`GetOptionalValue<T>`, return `Done()` from a void route, and end the switch with
    `throw UnknownType(request)` — the base owns that shape. Expected failures are an
    `OperationException`, **never one built from `ex.Message`**: its message crosses the wire
    verbatim, so that wrapper bypasses the whole error boundary. A route name the client also types
-   becomes a `public const string` (see `OperationsFacade.ListType`).
-4. **Emit through `context.Publish(type, payload, scope)`**, never a hand-typed module literal, and
-   hand long work to `context.Run` so it gets its OWN token rather than the request's.
-   `.claude/knowledge/ipc-contracts.md` is the authority here — read it before adding a route that
-   emits, awaits, or fails in a new way.
-5. **Register.** Plain DI composition → `services.AddModuleFacade<XFacade>()`. Needs the live
+   becomes a `public const string` (see `IpcRequestsModule.ListType`).
+4. **Emit through `context.Publish(type, payload, scope)`**, never a hand-typed module literal.
+   ⚠ **There is nothing to declare for long work** (D66): every request is tracked from dispatch, so a
+   slow route just calls `context.Report(new IpcProgress(…))` and returns normally. The token it is
+   handed IS the one `CANCEL` targets. Work the route hands OFF to outlive the request needs its own
+   token — do not capture that one. `.claude/knowledge/ipc-contracts.md` is the authority here — read
+   it before adding a route that emits, awaits, or fails in a new way.
+5. **Register.** Plain DI composition → `services.AddIpcModule<XModule>()`. Needs the live
    window → map LATE from where the form exists (`dispatcher.MapModule(facade)` in `MainForm`),
    never inside `UseMessageDispatcher`'s configure callback, which runs before any form. An opt-in
    kit cluster gets its own `AddShenoraX(this IServiceCollection, XOptions? options = null)` taking

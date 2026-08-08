@@ -197,12 +197,6 @@ sealed class Shenora.Core.Ipc.IpcResponse
   public static Shenora.Core.Ipc.IpcResponse CreateError(string id, Shenora.Core.Ipc.IpcError error)
   public static Shenora.Core.Ipc.IpcResponse CreateError(string id, string code, System.Collections.Generic.IReadOnlyDictionary<string, string>? parameters = null, string? message = null)
   public static Shenora.Core.Ipc.IpcResponse CreateSuccess(string id, object? data = null)
-static class Shenora.Core.Ipc.IpcServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddIpcModule<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Core.Ipc.IIpcModule
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection UseMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<System.IServiceProvider, Shenora.Core.Ipc.IMessageDispatcher>? configure = null)
-  public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
-  public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
-  public static Shenora.ShenoraApplication MapModule<TModule>(Shenora.ShenoraApplication app) where TModule : Shenora.Core.Ipc.IIpcModule
 sealed class Shenora.Core.Ipc.MessageDispatcher : Shenora.Core.Ipc.IMessageDispatcher, Shenora.Core.Ipc.IModuleRegistry
   public .ctor(Microsoft.Extensions.Logging.ILogger<Shenora.Core.Ipc.MessageDispatcher>? logger = null, Shenora.Core.Ipc.IIpcRequestTracker? requests = null)
   public Shenora.Core.Ipc.MessageDispatcher Use(Shenora.Core.Ipc.MessageMiddleware middleware)
@@ -500,9 +494,6 @@ sealed class Shenora.Engine.Files.FileReplacement : System.IDisposable
   public string TempPath { get; }
   public void Commit()
   public void Dispose()
-static class Shenora.Engine.Files.FileSystemExtensions
-  public static Shenora.ShenoraApplicationBuilder UseFileSystem(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Files.FileUpdateQueueOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
-  public static Shenora.ShenoraApplicationBuilder UseFileSystem(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Files.FileUpdateQueueOptions>? configure = null)
 enum Shenora.Engine.Files.FileUndoKind (int)
   public const Shenora.Engine.Files.FileUndoKind DeleteCreatedFile = 0
   public const Shenora.Engine.Files.FileUndoKind MoveBack = 2
@@ -693,9 +684,6 @@ struct Shenora.Engine.Missions.MissionExecution : System.IEquatable<Shenora.Engi
   public string MissionId { get; init; }
   public string? Kind { get; init; }
   public void Deconstruct(out string MissionId, out string? Kind, out int Priority, out System.DateTimeOffset QueuedUtc, out long Sequence, out int Attempt, out bool IsRunning)
-static class Shenora.Engine.Missions.MissionExtensions
-  public static Shenora.ShenoraApplicationBuilder UseMissions(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Missions.MissionSchedulerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
-  public static Shenora.ShenoraApplicationBuilder UseMissions(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Missions.MissionSchedulerOptions>? configure = null)
 struct Shenora.Engine.Missions.MissionKey : System.IEquatable<Shenora.Engine.Missions.MissionKey>
   public .ctor(string Value)
   public bool Equals(Shenora.Engine.Missions.MissionKey other)
@@ -818,6 +806,11 @@ sealed class Shenora.Engine.Missions.RetryPolicy
   public System.TimeSpan Delay { get; init; }
   public int Attempts { get; init; }
   public static Shenora.Engine.Missions.RetryPolicy None { get; }
+static class Shenora.FileDialogServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraFileDialogs(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+static class Shenora.FileSystemExtensions
+  public static Shenora.ShenoraApplicationBuilder UseFileSystem(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Files.FileUpdateQueueOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
+  public static Shenora.ShenoraApplicationBuilder UseFileSystem(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Files.FileUpdateQueueOptions>? configure = null)
 static class Shenora.HeadlessHostExtensions
   public static Shenora.ShenoraApplicationBuilder UseHeadless(Shenora.ShenoraApplicationBuilder builder, Shenora.HeadlessRunnerOptions? options = null)
 sealed class Shenora.HeadlessRunnerOptions
@@ -832,6 +825,24 @@ interface Shenora.IShenoraModule
   public abstract void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 interface Shenora.IShenoraRunner
   public abstract void Run(Shenora.ShenoraApplication app)
+static class Shenora.IpcRequestExtensions
+  public static Shenora.ShenoraApplicationBuilder UseRequests(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Core.Ipc.IpcRequestTrackerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
+  public static Shenora.ShenoraApplicationBuilder UseRequests(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Core.Ipc.IpcRequestTrackerOptions>? configure = null)
+static class Shenora.IpcServiceCollectionExtensions
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddIpcModule<TFacade>(Microsoft.Extensions.DependencyInjection.IServiceCollection services) where TFacade : class, Shenora.Core.Ipc.IIpcModule
+  public static Microsoft.Extensions.DependencyInjection.IServiceCollection UseMessageDispatcher(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<System.IServiceProvider, Shenora.Core.Ipc.IMessageDispatcher>? configure = null)
+  public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModules(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
+  public static Shenora.Core.Ipc.IMessageDispatcher MapRegisteredModulesLazily(Shenora.Core.Ipc.IMessageDispatcher dispatcher, System.IServiceProvider services)
+  public static Shenora.ShenoraApplication MapModule<TModule>(Shenora.ShenoraApplication app) where TModule : Shenora.Core.Ipc.IIpcModule
+static class Shenora.MediaPlayerExtensions
+  public static Shenora.ShenoraApplication UseMediaPlayer(Shenora.ShenoraApplication app)
+  public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
+  public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions>? configure = null)
+  public static System.IDisposable ReportTo(Shenora.Modules.Media.IMediaPlayer player, Shenora.Modules.Platform.IPlaybackSession session)
+  public static System.IDisposable? UseMediaPlayer(Shenora.Core.WebView.IWebViewInterceptor interceptor, System.IServiceProvider services)
+static class Shenora.MissionExtensions
+  public static Shenora.ShenoraApplicationBuilder UseMissions(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Missions.MissionSchedulerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
+  public static Shenora.ShenoraApplicationBuilder UseMissions(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Engine.Missions.MissionSchedulerOptions>? configure = null)
 sealed class Shenora.Modules.FileDialog.FileDialogFilter
   public required System.Collections.Generic.IReadOnlyList<string> Extensions { get; init; }
   public required string Name { get; init; }
@@ -855,8 +866,6 @@ sealed class Shenora.Modules.FileDialog.FileDialogResult
   public static Shenora.Modules.FileDialog.FileDialogResult Completed()
   public static Shenora.Modules.FileDialog.FileDialogResult Selected(string path)
   public string? FilePath { get; init; }
-static class Shenora.Modules.FileDialog.FileDialogServiceCollectionExtensions
-  public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddShenoraFileDialogs(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
 interface Shenora.Modules.FileDialog.IFileDialogPathStore
   public abstract System.Threading.Tasks.Task SavePathAsync(string key, string path)
   public abstract System.Threading.Tasks.Task<string> GetPathAsync(string key)
@@ -1061,12 +1070,6 @@ static class Shenora.Modules.Media.MediaPlayerEvents
 sealed class Shenora.Modules.Media.MediaPlayerException : System.Exception
   public .ctor(string message)
   public .ctor(string message, System.Exception inner)
-static class Shenora.Modules.Media.MediaPlayerExtensions
-  public static Shenora.ShenoraApplication UseMediaPlayer(Shenora.ShenoraApplication app)
-  public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
-  public static Shenora.ShenoraApplicationBuilder UseMediaPlayer(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Modules.Media.MediaPlayerOptions>? configure = null)
-  public static System.IDisposable ReportTo(Shenora.Modules.Media.IMediaPlayer player, Shenora.Modules.Platform.IPlaybackSession session)
-  public static System.IDisposable? UseMediaPlayer(Shenora.Core.WebView.IWebViewInterceptor interceptor, System.IServiceProvider services)
 sealed class Shenora.Modules.Media.MediaPlayerModule : Shenora.Core.Ipc.ModuleBase
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.Modules.Media.IMediaPlayer? player, Shenora.Modules.Media.MediaPlayerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Media.MediaPlayerModule>? logger = null)
@@ -1340,9 +1343,6 @@ sealed class Shenora.Modules.Platform.SafeAreaOptions
 static class Shenora.Modules.Platform.SafeAreaScript
   public const string DeliveredMarker = "shenora-safe-area"
   public static string Build(Shenora.Modules.Platform.SafeAreaOptions options, Shenora.Modules.Platform.SafeAreaInsets? insets = null)
-static class Shenora.Modules.Requests.IpcRequestExtensions
-  public static Shenora.ShenoraApplicationBuilder UseRequests(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Core.Ipc.IpcRequestTrackerOptions, Microsoft.Extensions.DependencyInjection.IServiceCollection> configure)
-  public static Shenora.ShenoraApplicationBuilder UseRequests(Shenora.ShenoraApplicationBuilder builder, System.Action<Shenora.Core.Ipc.IpcRequestTrackerOptions>? configure = null)
 sealed class Shenora.Modules.Requests.IpcRequestsModule : Shenora.Core.Ipc.ModuleBase
   protected override System.Threading.Tasks.Task<object> RouteMessageAsync(Shenora.Core.Ipc.IpcRequest request, Shenora.Core.Ipc.IModuleContext context, System.Threading.CancellationToken cancellationToken)
   public .ctor(Shenora.Core.Ipc.IIpcRequestTracker tracker, Shenora.Core.Ipc.IpcRequestTrackerOptions options, Microsoft.Extensions.Logging.ILogger<Shenora.Modules.Requests.IpcRequestsModule>? logger = null)

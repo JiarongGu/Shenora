@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Shenora;
+using Shenora.Engine.Files;
 
-namespace Shenora.Engine.Files;
+// Extensions live with the type they EXTEND (.NET's own rule) — these are on ShenoraApplicationBuilder,
+// so an app that already wrote `using Shenora;` needs no second import. See MediaPlayerExtensions.
+namespace Shenora;
 
 /// <summary>
 /// Wiring the file-operation engine into an application.

@@ -1,10 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Shenora;
+using Shenora.Modules.FileDialog;
 using Shenora.Modules.Requests;
 using Shenora.Core.Ipc;
 
-namespace Shenora.Modules.FileDialog;
+// Extensions live with the type they EXTEND — see MediaPlayerExtensions for the rule.
+namespace Shenora;
 
 /// <summary>
 /// Wires <see cref="FileDialogModule"/> into DI, so a page can drive the shell's native dialogs.

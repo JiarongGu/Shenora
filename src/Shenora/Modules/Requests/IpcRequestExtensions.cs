@@ -2,8 +2,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
+using Shenora.Modules.Requests;
 
-namespace Shenora.Modules.Requests;
+// Extensions live with the type they EXTEND — see MediaPlayerExtensions for the rule.
+namespace Shenora;
 
 /// <summary>
 /// Request tracking as APPLICATION SETUP: the tracker (built from the app's <see cref="IEventBus"/>) plus

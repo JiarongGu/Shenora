@@ -185,7 +185,7 @@ transport, or building the P6 adoption shims.
   same factory. MS DI's cycle detection is call-site-based and cannot see a factory delegate
   re-entering the provider, and the cache entry isn't published yet: unbounded recursion, process
   death by StackOverflow, no exception and no log. Resolve lazily (a terminal middleware over a
-  `Lazy<IModuleFacade[]>`) so the singleton is cached before enumeration.
+  `Lazy<IIpcModule[]>`) so the singleton is cached before enumeration.
 - **A batch COALESCES only what its EMITTER said may be coalesced.** `EventMessage.CoalesceKey` /
   `IpcNotification.CoalesceKey` declare that a notification supersedes an earlier undelivered one with
   the same module/type/scope/key; `NotificationPump` applies it at drain, last-write-wins, and the
@@ -231,8 +231,8 @@ transport, or building the P6 adoption shims.
 ### 0.2.0 — the communication core (D23)
 
 - **`Publish` goes through `IModuleContext`, never a hand-typed module literal, so an emit cannot
-  drift from the facade's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
-  with `Module` supplied by `BaseFacade` at construction — the same anti-drift reason
+  drift from the module's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
+  with `Module` supplied by `ModuleBase` at construction — the same anti-drift reason
   `IpcRequestStatus.Module` is taken from the request itself rather than trusted from the app. The sample's pre-0.2.0 shape (a hardcoded `"SAMPLE"` string re-typed at every emit
   site) is exactly the class of bug this closes: one typo and an event silently claims the wrong
   module, with nothing to grep for.

@@ -3,8 +3,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
-namespace Shenora.Core.Ipc;
+// Extensions live with the type they EXTEND — see MediaPlayerExtensions for the rule. `AddIpcModule` is
+// on IServiceCollection and the rest compose the app, so `Shenora` is the one import that serves both.
+namespace Shenora;
 
 /// <summary>
 /// The standard IPC composition, formalizing the pattern the sample app proved: modules

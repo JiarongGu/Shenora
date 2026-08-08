@@ -147,6 +147,17 @@ WinFormsHostOptions      # -> WindowsHostOptions
 UseMobile                # -> UseAndroid / UseIOS — a category name serving two packages that ship,
                          #    build and are consumed separately
 
+# --- 2026-08-07, D65: a module's root type is `XxxModule`, and the FACADE vocabulary went -----------
+# ⚠ ADDED 2026-08-08, a day late, and the delay is the lesson. D65 renamed these and did not list them,
+# so NO gate watched them — not doc-drift, not `stale-scan`, whose input is this very file. They were
+# still cited as CURRENT in README.md (which ships inside every nupkg) and in
+# `.claude/skills/new-ipc-module/SKILL.md`, the instruction set for writing a module: following it
+# produced code that does not compile. **A rename that skips this file is invisible to every tool the
+# repo has.** Found by reading, while chasing a different name entirely.
+BaseFacade               # -> ModuleBase
+IModuleFacade            # -> IIpcModule
+AddModuleFacade          # -> AddIpcModule
+
 # --- 2026-08-07, D65: the main package is `Shenora`, and IPC folded into it ------------------------
 # ⚠ `Shenora.Core` WAS listed here for one day and has been REMOVED, which is the rule working rather
 # than failing. It was added because it was retired in BOTH senses at once — package id AND namespace —

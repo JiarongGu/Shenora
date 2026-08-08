@@ -1,17 +1,27 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Shenora;
+using Shenora.Modules.Media;
 using Shenora.Modules.Platform;
 using Shenora.Core.Events;
 using Shenora.Core.WebView;
 using Shenora.Engine.Missions;
 using Shenora.Core.Ipc;
 
-namespace Shenora.Modules.Media;
+namespace Shenora;
 
 /// <summary>
 /// Composing <see cref="IMediaPlayer"/> with the rest of the shell.
+/// <para>
+/// 🔴 <b>In the ROOT <c>Shenora</c> namespace on purpose, with the types it composes left where they
+/// live.</b> An extension belongs with the type it EXTENDS — .NET's own rule, which is why
+/// <c>IServiceCollection</c> extensions ship in <c>Microsoft.Extensions.DependencyInjection</c> rather
+/// than in each library's namespace. These extend <see cref="ShenoraApplicationBuilder"/> and
+/// <see cref="ShenoraApplication"/>, so an app that already wrote <c>using Shenora;</c> to name the
+/// builder gets <c>UseMediaPlayer</c> with no second import. (Owner, 2026-08-08. The friction was real:
+/// the desktop sample had to add <c>using Shenora.Modules.Media;</c> solely to call
+/// <c>app.UseMediaPlayer()</c>.)
+/// </para>
 /// </summary>
 public static class MediaPlayerExtensions
 {

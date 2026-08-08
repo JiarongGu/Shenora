@@ -1,10 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Shenora;
+using Shenora.Engine.Missions;
 using Shenora.Core.WebView;
 using Shenora.Core.Ipc;
 
-namespace Shenora.Engine.Missions;
+// Extensions live with the type they EXTEND — see MediaPlayerExtensions for the rule.
+namespace Shenora;
 
 /// <summary>
 /// Wiring the mission scheduler into an application.
@@ -28,18 +29,19 @@ public static class MissionExtensions
     /// additive: the first wins, like every other <c>TryAdd</c> in the container.
     /// </para>
     /// <para>
-    /// <b>It stays <c>Use*</c>, and that is deliberate (D64).</b> These capabilities behave like
-    /// MIDDLEWARE — stages the frontend's requests flow through, not inert singletons — and <c>Use*</c> is
-    /// already this kit's vocabulary for a pipeline stage (<c>IMessageDispatcher.UseModule</c>/
-    /// <c>UseRoute</c>/<c>UseLogging</c>, <see cref="IWebViewInterceptor.Use"/>). What the
-    /// ASP.NET comparison actually corrects is not the PREFIX but the OBJECT: a pipeline is configured on
-    /// the built app, which is why mounting a route is <c>app.Use…</c> and not
-    /// <c>interceptor.Use…(services)</c>.
+    /// <b>It is <c>Use*</c> because it is the APPLICATION'S SETUP for a capability, not a container
+    /// registration</b> — D64's rule: <c>Use</c> means the wider configuration including whatever the
+    /// capability contributes to a pipeline; <c>Add</c> means the service-collection level only
+    /// (<c>AddIpcModule</c> registers a facade and nothing else, so it is an <c>Add</c>).
+    /// ⚠ An earlier version of this paragraph justified the prefix by claiming these "behave like
+    /// MIDDLEWARE — stages the frontend's requests flow through". **That was the coarse reading, and for
+    /// the scheduler it is simply untrue**: no request flows through it. The receiver is what decides —
+    /// this is on the BUILDER, which is the app's own setup.
     /// </para>
     /// <para>
     /// <b>Everything defaults, and there is no security-shaped choice here</b> — unlike
-    /// <c>AddShenoraMediaPlayer</c>, whose <c>AllowedRoots</c> the kit refuses to pick (D61's test: *does
-    /// this change what the app is EXPOSED to?*). A scheduler with no options is priority-then-FIFO, unbounded,
+    /// <c>UseMediaPlayer</c>, whose <c>AllowedRoots</c> the kit refuses to pick (D61's test: *does this
+    /// change what the app is EXPOSED to?*). A scheduler with no options is priority-then-FIFO, unbounded,
     /// in-memory: the behaviour the design started from, and a legitimate production choice for an app that
     /// wants ordering without persistence.
     /// </para>

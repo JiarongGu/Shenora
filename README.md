@@ -146,12 +146,12 @@ type ever creeps into app logic, that project turns red. See `docs/ADOPTION.md` 
 
 ### `Shenora.Ipc` — the wire and the dispatcher
 
-Typed request/response/notification envelopes, a composable middleware pipeline, module facades, and
+Typed request/response/notification envelopes, a composable middleware pipeline, IPC modules, and
 a structured error contract (`code` + parameters, i18n-ready). Transport-neutral by design: the same
 envelopes ride postMessage today and a WebSocket or mobile channel tomorrow.
 
 ```csharp
-public sealed class SettingsFacade : BaseFacade
+public sealed class SettingsModule : ModuleBase
 {
     public override string ModuleName => "SETTINGS";
 
@@ -165,8 +165,8 @@ public sealed class SettingsFacade : BaseFacade
         };
 }
 
-services.AddModuleFacade<SettingsFacade>();
-services.UseMessageDispatcher();          // error handler → logging → your middleware → facades
+services.AddIpcModule<SettingsModule>();
+services.UseMessageDispatcher();          // error handler → logging → your middleware → modules
 ```
 
 **Raw exception text never crosses the wire.** An `OperationException` carries the app's own code,

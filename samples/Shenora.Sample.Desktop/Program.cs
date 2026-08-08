@@ -5,7 +5,6 @@ using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Core.Events;
 using Shenora.Core.Ipc;
-using Shenora.Modules.Media;
 
 namespace Shenora.Sample.Desktop;
 
