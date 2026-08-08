@@ -25,7 +25,7 @@ public static class FileDialogServiceCollectionExtensions
     /// <para>
     /// It takes no options. The facade's module name is a constant
     /// (<see cref="FileDialogModule.Module"/>) because this facade publishes no events, so there is nothing
-    /// for a configurable name to keep in step with — the reason <c>OperationsModule</c> needs one.
+    /// for a configurable name to keep in step with — the reason <c>IpcRequestsModule</c> needs one.
     /// </para>
     /// </summary>
     public static IServiceCollection AddShenoraFileDialogs(this IServiceCollection services)

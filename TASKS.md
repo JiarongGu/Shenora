@@ -19,9 +19,9 @@ live in `CHANGELOG.md`; the current package set is the table at the top of `docs
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This file is the maintainer's remaining
 > work, and a short list here means the kit is in good shape rather than that nothing is happening — what
-> SHIPPED is `CHANGELOG.md`. The three items below are honest about what is not
-> done: one is a KNOWN unrepaired defect whose next step is a measurement, one is deliberately WAITING on
-> an adopter's harvest (D15 working as intended, not a stall), and one needs a physical device.
+> SHIPPED is `CHANGELOG.md`. The entries below are honest about what is not done: one is blocked on
+> another team's SDK (the iOS simulator link failure), several are deliberately WAITING on an adopter's
+> harvest (D15 working as intended, not a stall), and one needs a physical device.
 
 ### Release mechanics that still steer
 

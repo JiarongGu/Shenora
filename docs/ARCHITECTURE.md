@@ -37,7 +37,7 @@ throttled progress emission) as mechanism only — what an operation IS stays ap
 transport-neutral half of the outbound notification pipeline moved out of `WebViewIpcBridge` into
 `Shenora.Ipc`'s `NotificationPump`, so `WebViewIpcBridge` is now a thin WinForms/WebView2 adapter over
 it (D16's "the seam, not the package" applied to the host half). `@shenora/react` gained
-`useShenoraOperations`/`createOperationsStore`, a host-backed store mirroring the pattern
+`useShenoraRequests`/`createRequestsStore`, a host-backed store mirroring the pattern
 `createShenoraStore` already established. (No 0.2.0 release exists — `CHANGELOG.md`
 `## 0.2.0 — never released` has the account. **Dates, not version numbers, are how this file marks
 time**, precisely because that story exists: a version is assigned by the release workflow, so any
@@ -267,9 +267,10 @@ Shenora.slnx
     │                                            SCHEDULER's worked example: SCHEDULE_DEMO submits
     │                                            four items (two contending for one path, two
     │                                            disjoint) under a capacity-2 lane, and
-    │                                            MissionOperationObserver is the ~35-line IMissionObserver
-    │                                            adapter that reports them through Shenora.Ipc's
-    │                                            operation registry — execution, reporting and the
+    │                                            MissionEventPublisher is the ~35-line IMissionObserver
+    │                                            adapter that publishes them as an EVENT stream
+    │                                            (D66: a mission is host-initiated work, not a
+    │                                            request) — execution, reporting and the
     │                                            seam between them, all with no Windows reference.
     │                                            CHAIN_DEMO adds the composition an adopter builds:
     │                                            two MissionChains whose staging steps overlap and
@@ -461,10 +462,11 @@ changes, noting them in `CHANGELOG.md`).
   (2) the design's `IFileSystem` and atomic-replace helper were never shipped — `PathClaims` is the
   whole of the scheduler's `Files/` half, and the write-to-temp-then-replace SHAPE is what `Run`/`Commit`
   models; (3) nothing
-  in `Shenora.Ipc` implements `IMissionObserver`, so wiring execution to the operation registry is the
-  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionOperationObserver.cs` is the worked
-  example — and `Shenora` stays free of any reporting dependency either way (D19/D20). That
-  adapter's one non-obvious rule: its operations must be `Cancellable = false` unless the app wires
+  nothing in the kit implements `IMissionObserver`, so wiring execution to reporting is the
+  app's own ~35-line adapter — `samples/Shenora.Sample.Logic/MissionEventPublisher.cs` is the worked
+  example — and `Shenora` stays free of any reporting dependency either way (D19/D20). ⚠ It publishes
+  an EVENT STREAM rather than tracking requests (D66): a mission has no request behind it, so it has no
+  request id, no response to await and nothing for the page to abort. That
   cancellation itself, because the registry's `Cancel` signals the OPERATION's own token while the
   work observes the one handed to `SubmitAsync`.
 - **`Shenora`'s media layer — the translation layer for the web (`Shenora.Media` namespace, D52/D53),
@@ -827,106 +829,41 @@ changes, noting them in `CHANGELOG.md`).
   Closing it needs either a name-reservation seam the registry does not have or re-opening the
   deadlock — so until a consumer actually hits it, map anything that must be checkable through
   `MapModule(facade)`/`TryMapModule` explicitly rather than through DI registration.
-  **The module contract's event half (0.2.0, D23):** `IModuleContext` (`Module`, `Logger`,
-  `Publish(type, payload?, scope?)`, `Start(OperationOptions)`, `Run(OperationOptions, work)`) is the
-  second parameter of `ModuleBase.RouteMessageAsync` — the release's one breaking change, because
-  `Shenora.Ipc` had zero references to `IEventBus` while the kit's own `DropZoneManager` took one as a
-  REQUIRED option. Built once per facade (`ModuleBase.Context`, lazy — `ModuleName` is abstract and
-  unreadable from the base constructor) from the now-optional `ModuleBase(ILogger?, IEventBus?,
-  IOperationRegistry?)` constructor params; `Publish`/`Start`/`Run` throw a loud, self-naming
-  `InvalidOperationException` when the corresponding dependency was never supplied, rather than
-  silently no-op-ing. `Publish` needs no registry and no opt-in — the primary, always-available
-  channel; `Start`/`Run` are the one OPT-IN thing the same context offers (only present when
-  `AddShenoraOperations` is called), never the other way round.
-  **The operations cluster** (`Shenora.Ipc.Operations` mechanism, tracked long-running work — no
-  queue, scheduler, retry, priority or phase model, and no opinion on what an operation IS):
-  `OperationStatus` (`Running`/`Completed`/`Failed`/`Cancelled`/`Waiting` — crosses the
-  wire camelCase for free via `IpcJson`'s enum converter), `OperationLabel` (`{Text?, Key?, Parameters?}`,
-  the same i18n shape as `IpcError`), `OperationProgress` (`{Value, Total?, Unit?}` — the app's own
-  unit, e.g. bytes-of-a-known-total, items-of-a-known-total, an absolute count with no known total
-  (`Total = null`), or a genuine percent; `Unit` is app-defined and uninterpreted, like `Kind`),
-  `OperationOptions` (`Kind` an app-defined string, `Title`, `Scope`, `Cancellable`, `Progress`),
-  `OperationInfo` (the full
-  snapshot — both the `OPERATION_UPDATED` event payload and the `LIST` response element; one type for
-  every transition, so a client folds by `Id` with no cross-type ordering hazard; carries
-  `WaitReason`, an app-defined string like `Kind`), `IOperation`
-  (`Id`, its OWN `CancellationToken` — never the request's — `Report`(`OperationProgress?`, passed
-  through unchanged — no clamp, no validation)/`Complete`/
-  `Fail`(×2)/`Cancel`/`Wait`(reason OPTIONAL)/`Resume`, all idempotent once terminal),
-  `IOperationRegistry`/`OperationRegistry(+Options)`
-  (one lock over in-memory state; `Start`/`Run` — `Run` is `Start` + a guarded background body mapping
-  `OperationCanceledException`→`Cancel`, `OperationException`→`Fail(code, parameters, message)`, else
-  →`Fail(UnknownError, {exceptionType})`, identical to the dispatch boundary's no-raw-text rule —
-  `Find(id)` (resolves a live handle for an id — reinstated post-audit, see below),
-  `GetAll(module?, scope?)`/`ClearFinished(module?, scope?)` (both share ONE scope rule with
-  `IEventBus` — an unscoped operation matches any requested scope, not strict equality — and
-  `ClearFinished`'s filter mirrors `GetAll`'s exactly), `Cancel` (refuses an operation that never
-  opted into `Cancellable`, so the status can't lie about a body still running underneath it),
-  `Dismiss` (declines a pending `Waiting` offer → `Cancelled`, terminal — refuses
-  `Running` on purpose, since declining an offer and cancelling LIVE work are different acts and
-  conflating them inside `Cancel` was this branch's only Critical), and the ASK pair
-  `RequestWait`/`RequestResume` — exact mirrors of each other, both emitting
-  `{ operationId, module, kind, scope }` and changing NOTHING: the client asks, the owning module's own
-  `IOperation.Wait`/`Resume` acts. A removal (`MaxHistory` eviction, `ClearFinished`) publishes
-  `OperationEvents.Removed` naming the ids, so a client mirroring bounded host history actually hears
-  about it. Progress
-  emission is throttled to `ProgressInterval` — default 100 ms — with a TRAILING emit so the final
-  value in a window is never dropped, and every lifecycle transition emits immediately, never
-  throttled. `OperationEvents`
-  (`Updated` = `OPERATION_UPDATED`, `ResumeRequested` = `OPERATION_RESUME_REQUESTED`,
-  `WaitRequested` = `OPERATION_WAIT_REQUESTED`, `Removed` = `OPERATION_REMOVED`),
-  `OperationsModule` (module `SHENORA.OPERATIONS` by default, shared with the registry via one
-  `OperationRegistryOptions` instance so the two can never drift apart:
-  `LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`), `AddShenoraOperations` (opt-in DI
-  wiring; an app with no long-running work pays nothing).
-  **The file-dialog cluster** (2026-08-05) — the page's route to whichever `IFileDialogs` the SHELL
-  registered, so a picker needs no app-written route: `FileDialogModule` (module `SHENORA.DIALOGS`, a fixed
-  const because this facade publishes nothing for a configurable name to stay in step with —
-  `OPEN_FILE`/`OPEN_FOLDER`/`SAVE_FILE`/`SAVE_TEXT`) + `AddShenoraFileDialogs` (opt-in). `SAVE_TEXT` is the
-  PORTABLE save — the host does the writing, so it works on every shell — and carries text rather than
-  arbitrary bytes because the content crosses the envelope. `OPEN_FOLDER`/`SAVE_FILE` are desktop
-  capabilities (D35) and refuse elsewhere with `IpcErrorCodes.CapabilityNotSupported`, a NAMED code so a
-  client can hide the control instead of showing a fault — which is what `@shenora/react`'s
-  `useFileDialogs()` does, reading `canPickFile`/`canPickFolder`/`canPickSavePath` off the handshake (D36).
-  This closed a real gap: `ShellCapability.FilePicker`/`FolderPicker`/`SavePicker` were kit vocabulary that
-  crossed the wire with nothing in the kit able to satisfy them, so both samples had written the same
-  routes independently.
-  **Post-0.2.0-merge generic-library audit (before publish, so free):** the harvest absorbed one
-  app's shape on the removal/asking halves of the lifecycle its own source never had to solve.
-  `ClearFinished` gained the `module?`/`scope?` filter above (was unfilterable — a scoped window's
-  "clear completed" could wipe another scope's history); `OperationOptions.Resumable`/
-  `OperationInfo.Resumable` were REMOVED (consulted nowhere except the then-existing
-  `RegisterWaiting`'s required-true gate, which every caller had already satisfied — a tautological
-  flag, and the whole checkpoint path it gated went the same way in the design pass); `RequestWait`
-  (shipped at the time as `RequestPause`) and the reinstated `Find(id)` were added (above);
-  `OperationEvents.Removed` was added (above).
-  `IOperation.Wait`'s `reason` became optional. One limit recorded rather than solved: `MaxHistory`
-  is one global cap with no per-module/scope bounding seam. "Registered but not yet started" is
-  representable with no kit change: an app calls `Wait("queued")` on the handle immediately after
-  `Start`, before real work begins.
-  **Progress is not percent (owner direction, before publish, correcting this same audit's own first
-  pass):** `Progress` was `int?` (implicitly 0–100) with a silent `ClampProgress`; it is now
-  `OperationProgress?` (`Value`/`Total?`/`Unit?`, above) passed through completely unchanged —
-  `ClampProgress` is deleted, and `Complete()` sets `Value = Total` only when a `Total` was ever
-  reported, never a hardcoded 100.
-  **The lifecycle is enforced as THREE BANDS** (§5A of the design doc — Active: `Running`; Waiting,
-  never pruned: `Waiting`; Terminal: `Completed`/`Failed`/`Cancelled`), and the rule that
-  produced it is structural, not a convention: `OperationLifecycleInvariantTests` enumerates the LIVE
-  `OperationStatus` enum and asserts every non-terminal value has a registered exit reaching a
-  terminal one — a future status added with no exit fails that test by name instead of stranding an
-  operation the way a no-live-handle offer used to (its only exit, `RequestResume`, never reached a
-  terminal status at all).
-  **How the band got to ONE status and ONE reach, in two steps — the second is the 0.2.0 design pass
-  (D1) and it is the reason none of the machinery above exists any more.** `Paused` and `Interrupted`
-  were originally two statuses distinguished only by how the entry was reached (a live
-  `IOperation.Wait()` vs. a crash checkpoint registered by the former `RegisterWaiting`); every
-  transition already treated them as one band, so they collapsed into `Waiting`. That left the
-  distinction to be carried some other way, and each attempt failed: `ResumePayload` (app-controlled,
-  so it dropped live operations), then an internal provenance flag. The design pass removed the
-  QUESTION instead — the crash-checkpoint half is gone, so every entry reaches `Waiting` through a
-  live `IOperation.Wait` and `RequestResume` mutates nothing. Crash recovery is the app's: it owns the
-  checkpoint, and a resumed run is a fresh `Start()`. Full rationale: `docs/DECISIONS.md` D23's
-  amendments and `CHANGELOG.md` 0.2.0 `### Removed`.
+  **The module contract's event half (D23, merged into the request in D66):** `IModuleContext`
+  (`Module`, `RequestId`, `Logger`, `Publish(type, payload?, scope?)`, `Report(IpcProgress?, IpcLabel?)`)
+  is the second parameter of `ModuleBase.RouteMessageAsync`, and is built PER REQUEST — which is what
+  lets `Report` take no id. `Publish` throws a loud, self-naming `InvalidOperationException` when no
+  `IEventBus` was supplied rather than silently no-op-ing; `Report` is a silent no-op without a tracker,
+  because publishing is the route's own output (losing it loses app data) while progress is the kit's
+  bookkeeping about a request it is tracking.
+  **Request tracking** (`Core/Ipc/Requests/`): `IpcRequestState`
+  (`Running`/`Completed`/`Failed`/`Cancelled` — a request is IN FLIGHT or DONE, crossing the wire
+  camelCase for free via `IpcJson`'s enum converter), `IpcLabel` (`{Text?, Key?, Parameters?}`, the same
+  i18n shape as `IpcError`), `IpcProgress` (`{Value, Total?, Unit?}` — the app's own unit, e.g. bytes or
+  items of a known total, an absolute count with no known total (`Total = null`), or a genuine percent;
+  `Unit` is app-defined and uninterpreted), and `IpcRequestStatus` (the full snapshot — both the
+  `REQUEST_UPDATED` payload and the `LIST` response element; one type for every transition, so a client
+  folds by `Id` with no cross-type ordering hazard).
+  🔴 **There is NO separate operation entity, and that is D66.** `IpcRequestStatus.Id` IS
+  `IpcRequest.Id`; `Type` is the request's own action rather than a declared "kind"; `StartedAt` is its
+  `Timestamp`. The predecessor minted a fresh `Guid` unrelated to the request that caused it and carried
+  a parallel `Kind`/`Scope`/`StartedAt`, leaving the page to correlate two identities for one thing.
+  `IIpcRequestTracker`/`IpcRequestTracker(+Options)` holds one lock over in-memory state: `Begin`
+  (called by `ModuleBase`, returning an `IIpcRequestScope` whose disposal completes the request),
+  `GetAll` (in flight oldest-first, then finished newest-first, filtered by module/scope with
+  `IEventBus`'s scope rule), `Cancel(requestId)` (`XMLHttpRequest.abort()` — signals the token first,
+  then records `Cancelled`) and `ClearFinished`.
+  🔴 **The GRACE PERIOD is what makes tracking everything affordable, and it replaced the declaration.**
+  `Begin` publishes NOTHING; a request is announced only if it outlives
+  `IpcRequestTrackerOptions.GracePeriod` (50 ms — `NotificationPumpOptions.FlushInterval`'s own default,
+  and roughly the threshold below which a human does not want a spinner). One that finishes inside the
+  window emits no event, retains no history and never reaches the wire, so the fast path costs one
+  dictionary insert and one removal. There is nothing for a module author to declare, because whether a
+  route is "long-running" is something only the clock knows at run time. ⚠ It suppresses NOTIFICATIONS
+  only — the response is never delayed. `ProgressInterval` then throttles progress per request once
+  announced; terminal transitions are never throttled. `MaxHistory` bounds retained history, each
+  eviction announced through `REQUEST_REMOVED` so a long-lived client store mirrors a bounded list.
+
   **`NotificationPump`(+`Options`)** — the transport-neutral half of the outbound notification
   channel (design §5, D16 applied to the host side): bus subscription (from CONSTRUCTION, not
   `Open`), the per-channel `Filter` (applied at enqueue, fail-CLOSED on a throwing predicate — the
@@ -959,47 +896,27 @@ changes, noting them in `CHANGELOG.md`).
   `BaseModuleService<TRequests>`, hooks (`useShenora`/`useShenoraEvent`/`useShenoraQuery`),
   `WindowCommands` typed service + `useWindowMaximized` (resize-triggered resync), `useDropZone`
   (native drop zones synced to elements — real OS paths, unstyled drag feedback),
-  `installDevInterceptor` (`window.__shenora` CDP-testing global); **`useShenoraOperations`/
-  `createOperationsStore`** (0.2.0) — mirrors `Shenora.Ipc`'s operations cluster: `OperationStatuses`
-  (the wire values, including `waiting`), `OperationEventTypes` + `OperationModuleName` (the event
-  vocabulary and default module, for the two events the store deliberately does NOT subscribe to —
-  `RESUME_REQUESTED`/`WAIT_REQUESTED` target the OWNING module's service), and the
-  `OperationInfo`/`OperationLabel`/`OperationProgress` types (`waitReason`
-  mirrors the host's `WaitReason`; `resumable` removed post-audit, see below), and a
-  `createShenoraStore` instance (`snapshot: LIST`, `on: { OPERATION_UPDATED: fold-by-id,
-  OPERATION_REMOVED: delete-named-ids }`, `actions: { cancel, dismiss, wait, clearFinished, resume }`)
-  with `running`/`waiting`/`finished` DERIVED getters
-  computed from `byId` on every read — never a second copy a reducer has to remember to keep in sync.
-  **The status collapse (owner direction, before publish — "structured like XHR"):** `waiting` used to
-  be two getters, `paused` and `interrupted`, unioned by a third — `interrupted` itself was added
-  (0.2.0, second adopter review) to close a gap the design's own three-band table (§5A.2) exposed: an
-  `interrupted` entry used to fall into NO getter at all (matched only the literal status string, not
-  `finished`) — reachable only by hand-filtering `byId`. Once the host's `OperationStatus` collapsed
-  `Paused`/`Interrupted` into the single `Waiting` value (every transition already treated them as one
-  band), the two half-getters were DELETED rather than kept as aliases: `waiting` is now the whole
-  band, a single-status filter exactly like `running`, with no second internal status set to derive
-  it from. `finished`/`waiting` stay disjoint by construction (the TERMINAL set `finished` filters on
-  excludes `waiting` on purpose). **Post-audit (before publish):** `clearFinished`/`resume` no longer
-  carry an optimistic local prune — they used to guess at what the host had removed (`clearFinished`
-  on the TERMINAL set; `resume` mirroring the host's `RequestResume` asymmetry, §5A.4, dropping only
-  the no-live-handle case), because removals had no wire event at all; one of those guesses was this
-  release's only Critical (a `resume` prune that once dropped a live-`Wait()` row the host deliberately
-  keeps, rebuilding "a waiting entry with no reachable exit" one layer up). The host's
-  `OPERATION_REMOVED` is now the ONE authoritative removal signal, folded by deleting exactly the
-  named ids regardless of status — `clearFinished`/`resume` are now plain posts (`clearFinished`
-  forwards this store's own configured `scope`), with no client-side guess left to diverge from the
-  host. `wait` (post-audit; shipped at the time as `pause`) posts `WAIT` and mirrors `dismiss`'s shape
-  — asking is not acting, so neither needs any local mutation.
-  `dismiss` needs no removal handling at all, since the host's `Dismiss` publishes an ordinary
-  terminal snapshot for the entry over the wire rather than removing it.
-  `createOperationsStore(options)` takes an
-  optional renamed module (for an app that changed `OperationRegistryOptions.ModuleName` to avoid a
-  collision) and an optional `scope`, threaded into the snapshot payload, the bus subscription AND
-  the action envelopes so a scoped store stays internally consistent; `useShenoraOperations` is the
-  ready-made default instance. Known limit, deliberate: no `byModule`/`byScope` selector — filtering
-  by module or scope is a one-line consumer selector over `byId`
-  (`Object.values(state.byId).filter(o => o.module === 'X')`), and shipping indexes for it would be
+  `installDevInterceptor` (`window.__shenora` CDP-testing global); **`useShenoraRequests`/
+  `createRequestsStore`** — mirrors the host's request tracking: `IpcRequestStates` (the wire values),
+  `IpcRequestEventTypes` + `IpcRequestsModuleName`, the
+  `IpcRequestStatus`/`IpcLabel`/`IpcProgress` types, and a `createShenoraStore` instance
+  (`snapshot: LIST`, `on: { REQUEST_UPDATED: fold-by-id, REQUEST_REMOVED: delete-named-ids }`,
+  `actions: { cancel, clearFinished }`) with `running`/`finished` DERIVED getters computed from `byId`
+  on every read — never a second copy a reducer has to keep in sync.
+  **TWO bands, and `cancel` takes the id you already have.** The store is a list of work that is
+  actually taking a while rather than a log of every call the page made, because the host stays silent
+  for the first 50 ms. `clearFinished` does not touch local state: the host's
+  `REQUEST_REMOVED { requestIds }` is the ONE authoritative removal signal, folded by deleting exactly
+  the named ids — history eviction and `clearFinished` both publish it, so the client cannot drift from
+  what the host actually did.
+  `createRequestsStore(options)` takes an optional renamed module (for an app that changed
+  `IpcRequestTrackerOptions.ModuleName` to avoid a collision) and an optional `scope`, threaded into the
+  snapshot payload, the bus subscription AND the action envelopes so a scoped store stays internally
+  consistent; `useShenoraRequests` is the ready-made default instance. Known limit, deliberate: no
+  `byModule`/`byType` selector — filtering is a one-line consumer selector over `byId`
+  (`Object.values(state.byId).filter(r => r.module === 'X')`), and shipping indexes for it would be
   duplicated derived state for no gain. react ≥18 required peer.
+
 
 ## Dependency rules (enforced by review)
 

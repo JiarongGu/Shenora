@@ -150,3 +150,24 @@ MobileMediaCapability     # 2026-08-08 -> AndroidMediaCapability / IosMediaCapab
 MobileMediaAudioConversion # 2026-08-08 -> AndroidMediaAudioConversion / IosMediaAudioConversion
 MobileLiveActivities      # 2026-08-08 -> AndroidLiveActivities / IosLiveActivities
 MobileFileDialogs         # 2026-08-08 -> MobileFileDialogsBase (abstract) + AndroidFileDialogs / IosFileDialogs
+
+# D66, 2026-08-08 — "operations" MERGED INTO IpcRequest. Not a rename: the entity duplicated the request
+# that caused it (a minted Guid beside IpcRequest.Id, a Kind beside its Type), so it was deleted. What
+# replaced it is only the live STATE of a request that outlived its own send.
+IOperationRegistry     # -> IIpcRequestTracker
+OperationRegistry      # -> IpcRequestTracker
+OperationRegistryOptions # -> IpcRequestTrackerOptions
+OperationsModule       # -> IpcRequestsModule
+AddShenoraOperations   # -> AddShenoraRequests
+OperationStatus        # -> IpcRequestState
+OperationInfo          # -> IpcRequestStatus
+OperationProgress      # -> IpcProgress
+OperationLabel         # -> IpcLabel
+OperationOptions       # -> DELETED; the request already carries Module/Type/Scope/Timestamp
+OperationEvents        # -> IpcRequestEvents
+useShenoraOperations   # -> useShenoraRequests
+createOperationsStore  # -> createRequestsStore
+SHENORA.OPERATIONS     # -> SHENORA.REQUESTS
+OPERATION_UPDATED      # -> REQUEST_UPDATED
+OPERATION_REMOVED      # -> REQUEST_REMOVED
+MissionOperationObserver # -> MissionEventPublisher (the sample's; missions report as an EVENT stream)

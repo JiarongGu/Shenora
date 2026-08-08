@@ -2329,7 +2329,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   XHR-like state machine"* and then rejecting every replacement NAME: *"maybe just IpcRequest? so we
   sharp the original request properly to have this logic into it"* · *"because the long run request still
   a request?"*.)
-  - 🔴 **The defect the naming argument uncovered, measured rather than argued.** `OperationRegistry`
+  - 🔴 **The defect the naming argument uncovered, measured rather than argued.** The former registry
     mints `Id = Guid.NewGuid()` — an id with NO relationship to the `IpcRequest.Id` that caused it — and
     `IModuleContext.Start` never receives the request at all. So a page sends request `r1`, the facade
     starts operation `guid-xyz`, and **the page has to correlate the two itself**. One logical thing,
@@ -2340,7 +2340,7 @@ a dated note (or a later entry that supersedes it) — never silently rewrite.
   - **What folding it in means, concretely:** the response may say *accepted, still running*; progress
     and status events are keyed by the REQUEST id; cancel targets the request id (the dispatcher already
     threads a `CancellationToken`); `IModuleContext.Run` declares *this request is long-running* rather
-    than minting a parallel entity. The `SHENORA.OPERATIONS` module's `LIST` becomes "requests still in
+    than minting a parallel entity. The module's `LIST` becomes "requests still in
     flight" — a view over the wire, not a separate registry with its own vocabulary.
   - ⚠ **The minority case that does NOT fold, and it is the interesting one: work nobody asked for.**
     A scheduled or crash-recovered mission reports progress with no request behind it. Inside the kit

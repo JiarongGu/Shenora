@@ -103,7 +103,7 @@ internal static class Program
             options.Log = Console.WriteLine;
         });
         // ⚠ The observer is attached in a STARTING hook rather than in the options above, because it
-        // needs `IOperationRegistry` — a service, not a value — and the options object is built before
+        // needs `IIpcRequestTracker` — a service, not a value — and the options object is built before
         // any provider exists. Execution reports through ONE observer written in the APP (Shenora must
         // never learn what an operation is — D19/D20); that pairing is still the app's whole cost.
         builder.OnStarting(app =>

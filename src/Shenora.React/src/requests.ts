@@ -143,7 +143,7 @@ export interface RequestsState {
   readonly finished: IpcRequestStatus[];
 }
 
-/** Fire-and-forget actions exposed on {@link useShenoraRequests}, routed to `OperationsModule`. */
+/** Fire-and-forget actions exposed on {@link useShenoraRequests}, routed to `IpcRequestsModule`. */
 export interface RequestsActions {
   /** `CANCEL { requestId }` — the app-level cancel route `ipc-contracts` prescribes. */
   cancel: (requestId: string) => string;
@@ -151,7 +151,7 @@ export interface RequestsActions {
    * `CLEAR_FINISHED { scope? }` — drop retained finished history, forwarding this store's own
    * configured scope (generic-library audit finding 1) so a scoped store's "clear completed" cannot
    * wipe another scope's history host-side. No local mutation here: the host's
-   * `OPERATION_REMOVED` (finding 4) is the only thing that removes a row from this store now — see
+   * `REQUEST_REMOVED` (finding 4) is the only thing that removes a row from this store now — see
    * {@link IpcRequestEventTypes.Removed}. It used to carry an optimistic local prune of every TERMINAL
    * entry, added because removals had no wire event at all; that guess is retired now that one exists.
    */
@@ -185,15 +185,15 @@ export interface RequestsStoreOptions {
    * The request/event module this store talks to. Must match the host's
    * `OperationRegistryOptions.ModuleName` — default `'OPERATIONS'` on both sides — when an app
    * renamed it to avoid a collision with one of its own module names (the duplicate-module guard
-   * `OperationsModule`'s own docs describe). A store bound to the default name cannot reach a
+   * `IpcRequestsModule`'s own docs describe). A store bound to the default name cannot reach a
    * renamed host at all, which is exactly the gap this field closes.
    */
   module?: string;
   /**
    * Optional app-defined scope, applied to THREE places so the store stays internally consistent:
    * the bus subscription (only deltas whose event scope matches are folded), the actions' request
-   * envelope, and the initial `LIST` snapshot's payload (`OperationsModule` reads its scope filter
-   * from the payload, not the envelope — see `OperationsModule.RouteMessageAsync`). Threading it
+   * envelope, and the initial `LIST` snapshot's payload (`IpcRequestsModule` reads its scope filter
+   * from the payload, not the envelope — see `IpcRequestsModule.RouteMessageAsync`). Threading it
    * into only the first two would load every scope on first subscribe and never remove the
    * out-of-scope rows, since no delta for them ever arrives: a silent, permanent leak.
    */
@@ -247,7 +247,7 @@ export function createRequestsStore(
       clearFinished: () =>
         // Forward THIS store's own configured scope (Finding 1, generic-library audit) — the same
         // key the LIST snapshot payload already carries above. No local mutation here any more
-        // (Finding 4): the host's OPERATION_REMOVED is the ONLY thing that removes a row now, which
+        // (Finding 4): the host's REQUEST_REMOVED is the ONLY thing that removes a row now, which
         // is also what makes the scope threading safe to add — nothing here can diverge from what
         // the host actually cleared.
         post(IpcRequestRoutes.ClearFinished, {
@@ -261,8 +261,8 @@ export function createRequestsStore(
 }
 
 /**
- * The client side of the operations primitive (design §4.6, `OperationsModule` +
- * `IOperationRegistry`): snapshots via `LIST` on first subscribe, then folds `REQUEST_UPDATED` by
+ * The client side of the operations primitive (design §4.6, `IpcRequestsModule` +
+ * `IIpcRequestTracker`): snapshots via `LIST` on first subscribe, then folds `REQUEST_UPDATED` by
  * id — one subscription however many components read it, and a late mounter renders CURRENT state
  * because the host is authoritative (the store primitive's own late-mounter case is now
  * host-backed end to end). `running`/`waiting`/`finished` are selectors an activity panel or status

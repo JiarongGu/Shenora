@@ -213,55 +213,42 @@ transport, or building the P6 adoption shims.
 - **`Publish` goes through `IModuleContext`, never a hand-typed module literal, so an emit cannot
   drift from the facade's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
   with `Module` supplied by `BaseFacade` at construction — the same anti-drift reason
-  `OperationInfo.Module` is stamped by the registry from the caller's own module rather than trusted
-  from the app. The sample's pre-0.2.0 shape (a hardcoded `"SAMPLE"` string re-typed at every emit
+  `IpcRequestStatus.Module` is taken from the request itself rather than trusted from the app. The sample's pre-0.2.0 shape (a hardcoded `"SAMPLE"` string re-typed at every emit
   site) is exactly the class of bug this closes: one typo and an event silently claims the wrong
   module, with nothing to grep for.
-- **An operation's `CancellationToken` is its OWN, never the request's — work handed off outlives
-  the request that started it.** `OperationRegistry.Start` allocates a fresh `CancellationTokenSource`
-  per operation; `IModuleContext.Run`/`Start` never touch the dispatch token at all. Capturing the
-  request's token instead would cancel a ten-minute deploy the moment the page that kicked it off
-  navigates away — the same trap `BaseFacade.RouteMessageAsync`'s own doc already named for
-  hand-rolled background work, now structurally impossible to get wrong through the primitive.
-- **Progress emission is throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms)
-  with a TRAILING emit, because the notification batcher queues without coalescing.** A tight
-  `Report` loop would otherwise ship hundreds of updates a second — the exact defect the harvested
-  source app had already fixed. At most one emission lands per window, but the LAST value in that
-  window is never simply dropped: a trailing timer fires once the window closes. **The trailing
-  flag must reset in a `finally`, covering every exit — success, cancellation, or a faulting
-  `TimeProvider`** (`OperationRegistry.TrailingEmitAsync`) — resetting only on the happy path would
-  leave `TrailingScheduled` stuck `true` forever after one fault, silently muting every later
-  `Report` on that operation for its remaining lifetime (found in review: the first cut did exactly
-  this). Lifecycle transitions (start, complete, fail, cancel, interrupt) are never throttled — they
-  always emit immediately, because a terminal state arriving late or not at all is a different class
-  of bug than a missed progress tick.
-- **Progress is the app's own unit, never a kit-assumed percent — and the kit does not clamp, validate,
-  or interpret it (owner direction, before 0.2.0 published — "even its progress it might be different
-  than 0-100%").** `OperationOptions.Progress`/`OperationInfo.Progress`/`IOperation.Report`'s `progress`
-  parameter are `OperationProgress?` (`Value`, `Total?`, `Unit?` — TS mirror `{ value, total?, unit? }`),
-  not an `int?` percent: `Total = null` means an absolute count with no known denominator (bytes off a
-  chunked stream), never zero, and `Unit` is app-defined and uninterpreted exactly like `Kind`. A
-  previous pass fixed the wrong half of this — it patched the write-side XML doc to SAY "0–100 percent"
-  instead of removing the assumption, which is the same mistake `Kind`-as-an-app-string already avoided
-  for the app's taxonomy. `OperationRegistry`'s old `ClampProgress` (`Math.Clamp(value, 0, 100)`) is
-  DELETED with nothing put in its place: silently rewriting an app's own reported number is worse than
-  passing it through, so a `Value` above its own `Total` is the app's bug to see, not the kit's to hide
-  — and no validation throw was added either, because `Report` runs on a hot path from background work
-  and throwing there would kill an operation over a cosmetic number. `IOperation.Complete()` no longer
-  fabricates `Progress = 100`: it sets `Value = Total` only when the last report carried a known `Total`
-  (the honest "all of it"), otherwise it leaves the last reported value untouched. `OperationProgress` is
-  a NEW wire shape both sides name, so it gets its own tripwire
-  (`WireMirrorTests.OperationProgress_fields_match_the_host`) rather than trusting the two sides to stay
-  in step by inspection, the same discipline every other shape on this wire already gets.
-- **An operation failure obeys the same no-raw-exception-text boundary as a request/response
-  failure.** `OperationRegistry.Run`'s guarded background body maps `OperationCanceledException` →
-  the operation's own `Cancel()`, `OperationException` → `Fail(code, parameters, message)` (the app's
-  own sanctioned words, same rule as `IpcErrorMapping`), and anything else → `Fail(IpcErrorCodes.
-  UnknownError, {exceptionType})` with the real exception logged host-side only. One boundary, two
-  entry points (a response and an `OperationInfo.Error`) — a second copy of the policy is exactly how
-  the `ex.Message`-in-a-wrapper bypass gets re-earned. **That `Cancel()` is the handle's own
-  (`IOperation.Cancel`), NOT the registry's public by-id `Cancel(string id)`** — see the next bullet
-  for why conflating the two used to strand a non-`Cancellable` operation `Running` forever.
+- 🔴 **A request's token IS the one a route observes, and CANCEL targets the request id.** Since D66
+  there is no separate operation with a separate token: `IpcRequestTracker.Begin` links the caller's
+  lifetime into a scope token, `ModuleBase` hands THAT to the route, and `Cancel(requestId)` signals it.
+  ⚠ The predecessor deliberately did the opposite — a fresh token per operation — because a request's
+  own token died with its response, so capturing it would have killed a ten-minute deploy the moment the
+  page navigated. The merge removed that gap instead of working around it: the request now outlives its
+  own send, so its token is the right one to observe.
+- 🔴 **NOTHING is published until a request outlives the grace period, and that is the whole reason
+  every request can be tracked without asking anyone to declare anything.**
+  `IpcRequestTrackerOptions.GracePeriod` (50 ms, the notification pump's own flush interval) suppresses
+  the running snapshot, the progress and the completion alike: a request that finishes inside the window
+  leaves NO event and NO history. ⚠ It suppresses NOTIFICATIONS only — never the response, which returns
+  before the tracking scope disposes. Anyone implementing this by parking the response has inverted it
+  and added latency to every fast call in the app to save a notification nobody would have seen.
+  Progress is then throttled per request by `ProgressInterval` (default 100 ms) once announced;
+  terminal transitions are never throttled, because a terminal state arriving late is a different class
+  of bug from a missed progress tick.
+- **Progress is the app's own unit, never a kit-assumed percent — and the kit does not clamp, validate
+  or interpret it** (owner direction: *"even its progress it might be different than 0-100%"*).
+  `IpcProgress` is `{ Value, Total?, Unit? }` (TS mirror `{ value, total?, unit? }`), not an `int?`
+  percent: `Total = null` means an absolute count with no known denominator (bytes off a chunked
+  stream), never zero, and `Unit` is app-defined and uninterpreted. Silently rewriting an app's own
+  reported number is worse than passing it through, so a `Value` above its own `Total` is the app's bug
+  to see — and no validation throw was added either, because `Report` runs on a hot path from background
+  work and throwing there would kill a request over a cosmetic number. It is a wire shape both sides
+  name, so it has its own tripwire (`WireMirrorTests.IpcProgress_fields_match_the_host`) rather than
+  trusting the two sides to stay in step by inspection.
+- **A failure obeys the same no-raw-exception-text boundary as any request/response failure.**
+  `ModuleBase` maps an `OperationException` to its structured error and anything else to
+  `IpcErrorCodes.UnknownError` plus the exception type name, with the detail logged host-side only —
+  one boundary, and `IpcRequestStatus.Error` carries the same shape. A second copy of the policy is
+  exactly how the `ex.Message`-in-a-wrapper bypass gets re-earned.
+
 - **`NotificationPump` owns the gate, the cap and the batch; a base owns only the tick.** The pump
   subscribes to the bus at construction (buffering starts before any client could exist to receive
   anything), applies the per-channel `Filter` at enqueue, bounds the queue with drop-oldest, and

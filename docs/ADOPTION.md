@@ -355,34 +355,18 @@ until the page is listening.
   Register `services.AddShenoraOperations()` once (opt-in — nothing is added to the pipeline until
   you do) and it ships `OperationsModule` (`LIST`/`CANCEL`/`CLEAR_FINISHED`/`RESUME`/`DISMISS`/`WAIT`
   under module `SHENORA.OPERATIONS`) for free — no hand-rolled `…PROGRESS`/`…DONE` event pair per feature, and
-  no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraOperations()`
+  no per-app re-agreement of what "cancel this operation" means. Client side, `useShenoraRequests()`
   is a ready-made `createShenoraStore` instance: snapshots via `LIST` on first subscribe (so a
-  progress strip that mounts mid-run isn't empty), folds `OPERATION_UPDATED` by id afterward, and
-  folds `OPERATION_REMOVED { operationIds }` by deleting those ids — the one authoritative signal for
-  `MaxHistory` eviction, `ClearFinished`, and a dropped crash-resume offer. What an operation actually
-  means — its phases, whether it queues, what a viewer looks like — stays yours; the kit tracks only
-  id/status/progress/cancel.
-  The lifecycle also covers a run that stops mid-flight WITHOUT crashing — expired credentials, a
-  throttling provider, DNS not yet propagated, or an app's own queue parking a just-started operation
-  (`op.Wait("queued")`, no kit change needed): `op.Wait("dns", …)` (`Running` → `Waiting`, an
-  OPTIONAL app-defined reason string, like `Kind` — omit it when the wait is self-evident, e.g. the
-  user clicked Pause) and `op.Resume()` (`Waiting` → `Running`) on the SAME handle `Start`/`Run` gave
-  you, plus `IOperationRegistry.Dismiss(id)` for the human declining a waiting offer outright
-  (→ `Cancelled`, terminal). A client can ASK for either direction —
-  `IOperationRegistry.RequestWait(id)`/`RequestResume(id)`, the `WAIT`/`RESUME` routes — for the
-  download-manager/activity-panel shape (the user clicking Pause, then Resume, on visible work). Both
-  only emit (`OPERATION_WAIT_REQUESTED`/`OPERATION_RESUME_REQUESTED`, same
-  `{ operationId, module, kind, scope }` payload) and change nothing themselves: **asking is not
-  acting** — your module's own `op.Wait()`/`op.Resume()` is what moves the state. `Find(id)` resolves
-  a live handle back from a bare id, which is exactly what those two handlers need.
-  `OperationStatus` carries ONE waiting value reached ONE way (a live `op.Wait()`), so there is no
-  sub-case to tell apart. **Crash recovery is deliberately yours.** The kit briefly carried a
-  `RegisterWaiting` + `ResumePayload` pair for announcing an operation it had never started; it was
-  cut before publish because it forced everything to answer "does this entry still have a body?", and
-  every way of answering that produced a defect. Keep your checkpoint token in your own store, and on
-  restart begin the resumed run as an ordinary `Start()`/`Run()`. Want the pending offer visible while
-  the user decides? `Start()` it and immediately `op.Wait("interrupted")`. See `docs/DECISIONS.md` D23
-  for the rationale.
+  progress strip that mounts mid-run isn't empty), folds `REQUEST_UPDATED` by id afterward, and
+  folds `REQUEST_REMOVED { requestIds }` by deleting those ids — the one authoritative signal for
+  history eviction and `CLEAR_FINISHED`. ⚠ Most requests never appear at all: the host stays silent for
+  the first 50 ms, so this is a list of work that is actually TAKING A WHILE, not a log of every call.
+  🔴 **There is no "waiting" state, and nothing to declare.** A request is IN FLIGHT or DONE, exactly as
+  `XMLHttpRequest` has it. Work that parks awaiting a human is not a request — nobody is waiting on the
+  reply — so it belongs on an event stream of its own; see the mission adapter below for the worked
+  example. **Crash recovery is deliberately yours**: keep your checkpoint token in your own store, and
+  on restart begin the resumed run as an ordinary request.
+
 - **Failures of a one-way send** have no promise to reject, so wire `configureBridge({ onPostError })`
   once at startup or they are invisible.
 
@@ -925,16 +909,18 @@ tracing attach.
 
 Two things that adapter learned the moment it ran, both of which you will hit:
 
-- **Open the operation in `OnQueued`, then `op.Wait("queued")` immediately** — the shape
-  `IOperationRegistry.Start` documents for an app whose own queue sits in front of the registry.
-  Without it, an item waiting behind a claim is invisible until it starts, which is exactly when a
-  user asks whether it is stuck. `OnStarted` then calls `op.Resume()` on the same handle.
-- **Start those operations with `Cancellable = false` unless you wire cancellation yourself.** The
-  scheduler cancels through the token you passed to `SubmitAsync`, and the registry's `Cancel` signals
-  the OPERATION's own token — a different one, which no mission body observes. A cancel button wired
-  straight through would flip the status while the work ran on underneath it, so the registry refuses
-  to advertise it. To offer a real cancel, keep your own `CancellationTokenSource` per submission and
-  expose your own route; the kit deliberately does not guess a link between the two lifetimes.
+- **Publish mission state as EVENTS, not as requests.** A mission is host-initiated: nobody sent a
+  request for it, so it has no request id, no response to await and nothing for the page to abort.
+  `samples/Shenora.Sample.Logic/MissionEventPublisher.cs` emits one `MISSION_UPDATED` event per
+  transition (`queued` / `running` / `completed` / `cancelled` / `failed`) and the page folds it with
+  `useShenoraEvent`. Queue depth belongs to the scheduler, which is where the answer actually lives.
+  ⚠ This replaced an adapter that reported missions as tracked "operations" — it was the only code
+  anywhere that needed a parked state, which is exactly why that state existed and why removing it was
+  safe (D66).
+- **Cancellation stays yours.** The scheduler cancels through the token you passed to `SubmitAsync`.
+  The kit deliberately does not guess a link between that lifetime and anything on the page: to offer a
+  real cancel, keep your own `CancellationTokenSource` per submission and expose your own route.
+
 
 **Both halves are portable.** In the sample, the scheduler, the observer and the facade that submits
 all live in the `net10.0` project that cannot reference Windows — so this composition is one of the

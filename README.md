@@ -178,12 +178,12 @@ the detail in the host log. The one sharp edge: an `OperationException`'s messag
 `context.Publish(type, payload?, scope?)` emits on the host bus under the facade's own module — the
 default gesture for progress and state, not a wiring exercise, and it can never drift from
 `ModuleName` the way a hand-typed literal at every call site can. For work too long to answer inline,
-`context.Run(new OperationOptions { Kind = "IMPORT", Cancellable = true }, async (op, ct) => {
-op.Report(progress: 40); … })` hands it to the background, tracks it (id, status, progress,
-cancel-by-id), and returns the operation id immediately — pair it with `services
-.AddShenoraOperations()` and `@shenora/react`'s `useShenoraOperations()` for a host-backed progress
-store with no per-feature event wiring. Both are opt-in: a facade that never publishes and never
-starts tracked work pays nothing.
+`context.Report(new IpcProgress(40, 100, "steps"))` reports progress on the CURRENT request — no
+options record, no second id, nothing to declare. Every request is tracked automatically and the host
+stays SILENT for the first 50 ms, so a request that finishes quickly emits nothing at all and only work
+that is actually taking a while reaches the page. Pair it with `@shenora/react`'s
+`useShenoraRequests()` for a host-backed progress store with no per-feature event wiring, and cancel
+with the id you already have.
 
 ### `Shenora.Windows` — the shell, the page host, and extra browsers
 
