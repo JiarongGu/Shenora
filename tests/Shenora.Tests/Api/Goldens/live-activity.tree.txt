@@ -1,0 +1,92 @@
+counterCard
+  lockScreen:
+    layout axis=Vertical spacing=10 insets=16,16,16,16 justify=Start align=Fill
+      layout axis=Horizontal spacing=12 insets=0,0,0,0 justify=SpaceBetween align=Center
+        icon symbol="timer" tint=-
+        layout axis=Vertical spacing=2 insets=0,0,0,0 justify=Start align=Leading
+          text value="{title}" role=Headline tint=-
+          text value="{subtitle}" role=Caption tint=-
+        text value="{subtitle}" role=Value tint=-
+  expanded:
+    layout axis=Vertical spacing=6 insets=2,0,6,0 justify=Start align=Fill
+      layout axis=Horizontal spacing=- insets=0,0,0,0 justify=SpaceBetween align=Center
+        icon symbol="timer" tint=-
+        cutout
+        text value="{subtitle}" role=Value tint=-
+      text value="{title}" role=Headline tint=-
+      text value="{subtitle}" role=Caption tint=-
+  compactLeading:
+    icon symbol="timer" tint=-
+  compactTrailing:
+    text value="{subtitle}" role=Value tint=-
+  minimal:
+    icon symbol="timer" tint=-
+everyElement
+  lockScreen:
+    layout axis=Vertical spacing=4 insets=8,8,8,8 justify=Start align=Leading
+      text value="{title}" role=Headline tint=-
+      text value="plain body" role=Body tint=#FF8800
+      layout axis=Horizontal spacing=- insets=0,0,0,0 justify=SpaceBetween align=Center
+        icon symbol="bolt.fill" tint=-
+        spacer
+        text value="{progress}" role=Value tint=-
+      progress tint=#00AAFF
+  expanded:
+    layout axis=Horizontal spacing=3 insets=1,2,3,4 justify=Center align=Trailing
+      icon symbol="gauge" tint=#123456
+      cutout
+      text value="{subtitle}" role=Caption tint=-
+  compactLeading:
+    icon symbol="circle.fill" tint=-
+  compactTrailing:
+    layout axis=Vertical spacing=- insets=0,0,0,0 justify=End align=Fill
+      progress tint=-
+  minimal:
+    spacer
+progressCard
+  lockScreen:
+    layout axis=Vertical spacing=10 insets=16,16,16,16 justify=Start align=Fill
+      layout axis=Horizontal spacing=12 insets=0,0,0,0 justify=SpaceBetween align=Center
+        icon symbol="arrow.down.circle.fill" tint=-
+        layout axis=Vertical spacing=2 insets=0,0,0,0 justify=Start align=Leading
+          text value="{title}" role=Headline tint=-
+          text value="{subtitle}" role=Caption tint=-
+        text value="{progress}" role=Value tint=-
+      progress tint=-
+  expanded:
+    layout axis=Vertical spacing=6 insets=2,0,6,0 justify=Start align=Fill
+      layout axis=Horizontal spacing=- insets=0,0,0,0 justify=SpaceBetween align=Center
+        icon symbol="arrow.down.circle.fill" tint=-
+        cutout
+        text value="{progress}" role=Value tint=-
+      text value="{title}" role=Headline tint=-
+      progress tint=-
+      text value="{subtitle}" role=Caption tint=-
+  compactLeading:
+    icon symbol="arrow.down.circle.fill" tint=-
+  compactTrailing:
+    text value="{progress}" role=Value tint=-
+  minimal:
+    icon symbol="arrow.down.circle.fill" tint=-
+statusCard
+  lockScreen:
+    layout axis=Vertical spacing=10 insets=16,16,16,16 justify=Start align=Fill
+      layout axis=Horizontal spacing=12 insets=0,0,0,0 justify=Start align=Center
+        icon symbol="arrow.triangle.2.circlepath" tint=-
+        layout axis=Vertical spacing=2 insets=0,0,0,0 justify=Start align=Leading
+          text value="{title}" role=Headline tint=-
+          text value="{subtitle}" role=Caption tint=-
+      progress tint=-
+  expanded:
+    layout axis=Vertical spacing=6 insets=2,0,6,0 justify=Start align=Fill
+      layout axis=Horizontal spacing=- insets=0,0,0,0 justify=SpaceBetween align=Center
+        icon symbol="arrow.triangle.2.circlepath" tint=-
+        cutout
+      text value="{title}" role=Headline tint=-
+      progress tint=-
+      text value="{subtitle}" role=Caption tint=-
+  compactLeading:
+    icon symbol="arrow.triangle.2.circlepath" tint=-
+  compactTrailing: -
+  minimal:
+    icon symbol="arrow.triangle.2.circlepath" tint=-

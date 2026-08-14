@@ -1,4 +1,5 @@
-using Shenora.Core;
+using Shenora;
+using Shenora.Engine;
 
 namespace Shenora.Tests.Core;
 

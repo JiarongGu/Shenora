@@ -93,34 +93,63 @@ keeps the library reusable (adopted from the family's other library, where it's 
   (`IWindowStateStore`, injected scripts, custom schemes, transports), not boolean options
   that switch between two consumers' behaviors.
 - **Placement is a design decision, not an accident (D19/D20).** A **portable contract** belongs in
-  `Shenora.Core` (`net10.0`); its **platform implementation** belongs in that platform's shell package
+  `Shenora` (`net10.0`); its **platform implementation** belongs in that platform's shell package
   — `Shenora.Windows`, or `src/Shenora.Mobile/` for the shared source behind `Shenora.Android` and
   `Shenora.iOS`. The bar for moving a contract to Core is **"app logic must be able to compile off
   Windows"**, NOT "the signature happens to be platform-neutral" — which is exactly why the whole
   window-state stack stays in `Shenora.Windows` (window geometry is a desktop concept).
-- **⚠ A Core CONTRACT must be implementable without an optional package (D48).** This is the corollary
-  that decides the hard cases, and it was learned by getting one wrong: `IFileLockInspector` initially
-  travelled with the file-operation engine into `Shenora.IO`, which would have forced
-  `Shenora.Windows → Shenora.IO` for a single interface. If a shell implements it, the contract lives in
-  Core — full stop. Its sibling `IPathLocker` went the other way for the opposite reason: advisory lock
-  files are portable, so contract and implementation ship together with the engine that uses them.
-- **A package for a SEAM is still rejected (D2). A package for optional WEIGHT is not.** The old
-  wording of this rule said flatly "no new package", which by 2026-08-05 would have condemned three
-  packages that exist. Read it as it was meant: a `*.Abstractions` package for interfaces earns nothing
-  (Core already holds them), but an optional FEATURE package earns its place when **(a)** it is
-  something only SOME apps do and **(b)** it is real shipped weight sitting in a package everything
-  references. `Shenora.Media` (D40) and `Shenora.IO` + `Shenora.IO.Compression` (D48) each passed both;
-  `Io/` was 34% of `Shenora.Core` and a phone app that hosts a page carried a self-updater. These hang
-  OFF Core — they are not layers under it, and no shell reference brings them.
+- **⚠ If a SHELL implements it, the contract lives in Core — full stop.** Learned by getting one wrong:
+  `IFileLockInspector` initially travelled with the file-operation engine out of Core, which would have
+  forced a shell → file-engine package edge for a single interface (the engine was `Shenora.IO` then). Its sibling `IPathLocker` went the other
+  way for the opposite reason: advisory lock files are portable, so contract and implementation ship
+  together with the engine that uses them. D55 made the packaging half of this moot — it is all one
+  package now — but the rule still decides which LAYER a contract belongs in (`Core/` · `Engine/` ·
+  `Modules/`), and it is the same rule.
+- 🔴 **A new NuGet package is the wrong answer. Ship a FOLDER (D55, 2026-08-07).** The framework is one
+  whole: `Shenora` + one shell + `@shenora/react`. There is no "optional features" tier any more —
+  `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` were all folded in.
+  The fold costs an adopter a deleted `PackageReference` **and a moved `using`**, because D65 made the
+  LAYER the namespace (`Shenora.Modules.Media`, `Shenora.Engine.Files`,
+  `Shenora.Modules.Update.Compression`).
+  ⚠ **A migration-cost claim is the first thing a later restructure invalidates and the one an adopter
+  ACTS on** — that sentence had to be corrected in four places at once (D53, D55, ARCHITECTURE, here).
+  **Re-derive it from the tree before repeating it anywhere.**
+  **The test is not layering, it is what the package set SAYS the product is.** A nuget.org listing of
+  `Shenora.Media` + `Shenora.IO` + `Shenora.IO.Compression` reads as a shelf of single-domain libraries;
+  this is a hybrid app framework and those are capabilities it carries. Before defending any boundary,
+  ask whether it makes a claim about the product nobody meant.
+  ⚠ **Two ways this rule was got wrong, both worth knowing because the arguments were plausible:**
+  - **Weight is not a reason (D40 → D53).** `Shenora.Media` was split out because "a demuxer is real
+    shipped BYTES", then D51 guaranteed no engine byte would ever ship. The premise died and nobody
+    noticed for two days. Weight alone would equally justify splitting anything of a similar size.
+  - **"Only SOME apps do it" is not a reason either (D48 → D55).** That test survived D53 and still
+    fell: it is a fine *layering* test and it answers a question nobody was asking. Whether the code
+    lives in `Core/Io/` or `Shenora.IO.dll` changes nothing an adopter experiences except how many lines
+    they paste — and on a trimmed build, not even the size.
+  - **Before promising "keep the projects, merge the package", check the dependency DIRECTION.** It was
+    the first plan for D55 and it was impossible: `IO → Core` (every type logs through `AppCallback`),
+    so a Core that packed `Shenora.IO.dll` would have to reference what already references it. The edge
+    decides whether that option exists at all.
 - **One shell package per PLATFORM, named for the platform (2026-08-02).** Not per framework, and not
   per sub-area. Windows merged three packages into one because the seam they preserved protected a
   consumer this kit cannot have; mobile SPLIT into two because Android and iOS ship, build and get
-  consumed separately. The test both times was the same, and it is the same test the feature packages
-  pass: does the boundary correspond to something a CONSUMER experiences? "WinForms without WebView2"
-  did not. "I am building an Android app" does; so does "my app mutates a file tree".
-- **Reserve a family name before you need it; ship the member only when it has contents.**
-  `Shenora.IO.Windows` and `Shenora.IO.Android` are deliberately NOT created — today they would hold one
-  class and zero classes. The naming leaves room, D15 decides the timing.
+  consumed separately. The test both times was the same: does the boundary correspond to something a
+  CONSUMER experiences? "WinForms without WebView2" did not. "I am building an Android app" does — and
+  **that is now the only boundary the package set draws**, since D55 removed the feature tier. A platform
+  is the one thing you genuinely pick.
+- **Ask which future changes would be BREAKING rather than additive, and pay for those NOW.** Owner,
+  2026-08-02: *"you have to always think bigger than we currently have… a new application with a new
+  requirement should also fit."* Audit a new surface for the changes that could not be made later without
+  breaking every caller — those are the only ones worth pre-building. Two were found and fixed before the
+  mission scheduler shipped, at a cost of one defaulted parameter each:
+  - `MissionDefinition.Lanes` was `IReadOnlyList<string>`, one permit apiece. A lane is often a BUDGET
+    (memory, VRAM, bandwidth) where items cost different amounts, and adding a cost later changes the
+    property's TYPE. `MissionLane(string Name, int Permits = 1)` from the start.
+  - **Priority**, defaulted to 0 — which IS plain FIFO. Adding an ordering input to a strictly-FIFO
+    scheduler later changes admission semantics for existing callers.
+  ⚠ The test is *breaking vs additive*, not *might be useful*. A new method or a new implementation of a
+  seam is additive and can wait; a type change, a semantic change, or a parameter that must be threaded
+  through cannot. (Harvested from the mission design doc's `A2` when it was retired — D57.)
 - **Options records over magic values.** Every number/color/URL a source app hardcoded (dev port,
   background color, timeouts, batch intervals) becomes a documented option with the family-proven
   default.

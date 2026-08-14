@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -14,7 +14,7 @@ public class ModuleLifecycleTests
 {
     private static IpcRequest Request(string module, string type = "PING") => IpcRequests.Create(module, type);
 
-    private sealed class Facade(string module, string answer) : BaseFacade
+    private sealed class Facade(string module, string answer) : ModuleBase
     {
         public override string ModuleName => module;
         protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)
@@ -143,7 +143,7 @@ public class ModuleLifecycleTests
         Assert.Throws<NotSupportedException>(() => opaque.TryReleaseModule("ANY"));
     }
 
-    private sealed class SlowFacade(TaskCompletionSource entered, TaskCompletionSource release) : BaseFacade
+    private sealed class SlowFacade(TaskCompletionSource entered, TaskCompletionSource release) : ModuleBase
     {
         public override string ModuleName => "SLOW";
         protected override async Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken)

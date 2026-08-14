@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.Events;
 
 namespace Shenora.Tests.Core;
 
@@ -214,7 +215,7 @@ public class EventBusTests
     [Fact]
     public void Application_builder_registers_the_event_bus()
     {
-        using var app = global::Shenora.Core.ShenoraApplication.CreateBuilder([]).Build();
+        using var app = global::Shenora.ShenoraApplication.CreateBuilder([]).Build();
 
         Assert.IsType<EventBus>(app.Services.GetRequiredService<IEventBus>());
     }
@@ -222,7 +223,7 @@ public class EventBusTests
     [Fact]
     public void App_registration_wins_over_the_builder_default()
     {
-        var builder = global::Shenora.Core.ShenoraApplication.CreateBuilder([]);
+        var builder = global::Shenora.ShenoraApplication.CreateBuilder([]);
         var custom = new EventBus();
         builder.Services.AddSingleton<IEventBus>(custom);
         using var app = builder.Build();

@@ -1,5 +1,6 @@
 using System.Diagnostics;
-using Shenora.Core;
+using Shenora;
+using Shenora.Engine.Missions;
 
 namespace Shenora.Tests.Missions;
 

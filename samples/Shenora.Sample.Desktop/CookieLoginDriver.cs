@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 using Shenora.Windows;
 
@@ -87,7 +89,7 @@ public sealed class CookieLoginDriver
     // The frozen wire serializer, not a private copy (P5.5 H4.5): IpcJson's own docs record that
     // the source app grew three private option sets that drifted apart. Same camelCase shape, and the
     // captured blob rides the IPC contract anyway.
-    private static JsonSerializerOptions BlobJson => Shenora.Ipc.IpcJson.Options;
+    private static JsonSerializerOptions BlobJson => Shenora.Core.Ipc.IpcJson.Options;
 
     private readonly CookieLoginDriverOptions _options;
     private readonly List<Regex> _patterns;
@@ -134,7 +136,6 @@ public sealed class CookieLoginDriver
 
     /// <summary>The controller surface the flow actually uses — a seam so the poll/capture logic
     /// is testable without a live browser (the pool-seam precedent).</summary>
-    /// <summary>See the summary above — the seam that makes the poll/capture logic testable.</summary>
     public sealed class Hooks
     {
         public required Func<string, CancellationToken, Task<IReadOnlyList<SessionCookie>>> ReadCookies { get; init; }

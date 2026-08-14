@@ -57,6 +57,31 @@ public class OptimizedFormTests
     });
 
     [Fact]
+    public void A_throwing_MaximizedChanged_subscriber_does_not_take_the_window_down() => Sta.Run(() =>
+    {
+        // Same class as the WndProcHook test above, and the same position: two of the four raise paths
+        // are the WM_SYSCOMMAND maximize/restore interception inside WndProc, so an app subscriber that
+        // throws escapes into the window procedure. This event is PUBLIC and its own summary invites an
+        // app to resync chrome on it, so "no app subscribes" is not an answer.
+        var calls = 0;
+        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
+        form.MaximizedChanged += (_, _) =>
+        {
+            calls++;
+            throw new InvalidOperationException("app chrome bug");
+        };
+
+        _ = form.Handle;
+        form.Maximize();                        // raises through the guard
+        Assert.True(form.IsAppMaximized);       // …and the state change still completed
+        form.RestoreFromMax();
+        Assert.False(form.IsAppMaximized);
+
+        Assert.Equal(2, calls);                 // the subscriber really did run, and really did throw
+        Assert.True(form.IsHandleCreated);      // …and the window survived both
+    });
+
+    [Fact]
     public void Restoring_from_an_unreachable_saved_rect_lands_somewhere_visible() => Sta.Run(() =>
     {
         // _restoreBounds is RAW PHYSICAL px from whichever monitor the window maximized on, so it can

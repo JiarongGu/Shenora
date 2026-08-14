@@ -1,12 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
 public class IpcCompositionTests
 {
-    private sealed class AlphaFacade : BaseFacade
+    private sealed class AlphaFacade : ModuleBase
     {
         public override string ModuleName => "ALPHA";
 
@@ -14,7 +14,7 @@ public class IpcCompositionTests
             Task.FromResult<object?>("alpha");
     }
 
-    private sealed class BetaFacade : BaseFacade
+    private sealed class BetaFacade : ModuleBase
     {
         public override string ModuleName => "BETA";
 
@@ -56,7 +56,7 @@ public class IpcCompositionTests
         // composition that registered a different IMessageDispatcher silently lost three whole modules,
         // with the only symptom being a title bar that stopped working (P5.5 H6). Every mapping helper is
         // now an extension over the interface.
-        using var provider = new ServiceCollection().AddMessageDispatcher().BuildServiceProvider();
+        using var provider = new ServiceCollection().UseMessageDispatcher().BuildServiceProvider();
         IMessageDispatcher dispatcher = provider.GetRequiredService<IMessageDispatcher>();
 
         dispatcher.MapModule(new AlphaFacade());
@@ -84,12 +84,12 @@ public class IpcCompositionTests
     }
 
     [Fact]
-    public async Task AddMessageDispatcher_maps_every_registered_facade()
+    public async Task UseMessageDispatcher_maps_every_registered_facade()
     {
         using var provider = new ServiceCollection()
-            .AddModuleFacade<AlphaFacade>()
-            .AddModuleFacade<BetaFacade>()
-            .AddMessageDispatcher()
+            .AddIpcModule<AlphaFacade>()
+            .AddIpcModule<BetaFacade>()
+            .UseMessageDispatcher()
             .BuildServiceProvider();
 
         var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
@@ -103,8 +103,8 @@ public class IpcCompositionTests
     {
         var order = new List<string>();
         using var provider = new ServiceCollection()
-            .AddModuleFacade<AlphaFacade>()
-            .AddMessageDispatcher((_, dispatcher) => dispatcher.Use(async (_, next, _) =>
+            .AddIpcModule<AlphaFacade>()
+            .UseMessageDispatcher((_, dispatcher) => dispatcher.Use(async (_, next, _) =>
             {
                 order.Add("app-middleware");
                 return await next();
@@ -122,7 +122,7 @@ public class IpcCompositionTests
     public async Task The_error_handler_is_outermost()
     {
         using var provider = new ServiceCollection()
-            .AddMessageDispatcher((_, dispatcher) =>
+            .UseMessageDispatcher((_, dispatcher) =>
                 dispatcher.MapRoute("APP", "BOOM", _ => throw new InvalidOperationException("secret detail")))
             .BuildServiceProvider();
 
@@ -137,7 +137,7 @@ public class IpcCompositionTests
     [Fact]
     public async Task Unhandled_requests_still_answer_no_handler()
     {
-        using var provider = new ServiceCollection().AddMessageDispatcher().BuildServiceProvider();
+        using var provider = new ServiceCollection().UseMessageDispatcher().BuildServiceProvider();
 
         var response = await provider.GetRequiredService<IMessageDispatcher>()
             .DispatchAsync(Request("NOWHERE"));
@@ -146,7 +146,7 @@ public class IpcCompositionTests
     }
 
     // ── Lazy facade resolution (P5.5 H2) ──────────────────────────────────────────────────────────
-    // AddMessageDispatcher used to resolve facades INSIDE the IMessageDispatcher singleton factory.
+    // UseMessageDispatcher used to resolve facades INSIDE the IMessageDispatcher singleton factory.
     // Any facade whose graph reaches IMessageDispatcher — the documented cross-module SendAsync seam —
     // re-entered that factory: DI's cycle detection is call-site based and cannot see a factory
     // delegate re-entering the provider, and the singleton isn't cached yet, so it simply ran again.
@@ -157,8 +157,8 @@ public class IpcCompositionTests
     public async Task A_facade_that_injects_the_dispatcher_resolves_instead_of_killing_the_process()
     {
         using var provider = new ServiceCollection()
-            .AddModuleFacade<SelfDispatchingFacade>()
-            .AddMessageDispatcher()
+            .AddIpcModule<SelfDispatchingFacade>()
+            .UseMessageDispatcher()
             .BuildServiceProvider();
 
         // Before the fix this line never returned — it overflowed the stack.
@@ -179,8 +179,8 @@ public class IpcCompositionTests
         // unreachable with nothing logged anywhere. On the eager path the composition now refuses
         // outright, naming both facades.
         using var provider = new ServiceCollection()
-            .AddModuleFacade<DupOneFacade>()
-            .AddModuleFacade<DupTwoFacade>()   // both claim "DUP"
+            .AddIpcModule<DupOneFacade>()
+            .AddIpcModule<DupTwoFacade>()   // both claim "DUP"
             .BuildServiceProvider();
 
         var error = Assert.Throws<InvalidOperationException>(
@@ -194,15 +194,15 @@ public class IpcCompositionTests
     [Fact]
     public async Task A_duplicate_module_under_lazy_mapping_surfaces_as_a_logged_error_not_a_silent_shadow()
     {
-        // AddMessageDispatcher maps LAZILY (it must — see the recursion test above), so the duplicate
+        // UseMessageDispatcher maps LAZILY (it must — see the recursion test above), so the duplicate
         // cannot be caught until the first dispatch. And DispatchAsync's contract is that it NEVER
         // throws, so this arrives as a structured error response with the detail kept host-side. The
         // fix here is "diagnosable instead of silent", not "fails at startup" — worth being precise
         // about, because the eager path above genuinely does fail at composition.
         using var provider = new ServiceCollection()
-            .AddModuleFacade<DupOneFacade>()
-            .AddModuleFacade<DupTwoFacade>()
-            .AddMessageDispatcher()
+            .AddIpcModule<DupOneFacade>()
+            .AddIpcModule<DupTwoFacade>()
+            .UseMessageDispatcher()
             .BuildServiceProvider();
 
         var response = await provider.GetRequiredService<IMessageDispatcher>()
@@ -215,7 +215,7 @@ public class IpcCompositionTests
     }
 
     /// <summary>A facade that injects the dispatcher — ordinary, and previously fatal.</summary>
-    private sealed class SelfDispatchingFacade(IMessageDispatcher dispatcher) : BaseFacade
+    private sealed class SelfDispatchingFacade(IMessageDispatcher dispatcher) : ModuleBase
     {
         public override string ModuleName => "SELF";
 
@@ -229,13 +229,13 @@ public class IpcCompositionTests
     }
 
     // Two facades claiming one module, with no dependencies — so the guard is what fails, not DI.
-    private sealed class DupOneFacade : BaseFacade
+    private sealed class DupOneFacade : ModuleBase
     {
         public override string ModuleName => "DUP";
         protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken) => Task.FromResult<object?>("one");
     }
 
-    private sealed class DupTwoFacade : BaseFacade
+    private sealed class DupTwoFacade : ModuleBase
     {
         public override string ModuleName => "DUP";
         protected override Task<object?> RouteMessageAsync(IpcRequest request, IModuleContext context, CancellationToken cancellationToken) => Task.FromResult<object?>("two");

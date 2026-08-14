@@ -1,5 +1,6 @@
-using Shenora.Core;
-using Shenora.Ipc;
+using Shenora;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -7,8 +8,9 @@ public class NotificationPumpTests
 {
     private static NotificationPump Pump(NotificationPumpOptions? options = null) => new(options ?? new());
 
-    private static IpcNotification Note(string module = "APP", string type = "TICK", string? scope = null) =>
-        new() { Module = module, Type = type, Scope = scope };
+    private static IpcNotification Note(string module = "APP", string type = "TICK", string? scope = null,
+                                        string? key = null, object? payload = null) =>
+        new() { Module = module, Type = type, Scope = scope, CoalesceKey = key, Payload = payload };
 
     [Fact]
     public void Nothing_is_delivered_before_the_client_is_ready()
@@ -111,6 +113,99 @@ public class NotificationPumpTests
         bus.Emit("APP", "AFTER_DISPOSE");
 
         Assert.Equal(1, pump.PendingCount);
+    }
+
+    /// <summary>
+    /// 🔴 The batch has always coalesced ROUND TRIPS; this is what makes it coalesce PAYLOADS. A request
+    /// reporting a hundred times inside one 50 ms window used to put a hundred snapshots in one message
+    /// for the page to fold into the one number it renders.
+    /// </summary>
+    [Fact]
+    public void A_later_notification_supersedes_an_earlier_one_carrying_the_same_key()
+    {
+        using var pump = Pump();
+        pump.Open();
+        pump.Enqueue(Note(type: "STATUS", key: "r-1", payload: new { step = "FIRST" }));
+        pump.Enqueue(Note(type: "STATUS", key: "r-1", payload: new { step = "SECOND" }));
+        pump.Enqueue(Note(type: "STATUS", key: "r-1", payload: new { step = "LAST" }));
+
+        Assert.True(pump.TryDrainBatch(out var json));
+        Assert.Contains("LAST", json);
+        Assert.DoesNotContain("FIRST", json);
+        Assert.DoesNotContain("SECOND", json);
+    }
+
+    /// <summary>
+    /// The opt-in half, and the one that matters most: the pump cannot know whether an un-keyed payload is
+    /// a snapshot or a DELTA, and coalescing deltas silently loses data. So an emitter that says nothing
+    /// keeps every event it emitted.
+    /// </summary>
+    [Fact]
+    public void Un_keyed_notifications_are_never_coalesced_even_when_otherwise_identical()
+    {
+        using var pump = Pump();
+        pump.Open();
+        pump.Enqueue(Note(type: "ADDED", payload: new { delta = "one" }));
+        pump.Enqueue(Note(type: "ADDED", payload: new { delta = "two" }));
+
+        Assert.True(pump.TryDrainBatch(out var json));
+        Assert.Contains("one", json);
+        Assert.Contains("two", json);
+    }
+
+    /// <summary>
+    /// A key is scoped to its (module, type, scope), so two DIFFERENT events an app happens to key by the
+    /// same entity id never eat each other — only successive snapshots of the same thing do.
+    /// </summary>
+    [Fact]
+    public void A_key_shared_across_different_types_or_scopes_does_not_coalesce()
+    {
+        using var pump = Pump();
+        pump.Open();
+        pump.Enqueue(Note(type: "OPENED", key: "e-1", payload: new { mark = "opened" }));
+        pump.Enqueue(Note(type: "CLOSED", key: "e-1", payload: new { mark = "closed" }));
+        pump.Enqueue(Note(type: "OPENED", key: "e-1", scope: "w2", payload: new { mark = "scoped" }));
+
+        Assert.True(pump.TryDrainBatch(out var json));
+        Assert.Contains("opened", json);
+        Assert.Contains("closed", json);
+        Assert.Contains("scoped", json);
+    }
+
+    /// <summary>
+    /// The survivor keeps the LATEST position, not the first one's — a superseding snapshot describes
+    /// "now", so it must not be re-ordered ahead of un-keyed events that were queued between the two.
+    /// </summary>
+    [Fact]
+    public void The_survivor_keeps_the_position_of_the_notification_that_superseded()
+    {
+        using var pump = Pump();
+        pump.Open();
+        pump.Enqueue(Note(type: "STATUS", key: "r-1", payload: new { mark = "stale" }));
+        pump.Enqueue(Note(type: "BETWEEN"));
+        pump.Enqueue(Note(type: "STATUS", key: "r-1", payload: new { mark = "fresh" }));
+
+        Assert.True(pump.TryDrainBatch(out var json));
+        Assert.DoesNotContain("stale", json);   // it really did coalesce, or the order below proves nothing
+        Assert.True(json!.IndexOf("BETWEEN", StringComparison.Ordinal)
+                    < json.IndexOf("fresh", StringComparison.Ordinal),
+                    "the surviving snapshot must stay AFTER the event queued between the two, not take the older slot");
+    }
+
+    /// <summary>
+    /// The key is a host-side buffering hint and must never reach the page: by the time a batch leaves,
+    /// the coalescing has already happened and there is nothing left for a client to decide.
+    /// </summary>
+    [Fact]
+    public void The_coalesce_key_never_crosses_the_wire()
+    {
+        using var pump = Pump();
+        pump.Open();
+        pump.Enqueue(Note(type: "STATUS", key: "a-very-distinctive-key"));
+
+        Assert.True(pump.TryDrainBatch(out var json));
+        Assert.DoesNotContain("a-very-distinctive-key", json);
+        Assert.DoesNotContain("coalesce", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

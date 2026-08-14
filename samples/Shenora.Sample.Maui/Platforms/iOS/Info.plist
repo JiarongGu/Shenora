@@ -32,5 +32,17 @@
 	     _WriteAppManifest merges a stale obj/**/AppManifest.plist copy; see mobile-shells.md. -->
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<!-- 🔴 BACKGROUND AUDIO, and it is HALF of a pair — neither half works alone.
+	     Without this key iOS suspends the process the moment the app leaves the foreground and playback
+	     stops mid-sentence; without an ACTIVE AVAudioSession (see PlaybackSessionProbe) the key buys
+	     nothing, because the system does not believe the app is playing anything.
+	     ⚠ The symptom of missing either one is identical and says nothing about which: audio plays
+	     perfectly in the foreground and dies on the swipe. Measured on a device, 2026-08-07.
+	     Same caveat as the key above: this is the APP's declaration, the kit cannot add it, and editing
+	     this file does not reach an INCREMENTAL build. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

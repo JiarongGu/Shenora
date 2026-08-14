@@ -30,7 +30,7 @@ const { data, loading, refetch } = useShenoraQuery<Note[]>('NOTES', 'GET_ALL');
 useShenoraEvent<Note>('NOTES', 'ADDED', (note) => refetch());
 ```
 
-Failed calls reject with `OperationError` — a structured `code` (an i18n key: translate
+Failed calls reject with `ShenoraError` — a structured `code` (an i18n key: translate
 `errors.{code}`) plus interpolation `parameters`, never raw host exception text.
 
 ### Long-running work: post, then read a store
@@ -66,36 +66,43 @@ single component**. A failed `post` has no promise to reject, so it is reported 
 configureBridge({ onPostError: (failure) => log.error(failure.module, failure.type, failure.error) });
 ```
 
-### Tracked operations: a ready-made progress store
+### Requests in flight: a ready-made progress store
 
-For work the host tracks with `Shenora.Ipc`'s operation registry (an `IModuleContext.Run`/`Start`
-route on the C# side), `useShenoraOperations()` is a `createShenoraStore` instance built the same
-way as the example above — no per-feature event wiring needed:
+Every request the host handles is tracked automatically — there is nothing to declare on either side.
+`useShenoraRequests()` is a `createShenoraStore` instance built the same way as the example above:
 
 ```ts
-import { useShenoraOperations } from '@shenora/react';
+import { useShenoraRequests } from '@shenora/react';
 
-const running = useShenoraOperations((s) => s.running);         // every in-flight operation
-const waiting = useShenoraOperations((s) => s.waiting);          // stopped, awaiting a decision — "needs you", one bucket
-const importJob = useShenoraOperations((s) => s.byId[jobId]);   // one, by id
+const running = useShenoraRequests((s) => s.running);           // every request still in flight
+const finished = useShenoraRequests((s) => s.finished);         // retained history, newest first
+const importJob = useShenoraRequests((s) => s.byId[requestId]); // one, by id
 
-useShenoraOperations.actions.cancel(jobId);       // only does anything if the op opted into Cancellable
-useShenoraOperations.actions.dismiss(jobId);      // decline a waiting offer — refuses a running one
-useShenoraOperations.actions.wait(jobId);         // ASK the host to wait running work — refuses anything not running
-useShenoraOperations.actions.clearFinished();
+useShenoraRequests.actions.cancel(requestId);   // XMLHttpRequest.abort() — the id you sent with
+useShenoraRequests.actions.clearFinished();
 ```
 
-`operation.progress` is an exported `OperationProgress` (`{ value: number; total?: number; unit?:
-string }`) — import the type rather than re-declaring the shape — the APP's own unit
-(bytes-of-a-known-total, items-of-a-known-total, an absolute count with no known total, or a genuine
-percent), never a kit-assumed percentage: `total` is the denominator when one is known and `undefined`
-when there isn't one, and `unit` is app-defined and uninterpreted, exactly like `kind`. The kit ships
-no percent helper — render a ratio only when you have a `total`:
+🔴 **The id is the one you already have.** `requestId` is the `id` of the request you sent — there is no
+second identity to correlate. Cancelling it targets the token the route is running under.
+
+⚠ **Most requests never appear here, and that is the design.** The host stays SILENT for the first
+50 ms (`IpcRequestTrackerOptions.GracePeriod`): a request that finishes inside that window emits no
+event at all — no running snapshot, no completion, nothing retained. So this store is a list of work
+that is actually *taking a while*, not a log of every call your page made. Nobody wants a spinner for
+five milliseconds of work, and the clock decides that at run time rather than a module author guessing
+at authoring time.
+
+`request.progress` is an exported `IpcProgress` (`{ value: number; total?: number; unit?: string }`) —
+import the type rather than re-declaring the shape. It is the APP's own unit (bytes of a known total,
+items of a known total, an absolute count with no known total, or a genuine percent), never a
+kit-assumed percentage: `total` is the denominator when one is known and `undefined` when there is
+none, and `unit` is app-defined and uninterpreted. The kit ships no percent helper — render a ratio
+only when you have a `total`:
 
 ```ts
-import type { OperationProgress } from '@shenora/react';
+import type { IpcProgress } from '@shenora/react';
 
-function format(progress?: OperationProgress): string {
+function format(progress?: IpcProgress): string {
   if (!progress) return 'starting…';
   return progress.total
     ? `${Math.round((progress.value / progress.total) * 100)}%`
@@ -105,40 +112,20 @@ function format(progress?: OperationProgress): string {
 
 That division is your own policy, not the kit's, which is why it lives here instead of in `src/`.
 
-For the two events the store deliberately does NOT subscribe to — `OPERATION_RESUME_REQUESTED` and
-`OPERATION_WAIT_REQUESTED`, which target the OWNING module's service rather than this generic store —
-the module name and the event vocabulary are exported too, so you match by symbol and stay inside the
-host↔client mirror the wire tests pin:
+The store snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run is not
+empty), then folds `REQUEST_UPDATED` by id — one subscription however many components read it. Two
+bands, both derived from `byId` on every read: `running` and `finished`. Filtering by your own
+`module`/`type` is a plain `Array.filter` over either.
 
-```ts
-import { OperationEventTypes, OperationModuleName, useShenoraEvent } from '@shenora/react';
+`clearFinished` does not touch local state itself: the host's `REQUEST_REMOVED { requestIds }` is the
+one authoritative removal signal the store folds, deleting exactly the named ids. History eviction and
+`clearFinished` both publish it, so a long-lived store's mirror of bounded host history cannot drift
+from what the host actually did.
 
-useShenoraEvent(OperationModuleName, OperationEventTypes.ResumeRequested, (payload) => …);
-```
-
-It snapshots via `LIST` on first subscribe (so a progress strip that mounts mid-run isn't empty), then
-folds `OPERATION_UPDATED` by id — one subscription however many components read it. The client
-mirrors the host's three bands (design §5A.2): `running` (Active), `waiting` (Waiting), and `finished`
-(Terminal). All three are derived from `byId` on every read, never a second copy to keep in sync —
-`waiting` is a single-status filter, exactly like `running`. `OperationStatus` carries ONE waiting
-value reached ONE way — the host's `IOperation.Wait` on a live operation — so there is no sub-case to
-tell apart. Filtering by your own `module`/`kind` is a plain `Array.filter` over any of them. A
-`waiting` operation carries `waitReason` — an app-defined string, like `kind`, OPTIONAL on the host
-side — for your UI to branch on. The host never prunes a waiting entry on its own: it stays until
-someone resumes, dismisses, or finishes it. `resume`/`dismiss`/`wait` are all fire-and-forget client
-requests — the host's own `IOperation.Wait`/`Resume` (called by whoever owns the operation, hearing
-`OPERATION_WAIT_REQUESTED`/`OPERATION_RESUME_REQUESTED`) is what actually changes the state; asking
-is not acting. `clearFinished`/`resume`/`wait` do not touch local state themselves at all: the host's
-`OPERATION_REMOVED { operationIds }` is the ONE authoritative removal signal the store folds, deleting
-exactly the named ids — `MaxHistory` eviction and `clearFinished`
-publish it, so a long-lived store's mirror of bounded host history cannot drift from what the host
-actually did (this replaced two hand-written optimistic local prunes that a past release carried —
-one of which was this project's only Critical, a `resume` prune that dropped a still-waiting row).
-`dismiss` never needed one, since the host's `Dismiss` publishes an ordinary terminal snapshot over
-the wire, the same as a real cancel. Use `createOperationsStore({ module, scope })` instead of the
-default export if your host renamed `OperationRegistryOptions.ModuleName` or
-you need a scope-filtered instance (a secondary window, an auxiliary session) — `clearFinished`
-forwards that scope so clearing history in one window cannot wipe another's.
+⚠ **Work nobody requested does not belong here.** A scheduled job, a background sync, anything the host
+starts on its own — those have no request behind them and no response to wait for, so they report on
+their own event stream via `useShenoraEvent`. Squeezing them in here is what the previous design did,
+and it is why it needed a "waiting" state nothing else could explain.
 
 ### Observing the whole stream
 

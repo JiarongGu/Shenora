@@ -70,7 +70,7 @@ public class MetadataSurfaceTests
             // package differing only by TFM: a consumer that retargets has to find the same members. Two
             // hand-written shapes with only one gated is precisely the drift this file exists to catch.
             { "Shenora.Windows", "net10.0-windows" },
-            // Shenora.Media.Android/.iOS were here for one commit and are gone (D45): interception moved to
+            // Shenora.Modules.Media.Android/.iOS were here for one commit and are gone (D45): interception moved to
             // the shells and generic serving to Core, leaving them nothing to hold.
         };
 

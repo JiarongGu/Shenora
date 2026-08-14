@@ -1,12 +1,15 @@
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Storage;
-using Shenora.Core;
+using Shenora;
+using Shenora.Modules.FileDialog;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 
 namespace Shenora.Mobile;
 
 /// <summary>
-/// The MAUI implementations of <c>Shenora.Core</c>'s shell contracts — the peers of
+/// The MAUI implementations of <c>Shenora</c>'s shell contracts — the peers of
 /// <c>Shenora.Windows</c>'s. Each one is either a real implementation, an honest no-op the platform
 /// already satisfies, or a loud refusal; never a quiet nothing (see <see cref="ShellCapability"/>).
 /// </summary>
@@ -119,14 +122,21 @@ public sealed class MobileUiInteraction : IUiInteraction
 /// <c>DefaultExtension</c>. <c>Title</c> and <c>Filters</c> DO map.
 /// </para>
 /// <para>
-/// <b>SAVING is implemented PER PLATFORM</b> (<c>Platforms/Android/</c>, <c>Platforms/iOS/</c>) because
-/// the two systems express it differently and neither resembles a desktop save dialog — see
-/// <see cref="SaveAsync"/>. It is a <c>partial</c> method rather than a virtual with a fallback on
-/// purpose: a THIRD platform joining this shared source cannot compile until someone decides what save
-/// means there, instead of silently inheriting a stub that refuses at runtime.
+/// <b>SAVING is implemented PER PLATFORM</b> — <c>AndroidFileDialogs</c> and <c>IosFileDialogs</c>, each
+/// in its own shell project — because the two systems express it differently and neither resembles a
+/// desktop save dialog. See <see cref="SaveAsync"/>.
+/// </para>
+/// <para>
+/// 🔴 <b>ABSTRACT, not <c>partial</c></b> (owner, 2026-08-08: *"use abstraction or composition, do not use
+/// partial class — the partial class is only useful and meaningful for code generation"*). It was a partial
+/// method to get one property: a THIRD platform joining this shared source cannot compile until someone
+/// decides what save means there, rather than silently inheriting a stub that refuses at runtime.
+/// <c>abstract</c> gives exactly that — an unimplemented member is a compile error — while also being a
+/// real seam: the split is visible in the type system, a test can subclass it, and the two halves stop
+/// pretending to be one class that no tooling can see the whole of.
 /// </para>
 /// </summary>
-public sealed partial class MobileFileDialogs : IFileDialogs
+public abstract class MobileFileDialogsBase : IFileDialogs
 {
     /// <summary>
     /// Pick a destination and write to it — the portable save, implemented natively per platform:
@@ -146,9 +156,9 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     /// callback as "may run even if the user ultimately cancels".
     /// </para>
     /// </summary>
-    public partial Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
-                                                    Func<Stream, CancellationToken, Task> write,
-                                                    CancellationToken cancellationToken = default);
+    public abstract Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
+                                                     Func<Stream, CancellationToken, Task> write,
+                                                     CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
     public async Task<FileDialogResult> OpenFileAsync(OpenFileOptions? options = null)
@@ -194,7 +204,7 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     /// per-call directory gives the same collision safety with the filename left alone.
     /// </para>
     /// </summary>
-    private static string NewTempPath(string? suggestedName)
+    protected static string NewTempPath(string? suggestedName)
     {
         var name = string.IsNullOrWhiteSpace(suggestedName) ? "save" : Path.GetFileName(suggestedName);
         var directory = Path.Combine(FileSystem.CacheDirectory, "shenora-save", Guid.NewGuid().ToString("n"));
@@ -207,7 +217,7 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     /// every save leaks an empty folder into the cache for the life of the install. Best-effort by
     /// design: a cache the OS reclaims is not worth masking a real outcome for.
     /// </summary>
-    private static void DiscardTemp(string tempPath)
+    protected static void DiscardTemp(string tempPath)
     {
         try
         {
@@ -227,7 +237,7 @@ public sealed partial class MobileFileDialogs : IFileDialogs
     /// own. Unlike the desktop, the NAME is the only place an extension can be expressed here — the
     /// MIME type is deliberately generic (see the platform implementations).
     /// </summary>
-    private static string SuggestedName(SaveFileOptions? options)
+    protected static string SuggestedName(SaveFileOptions? options)
     {
         var name = options?.FileName;
         if (string.IsNullOrWhiteSpace(name)) name = "untitled";

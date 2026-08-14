@@ -24,7 +24,7 @@
          WHY serial (see xunit.runner.json): this suite creates real STA message pumps, real OS
          mutexes and six real window threads, and asserts wall-clock budgets — collection-level
          parallelism made those race each other on a loaded box. It also actively HID a defect:
-         WindowCommandFacadeTests' START_RESIZE case entered the OS modal size loop on the test
+         WindowCommandModuleTests' START_RESIZE case entered the OS modal size loop on the test
          thread for ~17 s (indefinitely when run alone), and overlapping work kept the wall clock at
          6 s so nobody saw it. Serial costs 6 s → 9 s and is steady. -->
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
@@ -45,10 +45,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Shenora.Ipc\Shenora.Ipc.csproj" />
-    <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
-    <ProjectReference Include="..\..\src\Shenora.IO.Compression\Shenora.IO.Compression.csproj" />
-    <ProjectReference Include="..\..\src\Shenora.Media\Shenora.Media.csproj" />
+    <!-- The file-operation engine and its zip half arrive through Shenora: the Shenora.IO and
+         Shenora.IO.Compression package ids stopped existing on 2026-08-07 (D55), and D65 then moved
+         their namespaces too — Shenora.Engine.Files and Shenora.Modules.Update.Compression. D55's
+         note here promised the namespaces were unchanged, which was true for exactly two days. -->
     <ProjectReference Include="..\..\src\Shenora.Windows\Shenora.Windows.csproj" />
     <!-- The desktop SAMPLE, so the cookie-login driver keeps its tests after moving out of the
          library (P7). It is a recipe now, not public surface — but its invariants are sibling

@@ -149,7 +149,7 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
       setState(reduce(state, event.payload as never, event));
     } catch (error) {
       // A throwing reducer must not corrupt shared state or break the other subscribers — the same
-      // guarded-callback rule the host applies to app code (Shenora.Core.AppCallback).
+      // guarded-callback rule the host applies to app code (Shenora.AppCallback).
       report(error, { module, type });
     }
   };

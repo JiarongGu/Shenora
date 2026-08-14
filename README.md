@@ -1,9 +1,14 @@
 # Shenora (神阙)
 
-**The reusable desktop body for Windows applications built with .NET + WinForms + WebView2 +
-React.** Shenora provides the hosting shell — application host, lifecycle, typed IPC, module
-registration, window management, and native desktop integrations — so an application ships only
-its domain logic and screens. The name (神阙, "vessel of the way") reflects the split: Shenora is
+**A hybrid app development framework — .NET + React — for Windows, Android and iOS.** Shenora is the
+"body" an app boots its logic on: shell hosting, typed IPC, modules, window management and native
+services, so an application ships only its domain logic and screens. **.NET does the platform work,
+React does the interface, and the kit owns the seam between them** — which is the whole differentiator
+against a webview-plus-plugins stack: the ceiling here is .NET's (real threads, real handles, the
+platform SDKs, background execution), not the web platform's.
+
+⚠ **It is not a media library, a file library, or any other single-domain library** — those are
+capabilities it happens to carry (D53). The name (神阙, "vessel of the way") reflects the split: Shenora is
 the developing body that hosts an application's logic and intelligence; its sibling library
 [Lyntai](https://github.com/JiarongGu/Lyntai) (灵台) is the reusable AI brain. The two never
 depend on each other.
@@ -20,7 +25,8 @@ native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary
 the auxiliary browser sessions (off-screen render pool, interactive sessions, streaming sessions) are
 extracted from proven in-house applications and verified end-to-end against the sample app. Every
 public and protected member is documented and gated by API-surface baselines. The kit also runs on
-**Android and iOS**, proven on a device and a simulator.
+**Android and iOS**, both proven on real hardware — an Android device and an iPhone 17 Pro, including
+media playback, the native save picker, audio conversion and Live Activities.
 
 ⚠ **The package set was reorganised by platform in 0.5.0.** `Shenora.WinForms`, `Shenora.WebView2`
 and `Shenora.WebView2.Sessions` are superseded by a single `Shenora.Windows`, and `Shenora.Android` /
@@ -34,16 +40,13 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
-| `Shenora.Core` | NuGet | `net10.0` | The application host, and the platform-neutral contracts your logic compiles against. |
-| `Shenora.Ipc` | NuGet | `net10.0` | The transport-neutral IPC contract and middleware dispatcher. |
-| `Shenora.Media` | NuGet | `net10.0` | Media LOGIC only: a per-stream playability planner and the probe-result shape it reads. Ships no codec list and no engine — and **is not needed to play a file** (see below). |
-| `Shenora.IO` | NuGet | `net10.0` | Mutating a file tree without corrupting it: a journalled update queue with rollback, cross-process path locks, and a staged self-updater with per-file verification. |
-| `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.IO`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
-| `Shenora.IO.Compression` | NuGet | `net10.0` | Getting files into and out of an archive SAFELY: extraction that refuses any entry escaping its destination, bounded size and count, and a ZIP-backed update source. No native engine — zip works on the framework alone. |
+| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Modules.Update.Compression`). |
+| `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Modules.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
-| `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell — same source as `Shenora.Android`, different platform. |
+| `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
 | `@shenora/react` | npm | ES2022 / ESM | The client half — bridge, event bus, store, hooks. |
+| `@shenora/cli` | npm | Node 20+ | **Build-time only, a `devDependency`** (D67). The `shenora` binary: take a built app onto a simulator, a real iPhone or an Android device, with no Xcode project of your own. The Android half runs on Windows. Ships inside nothing you deploy. |
 
 The TFM column is here so an adopter can tell whether a package fits without downloading the nupkg to
 inspect it. **One shell package per platform** — you reference the one you are building for, and the
@@ -56,33 +59,38 @@ target framework names a Windows SDK version. Stay on plain `net10.0-windows` an
 by name with the one-line fix in the message; retarget and it works, on a Windows 10 1809 floor. **The kit
 does not narrow your supported platforms for a feature you did not ask for.**
 
-Dependencies — the graph is a **diamond, not a chain**:
+Dependencies — the graph is a **fan, one level deep**: each shell references `Shenora` and nothing else
+of the kit's, so referencing two shells is impossible by construction rather than by convention.
+(It was a *diamond* while `Shenora.Ipc` sat in the middle; D65 removed that level.)
 
 ```
-                    Shenora.Core          net10.0        portable: no Windows reference
-                      ↑          ↑
-        Shenora.Ipc ──┘          │
-          net10.0                │
-              ↑                  │
-              ├──── Shenora.Windows ──────┘             net10.0-windows
-              ├──── Shenora.Android                     net10.0-android
-              └──── Shenora.iOS                         net10.0-ios
+                      Shenora           net10.0    portable: no Windows reference
+                         ↑              (Core · Engine · Modules — the IPC stack is
+            ┌────────────┼────────────┐  Shenora.Core.Ipc, a NAMESPACE, not a package)
+            │            │            │
+   Shenora.Windows  Shenora.Android  Shenora.iOS
+   net10.0-windows  net10.0-android  net10.0-ios
 
-        Shenora.Core
-              ↑
-              ├──── Shenora.Media                       net10.0    optional, media LOGIC only
-              └──── Shenora.IO                          net10.0    optional, the file-operation engine
-                          ↑
-                    Shenora.IO.Compression              net10.0    optional, safe archive extraction
+   Shenora.Launcher — native, referenced by nothing; a build-time artifact (D50)
 ```
 
-**The optional feature packages hang off `Shenora.Core`, they do not sit under it.** Media logic and
-file-operation machinery are things *some* apps do; a phone app that hosts a page and plays a file needs
-neither, and it used to carry the whole update engine anyway because that engine lived in `Shenora.Core`,
-which every package references. Reference the leaf you actually use (D48).
+**There are no optional feature packages — the framework ships as one whole** (D55). `Shenora`
+carries media, file operations and archive extraction as namespaces (`Shenora.Modules.Media`,
+`Shenora.Engine.Files`, `Shenora.Modules.Update.Compression`) rather than as separate NuGet ids. ⚠ Those
+are the names D65 relayered to — a retired PACKAGE id written where a namespace belongs is a `using` an
+adopter cannot compile. The
+reason they stopped being packages is not size: **a package set is a public statement about what a product IS**, and
+`Shenora.Media` + `Shenora.IO` + `Shenora.IO.Compression` on nuget.org read as a shelf of single-domain
+libraries. This is a hybrid app framework; those are capabilities it carries. Reference `Shenora`
+plus your platform's shell and you have all of it.
 
-**`<video>`, `<audio>` and `<img>` over local files need NO media package.** Serving bytes to a page is
-resource interception, and that is a SHELL capability (D45): `Shenora.Core` declares
+**The line is what a CONSUMER experiences, not size** (D53): *making the page host, serve and play what it
+was handed* is shell work and lives in `Shenora`; *something only some apps do* earns its own package.
+That is why media is in Core and file operations are not — every app that hosts a page can be handed a file
+it cannot play; not every app rewrites a directory tree.
+
+**`<video>`, `<audio>` and `<img>` over local files need nothing beyond the shell.** Serving bytes to a
+page is resource interception, and that is a SHELL capability (D45): `Shenora` declares
 `IWebViewInterceptor` plus a file middleware that does path containment, HTTP ranges and content types,
 and each shell implements the contract over its own webview — `WebViewHost.Interceptor` on Windows,
 `MobileWebViewInterceptor` on Android and iOS. One route, and the same three lines compile on all three:
@@ -92,8 +100,9 @@ host.Interceptor.UseFiles(new WebViewFileOptions { AllowedRoots = [libraryDir], 
 ```
 
 A file the platform cannot decode simply errors in the element, which is the honest outcome. **Deciding
-what to do about that** — probe it, remux it, transcode it — is what `Shenora.Media` adds, as a further
-middleware. That is why it is optional: an app that serves ordinary files never references it.
+what to do about that** — probe it, plan it, remux it — is the `Shenora.Modules.Media` namespace, also in
+`Shenora`, composed on the same interceptor as a further middleware. An app that only ever serves
+ordinary files simply never calls it.
 
 ⚠ **One measured platform fact rides on the interceptor, not on media.** Android's webview applies the
 `Range` start to whatever body it is handed; WebView2's and iOS's send the body verbatim. So the same
@@ -101,14 +110,14 @@ request needs an *unsliced* body on one and a *sliced* body on the other two —
 `IWebViewInterceptor.RangeDelivery` reports which, `UseFiles` reads it from the platform so it cannot be
 passed in wrong, and a fourth shell cannot compile without declaring its own answer.
 
-**`Shenora.Ipc` is platform-neutral and stays that way.** It targets `net10.0`, references only
-`Shenora.Core`, and binds to no UI framework at all — the whole transport story (D16) rests on that:
-the same envelopes ride WebView2 postMessage on Windows, `HybridWebView` on mobile, and a WebSocket
+**`Shenora.Core.Ipc` is platform-neutral and stays that way.** It is a namespace inside `Shenora`,
+which targets `net10.0` and binds to no UI framework at all — the whole transport story (D16) rests on
+that: the same envelopes ride WebView2 postMessage on Windows, `HybridWebView` on mobile, and a WebSocket
 tomorrow, and a server-side or headless host can dispatch them with no shell anywhere in the graph.
 Anything that genuinely needs a window lives one layer up: the UI-thread seam is the portable
-`IUiDispatcher` in `Shenora.Core`, implemented once per shell.
+`IUiDispatcher` in `Shenora`, implemented once per shell.
 
-App logic that must stay portable references only `Shenora.Core` — `samples/Shenora.Sample.Logic` is
+App logic that must stay portable references only `Shenora` — `samples/Shenora.Sample.Logic` is
 a plain `net10.0` project that proves it, and the same facade runs on all three shells.
 
 Two consumption profiles are supported: **desktop-only** (full postMessage IPC) and **server-backed**
@@ -128,7 +137,7 @@ the workflows are yours (D21).
 Enough to get each one working, plus the trap that costs an afternoon. The sample app under
 `samples/` is the full reference composition.
 
-### `Shenora.Core` — the host, and portability
+### `Shenora` — the host, and portability
 
 The builder, lifetime, module registration, environment and app paths — plus the **platform-neutral
 contracts** (`IUiDispatcher`, `IFileDialogs`, `IClipboardService`, `IUrlLauncher`, `IUiInteraction`)
@@ -138,21 +147,21 @@ and the in-process `IEventBus`.
 var builder = ShenoraApplication.CreateBuilder(args);
 builder.Services.AddSingleton<IMyService, MyService>();
 using var app = builder.Build();
-app.Run();                       // executes the registered runner (UseWinForms supplies one)
+app.Run();                       // executes the registered runner (UseWindows supplies one)
 ```
 
 Put your facades in a plain `net10.0` project that references only this package and inject the
 contracts. The compiler then enforces portability instead of a document asserting it — if a Windows
 type ever creeps into app logic, that project turns red. See `docs/ADOPTION.md` Stage 4.
 
-### `Shenora.Ipc` — the wire and the dispatcher
+### `Shenora.Core.Ipc` — the wire and the dispatcher *(a namespace inside `Shenora`, not a package)*
 
-Typed request/response/notification envelopes, a composable middleware pipeline, module facades, and
+Typed request/response/notification envelopes, a composable middleware pipeline, IPC modules, and
 a structured error contract (`code` + parameters, i18n-ready). Transport-neutral by design: the same
 envelopes ride postMessage today and a WebSocket or mobile channel tomorrow.
 
 ```csharp
-public sealed class SettingsFacade : BaseFacade
+public sealed class SettingsModule : ModuleBase
 {
     public override string ModuleName => "SETTINGS";
 
@@ -166,25 +175,25 @@ public sealed class SettingsFacade : BaseFacade
         };
 }
 
-services.AddModuleFacade<SettingsFacade>();
-services.AddMessageDispatcher();          // error handler → logging → your middleware → facades
+services.AddIpcModule<SettingsModule>();
+services.UseMessageDispatcher();          // error handler → logging → your middleware → modules
 ```
 
-**Raw exception text never crosses the wire.** An `OperationException` carries the app's own code,
+**Raw exception text never crosses the wire.** A `ShenoraException` carries the app's own code,
 parameters and message; anything else becomes `UNKNOWN_ERROR` plus the exception's type name, with
-the detail in the host log. The one sharp edge: an `OperationException`'s message crosses **verbatim**
+the detail in the host log. The one sharp edge: a `ShenoraException`'s message crosses **verbatim**
 — so never build one from `ex.Message`, which would turn the sanctioned channel into a bypass.
 
 **`IModuleContext` is the route's world: who it is, how it emits, how it starts long work.**
 `context.Publish(type, payload?, scope?)` emits on the host bus under the facade's own module — the
 default gesture for progress and state, not a wiring exercise, and it can never drift from
 `ModuleName` the way a hand-typed literal at every call site can. For work too long to answer inline,
-`context.Run(new OperationOptions { Kind = "IMPORT", Cancellable = true }, async (op, ct) => {
-op.Report(progress: 40); … })` hands it to the background, tracks it (id, status, progress,
-cancel-by-id), and returns the operation id immediately — pair it with `services
-.AddShenoraOperations()` and `@shenora/react`'s `useShenoraOperations()` for a host-backed progress
-store with no per-feature event wiring. Both are opt-in: a facade that never publishes and never
-starts tracked work pays nothing.
+`context.Report(new IpcProgress(40, 100, "steps"))` reports progress on the CURRENT request — no
+options record, no second id, nothing to declare. Every request is tracked automatically and the host
+stays SILENT for the first 50 ms, so a request that finishes quickly emits nothing at all and only work
+that is actually taking a while reaches the page. Pair it with `@shenora/react`'s
+`useShenoraRequests()` for a host-backed progress store with no per-feature event wiring, and cancel
+with the id you already have.
 
 ### `Shenora.Windows` — the shell, the page host, and extra browsers
 
@@ -200,7 +209,7 @@ own STA pumps, tray icon, frameless `OptimizedForm` with optional native caption
 panel, and the Windows implementations of the Core contracts.
 
 ```csharp
-builder.UseWinForms(new WinFormsHostOptions { MainForm = sp => new MainForm(sp) });
+builder.UseWindows(new WindowsHostOptions { MainForm = sp => new MainForm(sp) });
 ```
 
 **`CloseReason.UserClosing` also means a programmatic `Close()`.** With close-to-tray on, a

@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -35,7 +35,7 @@ public class DispatchCancellationTests
     }
 
     [Fact]
-    public async Task A_facade_receives_the_token_through_BaseFacade()
+    public async Task A_facade_receives_the_token_through_ModuleBase()
     {
         var facade = new TokenCapturingFacade();
         var dispatcher = new MessageDispatcher();
@@ -105,7 +105,7 @@ public class DispatchCancellationTests
     [Fact]
     public async Task An_apps_own_cancellation_code_survives()
     {
-        // Cancellation is mapped AFTER OperationException on purpose: an app that models "aborted" in
+        // Cancellation is mapped AFTER ShenoraException on purpose: an app that models "aborted" in
         // its own words keeps them, and only an unnamed OperationCanceledException becomes the
         // kit's code.
         //
@@ -118,7 +118,7 @@ public class DispatchCancellationTests
         dispatcher.MapModule("APP", routes => routes.RouteAsync("WORK", (_, ct) =>
         {
             ct.ThrowIfCancellationRequested();
-            throw new OperationException("IMPORT_ABORTED");
+            throw new ShenoraException("IMPORT_ABORTED");
         }));
 
         var response = await dispatcher.DispatchAsync(Request("APP", "WORK"), CancellationToken.None);
@@ -159,7 +159,7 @@ public class DispatchCancellationTests
         Assert.Equal(cts.Token, seen);
     }
 
-    private sealed class TokenCapturingFacade : BaseFacade
+    private sealed class TokenCapturingFacade : ModuleBase
     {
         public CancellationToken Seen { get; private set; }
 

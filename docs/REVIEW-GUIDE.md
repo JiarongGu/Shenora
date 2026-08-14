@@ -1,7 +1,7 @@
 # REVIEW-GUIDE.md — orientation for a full code review of Shenora
 
 Written to hand a whole-codebase code review the context it needs without re-deriving it. Read this,
-then review `src/` against the invariants it points at. Nothing here overrides the design contract or
+then review `src/` against the invariants it points at. Nothing here overrides `docs/DECISIONS.md` or
 the rules — it routes you to them and flags what's already settled.
 
 > **A review that only asks "does this work?" has done HALF the job.** Owner direction, 2026-08-01,
@@ -12,21 +12,21 @@ the rules — it routes you to them and flags what's already settled.
 > those intentions were right, so a doc asserting a design was treated as context rather than as the
 > claim most worth attacking. So on every pass, spend budget on **§1's lens** as well as §4's hot
 > spots, and ask of anything load-bearing: does this earn its place for the PURPOSE (§1), or only for
-> the design it already committed to? The four findings that came out of asking that (D1–D4,
-> `docs/archive/tasks.md` `### 0.2.0 design pass`) were each bigger than anything the correctness pass
-> found — one cut a whole feature half, one was a REJECTION with a narrower change in its place. Note
-> both directions: "this design is wrong" and "this complaint is fair but the fix is worse" are
-> equally valid outcomes, and only the second needs a `DECISIONS.md` entry so it stays rejected.
+> the design it already committed to? The four findings that came out of asking that (D1–D4) were each
+> bigger than anything the correctness pass found — one cut a whole feature half, one was a REJECTION
+> with a narrower change in its place. Note both directions: "this design is wrong" and "this complaint
+> is fair but the fix is worse" are equally valid outcomes, and only the second needs a `DECISIONS.md`
+> entry so it stays rejected.
 >
-> **Three full reviews have already run. Verify and EXTEND them — do not re-derive them.**
+> **Three full reviews have already run. Verify and EXTEND them — do not re-derive them.** Their verdicts
+> live in `docs/DECISIONS.md`; the working records were deleted with `docs/archive/` on 2026-08-07 and
+> are in git if you need the detail.
 >
 > 1. **The P0–P5 review** (at `130d4cd`) — ~60 findings, executed as batches H1–H8 and now closed;
->    the record is `docs/archive/tasks.md` `### P5.5`, summarised in `docs/ROADMAP.md` `### P5.5`.
-> 2. **The whole-codebase review** (2026-08-01, before 0.2.0 was published) —
->    `docs/archive/tasks.md` `### 0.2.0 — whole-codebase review`.
-> 3. **The design pass** (2026-08-01, same day, prompted by the direction above) —
->    `docs/archive/tasks.md` `### 0.2.0 design pass`. Its four verdicts are settled; D24 records the
->    rejection. Don't re-open them without new evidence.
+>    summarised in `CHANGELOG.md`.
+> 2. **The whole-codebase review** (2026-08-01, before 0.2.0 was published).
+> 3. **The design pass** (2026-08-01, same day, prompted by the direction above). Its four verdicts are
+>    settled; D24 records the rejection. Don't re-open them without new evidence.
 >
 > **What the second one found is the more useful hint about where to spend YOUR budget.** It found
 > nothing in the threading, UI-thread marshalling, resource-ownership or IPC-error-boundary hot spots
@@ -44,12 +44,22 @@ the rules — it routes you to them and flags what's already settled.
 
 ## 1. What Shenora is (the review lens)
 
-Shenora (神阙) is a **reusable library, not an app**: the desktop and mobile "body" (WinForms +
-WebView2 + React hosting on Windows, MAUI `HybridWebView` on Android/iOS, typed IPC, modules, native
-services, auxiliary browser sessions) for a family of apps. Shipped as eight NuGet packages —
-five shells (`Core`, `Ipc`, `Windows`, `Android`, `iOS`; D37) plus three optional feature packages
-hanging off Core (`Media`, `IO`, `IO.Compression`; D40/D48) — and npm `@shenora/react`, versioned in
-lockstep.
+Shenora (神阙) is a **hybrid app development framework — .NET + React**, not an app and not a
+single-domain library: the desktop and mobile "body" (WinForms + WebView2 + React hosting on Windows,
+MAUI `HybridWebView` on Android/iOS, typed IPC, modules, native services, auxiliary browser sessions)
+that React apps boot their logic on. What decides whether a feature is worth building is **D54's
+thesis** — the differentiator is native .NET capability, so the question is never *"is this useful?"*
+but *"can React already do this?"*. Read `CLAUDE.md`'s opening before judging anything load-bearing.
+
+Shipped as **`Shenora`** (the framework itself) + three shell packages (`Windows`, `Android`, `iOS`;
+D37) + the native `Launcher` (D50) + npm `@shenora/react` and the build-time `@shenora/cli` (D67),
+versioned in lockstep. **Read D65 before
+judging any placement**: core is the CONTRACT (IPC · EventBus · RouteInterceptor), logic is the BRAIN
+(missions, safe file mutation), features BRIDGE .NET to the web (media, dialogs, update).
+⚠ **There is no optional-feature tier** — media, files and compression were folded in by D53/D55, and
+IPC by D65, which also renamed `Shenora.Core` to `Shenora`. The set lives in the
+header table of `docs/DECISIONS.md`, ONCE — never reconstruct it from a chain of entries, which is how
+four docs came to state a set that no longer existed, this file twice.
 
 > **The owner's standing criterion, in their words (2026-08-01) — this is the review, everything
 > below is detail:** *"make sure this is a library — we're not solving specific business logic.
@@ -85,8 +95,8 @@ Two properties follow from that and shape every judgement:
   member names, parameter names, csproj `<Description>`s, and the docs — and it says nothing at all
   about the second test above. **A green suite is not evidence that a component earns its place.**
 
-Design contract: `docs/2026-07-30-shenora-design.md` (a dated snapshot — read `ARCHITECTURE.md` for
-what is true now). Load-bearing choices: `docs/DECISIONS.md` (D1–D48 — numbered; don't relitigate,
+What the kit IS: `CLAUDE.md`'s opening + `docs/DECISIONS.md` D53–D56. As-built: `ARCHITECTURE.md`.
+Load-bearing choices: `docs/DECISIONS.md` (numbered; don't relitigate,
 they record *why*; the count grows, so check the file rather than trusting a range written here).
 **The ones most likely to look like violations:** D21 + D22 (a feature ships as primitives + lifecycle
 hooks rather than the product, and every public type is named for its MECHANISM — so
@@ -94,27 +104,45 @@ hooks rather than the product, and every public type is named for its MECHANISM 
 **D37** (ONE shell package per PLATFORM — do not propose re-splitting `Shenora.Windows`, and read the
 measurements that killed the counter-arguments first); **D47** (while one repo fully adopts, the kit
 prefers the correct shape to the compatible one and ships no `[Obsolete]` aliases — so a break with a
-CHANGELOG migration is not a finding); and **D48** (the optional feature packages hang OFF Core).
-As-built map + full public surface: `docs/ARCHITECTURE.md`. Narrative of what changed and how it was
-verified: `docs/ROADMAP.md` `## Done`.
+CHANGELOG migration is not a finding); and **D55** (there is no optional feature tier — one whole).
+As-built map: `docs/ARCHITECTURE.md`. **The public surface is NOT listed in prose anywhere** — review it
+against `tests/Shenora.Tests/Api/Baselines/*.txt` (exact, gated) and the types' own XML docs. Narrative of
+what changed and how it was verified: `CHANGELOG.md`.
 
 ## 2. What exists (commit-by-commit)
 
 | Commit | Phase | Adds |
 |---|---|---|
-| `34add37` | P0–P2 bootstrap | Repo/docs/devtools skeleton; `Shenora.Core` host + builder + paths + env; `Shenora.Windows` bootstrap/window-state/single-instance; `Shenora.Windows` hosting + serving; the sample app |
-| `eeb23f7` | P3 | The full typed IPC stack: `Shenora.Ipc` contracts + dispatcher + facades, `Shenora.Core` event bus, `Shenora.Windows` postMessage bridge, the `@shenora/react` client, live round-trip |
+| `34add37` | P0–P2 bootstrap | Repo/docs/devtools skeleton; `Shenora` host + builder + paths + env; the WinForms shell (bootstrap/window-state/single-instance) and the WebView2 host (hosting + serving), both now merged into `Shenora.Windows` by D37; the sample app |
+| `eeb23f7` | P3 | The full typed IPC stack: `Shenora.Ipc` contracts + dispatcher + facades, `Shenora` event bus, `Shenora.Windows` postMessage bridge, the `@shenora/react` client, live round-trip |
 | `43f18ad` | P4 | Scoped-container router + IPC composition; frameless chrome + window commands; STA dialogs/shell/clipboard/interaction; drag-drop zones + `useDropZone`; secondary windows + tray |
 | `0776f37` | P1.1 | Local-feed consumption smoke — caught + fixed a real npm ESM packaging bug (extensionless imports) |
 | `4ebb8e0` | P5 | `Shenora.Windows`: session browser, render-session pool, login windows, co-browse streaming |
 
 ⚠ **That table stops at P5 and is kept for the bootstrap history only.** Everything after it — the
-mission layer, the mobile shells, media, file dialogs, the `Shenora.IO` split — is narrated in
-`docs/ROADMAP.md` `## Done` (newest first), which is the list to read for "what exists".
+mission layer, the mobile shells, media, file dialogs, the IO fold — is narrated in `CHANGELOG.md`
+(newest first), which is the list to read for "what exists".
 
-Layout: `src/` (8 packable projects + `Shenora.React/` + `Shenora.Mobile/`, which is SOURCE with no
-csproj, compiled into both mobile packages), `tests/Shenora.Tests` (one project, folders
-mirror src), `samples/` (desktop + web + MAUI; the e2e subject), `devtools/` (one-entry dev loop).
+Layout: `src/` (the packable projects — the authoritative set is the table at the top of
+`docs/DECISIONS.md` — plus `Shenora.React/` and `Shenora.Cli/`, the two npm packages, and
+`Shenora.Mobile/`, which is SOURCE with no csproj compiled into both mobile packages),
+`tests/Shenora.Tests` (one project, folders mirror src), `samples/` (FOUR: `Sample.Logic` — the
+portable `net10.0` project that turns red if a Windows type reaches app logic, the D20 tripwire — plus
+desktop, web and MAUI; the e2e subject), `devtools/` (one-entry dev loop).
+
+⚠ **Those directories were removed: a review looking for `src/Shenora.Media/`, `src/Shenora.IO/` or
+`src/Shenora.Ipc/` finds nothing,
+and that is not the code being gone.** D53/D55 folded the capability tier into `Shenora`, and **D65 then
+moved it again into three layers** — so the folders are `Core/`, `Engine/` and `Modules/`, and the
+namespaces are the layer names:
+
+| Looking for | It is at | Namespace |
+|---|---|---|
+| media | `src/Shenora/Modules/Media/` | `Shenora.Modules.Media` |
+| file updates + locking | `src/Shenora/Engine/Files/` | `Shenora.Engine.Files` |
+| missions | `src/Shenora/Engine/Missions/` | `Shenora.Engine.Missions` |
+| compression | `src/Shenora/Modules/Update/Compression/` | `Shenora.Modules.Update.Compression` |
+| the IPC wire + dispatcher | `src/Shenora/Core/Ipc/` | `Shenora.Core.Ipc` |
 Detail per package is in `docs/ARCHITECTURE.md` — this guide does not duplicate it.
 
 ## 3. Invariants by area — where "correct" is DEFINED
@@ -124,12 +152,12 @@ a finding that contradicts one of these is either a real regression or a rule th
 
 | Area (files) | Invariant source | What to check |
 |---|---|---|
-| IPC stack (`src/Shenora.Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.claude/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `OperationException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
+| IPC stack (`src/Shenora/Core/Ipc/`, `WebViewIpcBridge`, `Shenora.React/src/`) | `.claude/knowledge/ipc-contracts.md` | C#⇄TS wire mirror in lockstep; **no raw exception text on ANY error path** (only `ShenoraException`/error codes cross the bridge); `DispatchAsync` never throws / never returns null; notifications always batched; ready-gate resets on navigation; camelCase wire via the frozen `IpcJson` options |
 | WebView2 hosting/serving (`src/Shenora.Windows/`) | `.claude/knowledge/webview2-hosting.md` | environment thread-affinity; `IsHandleCreated` checked BEFORE `InvokeRequired`; non-blocking `BeginInvoke` (never blocking `Invoke` off the UI thread); init-timeout guard; sync-bundle vs deferred-scheme serving split; JSON-escaped script injection; CDP arg re-append (the env-var-ignored gotcha) |
 | Any public API / naming / new type | `.claude/knowledge/generic-library.md` + D13 | generalized shape (no consumer vocabulary), options records, seams; every public type earns its keep; no UI-component-library dependency |
 | Extraction ports (all of `src/`) | `.claude/knowledge/extraction-sources.md` | post-mortem comments kept; the listed gaps actually fixed (no `as dynamic`, no static mutable registry, `ILogger` not console, async-interleaved dispatch not `Task.Run`-per-message) |
-| Missions (`src/Shenora.Core/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
-| File updates + locking (`src/Shenora.IO/`, its own package since D48) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
+| Missions (`src/Shenora/Engine/Missions/`) | `docs/DECISIONS.md` D27–D29 | claims declared as a SET (never acquired one at a time — that is the deadlock the design removed); work never runs under the scheduler lock; a policy is consulted only AFTER admission, so it can delay but never corrupt; a chain is one entry holding its claim UNION, stronger mode winning; the queue's pending list stays internal and synchronous (D28 records why a pluggable async queue was rejected) |
+| File updates + locking (`src/Shenora/Engine/Files/`; a package between D48 and D55, then relayered by D65) | `docs/DECISIONS.md` D30–D31 | **the journal is written BEFORE the mutation** — a plan written after is missing exactly the interrupted change, which is why undo is DATA and every change is planned then applied; recovery rolls back `Applying` and FINISHES `Committing`; undo steps check the world first (safe to run twice); leases are taken after the in-process gate, in sorted path order; lock files never land in the managed tree; `WhoHolds` empty means "cannot tell", not "nobody" |
 | Windows/build/shell | `.claude/rules/windows-dev-gotchas.md` | PS5 UTF-8/BOM traps; `fs.cpSync` avoided; WinForms `AllowDrop`/OLE handle-creation must be on an STA thread (xunit workers are MTA) |
 | Any tracked file / commit message | `.claude/rules/sensitive-info.md` | NO absolute local paths, NO private sibling names, NO personal/network data (this repo goes public) |
 
@@ -145,7 +173,7 @@ a finding that contradicts one of these is either a real regression or a rule th
    here — see §5 — but this is the standing hotspot.)
 2. **The IPC error boundary.** The single most important contract: raw exception text must never
    reach the client. Trace every `catch` in the dispatcher, facades, the bridge, and the sample
-   routes — expected failures become `OperationException`/structured codes; unknowns become
+   routes — expected failures become `ShenoraException`/structured codes; unknowns become
    `UNKNOWN_ERROR` with details kept host-side only.
 3. **WebView2 lifecycle & resource ownership.** Controls, forms, CTS, `SemaphoreSlim`, channels,
    and event subscriptions (`WebMessageReceived`, `NavigationCompleted`, DevTools receivers,
@@ -160,8 +188,8 @@ a finding that contradicts one of these is either a real regression or a rule th
    `src/`, never against a number written in a doc (0.5.0 published four of five because `pack`
    skipped iOS on a mistaken belief that it needed a Mac, and no gate counted).
    ⚠ **A csproj `<Description>` ships to nuget.org and NO gate reads it** — the D22 word audit sweeps
-   the API baselines only. Two defects lived in one Description until 2026-08-05: a retired package
-   name, and a safety claim ("bounded recursion") the code does not implement.
+   the API baselines only, so read every `<Description>` by hand. Both defect kinds have been found
+   there: a retired package name, and a safety claim ("bounded recursion") the code does not implement.
 5. **Sensitive-info.** Public repo. The pre-commit guard scans staged changes, but review tracked
    content too — any dev path, private sibling name, or personal data is a history problem once
    committed.
@@ -169,22 +197,26 @@ a finding that contradicts one of these is either a real regression or a rule th
 ## 5. Already settled — do NOT re-raise these
 
 **Accepted design deviations (with rationale in `docs/DECISIONS.md` / port comments):**
-- `Shenora.Core` depends on the Microsoft DI *implementation* package, not just abstractions (D17 —
+- `Shenora` depends on the Microsoft DI *implementation* package, not just abstractions (D17 —
   the builder needs `BuildServiceProvider`).
-- `WindowCommandFacade` / the drop-zone stack live in `Shenora.Windows/WebView/` (not `Shell/`)
-  because they need `Shenora.Ipc`, which the primitives half deliberately does not reference.
+- `WindowCommandModule` / the drop-zone stack live in `Shenora.Windows/WebView/` (not `Shell/`)
+  because they need the IPC core (`Shenora.Core.Ipc`), which the primitives half deliberately does not
+  reference.
+  🔴 **AN EXEMPTION IS A CLAIM TOO, AND NOTHING RE-READS IT.** Four names were held out of
+  `retired-names.txt` on the rationale "the id went but the namespace stayed" — which D65 had already
+  invalidated by moving the namespace as well, so a gate sat switched off on an expired reason and
+  arming those names produced 86 hits. **The tool narrows the reading; it does not replace it.**
 - ⚠ **The three Windows packages are ONE package now (D37, 0.5.0): `Shenora.Windows`.** What used to
   be `Shenora.WinForms` → `Shenora.WebView2` → `Shenora.WebView2.Sessions` is `Shell/` → `WebView/` →
   `Sessions/` inside it, and D19's rule survives one level down: `Shell/` must never depend on
   `WebView/`, and `Shell/` still carries no `Ipc` dependency. The edges are deliberate, so neither is
   a violation; the old "never sideways" package rule was retired on evidence.
-  **This bullet is also the review's own cautionary tale.** Until 2026-08-05 it read
-  *"`Shenora.Windows` depends on `Shenora.Windows` … and `Shenora.Windows` depends on
-  `Shenora.Windows`"* — twice — because the D37 rename replaced both old ids with the new one and
-  nobody read the result. `doc-drift`'s retired-name check is structurally blind to this: the retired
-  name is GONE, so there is nothing left to match on. **After a rename sweep, read the diff.**
+  ⚠ **Watch for "`X` depends on `X`" while reviewing prose.** A rename sweep replaces both old ids with
+  the new one, including in the sentence whose SUBJECT was the old name, and `doc-drift`'s retired-name
+  check is structurally blind to it — the retired name is GONE, so there is nothing left to match on.
+  `node devtools/dev.mjs self-rename-scan` lists the candidates; **after a rename sweep, read the diff.**
 - The portable contracts (`IUiDispatcher`, `IFileDialogs` + models, `IClipboardService`,
-  `IUrlLauncher`, `IUiInteraction`) live in `Shenora.Core` with their implementations in
+  `IUrlLauncher`, `IUiInteraction`) live in `Shenora` with their implementations in
   `Shenora.Windows` (**D20**), and `WinFormsUiDispatcher` is public deliberately — a
   `ProjectReference` does not grant `internal` access, so the alternative was `InternalsVisibleTo` for
   two packages.
@@ -193,10 +225,10 @@ a finding that contradicts one of these is either a real regression or a rule th
 - `PayloadHelper` is static; `IpcResponse.category` is lowercase; notifications are always batched —
   all documented deviations from the source shapes.
 
-**P5 phase-review findings already fixed** (full list in `docs/ROADMAP.md` P5-close entry): the
+**P5 phase-review findings already fixed** (full list in `git log`): the
 foreground/background controller split (hold-close no longer vetoes `Application.Exit`); pool
 init-failure/dispose leaks; a `SemaphoreSlim.Dispose()`-races-cancelled-waiter hang
-(`docs/archive/fix-log.md`); silent-refresh ownerless modal; loading-splash fallback; drag button state;
+silent-refresh ownerless modal; loading-splash fallback; drag button state;
 cached co-browse viewport; request-filter `about:blank` page-source; init-timeout on env creation;
 sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
@@ -206,10 +238,8 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   business logic; it did not — `LoginWindow` held no login logic — but the NAMES made it look like it
   shipped that product, and `SessionController.GetCookiesAsync` returned `IReadOnlyList<LoginCookie>`,
   forcing a streaming consumer to name a login type. See D22 for the rule and the audit method.
-  (This bullet used to end "do NOT re-raise `CookieLoginFlow`, which keeps its scenario name
-  deliberately as the one reference driver" — P7 reversed exactly that: a scenario name in `src/` is a
-  PLACEMENT smell, so the driver moved to the sample and the kit ships none. `generic-library.md`
-  carries the amended rule.)
+  ⚠ **A scenario name in `src/` is a PLACEMENT smell, not a naming one** — the login driver moved to the
+  sample and the kit ships none. `generic-library.md` carries the rule.
 - STA-wrapping the new pool/session tests — the earned STA rule's trigger (`AllowDrop`/OLE) does not
   apply to those forms, and the tests are deterministically green.
 - `InteractiveSession`'s busy gate can be released by the cancellation fallback a beat before `ShowDialog`
@@ -220,7 +250,7 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
 
 - **Gated by tests:** the public surface is pinned by API-surface baseline tests
   (`tests/Shenora.Tests/Api/Baselines/*.txt` — drift fails the build). Since H6 that gate is
-  thorough, not nominal: `protected` members (including `BaseFacade.RouteMessageAsync`, the one every
+  thorough, not nominal: `protected` members (including `ModuleBase.RouteMessageAsync`, the one every
   consumer overrides), default parameter values, `init`-vs-`set`, `required`, `static`, virtuality,
   parameter NAMES, generic constraints, nullability, base types, const VALUES and attributes — all 22
   `[JsonPropertyName]` wire names included, so a rename cannot break the C#⇄TS mirror silently. A

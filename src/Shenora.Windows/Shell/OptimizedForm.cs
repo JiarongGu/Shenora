@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
@@ -68,7 +69,7 @@ public sealed class OptimizedFormOptions
 /// borderless "custom chrome" (from the second sibling, with its measured lessons kept as
 /// comments below). With <see cref="OptimizedFormOptions.FramelessChrome"/> the default title
 /// bar is gone; min/max/close/drag/resize are driven from the frontend over IPC (see
-/// <c>WindowCommandFacade</c> in Shenora.Windows and <c>WindowCommands</c> in @shenora/react).
+/// <c>WindowCommandModule</c> in Shenora.Windows and <c>WindowCommands</c> in @shenora/react).
 ///
 /// Frameless technique: WM_NCCALCSIZE keeps Windows' native (visually invisible on Win11)
 /// side/bottom resize borders but gives the TOP back to the client — so the window is
@@ -267,7 +268,7 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <para>
     /// Call it on the UI THREAD. With <see cref="OptimizedFormOptions.NativeCaptionButtons"/> on it
     /// reshapes child controls, which is not safe cross-thread; the kit's own route already marshals
-    /// (<c>WindowCommandFacade</c> posts through <c>IUiDispatcher</c>). Calling it before the handle
+    /// (<c>WindowCommandModule</c> posts through <c>IUiDispatcher</c>). Calling it before the handle
     /// exists is fine and supported — the rectangles are stored and the clip is applied once the
     /// window is shown, which is what lets an app declare its buttons early enough to be usable
     /// behind a splash screen.
@@ -424,7 +425,7 @@ public class OptimizedForm : Form, IAppMaximizable
     {
         if (_captionUnion.IsEmpty || child.Width <= 0 || child.Height <= 0) return Rectangle.Empty;
         // The union is in this FORM's client px; a window region is in the CHILD's own. Via screen
-        // coordinates for the same reason WindowCommandFacade converts that way: identical whenever
+        // coordinates for the same reason WindowCommandModule converts that way: identical whenever
         // the child fills the form, and correct when it does not.
         if (!IsHandleCreated || !child.IsHandleCreated) return Rectangle.Empty;
         var topLeft = child.PointToClient(PointToScreen(_captionUnion.Location));
@@ -474,7 +475,7 @@ public class OptimizedForm : Form, IAppMaximizable
     {
         if (CaptionButtonStateChanged is not { } handler) return;
         var state = new CaptionButtonState(_hotCaptionButton, _pressedCaptionButton);
-        Shenora.Core.AppCallback.Run(() => handler(state));
+        Shenora.AppCallback.Run(() => handler(state));
     }
 
     /// <summary>
@@ -540,6 +541,27 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <summary>Raised after the maximize/restore state changes (chrome glyphs resync on it).</summary>
     public event EventHandler? MaximizedChanged;
 
+    /// <summary>
+    /// Raise <see cref="MaximizedChanged"/> through the app-callback guard.
+    /// <para>
+    /// 🔴 <b>Two of the four raise paths are inside <c>WndProc</c></b> (the <c>WM_SYSCOMMAND</c>
+    /// maximize/restore interception), and this event is PUBLIC — an adopting app subscribes to resync
+    /// its own chrome. An exception from a subscriber there escapes into the window procedure, which is
+    /// the "fatal rather than catchable" position <see cref="AppCallback"/> exists for, and the same
+    /// reason <c>WndProcHook</c> is already guarded a few hundred lines below.
+    /// </para>
+    /// <para>
+    /// ⚠ Containment, not isolation: a throwing subscriber still shadows the ones registered after it,
+    /// exactly as <see cref="RaiseCaptionButtonState"/> behaves. Per-subscriber isolation is
+    /// <c>IEventBus</c>'s job, and a WinForms chrome event does not carry that weight.
+    /// </para>
+    /// </summary>
+    private void RaiseMaximizedChanged()
+    {
+        if (MaximizedChanged is not { } handler) return;
+        Shenora.AppCallback.Run(() => handler(this, EventArgs.Empty));
+    }
+
     /// <summary>Toggle maximize/restore (the manual work-area path when frameless).</summary>
     public void ToggleMaximize()
     {
@@ -554,7 +576,7 @@ public class OptimizedForm : Form, IAppMaximizable
         {
             if (WindowState == FormWindowState.Maximized) return;
             WindowState = FormWindowState.Maximized;
-            MaximizedChanged?.Invoke(this, EventArgs.Empty);
+            RaiseMaximizedChanged();
             return;
         }
 
@@ -566,7 +588,7 @@ public class OptimizedForm : Form, IAppMaximizable
         _maximized = true;
         ApplyCornerPreference(); // square corners while maximized
         FillWorkArea(work);
-        MaximizedChanged?.Invoke(this, EventArgs.Empty);
+        RaiseMaximizedChanged();
     }
 
     /// <summary>
@@ -670,7 +692,7 @@ public class OptimizedForm : Form, IAppMaximizable
         {
             if (WindowState != FormWindowState.Maximized) return;
             WindowState = FormWindowState.Normal;
-            MaximizedChanged?.Invoke(this, EventArgs.Empty);
+            RaiseMaximizedChanged();
             return;
         }
 
@@ -707,7 +729,7 @@ public class OptimizedForm : Form, IAppMaximizable
             SetWindowPos(Handle, IntPtr.Zero, target.X, target.Y, target.Width, target.Height,
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
         }
-        MaximizedChanged?.Invoke(this, EventArgs.Empty);
+        RaiseMaximizedChanged();
     }
 
     /// <summary>
@@ -788,7 +810,7 @@ public class OptimizedForm : Form, IAppMaximizable
         // msg is copied out first: `m` is a `ref` parameter and cannot be captured by the guard's
         // lambda (CS1628). The hook only ever received the message id anyway.
         var msg = m.Msg;
-        if (WndProcHook is { } hook && Shenora.Core.AppCallback.RunOrDefault(() => hook(msg), false))
+        if (WndProcHook is { } hook && Shenora.AppCallback.RunOrDefault(() => hook(msg), false))
             return;
 
         if (!_options.FramelessChrome)

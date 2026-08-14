@@ -1,15 +1,17 @@
 using System.Text.Json;
-using Shenora.Core;
-using Shenora.Ipc;
+using Shenora;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Desktop;
 
 /// <summary>
 /// The sample main window — since P4 a FRAMELESS <see cref="OptimizedForm"/>: the page renders
 /// its own title bar and drives the window over the <c>WINDOW</c> IPC module
-/// (<see cref="WindowCommandFacade"/>); drop zones overlay page elements
+/// (<see cref="WindowCommandModule"/>); drop zones overlay page elements
 /// (<see cref="DropZoneManager"/>); a tray icon (launcher-style, no close-to-tray so the e2e's
 /// graceful close still exits) rounds out the native surface. The IPC bridge keeps its intended
 /// order — construct before init (event buffering), attach after init, before navigation.
@@ -127,7 +129,7 @@ public sealed class MainForm : OptimizedForm
         // any composition that registered a different IMessageDispatcher or wrapped it in a decorator —
         // and the symptom was the frameless title bar simply not working, with no error anywhere.
         {
-            dispatcher.MapModule(new WindowCommandFacade(new WindowCommandOptions
+            dispatcher.MapModule(new WindowCommandModule(new WindowCommandOptions
             {
                 Window = this,
                 ToggleMaximize = ToggleMaximize,      // the frameless manual work-area path
@@ -138,9 +140,9 @@ public sealed class MainForm : OptimizedForm
                 CoordinateSpace = _webView,
                 SetCaptionButtons = SetCaptionButtons,
             }));
-            dispatcher.MapModule(new DropZoneFacade(_dropZones));
+            dispatcher.MapModule(new DropZoneModule(_dropZones));
 
-            // The route-builder shape (SampleFacade shows the BaseFacade shape): lease a pooled
+            // The route-builder shape (SampleModule shows the ModuleBase shape): lease a pooled
             // off-screen session, render the requested page, and prove its JS ran (title + HTML
             // length come from the LIVE DOM, not the response bytes) — the e2e drives this.
             dispatcher.MapModule("RENDER", routes => routes.RouteAsync("PROBE", async (request, ct) =>
@@ -152,7 +154,7 @@ public sealed class MainForm : OptimizedForm
                 using var leaseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                 RenderSession session;
                 try { session = await _renderPool.LeaseAsync(leaseTimeout.Token); }
-                catch (OperationCanceledException) { throw new OperationException("RENDER_BUSY", "url", url); }
+                catch (OperationCanceledException) { throw new ShenoraException("RENDER_BUSY", "url", url); }
                 await using (session)
                 {
                     try
@@ -163,7 +165,7 @@ public sealed class MainForm : OptimizedForm
                     {
                         // The guard (or the http/https gate) refused the data-driven URL — cross
                         // the bridge as a structured error, not as leaked exception text.
-                        throw new OperationException("RENDER_REFUSED", "url", url);
+                        throw new ShenoraException("RENDER_REFUSED", "url", url);
                     }
                     var html = await session.GetHtmlAsync() ?? "";
                     var titleJson = await session.ExecuteScriptAsync("document.title") ?? "\"\"";
@@ -186,7 +188,7 @@ public sealed class MainForm : OptimizedForm
                 .RouteAsync("START", async (request, ct) =>
                 {
                     var url = PayloadHelper.GetRequiredValue<string>(request.Payload, "url");
-                    if (_stream is not null) throw new OperationException("STREAM_ALREADY_RUNNING");
+                    if (_stream is not null) throw new ShenoraException("STREAM_ALREADY_RUNNING");
 
                     var session = await StreamingSession.StartAsync(new StreamingSessionOptions
                     {
@@ -250,7 +252,7 @@ public sealed class MainForm : OptimizedForm
                         // undiagnosable from either end. Raw exception text still must not cross the
                         // wire (ipc-contracts), so the detail goes here and the page gets the code.
                         Console.WriteLine($"[sample] STREAM/START failed for '{url}': {ex}");
-                        throw new OperationException("STREAM_REFUSED", "url", url);
+                        throw new ShenoraException("STREAM_REFUSED", "url", url);
                     }
 
                     _stream = session;
@@ -279,13 +281,13 @@ public sealed class MainForm : OptimizedForm
                 })
                 .RouteAsync("INPUT", async (request, ct) =>
                 {
-                    if (_stream is null) throw new OperationException("STREAM_NOT_RUNNING");
+                    if (_stream is null) throw new ShenoraException("STREAM_NOT_RUNNING");
                     // The client speaks the kit's legacy wire shape here ON PURPOSE: it exercises
                     // the documented adoption shim, which is the migration path a real consumer
                     // takes. A greenfield app would build SessionInput records directly.
                     var json = PayloadHelper.GetRequiredValue<string>(request.Payload, "input");
                     if (!SessionInput.TryParseLegacyJson(json, out var input))
-                        throw new OperationException("STREAM_BAD_INPUT");
+                        throw new ShenoraException("STREAM_BAD_INPUT");
                     await _stream.DispatchAsync(input!);
                     return null;
                 })
@@ -307,7 +309,7 @@ public sealed class MainForm : OptimizedForm
             Log = Console.WriteLine,
             // The other end of the MAUI sample's declaration — SAME page contract, different answer.
             // Every name below is something THIS composition actually registered a few lines up
-            // (WindowCommandFacade, DropZoneFacade, SecondaryWindows, TrayIcon, the STA dialogs), which
+            // (WindowCommandModule, DropZoneModule, SecondaryWindows, TrayIcon, the STA dialogs), which
             // is the discipline the descriptor demands: advertising one the app never mapped renders a
             // button that throws when pressed. The mobile shell answers `[filePicker]` to the same
             // handshake, and one bundle renders correctly against both.
@@ -373,19 +375,14 @@ public sealed class MainForm : OptimizedForm
             },
         });
 
+        // The pipeline the APP declared (Program.cs, after Build()) is already on this host's interceptor:
+        // it travelled with `hostOptions.Pipeline` and was applied during construction, before anything
+        // can navigate. The probe's file route used to be registered HERE, per window — which is what
+        // `app.Use…()` replaced (D64), and why this line is now the whole of it.
         _host = new WebViewHost(_webView, hostOptions);
-
-        // The D45 interceptor route, registered BEFORE InitializeAsync — which is the point of the
-        // interceptor existing on the host from construction: an app composes its routes where it composes
-        // everything else, not from inside a webview callback.
-        _interceptorRoute = InterceptorProbe.Register(_host.Interceptor,
-            Path.Combine(paths.DataArea("probe"), "files"));
 
         Load += OnLoadAsync;
     }
-
-    /// <summary>The probe's file route. Disposed with the form, as an app's own routes would be.</summary>
-    private readonly IDisposable _interceptorRoute;
 
     /// <summary>
     /// Set once the page has taken over reporting its own caption-button rects. Until then the host
@@ -423,12 +420,18 @@ public sealed class MainForm : OptimizedForm
         // startup self-check for the same reason: it is only provable against the real OS.
         try { Console.WriteLine(await PlaybackSessionProbe.RunAsync().ConfigureAwait(true)); }
         catch (Exception ex) { Console.WriteLine($"PLAYBACK SESSION: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+
+        // The host-owned player (D54), for the same reason as the line above: Media Foundation is only
+        // provable against the real platform. AFTER the transport probe, because both touch the audio
+        // stack and two of them at once would make either result unreadable.
+        try { Console.WriteLine(await MediaPlayerProbe.RunAsync().ConfigureAwait(true)); }
+        catch (Exception ex) { Console.WriteLine($"MEDIA PLAYER: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private void ReportSplashCaptionButtons()
     {
         if (_pageOwnsCaptionButtons || !IsHandleCreated || IsDisposed) return;
-        // CSS px -> physical px through the control's own DPI, exactly as WindowCommandFacade does
+        // CSS px -> physical px through the control's own DPI, exactly as WindowCommandModule does
         // for the page's report; a constant here would be wrong on any scaled display.
         var scale = DpiHelper.ScaleFromDeviceDpi(DeviceDpi);
         var w = (int)Math.Round(2.6 * 16 * scale);
@@ -499,7 +502,6 @@ public sealed class MainForm : OptimizedForm
             // Stop the flush timer + detach before the WebView goes down (the source app's
             // transport once kept posting into a torn-down WebView for the process lifetime).
             _tickTimer.Dispose();
-            _interceptorRoute.Dispose();
             _dropZones.Dispose();
             _bridge.Dispose();
             _tray.Dispose();

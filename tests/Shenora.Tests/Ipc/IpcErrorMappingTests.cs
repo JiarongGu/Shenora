@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
@@ -28,7 +28,7 @@ public class IpcErrorMappingTests
     public void An_OperationException_keeps_its_own_words()
     {
         var error = IpcErrorMapping.ToError(
-            new OperationException("IMPORT_FAILED", "file", "notes.json", "Could not read notes.json."));
+            new ShenoraException("IMPORT_FAILED", "file", "notes.json", "Could not read notes.json."));
 
         Assert.Equal("IMPORT_FAILED", error.Code);
         Assert.Equal("notes.json", error.Parameters?["file"]);
@@ -40,11 +40,11 @@ public class IpcErrorMappingTests
     {
         // This is the sharp edge, pinned deliberately rather than left as prose. The one sanctioned
         // channel through the boundary is the app's OWN words — so an adapter that "helpfully" writes
-        // `new OperationException(code, message: ex.Message)` turns that channel into a complete
+        // `new ShenoraException(code, message: ex.Message)` turns that channel into a complete
         // bypass. Found by the P6.4 adapter probe, which reproduced it against a planted secret; the
         // rule lives in .claude/knowledge/ipc-contracts.md and the trap is called out in ADOPTION.md.
         var wrapped = IpcErrorMapping.ToError(
-            new OperationException("MODULE_FAILED", message: new InvalidOperationException(Secret).Message));
+            new ShenoraException("MODULE_FAILED", message: new InvalidOperationException(Secret).Message));
 
         Assert.Contains("hunter2", IpcJson.Serialize(wrapped), StringComparison.Ordinal);
     }

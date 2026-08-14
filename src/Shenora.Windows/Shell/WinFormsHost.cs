@@ -1,12 +1,17 @@
 using System.Runtime.InteropServices;
-using Shenora.Core;
+using Shenora;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Shenora.Modules.Platform;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Media;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 
 namespace Shenora.Windows;
 
-/// <summary>Single-instance behavior for <see cref="WinFormsHostOptions.SingleInstance"/>.</summary>
+/// <summary>Single-instance behavior for <see cref="WindowsHostOptions.SingleInstance"/>.</summary>
 public sealed class SingleInstanceHostOptions
 {
     /// <summary>
@@ -36,7 +41,7 @@ public sealed class SingleInstanceHostOptions
     public Action<ShenoraApplication, SingleInstanceGuard>? OnSecondInstance { get; init; }
 }
 
-/// <summary>Main-window state persistence for <see cref="WinFormsHostOptions.WindowState"/>.</summary>
+/// <summary>Main-window state persistence for <see cref="WindowsHostOptions.WindowState"/>.</summary>
 public sealed class WindowStateHostOptions
 {
     /// <summary>
@@ -49,8 +54,8 @@ public sealed class WindowStateHostOptions
     public WindowStateOptions? Options { get; init; }
 }
 
-/// <summary>Inputs for <see cref="WinFormsHostExtensions.UseWinForms"/>.</summary>
-public sealed class WinFormsHostOptions
+/// <summary>Inputs for <see cref="WindowsHostExtensions.UseWindows"/>.</summary>
+public sealed class WindowsHostOptions
 {
     /// <summary>
     /// Creates the main window once services are available. The runner shows it via the message
@@ -85,7 +90,7 @@ public sealed class WinFormsHostOptions
 }
 
 /// <summary>Registers the WinForms host loop on a <see cref="ShenoraApplicationBuilder"/>.</summary>
-public static class WinFormsHostExtensions
+public static class WindowsHostExtensions
 {
     /// <summary>
     /// Make this a WinForms-hosted application: registers the runner that
@@ -94,8 +99,8 @@ public static class WinFormsHostExtensions
     /// lifecycle hooks, main-form creation (+ optional window-state persistence and
     /// activate-on-second-launch), the message loop, and ordered shutdown.
     /// </summary>
-    public static ShenoraApplicationBuilder UseWinForms(this ShenoraApplicationBuilder builder,
-        WinFormsHostOptions options)
+    public static ShenoraApplicationBuilder UseWindows(this ShenoraApplicationBuilder builder,
+        WindowsHostOptions options)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
@@ -115,16 +120,63 @@ public static class WinFormsHostExtensions
                 PathStore = sp.GetService<IFileDialogPathStore>(),
             },
             sp.GetService<ILogger<FileDialogs>>()));
+        // The page's ROUTE to those dialogs, registered here rather than centrally because THIS is where
+        // the platform implementation exists (D64). A capability's facade belongs with the shell that can
+        // satisfy it: a shell without native dialogs registers neither, and the page learns that from the
+        // ready handshake's capability list (D36) instead of from a route that answers nothing.
+        builder.Services.AddShenoraFileDialogs();
 
         // The system media transport surface, registered LAZILY like everything else here — a
         // WindowsPlaybackSession creates a MediaPlayer in its constructor, and an app that never plays
-        // anything should not pay for a media pipeline just by calling UseWinForms(). DI disposes it.
+        // anything should not pay for a media pipeline just by calling UseWindows(). DI disposes it.
         builder.Services.TryAddSingleton<IPlaybackSession>(sp =>
             new WindowsPlaybackSession(message =>
                 sp.GetService<ILogger<WindowsPlaybackSession>>()?.LogDebug("{Message}", message)));
 
+        // "Who is holding this file open?" — Windows answers with the Restart Manager, which is why the
+        // CONTRACT is portable and this implementation is not (D19/D20, and D31's two-mechanisms split).
+        //
+        // ⚠ IT WAS NEVER REGISTERED until 2026-08-07. RestartManagerLockInspector shipped, was documented,
+        // was tested — and no container ever built one, so FileUpdateQueueOptions.LockInspector was always
+        // null and a locked file reported "cannot tell" instead of naming the process. Nothing failed:
+        // `WhoHolds` empty legitimately MEANS "cannot tell", so the degraded answer was indistinguishable
+        // from the honest one. Same failure mode as D59 — a capability that is ABSENT rather than broken
+        // produces no error, no log line and no failing test.
+        builder.Services.TryAddSingleton<IFileLockInspector, RestartManagerLockInspector>();
+
+        // What THIS MACHINE decodes and encodes. Registered here for the same reason both mobile shells
+        // register theirs: the kit ships the QUESTION, never a codec list (D42), and a shell that cannot
+        // answer it pushes the guess back onto every app. Windows was the one shell that answered nothing.
+        //
+        // Singleton because it caches — the codec set cannot change while the process runs (an installed
+        // extension needs a restart), and each query walks the platform's MFT list.
+        builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(sp =>
+            new WindowsMediaCapability(message =>
+                sp.GetService<ILogger<WindowsMediaCapability>>()?.LogDebug("{Message}", message)));
+
+        // The HOST-OWNED PLAYER (D54) — Media Foundation through Windows.Media.Playback.
+        //
+        // 🔴 REGISTERED BY ITS OWN TYPE, NOT AS IMediaPlayer, and that is the whole decision. The default
+        // IMediaPlayer stays the PAGE-BACKED MediaPlayer, because rendering through the page is the normal
+        // case for a hybrid app (D58) and `useMediaPlayer(ref)` in @shenora/react binds to it: a shell that
+        // grabbed IMediaPlayer here would move the audio out of the page's own element, and the page's
+        // PLAYER_REPORT would land on a native player that has no Report to take (MediaPlayerModule
+        // short-circuits, so nothing would fail — it would just quietly stop working).
+        //
+        // So the native player is OPT-IN, resolved by name when an app actually wants what it adds:
+        // playback that survives the webview, and the platform's whole codec set.
+        //
+        //     var player = services.GetRequiredService<WindowsMediaPlayer>();
+        //     using var link = player.ReportTo(services.GetRequiredService<IPlaybackSession>());
+        //
+        // Lazy, like every registration here: constructing one builds an audio graph, and on plain
+        // net10.0-windows it refuses by name — so an app that never asks never pays and never throws.
+        builder.Services.TryAddSingleton(sp =>
+            new WindowsMediaPlayer(message =>
+                sp.GetService<ILogger<WindowsMediaPlayer>>()?.LogDebug("{Message}", message)));
+
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
-        // the SAME singleton — so an app's own logic can inject Shenora.Core contracts, compile
+        // the SAME singleton — so an app's own logic can inject Shenora contracts, compile
         // without a Windows reference, and still get these implementations at runtime.
         builder.Services.TryAddSingleton<IUiInteraction>(sp => sp.GetRequiredService<IFormInteraction>());
         builder.Services.TryAddSingleton<IUrlLauncher>(sp => sp.GetRequiredService<IShellLauncher>());
@@ -145,7 +197,7 @@ internal sealed class WinFormsRunner : IShenoraRunner
 {
     public void Run(ShenoraApplication app)
     {
-        var options = app.Services.GetRequiredService<WinFormsHostOptions>();
+        var options = app.Services.GetRequiredService<WindowsHostOptions>();
 
         // Single-instance gate FIRST — before any lifecycle hook or heavy init. Hooks may take
         // OS locks (the WebView2 environment prewarm takes the user-data-folder lock), and a
@@ -204,6 +256,31 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 {
                     filter = new ActivateMessageFilter(form, guard.ActivateMessageId);
                     Application.AddMessageFilter(filter);
+                }
+                else if (guard is not null)
+                {
+                    // 🔴 SAY SO. `RegisterWindowMessage` returned 0, so there is no channel to listen on and
+                    // this app will NOT come to the front when a second launch tries to activate it. Single
+                    // instance still WORKS — the mutex is the real guard — which is exactly what makes this
+                    // worth a line: the user double-clicks, the second process exits quietly, nothing
+                    // appears, and the app looks broken with no trace anywhere.
+                    //
+                    // ⚠ It is rare and it is REAL: the call fails when the session's global atom table is
+                    // exhausted, which this machine reached on 2026-08-10 — `RegisterWindowMessage` returned
+                    // 0 and `RegisterClass` failed with "Not enough memory resources", and the only reason
+                    // anyone noticed was a TEST asserting the id is non-zero. The shipped code did not.
+                    //
+                    // ⚠ Not covered by a test, deliberately and with the reason stated: forcing the failure
+                    // means exhausting a session-wide OS resource, which no test may do to the machine it
+                    // runs on. `SingleInstanceGuardTests` asserts the SUCCESS case; this branch is the one
+                    // that can only be reasoned about, so it is a diagnostic rather than a guarantee.
+                    // A WARNING, not Debug: a capability the app asked for is absent, and the only person
+                    // who can act on it is looking at logs because the app "does nothing" on relaunch.
+                    app.Services.GetService<ILogger<SingleInstanceGuard>>()?.LogWarning(
+                        "The single-instance ACTIVATE channel is unavailable (RegisterWindowMessage "
+                        + "returned 0): a second launch will exit quietly instead of bringing this window "
+                        + "to the front. Single instance itself is unaffected. Usually a session out of "
+                        + "atom-table space — signing out clears it.");
                 }
                 try
                 {

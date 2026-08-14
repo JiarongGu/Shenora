@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using Shenora.Windows;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WebView2Sessions;
 
@@ -183,11 +183,11 @@ public class InteractiveSessionTests
     [InlineData(SessionErrorCodes.Unavailable)]
     public void ThrowIfFailed_surfaces_the_login_code_verbatim_as_the_wire_code(string code)
     {
-        var ex = Assert.Throws<OperationException>(
+        var ex = Assert.Throws<ShenoraException>(
             () => new SessionResult { Success = false, ErrorCode = code }.ThrowIfFailed());
 
         Assert.Equal(code, ex.Code);
-        // The dispatcher's boundary maps an OperationException to its structured error, so this is
+        // The dispatcher's boundary maps an ShenoraException to its structured error, so this is
         // exactly what a client receives — no re-mapping table anywhere in between.
         Assert.Equal(code, ex.ToError().Code);
     }
@@ -197,7 +197,7 @@ public class InteractiveSessionTests
     {
         // Should be unreachable — every Fail() site passes a code — but an error path that throws
         // NullReferenceException replaces the real diagnosis with a worse one.
-        var ex = Assert.Throws<OperationException>(
+        var ex = Assert.Throws<ShenoraException>(
             () => new SessionResult { Success = false, ErrorCode = null }.ThrowIfFailed());
 
         Assert.Equal(IpcErrorCodes.UnknownError, ex.Code);

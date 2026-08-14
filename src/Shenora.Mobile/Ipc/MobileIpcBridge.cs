@@ -1,7 +1,9 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Dispatching;
-using Shenora.Core;
-using Shenora.Ipc;
+using Shenora;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Mobile;
 
@@ -44,7 +46,7 @@ public sealed class MobileIpcBridgeOptions
 /// <summary>
 /// The MAUI <c>HybridWebView</c> IPC transport — the peer of
 /// <c>Shenora.Windows.WebViewIpcBridge</c>, and deliberately much thinner than it, because
-/// everything that is not transport already moved into <c>Shenora.Ipc</c>:
+/// everything that is not transport already moved into <c>Shenora.Core.Ipc</c>:
 /// <see cref="IpcHostBridge"/> owns parse → handshake-or-dispatch → response and the error boundary,
 /// <see cref="NotificationPump"/> owns the queue, the ready gate and batch building. What is left
 /// here is what only this platform can do: read a message off <c>RawMessageReceived</c>, write one

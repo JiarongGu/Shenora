@@ -3,8 +3,8 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 import { debounce, randomId } from './internal.js';
 
-/** The reserved module the drop-zone stack speaks (host: `DropZoneManager`/`DropZoneFacade`). */
-export const DROP_ZONE_MODULE = 'DROP_ZONE';
+/** The reserved module the drop-zone stack speaks (host: `DropZoneManager`/`DropZoneModule`). */
+export const DROP_ZONE_MODULE = 'SHENORA.DROPZONE';
 
 /** A native file drop delivered to a zone. */
 export interface DropZoneFileDrop {

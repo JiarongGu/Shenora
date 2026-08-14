@@ -1,4 +1,4 @@
-import { OperationError } from './errors.js';
+import { ShenoraError } from './errors.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 import { randomId } from './internal.js';
 import { createHostTransport, type ShenoraTransport } from './transport.js';
@@ -143,7 +143,7 @@ export class ShenoraBridge {
 
   /**
    * Send a request and await its typed response data. A failed response rejects with the
-   * structured {@link OperationError} (code + parameters); no response within the timeout
+   * structured {@link ShenoraError} (code + parameters); no response within the timeout
    * rejects with code `TIMEOUT`; no transport and no fallback rejects with `NO_TRANSPORT`.
    */
   invoke<TData = unknown, TPayload = unknown>(
@@ -155,7 +155,7 @@ export class ShenoraBridge {
       // Fail fast: the transport subscription is gone, so a response could never correlate —
       // without this the call would burn the full timeout (stale references after
       // configureBridge replaced the default are the typical way here).
-      return Promise.reject(new OperationError({
+      return Promise.reject(new ShenoraError({
         code: IpcErrorCodes.noTransport,
         message: `Bridge disposed — ${module}.${type} cannot be sent.`,
       }));
@@ -185,18 +185,25 @@ export class ShenoraBridge {
         // none of the diagnostics the real path gives (P5.5 H2). Only a thenable needs racing; a plain
         // value is already settled.
         if (!isThenable(result)) return Promise.resolve(result as TData);
+        // ⚠ The loser's timer is CLEARED, which it was not until 2026-08-14. Every other path in this
+        // file clears meticulously — the real invoke's timeout handler, its transport-throw catch, its
+        // response path and `dispose` — and this one left a live timer per call for the full timeout
+        // (30 s by default), each holding its closure. Harmless to a caller, because `race` has already
+        // settled and has a rejection handler attached either way, but it is the same "one site out of
+        // N" shape the rest of this file is careful about, and it keeps timers pending in a test run.
+        let timer: ReturnType<typeof setTimeout> | undefined;
         return Promise.race([
           Promise.resolve(result) as Promise<TData>,
           new Promise<TData>((_, reject) => {
-            setTimeout(() => reject(new OperationError({
+            timer = setTimeout(() => reject(new ShenoraError({
               code: IpcErrorCodes.timeout,
               message: `${module}.${type} timed out after ${timeoutMs} ms (in the configured fallback).`,
               parameters: { module, type },
             })), timeoutMs);
           }),
-        ]);
+        ]).finally(() => clearTimeout(timer));
       }
-      return Promise.reject(new OperationError({
+      return Promise.reject(new ShenoraError({
         code: IpcErrorCodes.noTransport,
         message: `No transport for ${module}.${type} — not inside a Shenora host, and no fallback is configured.`,
       }));
@@ -205,7 +212,7 @@ export class ShenoraBridge {
     return new Promise<TData>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(request.id);
-        reject(new OperationError({
+        reject(new ShenoraError({
           code: IpcErrorCodes.timeout,
           message: `${module}.${type} timed out after ${timeoutMs} ms.`,
           parameters: { module, type },
@@ -341,7 +348,7 @@ export class ShenoraBridge {
     this.unsubscribe?.();
     for (const [id, entry] of this.pending) {
       clearTimeout(entry.timer);
-      entry.reject(new OperationError({ code: IpcErrorCodes.noTransport, message: 'Bridge disposed.' }));
+      entry.reject(new ShenoraError({ code: IpcErrorCodes.noTransport, message: 'Bridge disposed.' }));
       this.pending.delete(id);
     }
     // Unawaited ids are pure bookkeeping with nothing to settle — drop them so a disposed bridge
@@ -393,7 +400,7 @@ export class ShenoraBridge {
       if (response.success) {
         entry.resolve(response.data);
       } else {
-        entry.reject(new OperationError(response.error ?? { code: IpcErrorCodes.unknownError }));
+        entry.reject(new ShenoraError(response.error ?? { code: IpcErrorCodes.unknownError }));
       }
       return;
     }

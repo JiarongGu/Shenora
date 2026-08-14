@@ -7,10 +7,19 @@
   a shared assembly referenced by both, would either publish a package nobody asks for or need
   embedding tricks to hide it.
 
-  The `Platforms/` folder inside each platform project is where the two diverge. That split is a MAUI
-  SDK convention, not something wired here: `Platforms/<Platform>/**` is included only for the
-  matching TFM. Proven the hard way — an iOS build compiled cleanly with `Platforms/Android/MainActivity.cs`
-  (which references `Android.App` and cannot compile for iOS) sitting in the same project.
+  🔴 WHAT BELONGS HERE, and it is the whole rule (owner, 2026-08-08): code that is genuinely the SAME on
+  both mobile shells — which is real, because both are MAUI. The HybridWebView IPC transport, the UI
+  dispatcher, the safe-area handling, the interceptor, the host composition. This folder is NOT a place to
+  put two implementations behind an `#if`.
+
+  Platform-specific code lives in `src/Shenora.Android/Services/` or `src/Shenora.iOS/Services/`, named for
+  its platform (`AndroidMediaPlayer`, `IosMediaPlayer`) and in that platform's namespace, exactly as
+  `WindowsMediaPlayer` is. The build already selects it — each shell is a SINGLE-TFM project — so those
+  files need no `#if` at all, and ten of them lost one.
+
+  ⚠ There is no `Platforms/<Platform>/` sub-folder any more. That is a MAUI SDK convention for projects
+  which MULTI-TARGET, where `Platforms/<Platform>/**` is included only for the matching TFM. These projects
+  each target one framework, so the gate never fired and the folder only restated the project's own name.
 -->
 <Project>
 
@@ -40,8 +49,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Shenora.Core\Shenora.Core.csproj" />
-    <ProjectReference Include="..\Shenora.Ipc\Shenora.Ipc.csproj" />
+    <ProjectReference Include="..\Shenora\Shenora.csproj" />
   </ItemGroup>
 
   <!--

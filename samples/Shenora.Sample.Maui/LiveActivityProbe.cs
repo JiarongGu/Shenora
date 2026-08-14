@@ -1,4 +1,6 @@
-using Shenora.Core;
+using Shenora;
+using Shenora.Modules.Platform;
+using Shenora.Modules.Platform.Activities;
 
 namespace Shenora.Sample.Maui;
 
@@ -40,7 +42,34 @@ internal static class LiveActivityProbe
             // An indeterminate start, because that is the honest state of work that has just begun and it
             // exercises the null-progress path the views must handle with a spinner.
             var state = new LiveActivityState { Title = "Shenora probe", Subtitle = "starting" };
-            var handle = activities.Start(state);
+
+            // 🔴 AN APPEARANCE IS PASSED, and that is the point of the probe rather than decoration: D69's
+            // config layer is only DONE when something asks for it, and a widget rendering the kit's
+            // hardcoded defaults would look identical to one reading this (D63 — absent is
+            // indistinguishable from working). A non-default symbol and tint make the two distinguishable
+            // on sight: the kit's built-in default is a plain `circle.fill` in the system accent.
+            var appearance = new LiveActivityAppearance
+            {
+                Symbol = "arrow.down.circle.fill",
+                Tint = "#FF9500",
+            };
+
+            // 🔴 THE LAYOUT, IN ONE LINE — which is the point of the preset set existing. An adopter's
+            // activity is usually one of three shapes (known end, unknown end, a number that matters), and
+            // each has metrics that are fiddly to get right and invisible when wrong: where the value sits
+            // so it does not drift as the title changes, how much room the bar needs, which slot survives
+            // the collapse into the pill. `Presentations` settles all of those.
+            //
+            // ⚠ IT IS AN ORDINARY LAYOUT, not a hidden rendering path — built from the same public elements
+            // an app could have written by hand, so `with` overrides any region. The sample takes the
+            // preset WHOLE on purpose: a demo that immediately customised everything would not show that
+            // the default is worth having.
+            //
+            // ⚠ `{title}` / `{subtitle}` / `{progress}` inside it are bound at every RENDER, not at
+            // description — which is why a layout handed over once at start keeps showing values that change.
+            var layout = Components.ProgressCard(appearance.Symbol);
+
+            var handle = activities.Start(state, appearance, layout);
             log($"[ACTIVITY] start -> {handle ?? "<null>"}");
             if (handle is null)
             {
@@ -48,16 +77,46 @@ internal static class LiveActivityProbe
                 return;
             }
 
-            // Three updates, so a screenshot at any point shows a plausible value AND the update path is
-            // exercised rather than only the start path. `with` on the app's own record is why the contract
-            // needs no mutation callback.
-            for (var step = 1; step <= 3; step++)
+            // 🔴 TEN UPDATES AT 3 s, AND THE COUNT IS THE POINT. Three at 6 s exercised the update path but
+            // was almost impossible to WATCH — and watching is the only way to catch the failure this probe
+            // exists to catch, because an update that is accepted and applied and never repainted logs
+            // exactly like one that works (measured: the compact Island held a stale value while every line
+            // read `update applied`). A ten-step climb makes a frozen pill obvious at a glance.
+            //
+            // ⚠ Ten in thirty seconds is deliberately inside ActivityKit's update budget. Do not raise it
+            // to "make it smoother": a throttled activity stops repainting, which reproduces the very bug
+            // this is meant to detect and would be blamed on the kit.
+            const int steps = 10;
+            for (var step = 1; step <= steps; step++)
             {
-                await Task.Delay(TimeSpan.FromSeconds(6)).ConfigureAwait(false);
-                state = state with { Subtitle = $"step {step} of 3", Progress = step / 3.0 };
+                await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+                state = state with { Subtitle = $"step {step} of {steps}", Progress = (double)step / steps };
                 activities.Update(handle, state);
                 log($"[ACTIVITY] update {step} -> progress={state.Progress:0.00}");
             }
+
+            // 🔴 THE PUSH TOKEN, read here because a seam nothing consults is indistinguishable from one
+            // that does not work (D63). It is also the answer to the limit this probe cannot otherwise
+            // show: `Update` runs in THIS process, so an activity outlives the app while its update loop
+            // does not — a server advancing it needs this token.
+            // ⚠ Polled, not read once: the system issues it asynchronously AFTER the activity starts, so
+            // the honest answer immediately after `Start` is null and that is not a failure.
+            string? token = null;
+            for (var attempt = 0; attempt < 5 && token is null; attempt++)
+            {
+                token = activities.PushToken(handle);
+                if (token is null) await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            }
+            log(token is null
+                // 🔴 NOT A FAIL, and the reason is known rather than guessed: this sample ships NO
+                // entitlements file, so it has no `aps-environment`, and iOS issues no push token to an app
+                // without the Push Notifications entitlement however correctly the activity asks for one.
+                // Measured on an iPhone 17 Pro 2026-08-09 — `pushType: .token` was accepted and no token
+                // followed. Proving this path end to end needs an App ID with Push Notifications enabled,
+                // which a free/personal team cannot create.
+                ? "[ACTIVITY] push token: none — this sample has no aps-environment entitlement, so iOS "
+                  + "issues none. The seam is exercised; the TOKEN path is unproven."
+                : $"[ACTIVITY] push token: {token.Length / 2} bytes — a server can advance this activity");
 
             log("[ACTIVITY] VERDICT: PASS — started and updated; the Island is the visual half");
 

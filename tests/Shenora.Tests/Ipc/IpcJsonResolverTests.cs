@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Shenora.Ipc;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 

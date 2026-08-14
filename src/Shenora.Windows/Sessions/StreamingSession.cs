@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
@@ -174,7 +175,7 @@ public sealed class StreamingSessionOptions
 public sealed class StreamingSession : IAsyncDisposable
 {
     private readonly Form _form;
-    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Channel<SessionFrame> _frames;
 
@@ -553,7 +554,7 @@ public sealed class StreamingSession : IAsyncDisposable
     {
         if (options.OnEnded is not { } handler) return;
         if (Interlocked.Exchange(ref latch.Value, 1) != 0) return;
-        Shenora.Core.AppCallback.Run(() => handler(ended),
+        Shenora.AppCallback.Run(() => handler(ended),
             onError: ex => SessionLog.Try(options.Log, log => log.LogError(ex, "Streaming session: OnEnded handler threw")));
     }
 

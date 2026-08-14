@@ -1,7 +1,10 @@
-using Shenora.Core;
-using Shenora.IO;
-using Shenora.Ipc;
-using Shenora.Media;
+using Shenora;
+using Shenora.Modules.FileDialog;
+using Shenora.Modules.Media;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Logic;
 
@@ -11,25 +14,25 @@ namespace Shenora.Sample.Logic;
 /// <c>net10.0</c>.
 /// <para>
 /// Every native capability it uses arrives through a platform-neutral contract from
-/// <c>Shenora.Core</c>: <see cref="IFileDialogs"/>, <see cref="IClipboardService"/>,
+/// <c>Shenora</c>: <see cref="IFileDialogs"/>, <see cref="IClipboardService"/>,
 /// <see cref="IUrlLauncher"/>, <see cref="IUiDispatcher"/>. The desktop app supplies the WinForms
-/// implementations (<c>UseWinForms</c> registers both the Windows and the portable face of each), so
+/// implementations (<c>UseWindows</c> registers both the Windows and the portable face of each), so
 /// this class never names a Windows type and never references <c>Shenora.Windows</c>.
 /// </para>
 /// <para>
-/// Contrast with the desktop sample's own <c>SampleFacade</c>, which keeps the genuinely
+/// Contrast with the desktop sample's own <c>SampleModule</c>, which keeps the genuinely
 /// desktop-only routes (reveal-in-Explorer, secondary windows on their own STA threads). That split
 /// is the point: portable logic here, platform-bound composition there.
 /// </para>
 /// </summary>
-public sealed class PortableSampleFacade(
+public sealed class PortableSampleModule(
     IFileDialogs dialogs,
     IClipboardService clipboard,
     IUrlLauncher urls,
     IUiDispatcher ui,
     IMissionScheduler scheduler,
     IFileUpdateQueue updates,
-    ShenoraPaths paths) : BaseFacade
+    ShenoraPaths paths) : ModuleBase
 {
     /// <summary>The reserved module name for the portable half of the sample.</summary>
     public const string Module = "SAMPLE_LOGIC";
@@ -50,7 +53,7 @@ public sealed class PortableSampleFacade(
             // A file picker exists on every host worth shipping to; only the implementation differs.
             //
             // ⚠ AN APP THAT ONLY WANTS A PICKER SHOULD NOT WRITE THIS ROUTE ANY MORE. The kit ships
-            // FileDialogFacade (`services.AddShenoraFileDialogs()`), and `@shenora/react`'s
+            // FileDialogModule (`services.AddShenoraFileDialogs()`), and `@shenora/react`'s
             // `useFileDialogs()` calls it with capability gating already done. These two routes stay
             // because they demonstrate something different and still true: portable APP LOGIC composing a
             // dialog with behaviour of its own — see SAVE_TEXT's deliberately slow, interruptible write,
@@ -115,7 +118,7 @@ public sealed class PortableSampleFacade(
             case "UI_STATE":
                 return new { State = ui.State.ToString(), OnUiThread = ui.IsOnUiThread };
 
-            // Scheduling is portable too (Shenora.Core's Work layer), so it belongs on this side of
+            // Scheduling is portable too (Shenora's Work layer), so it belongs on this side of
             // the split. Four items go in at once: two contend for ONE path and must serialize, two
             // are disjoint and must overlap. Nothing is awaited here — the route returns immediately
             // and the page watches the operations list, which is the D23 shape for anything slow.
@@ -123,7 +126,7 @@ public sealed class PortableSampleFacade(
                 return ScheduleDemo();
 
             // The media decision, from PORTABLE logic — which is the point of the route existing (D41).
-            // `Shenora.Media` is net10.0, so this compiles here, on the desktop shell and on both mobile
+            // `Shenora.Modules.Media` is net10.0, so this compiles here, on the desktop shell and on both mobile
             // shells with no `#if`; the moment someone reaches for a platform media type instead, THIS
             // project stops compiling. That is the tripwire, and it is armed rather than described.
             //
@@ -146,7 +149,7 @@ public sealed class PortableSampleFacade(
     }
 
     /// <summary>
-    /// What a browser-ish player can open. <b>The APP's policy, not the kit's</b> — `Shenora.Media` ships
+    /// What a browser-ish player can open. <b>The APP's policy, not the kit's</b> — `Shenora.Modules.Media` ships
     /// no codec list on purpose, because the correct one differs per player and, on Android, per DEVICE
     /// (codec support is vendor-declared, which is why <c>MediaCodecList</c> is a runtime query). A list
     /// baked into the kit would be one app's guess frozen into everyone's planner.
@@ -154,12 +157,14 @@ public sealed class PortableSampleFacade(
     private static readonly MediaPlaybackPolicy BrowserPolicy = new()
     {
         Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".mov", ".webm" },
-        VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp8", "vp9", "av1" },
-        AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "mp3", "opus", "vorbis", "flac" },
-        // This sample ships no engine, so it can convert nothing — and saying so honestly is the point:
-        // the planner then answers `Unsupported` instead of promising a transcode nobody can perform.
-        CanEncodeVideo = false,
-        CanEncodeAudio = false,
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        {
+            [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp8", "vp9", "av1" },
+            [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "mp3", "opus", "vorbis", "flac" },
+        },
+        // Encodable is left EMPTY: this sample ships no engine, so it can convert nothing — and saying so
+        // honestly is the point. The planner then answers `Unsupported` instead of promising a transcode
+        // nobody can perform. `WithDeviceEncoders(capability)` is how a real app fills it in.
     };
 
     /// <summary>

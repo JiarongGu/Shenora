@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Shenora.Tests.Core;
@@ -212,7 +212,7 @@ public class ShenoraApplicationTests
     {
         using var app = ShenoraApplication.CreateBuilder(Options()).Build();
         var ex = Assert.Throws<InvalidOperationException>(app.Run);
-        Assert.Contains("UseWinForms", ex.Message);
+        Assert.Contains("UseWindows", ex.Message);
     }
 
     private sealed class RecordingRunner : IShenoraRunner

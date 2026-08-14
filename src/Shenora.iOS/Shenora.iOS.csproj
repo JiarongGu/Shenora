@@ -6,8 +6,17 @@
     expected in the save picker (Android needs SAF, iOS needs UIDocumentPickerViewController), and it
     will land in `Platforms/` on each side rather than behind an #if.
 
-    ⚠ This project can only be BUILT on macOS (Xcode). `dev.mjs verify` on Windows therefore never
-    compiles it, and its API baseline is gated on macOS only — see MetadataSurfaceTests.
+    ⚠ It BUILDS ON WINDOWS and `dev.mjs verify` COMPILES IT. A `net10.0-ios` LIBRARY needs only the
+    maui-ios workload and the Microsoft.iOS reference assemblies; a Mac is required to produce and run an
+    .app BUNDLE, which is why `_ValidateXcodeVersion` is conditioned on `_CanOutputAppBundle`. Its API
+    baseline is gated here too, on Windows, beside Android's — see MetadataSurfaceTests. (Owner's call,
+    2026-08-03; `Shenora.slnx` carries the same reasoning at length.)
+
+    🔴 This paragraph said the OPPOSITE on BOTH counts until 2026-08-13, and cited MetadataSurfaceTests —
+    the test that disproves it. That matters more than an ordinary stale comment because this file is where
+    someone checks whether an iOS change is safe to make from Windows: it denied a gate that had just
+    worked. `verify` is what caught a doc reference to `Java.IO.IOException` that only the iOS TFM rejects
+    (CS1574), during the Android body-throw fix.
   -->
   <Import Project="..\Shenora.Mobile\Shenora.Mobile.props" />
 
@@ -15,10 +24,18 @@
     <TargetFrameworks>net10.0-ios</TargetFrameworks>
     <!-- 15.0 is the .NET 10 iOS workload's floor; MAUI's own template uses the same. -->
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <!--
+      Unsafe, for ONE reason: `AudioConverterFillComplexBuffer` pulls its input through a NATIVE CALLBACK,
+      so the converter needs an `[UnmanagedCallersOnly]` function pointer and a pinned context. There is no
+      safe form of that API, and the safe alternative (`AudioConverterConvertBuffer`) cannot perform a
+      complex conversion at all — measured on a device: `'op??'` on the simulator, and success with ZERO
+      BYTES on an iPhone.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Inline on purpose — the baseline coverage gate text-matches it here. See Shenora.Mobile.props. -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.iOS</PackageId>
-    <Description>Shenora's iOS shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a UI-thread dispatcher, and the iOS implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.Android. Also ships the Live Activity devkit: the app writes four SwiftUI view bodies and sets one MSBuild property, and the package supplies the ActivityKit shim, the state mirror and the build step that produces and signs the widget extension.</Description>
+    <Description>Shenora's iOS shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), the resource interceptor that answers a page's byte ranges, a UI-thread dispatcher, safe-area insets, and the iOS implementations of the Shenora shell contracts — native file dialogs, an AudioToolbox/VideoToolbox conversion pipeline with device capability probing, an AVPlayer media player, and a Now Playing playback session. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.Android. Also ships the Live Activity devkit: the app writes four SwiftUI view bodies and sets one MSBuild property, and the package supplies the ActivityKit shim, the state mirror and the build step that produces and signs the widget extension.</Description>
   </PropertyGroup>
 
   <!--
@@ -34,11 +51,20 @@
     <None Include="buildTransitive\Shenora.iOS.targets" Pack="true" PackagePath="buildTransitive\" />
     <!--
       ⚠ The repo path and the PackagePath are deliberately IDENTICAL (`buildTransitive/swift/`). The targets
-      find this by `$(MSBuildThisFileDirectory)swift/`, so making the source tree mirror the package layout
+      find these by `$(MSBuildThisFileDirectory)swift/`, so making the source tree mirror the package layout
       means the path the sample exercises is the path a real consumer gets — rather than two paths where only
       one is ever tested. Getting this wrong is how the first Mac build failed.
+
+      🔴 A GLOB, NOT A LIST, AND THAT IS A FIX. This named `ShenoraLiveActivity.swift` alone — correct at
+      v0.10.0, when it was the only Swift file, and never extended when `ShenoraLayout.swift` and
+      `ShenoraDefaultViews.swift` landed. `ShenoraBuildLiveActivityShim` compiles the layout for EVERY iOS
+      app that references this package (unconditional since the 0.9.0 link defect), so the next release
+      would have failed every adopter's build at `swiftc: no such file or directory` — while this repo's
+      own builds stayed green, because the sample reaches the SOURCE tree and never the nupkg. The 0.9.0
+      lesson exactly: only an app-shaped PACKAGE consumer finds this class, so the shape has to make it
+      unrepresentable. `LiveActivityPackagingTests` names the file if anyone lists them again.
     -->
-    <None Include="buildTransitive\swift\ShenoraLiveActivity.swift" Pack="true"
+    <None Include="buildTransitive\swift\*.swift" Pack="true"
           PackagePath="buildTransitive\swift\" />
   </ItemGroup>
 

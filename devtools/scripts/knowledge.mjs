@@ -49,7 +49,21 @@ const claudeMd = path.join(repo, 'CLAUDE.md');
 // game rather than a saving. The row routes a whole new platform line (two mobile shells, both proven
 // on device), which is the kind of growth the cap is supposed to permit rather than the kind it is
 // supposed to catch.
-const CORE_BUDGET = 18 * 1024;
+// 🔴 Raised 18 -> 32 KB on 2026-08-07, and the SIZE of the jump is the point. Owner: *"lets do not care
+// too much of the core size"* — said after a session where this cap consumed real time three separate
+// ways: a trim of the index's `Enforces` column (which did land, 205 bytes, and was still not enough),
+// then a raise, then a correction to the raise-count claim in the index. That is a lot of ceremony to
+// admit one rule.
+//
+// The rule it was blocking is D63 — *an extension point is done when something ASKS for it, not when the
+// interface compiles* — the write-up of a defect class that hit THREE times in one fortnight and whose
+// defining property is that it produces NO SIGNAL. A cap that makes someone argue for a rule like that is
+// not paying for itself.
+//
+// ⚠ WHAT THIS CHECK IS FOR, now that it is not a squeeze: noticing DRIFT. A core rule base that doubles
+// is worth a look; one that grows by a paragraph is not. It still prints every run, and the earlier
+// raises (16→17→18) are recorded in git with their reasons if the history is ever wanted.
+const CORE_BUDGET = 32 * 1024;
 
 const rel = (p) => path.relative(repo, p).replace(/\\/g, '/');
 const NON_RULES = new Set(['RULES_INDEX.md', 'TEMPLATE.md']);

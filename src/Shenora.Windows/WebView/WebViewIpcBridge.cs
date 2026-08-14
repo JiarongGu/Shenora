@@ -1,5 +1,7 @@
-using Shenora.Core;
-using Shenora.Ipc;
+using Shenora;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -41,14 +43,14 @@ public sealed class WebViewIpcBridgeOptions
     /// call AND a forwarded bus event alike). Default: deliver everything. This is the seam that lets
     /// one bridge per window, or an auxiliary/remote session, receive only the slice of the app's
     /// traffic it should — every bridge subscribing with the bus's wildcard forward otherwise means
-    /// every event reaches every window. Forwarded to <see cref="Shenora.Ipc.NotificationPumpOptions.Filter"/>.
+    /// every event reaches every window. Forwarded to <see cref="Shenora.Core.Ipc.NotificationPumpOptions.Filter"/>.
     /// </summary>
     public Func<IpcNotification, bool>? NotificationFilter { get; init; }
 
     /// <summary>
     /// What to tell the client this shell is and can do, answered in the handshake so one page can
     /// ship to every shell. Declared by the APP because it depends on what this app composed — a
-    /// desktop host that never mapped <c>WindowCommandFacade</c> has no window chrome to advertise,
+    /// desktop host that never mapped <c>WindowCommandModule</c> has no window chrome to advertise,
     /// whatever platform it is on. A typical frameless composition here declares
     /// <c>WindowChrome</c>, <c>DropZones</c> and the picker capabilities.
     /// </summary>
@@ -97,7 +99,7 @@ public sealed class WebViewIpcBridge : IDisposable
     private readonly WebView2Control _webView;
     private readonly WebViewIpcBridgeOptions _options;
     private readonly Action<string>? _log;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     private readonly NotificationPump _pump;
     private readonly IpcHostBridge _host;
     private System.Windows.Forms.Timer? _flushTimer;
@@ -162,7 +164,7 @@ public sealed class WebViewIpcBridge : IDisposable
         });
 
         // The inbound protocol — the dispatch lifetime, deserialize, the handshake, the error
-        // boundary — is transport-neutral and moved to Shenora.Ipc for the same reason the outbound
+        // boundary — is transport-neutral and moved to Shenora.Core.Ipc for the same reason the outbound
         // half did: the D3 spike proved a second base rewrites it identically. What stays HERE is
         // everything WebView2: the Forms.Timer, the event wiring, PostWebMessageAsString.
         //
@@ -232,12 +234,12 @@ public sealed class WebViewIpcBridge : IDisposable
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). Every site
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). Every site
     /// here has no caller to catch anything — a WebView2 event handler, the flush timer's tick,
     /// dispose — and several sit inside a <c>catch</c> that exists to stop a failure escaping, so a
     /// throwing sink would defeat the very catch it reports from.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_log, message);
+    private void Log(Func<string> message) => Shenora.AppCallback.Log(_log, message);
 
     /// <summary>
     /// Queue a notification for the next batched push (fire-and-forget; delivery starts once the

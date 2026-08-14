@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShenoraBridge, configureBridge, getBridge } from './bridge.js';
-import { OperationError } from './errors.js';
+import { ShenoraError } from './errors.js';
 import { ShenoraEventBus } from './eventBus.js';
 import { IpcCategories, HANDSHAKE_MODULE, HANDSHAKE_TYPE, IpcErrorCodes, type EventMessage, type IpcRequest } from './types.js';
 import { FakeTransport } from './testing/fakeTransport.js';
@@ -40,7 +40,7 @@ describe('ShenoraBridge', () => {
     await expect(promise).resolves.toEqual({ count: 2 });
   });
 
-  it('rejects a failed response as a structured OperationError', async () => {
+  it('rejects a failed response as a structured ShenoraError', async () => {
     const { transport, bridge } = createBridge();
 
     const promise = bridge.invoke('APP', 'FAIL');
@@ -53,9 +53,9 @@ describe('ShenoraBridge', () => {
 
     const error = await promise.then(
       () => { throw new Error('should have rejected'); },
-      (e: unknown) => e as OperationError,
+      (e: unknown) => e as ShenoraError,
     );
-    expect(error).toBeInstanceOf(OperationError);
+    expect(error).toBeInstanceOf(ShenoraError);
     expect(error.code).toBe('IMPORT_FAILED');
     expect(error.parameters).toEqual({ name: 'x' });
   });
@@ -158,6 +158,26 @@ describe('ShenoraBridge', () => {
     await expect(bridge.invoke('NOTES', 'GET_ALL', { timeoutMs: 20 })).resolves.toEqual({ ok: true });
   });
 
+  it('an async fallback that settles leaves NO pending timer behind', async () => {
+    // The timeout that lost the race must be cleared. Until 2026-08-14 it was not, so every async
+    // fallback call left a live timer for the full timeout (30 s by default) holding its closure.
+    // Asserted with getTimerCount for the same reason the post-tracking test does: "did it clean up"
+    // is not observable from the resolved value, and a leak is silent by construction.
+    vi.useFakeTimers();
+    try {
+      const bridge = new ShenoraBridge({
+        transport: null,
+        eventBus: new ShenoraEventBus(),
+        fallback: () => Promise.resolve({ ok: true }),
+      });
+
+      await expect(bridge.invoke('NOTES', 'GET_ALL', { timeoutMs: 30_000 })).resolves.toEqual({ ok: true });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('notifyReady sends the reserved handshake route', async () => {
     const { transport, bridge } = createBridge();
 
@@ -200,7 +220,7 @@ describe('ShenoraBridge', () => {
     const promise = bridge.invoke('APP', 'PING');
     bridge.dispose();
 
-    await expect(promise).rejects.toBeInstanceOf(OperationError);
+    await expect(promise).rejects.toBeInstanceOf(ShenoraError);
     expect(transport.subscribed).toBe(false);
   });
 

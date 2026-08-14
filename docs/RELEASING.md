@@ -77,18 +77,39 @@ burns no version:
    perfect. Everything protecting the artifact still runs (dotnet build + tests, npm build + tests,
    typechecks, `check-sensitive --tree`, `doc-drift` — the README it checks ships in every nupkg —
    and `doctor`).
-3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + the npm tarball
-   (npm `package.json` version and the README headline synced from `VersionPrefix`), each with its
-   sha256 printed.
+2b. **Account for every REMOVAL**: `node devtools/dev.mjs retired-audit <previous tag>` — which public
+   types left the shipped surface with no `retired-names.txt` entry. **`verify` cannot answer this**:
+   `doc-drift` and `stale-scan` both READ that file, so a name that never reached it is invisible to
+   both, and the compiler is no help either because every remaining call site compiles.
+   Measured 2026-08-08 against v0.10.0: 19 types had left and SIX were unregistered — one whole rename
+   family (`*Facade` → `*Module`) plus D66's deletions. Each finding needs an entry saying what replaced
+   it, then a `stale-scan` pass, and a `### Breaking` line with its migration if an adopter could have
+   named it. **A break is cheap here (D47) but never silent.** Not folded into `verify` because it needs
+   tags and CI clones are not always deep.
+   - **It also audits `required`, which is a break that keeps every name.** Adding `required` to a property
+     that already shipped stops an adopter's object initializer compiling, and *no* name gate can see it —
+     nothing was renamed. That fails the audit unless `## Unreleased` names it. **Dropping** `required` only
+     invalidates prose, so it prints and passes: measured 2026-08-12, `MediaConversionOptions.Convert` lost
+     it under D70 and two docs went on calling it required for two days with every gate green.
+   - Takes an optional second rev — `retired-audit v0.9.0 v0.10.0` audits a shipped release after the fact,
+     and swapping the revs is how the `required` detector was verified against real history instead of a
+     fake (a loss one way is a gain the other).
+3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + **two** npm tarballs
+   (`@shenora/react` and the build-time `@shenora/cli`, D67 — both `package.json` versions and the README
+   headline synced from `VersionPrefix`), each with its sha256 printed.
 4. **Publish NuGet** — Trusted Publishing (OIDC): `NuGet/login@v1` mints a short-lived key; no
    stored secret. One-time setup on nuget.org: Account → Trusted Publishing → policy for the
    repo + `release.yml`, scoped to the `Shenora.*` package glob. `--skip-duplicate` makes a re-run safe.
-5. **Publish npm** — `npm publish publish/packages/shenora-react-X.Y.Z.tgz --provenance --access public`.
+5. **Publish npm — BOTH tarballs**: `npm publish publish/packages/shenora-react-X.Y.Z.tgz --provenance
+   --access public`, then the same for `shenora-cli-X.Y.Z.tgz`.
    Note it publishes the tarball **Pack produced**, not a rebuild: `npm publish` from the package
    directory would re-run `prepublishOnly` and ship a second artifact, so the thing whose sha256 step 3
    printed would not be the thing that shipped. Uses npm Trusted Publishing (OIDC) once the publisher
-   policy is configured on npmjs.com for `@shenora/react` + this repo/workflow; until then set a
-   granular `NPM_TOKEN` repo secret (the workflow uses it when present).
+   policy is configured on npmjs.com for `@shenora/react` **and `@shenora/cli`** + this repo/workflow;
+   until then set a granular `NPM_TOKEN` repo secret (the workflow uses it when present).
+   ⚠ **A second package doubles the ways a release half-lands.** The skip-if-already-published guard below
+   must be applied per package, not once — otherwise a re-run after the react publish succeeded and the cli
+   publish failed will stop at the first one and never reach the second.
    The step **skips when that exact version is already on the registry**, because npm has no
    `--skip-duplicate` and fails hard otherwise. That matters: the two registries can never be made
    atomic, so the goal is re-runnability — without the guard, any failure after both pushes (a
@@ -135,11 +156,10 @@ framework** — the same milestone that makes a 1.0 freeze possible. The set is 
 added two packages; one id came and went inside a day), so retiring in batches means repeating the
 ceremony every time the shape changes.
 
-Two things that must stay true while it is deferred: no doc may CLAIM the retirement has happened
-(`README.md` said the old ids "carry a deprecation notice" until 2026-08-05 — they do not), and the
-deferral stays written down. The earlier version of this note said "once the next release ships"; four
-releases shipped, and a review then re-raised it as a defect. **A deferral nobody records gets
-rediscovered as a bug.**
+Two things must stay true while it is deferred: **no doc may CLAIM the retirement has happened** — the
+old ids carry no deprecation notice — and **the deferral stays written down with its trigger, not with a
+release number.** "Once the next release ships" is not a trigger: four shipped, and a review then
+re-raised the whole thing as a defect. **A deferral nobody records gets rediscovered as a bug.**
 
 ## Consuming pre-release (in-house siblings)
 
@@ -151,14 +171,14 @@ co-development against an unpublished change, or a pre-release smoke test. The r
   `publish/packages` (this repo) as a source alongside nuget.org (transitive deps like the
   WebView2 package come from there) and pin EXACT versions with the range syntax:
   `<PackageReference Include="Shenora.Windows" Version="[0.1.0]" />`. Reference the leaf package you
-  actually need and the rest arrive transitively: `Shenora.Windows` pulls `Shenora.Ipc` + `Shenora.Core`.
-  The optional feature packages hang off Core and arrive with NOTHING — add `Shenora.Media`,
-  `Shenora.IO` or `Shenora.IO.Compression` yourself when you want one (D48).
+  actually need and the rest arrive transitively: `Shenora.Windows` pulls `Shenora`.
+  There are no optional feature packages to add (D55): media, file operations and archive extraction
+  are namespaces inside `Shenora`, so a shell reference brings all of them.
   A consumer inside this repo's tree must set `ManagePackageVersionsCentrally=false`.
 - npm: install the packed tarball (`npm install <repo>/publish/packages/shenora-react-<v>.tgz`)
   with `react` alongside — or a `file:` dependency on `src/Shenora.React` during co-development.
   The tarball works under native Node ESM, not just bundlers (the emitted imports carry explicit
-  `.js` extensions; enforced by the package's NodeNext tsconfig — see `docs/archive/fix-log.md`).
+  `.js` extensions; enforced by the package's NodeNext tsconfig).
 
 > ⚠ **The NuGet GLOBAL cache beats every source, so re-packing the same version is not enough.**
 > `~/.nuget/packages` is keyed on id+VERSION, and a cached copy wins over any feed — including this
@@ -194,7 +214,7 @@ had "0.3.0 PUBLISHED (2026-08-01)" typed into a heading by hand.
 
 So (owner, 2026-08-02):
 
-- **Design docs, `DECISIONS.md`, `ARCHITECTURE.md`'s body and `ROADMAP.md` mark time with DATES.**
+- **`DECISIONS.md` and `ARCHITECTURE.md`'s body mark time with DATES.**
   "2026-08-02 — the mission layer", not "0.3.0 — the mission layer".
 - **`CHANGELOG.md` is where work meets a version number**, because that is the release-facing log and
   the workflow stamps its heading.
@@ -204,3 +224,91 @@ So (owner, 2026-08-02):
   fails on drift in either, so a stale one cannot survive the gate.
 - Naming a version in HISTORY is fine and often necessary — "shipped in v0.1.0", "0.2.0 never
   released". The rule is about claims describing the PRESENT.
+
+## Mechanics that still steer
+
+> MOVED here from `TASKS.md` on 2026-08-13, verbatim. It is standing guidance, not open
+> work, and it was one of four sections making that file 458 lines long while it held 7
+> open items — the third occurrence of a drift its own header records twice.
+
+- **NEVER touch `<VersionPrefix>` or the CHANGELOG's `## Unreleased` heading** — the release workflow owns
+  both. A hand-bump moves the baseline and SKIPS a release; that is how **0.2.0 was consumed without ever
+  shipping** (the registries read 0.1.2 → 0.3.0). Work written while that was in flight calls itself "the
+  0.2.0 pass" — those names refer to the WORK, not to a release. Guard: `docs/RELEASING.md`.
+- **A release only contains what is PUSHED.** 0.6.0 shipped 0.5.1's CODE because the work was committed
+  locally and never pushed. `dev.mjs changelog` now fails a release whose `## Unreleased` is empty, with the
+  message pointing at that cause first.
+- **A break is CHEAP but never silent (D47).** One repo fully adopts the surface, so a break costs that one
+  repo's compile errors — found by the compiler, fixed by whoever asked for the change. So prefer the
+  CORRECT shape over the compatible one and ship no compatibility aliases; the test is *"would this be the
+  shape on a greenfield surface?"* It still belongs under `### Breaking` with its migration, and it still
+  shows as API-baseline drift. ⚠ This is a property of today's adoption count and reverts the moment a
+  second repo fully adopts. 1.0 is a separate deliberate freeze, not yet cut.
+- **The launcher binaries are BUILT BY THE RELEASE, both RIDs, and never committed.** `release.yml` has a
+  matrix job (win-x64 + MSVC, linux-x64 + gcc) that builds and conformance-tests each one, and `publish`
+  `needs:` it — so a launcher that fails conformance, or a missing RID, stops the release before anything
+  is published rather than silently shipping a package short. ⚠ Committing them was tried and reverted the
+  same day, history rewritten so the blob never existed: "a release might forget the download step" was a
+  real risk solved in the wrong place — a build output in git, carrying only the ONE rid this machine
+  builds, going stale the moment someone edited the C++ without rebuilding.
+- **A one-platform build proves one platform.** The launcher's POSIX half went uncompiled until the 0.10.0
+  release tried it and failed on two missing includes. Before a release that touches C++, run
+  `node devtools/dev.mjs launcher --posix`; fix-log 2026-08-05.
+- **NuGet lags npm on a release, by minutes.** 0.10.0 showed npm at the new version while all nine NuGet
+  packages still read 0.9.1 and the three new IDs 404'd — that is the validation pipeline, not a failed
+  push. All nine indexed within ~2 minutes. Re-check the feed before concluding anything is broken.
+
+> **This library is the intended foundation for the author's apps** (owner, 2026-08-03), so the bar on the
+> published surface is an adopter's, not a maintainer's: docs that match the artifact, breaks documented
+> with their migration, and readiness claims verified against a restored package rather than the tree.
+
+> DIRECTION (user, 2026-07-30): Shenora is the shared infrastructure library for ALL sibling
+> projects — a "UI kit for non-web applications" in the headless sense: it holds the desktop
+> shell that different applications boot their own logic on, and it must NOT depend on any UI
+> component library. Purpose is to stop re-solving the same problems per project. In-scope
+> common work explicitly includes: multi-form/multi-window, co-browsing (auxiliary browser
+> sessions), drag-drop zones, the IPC package design, the event hub, frontend display
+> optimizations, and the React hooks layer.
+>
+> DIRECTION (user, 2026-07-30, later): growth is harvest-driven — when something nice emerges
+> while developing another application, it gets generalized and promoted into Shenora (common
+> design/library/tool sharing). And the kit must be able to adopt MOBILE application logic too:
+> Capacitor (and similar) shells speaking the same IPC envelope through a pluggable transport.
+>
+> DIRECTION (user, 2026-08-04): *"one thing you need to keep in mind, we are doing a library, for
+> multiple platform, so if the library can provide powerful devtooling that will be even better so
+> for example rely on less swift code for ios (dynamic island) and support platform logic like now
+> playing"* — so **PLATFORM LOGIC is in scope, not just the shell**, and the measure of a platform
+> capability is *how little native code an adopting app has to write*.
+>
+> DIRECTION (user, 2026-08-05): *"sonora actually is the first one fully adopting all features so you can
+> fix anything into the best here which only cause 1 repo to update"* — so **the API is optimised for
+> correctness, not for compatibility**, while adoption is one repo. Full reasoning and its limits: **D47**.
+
+> 🔴 **DIRECTION (owner, 2026-08-10) — WHAT THE MEDIA TIER IS, in the owner's own words:** *"for ffmpeg we
+> supply for conversion interface but not the binary … so what we doing here is a proper segmenting engine,
+> a media interface to frontend, a well designed conversion interface"*.
+> **Three things, and an engine is not one of them.** That is the scope test to apply to any media
+> proposal, and it settles the ffmpeg question by IDENTITY rather than by expedience — the kit is the
+> SEAM, so "should we ship a codec" is not a cost/benefit question that a big enough benefit could flip.
+> It also names what the tier must be GOOD at, which is the more useful half: the segmenting engine, the
+> page-facing player interface, and the conversion interface an app plugs an engine into. D51 (no engine
+> bytes), D52/D59 (what the translation layer is FOR) and D42 (the kit ships the QUESTION, never a codec
+> list) are the same position argued from different directions; this is the one-line form.
+
+> 🔴 **WHY the mobile media tier exists at all: OFFLINE.** (Owner, 2026-08-09: *"the reason why we have
+> this properly designed mobile media logic is for its offline capability"*.) The obvious objection — *"the
+> server-backed profile already transcodes and streams, so why does a phone need any of this?"* — has
+> exactly one answer, and it is decisive: **offline is the case where the server is not there.** A phone
+> with no connection must serve, decode and if necessary repair what it already holds, locally.
+> - So **the on-device converter is not a nicety, it is the offline path.**
+> - It is also the scope test D52 asks for, answered properly: *does a React+C# app fail without it?*
+>   Offline, yes — completely.
+> - ⚠ And it is the line for HARVESTING from a server-backed sibling: a trick that needs the server is an
+>   application architecture, not a shell capability. Offline is what tells the two apart.
+
+> ⚠ **Designing anything in media? The reading list, in this order: `D59` (what the converter is FOR — the
+> gap between what the DEVICE decodes and what its WEBVIEW accepts, nothing wider), `D58` (the interceptor
+> route is the player's output pipe, not a parallel feature), `D51` (no engine byte ever ships), `D42`
+> (the kit ships the QUESTION, never a codec list), then `D63` (the defect class this subsystem kept
+> producing).** D52 and D53 are still true and are the earlier framing D59 sharpened.

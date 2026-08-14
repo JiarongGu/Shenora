@@ -105,15 +105,106 @@
                LogicalName="wwwroot/media/clip-faststart.mp4" />
     <MauiAsset Include="Resources\Raw\wwwroot\media\clip-tailmoov.mp4"
                LogicalName="wwwroot/media/clip-tailmoov.mp4" />
+    <!--
+      The TRANSCODE fixture: the same 20 s of audio as MP3 inside Matroska. The codec pairing is the whole
+      point — MP4 cannot CARRY mp3 as the kit's muxer defines carriable, so the remuxer is forced down the
+      decode → encode → mux path instead of copying the stream, which is the path no device had ever run.
+      AC-3 would be the real-world case and cannot be used: AOSP ships no AC-3 decoder, so an emulator
+      could never execute it. MP3 exercises the identical chain on every target.
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-mp3.mkv"
+               LogicalName="wwwroot/media/clip-mp3.mkv" />
+    <!--
+      The AC-3 half of the same fixture pair. Two are needed because the shells implement different input
+      sets: Android's converter takes mp3 and cannot take AC-3 on AOSP (no decoder exists there), iOS takes
+      AC-3 and does not claim mp3. `TranscodeProbe` uses whichever the shell CLAIMS.
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-ac3.mkv"
+               LogicalName="wwwroot/media/clip-ac3.mkv" />
+    <!--
+      🔴 THE SAME PAIR WITH A VIDEO TRACK, and that difference is why they exist. The two fixtures above
+      were built with ffmpeg's `-vn` for `TranscodeProbe`, which only cares about a soundtrack — so they are
+      AUDIO-ONLY, and `ConversionRouteProbe` used them for a fortnight while never once carrying a video
+      track through a conversion. The route's job on a real film is to COPY h264 and CONVERT the audio; with
+      an audio-only source that half was untested, and the output legitimately had no picture.
+      These carry h264 beside an audio codec MP4 cannot hold, so the probe can play the output and demand
+      `videoWidth != 0` — the assertion that catches a remux which quietly dropped the video.
+        ffmpeg -i clip-faststart.mp4 -t 6 -c:v copy -c:a libmp3lame -b:a 128k -f matroska clip-video-mp3.mkv
+        ffmpeg -i clip-faststart.mp4 -t 6 -c:v copy -c:a ac3 -b:a 192k -ac 2 -f matroska clip-video-ac3.mkv
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-video-mp3.mkv"
+               LogicalName="wwwroot/media/clip-video-mp3.mkv" />
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-video-ac3.mkv"
+               LogicalName="wwwroot/media/clip-video-ac3.mkv" />
+    <!--
+      🔴 THE REFUSAL FIXTURE: mpeg4 video + AAC audio. AAC is carriable by MP4 on every platform, so the
+      ONLY stream the kit cannot carry is the VIDEO — which makes the verdict unambiguous instead of
+      blameable on the soundtrack. `ConversionRouteProbe.CheckRefusalAsync` requires the route to FAIL and
+      to name `mpeg4`, because a remux will otherwise produce a perfectly good audio-only file.
+      It is also a real case rather than a contrivance: this device decodes mpeg4 and its webview will not.
+        ffmpeg -i clip-faststart.mp4 -t 6 -c:v mpeg4 -q:v 5 -c:a copy -f matroska clip-mpeg4-aac.mkv
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-mpeg4-aac.mkv"
+               LogicalName="wwwroot/media/clip-mpeg4-aac.mkv" />
+    <!--
+      🔴 THE PICTURE-CONVERSION FIXTURE FOR iOS, and it exists because the mpeg4 one CANNOT serve there.
+      Measured 2026-08-13 on an iPhone 17 Pro / iOS 26.6: that device has no MPEG-4 Part 2 decoder — 47
+      bytes of ESDS present and VTDecompressionSession still refuses — so the arm could only ever SKIP, and
+      a probe that can never pass teaches its reader to ignore a FAIL. `h263` is the one picture codec the
+      same device DOES decode (`convert video h263: accepted=True`), so this is what proves iOS's
+      decode -> re-encode -> mux path end to end rather than only that the seam answers.
+      ⚠ `-s 352x288` is NOT optional: h263 only accepts a QCIF-family frame size and ffmpeg refuses others.
+        ffmpeg -i clip-faststart.mp4 -t 6 -c:v h263 -q:v 5 -s 352x288 -c:a copy -f matroska clip-h263-aac.mkv
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-h263-aac.mkv"
+               LogicalName="wwwroot/media/clip-h263-aac.mkv" />
+
+    <!--
+      🔴 THE REFUSAL FIXTURE proper, since 2026-08-12: mpeg2video + AAC. The mpeg4 file above STOPPED being
+      one the day AndroidMediaVideoConversion learned to convert it — the probe then asserted a refusal that
+      correctly no longer happens. A refusal fixture has to be a codec the device can neither CARRY nor
+      CONVERT, and AOSP ships no mpeg2 decoder.
+        ffmpeg -i clip-faststart.mp4 -t 6 -c:v mpeg2video -q:v 5 -c:a copy -f matroska clip-mpeg2-aac.mkv
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-mpeg2-aac.mkv"
+               LogicalName="wwwroot/media/clip-mpeg2-aac.mkv" />
+    <!--
+      🔴 THE COMPUTED-REMUX FIXTURE, and it exists because NONE of the six clips above can be PLANNED.
+      `Mp4Remuxer.Plan` is lossless by contract — every stream the source offers must be carriable by MP4
+      as it stands, which is H.264/HEVC video and AAC audio — and every fixture above was built for the
+      CONVERSION tier, so each deliberately carries something MP4 cannot hold (mp3, AC-3, mpeg4,
+      mpeg2video). Measured 2026-08-12 against `Mp4Remuxer.Plan` directly: all six answer `null` and fall
+      through, which is the computed route working exactly as designed and proves nothing about it.
+      This one is the CONTAINER-REPAIR case the route exists for — the same 60 s H.264+AAC content as
+      `clip-faststart.mp4`, copied into Matroska, so a copy is all a correct output needs.
+        ffmpeg -i clip-faststart.mp4 -c copy -f matroska clip-h264-aac.mkv
+      ⚠ 468 KB, planning to 488,377 bytes. It was chosen to sit under the route's then 64 MiB buffered-body
+      ceiling so it would exercise the SERVE path rather than the decline; that ceiling was DELETED on
+      2026-08-13 (there is no size limit now), so any plannable clip would do — and a BIG one is what the route
+      has never been given on a device. ⚠ It also predates the route's `503` — the first request for a source is
+      answered while a mission walks it — and the probe rides that out: `RemuxRouteProbe.WaitForPlanAsync`
+      (25 attempts, one second apart, the interval the route's `Retry-After: 1` sets) is what both `CheckAsync`
+      and `CheckFirstRequestAsync` drive before they judge anything.
+    -->
+    <MauiAsset Include="Resources\Raw\wwwroot\media\clip-h264-aac.mkv"
+               LogicalName="wwwroot/media/clip-h264-aac.mkv" />
   </ItemGroup>
 
   <!--
-    THE LIVE ACTIVITY OPT-IN — one property, which is the whole adoption. The kit compiles this file together
-    with its own ShenoraLiveActivity.swift into a widget extension, embeds it in the app bundle and re-signs
-    it. The app writes four SwiftUI view bodies and no lifecycle Swift, no Info.plist, no .xcodeproj.
+    THE LIVE ACTIVITY OPT-IN — one property, and NO SWIFT AT ALL (D69). The kit compiles its own generic
+    widget into a widget extension, embeds it in the app bundle and re-signs it; what the widget DRAWS
+    comes from `LiveActivityAppearance`, described in C# where the rest of this app is.
+
+    The app writes no view bodies, no lifecycle Swift, no Info.plist and no .xcodeproj.
+
+    ⚠ An app that wants its own design system points `ShenoraLiveActivityViews` at its own SwiftUI file
+    instead, and the kit's default is not compiled. `Platforms/iOS/IslandViews.swift` is still in this
+    sample as the worked example of that path — swap the two lines below to run it:
+
+      <ShenoraLiveActivityViews>Platforms/iOS/IslandViews.swift</ShenoraLiveActivityViews>
   -->
   <PropertyGroup Condition="$(TargetFramework.Contains('ios'))">
-    <ShenoraLiveActivityViews>Platforms/iOS/IslandViews.swift</ShenoraLiveActivityViews>
+    <ShenoraLiveActivity>true</ShenoraLiveActivity>
   </PropertyGroup>
 
   <!--
@@ -148,8 +239,8 @@
                       Condition="$(TargetFramework.Contains('ios'))" />
     <!--
       No media PLATFORM reference any more (D45). Serving local files is the SHELL's interceptor plus
-      Shenora.Core's file middleware, and the range-delivery rule those two packages existed to carry turned
-      out to be a property of the interception rather than of media. `Shenora.Media` arrives transitively
+      Shenora's file middleware, and the range-delivery rule those two packages existed to carry turned
+      out to be a property of the interception rather than of media. `Shenora.Modules.Media` arrives transitively
       through Sample.Logic, which is the point: app logic names it, the platform head does not.
     -->
     <!-- The SAME portable logic the desktop sample hosts. That shared reference is the point of the

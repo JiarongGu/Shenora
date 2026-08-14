@@ -39,13 +39,22 @@
     --sa-settle: 180ms;
     --sa-color: transparent;
   }
-  /* The inset strips, painted with whatever the shell published. Fixed, so they never scroll away. */
-  body::before, body::after {
-    content: ""; position: fixed; left: 0; right: 0; background: var(--sa-color);
-    pointer-events: none; z-index: 1;
+  /*
+    The inset strips, painted with whatever the shell published. Fixed, so they never scroll away.
+
+    ⚠ FOUR edges, not two. The first version painted only top and bottom, which is the portrait shape
+    mistaken for the general one: rotate the device and the cutout moves to a SIDE, so the page padded
+    itself correctly and left an unpainted band exactly where the notch is. Four BORDERS on one
+    full-viewport element draw all four edges at independent thicknesses, which is why this needs
+    neither a second pseudo-element nor any JS.
+  */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    border-top: var(--sa-top) solid var(--sa-color);
+    border-right: var(--sa-right) solid var(--sa-color);
+    border-bottom: var(--sa-bottom) solid var(--sa-color);
+    border-left: var(--sa-left) solid var(--sa-color);
   }
-  body::before { top: 0; height: var(--sa-top); }
-  body::after { bottom: 0; height: var(--sa-bottom); }
   /*
     The safe-area insets are NOT optional once a page ships to more than one mobile shell, and this
     is what proves it: the identical markup looked correct on an Android emulator for a whole session
@@ -173,6 +182,18 @@
 </div>
 <video id="vid" controls playsinline preload="none"
        style="width:100%; max-height:34vh; background:#000; border-radius:8px; margin-bottom:10px;"></video>
+<!-- 🔴 AN AUDIO ELEMENT, because <video> and <audio> background DIFFERENTLY on iOS and only one of them
+     can demonstrate the host is configured correctly.
+     iOS PAUSES a <video> when the app is backgrounded — the video track cannot render — so testing
+     background playback with the element above measures that pause and says nothing about the shell.
+     An <audio> already playing CONTINUES, given UIBackgroundModes=audio plus an active
+     AVAudioSession(.playback), which is the pair a public sibling proved on a device for its player.
+     It plays the SAME clip: those files carry an AAC track, so this is the same bytes over the same
+     route, differing only in the element that consumes them. -->
+<div class="row">
+  <button id="maud">♪ audio only (background test)</button>
+</div>
+<audio id="aud" controls preload="none" style="width:100%; margin-bottom:10px;"></audio>
 <div id="log"></div>
 </div><!-- /#scroll -->
 
@@ -257,6 +278,20 @@ function post(module, type, payload) {
   return id;
 }
 
+/**
+ * The host driving this page's media element, installed further down where `vid` exists.
+ *
+ * ⚠ A HOLDER rather than a direct call, and the reason is this module's evaluation order: `vid` is
+ * declared hundreds of lines below and `const`/`let` are in the temporal dead zone until then, so a
+ * notification arriving during the initial evaluation would throw a ReferenceError inside the transport's
+ * own listener. Null until the media section runs, and events before that are ordinary log lines.
+ *
+ * A second `channel.subscribe(...)` beside the media code would also work — every transport adds its own
+ * listener per call and returns an unsubscribe — but it would re-parse every inbound message to read the
+ * few that are the player's. This dispatches from the parse that already happened.
+ */
+let playerCommand = null;
+
 channel.subscribe((raw) => {
   let msg;
   try { msg = JSON.parse(raw); }
@@ -267,6 +302,7 @@ channel.subscribe((raw) => {
   if (msg.category === 'notification') {
     for (const n of (msg.payload ?? [])) {
       log('evt', `<= EVENT ${n.module}/${n.type} ${n.payload ? JSON.stringify(n.payload) : ''}`);
+      if (n.module === 'SHENORA.MEDIA' && playerCommand) playerCommand(n);
     }
     return;
   }
@@ -359,9 +395,13 @@ function loadClip(name) {
   log('t', `video.src = ${url}`);
   vid.src = url;
   vid.load();
-  // A button click IS a user gesture, so autoplay policy does not block this. A rejection here is a
-  // real failure and must be visible — a silent catch is how "it just does not play" becomes a
-  // half-hour of guessing.
+  // A REAL button click is a user gesture, so autoplay policy does not block this — measured on
+  // Android/WebView 133 with a genuine touch and with trusted CDP input: both play unmuted.
+  // ⚠ An INJECTED click() is not: it is isTrusted:false and grants no user activation, so a harness
+  // driving this button sees NotAllowedError and that is the platform behaving correctly rather than a
+  // fault. This comment used to say "a rejection here is a real failure", and that sent a probe's
+  // correct-behaviour verdict to TASKS.md as a shell divergence. The rejection stays visible either
+  // way — a silent catch is how "it just does not play" becomes a half-hour of guessing.
   vid.play().then(() => log('in', 'play() resolved')).catch(err => log('err', `play() REJECTED: ${err}`));
 }
 
@@ -376,6 +416,194 @@ vid.addEventListener('error', () => {
 // failure mode iOS's two-byte `bytes=0-1` probe walks into when Content-Range does not come back.
 document.getElementById('mfast').onclick  = () => loadClip('clip-faststart.mp4');
 document.getElementById('mtail').onclick  = () => loadClip('clip-tailmoov.mp4');
+
+// Give the element a SOURCE at startup, without playing it.
+//
+// The element renders `controls`, so it shows a play button from the moment the page loads — and with no
+// src that button does nothing at all. Tapping it is the first thing anyone tries, and "the sample's video
+// does not play" is exactly what a dead native control looks like, even though every button beside it
+// works. Measured on a device: the ▶ buttons decoded and played fine the whole time.
+//
+// preload stays 'none', so this costs no bytes until something actually asks for them — it only means the
+// native control has a source to start.
+if (mediaUrl) {
+  vid.src = clipUrl('clip-faststart.mp4');
+  log('t', 'video preloaded with clip-faststart.mp4 — the native ▶ works, or use the buttons above');
+}
+
+// The AUDIO path — the one that can actually be backgrounded on iOS. Same clip, same route, different
+// element. Errors are surfaced rather than swallowed, for the same reason loadClip() surfaces them.
+const aud = document.getElementById('aud');
+aud.addEventListener('error', () => {
+  const e = aud.error;
+  log('err', `audio ERROR code=${e ? e.code : '?'} ${e && e.message ? e.message : ''}`);
+});
+aud.addEventListener('playing', () => log('in', `audio playing — t=${aud.currentTime.toFixed(2)}s`));
+aud.addEventListener('pause',   () => log('in', `audio PAUSED — t=${aud.currentTime.toFixed(2)}s`));
+document.getElementById('maud').onclick = () => {
+  aud.src = clipUrl('clip-faststart.mp4');
+  aud.load();
+  log('out', 'audio: play — now background the app; it should keep going');
+  aud.play().then(() => log('in', 'audio play() resolved')).catch(err => log('err', `audio play() REJECTED: ${err}`));
+};
+if (mediaUrl) aud.src = clipUrl('clip-faststart.mp4');
+
+// 🔴 THE BACKGROUND MEASUREMENT, and it works BECAUSE this timer stops.
+//
+// iOS suspends a backgrounded page's timers, so these lines simply stop appearing while the app is away —
+// which makes the GAP between two of them the background window, measured rather than assumed. What
+// settles the question is the jump in `t` ACROSS that gap: audio that kept playing advances by the length
+// of the gap, audio that was stopped advances by nothing. Neither can be seen from a screenshot, and
+// `play()` resolving proves only that playback STARTED.
+//
+// ⚠ It logs only while playing, so an idle app is not noisy.
+setInterval(() => { if (!aud.paused) log('in', `audio t=${aud.currentTime.toFixed(2)}s`); }, 2000);
+
+// ── Keeping playback alive across a background, by HANDING OFF video -> audio ────────────────────
+//
+// 🔴 MEASURED 2026-08-12 AND IT DOES NOT WORK. This block is kept as the DEMONSTRATION of why, because
+// it is the first thing anyone tries and the reason it fails is not obvious.
+//
+// It exists because of a platform rule: a <video> is PAUSED when the app is backgrounded (the video track
+// cannot render), while an <audio> already playing keeps going. So the handoff copies the playhead onto
+// the <audio>, starts it, and pauses the <video>.
+//
+// **The start is REFUSED.** On Android/WebView 133:
+//     handoff -> audio at 44.12s (app hiding)
+//     play() REJECTED: NotAllowedError: play() can only be initiated by a user gesture
+// The tap that started the video granted user activation, and activation is TRANSIENT — it was gone
+// long before the user pressed HOME. So `visibilitychange` is not "too late to start audio in the
+// background"; it is a play() with no activation, which is the ordinary autoplay policy. Pressing HOME is
+// not a gesture on this page and never can be.
+//
+// 🔴 AND EVEN AN ALREADY-PLAYING <audio> IS NOT ENOUGH ON ANDROID: measured twice, it advances ~15.3–15.6 s
+// while hidden and then PAUSES mid-clip (`t=20.30` of 60, `ended=false`). The process is suspended; no
+// amount of page code prevents that.
+//
+// **So the page cannot solve background playback here — it needs a NATIVE anchor**, which is what
+// `IPlaybackSession` (MediaSession) and `IMediaPlayer` are for. That is the kit's thesis rather than a
+// workaround: this is a thing .NET can do and JavaScript cannot.
+let handedOff = false;
+
+// 🔴 THE HOST STILL NEEDS THE PLAYHEAD BEFORE THE APP HIDES — but the page no longer publishes a private
+// snapshot for it. That was `window.__shenoraLastPlay`, written on `timeupdate`, and it existed only
+// because the probe reading it was raw JS with no access to kit state.
+//
+// The ORDERING REQUIREMENT it solved is real and unchanged: `visibilitychange` fires BEFORE MAUI's
+// `Window.Stopped`, and the platform pauses a backgrounded <video> on its own, so by the time the host is
+// told the app stopped, the element's LIVE state reads `paused` for a video that was playing a second ago.
+//
+// What replaced it is the kit's own player: `PLAYER_REPORT` above feeds `IMediaPlayer.Status`, which keeps
+// the last reported position across that pause, and `BackgroundPlaybackTransfer` reads it there. One
+// playhead, owned by the host, instead of a page global only one probe knew about.
+
+// ── THE PAGE HALF OF THE MEDIA PLAYER, which this sample had never wired ──────────────────────────────
+//
+// 🔴 The kit's page-backed `IMediaPlayer` learns the playhead from HERE and nowhere else — an app that
+// never reports leaves `Status` at `Empty` forever, and anything reading it (notably
+// `BackgroundPlaybackTransfer`) then does nothing at all, SILENTLY. This sample drove a bare <video> for
+// its whole life because its probes test the ROUTE; that made it the one app that could not consume the
+// kit's own player.
+//
+// A React app gets this for free from `useMediaPlayer(ref)` in `@shenora/react`. This is the same contract
+// by hand, which is also what makes it worth having in the sample: it shows an adopter with no React what
+// the hook actually does.
+//
+// ⚠ Report on TRANSITIONS plus `timeupdate` — the element fires that ~4x a second, which is the rate the
+// host wants for a position and far below anything that needs throttling.
+const reportPlayer = (state, error) => {
+  try {
+    channel.post(JSON.stringify({
+      id: `m${++diagSeq}`, module: 'SHENORA.MEDIA', type: 'PLAYER_REPORT',
+      payload: {
+        state,
+        // SECONDS on the wire. `duration` is legitimately NaN before metadata lands and Infinity for a
+        // live stream, and the host guards both — but sending null is the honest form.
+        position: vid.currentTime,
+        duration: Number.isFinite(vid.duration) ? vid.duration : null,
+        // A rejected play() has no `MediaError` at all, so the caller's reason wins when it has one.
+        error: error ?? (vid.error ? `MEDIA_ERR_${vid.error.code}` : null),
+      },
+      timestamp: new Date().toISOString(),
+    }));
+  } catch { /* the channel may not exist during boot — a lost report must never break playback */ }
+};
+
+vid.addEventListener('loadedmetadata', () => reportPlayer('Opening'));
+vid.addEventListener('playing', () => reportPlayer('Playing'));
+vid.addEventListener('pause', () => reportPlayer(vid.ended ? 'Ended' : 'Paused'));
+vid.addEventListener('ended', () => reportPlayer('Ended'));
+vid.addEventListener('error', () => reportPlayer('Failed'));
+vid.addEventListener('timeupdate', () => { if (!vid.paused && !vid.ended) reportPlayer('Playing'); });
+
+// ── AND THE OTHER HALF: THE HOST DRIVING THIS ELEMENT ─────────────────────────────────────────────
+//
+// 🔴 REPORTING ALONE IS HALF A CONTRACT, and the missing half fails exactly as silently as the missing
+// reports did. `IMediaPlayer.SeekAsync`/`PlayAsync` on the host EMIT `PLAYER_SEEK`/`PLAYER_PLAY` as
+// events; with nothing subscribed here, `BackgroundPlaybackTransfer.ToForegroundAsync` completes, reports
+// `Resumed` with a position, and moves nothing at all. The handoff would have looked like it worked and
+// the handback would have quietly dropped the film.
+//
+// A React app gets this from `useMediaPlayer(ref)`; this is the same host→element half by hand, and it is
+// the reason the page can now be driven by the kit instead of by a probe's private copy of the logic.
+playerCommand = (n) => {
+  const p = n.payload ?? {};
+  switch (n.type) {
+    case 'PLAYER_LOAD':
+      vid.src = p.uri ?? '';
+      // load() rather than trusting the src assignment: a second load on the same element keeps the
+      // previous buffer, and a seek then lands in the OLD media.
+      vid.load();
+      if (p.startAt > 0) {
+        // `loadedmetadata` is the earliest point currentTime is settable — before it the assignment is
+        // silently dropped and the item starts at zero.
+        vid.addEventListener('loadedmetadata', () => { vid.currentTime = p.startAt; }, { once: true });
+      }
+      break;
+    // ⚠ A refusal is REPORTED, never swallowed: returning to the foreground is not a user gesture, and if
+    // the element has lost its activation the host must hear `Failed` rather than believe playback resumed.
+    case 'PLAYER_PLAY':
+      vid.play().catch(err => {
+        log('err', `PLAYER_PLAY refused: ${err}`);
+        reportPlayer('Failed', (err && err.name) ? err.name : 'PlayRejected');
+      });
+      break;
+    case 'PLAYER_PAUSE': vid.pause(); break;
+    case 'PLAYER_SEEK': vid.currentTime = p.position ?? 0; break;
+    case 'PLAYER_RATE': vid.playbackRate = p.rate ?? 1; break;
+    case 'PLAYER_UNLOAD':
+      vid.pause();
+      vid.removeAttribute('src');
+      // load() after clearing src is what actually FREES the decoded buffer — on a phone that is the
+      // difference between releasing memory and not.
+      vid.load();
+      reportPlayer('Empty');
+      break;
+  }
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    if (vid.paused || vid.ended || !vid.currentSrc) return;
+    handedOff = true;
+    const at = vid.currentTime;
+    if (aud.currentSrc !== vid.currentSrc) aud.src = vid.currentSrc;
+    aud.currentTime = at;
+    log('out', `handoff -> audio at ${at.toFixed(2)}s (app hiding)`);
+    aud.play()
+      .then(() => log('in', 'handoff: audio took over'))
+      .catch(err => log('err', `handoff REJECTED: ${err} — no user activation survives to here`));
+    // ⚠ It does NOT pause the <video> any more. The platform does that itself, and doing it here ALSO
+    // destroyed the state the host's handoff reads — two owners of one element, and the second one lost.
+  } else if (handedOff) {
+    handedOff = false;
+    aud.pause();
+    // ⚠ NO handback from here any more. The HOST owns the return trip now (BackgroundHandoffProbe, wired to
+    // Window.Resumed): it reads the position off the native player and drives this element. Two things
+    // resuming one <video> would race, and the loser would look like a bug in whichever ran second.
+    log('out', 'handback deferred to the host — it has the real position from the native player');
+  }
+});
 document.getElementById('mseek').onclick  = () => {
   log('out', `seeking to 48s (from ${vid.currentTime.toFixed(2)}s, duration=${vid.duration})`);
   vid.currentTime = 48;
@@ -415,6 +643,162 @@ document.getElementById('mwhere').onclick = () => {
 // The handshake. Until this lands the host BUFFERS notifications rather than dropping them, which
 // is why the tick events that fired before this point still arrive.
 log('t', `channel: ${channelSource}`);
+
+// ── The SEGMENT route's page half, defined HERE rather than injected ───────────────────────────────
+//
+// 🔴 It lives in the page because `EvaluateJavaScriptAsync` is not a good way to ship a 4 KB script:
+// `PageProbe.Safe()` flattens it to one line (so a `//` comment swallows the rest), the whole thing is
+// then re-escaped by MAUI, and a failure comes back as a bare null that says nothing about where. The
+// host now evaluates ONE short call instead, which is the pattern `mobile-shells.md` recommends —
+// heavy logic in the page, results over the IPC log mirror.
+//
+// It parks its answer in a slot the host polls, because EvaluateJavaScriptAsync does not await promises.
+window.__shenoraSegCheck = function (base, mime) {
+  window.__shenoraSegProbe = 'pending';
+  (async () => {
+    const out = [];
+    const say = (k, v) => out.push(k + '=' + v);
+    const done = () => { window.__shenoraSegProbe = out.join('|'); };
+    // Poll a resource the ENGINE has to produce: 503 means "not ready", which is the route working.
+    const fetchProduced = async (url, label) => {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const r = await fetch(url);
+        if (r.status === 200) return new Uint8Array(await r.arrayBuffer());
+        if (r.status !== 503) { say(label, 'status ' + r.status); return null; }
+        await new Promise(res => setTimeout(res, 1000));
+      }
+      say(label, 'NEVER-READY');
+      return null;
+    };
+    try {
+      const m = await fetch(base + 'index.m3u8');
+      say('manifest', m.status);
+      if (!m.ok) return done();
+      const text = await m.text();
+      say('version', /#EXT-X-VERSION:(\d+)/.exec(text)?.[1] ?? 'none');
+      const initName = /#EXT-X-MAP:URI="([^"]+)"/.exec(text)?.[1] ?? null;
+      say('map', initName ?? 'MISSING');
+      const segs = text.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+      say('segments', segs.length);
+      if (!initName || !segs.length) return done();
+
+      const init = await fetchProduced(base + initName, 'init');
+      if (!init) return done();
+      say('initBytes', init.length);
+      const seg = await fetchProduced(base + segs[0], 'seg0');
+      if (!seg) return done();
+      say('seg0Bytes', seg.length);
+
+      /* THE APPEND — the only part a device is required for. */
+      const Src = window.ManagedMediaSource ?? window.MediaSource;
+      if (!Src) { say('append', 'NO-MEDIASOURCE'); return done(); }
+      const mime = 'video/mp4; codecs="avc1.640028"';
+      say('typeSupported', Src.isTypeSupported ? Src.isTypeSupported(mime) : 'n/a');
+      const ms = new Src();
+      const el = document.createElement('video');
+      el.muted = true; el.playsInline = true; el.disableRemotePlayback = true;
+      el.srcObject = ms;
+      document.body.appendChild(el); el.style.width = el.style.height = '1px';
+      let started = 0, ended = 0;
+      ms.addEventListener('startstreaming', () => started++);
+      ms.addEventListener('endstreaming', () => ended++);
+      el.play().catch(() => {});
+      const opened = await new Promise(res => {
+        if (ms.readyState === 'open') return res(true);
+        ms.addEventListener('sourceopen', () => res(true), { once: true });
+        setTimeout(() => res(false), 5000);
+      });
+      say('sourceopen', opened);
+      if (!opened) { el.remove(); return done(); }
+      let sb;
+      try { sb = ms.addSourceBuffer(mime); }
+      catch (e) { say('addSourceBuffer', 'THREW ' + e.name); el.remove(); return done(); }
+      const append = (bytes) => new Promise((res) => {
+        sb.addEventListener('updateend', () => res('ok'), { once: true });
+        sb.addEventListener('error', () => res('error'), { once: true });
+        try { sb.appendBuffer(bytes); } catch (e) { res('threw ' + e.name); }
+      });
+      say('appendInit', await append(init));
+      say('appendSeg0', await append(seg));
+      /* Buffered range is the honest proof: an append that "succeeded" and buffered nothing is the
+         silent failure this whole probe exists for. */
+      const b = sb.buffered;
+      say('buffered', b.length ? b.start(0).toFixed(2) + '-' + b.end(0).toFixed(2) : 'EMPTY');
+      say('startstreaming', started);
+      say('endstreaming', ended);
+      el.remove();
+    } catch (err) {
+      say('threw', (err && err.name) ? err.name : String(err));
+    }
+    done();
+  })();
+  return 'started';
+};
+
+// ── MSE-PROBE: what this shell's MediaSource actually IS, and whether it TALKS ─────────────────────
+//
+// 🔴 D71 piece 4's stated prerequisite: "Confirm iOS's ManagedMediaSource streaming signals on the
+// simulator before relying on them; nothing in this repo has verified them." `nextSegment` in
+// @shenora/react refuses to fetch while a managed source has said stop, so if those events never
+// arrive the binder would fetch NOTHING and the failure would be a video that silently never starts.
+//
+// ⚠ EXISTENCE IS NOT THE QUESTION. `typeof window.ManagedMediaSource` is cheap and nearly worthless —
+// this repo already has a measured case of a capability query answering `true` for something that
+// does not work (`isTypeSupported('video/mp2t')` on both shells, which the knowledge file says not to
+// believe). So this ATTACHES one to a real element and waits for the event, and reports what it saw
+// rather than what was advertised.
+(async () => {
+  const has = (n) => typeof window[n] === 'function';
+  const Managed = window.ManagedMediaSource;
+  log('t', `MSE-PROBE: MediaSource=${has('MediaSource')} ManagedMediaSource=${has('ManagedMediaSource')}`);
+
+  // The MIME @shenora/react's segmentMimeType() builds, asked of whichever implementation exists.
+  const mime = 'video/mp4; codecs="avc1.640028,mp4a.40.2"';
+  const src = Managed ?? window.MediaSource;
+  if (!src) { log('err', 'MSE-PROBE: no MediaSource of either kind — the binder cannot work here'); return; }
+  log('t', `MSE-PROBE: isTypeSupported(fMP4 h264+aac) = ${src.isTypeSupported ? src.isTypeSupported(mime) : 'n/a'}`);
+
+  if (!Managed) { log('t', 'MSE-PROBE: standard MediaSource — no streaming events to confirm'); return; }
+
+  // The real question. A ManagedMediaSource only wants data between `startstreaming` and
+  // `endstreaming`; attach one to an element and see whether it ever asks.
+  try {
+    const ms = new Managed();
+    const el = document.createElement('video');
+    el.muted = true;
+    el.playsInline = true;
+    // ⚠ `srcObject`, not createObjectURL: a managed source attached by URL does not get the
+    // lifecycle it manages, and Apple's own guidance is the object form.
+    el.srcObject = ms;
+    // ⚠ Also load-bearing per Apple's docs — without it the element may never enter the state that
+    // makes the source ask for data at all.
+    el.disableRemotePlayback = true;
+    document.body.appendChild(el);
+    el.style.width = el.style.height = '1px';
+
+    let opened = false, started = 0, ended = 0;
+    ms.addEventListener('sourceopen', () => { opened = true; });
+    ms.addEventListener('startstreaming', () => { started++; });
+    ms.addEventListener('endstreaming', () => { ended++; });
+    el.play().catch(() => { /* autoplay refusal is not what this measures */ });
+
+    // Report at 2s and again at 6s: `startstreaming` is not promised to be immediate, and a probe
+    // that looked once would report "never fires" for an event that was merely late.
+    const report = (when) => log('t',
+      `MSE-PROBE @${when}: sourceopen=${opened} startstreaming=${started} endstreaming=${ended} `
+      + `readyState=${ms.readyState} streaming=${'streaming' in ms ? ms.streaming : 'n/a'}`);
+    setTimeout(() => report('2s'), 2000);
+    setTimeout(() => {
+      report('6s');
+      log('t', started > 0
+        ? 'MSE-PROBE: VERDICT startstreaming FIRES — nextSegment’s gate is real'
+        : 'MSE-PROBE: VERDICT startstreaming NEVER FIRED in 6s — a gated binder would fetch nothing');
+      el.remove();
+    }, 6000);
+  } catch (err) {
+    log('err', `MSE-PROBE: constructing a ManagedMediaSource threw ${err}`);
+  }
+})();
 
 // ── Safe-area insets: MEASURE them, and KEEP measuring ────────────────────────────────────────────
 //
@@ -462,9 +846,15 @@ const readInsets = (announce) => {
     // with. A gate that only printed env() would have shown zeros while the layout was correct.
     const rs = getComputedStyle(document.documentElement);
     const rv = (n) => (rs.getPropertyValue(n).trim() || '(unset)');
+    // ⚠ ALL FOUR of the published values, not just top/bottom. Rotation moves an inset to a different
+    // EDGE, so a line that prints only the vertical pair cannot tell a correct landscape layout from a
+    // stale portrait one — which is exactly the bug this page was used to find (2026-08-06).
+    // `orientation` is here for the same reason: the numbers are only interpretable next to it.
     log('t', `insets env: top=${v.top} right=${v.right} bottom=${v.bottom} left=${v.left} · `
-      + `laid out with var: top=${rv('--sa-top')} bottom=${rv('--sa-bottom')} `
+      + `laid out with var: top=${rv('--sa-top')} right=${rv('--sa-right')} `
+      + `bottom=${rv('--sa-bottom')} left=${rv('--sa-left')} `
       + `color=${rv('--sa-color')} settle=${rv('--sa-settle')} · `
+      + `orientation=${innerWidth > innerHeight ? 'landscape' : 'portrait'} `
       + `viewport=${innerWidth}x${innerHeight} dpr=${devicePixelRatio}`);
   }
   return v;

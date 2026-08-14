@@ -1,8 +1,9 @@
-using Shenora.Core;
-using Shenora.Ipc;
+using Shenora;
 using Shenora.Tests.TestSupport;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.WebView2;
 
@@ -163,7 +164,7 @@ public class DropZoneManagerTests
         using (form)
         using (manager)
         {
-            var facade = new DropZoneFacade(manager);
+            var facade = new DropZoneModule(manager);
             var dispatcher = new MessageDispatcher().UseErrorHandler().MapModule(facade);
 
             IpcResponse Send(string type, object payload) =>
@@ -190,7 +191,7 @@ public class DropZoneManagerTests
             Assert.Equal(IpcErrorCodes.MissingPayloadValue, missing.Error!.Code);
 
             var unknown = Send("NOPE", new { });
-            Assert.Equal(IpcErrorCodes.NoHandler, unknown.Error!.Code);
+            Assert.Equal(IpcErrorCodes.NoRoute, unknown.Error!.Code);
         }
     }));
 }

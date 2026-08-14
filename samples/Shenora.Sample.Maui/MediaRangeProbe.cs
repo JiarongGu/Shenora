@@ -1,12 +1,14 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Mobile;
+using Shenora.Modules.Update;
+using Shenora.Core.WebView;
 
 namespace Shenora.Sample.Maui;
 
 /// <summary>
 /// Serving local media to the page — and after the D45 re-layering, this is the whole of it: declare where
 /// files may come from, say how your route maps to one, and let the shell's interceptor plus
-/// <c>Shenora.Core</c>'s file middleware do the rest.
+/// <c>Shenora</c>'s file middleware do the rest.
 /// <para>
 /// Worth keeping the history, because it is the shape of the mistake this file went through. It used to BE
 /// the range implementation (proven on both devices — D44), then it called <c>Shenora.Media</c>'s range
@@ -15,9 +17,11 @@ namespace Shenora.Sample.Maui;
 /// platform's body rule.
 /// </para>
 /// <para>
-/// ⚠ Note what is NOT referenced here: <c>Shenora.Media</c>. Serving a file the platform can already decode
-/// needs no media package at all — that is D45's "the interceptor without the media bundle should still load
-/// video/image/audio". The media package is a further middleware, for the files this cannot serve.
+/// ⚠ Note what is NOT used here: anything from <c>Shenora.Modules.Media</c>. Serving a file the platform can
+/// already decode needs no media middleware at all — that is D45's "the interceptor without the media bundle
+/// should still load video/image/audio". The media tier is a FURTHER middleware, for the files this cannot
+/// serve. (This said "media package" until 2026-08-10; there is no media package since D53 — it is a
+/// namespace inside <c>Shenora</c>, so the point is about what the app REFERENCES in code, not about ids.)
 /// </para>
 /// </summary>
 internal sealed class MediaRangeProbe : IDisposable
@@ -40,6 +44,7 @@ internal sealed class MediaRangeProbe : IDisposable
 	private MobileWebViewInterceptor? _interceptor;
 	private IDisposable? _route;
 	private string? _root;
+	private volatile string? _lastServed;
 
 	public MediaRangeProbe(Action<string> log) => _log = log;
 
@@ -51,6 +56,65 @@ internal sealed class MediaRangeProbe : IDisposable
 	/// </summary>
 	public IWebViewInterceptor? Interceptor => _interceptor;
 
+	/// <summary>Where the staged clips live, once <see cref="PrepareAsync"/> has copied them out of the
+	/// app package — so a second route can serve the SAME files without re-deriving the path.</summary>
+	public string? SourceRoot => _root;
+
+	/// <summary>
+	/// The last file this route actually served, or <c>null</c> before the page has asked for one.
+	///
+	/// <para>
+	/// 🔴 <b>This is the app's half of <c>BackgroundPlaybackOptions.ResolveNativeSource</c>, and it lives
+	/// HERE because this is the one place that already knows the answer.</b> The page plays
+	/// <c>/media?&lt;base64&gt;</c> — a route this app serves through the interceptor — and a native player
+	/// cannot fetch that. Something has to map "what the page is playing" back to "a file this device can
+	/// open", and <see cref="Resolve"/> is literally that mapping, in the direction the request already
+	/// travels. Recording its answer costs one field.
+	/// </para>
+	/// <para>
+	/// ⚠ <b>Written from the interceptor's thread and read at background time from the app's</b>, hence
+	/// <c>volatile</c>: a reference assignment is already atomic, and this only forbids the compiler and the
+	/// CPU from caching a stale value across the two.
+	/// </para>
+	/// </summary>
+	public string? LastServedFile => _lastServed;
+
+	/// <summary>
+	/// Copy ONE packaged fixture into the staging root if it is not already there, and return its path.
+	///
+	/// <para>
+	/// 🔴 <b>A PROBE MUST STAGE WHAT IT NEEDS — depending on another probe's side effect is a first-run
+	/// bug that hides forever afterwards.</b> <see cref="ConversionRouteProbe"/> asks for
+	/// <c>clip-mp3.mkv</c>, which only <see cref="TranscodeProbe"/> ever wrote, and it runs LATER. So on a
+	/// cold install the source did not exist and the route correctly answered 404, while every subsequent
+	/// run found the file the previous run had left behind and passed. Measured 2026-08-10: uninstall,
+	/// install, first launch → <c>CONVERT: FAIL status=404</c>; relaunch → <c>PASS 325433 bytes</c>.
+	/// </para>
+	/// <para>
+	/// ⚠ <b>That is also why it "failed on one emulator and passed on another".</b> Nothing about the
+	/// devices differed — one had run the app before. A per-device difference is the seductive reading
+	/// (WebView 133 vs 110 was the standing suspicion) and it was wrong; the state that differed was on
+	/// DISK, not in the platform.
+	/// </para>
+	/// </summary>
+	public static async Task<string> EnsureStagedAsync(string root, string clip, Action<string> log)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(root);
+		ArgumentException.ThrowIfNullOrWhiteSpace(clip);
+		ArgumentNullException.ThrowIfNull(log);
+
+		Directory.CreateDirectory(root);
+		var destination = Path.Combine(root, clip);
+		if (File.Exists(destination)) return destination;
+
+		await using var source = await FileSystem.OpenAppPackageFileAsync($"wwwroot/media/{clip}").ConfigureAwait(false);
+		await using var target = File.Create(destination);
+		await source.CopyToAsync(target).ConfigureAwait(false);
+		await target.FlushAsync().ConfigureAwait(false);
+		log($"media: staged {clip} -> cache ({target.Length} bytes)");
+		return destination;
+	}
+
 	/// <summary>
 	/// Stage the clips out of the app package, then wire the route.
 	/// <para>
@@ -58,8 +122,14 @@ internal sealed class MediaRangeProbe : IDisposable
 	/// half-written file — the same write-the-marker-last ordering <c>UpdateStage</c> uses.
 	/// </para>
 	/// </summary>
-	public async Task PrepareAsync(HybridWebView webView)
+	/// <param name="webView">The page's webview — this is the app's ORDINARY window, not a probe-owned one.</param>
+	/// <param name="pipeline">
+	/// The application's <see cref="WebViewPipeline"/>. Required rather than optional so the choice is made
+	/// at the call site instead of forgotten — the same reason the interceptor's own parameter is required.
+	/// </param>
+	public async Task PrepareAsync(HybridWebView webView, WebViewPipeline pipeline)
 	{
+		ArgumentNullException.ThrowIfNull(pipeline);
 		var root = Path.Combine(FileSystem.CacheDirectory, "media");
 		Directory.CreateDirectory(root);
 
@@ -80,7 +150,15 @@ internal sealed class MediaRangeProbe : IDisposable
 		}
 
 		_root = root;
-		_interceptor = new MobileWebViewInterceptor(webView, _log);
+		// 🔴 THE APP'S PIPELINE, and it used to be a fresh empty one. The comment justifying that said "this
+		// probe owns an isolated webview", which was simply not true — `PrepareAsync` is handed the page's
+		// MAIN webview, so this is the ordinary window the same comment said should pass `app.Pipeline`.
+		// The cost of the mistake was not a wrong measurement, it was ABSENCE: `app.Use(…)` reached no
+		// webview on Android or iOS, so the mobile half of D64's pipeline surface had never once executed —
+		// and an unapplied pipeline is indistinguishable from one whose routes nothing requested (D63).
+		// Corrected 2026-08-09. Isolation is still available and still correct for a probe that genuinely
+		// owns its webview: pass `new WebViewPipeline()`.
+		_interceptor = new MobileWebViewInterceptor(webView, pipeline, _log);
 
 		// THE WHOLE WIRING. No BodyMode, no content-type table, no range arithmetic, no containment check —
 		// UseFiles reads the platform's delivery rule off the interceptor so it cannot be passed in wrong.
@@ -130,7 +208,11 @@ internal sealed class MediaRangeProbe : IDisposable
 
 		// An app-level allow-list on top of the kit's containment. This sample knows exactly two filenames.
 		if (name is null || !Clips.Contains(name, StringComparer.Ordinal)) return null;
-		return Path.Combine(_root!, name);
+		// Remembered for the background transfer — see LastServedFile. Recorded AFTER the allow-list, so a
+		// refused name can never become something a native player is later asked to open.
+		var file = Path.Combine(_root!, name);
+		_lastServed = file;
+		return file;
 	}
 
 	public void Dispose()

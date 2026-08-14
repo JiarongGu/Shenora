@@ -1,8 +1,10 @@
-using Shenora.Core;
-using Shenora.IO;
-using Shenora.Ipc;
+using Shenora;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Desktop;
 
@@ -63,6 +65,9 @@ internal static class Program
         builder.Services.AddSingleton(sp => new WebViewHostOptions
         {
             Environment = sp.GetRequiredService<WebViewEnvironmentOptions>(),
+            // Every window built from these options serves the app's `app.Use…()` routes (D64), including
+            // the secondary windows — which previously got nothing unless wired again by hand.
+            Pipeline = sp.GetRequiredService<Shenora.Core.WebView.WebViewPipeline>(),
             // Must match samples/Shenora.Sample.Web/vite.config.ts (unique per app — family rule).
             DevUrl = "http://localhost:3900",
             VirtualHost = "sample.local",
@@ -80,49 +85,46 @@ internal static class Program
             },
         });
 
-        // The IPC pipeline — facades live in DI; AddMessageDispatcher composes the family order
-        // (error handler → app middleware → registered facades). The window-facing facades
-        // (WINDOW commands, DROP_ZONE) map later, in MainForm, once the form exists.
+        // 🔴 WHAT IS NOT HERE IS THE POINT (D64/D65). The IPC dispatcher, the mission scheduler, the
+        // file-update queue, the media player, the operations registry and the kit's own route modules
+        // are ALL registered by `Build()` — or, where they need a platform, by `UseWindows` above. This
+        // sample used to hand-construct four of them inside `AddSingleton` lambdas, with a comment
+        // claiming the kit "ships no DI extension for it, and it needs none". **That block is the
+        // acceptance test for the whole rewire, and its deletion is the result.**
+        //
+        // What remains below is the app's OWN composition: its windows, its facades, and the two places
+        // it genuinely disagrees with a default.
         builder.Services.AddSingleton<Shenora.Windows.SecondaryWindows>();
-        // Opt-in (D21): SampleFacade's SLOW route uses ctx.Run, so the sample pays for the registry
-        // it demonstrates rather than getting it for free — the same bar every consumer faces.
-        builder.Services.AddShenoraOperations();
 
-        // The mission scheduler — a plain object, registered like any other singleton (Shenora.Core
-        // ships no DI extension for it, and it needs none). Composition, not framework: the app
-        // chooses the scopes, the capacity, and how execution reports itself.
-        builder.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
+        // The scheduler is already registered; this CONFIGURES it (D64 — `Use…` no longer enables).
+        builder.UseMissions(options =>
         {
             // Explicit rather than the clamp(cores-1,1,4) default, so the sample behaves the same on
             // every machine — the same reason the concurrency tests pass one.
-            GlobalLaneCapacity = 4,
-            Scopes = [PathClaims.Scope],
-            // Execution reports through the operations registry via ONE observer written in the app
-            // (Shenora.Core must never learn what an operation is — D19/D20). This is the whole cost
-            // of the pairing that docs/ADOPTION.md describes.
-            Observers = [new Shenora.Sample.Logic.MissionOperationObserver(
-                sp.GetRequiredService<IOperationRegistry>(), Shenora.Sample.Logic.PortableSampleFacade.Module)],
-            Log = Console.WriteLine,
-        }));
-        // The file-update queue: independent of the scheduler, and registered the same plain way.
-        // Missions compute in parallel and hand their finished change sets here to land one at a time.
-        builder.Services.AddSingleton<IFileUpdateQueue>(_ =>
-            new FileUpdateQueue(new FileUpdateQueueOptions { Log = Console.WriteLine }));
-
-        // Lane capacities are configured ONCE, at startup, by name — an unknown name is created at
-        // the default capacity rather than rejected, so a typo silently costs the budget you meant.
+            options.GlobalLaneCapacity = 4;
+            options.Scopes = [PathClaims.Scope];
+            options.Log = Console.WriteLine;
+        });
+        // ⚠ The observer is attached in a STARTING hook rather than in the options above, because it
+        // needs `IIpcRequestTracker` — a service, not a value — and the options object is built before
+        // any provider exists. Execution reports through ONE observer written in the APP (Shenora must
+        // never learn what an operation is — D19/D20); that pairing is still the app's whole cost.
         builder.OnStarting(app =>
-            app.Services.GetRequiredService<IMissionScheduler>().Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2);
-        // The kit's own dialog routes, so the PAGE can open a picker without this sample writing a route for
-// it — which is what it used to do, in two samples, identically. Opt-in like every other kit cluster;
-// it needs the IFileDialogs that UseWinForms registered above.
-builder.Services.AddShenoraFileDialogs();
+        {
+            var scheduler = app.Services.GetRequiredService<IMissionScheduler>();
+            app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
+                [new Shenora.Sample.Logic.MissionEventPublisher(
+                    app.Services.GetRequiredService<IEventBus>(),
+                    Shenora.Sample.Logic.PortableSampleModule.Module)];
+            // Lane capacities are configured ONCE, at startup, by name — an unknown name is created at
+            // the default capacity rather than rejected, so a typo silently costs the budget you meant.
+            scheduler.Lane(Shenora.Sample.Logic.MissionLanes.DemoIo).Capacity = 2;
+        });
 
-builder.Services.AddModuleFacade<SampleFacade>();
+        builder.Services.AddIpcModule<SampleModule>();
         // The app's PORTABLE logic, from a net10.0 assembly that cannot see Windows (D20/H4.3). It
         // resolves the same implementations through their platform-neutral contracts.
-        builder.Services.AddModuleFacade<Shenora.Sample.Logic.PortableSampleFacade>();
-        builder.Services.AddMessageDispatcher();
+        builder.Services.AddIpcModule<Shenora.Sample.Logic.PortableSampleModule>();
 
         builder.Services.AddSingleton<MainForm>();
 
@@ -132,7 +134,7 @@ builder.Services.AddModuleFacade<SampleFacade>();
         builder.OnStarting(app =>
             (app.Services.GetRequiredService<IWebViewResourceProvider>() as EmbeddedResourceProvider)?.BeginWarmup());
 
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = sp => sp.GetRequiredService<MainForm>(),
             WindowState = new WindowStateHostOptions
@@ -143,6 +145,22 @@ builder.Services.AddModuleFacade<SampleFacade>();
         });
 
         using var app = builder.Build();
+
+        // 🔴 THE PIPELINE PHASE (D64) — declared on the BUILT app, before any window exists, exactly like
+        // ASP.NET's `app.UseStaticFiles()`. Every webview this app hosts gets these routes, so the
+        // secondary windows are covered too; previously each construction site had to wire its own
+        // interceptor, and a window that missed out looked identical to one that needed nothing.
+        //
+        // This is also the ACCEPTANCE TEST for the move: the probe below fetches through the REAL browser,
+        // so `INTERCEPTOR: PASS` in the sample's output means an app-level declaration reached the main
+        // window's interceptor — which is the whole claim.
+        app.Use(interceptor => InterceptorProbe.Register(
+            interceptor, Path.Combine(app.Paths.DataArea("probe"), "files")));
+
+
+        // No `services` argument, and no fetching an inner object to hand the provider back to.
+        app.UseMediaPlayer();
+
         app.Run();
     }
 }

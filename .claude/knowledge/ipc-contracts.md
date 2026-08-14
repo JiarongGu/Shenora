@@ -1,9 +1,12 @@
 # IPC contract invariants — the wire rules the P3 stack encodes
 
 The envelope contract is FIXED (design §5, D11/D16) and both sides ship from this repo:
-`src/Shenora.Ipc` + `src/Shenora.Windows/WebViewIpcBridge.cs` (host) ⇄
+`src/Shenora/Core/Ipc/` + `src/Shenora.Windows/WebView/WebViewIpcBridge.cs` (host) ⇄
 `src/Shenora.React/src/types.ts|bridge.ts` (client). Read before touching any of them, adding a
-transport, or building the P6 adoption shims.
+transport, or writing an adoption shim.
+
+⚠ **Re-check these paths whenever a layer moves.** A dead path in a RULE is worse than in a doc, because
+a rule is read as instructions — this line pointed at a folded package and a relayered file for days.
 
 ## The rules
 
@@ -41,7 +44,7 @@ transport, or building the P6 adoption shims.
 - **Raw exception text never crosses the bridge (design §5) — EVERY error path.** Wire errors are
   `{code, message?, parameters?}`; unknown exceptions cross as `UNKNOWN_ERROR` + the exception
   TYPE name only, details go to the host log. This holds in `MessageDispatcher.DispatchAsync`/
-  `UseErrorHandler`, `BaseFacade`, `PayloadHelper` (the wire message carries only the key — the
+  `UseErrorHandler`, `ModuleBase`, `PayloadHelper` (the wire message carries only the key — the
   serializer's text lives in the inner exception), and the bridge's own fallback. New error
   paths get a `DoesNotContain` leak test (the suite has precedents).
 - **Claim and release are ONE owner's job.** `IModuleRegistry` records the module AND holds the
@@ -57,7 +60,7 @@ transport, or building the P6 adoption shims.
   belongs to whoever built it — usually DI).
   **KNOWN LIMIT the registry does NOT cover, and it is the composition path most apps use:
   DI-registered facades are invisible to it** (whole-codebase review, 2026-08-01).
-  `AddMessageDispatcher` maps them through `MapRegisteredModulesLazily` — one terminal middleware
+  `UseMessageDispatcher` maps them through `MapRegisteredModulesLazily` — one terminal middleware
   resolving them on the first dispatch — precisely because claiming a name needs to READ the names,
   and resolving facades inside the `IMessageDispatcher` singleton factory is the silent
   `StackOverflow` the bullet further down describes. So `IsModuleMapped("OPERATIONS")` is `false`
@@ -67,10 +70,11 @@ transport, or building the P6 adoption shims.
   the composition path rather than through the registry. The PRECEDENCE is right (the app's own
   modules win); only the answer is dishonest. Recorded rather than fixed: closing it needs a
   name-reservation seam the registry does not have, or re-opening the deadlock. Until a consumer hits
-  it, map anything a plug-in must be able to collide with EXPLICITLY (`MapModule(facade)` /
-  `TryMapModule`), not through `AddModuleFacade`.
+  it, map anything a plug-in must be able to collide with EXPLICITLY (`MapModule(module)` /
+  `TryMapModule`), not through DI enumeration
+  (`services.TryAddEnumerable(ServiceDescriptor.Singleton<IIpcModule, TModule>())`).
 - **The dispatch token is a LIFETIME, not a per-request cancel — and the boundary still never
-  throws.** `DispatchAsync`/`SendAsync`/`MessageMiddleware`/`IModuleFacade`/`BaseFacade.RouteMessageAsync`
+  throws.** `DispatchAsync`/`SendAsync`/`MessageMiddleware`/`IIpcModule`/`ModuleBase.RouteMessageAsync`
   all carry a `CancellationToken` (P6.4; before that the whole pipeline was uncancellable, so a handler
   could not observe a token it was never given). The transport supplies it — `WebViewIpcBridge` owns a
   CTS and cancels it in `Dispose`, FIRST, before tearing anything else down. Three rules that follow:
@@ -86,16 +90,16 @@ transport, or building the P6 adoption shims.
   the test HANGS instead of failing — the worst outcome here, and the reason the dotnet suite runs
   serially at all (parallelism once masked a 17-second hang). Found by sabotage: swallowing the token
   in `BuildPipeline` hung the whole run; with the bound, five tests failed in five seconds.
-- **An `OperationException`'s MESSAGE crosses the wire verbatim — so never build one from
+- **An `ShenoraException`'s MESSAGE crosses the wire verbatim — so never build one from
   `ex.Message`.** The no-raw-exception-text rule above has exactly one sanctioned channel through it:
-  `OperationException` is the app describing an EXPECTED failure in its own words, and
+  `ShenoraException` is the app describing an EXPECTED failure in its own words, and
   `IpcErrorMapping` passes its code, parameters and message through untouched. That makes
-  `catch (Exception ex) { throw new OperationException(code, message: ex.Message); }` a complete
+  `catch (Exception ex) { throw new ShenoraException(code, message: ex.Message); }` a complete
   bypass of the boundary — and it is the natural line to write when porting a host whose dispatcher
   did `$"{action} failed: {ex.Message}"`, which is how the P6.4 adapter probe found it (sabotage:
   with the wrapper in place a planted connection string reached the client; without it, the response
   carried only `UNKNOWN_ERROR` + the exception type name). Let unexpected exceptions ESCAPE to the
-  boundary; reserve `OperationException` for failures the app can name.
+  boundary; reserve `ShenoraException` for failures the app can name.
 - **The client event bus mirrors the host's `IEventBus` in BREADTH, not just in the wire types.**
   Three levels — exact `(module, type)`, `subscribeToModule`, `subscribeToAll` — because an observer
   that cannot enumerate the vocabulary up front (plug-in-contributed events, a diagnostics tap, an
@@ -134,7 +138,7 @@ transport, or building the P6 adoption shims.
   stopped working). Keep the interface at the four things a dispatcher IS — dispatch, two sends,
   compose — so a decorator has four members to write and every helper works on it for free. Anything
   requiring the live window is mapped LATE, from wherever the window is created; a doc that says to do it
-  in `AddMessageDispatcher`'s configure callback is wrong, because that runs before any form exists.
+  in `UseMessageDispatcher`'s configure callback is wrong, because that runs before any form exists.
 - **LATE MAPPING is supported, so the pipeline must be thread-safe** — "configure then serve" is not a
   safe assumption here (the WinForms host maps its window facades after the form exists). `Use` was a
   `Lazy` reassignment over a mutable `List<T>` with no synchronization: a dispatch could read the OLD
@@ -143,7 +147,7 @@ transport, or building the P6 adoption shims.
   invalidate-then-rebuild.
 - **Cancellation is a NORMAL outcome and gets its own code** (`OPERATION_CANCELLED`), not
   `UNKNOWN_ERROR` — it is the one failure a UI should stay silent about, and a client could not tell it
-  from a real fault. Map it AFTER `OperationException` so an app that models cancellation in its own
+  from a real fault. Map it AFTER `ShenoraException` so an app that models cancellation in its own
   words keeps them. Same shape for a scope invalidated mid-request: that is a race with a documented
   app-facing call, so retry once rather than reporting a fault.
 - **`ConfigureAwait(false)` does NOT belong in the dispatch path — and "the dispatch path" is a
@@ -160,23 +164,43 @@ transport, or building the P6 adoption shims.
   the never-`Task.Run`-per-message rule below — that is about the TRANSPORT spawning per inbound
   message (a measured pool-starvation freeze), not a handler offloading one long operation.
 - **The dispatch boundary never throws and never returns null** (`DispatchAsync`): unhandled →
-  `NO_HANDLER` (+`{module,type}` params), `OperationException` → its structured error, else →
+  `NO_HANDLER` (+`{module,type}` params), `ShenoraException` → its structured error, else →
   `UNKNOWN_ERROR`. Transports rely on it — but `IMessageDispatcher` is a public seam, so
   `WebViewIpcBridge.HandleIncomingAsync` still wraps dispatch + serialize (an unserializable
   handler result once escaped through the async-void handler = process death; found in review).
+  ⚠ **The contract extends to every SEAM the boundary itself calls, not just to handlers.** When
+  tracking moved into `DispatchAsync` it called `IIpcRequestTracker.Begin`/`Fail`/`Dispose` bare — and
+  that is a PUBLIC seam an app may implement, with `Fail` in the `catch` and `Dispose` in the `finally`,
+  i.e. the two places an exception escapes or REPLACES the response. Sabotage-verified: a throwing
+  `Dispose` propagated straight out of `DispatchAsync`. Guarded now, and the shape generalises —
+  **bookkeeping must never decide a request's fate**, so a faulty tracker dispatches untracked and logs
+  rather than turning a diagnostic loss into an outage. `IModuleContext.Report` is deliberately left
+  unguarded by contrast: it runs inside the module's own error boundary, so it degrades to one failed
+  request, and swallowing it would hide a broken tracker from the app that supplied it.
 - **An app-supplied payload never serializes unguarded — including on the OUTGOING timer.** The
   rule above covers the incoming path; the notification flush is the twin and was NOT guarded:
   `WebViewIpcBridge.TryBuildBatchJson` DRAINS the queue and then serializes, on a 50 ms WinForms
   timer, so one event carrying a cyclic object graph (parent/child entities), a `Type`/delegate
   member, or a throwing getter is an unhandled UI-thread exception AND the whole drained batch is
   lost. Guard per-notification (one bad event must not kill its batch) plus a catch-all in `Flush`.
-- **A DI singleton factory must never enumerate the provider it is building.** `AddMessageDispatcher`
+- **A DI singleton factory must never enumerate the provider it is building.** `UseMessageDispatcher`
   resolved `IModuleFacade`s inside the `IMessageDispatcher` singleton factory, so any facade whose
   graph injects `IMessageDispatcher` — the documented cross-module `SendAsync` seam — re-enters the
   same factory. MS DI's cycle detection is call-site-based and cannot see a factory delegate
   re-entering the provider, and the cache entry isn't published yet: unbounded recursion, process
   death by StackOverflow, no exception and no log. Resolve lazily (a terminal middleware over a
-  `Lazy<IModuleFacade[]>`) so the singleton is cached before enumeration.
+  `Lazy<IIpcModule[]>`) so the singleton is cached before enumeration.
+- **A batch COALESCES only what its EMITTER said may be coalesced.** `EventMessage.CoalesceKey` /
+  `IpcNotification.CoalesceKey` declare that a notification supersedes an earlier undelivered one with
+  the same module/type/scope/key; `NotificationPump` applies it at drain, last-write-wins, and the
+  survivor keeps its own later position. ⚠ **Never derive the key inside the pump.** It cannot tell a
+  full snapshot (safe to supersede) from a delta (`+3 bytes` — coalescing two of those loses one), and
+  only the emitter can. The kit sets it on `REQUEST_UPDATED`, whose payload is a whole
+  `IpcRequestStatus` the client already folds last-write-wins by id — that folding rule IS the licence
+  to drop the intermediates — and deliberately NOT on `REQUEST_REMOVED`, whose payload is a batch of
+  DIFFERENT ids, where superseding would silently lose removals. Host-side only (`[JsonIgnore]`, no TS
+  mirror): the coalescing has already happened by the time a batch leaves, so a client has nothing to
+  decide and shipping the key would invite it to re-implement a policy the host applied.
 - **Notifications are ALWAYS a batch** (a single event is a batch of one) — `category` alone
   discriminates, which is what lets the same envelope ride postMessage, WebSocket, or a mobile
   channel (D16). Don't reintroduce a single-notification shape or a synthetic batch module/type.
@@ -208,60 +232,81 @@ transport, or building the P6 adoption shims.
   after an async fall-through. The transport side interleaves async on the UI thread; never
   `Task.Run`-per-message (the measured pool-starvation freeze).
 
-### 0.2.0 — the communication core (D23, `docs/2026-08-01-shenora-communication-core-design.md`)
+### 0.2.0 — the communication core (D23)
+
+> 🔴 **READ THIS BEFORE THE OPERATIONS MATERIAL BELOW: the MECHANISM is gone, the LESSONS are not.**
+> D66 merged operations into `IpcRequest`, and with them went `OperationStatus.Waiting`,
+> `IOperationRegistry.Dismiss`, `RequestResume`, `CancelTokenThenFinish` and the tests named against
+> them (`ModuleOperationTests`, `OperationDismissTests`, `Concurrent_Cancel_and_Complete_…`). **Nothing
+> in the repo carries those names today**, so do not go looking — the live lifecycle is
+> `IpcRequestState` + `IpcRequestTracker`, pinned by `IpcRequestStateInvariantTests`.
+>
+> The passages are kept because what they teach outlived what they were about: *check-then-act across
+> two lock acquisitions is a race*, *a method that gates a mutation must report whether it actually
+> transitioned rather than let the caller assume*, and *a race test needs real threads, not
+> thread-pool tasks*. Read them as earned rules with dead examples attached, which is exactly the
+> split the 2026-08-09 audit was for.
 
 - **`Publish` goes through `IModuleContext`, never a hand-typed module literal, so an emit cannot
-  drift from the facade's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
-  with `Module` supplied by `BaseFacade` at construction — the same anti-drift reason
-  `OperationInfo.Module` is stamped by the registry from the caller's own module rather than trusted
-  from the app. The sample's pre-0.2.0 shape (a hardcoded `"SAMPLE"` string re-typed at every emit
+  drift from the module's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
+  with `Module` supplied by `ModuleBase` at construction — the same anti-drift reason
+  `IpcRequestStatus.Module` is taken from the request itself rather than trusted from the app. The sample's pre-0.2.0 shape (a hardcoded `"SAMPLE"` string re-typed at every emit
   site) is exactly the class of bug this closes: one typo and an event silently claims the wrong
   module, with nothing to grep for.
-- **An operation's `CancellationToken` is its OWN, never the request's — work handed off outlives
-  the request that started it.** `OperationRegistry.Start` allocates a fresh `CancellationTokenSource`
-  per operation; `IModuleContext.Run`/`Start` never touch the dispatch token at all. Capturing the
-  request's token instead would cancel a ten-minute deploy the moment the page that kicked it off
-  navigates away — the same trap `BaseFacade.RouteMessageAsync`'s own doc already named for
-  hand-rolled background work, now structurally impossible to get wrong through the primitive.
-- **Progress emission is throttled to `OperationRegistryOptions.ProgressInterval` (default 100 ms)
-  with a TRAILING emit, because the notification batcher queues without coalescing.** A tight
-  `Report` loop would otherwise ship hundreds of updates a second — the exact defect the harvested
-  source app had already fixed. At most one emission lands per window, but the LAST value in that
-  window is never simply dropped: a trailing timer fires once the window closes. **The trailing
-  flag must reset in a `finally`, covering every exit — success, cancellation, or a faulting
-  `TimeProvider`** (`OperationRegistry.TrailingEmitAsync`) — resetting only on the happy path would
-  leave `TrailingScheduled` stuck `true` forever after one fault, silently muting every later
-  `Report` on that operation for its remaining lifetime (found in review: the first cut did exactly
-  this). Lifecycle transitions (start, complete, fail, cancel, interrupt) are never throttled — they
-  always emit immediately, because a terminal state arriving late or not at all is a different class
-  of bug than a missed progress tick.
-- **Progress is the app's own unit, never a kit-assumed percent — and the kit does not clamp, validate,
-  or interpret it (owner direction, before 0.2.0 published — "even its progress it might be different
-  than 0-100%").** `OperationOptions.Progress`/`OperationInfo.Progress`/`IOperation.Report`'s `progress`
-  parameter are `OperationProgress?` (`Value`, `Total?`, `Unit?` — TS mirror `{ value, total?, unit? }`),
-  not an `int?` percent: `Total = null` means an absolute count with no known denominator (bytes off a
-  chunked stream), never zero, and `Unit` is app-defined and uninterpreted exactly like `Kind`. A
-  previous pass fixed the wrong half of this — it patched the write-side XML doc to SAY "0–100 percent"
-  instead of removing the assumption, which is the same mistake `Kind`-as-an-app-string already avoided
-  for the app's taxonomy. `OperationRegistry`'s old `ClampProgress` (`Math.Clamp(value, 0, 100)`) is
-  DELETED with nothing put in its place: silently rewriting an app's own reported number is worse than
-  passing it through, so a `Value` above its own `Total` is the app's bug to see, not the kit's to hide
-  — and no validation throw was added either, because `Report` runs on a hot path from background work
-  and throwing there would kill an operation over a cosmetic number. `IOperation.Complete()` no longer
-  fabricates `Progress = 100`: it sets `Value = Total` only when the last report carried a known `Total`
-  (the honest "all of it"), otherwise it leaves the last reported value untouched. `OperationProgress` is
-  a NEW wire shape both sides name, so it gets its own tripwire
-  (`WireMirrorTests.OperationProgress_fields_match_the_host`) rather than trusting the two sides to stay
-  in step by inspection, the same discipline every other shape on this wire already gets.
-- **An operation failure obeys the same no-raw-exception-text boundary as a request/response
-  failure.** `OperationRegistry.Run`'s guarded background body maps `OperationCanceledException` →
-  the operation's own `Cancel()`, `OperationException` → `Fail(code, parameters, message)` (the app's
-  own sanctioned words, same rule as `IpcErrorMapping`), and anything else → `Fail(IpcErrorCodes.
-  UnknownError, {exceptionType})` with the real exception logged host-side only. One boundary, two
-  entry points (a response and an `OperationInfo.Error`) — a second copy of the policy is exactly how
-  the `ex.Message`-in-a-wrapper bypass gets re-earned. **That `Cancel()` is the handle's own
-  (`IOperation.Cancel`), NOT the registry's public by-id `Cancel(string id)`** — see the next bullet
-  for why conflating the two used to strand a non-`Cancellable` operation `Running` forever.
+- 🔴 **A request's token IS the one a route observes, and CANCEL targets the request id.** Since D66
+  there is no separate operation with a separate token: `IpcRequestTracker.Begin` links the caller's
+  lifetime into a scope token, `MessageDispatcher.DispatchAsync` hands THAT down the pipeline, and
+  `Cancel(requestId)` signals it.
+  ⚠ The predecessor deliberately did the opposite — a fresh token per operation — because a request's
+  own token died with its response, so capturing it would have killed a ten-minute deploy the moment the
+  page navigated. The merge removed that gap instead of working around it: the request now outlives its
+  own send, so its token is the right one to observe.
+- 🔴 **TRACKING BELONGS TO THE DISPATCH BOUNDARY, and putting it in `ModuleBase` made the whole feature
+  silently absent for a release** (2026-08-08). `ModuleBase` took an optional `IIpcRequestTracker` that
+  each facade had to inject and forward through `base(logger, events, requests)` — and not one module in
+  the kit did, so the only `Begin` call site in the repo never fired in a composed app. `LIST` answered
+  empty, `CANCEL` answered false, `REQUEST_UPDATED` never went out, nothing threw or logged, and the
+  tracker's own tests stayed green because they called it directly. **D63's class, and its fifth
+  instance.** Two independent reasons the boundary is the honest place, and the second is the one that
+  was missed: the dispatcher sees EVERY module (a bare `IIpcModule` and an ad-hoc `MapRoute` lambda could
+  never have wired anything), and it sees the OUTCOME — one `IpcResponse` carries success, an app's
+  structured failure, a cancellation and `NO_HANDLER` alike. `ModuleBase`'s `catch` could not: it
+  returned an error response and then let the scope dispose as `Completed`, so `IpcRequestState.Failed`
+  was unreachable and `IIpcRequestScope.Fail` had no caller anywhere.
+  **Generalize it:** when a capability needs every implementer to remember one line, the capability is in
+  the wrong place — put it where nothing can decline to opt in, and delete the parameter that asked.
+  ⚠ A route reaches its scope through an AMBIENT (`IpcRequestScopeAccessor`), matched BY REQUEST ID.
+  The id match is not paranoia: a route calling another module's `HandleMessageAsync` directly leaves the
+  outer scope genuinely ambient, and an unguarded read attributes the inner module's progress to the
+  outer request. The ambient does NOT leak upward out of an async method — `AsyncTaskMethodBuilder.Start`
+  restores the caller's ExecutionContext — so the explicit restore is belt-and-braces, not the guarantee.
+  That was measured by sabotage after being asserted the other way round from memory.
+- 🔴 **NOTHING is published until a request outlives the grace period, and that is the whole reason
+  every request can be tracked without asking anyone to declare anything.**
+  `IpcRequestTrackerOptions.GracePeriod` (50 ms, the notification pump's own flush interval) suppresses
+  the running snapshot, the progress and the completion alike: a request that finishes inside the window
+  leaves NO event and NO history. ⚠ It suppresses NOTIFICATIONS only — never the response, which returns
+  before the tracking scope disposes. Anyone implementing this by parking the response has inverted it
+  and added latency to every fast call in the app to save a notification nobody would have seen.
+  Progress is then throttled per request by `ProgressInterval` (default 100 ms) once announced;
+  terminal transitions are never throttled, because a terminal state arriving late is a different class
+  of bug from a missed progress tick.
+- **Progress is the app's own unit, never a kit-assumed percent — and the kit does not clamp, validate
+  or interpret it** (owner direction: *"even its progress it might be different than 0-100%"*).
+  `IpcProgress` is `{ Value, Total?, Unit? }` (TS mirror `{ value, total?, unit? }`), not an `int?`
+  percent: `Total = null` means an absolute count with no known denominator (bytes off a chunked
+  stream), never zero, and `Unit` is app-defined and uninterpreted. Silently rewriting an app's own
+  reported number is worse than passing it through, so a `Value` above its own `Total` is the app's bug
+  to see — and no validation throw was added either, because `Report` runs on a hot path from background
+  work and throwing there would kill a request over a cosmetic number. It is a wire shape both sides
+  name, so it has its own tripwire (`WireMirrorTests.IpcProgress_fields_match_the_host`) rather than
+  trusting the two sides to stay in step by inspection.
+- **A failure obeys the same no-raw-exception-text boundary as any request/response failure.**
+  `ModuleBase` maps an `ShenoraException` to its structured error and anything else to
+  `IpcErrorCodes.UnknownError` plus the exception type name, with the detail logged host-side only —
+  one boundary, and `IpcRequestStatus.Error` carries the same shape. A second copy of the policy is
+  exactly how the `ex.Message`-in-a-wrapper bypass gets re-earned.
+
 - **`NotificationPump` owns the gate, the cap and the batch; a base owns only the tick.** The pump
   subscribes to the bus at construction (buffering starts before any client could exist to receive
   anything), applies the per-channel `Filter` at enqueue, bounds the queue with drop-oldest, and
@@ -272,33 +317,34 @@ transport, or building the P6 adoption shims.
   `READY`→`Open`, `ProcessFailed`→`Close`) and `PostWebMessageAsString`, and calls
   `TryDrainBatch` on its own schedule. A second, non-WinForms base gets every one of the pump's
   already-paid-for bug fixes (P5.5 H2/H3) by construction instead of re-earning them.
-- **`Cancel` refuses an operation that never opted into `Cancellable` — flipping its status while
-  the body runs on would be a lie to the UI.** `OperationRegistry.Start` allocates a
-  `CancellationTokenSource` for every operation regardless of `Cancellable`, so a token is not what a
-  non-cancellable operation lacks; what the flag actually gates is whether `Cancel()` is allowed to
-  signal it at all. Honoring a cancel on an operation that opted out would report `Cancelled` to
-  every subscriber while the background body kept running to its own `Complete()`/`Fail()` —
-  observable state that no longer describes reality. Same honest-refusal shape as an unknown or
-  already-terminal id: `Cancel` returns `false` and changes nothing, rather than pretending to
-  succeed. **This refusal is ONLY on the public, by-id `IOperationRegistry.Cancel(string id)`** — the
-  route an external CLIENT's `CANCEL` request goes through, where the permission question is real.
-  `IOperation.Cancel()` (the handle held by the operation's own owner, and what `Run`'s catch calls
-  when the body itself ends in `OperationCanceledException`) is deliberately unconditional: the work
-  is over, and refusing to RECORD that — regardless of `Cancellable` — is data loss, not honesty. A
-  whole-branch review found this conflated: `Run`'s catch used to call through the by-id route,
-  refusing on the DEFAULT `Cancellable = false` and stranding the entry `Running` forever (no
-  terminal transition, never evictable by `ClearFinished`, its CTS never disposed) — reachable any
-  time a body's cancellation isn't a client's `CANCEL` request at all (an `HttpClient` timeout, a
-  linked shutdown token: `TaskCanceledException` derives from `OperationCanceledException`).
+- **`Cancel` refuses an unknown or already-finished id, rather than pretending to succeed.**
+  `IIpcRequestTracker.Cancel(requestId)` signals the request's token FIRST — so a body observing it
+  unwinds instead of racing a finished-then-cancelled flip — then records `Cancelled`, and returns
+  whether it actually transitioned. There is no opt-in: **every request is cancellable**, because the
+  scope's token is the one the whole pipeline runs under.
+  ⚠ **There USED to be a `Cancellable` flag that `Cancel` refused without**, and the reasoning behind it
+  is worth knowing only as the shape of a bug: a by-id cancel that honoured the flag stranded entries
+  `Running` forever whenever a body's cancellation was not a client's `CANCEL` at all (an `HttpClient`
+  timeout, a linked shutdown token — `TaskCanceledException` derives from `OperationCanceledException`).
+  D66 removed the flag along with the whole second entity. **The surviving rule is the general one: a
+  refusal must be honest, and a terminal transition must never be refused as a permission question.**
 - **`GetAll`'s `scope` filter follows the SAME rule as `IEventBus`, not strict equality** — no
-  requested scope matches every scope, AND an operation started with no `Scope` of its own (a global
-  operation) matches ANY requested scope. Both event buses already apply exactly this (a scope-less
-  event still reaches scoped subscribers), so a `GetAll` that instead required strict equality
-  disagreed with the deltas a scoped store folds afterward: it never SAW an unscoped operation in a
-  scoped `LIST` snapshot but DID receive its `OPERATION_UPDATED` deltas, so a scoped store's contents
-  silently depended on whether it mounted before or after the work started.
-- **Every non-terminal state must have a sanctioned exit to a terminal one — this generalises past
-  operations, and it is enforced by a test, not by reviewer attention** (§5A.1, the D23 amendment
+  requested scope matches every scope, AND a request with no `Scope` of its own (a global one) matches
+  ANY requested scope. Both event buses already apply exactly this (a scope-less event still reaches
+  scoped subscribers), so a `GetAll` that instead required strict equality would disagree with the
+  deltas a scoped store folds afterward: it would never SEE an unscoped request in a scoped `LIST`
+  snapshot but WOULD receive its `REQUEST_UPDATED` deltas, so a scoped store's contents would silently
+  depend on whether it mounted before or after the work started.
+- <!-- doc-drift:history --> **Every non-terminal state must have a sanctioned exit to a terminal one —
+  the REUSABLE half, and it is enforced by a test rather than by reviewer attention.**
+  🔴 **READ THE NAMES BELOW AS HISTORY.** Everything from here to the end of this bullet describes the
+  OPERATIONS REGISTRY, which D66 deleted: `IOperationRegistry`, `OperationStatus`, `Waiting`,
+  `Dismiss`, `RegisterWaiting`, `ResumePayload`. Today there is one non-terminal state (`Running`) and
+  three terminals, so the invariant is satisfied by construction and the sweep is trivial. **What still
+  applies is the TEST SHAPE** — enumerate the LIVE enum by reflection, require a registered exit per
+  non-terminal value, and assert `ContainsKey` by name so a new status with no exit fails LOUDLY
+  instead of silently checking nothing. Any future state machine here (a session lifecycle, a
+  connection state) should get that shape. The incident stack that earned it follows (§5A.1, the D23 amendment
   before 0.2.0 merged). The bug that named the rule: a crash-checkpoint offer (its own status,
   `Interrupted`, at the time — since collapsed into `OperationStatus.Waiting`, see the amendment
   below) could only be removed by *resuming* it — `Validate` hard-coded `Status == Running` for every
@@ -314,8 +360,11 @@ transport, or building the P6 adoption shims.
   the kit's own review had flagged the gap as a Minor and deferred it; the adopter's production
   incident was the sharper evidence.
   The fix (`OperationStatus.Waiting`, `IOperationRegistry.Dismiss`) is the specific instance; the
-  REUSABLE half is the test shape: `OperationLifecycleInvariantTests` enumerates the LIVE status enum
-  via reflection (`Enum.GetValues<OperationStatus>()`), never a hardcoded list, so a future status is
+  REUSABLE half is the test shape — today `IpcRequestStateInvariantTests` (the original
+  `OperationLifecycleInvariantTests` died with D66 and went unreplaced for two versions, which is its own
+  lesson: **a test shape called reusable is only reusable if something re-uses it after a rename**). It
+  enumerates the LIVE status enum
+  via reflection (`Enum.GetValues<IpcRequestState>()`), never a hardcoded list, so a future status is
   swept in automatically — and for each non-terminal value it looks up a registered `(reach, exit)`
   pair, asserting `ContainsKey` explicitly (by name) rather than only iterating the dictionary's own
   keys, which is what makes it fail LOUDLY when a new status has no exit registered, instead of
@@ -331,8 +380,8 @@ transport, or building the P6 adoption shims.
   everywhere that mattered (`Dismiss`/`RequestResume` accepted either, neither was pruned, the
   client's `waiting` getter already unioned them); the one place they diverged — `RequestResume`
   dropping the checkpoint case, keeping the live-`Wait()` case — moved to keying on `ResumePayload`
-  instead of a second status. With one fewer non-terminal status, `OperationLifecycleInvariantTests`'
-  sweep is simpler, not weaker — it still enumerates the live enum rather than a hardcoded list. Full
+  instead of a second status. With one fewer non-terminal status, that sweep was simpler, not weaker — it
+  still enumerated the live enum rather than a hardcoded list. Full
   rename table and rationale: `docs/DECISIONS.md` D23's amendment.
   **CLOSED BY REMOVAL (2026-08-01, the 0.2.0 design pass, before publish) — and the WAY it closed is
   the reusable lesson, so read this bullet's whole amendment stack as one symptom.** The same question
@@ -366,7 +415,12 @@ transport, or building the P6 adoption shims.
   `undefined`) — `PayloadHelper` treats an explicit null as missing on purpose.
 - The client bridge fails fast after `dispose()` (`NO_TRANSPORT`) — stale instances captured
   before `configureBridge` replaced the default otherwise burn the full 30 s timeout per call.
-- **`AddShenoraOperations` takes the `OperationRegistryOptions` RECORD, not a configure callback** —
+- ⚠ **HISTORY — `AddShenoraOperations` and `OperationRegistryOptions` were DELETED by D66**, and the
+  live equivalent is `builder.UseRequests(x => …)`. The LESSON below is why this bullet stays: it is the
+  kit's options-shape convention, and it applies to every `*Options` record the kit still has.
+  ⚠ **A history marker only reaches to the next `##`** — mark each section that needs it, or a reader
+  landing here by search takes the whole bullet as current.
+  **It took the `OperationRegistryOptions` RECORD, not a configure callback** —
   every property on it is `{ get; init; }` (the kit's one immutability convention), so an
   `Action<OperationRegistryOptions>` callback shape made `o => o.ModuleName = "X"` a compile error
   (CS8852): the callback could only ever read a freshly-defaulted instance, never configure one. Pass
@@ -419,9 +473,9 @@ transport, or building the P6 adoption shims.
   dispatches to a thread-pool thread, but once that thread starts, an already-completed awaited `Task`
   does not yield — the whole `Wait()` → `Complete()` sequence runs in one synchronous burst, so a
   test polling for "first non-`Running` observation" can transiently see `Waiting` and pass BY ACCIDENT
-  depending on scheduling luck (found live: the first version of this test passed, then failed
-  reliably once it waited for the settled state instead of the first observation — see
-  `ModuleOperationTests.Run_does_not_complete_a_body_that_waited_and_returned`'s own comment). The
+  depending on scheduling luck (found live: the first version of that test passed, then failed
+  reliably once it waited for the settled state instead of the first observation — **the lesson needs
+  no surviving test to stand**). The
   fix — peek the entry's live status and only call `Complete()` when it is still `Running` — is the
   general rule for any "finish implicitly unless something else already happened" tail: check, don't
   assume, especially when the thing that might have happened is itself a legitimate, newly-added
@@ -451,7 +505,7 @@ transport, or building the P6 adoption shims.
   by hand-filtering `byId`, exactly the workaround the store's own docs warn against. The fix at the
   time (`interrupted`, `waiting` = `paused` ∪ `interrupted`, both derived from one `WAITING_STATUSES`
   set — the same one-definition discipline `TERMINAL_STATUSES` already used) is the specific instance;
-  the REUSABLE half is the same shape as the host's own `OperationLifecycleInvariantTests`: a test that
+  the REUSABLE half is the same shape as the host's own `IpcRequestStateInvariantTests`: a test that
   enumerates the LIVE status object (`Object.values(OperationStatuses)`, never a hardcoded list) and
   asserts every value lands in exactly one getter-backed band, so a status added later with no band
   fails that test instead of silently belonging nowhere. A hand-maintained parallel status set (a

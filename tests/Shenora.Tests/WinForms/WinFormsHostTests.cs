@@ -1,4 +1,4 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Tests.TestSupport;
 using Shenora.Windows;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,12 +27,12 @@ public class WinFormsHostTests
     public void UseWinForms_registers_the_runner_and_its_options()
     {
         var builder = Builder(UniqueRoot());
-        var options = new WinFormsHostOptions { MainForm = _ => new Form() };
-        builder.UseWinForms(options);
+        var options = new WindowsHostOptions { MainForm = _ => new Form() };
+        builder.UseWindows(options);
         using var app = builder.Build();
 
         Assert.NotNull(app.Services.GetRequiredService<IShenoraRunner>());
-        Assert.Same(options, app.Services.GetRequiredService<WinFormsHostOptions>());
+        Assert.Same(options, app.Services.GetRequiredService<WindowsHostOptions>());
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class WinFormsHostTests
         builder.OnStarting(_ => order.Add("starting.2"));
         builder.OnStopping(_ => order.Add("stopping.1"));
         builder.OnStopping(_ => order.Add("stopping.2"));
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = _ =>
             {
@@ -75,7 +75,7 @@ public class WinFormsHostTests
         var builder = Builder(root);
         builder.OnStarting(_ => throw new InvalidOperationException("startup failed"));
         builder.OnStopping(_ => order.Add("stopping"));
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = _ => new Form(),
             SkipProcessInit = true,
@@ -99,7 +99,7 @@ public class WinFormsHostTests
         ShenoraApplication? reported = null;
         var builder = Builder(root);
         builder.OnStarting(_ => Assert.Fail("lifecycle hooks must not run for a losing launch"));
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = _ =>
             {
@@ -138,7 +138,7 @@ public class WinFormsHostTests
 
             var ran = false;
             var builder = Builder(root, "--restarted");
-            builder.UseWinForms(new WinFormsHostOptions
+            builder.UseWindows(new WindowsHostOptions
             {
                 MainForm = _ => new Form(),
                 SkipProcessInit = true,
@@ -167,7 +167,7 @@ public class WinFormsHostTests
         var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, null, null, false) };
         var sizeInLoop = Size.Empty;
         var builder = Builder(root);
-        builder.UseWinForms(new WinFormsHostOptions
+        builder.UseWindows(new WindowsHostOptions
         {
             MainForm = _ => new Form(),
             SkipProcessInit = true,

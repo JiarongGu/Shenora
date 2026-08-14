@@ -23,7 +23,7 @@
     <!-- Inline on purpose — the baseline coverage gate text-matches it here. See Shenora.Mobile.props. -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Android</PackageId>
-    <Description>Shenora's Android shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), a UI-thread dispatcher, and the Android implementations of the Shenora.Core shell contracts. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.iOS.</Description>
+    <Description>Shenora's Android shell: the MAUI HybridWebView IPC transport (the same envelope the desktop shell speaks, over SendRawMessage/RawMessageReceived), the resource interceptor that answers a page's byte ranges, a UI-thread dispatcher, safe-area insets, and the Android implementations of the Shenora shell contracts — native file dialogs, a MediaCodec-backed audio and video conversion pipeline with device capability probing, an ExoPlayer/MediaPlayer media player, and a MediaSession playback session for the lock screen and headphone controls. The platform owns the loop, so the app drives ShenoraApplication.Start/Stop from its own lifecycle rather than calling Run. Shares its source with Shenora.iOS.</Description>
   </PropertyGroup>
 
 </Project>

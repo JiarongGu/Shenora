@@ -10,6 +10,16 @@
 # current, months of amendment prose around them was correct history, and nothing could tell the two
 # apart. This file is what tells them apart now.
 #
+# 🔴 ADDING THE NAME IS HALF THE JOB. The other half is `node devtools/dev.mjs stale-scan`, IN THE SAME
+# COMMIT — because the gate that reads this file CANNOT find the prose you just invalidated. doc-drift
+# suppresses any match within 6 lines of a history word (was/replaced/used to/…), and this repo's docs
+# are amendment stacks by design, so a stale claim hides exactly where the suppression is active.
+# Measured 2026-08-08: a planted claim stayed GREEN in TASKS.md and in ARCHITECTURE.md.
+# That is not hypothetical either — D66 added its names here and skipped the scan, and docs/ADOPTION.md
+# went on telling adopters to call `services.AddShenoraOperations()`, a deleted API, for three commits.
+# `stale-scan` never fails a build: it prints the worklist, and YOU triage it (most hits are correct
+# past tense and must stay).
+#
 # ADD A NAME HERE THE MOMENT YOU DELETE OR RENAME ONE. The cost of forgetting is a doc that quietly
 # describes a kit that no longer exists — which is not hypothetical, it is what this gate was built
 # after finding. CHANGELOG.md, docs/archive/tasks.md and docs/archive/fix-log.md are exempt by construction:
@@ -96,3 +106,388 @@ Shenora.WebView2.Sessions # -> Shenora.Windows
 Shenora.Archives         # -> Shenora.IO.Compression (2026-08-05, never released under this name)
 Shenora.Media.Android    # -> deleted by D45; serving is a SHELL capability, not a media package
 Shenora.Media.iOS        # -> deleted by D45
+# D45 deleted five TYPES along with those two package ids, and until 2026-08-07 only the ids were listed
+# here — so the types were retired with nothing watching them. That is not hypothetical: the shipped
+# Shenora.Media.csproj justified its Core reference with "`MediaRangeServer` speaks
+# `WebViewResourceRequest`" for days. Registering an id and forgetting the types it carried is the easy
+# half to miss, because the id is what the CHANGELOG talks about.
+MediaWebViewRoute        # -> MobileWebViewInterceptor (Android/iOS) + WebViewHost.Interceptor (Windows)
+MediaRangeServer         # -> Core.WebViewFiles.Serve + interceptor.UseFiles(…)
+MediaBodyMode            # -> Core.WebViewRangeDelivery, read off the interceptor
+MediaAccess              # -> Core.WebViewFiles.ResolveContained; the IsRemoteAllowed half was dropped
+MediaCacheKey            # -> Core.DerivedCacheKey — it keys ANY file-derived artefact, not a media one
+# --- 2026-08-08: the transcode tier's contract, found by a TASKS.md-vs-code sweep ------------------
+# TASKS.md described "iOS's IMediaStreamConversion ... Registered on Android only today" as current work
+# when no such type existed — the seam was IMediaAudioConversion (+ IMediaAudioConversionRun).
+#
+# 🔴 UN-RETIRED 2026-08-12, and the gate is what noticed. The name came BACK, for real this time: the
+# owner unified the conversion path across stream kinds ("both audio and video should take the same path,
+# the difference is encoding and decoding logic"), and the seam that answers for every kind cannot honestly
+# be called Audio. So `IMediaStreamConversion` is the CURRENT type and its entry had to go — doc-drift
+# fired on 35 sites the moment the code used it, which is precisely the job. **A retired name coming back
+# is a real event, and this file is where it gets noticed rather than silently re-used.**
+
+# --- 2026-08-12: the audio-only conversion tier, replaced by ONE seam keyed by MediaStreamKind --------
+# Same day, same change. The kit re-encodes a PICTURE now (mpeg4 that a device decodes and its own webview
+# refuses), and two parallel families would have meant two of everything — two pipelines, two run
+# interfaces, two remuxer methods. Keying by kind removed the branch, exactly as it did for the planner's
+# CodecsFor (whose own comment records that branching Video-vs-Audio silently treated SUBTITLES as audio).
+IMediaAudioConversion     # -> IMediaStreamConversion (CanConvert takes the KIND now)
+IMediaAudioConversionRun  # -> IMediaStreamConversionRun (OutputFormat describes either kind)
+MediaAudioPipeline        # -> MediaConversionPipeline
+MediaAudioMiddleware      # -> MediaConversionMiddleware
+IMediaVideoConversion     # never shipped: the parallel video tier, unified before release
+MediaConversionSeams      # never shipped: with ONE seam there is nothing to bundle
+# --- 2026-08-12: the background handoff was PROMOTED, so the sample's copy went ---------------------
+# D15 running to completion: proven in the sample, generalised into BackgroundPlaybackTransfer, and then
+# the original DELETED — the step that usually gets skipped, leaving two implementations of one behaviour
+# to drift apart. The page global went with it: it existed only because the probe was raw JS with no
+# access to kit state, and the kit reads IMediaPlayer.Status instead.
+BackgroundHandoffProbe    # -> Shenora.Modules.Media.BackgroundPlaybackTransfer (the kit owns it now)
+__shenoraLastPlay         # the page's last-known-playing snapshot; PLAYER_REPORT feeds Status instead
+# --- 2026-08-12, D71 piece 1: containment is stated ONCE, on MediaAccessOptions ---------------------
+# `AllowedRoots` and the cache root used to be declared THREE times — on MediaConversionOptions,
+# MediaPlayerOptions and SegmentStreamOptions — so an app could contain one delivery route and leave the
+# next one open. All three take ONE `Access` object now, and twelve members left the public surface.
+#
+# ⚠ QUALIFIED ON PURPOSE — the first section here that has to be. The bare tokens `AllowedRoots`,
+# `CacheRoot`, `Resolve`, `Log` and `Module` are all LIVE on `MediaAccessOptions`, so watching them bare
+# would fire on every correct sentence in the media docs. Both gates take a literal PHRASE as happily as a
+# name (see RETIRED CLAIMS below) and `Type.Member` is one.
+#
+# 🔴 THE LIMIT, WRITTEN DOWN SO IT IS NOT RE-DISCOVERED: the form that actually shipped broken was
+# `x.AllowedRoots = [library]` in a shipped XML sample — a LAMBDA PARAMETER, which no qualified entry can
+# match and no bare entry can watch without crying wolf. So this section catches prose that names a dead
+# member outright, and CANNOT catch a dead code sample. That is precisely how the removal below reached an
+# adopter's IDE with every gate green, found only by reading, and no entry closes it. The habit that does:
+# when you delete a member, grep the code SAMPLES in the XML of everything that configured it.
+MediaConversionOptions.AllowedRoots   # -> MediaConversionOptions.Access.AllowedRoots (D71)
+MediaConversionOptions.CacheRoot      # -> .Access.CacheRoot
+MediaConversionOptions.Resolve        # -> .Access.Resolve
+MediaConversionOptions.Log            # -> .Access.Log
+MediaConversionOptions.Module         # -> .Access.Module
+MediaPlayerOptions.AllowedRoots       # -> MediaPlayerOptions.Access.AllowedRoots
+MediaPlayerOptions.CacheRoot          # -> .Access.CacheRoot
+MediaPlayerOptions.Log                # -> .Access.Log
+MediaPlayerOptions.Module             # -> .Access.Module
+SegmentStreamOptions.AllowedRoots     # -> SegmentStreamOptions.Access.AllowedRoots
+SegmentStreamOptions.CacheRoot        # -> .Access.CacheRoot
+SegmentStreamOptions.Resolve          # -> .Access.Resolve
+# --- 2026-08-08, D64 amendment: `Use` CONFIGURES A PIPELINE; `Add` only registers ------------------
+# Owner: "Use means a wider configuration including its pipeline interceptor, and Add only means the
+# service collection level."
+# ⚠ ONE name moved, not four. The first pass renamed all four Add* to Use* on the coarser reading
+# ("these are all middleware-ish"), and three of them were WRONG and were reverted the same day:
+# AddIpcModule, AddShenoraFileDialogs and AddShenoraRequests are plain DI registration and keep `Add`.
+# UseMessageDispatcher earns `Use` because it COMPOSES the dispatcher pipeline (UseErrorHandler +
+# configure + MapRegisteredModulesLazily), which is the "includes its pipeline" half of the rule.
+AddMessageDispatcher     # -> UseMessageDispatcher
+# --- 2026-08-08: a CORE module is configured, never added -----------------------------------------
+# Owner: "more like a webapp config as .net … this entire framework cannot work without those core
+# modules". So request tracking's IServiceCollection registration went INTERNAL and the app-facing
+# surface is builder.UseRequests(...). ⚠ `UseShenoraRequests` is NOT listed: it still exists as an
+# internal method, and listing it would fail the gate on the kit's own call site.
+IpcRequestServiceCollectionExtensions   # -> IpcRequestExtensions (it extends the BUILDER now too)
+# --- 2026-08-07, D65: the shell entry points are named for the PLATFORM ---------------------------
+# D37 made the package set one-per-platform in 0.5.0 and the ENTRY POINTS never followed: the calls
+# were still named for a UI framework and for a category. A platform is the one thing an adopter
+# genuinely picks, so it is the one call that earns a name.
+UseWinForms              # -> UseWindows (named for a UI framework, not a platform)
+WinFormsHostExtensions   # -> WindowsHostExtensions
+WinFormsHostOptions      # -> WindowsHostOptions
+UseMobile                # -> UseAndroid / UseIOS — a category name serving two packages that ship,
+                         #    build and are consumed separately
+
+# --- 2026-08-07, D65: a module's root type is `XxxModule`, and the FACADE vocabulary went -----------
+# ⚠ ADDED 2026-08-08, a day late, and the delay is the lesson. D65 renamed these and did not list them,
+# so NO gate watched them — not doc-drift, not `stale-scan`, whose input is this very file. They were
+# still cited as CURRENT in README.md (which ships inside every nupkg) and in
+# `.claude/skills/new-ipc-module/SKILL.md`, the instruction set for writing a module: following it
+# produced code that does not compile. **A rename that skips this file is invisible to every tool the
+# repo has.** Found by reading, while chasing a different name entirely.
+BaseFacade               # -> ModuleBase
+IModuleFacade            # -> IIpcModule
+AddModuleFacade          # -> AddIpcModule
+# The concrete facades renamed with them. Found 2026-08-08 by diffing the SHIPPED v0.10.0 API baselines
+# against HEAD: 19 public types had left the surface and 6 were unregistered — all of them this family.
+# A rename sweep that misses the family it is renaming is the easy mistake, because each site compiles.
+DropZoneFacade           # -> DropZoneModule
+FileDialogFacade         # -> FileDialogModule
+WindowCommandFacade      # -> WindowCommandModule
+
+# --- 2026-08-07, D65: the main package is `Shenora`, and IPC folded into it ------------------------
+# ⚠ `Shenora.Core` WAS listed here for one day and has been REMOVED, which is the rule working rather
+# than failing. It was added because it was retired in BOTH senses at once — package id AND namespace —
+# unlike Shenora.Media / Shenora.IO / Shenora.Ipc, which kept live namespaces after their ids went.
+# Then D65's layer naming brought `Shenora.Core.*` back as the namespace of the CORE LAYER, so the name
+# is live again in one sense and the gate would fire on every correct sentence. Same test as the other
+# three, applied in reverse: watch a name only when NOTHING legitimately still uses it.
+#   the retired PACKAGE ID `Shenora.Core` -> `Shenora`; the live NAMESPACE `Shenora.Core.*` -> the cores.
+#
+# 🔴 2026-08-09 — "which kept live namespaces" WAS TRUE FOR ONE DAY AND THIS FILE NEVER RE-CHECKED IT.
+# D65's layer naming moved those three as well, and the note above was written while reasoning about
+# exactly that (it records `Shenora.Core.*` coming BACK) without re-reading the other three. Verified
+# against the `namespace` declarations: Shenora.Modules.Media, Shenora.Engine.Files,
+# Shenora.Modules.Update.Compression, Shenora.Core.Ipc. Nothing legitimately uses the old four, so by
+# this file's own test they belong here — and the exemption had been protecting `Shenora.Ipc` in the
+# README's dependency graph, in CLAUDE.md's package list and in the ALWAYS-LOADED RULES_INDEX.md.
+# ⚠ The lesson is not "the rule was wrong". It is that an EXEMPTION rests on a fact, and a fact needs
+# re-reading on the same schedule as the claim it excuses.
+Shenora.Media            # id AND namespace retired -> the folder Modules/Media, namespace Shenora.Modules.Media
+Shenora.IO               # -> the folder Engine/Files, namespace Shenora.Engine.Files
+Shenora.IO.Compression   # -> Modules/Update/Compression, namespace Shenora.Modules.Update.Compression
+Shenora.Ipc              # -> folded into Shenora, namespace Shenora.Core.Ipc
+
+# --- 2026-08-07, D64: every kit module moved onto the reserved `SHENORA.` prefix -------------------
+# These are WIRE names, which is a category this file did not previously watch and the one where a stale
+# doc costs the most: an adopter copies a module string out of a recipe and gets UNKNOWN_MODULE at
+# runtime, with both halves compiling perfectly. The prefix exists so an app stays free to own the plain
+# names, so the old spellings now belong to CONSUMERS — which is exactly why the kit's docs must never
+# state them as its own.
+FILE_DIALOGS     # -> SHENORA.DIALOGS
+DROP_ZONE        # -> SHENORA.DROPZONE
+MediaAudioConversion   # 2026-08-07 -> MediaAudioPipeline (the class; IMediaAudioConversion the INTERFACE is current)
+VideoCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Video]
+AudioCodecs      # 2026-08-07 -> MediaPlaybackPolicy.Codecs[MediaStreamKind.Audio]
+CanEncodeVideo   # 2026-08-07 -> MediaPlaybackPolicy.CanEncode(MediaStreamKind.Video)
+CanEncodeAudio   # 2026-08-07 -> MediaPlaybackPolicy.CanEncode(MediaStreamKind.Audio)
+
+# The 2026-08-08 mobile restructure. `Shenora.Mobile` is shared source because both mobile shells are MAUI
+# — it is NOT a place for two implementations behind an `#if`. Five types were exactly that: one NAME with
+# two bodies that never compiled together, which is why they read as an abstraction that did not exist.
+# They now live in `src/Shenora.<Platform>/Services/`, named and namespaced for their platform, exactly as
+# `WindowsMediaPlayer` is.
+MobileMediaPlayer         # 2026-08-08 -> AndroidMediaPlayer / IosMediaPlayer
+MobilePlaybackSession     # 2026-08-08 -> AndroidPlaybackSession / IosPlaybackSession
+MobileMediaCapability     # 2026-08-08 -> AndroidMediaCapability / IosMediaCapability
+MobileMediaAudioConversion # 2026-08-08 -> AndroidMediaAudioConversion / IosMediaAudioConversion
+MobileLiveActivities      # 2026-08-08 -> AndroidLiveActivities / IosLiveActivities
+MobileFileDialogs         # 2026-08-08 -> MobileFileDialogsBase (abstract) + AndroidFileDialogs / IosFileDialogs
+
+# D66, 2026-08-08 — "operations" MERGED INTO IpcRequest. Not a rename: the entity duplicated the request
+# that caused it (a minted Guid beside IpcRequest.Id, a Kind beside its Type), so it was deleted. What
+# replaced it is only the live STATE of a request that outlived its own send.
+IOperationRegistry     # -> IIpcRequestTracker
+OperationRegistry      # -> IpcRequestTracker
+OperationRegistryOptions # -> IpcRequestTrackerOptions
+OperationsModule       # -> IpcRequestsModule
+OperationsFacade       # -> the same module, under its pre-D65 name
+AddShenoraOperations   # -> AddShenoraRequests
+OperationServiceCollectionExtensions # -> IpcRequestExtensions
+IOperation             # -> nothing. The HANDLE went with the entity: a request needs no second
+                       #    identity to report against, so IModuleContext.Report replaced it.
+OperationStatus        # -> IpcRequestState
+OperationInfo          # -> IpcRequestStatus
+OperationProgress      # -> IpcProgress
+OperationLabel         # -> IpcLabel
+OperationOptions       # -> DELETED; the request already carries Module/Type/Scope/Timestamp
+OperationEvents        # -> IpcRequestEvents
+useShenoraOperations   # -> useShenoraRequests
+createOperationsStore  # -> createRequestsStore
+SHENORA.OPERATIONS     # -> SHENORA.REQUESTS
+OPERATION_UPDATED      # -> REQUEST_UPDATED
+OPERATION_REMOVED      # -> REQUEST_REMOVED
+MissionOperationObserver # -> MissionEventPublisher (the sample's; missions report as an EVENT stream)
+OperationException     # -> ShenoraException (the LAST D66 leftover; general IPC structured error, never request-scoped)
+OperationError         # -> ShenoraError (its client mirror — same stem, language-idiomatic suffix)
+
+# Added 2026-08-09 by the DECISIONS audit. None of these was ever listed, which is exactly why every one
+# of them survived in a doc as a CURRENT fact: step 2 of the rename rule was skipped each time, so
+# `doc-drift` had nothing to match. Listing them retroactively is what makes a recurrence catchable.
+ConvertWith            # -> MediaContainerWriterExtensions.ToConverter (wrapping a writer is the INTERFACE's job)
+Mp4RemuxerResult       # -> MediaRemuxerResult (the result is the CONTRACT's, not one implementation's)
+Mp4RemuxerOutcome      # -> MediaRemuxerOutcome
+IMediaRenderTarget     # never shipped — the chain ends at IMediaPlayer; cited by D58 as if it existed
+RestartManagerFileLockInspector # never existed — the class is RestartManagerLockInspector
+OperationLifecycleInvariantTests # -> IpcRequestStateInvariantTests (died with D66; D23 claimed it still ran)
+
+# Added 2026-08-09/10: the activity drawing vocabulary, renamed TWICE before shipping (D69). None of
+# these was ever published, so nothing external breaks — they are listed because the DOCS named them,
+# and a name a doc taught is exactly as capable of going stale as one NuGet shipped. The whole set now
+# lives in `Shenora.Modules.Platform.Activities`, which is what buys the short names; `ILiveActivities`,
+# `LiveActivityState` and `LiveActivityAppearance` deliberately KEPT theirs (they are the API, not the
+# drawing vocabulary, and `Activities.State` would read as a namespace accident).
+LiveActivityLayout     # -> Presentation (one element per Island SURFACE; it never was a layout)
+ActivityLayout         # -> Layout (the second attempt; the namespace makes the prefix redundant)
+LiveActivityStack      # -> Layout (the first attempt — a `div`, not a SwiftUI VStack)
+LiveActivityElement    # -> Element
+LiveActivityText       # -> Text  (content is POSITIONAL now: new Text("done"))
+LiveActivityIcon       # -> Icon
+LiveActivityProgress   # -> ProgressBar (a bar, not a number — the old name read as the value)
+LiveActivitySpacer     # -> Spacer
+LiveActivityCutout     # -> Cutout
+LiveActivityInsets     # -> Insets
+LiveActivityAxis       # -> Axis
+LiveActivityJustify    # -> Justify
+LiveActivityAlignment  # -> Align (matches Justify's length, and CSS calls it align-items)
+LiveActivityTextRole   # -> TextRole
+LiveActivityComponents # -> Components (Components.ProgressCard reads as well as the old prefix did)
+
+# --- 2026-08-13, D71 piece 2b Task 2: the computed remux range is read lazily, not buffered whole -----
+# `Mp4LayoutReader.CopyRange`'s inline seek-and-copy loop (over a large span) became a private helper
+# used by the push writer alone; `Mp4LayoutRangeStream` (a pull-based reader) now serves BOTH `CopyRange`
+# and `ComputedRemuxRoute.Produce`, so the helper had nothing left calling it.
+CopyExact                # -> Mp4LayoutRangeStream.Read (the reusable per-span copy is inside it now)
+
+# ─── RETIRED CLAIMS ──────────────────────────────────────────────────────────────────────────────
+#
+# A name is not the only thing that gets retired. A CLAIM about behaviour does too — and it drifts
+# WORSE, because every name in the sentence still exists, so `doc-drift`'s name matching, `cite-scan`
+# and `retired-audit` are all blind to it. Two landed on 2026-08-12 alone:
+#
+#   * `Convert` is `required` — D70 made it an optional OVERRIDE, and two docs went on saying otherwise
+#     for two days with every gate green, including the media guide's identity paragraph.
+#   * iOS "never produces a second document" — disproved by measurement on 2026-08-09 and still served
+#     in FOUR places three days later, one of them shipped XML that renders in an adopter's IDE, another
+#     the knowledge rule a session reads BEFORE touching mobile.
+#
+# The entries below are literal phrases, matched exactly like a name and suppressed by the same
+# past-tense rule — so quoting one while explaining that it went is correct and stays green. That
+# suppression is load-bearing here: every correction this file exists to catch is written by quoting the
+# claim it retires.
+#
+# ⚠ Keep a phrase FREE OF REGEX METACHARACTERS (entries are interpolated into a RegExp unescaped), and
+# make it long enough to be unambiguous — a claim shares its words with ordinary prose in a way a type
+# name never does.
+
+Convert` is `required`           # D70: an optional OVERRIDE now; the default engine is the platform's
+never produces a second document # 2026-08-09: iOS DOES issue it; a blocking read in the handler was the bug
+the mobile shells' ownership is unmeasured # 2026-08-12: measured — Android disposes Content, iOS never does
+the lazy body needs a device run # same run answered it; what is left is a body that closes ITSELF at EOF
+
+# 2026-08-13, D71 piece 2b Task 2: `ComputedRemuxRoute.Produce` stopped buffering a range into a
+# MemoryStream and started answering it lazily, through Mp4LayoutRangeStream wrapped in the same
+# BoundedBodyStream WebViewFiles.Read already uses. Four sites in ComputedRemuxRoute.cs alone still
+# said the body was buffered after the code no longer was — one of them on the PUBLIC
+# ComputedRemuxExtensions class, which ships in the nupkg's XML docs — plus one each in
+# docs/ARCHITECTURE.md, TASKS.md and CHANGELOG.md.
+# ⚠ THIS BLOCK'S OWN CLOSING NOTE WAS WRONG AND IS CORRECTED HERE (Task 3, same day). It said the 64 MiB
+# ceiling did NOT go with the buffering because it "still declines a source whose metadata WALK is too
+# expensive to run synchronously", and that a large film not using the route "stays true". Neither held:
+# the ceiling was tested against the layout's TotalLength, a number the WALK PRODUCES, so it never bounded
+# any walk — a big film paid the walk and was declined after. Laziness alone left the number unjustified,
+# and it was deleted the same day along with the belief. The claim entries below are still correct; only
+# the reasoning in this comment was not.
+the body is materialised per request          # -> Produce reads a range lazily now (Mp4LayoutRangeStream)
+while the body is BUFFERED                    # -> the ceiling bounded nothing once no body was buffered
+the way to raise this ceiling is the lazily-read body  # -> it shipped 2026-08-13; the ceiling went with it
+Produce` buffers, so an output past          # -> Produce is lazy, and the ceiling is gone entirely
+STILL buffered into a `MemoryStream`          # -> lazily read now, through Mp4LayoutRangeStream
+still buffers its range into a `MemoryStream` # -> ComputedRemuxRoute.Produce is lazy now
+
+# The EIGHTH one, in the same block, missed by the first pass of this same commit's own review: an
+# EIGHTH site in the same paragraph kept asserting the buffered-body memory arithmetic as the ceiling's
+# CURRENT justification, present tense, between two paragraphs already corrected for the opposite claim
+# — a coherence regression the edit itself introduced, invisible to doc-drift because none of the six
+# phrases above appear in it. The arithmetic is kept as HISTORY now (it derived the right number for the
+# constraint it solved, a buffered body's memory) rather than deleted, because the failure mode is the
+# lesson: a number justified by one mechanism does not survive that mechanism retiring.
+ONE buffered body is about a THIRD of the smallest common heap  # -> retired arithmetic; walk cost governs now
+
+# 2026-08-13, D71 piece 2b Task 3. TWO INDEPENDENT changes, and conflating them is itself a retired claim:
+#   (1) the 64 MiB ceiling was DELETED. Task 2's lazy body had already left it with nothing to justify it —
+#       the number was sized for a buffered body's footprint — and it had NEVER bounded the metadata walk,
+#       because it was tested against the layout's TotalLength, which the walk PRODUCES. A two-hour film paid
+#       its whole walk on the resource thread and was declined afterwards. Anyone reintroducing a bound wants
+#       a PRE-walk figure (the source file's length), which this number never was.
+#   (2) the WALK moved into an IMissionScheduler mission, required on its own terms: never block a webview's
+#       resource thread, at any size — measured, not inferred (MobileWebViewInterceptor resolves with a
+#       blocking .GetAwaiter().GetResult() and records an iOS main-thread DEADLOCK from one blocking read
+#       there). `UseComputedRemux` answers 503 Retry-After: 1 until the plan lands.
+# Four documents had spent a day explaining, correctly at the time, that a large film could not use this
+# route — and, INCORRECTLY, that lifting the ceiling needed the walk moved first. Those sentences are all
+# false now and none of them names a type: they are the CLAIM kind of retirement, hence this section.
+# ⚠ Both spellings of a claim are listed where the tree carried two, because matching is case-SENSITIVE.
+MaxBufferedOutputBytes              # the 64 MiB ceiling and both its guards — deleted, constant and all
+LayoutFor                           # the inline walk on the request path -> ComputedRemuxRoute.PlanSource (a mission)
+_planning                           # the lock that serialised the inline walk; the in-flight entry does it now
+a two-hour film still does NOT go through this route   # it does, at any size
+a large film still does not go through this route      # same claim, ARCHITECTURE's wording
+so a film does not use this route yet                  # this section's original wording; D71 now says "could not … then" (correct past tense)
+still declines anything planning past 64 MiB           # nothing is declined for its SIZE any more
+the ceiling is the only thing bounding the metadata WALK  # it never bounded the walk — see (1) above
+needs the walk moved off-thread                        # done 2026-08-13 — not a plan any more
+needs that walk moved off the resource thread          # same, ARCHITECTURE's wording
+the first request answers 206                          # the first request for an unplanned source is a 503
+total on the FIRST request                             # same claim, the wording CHANGELOG and Plan's XML used
+total on the very first request                        # same claim again — three spellings were in the tree
+# ⚠ 2026-08-13, SAME DAY, ADDED BY THE REVIEW THAT FOUND THIS SECTION INSUFFICIENT. The commit that wrote the
+# entries above corrected TEN files and MISSED docs/DECISIONS.md — the numbered record CLAUDE.md sends every
+# session to "before relitigating anything" — and neither gate saw it, because D71 spelled the same two claims
+# differently from every entry registered here. That is the failure mode this file exists to prevent, so the
+# lesson is a mechanical one: when a claim is retired, register the wording of EVERY document that carries it,
+# and grep the tree for the claim rather than for the phrase you happen to have fixed. Matching is per-LINE and
+# case-SENSITIVE, so a spelling that wraps differently is a different entry.
+the ceiling had really been bounding                   # D71's spelling of "it bounded the walk" — it never did; see (1) above
+and it took both                                       # D71's spelling of "lifting the ceiling needed the walk moved first" — the two changes are INDEPENDENT
+predates that 503 and has not been repeated            # D71's claim that the hardware run was never re-run — it WAS, on both shells, 2026-08-13
+Chromium's `InputStreamUtil.read` does not catch       # reads as "Chromium has no error path" and that is FALSE: it catches IOException and returns -2.
+InputStreamUtil.read` does not catch it                # same claim, the wording mobile-shells.md used. The APP KILL is .NET Android marshalling a managed
+                                                       # exception as android.runtime.JavaProxyThrowable, which extends java.lang.Error — outside that catch by construction.
+the probe does not retry yet                           # RemuxRouteProbe.WaitForPlanAsync (25 x 1 s) rides out the 503 for CheckAsync and CheckFirstRequestAsync
+# ⚠ AND ARCHITECTURE.md carried BOTH the correction and the error, sixty lines apart — the amendment paragraph
+# that recorded "the plan was wrong" gave the WRONG reason for it, in bold, as the takeaway. Found by reading
+# the file instead of the diff. Two more spellings, because neither matches any entry above:
+it took the walk moving too                            # it did not — laziness alone retired the ceiling's justification
+what still had to be bounded was the WALK              # nothing had to bound the walk for the CEILING to go; the mission is a separate requirement
+# --- 2026-08-13: a throwaway instrument, deleted the moment it had answered -------------------------
+# It asked two things a lazy response body raises that nothing shipped can reach — what a shell does with
+# a body that throws MID-RESPONSE (Android used to kill the process — fixed 2026-08-13; iOS commits a
+# short body silently) and
+# whether an ABANDONED body leaks its source handle — and the two shells answer that one UNEQUALLY, so
+# "neither shell leaks" is the wrong summary and this line used to carry it. Android DISPOSES an abandoned
+# body (two undrained bodies, both disposed, fd 1 -> 0), which is a real answer. iOS disposed nothing and
+# NEVER ACTUALLY PRODUCED an abandoned body — all 712 were DRAINED, because every window it asks for is
+# small — so what is proven there is "this request pattern cannot leak", by construction rather than by the
+# shell's cooperation, and a LARGE abandoned window on iOS remains untested. The numbers live in
+# `.claude/knowledge/mobile-shells.md`, the Android crash in TASKS.md, and the instrument does not, which
+# is the ResponseDisposalProbe shape. Listed so prose claiming it is live gets caught.
+LazyBodyProbe             # sample-only; measurements in .claude/knowledge/mobile-shells.md
+__shenoraLazy             # its page slot
+# --- 2026-08-13: the ANDROID mid-response crash is FIXED, so every claim of it is now history --------
+# `MobileWebViewInterceptor.PlatformBody` translates a mid-read throw into a `Java.IO.IOException`, whose
+# Java PEER is what Chromium's `InputStreamUtil.read` already catches (-> `-2`, a visible failed load). The
+# marshalling assumption that had blocked this was MEASURED and held. Registered because five documents
+# carried the crash as the current state — and each spelled it differently, which is the failure mode the
+# header above describes: register EVERY document's wording, then grep for the CLAIM.
+# ⚠ iOS's silent short body and Windows/WebView2's UNMEASURED throw are still true — do not "correct" those.
+KILLS AN ANDROID APP                                   # TASKS.md's 2b heading; Android's half is closed
+ANDROID DIES; iOS GOES SHORT AND SILENT                # mobile-shells.md's section heading. ⚠ NOT the bare
+                                                       # "ANDROID DIES" — that also names a TRUE and unrelated
+                                                       # fact (the ~15.4 s background-audio kill, same file),
+                                                       # and stale-scan caught the collision on the first run.
+NO GOOD ANSWER ON ANDROID YET                          # WebViewFiles.Read's XML doc
+on Android that KILLS THE APP                          # ARCHITECTURE.md's laziness-cost paragraph
+ON ANDROID "LOUDLY" MEANS THE PROCESS DIES             # BoundedBodyStream.Read's XML doc
+# ⚠ TWO MORE WORDINGS, added on review: this file's header says register EVERY document's wording, and the
+# first pass registered only the four that `doc-drift` can see. CHANGELOG.md is exempt BY CONSTRUCTION and
+# `stale-scan` skips it, so these two catch a resurrection anywhere else rather than there.
+AND BAD ON ANDROID: the app process DIES         # CHANGELOG's computed-remux entry (Unreleased, rewritten)
+On Android that throw kills the app process      # CHANGELOG's UseFiles entry (Unreleased, rewritten)
+# ⚠ Written WITHOUT its brackets on purpose (it was a parenthetical). Entries are literal since
+# 2026-08-13, so brackets here would be required characters; unbracketed, it catches the sentence
+# whether or not a resurrection keeps them.
+Android dies; iOS commits a short body silently   # MainPage.cs's parenthetical, deleted with the merged note
+# 🔴 AND THE REASONING THAT WAS WRONG INSIDE THE FIX ITSELF, which is the subtler retirement: the first
+# wrapper rethrew every `Java.Lang.Throwable` because it "already has a peer, so the platform sees its real
+# type". Measured FALSE on a device: peer ≠ catchable. A `java.lang.SecurityException` marshals as its own
+# peer perfectly and still misses Chromium's `catch (IOException)`, so the process died anyway. The test is
+# "is it already catchable by the platform" (`Java.IO.IOException`), never "does it have a peer".
+so it marshals as itself and the platform sees its real type   # the rejected boundary condition
+# And the throwaway that A/B'd the fix, deleted the moment it had answered (the LazyBodyProbe shape):
+# 🔴 `ThrowingBodyProbe` HAS NOW BEEN WRITTEN AND DELETED TWICE, for two different platforms, and the
+# lifecycle is the point: it answers ONE platform question and goes. Android's version proved a managed
+# throw killed the app (fixed); the desktop version proved WebView2 commits a SILENT SHORT BODY, like iOS —
+# `status=200|promised=262144|bytes=98304|throws=1`, app survived. Both answers live in
+# `.claude/knowledge/mobile-shells.md`, which is why neither probe needs to.
+# ⚠ Un-retiring it for the second write was the honest move over renaming the probe to dodge the gate — and
+# doc-drift caught that resurrection on its first run, which is exactly what this file is for.
+ThrowingBodyProbe
+__shenoraThrowingBody     # the Android page slot; the desktop one used `__throwBody`
+# ⚠ A RETIRED NAME THAT COLLIDES WITH A LIVE BCL ONE MUST BE REGISTERED QUALIFIED. `Mp4Remuxer.WriteThrough`
+# (deleted 2026-08-13, private, zero callers — `ToConverter` carried the same file handling AND the same
+# cancellation rethrow) cannot be registered as bare `WriteThrough`: `FileOptions.WriteThrough` is live in
+# `FileUpdateJournal` and cited in ARCHITECTURE, so the bare form would fire on three correct sentences
+# forever. The qualified form finds nothing today by design — no prose ever used it — and exists to catch a
+# resurrection. Entries interpolate into a regex unescaped, so the `.` matches any char; harmless here.
+Mp4Remuxer.WriteThrough

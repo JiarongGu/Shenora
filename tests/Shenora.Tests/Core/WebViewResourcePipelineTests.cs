@@ -1,10 +1,11 @@
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.WebView;
 
 namespace Shenora.Tests.Core;
 
 /// <summary>
 /// The middleware composition every shell's interceptor runs on (D45). All of it is provable with no
-/// webview — which is the reason it lives in <c>Shenora.Core</c> instead of being hand-rolled three times:
+/// webview — which is the reason it lives in <c>Shenora</c> instead of being hand-rolled three times:
 /// before this, the only way to find out whether a route ran in the right order was to launch a device.
 /// </summary>
 public class WebViewResourcePipelineTests

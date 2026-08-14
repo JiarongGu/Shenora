@@ -1,9 +1,10 @@
 using System.Drawing.Imaging;
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
-// IClipboardService moved to Shenora.Core in P5.5 H4.1 — a clipboard is portable in both concept and
+// IClipboardService moved to Shenora in P5.5 H4.1 — a clipboard is portable in both concept and
 // signature, so app logic using it needs no Windows reference (D20). The STA-thread implementation
 // below is what stays Windows-side.
 

@@ -1,4 +1,5 @@
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.WebView;
 
 namespace Shenora.Tests.Core;
 
@@ -240,6 +241,47 @@ public class WebViewFilesServeTests : IDisposable
             () => WebViewFiles.Serve(Request(null), " ", "video/mp4", WebViewRangeDelivery.Sliced));
         Assert.Throws<ArgumentException>(
             () => WebViewFiles.Serve(Request(null), _file, " ", WebViewRangeDelivery.Sliced));
+    }
+
+    /// 🔴 Serving a file no longer allocates its window. Under Android's Unsliced rule the window IS the
+    /// whole file, so `new byte[count]` meant every response allocated the entire file — measured on this
+    /// repo's own 475 KB sample clip, and unbounded for a real film.
+    /// <para>
+    /// Asserted on the STREAM's own shape rather than process memory, which is not deterministic in a
+    /// test: the body is a <see cref="BoundedBodyStream"/> (never a <c>MemoryStream</c>), it reports the
+    /// whole file's length up front without having read a byte of it, and a small read advances
+    /// <c>Position</c> by exactly what was asked for — none of which is true of a body that was already
+    /// fully materialised before this method ever saw it.
+    /// </para>
+    [Fact]
+    public void Serving_a_file_does_not_materialise_it()
+    {
+        // Larger than any sane read buffer (a few KB to a few hundred KB), so a pre-loaded body of this
+        // size would be an obvious upfront allocation rather than a coincidence of a small fixture.
+        var bigPath = Path.Combine(_dir, "big.bin");
+        var bigBytes = new byte[2 * 1024 * 1024];
+        new Random(Seed: 1).NextBytes(bigBytes);
+        File.WriteAllBytes(bigPath, bigBytes);
+
+        var r = WebViewFiles.Serve(Request(null), bigPath, "video/mp4", WebViewRangeDelivery.Sliced);
+        try
+        {
+            Assert.Equal(200, r.StatusCode);
+            // The regression this pins: the old body was ALWAYS a MemoryStream, allocated in full before
+            // Serve even returned. This one is a lazy window over the still-open file.
+            Assert.IsType<BoundedBodyStream>(r.Content);
+            Assert.Equal(bigBytes.LongLength, r.Content.Length);   // known up front — nothing was read yet
+            Assert.Equal(0, r.Content.Position);
+
+            var head = new byte[64];
+            Assert.Equal(64, r.Content.Read(head, 0, 64));
+            Assert.Equal(bigBytes[..64], head);
+            Assert.Equal(64, r.Content.Position);   // advanced by exactly what was read, not by the file
+        }
+        finally
+        {
+            r.Content.Dispose();
+        }
     }
 }
 

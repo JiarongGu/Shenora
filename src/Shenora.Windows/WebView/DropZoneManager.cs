@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.Events;
+using Shenora.Core.Shell;
+using Shenora.Engine.Files;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
@@ -29,7 +32,7 @@ public sealed class DropZoneManagerOptions
 /// third copy was already annotated "ported from…" — this ends that): transparent overlays are
 /// positioned over the page's zone elements to capture REAL OS file paths, including drags from
 /// other apps while this one is in the background. The client side is <c>useDropZone</c> in
-/// @shenora/react; the routes arrive through <see cref="DropZoneFacade"/>.
+/// @shenora/react; the routes arrive through <see cref="DropZoneModule"/>.
 ///
 /// WHY NOT HTML5 DROP — it is not merely that the page cannot see the path. A page-side drop yields
 /// a <c>File</c> handle whose only accessor is its CONTENT, so in a shell architecture (the page is
@@ -48,11 +51,11 @@ public sealed class DropZoneManagerOptions
 public sealed class DropZoneManager : IDisposable
 {
     /// <summary>The reserved module name (mirrored by the client's <c>useDropZone</c>).</summary>
-    public const string Module = "DROP_ZONE";
+    public const string Module = "SHENORA.DROPZONE";
 
     private readonly DropZoneManagerOptions _options;
     private readonly ILogger<DropZoneManager> _logger;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     private readonly Dictionary<string, DropZoneOverlay> _overlays = [];
     // Last CSS bounds per zone — so a DPI change (window moved to another monitor) can re-derive
     // every overlay's physical bounds without waiting for the page to resend them (P2.3b).

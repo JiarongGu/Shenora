@@ -1,8 +1,11 @@
 using Microsoft.Web.WebView2.Core;
+using Shenora.Core.WebView;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 // Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
 // the control type needs an alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
-using Shenora.Core;
+using Shenora;
 
 namespace Shenora.Windows;
 
@@ -25,9 +28,9 @@ public sealed class WebViewHost
     private readonly WebView2Control _webView;
     private readonly WebViewHostOptions _options;
     private readonly Action<string>? _log;
-    private readonly Shenora.Core.IUiDispatcher _ui;
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
-    private readonly Shenora.Core.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
+    private readonly Shenora.Core.Shell.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
     private readonly WebView2Interceptor _interceptor = new();
     private DateTime _lastAutoReloadUtc = DateTime.MinValue;
     private int _autoReloadCount;            // terminal state for the crash-reload loop (see WireEventPolicies)
@@ -39,6 +42,14 @@ public sealed class WebViewHost
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = options.Log ?? options.Environment.Log;
+
+        // The app-level pipeline (D64), applied BEFORE anything can navigate — routes are read per
+        // request, so registering here is early enough for the first document. This is what makes
+        // `app.UseFiles(…)` reach a SECONDARY window too: it travels with the options, so every host
+        // built from them serves the same routes instead of the app re-wiring each window by hand.
+        // Not guarded: a throwing step is a composition mistake and must fail the window loudly rather
+        // than produce one that silently serves nothing.
+        options.Pipeline?.ApplyTo(_interceptor);
 
         // Fail at COMPOSITION rather than degrading to silence (the P5.5 H3 convention). A deferred
         // scheme gets a WebResourceRequested filter below, but WebView2 accepts the SCHEME itself only
@@ -73,13 +84,13 @@ public sealed class WebViewHost
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). Almost every
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). Almost every
     /// call site below sits inside a WebView2 event handler or a posted UI-thread body, where an
     /// escaping exception has no caller and becomes a modal crash dialog; and several messages read
     /// WebView2/COM properties (a download's URI, a process-failed reason) that throw once the
     /// underlying object is gone, which is why BUILDING the message must be inside the guard too.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_log, message);
+    private void Log(Func<string> message) => Shenora.AppCallback.Log(_log, message);
 
     /// <summary>
     /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event: true only
@@ -87,7 +98,7 @@ public sealed class WebViewHost
     /// default rather than leaving a WebView2 event unanswered (P5.5 H2).
     /// </summary>
     private bool AppCallbackRan<T>(Action<T> callback, T args, string hookName) =>
-        Shenora.Core.AppCallback.Run(() => callback(args),
+        Shenora.AppCallback.Run(() => callback(args),
             ex => Log(() => $"[Shenora.Windows] {hookName} threw ({ex.GetType().Name}: {ex.Message}); " +
                             "applying the built-in policy instead."));
 
@@ -525,12 +536,25 @@ public sealed class WebViewHost
             // (the source app's exact bug). The one marshalling owner encodes that rule (P5.5 H4.2);
             // it returns false when there is no handle (early-startup race) or the control is gone,
             // and then we complete WITHOUT a response rather than serving from the wrong thread.
+            // 🔴 IF `Build` NEVER RUNS, NOTHING ELSE WILL EVER CLOSE THE BODY. `Build`'s own catch disposes
+            // when `CreateWebResourceResponse` fails, but these two paths skip `Build` entirely — a `Post`
+            // that returns false (no handle yet, or the control is gone: the two races the comment above
+            // names) and a `Post` that throws. Since 0.9.1 the body is LAZY (`BoundedBodyStream` over a real
+            // `FileStream`, and only its own at-bound self-close would otherwise release it), so what leaks
+            // is an OS FILE HANDLE per affected request — which on Windows also blocks deleting or moving
+            // the file the app was serving. Both paths are teardown/startup races, so they arrive in bursts
+            // rather than singly.
             try
             {
-                if (!_ui.Post(Build)) deferral.Complete();
+                if (!_ui.Post(Build))
+                {
+                    response.Content.Dispose();
+                    deferral.Complete();
+                }
             }
             catch
             {
+                try { response.Content.Dispose(); } catch { }
                 try { deferral.Complete(); } catch { }
             }
         });
@@ -616,7 +640,28 @@ public sealed class WebViewHost
                 && AppCallbackRan(onFailed, e, nameof(WebViewHostOptions.OnProcessFailed)))
                 return;
 
-            Log(() => $"[Shenora.Windows] Process failed: {e.ProcessFailedKind} (reason: {e.Reason})");
+            // 🔴 EVERYTHING WebView2 KNOWS, not just the kind. "RenderProcessExited (reason: Crashed)"
+            // names the event and nothing about the cause, so an adopter — and this repo — could stare at
+            // it without a next step. The three fields below are the ones that actually identify a crash:
+            // ExitCode (a STATUS_* code names the fault class), ProcessDescription (WHICH utility/GPU
+            // process, since those kinds cover several), and FailureSourceModulePath (the module the
+            // crash came from — usually a codec, a GPU driver or a shell extension injected into the
+            // renderer, and the single most useful field there is).
+            // ⚠ Same defect shape as a WinRT COMException reported without its HRESULT: naming a failure
+            // while withholding its identity reads as a diagnostic and is not one.
+            Log(() =>
+            {
+                var detail = $"[Shenora.Windows] Process failed: {e.ProcessFailedKind} (reason: {e.Reason}"
+                    + $", exitCode: {e.ExitCode})";
+                var description = AppCallback.RunOrDefault(() => e.ProcessDescription, null);
+                if (!string.IsNullOrWhiteSpace(description)) detail += $" process='{description}'";
+                // Guarded and read separately: these are newer members on the args, and an older runtime
+                // can throw rather than return empty — which must not turn a crash REPORT into a second
+                // crash inside the handler.
+                var module = AppCallback.RunOrDefault(() => e.FailureSourceModulePath, null);
+                if (!string.IsNullOrWhiteSpace(module)) detail += $" module='{module}'";
+                return detail;
+            });
             if (!_options.ReloadOnRenderProcessFailure
                 || e.ProcessFailedKind != CoreWebView2ProcessFailedKind.RenderProcessExited) return;
 

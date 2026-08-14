@@ -59,10 +59,6 @@ Shenora.Windows.DpiHelper
   method Scale
   method ScaleFromDeviceDpi
   method SystemScale
-Shenora.Windows.DropZoneFacade
-  method .ctor
-  method RouteMessageAsync
-  property ModuleName
 Shenora.Windows.DropZoneManager
   field Module
   method .ctor
@@ -77,6 +73,10 @@ Shenora.Windows.DropZoneManagerOptions
   property EventBus
   property ParentForm
   property WebView
+Shenora.Windows.DropZoneModule
+  method .ctor
+  method RouteMessageAsync
+  property ModuleName
 Shenora.Windows.EmbeddedResourceProvider
   method .ctor
   method BeginWarmup
@@ -568,6 +568,7 @@ Shenora.Windows.WebViewHostOptions
   property OnProcessFailed
   property OpenExternalLinksInSystemBrowser
   property PermittedPermissions
+  property Pipeline
   property PreventDefaultFileDrop
   property ProductionUrl
   property ReloadOnRenderProcessFailure
@@ -601,25 +602,13 @@ Shenora.Windows.WinFormsBootstrapOptions
   property ObserveUnobservedTaskExceptions
   property OnUnhandledException
   property ShowCrashDialog
-Shenora.Windows.WinFormsHostExtensions
-  method UseWinForms
-Shenora.Windows.WinFormsHostOptions
-  method .ctor
-  property Bootstrap
-  property MainForm
-  property SingleInstance
-  property WindowState
 Shenora.Windows.WinFormsUiDispatcher
   method .ctor
-  method InvokeAsync
-  method InvokeAsync
-  method InvokeAsync
-  method InvokeOrDefaultAsync
-  method Post
-  method Post
+  method TryPost
   property IsOnUiThread
   property State
-Shenora.Windows.WindowCommandFacade
+  property TargetName
+Shenora.Windows.WindowCommandModule
   field Module
   method .ctor
   method RouteMessageAsync
@@ -670,6 +659,29 @@ Shenora.Windows.WindowStateOptions
   property MinVisibleHeight
   property MinVisibleWidth
   property MinWidth
+Shenora.Windows.WindowsHostExtensions
+  method UseWindows
+Shenora.Windows.WindowsHostOptions
+  method .ctor
+  property Bootstrap
+  property MainForm
+  property SingleInstance
+  property WindowState
+Shenora.Windows.WindowsMediaCapability
+  method .ctor
+  method Decodable
+  method Encodable
+Shenora.Windows.WindowsMediaPlayer
+  method .ctor
+  method ApplyRateCore
+  method ApplyStartAt
+  method OpenCore
+  method PauseCore
+  method PlayCore
+  method SeekCore
+  method TeardownCore
+  property DurationCore
+  property PositionCore
 Shenora.Windows.WindowsPlaybackSession
   event CommandReceived
   method .ctor

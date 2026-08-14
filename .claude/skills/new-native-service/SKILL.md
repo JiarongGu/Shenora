@@ -1,6 +1,6 @@
 ---
 name: new-native-service
-description: Walk the chain for adding a native desktop service — where the contract goes, the Windows implementation, DI registration, the registration tripwire. Use before adding a clipboard/dialog/shell/interaction capability, or whenever a new contract has to be placed between Shenora.Core and Shenora.Windows.
+description: Walk the chain for adding a native desktop service — where the contract goes, the Windows implementation, DI registration, the registration tripwire. Use before adding a clipboard/dialog/shell/interaction capability, or whenever a new contract has to be placed between Shenora and Shenora.Windows.
 ---
 
 # new-native-service
@@ -12,7 +12,7 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
 
 1. **Place the CONTRACT before writing anything.** The bar is *"app logic must be able to compile
    off Windows"*, NOT "the signature happens to be platform-neutral" — which is why the whole
-   window-state stack correctly stays in `Shenora.Windows`. Portable → `Shenora.Core`. Partly
+   window-state stack correctly stays in `Shenora.Windows`. Portable → `Shenora`. Partly
    portable → SPLIT it: the portable slice in Core, the desktop-only operations on an interface
    deriving from it (`IShellLauncher : IUrlLauncher`, `IFormInteraction : IUiInteraction`).
    Windows-only concept → `Shenora.Windows` alone. Never a new package (D2).
@@ -25,13 +25,13 @@ own logic can compile off Windows (D19/D20), and moving a contract later is a br
    `ArgumentNullException.ThrowIfNull` / `ArgumentException.ThrowIfNullOrWhiteSpace`, and decide
    the empty-versus-null policy explicitly: empty is usually app DATA and null is a caller bug
    (`Clipboard.SetText("")` throws, so empty routes to `Clear()` instead).
-4. **Register in `WinFormsHostExtensions.UseWinForms`** with `TryAddSingleton`, so an app's own
+4. **Register in `WindowsHostExtensions.UseWindows`** with `TryAddSingleton`, so an app's own
    registration wins. If you split the contract in step 1, register the portable face resolving to
    the SAME singleton — `TryAddSingleton<IUiInteraction>(sp => sp.GetRequiredService<IFormInteraction>())`
    — or an app depending on the Core contract gets a second instance. Anything that needs the main
    form must resolve it LAZILY: the provider is built before the runner creates the form, so
    anything captured at registration captures null.
-5. **Extend `tests/Shenora.Tests/WinForms/NativeServicesRegistrationTests`** with both halves it
+5. **Extend `tests/Shenora.Tests/WinForms/NativeServicesRegistrationTests.cs`** with both halves it
    already asserts — the service is registered, AND an app registration wins. Behaviour tests go in
    their own class, and anything that realizes a window handle runs through `TestSupport/Sta.Run`:
    an OLE failure on an MTA thread is not a test failure, it is a BLOCKING WinForms dialog that

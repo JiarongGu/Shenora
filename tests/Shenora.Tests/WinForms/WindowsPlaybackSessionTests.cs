@@ -1,4 +1,6 @@
 using Shenora.Windows;
+using Shenora.Modules.Platform;
+using Shenora.Modules.Media;
 
 namespace Shenora.Tests.WinForms;
 

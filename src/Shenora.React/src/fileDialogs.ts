@@ -1,8 +1,8 @@
 /**
- * The page's half of the host's `FILE_DIALOGS` module — native file/folder/save dialogs, and the
+ * The page's half of the host's `SHENORA.DIALOGS` module — native file/folder/save dialogs, and the
  * capability gating that lets ONE bundle ship to every shell.
  *
- * Mirrors `Shenora.Ipc.FileDialogFacade`. The wire names here are pinned against the host's own
+ * Mirrors `Shenora.Core.Ipc.FileDialogModule`. The wire names here are pinned against the host's own
  * constants by `WireMirrorTests`, not by care.
  */
 import { useMemo } from 'react';
@@ -94,7 +94,7 @@ interface FileDialogRequests {
 }
 
 /**
- * Typed client for the host's `FILE_DIALOGS` module (`FileDialogFacade`).
+ * Typed client for the host's `SHENORA.DIALOGS` module (`FileDialogModule`).
  *
  * ⚠ **Two of these are DESKTOP capabilities.** `openFolder` and `saveFile` have no expression on a
  * phone and reject with `IpcErrorCodes.capabilityNotSupported` there. Do not catch that — ask first,
@@ -103,7 +103,7 @@ interface FileDialogRequests {
  */
 export class FileDialogs extends BaseModuleService<FileDialogRequests> {
   constructor(bridge?: ShenoraBridge) {
-    super('FILE_DIALOGS', bridge);
+    super('SHENORA.DIALOGS', bridge);
   }
 
   /** Pick an existing file. Available on every shell. */

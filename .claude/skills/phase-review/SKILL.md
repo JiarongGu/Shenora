@@ -50,15 +50,40 @@ The standing rule: every phase gets an adversarial review before its commit.
 4. **Fix**: batch the real findings; delegating the whole fix batch to one subagent and
    re-verifying afterwards has worked well.
 5. **Re-verify**: `node devtools/dev.mjs verify` — everything green.
-6. **Sync docs**: README status, `docs/ARCHITECTURE.md` (projects/surface), `docs/ROADMAP.md`
-   (done narrative), `CHANGELOG.md` (if surface changed), `docs/archive/fix-log.md` for
-   any non-trivial fix the review produced (via `/fix-log`), `docs/REVIEW-GUIDE.md` if an invariant
-   or settled-decision changed, and rules — a new
+6. **Sync docs**: README status, `docs/ARCHITECTURE.md` (the MAP — projects, subsystem kinds,
+   dependency rules; **never a surface listing**, which the API baselines and XML docs own),
+   `CHANGELOG.md` (if surface
+   changed), `docs/REVIEW-GUIDE.md` if an invariant or settled-decision changed, and rules — a new
    invariant defaults to on-demand `.claude/knowledge/` via `node devtools/dev.mjs knowledge new
-   <name>` (only universal ones go core with `--core`); then `… knowledge check`.
-   **`TASKS.md` is pruned by MOVING finished entries to `docs/archive/tasks.md`, never by ticking them
-   in place** (standing user rule) — the file's length is the size of the remaining work, so a DONE
+   <name>` (only universal ones go core with `--core`); then `… knowledge check`. A non-trivial fix's
+   root cause goes in the COMMIT MESSAGE — there is no fix log.
+   **`TASKS.md` is pruned by DELETING finished entries, never by ticking them
+   in place** (standing user rule; git is the archive since 2026-08-07) — the file's length is the size
+   of the remaining work, so a DONE
    paragraph left under `## Open` defeats the only reason to open it. Leave behind at most a one-line
    pointer, and keep any follow-up the entry spawned.
-7. **Prep the commit message** (summary, verified-against notes — no private paths/names)
+7. **Run the EVIDENCE LEDGER before writing the commit message.** List every factual claim this change
+   writes into a tracked file — a doc, an XML comment, a rule, a TASKS entry — and next to each, the
+   command that established it. Anything with no command is DERIVED or ASSUMED and must SAY SO in the
+   text, or come out.
+   🔴 **This is not ceremony; it is the only step that has ever caught this class.** Asked for exactly
+   this, a subagent's own report separated "verified by running something" from "written but NOT
+   verified", and the unverified list contained real ones it then fixed — a rationale it had reasoned
+   out and stated as fact, and an inference about warnings it replaced with a measurement. Nothing else
+   in this loop looks at a claim's PROVENANCE: the gates check names, paths and tests, never how you know.
+   The recurring shapes, each of which bit within one fortnight:
+   - **Absence is not a defect until you know which environment you are in.** `local/` is gitignored and
+     CANNOT exist in a worktree, a fresh clone or CI. A subagent read "MISSING", concluded the repo was
+     broken, and copied private context across checkouts. Never copy `local/` anywhere.
+   - **A tool's silence is evidence about your QUERY, not about the world.** `grep "record SessionFrame"`
+     returned nothing and the type exists. Ask a second way before concluding "gone".
+   - **"I fixed all of them" needs a definition of ALL.** A sweep fixed `process.cwd()` in three scanners
+     and missed the fourth, because the population was "the files I happened to open".
+   - **A measurement attributes to your variable only if nothing else moved.** `staleDate` became a 🔴
+     rule from one device run on a day that also fixed two defects explaining the same symptom.
+     Confounded is not wrong — it is UNATTRIBUTED, and must be labelled so rather than promoted.
+   - **Your own edit invalidates prose about it, in the same commit** — including text you wrote minutes
+     ago. One commit rewrote a comment and filed a task describing that comment's old wording.
+   - **A documented invariant is not an enforced one** (D19: asserted in three documents, false in code).
+8. **Prep the commit message** (summary, verified-against notes — no private paths/names)
    and ask the user for commit approval.

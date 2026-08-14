@@ -45,7 +45,19 @@ public sealed class SingleInstanceGuard : IDisposable
 
     /// <summary>
     /// Registered window message the running instance listens for. Per-scope, so activating one
-    /// install never foregrounds another. 0 until <see cref="TryAcquire()"/> runs.
+    /// install never foregrounds another.
+    /// <para>
+    /// ⚠ <b>0 means TWO different things and callers must not treat them alike:</b>
+    /// <see cref="TryAcquire()"/> has not run yet, or <c>RegisterWindowMessage</c> FAILED — in which case
+    /// there is no channel and activation silently cannot work while single instance itself is unaffected
+    /// (the mutex is the real guard). The host logs a warning for the second case rather than skipping in
+    /// silence; a caller reading this property directly gets no such help.
+    /// </para>
+    /// <para>
+    /// ⚠ The failure is rare and real: the call fails when the session's global atom table is exhausted,
+    /// reached on this dev machine 2026-08-10, where <c>RegisterClass</c> failed in the same breath. The
+    /// only thing that noticed was a TEST asserting this is non-zero.
+    /// </para>
     /// </summary>
     public uint ActivateMessageId { get; private set; }
 

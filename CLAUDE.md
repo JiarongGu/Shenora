@@ -4,27 +4,42 @@ Auto-loaded every session. Keep short — details live in `docs/` and `.claude/r
 
 ## What this is
 
-Shenora (神阙) is a **reusable library**, not an app: the desktop "body" (WinForms + WebView2 +
-React hosting, typed IPC, modules, window management, native services) for the family's Windows
-applications, shipped as NuGet packages (`Shenora.Core|Ipc|Windows|Android|iOS` — ONE shell per platform, D37 —
-plus the optional `Media|IO|IO.Compression` hanging off Core, D48) + npm
-(`@shenora/react`), all versioned in lockstep. Code is **extracted from proven sibling apps**, not
+Shenora (神阙) is a **hybrid app development framework — .NET + React**, not an app: the "body"
+(shell hosting, typed IPC, modules, window management, native services) that React apps boot their
+logic on, across Windows, Android and iOS. ⚠ **It is not a media library, a file library, or any other
+single-domain library** — those are capabilities it happens to carry, and a package boundary that
+suggests otherwise is making a claim about the product (D53).
+
+🔴 **The thesis, which decides what is worth building (D54):** the differentiator against Capacitor and
+Electron is **native .NET capability**. They give you a webview and a JS bridge, so their ceiling is the
+web platform plus plugins; this kit's ceiling is .NET's — real threads, real handles, the platform SDKs,
+background execution — with React for the interface. **The kit's job is the translation layer between
+them: what .NET can do and React cannot.** So the question for any feature is not *"is this useful?"* but
+*"can React already do this?"* — if it can, the kit is competing with the web platform and loses.
+`.NET does the platform work · React does the interface · the kit owns the seam and the IPC.`
+
+Shipped as NuGet packages (`Shenora` + ONE shell per platform, `Shenora.Windows|Android|iOS` — D37 —
+plus the native `Shenora.Launcher`, D50) + npm (`@shenora/react`, plus the build-time `@shenora/cli` —
+D67), all versioned in lockstep. **There is no optional feature tier** (D53/D55/D65): a capability gets
+a FOLDER inside `Shenora`, never a package id. The layer is the namespace — `Shenora.Core.*` (Events ·
+Ipc · Shell · WebView), `Shenora.Engine.*` (Files · Missions), `Shenora.Modules.*` (Media · FileDialog ·
+Platform · Requests · Update). ⚠ **`Shenora.Ipc` is retired as BOTH a package id and a namespace.**
+Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
 (postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See
-`docs/2026-07-30-shenora-design.md` (+ its `## Amendments`) + `docs/DECISIONS.md` (D1–D49 and growing —
-check the file, not this range; its header carries the current package set) before relitigating anything. The 0.2.0 cleanup RETIRED the pre-implementation design docs once implemented
-(re-layering → D19/D20, one-way IPC → D23, plus the originating brief): decisions live in
-`DECISIONS.md`, as-built shape in `ARCHITECTURE.md`. One design doc survives —
-`docs/2026-08-01-shenora-communication-core-design.md`, rewritten to the current shape — because the
-code cites its `§` numbers.
+`docs/DECISIONS.md` (numbered; its header carries the current package set) before relitigating anything.
+**There are no design docs and no archive** (D57, D9): why → `DECISIONS.md`, as-built →
+`ARCHITECTURE.md`, what's left → `TASKS.md`, what happened → `git log`.
 
-**Status: v0.9.1 published (2026-08-04)**, six packages; `## Unreleased` adds two (`IO`, `IO.Compression`)
-and carries **five breaking changes** — read `CHANGELOG.md` before touching the surface. Repo public, verified
-against the FEED rather than the tree; 0.5.0 reorganised the set BY PLATFORM (D37); the kit runs on all three
-shells, proven on a device and a simulator. P1–P7 are complete. `TASKS.md` has the open work. Growth is
-harvest-driven (D15) and adoption-driven. **Every public change is SemVer surface**; 1.0 is a separate
-deliberate freeze, not yet cut.
+**Status: v0.10.0 published (2026-08-05)**; the tree is ahead of it and the release is deliberately on
+HOLD — the surface is not yet one an app should adopt, so correctness beats cosmetics and a half-finished
+surface is a reason to keep working rather than to cut. Read `CHANGELOG.md` `## Unreleased` before
+touching the surface: it carries **breaking changes**. **The package set lives in `docs/DECISIONS.md`'s
+header table, once** — never reconstruct it from a chain of entries. Repo public, verified against the
+FEED rather than the tree; the kit runs on all three shells, proven on a real iPhone and on Android.
+`TASKS.md` has the open work. Growth is harvest-driven (D15) and adoption-driven. **Every public change
+is SemVer surface**; 1.0 is a separate deliberate freeze, not yet cut.
 
 **Read first:** `docs/README.md` — the memory map that routes any task to the right doc or rule.
 **Private companion:** also read `local/CLAUDE.local.md` + `local/PROJECT_NOTES.md` at session
@@ -48,14 +63,13 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 - **Library discipline:** generalize the consumer's request, never ship its shape
   (`.claude/knowledge/generic-library.md`). No app/domain vocabulary in `src/`. **Headless
   (D13):** no UI component library dependency anywhere — apps bring their own design system.
-- **Layering (D19/D20/D37):** ONE shell package per PLATFORM. Windows primitives and web hosting
-  are one layer — since 2026-08-02 literally one package, `Shenora.Windows`, with the direction kept
-  internally (`Shell/` must never depend on `WebView/`). Portable contracts + the `IUiDispatcher`
-  marshalling seam live in `Shenora.Core` so app logic compiles with no Windows reference —
-  enforced, not asserted: `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED if a
-  Windows type creeps into app logic. `docs/ARCHITECTURE.md` describes this as-built; don't
-  "fix" the layering back toward the pre-P5.5 shape or re-split the packages (D37 has the reasoning
-  and the measurements that killed the counter-arguments).
+- **Layering (D19/D20/D37):** ONE shell package per PLATFORM. Windows primitives and web hosting are
+  one layer — literally one package, `Shenora.Windows`, with the direction kept internally
+  (`Shell/` must never depend on `WebView/`). Portable contracts + the `IUiDispatcher` marshalling
+  seam live in `Shenora` so app logic compiles with no Windows reference — enforced, not asserted:
+  `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED if a Windows type creeps into
+  app logic. `docs/ARCHITECTURE.md` describes this as-built; **don't re-split the packages** — D37
+  has the reasoning and the measurements that killed the counter-arguments.
 - **Extraction-first:** prefer lifting proven sibling code — including its post-mortem comments —
   over new abstractions (`.claude/knowledge/extraction-sources.md` + `local/EXTRACTION-MAP.md`).
 - **NEVER touch the version — the release workflow owns it.** One `<VersionPrefix>`
@@ -73,7 +87,7 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 
 ## Dev loop
 
-`node devtools/dev.mjs <build|test|verify|pack|doctor|sample|vite|shot|wgc|click|rclick|move|drag|input|knowledge|check-sensitive|install-hooks>`
-— see `devtools/README.md`. Verification gate before claiming done: `dev.mjs verify` (it compiles the
-samples, type-checks the sample web app, and runs doctor since P5.5 H5). CI needs
+`node devtools/dev.mjs` with no argument prints every verb — **read that, not a list here**, which is
+how the last one went stale. Details: `devtools/README.md`. Verification gate before claiming done:
+`dev.mjs verify` (builds, tests, type-checks the sample web app, and runs doctor). CI needs
 `SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1` — the sensitive guard fails CLOSED and `local/` can't exist there.

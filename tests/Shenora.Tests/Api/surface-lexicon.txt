@@ -62,6 +62,15 @@ Json
 # Gated by MetadataSurfaceTests rather than SurfaceVocabularyTests — the Windows test project cannot
 # reference a net10.0-android assembly — so both gates read this one lexicon.
 Mobile
+
+# `Android` and `Ios` (2026-08-08) are the peers of `Windows` above, and they arrived when the mobile
+# shells stopped pretending two implementations were one type. `Shenora.Mobile` is shared source because
+# both shells are MAUI; code that is NOT shared — AVPlayer vs android.media.MediaPlayer, MPNowPlayingInfo
+# vs MediaSession — now lives in src/Shenora.<Platform>/Services/ and is named for the platform it talks
+# to. A platform is a MECHANISM in D22's sense for exactly the reason `Windows` always was: it names the
+# API surface being spoken to, not a scenario someone wants to enable.
+Android
+Ios
 Path
 Paths
 Shell
@@ -130,7 +139,6 @@ Context
 Controller
 Environment
 Extensions
-Facade
 Guard
 Helper
 Hook
@@ -158,8 +166,8 @@ Exception
 Info
 Kind
 Label
-Operation
-Operations
+Requests
+Tracker
 Options
 Progress
 Reason
@@ -232,6 +240,17 @@ Manifest
 Zip
 Extraction
 Limits
+# `Pack` (2026-08-06) — a NAMED, VERSIONED SET OF FILES an app needs on disk at runtime, delivered as one
+# archive. Admitted because it names the unit, not its contents: the first consumer's pack holds a media
+# engine, but a model, a font set, a voice pack or a fixture tree are the same mechanism, and nothing on
+# `ResourcePack`'s surface knows which it is holding.
+# It also passes the harder test in `generic-library.md` — *would a second app disagree with this?* The
+# four things it decides (where a version lives, whether it is complete, how a path resolves inside it,
+# when the old one is collected) are not app decisions; the BYTES are, and the kit never supplies them.
+# ⚠ Watch it the way `Media` and `Download` are watched. `Pack` must keep meaning the container. A
+# `PackDownloader`, `PackRegistry` or `PackStore` would be the kit growing delivery — deciding where packs
+# come from — which is precisely the half D42 leaves with the app, and must be argued afresh.
+Pack
 Delete
 Directory
 Entry
@@ -344,6 +363,209 @@ Kind
 # would be the kit growing an engine, which the design puts explicitly out of scope (§2) — argue those
 # afresh rather than waving them past because this line exists.
 Conversion
+# `Segment` + `Run` + `Engine` (2026-08-06) — the segment-stream route, harvested from a consuming app that
+# proved it on a device. All three name MECHANISM and none names a product:
+#   · `Segment` is a piece of a stream produced on a fixed grid. Streaming-protocol vocabulary (HLS and DASH
+#     both use it), not ours and not any app's.
+#   · `Run` is one live production — started, writes numbered output, can be killed. Deliberately not `Job`
+#     or `Task`: `Task` collides with the BCL, and `Job` is the app's word for work it schedules, which is
+#     the noun the mission layer refused for the same reason.
+#   · `Engine` names the SEAM an app plugs its own encoder into — `ISegmentEngine`. ⚠ This entry used to
+#     say the kit "ships no implementation and never will (D42, D51)", which D52 corrected LATER THE SAME
+#     DAY: the kit does ship a DEFAULT, assembled from a managed remux and the platform's own codecs. That
+#     narrows D42 rather than reversing it — D42's objection was always VENDORING (megabytes every consumer
+#     pays for, a licence every consumer inherits), and a default costing zero bytes and zero obligations
+#     is neither. The word is still admissible for the better reason: it names a MECHANISM, and the seam
+#     remains the escape hatch for reach the default lacks rather than the only door.
+# ⚠ Watch `Engine` the way `Media` and `Download` are watched, and closer: the moment a type here DECIDES
+# how to encode rather than asking the app, the kit has grown an engine, which D42 puts out of scope. A
+# `SegmentEncoder`, `SegmentTranscoder`, or a codec ladder in `src/` would be that — argue those afresh
+# rather than waving them past because this line exists.
+Segment
+Run
+Engine
+# `Matroska` (2026-08-06) — the CONTAINER FORMAT, in MatroskaProbe. Admitted on exactly the terms `Zip` was,
+# and the parallel is close enough to be worth stating: it is a published format name rather than a product
+# concept, the type reads its header and does nothing else, and naming the format is the SMALLER commitment.
+# `MediaContainerProbe` would over-claim — it reads Matroska and not MP4 — and the Archives lesson above is
+# that a name which has to be explained by its contents is the wrong name.
+# ⚠ The watch here is scope, not vocabulary: this may only ever READ a header. A `MatroskaWriter`,
+# `MatroskaMuxer` or anything that produces one is a different argument (it is the translation layer's
+# output side) and must be made on its own, not waved past because the format is already named.
+Matroska
+# `Mp4` + `Remuxer` (2026-08-07) — THE ARGUMENT THE LINE ABOVE ASKED FOR, made on its own terms.
+# `Mp4Remuxer` reads Matroska and writes MP4. Note first what it is NOT: not a `MatroskaWriter`, which is
+# what that warning was actually guarding against — nothing here produces a Matroska file, and the kit
+# still owns exactly one direction.
+#   · `Mp4` is a published container format name, admitted on precisely the terms `Zip` and `Matroska`
+#     were: it names the format the type emits and nothing about a product. A `MediaRemuxer` or
+#     `ContainerRewriter` would OVER-CLAIM in the way `MediaContainerProbe` would have — this reads one
+#     container and writes one other, and the Archives lesson is that a name needing its contents
+#     explained is the wrong name.
+#   · `Remuxer` is the kit's OWN decided vocabulary already: `MediaPlaybackAction.Remux` has been the
+#     planner's verdict since 2026-08-03. This type is the thing that performs the verdict the planner
+#     already names, so the word is not new to the surface — only to the part of it this gate sweeps
+#     (D22 is types; enum members are not swept).
+# ⚠ And the scope test it has to keep passing (D52): a remux DECODES NOTHING. It copies frames and their
+# decoder configuration verbatim into a different box — zero bytes shipped, zero licence weight, no codec
+# written. The moment something here decodes or encodes a frame, the kit has grown the engine D42 puts out
+# of scope, and `Mp4Transcoder` or a `Decoder` would be that — argue those afresh.
+Mp4
+Remuxer
+# `Sample` + `Span` (2026-08-12) — in `Mp4SampleSpan`, one frame's place in the source and in the planned
+# output, alongside `Mp4Layout` (`Layout` is already admitted for the activity vocabulary, further down).
+#   · `Sample` is the ISO base media file format's OWN word for one frame of coded media — it is what the
+#     boxes this type describes are called (`stsz` is the sample size table, `stss` the sync sample table).
+#     Naming a thing what its format names it is the same argument that admitted `Mp4` and `Matroska`: it
+#     is published vocabulary rather than a product concept, and `Mp4FrameSpan` would be the kit inventing
+#     a private synonym for a word every reader of the spec already knows.
+#   · `Span` is a RANGE — an offset and a length — which is as mechanical as a word gets.
+#     ⚠ The obvious objection is `System.Span<T>`, and it is worth answering rather than waving past: this
+#     is not a view over memory and does not pretend to be, which is why it is never bare `Span` but always
+#     qualified by what it spans. `Range` would collide with `System.Range` far more confusingly (that one
+#     really is two indices), and `Extent` or `Placement` name nothing the reader already has.
+# ⚠ The watch here is the same one `Mp4` carries: these describe a COPY. The moment a type here describes
+# a sample being decoded, resampled or re-encoded, the kit has grown the engine D42 puts out of scope.
+Sample
+Span
+# `Writer` (2026-08-07) — in `IMediaContainerWriter`, the MUXER seam. Admitted because it names a MECHANISM
+# and nothing else: something that writes a container. The reasoning for wanting the seam at all is worth
+# recording because it is not the obvious one — `MediaConversionOptions.Convert` already accepts a delegate,
+# but that delegate is ALL-OR-NOTHING: a consumer wanting only their own AAC encoder, or only a native
+# muxer, had to reimplement demux, timing, sample tables and interleave behind it. Cutting the pipeline into
+# replaceable PARTS is the point (owner: "the issue is not the speed, its how to optimize this").
+# ⚠ Watch it the way `Engine` is watched: a `Writer` that starts DECIDING what to encode has become an
+# engine, which D42 puts out of scope. This one is TOLD what to carry and refuses what it cannot.
+Writer
+# `Reader` (2026-08-12) — in `Mp4LayoutReader`, the read half of what `Mp4Remuxer.Plan` already describes.
+# Admitted on the identical grounds `Writer` was: it names a MECHANISM (something that reads bytes out of an
+# existing description) and nothing about a product, and the base class library already uses the word the
+# same way (`BinaryReader`, `StreamReader`). It decodes nothing and re-encodes nothing — it maps an
+# already-planned byte range straight onto the source's own frames, one seek per span — so the same D42
+# boundary `Writer` and `Mp4` both watch applies unchanged here.
+# ⚠ Watch it the same way: the moment this type starts INTERPRETING a frame's content rather than its
+# position, or deciding what belongs in a range rather than being told one, it has grown the engine D42 puts
+# out of scope.
+Reader
+# `Computed` + `Remux` (2026-08-12) — in `ComputedRemuxExtensions`, the route that serves an MP4 over HTTP
+# ranges WITHOUT ever writing one (D71). Both words describe the mechanism, and between them they are the
+# only honest way to say what this route is: the OTHER delivery routes produce a file and then serve it.
+#   · `Remux` is the kit's own decided vocabulary and already on the surface as `MediaPlaybackAction.Remux`,
+#     the planner's verdict since 2026-08-03 — this is the same argument that admitted `Remuxer`, minus the
+#     `-er`, because the type is not a remuxer: it DELIVERS what one would have produced. A bare
+#     `Remuxer`-shaped name here would claim the type performs the copy, which `Mp4Remuxer` does.
+#   · `Computed` names the distinguishing MECHANISM — the output is derived from the source's frame index
+#     rather than produced and stored — and it is the word that makes the D71 split readable in one line:
+#     the conversion route materialises, the segment route produces a frontier, this one computes. The
+#     alternatives all say less: `Virtual` is a claim about existence rather than about how bytes arrive,
+#     `Live` and `Dynamic` say only "not static", and `Lazy` describes a schedule, not a derivation.
+# ⚠ The watch is exactly `Mp4`'s and `Reader`'s: this route DECODES NOTHING. It answers a byte range out of a
+# layout somebody else planned. `Computed` beside a word like `Transcode`, `Encode` or `Effect` would be the
+# kit growing the engine D42 puts out of scope, and `ComputedTranscodeExtensions` is not a name to wave past
+# because half of it is already here.
+Computed
+Remux
+# `Audio` (2026-08-07) — in `IMediaAudioConversion`, and admitted because the name had to become MORE
+# specific rather than less. It was `IMediaStreamConversion`, which OVER-CLAIMED: its run exposes
+# SampleRate and Channels, so it only ever converted audio, and a name that promises streams while
+# delivering audio is the same defect as a scenario name — it invites the next contributor to add video to
+# something shaped wrong for it. Owner's direction, same day: make the interfaces "more specific and more
+# generic" — specific in what each says it does, generic in the shapes that have to extend.
+# It is platform vocabulary rather than domain vocabulary: every OS names this surface the same way
+# (AVAudioSession, MediaCodec's `audio/*`, SystemMediaTransportControls), which is the `ProfileDirectory`
+# test — genuine mechanism words the platforms themselves use.
+# ⚠ Watch it the way `Media` is watched. `AudioLibrary` or an `AudioEffect` would be the kit growing a
+# product; this converts ONE stream so a webview can play it, and nothing more.
+# ⚠⚠ This note originally listed `AudioPlayer` among the words that would mean the kit had grown a product,
+# and eight days later `IMediaPlayer` was admitted (below). Read the argument there before concluding the
+# gate was simply overridden — the line moved deliberately, and it moved because D54 changed what the kit
+# is FOR, not because the check was inconvenient.
+Audio
+
+# `Player` (2026-08-07) — in `IMediaPlayer`, and admitted only after arguing against the warning THIS FILE
+# had already written about it (see the `Audio` note above, which named `AudioPlayer` as the shape that
+# would mean the kit had grown a product). The gate fired on exactly the word it was built to catch, so the
+# case has to be made rather than waved through.
+#
+# WHAT CHANGED IS THE PRODUCT DEFINITION, not the tolerance for domain words. D54 (owner, 2026-08-07):
+# the kit is a hybrid app framework whose differentiator is native .NET capability, and its job is the
+# translation layer for "what .NET can do and React cannot". A host-owned player is the clearest instance
+# of that: iOS PAUSES a <video> the moment the app backgrounds, and AVPlayer does not. No amount of
+# JavaScript closes that gap.
+#
+# WHY IT IS MECHANISM AND NOT DOMAIN, on the file's own tests:
+#   · The `ProfileDirectory` test — do the platforms themselves use the word? AVPlayer (Apple), ExoPlayer
+#     and MediaPlayer (Android), MediaPlayer (Windows). All three name this surface `Player`. It is
+#     platform vocabulary in the same way `Audio` is.
+#   · It names a MECHANISM: something that opens a source and advances a clock through it. Compare the
+#     names it is NOT — `MediaLibrary`, `Playlist`, `NowPlayingQueue`, `AudioEffect` — every one of which
+#     describes a PRODUCT built ON a player.
+#
+# ⚠ THE LINE, stated so the next contributor does not have to re-derive it. `IMediaPlayer` ships ONE
+# source, open/play/pause/seek/close, and no queue, playlist, gapless, crossfade, shuffle or effects —
+# the same refusal that keeps a queue model out of IPlaybackSession, for the same reason: only the app
+# knows what "next" means. **A `Next()` on this interface is the tell that it has become a product.**
+Player
+
+# `Video` (2026-08-12) — in `AndroidMediaVideoConversion`, the platform half that decodes a picture the
+# webview refuses. It names a STREAM KIND the platform itself names: `MediaStreamKind.Video` has existed
+# since the planner shipped, so the word was load-bearing everywhere except a type name.
+#
+# ⚠ ADDED, REMOVED AND RE-ADDED THE SAME DAY, which is the gate working rather than churn. It went in for a
+# parallel video tier; unification deleted every type carrying it, and `Lexicon_has_no_unused_words` made me
+# take it out ("an allow-list that only grows reviews nothing"); the Android converter brought it back. Each
+# move was forced by a check, not by taste.
+#
+# WHAT EARNED IT is a measurement. On API 36 / WebView 133 the device decodes `mpeg4` to a real 480x270
+# frame while `canPlayType` answers "" for it — and the page then reaches readyState=4 with NO error and a
+# 0x0 picture. Sound over a blank rectangle, silently. That is D59's gap with the picture in it.
+#
+# ⚠ THE LINE, in the shape the `Player` note uses: this converts ONE stream using codecs the OS already has.
+# The names it is NOT: `VideoEditor`, `VideoFilter`, `VideoEffect`, `Thumbnailer`, `VideoLibrary`. **A crop,
+# a scale-for-quality or an overlay is the tell that the kit has grown an editor** (D51: no engine, ever).
+Video
+
+# `Background` + `Transfer` (2026-08-12) — in `BackgroundPlaybackTransfer`, which moves a playhead between
+# the page's player and the platform's when the app leaves the foreground.
+#
+# `Background` names an app LIFECYCLE STATE the platforms name themselves (`didEnterBackground`, `onStop`,
+# `UIBackgroundModes`) — hosting vocabulary, exactly like `Headless`. It is not a scenario word: it does not
+# describe what an app is FOR, it describes where the process is.
+#
+# `Transfer` names the MECHANISM: one responsibility moving between two implementations of one contract.
+#
+# 🔴 IT WAS `Handoff` FIRST, and the gate is what made me look at it. Apple ships a branded feature called
+# Handoff — device-to-device continuity — and this kit ships an iOS shell, so an adopter meeting
+# `BackgroundPlaybackHandoff` there would reasonably expect Continuity. A public type name that collides
+# with a platform feature ON A PLATFORM WE SUPPORT is the naming mistake this file exists to catch.
+#
+# ⚠ THE LINE: this moves a POSITION between two players and nothing else. The names it is NOT:
+# `BackgroundService`, `BackgroundTask`, `BackgroundQueue` — a general background-work API is a different
+# thing entirely, and the kit does not have one.
+Background
+Transfer
+
+# `Access` (2026-08-12, D71) — in `MediaAccessOptions`, the containment boundary `MediaConversionOptions`,
+# `SegmentStreamOptions` and `MediaPlayerOptions` used to each declare on their own (`AllowedRoots` +
+# `CacheRoot`), stated once instead.
+#
+# THE `ProfileDirectory` TEST: platforms already use this exact word for this exact thing — Android's
+# runtime permissions are literally named `READ_MEDIA_*` / storage "access", iOS frames the same idea as
+# sandbox/file-access entitlements, and the BCL's own `FileAccess` enum predates all of them. It is not this
+# kit's invention; it is the word every platform already reaches for when the question is "may this code
+# touch that path".
+#
+# THE "would a second app disagree" TEST: no — every consumer of a delivery route needs the same three
+# answers (where may it read, where does it cache, which module does it speak on), and none of those is a
+# choice specific to media, or to any one app's domain. That is exactly why D71 pulled it out from three
+# separate declarations into one.
+#
+# ⚠ THE LINE, in the shape the other watched words use: this type decides CONTAINMENT and CACHE LOCATION
+# and nothing else. The names it is NOT: `MediaPermissions`, `MediaSecurity`, `MediaPolicy` (already taken,
+# and for a different question — WHICH CODECS play, not WHERE FILES live) — a type that started asking an
+# app to describe a permission MODEL rather than a boundary would be the kit growing an authorization
+# product, which is out of scope.
+Access
 
 # ── Resource interception (Shenora.Core, 2026-08-04) ──────────────────────────────────────────────
 # The interceptor is a MIDDLEWARE pipeline over resource requests — the same shape IMessageDispatcher
@@ -384,6 +606,66 @@ Commands
 Live
 Activity
 Activities
+# `Appearance` (2026-08-09, D69) — the static half of a live surface: which SF Symbol and which tint the
+# kit's generic widget renders. Admitted rather than renamed because it names a MECHANISM the platform
+# itself has: ActivityKit splits an activity into fixed attributes and changing content, and this is the
+# fixed half. It is also what makes the widget GENERIC — the alternative to a config the widget reads is
+# an app writing SwiftUI, which is the Swift dependency D69 exists to remove.
+# ⚠ Watch it the way `Activity` is watched. It stays legitimate while it describes HOW a kit-drawn
+# surface is rendered; the moment it starts carrying an app's design system it has become the thing D13
+# says the kit does not ship, and a `Theme`/`Style` sibling appearing beside it is the tell.
+Appearance
+# ── The Live Activity LAYOUT vocabulary (2026-08-09, D69) ────────────────────────────────────────────
+# Six words admitted together, for a tree an app describes in C# and the kit's generic widget interprets
+# at runtime — so an app gets a styled Live Activity with no Swift.
+#
+# 🔴 THE ARGUMENT, because this is the closest the kit has come to shipping a design system and D13 says
+# it must not. What makes these MECHANISM words rather than presentation ones is that the element set is
+# CLOSED AND TINY, and it is tiny because the SURFACE is: a Live Activity is a lock-screen card and four
+# regions measured in millimetres. Text, a symbol, a bar, and a way to put them beside or under each
+# other is the whole of what fits. That describes a PLATFORM SURFACE; it is not a way to express an
+# app's design.
+#
+# ⚠ THE TELL THAT IT HAS GONE WRONG, and it is specific: a request for nesting depth, absolute
+# positioning, images, custom fonts, or a word like `Style`/`Theme`/`Padding`/`Font` arriving beside
+# these. Every one is the moment to answer "write the four SwiftUI view bodies"
+# (`ShenoraLiveActivityViews`, which stays first-class) rather than to widen this list. `Role` is here
+# INSTEAD of `Style` deliberately: it names what a line IS — headline, caption, value — which the widget
+# maps onto the platform's own type scale. Semantic in, visual out.
+Layout
+Element
+# ── The layout container and its flex vocabulary (2026-08-09) ─────────────────────────────────────
+# `ActivityLayout` is the container an app puts things in — a div, and named for what a web developer
+# already calls it, because this kit's adopters write React. `Justify` and `Alignment` are flexbox's
+# own two axes (justify-content, align-items); they are layout mechanics, not appearance, which is the
+# same line `Insets` and `Spacing` already sit on. ⚠ If either ever grows a NAMED SCALE — a token, a
+# size word, a breakpoint — it has crossed into the design system D13 refuses and the word should go.
+Justify
+# `Cutout` is HARDWARE, not decoration: the Dynamic Island's sensor housing, which an app lays out
+# around. It earns a public word because the alternative is every adopter rediscovering that the middle
+# of the Island cannot be drawn in.
+Cutout
+# ── The activity layout vocabulary lives in its OWN namespace (2026-08-10) ────────────────────────
+# These are deliberately SHORT — `Layout`, `Text`, `Icon`, `Presentation` — because they sit in
+# `Shenora.Modules.Platform.Activities` and are typed over and over inside a tree. The prefix they used
+# to carry (`LiveActivityText`, `LiveActivityTextRole`…) existed only to stop short names colliding in a
+# shared namespace, which is what a namespace is for; a six-node tree said "LiveActivity" eight times.
+# ⚠ A short name is only safe BECAUSE of the namespace. Do not promote one of these to a broader
+# namespace without re-earning it — `Text` at the root would collide with everything an app has.
+# `Align` (not `Alignment`) and `Justify` are flexbox's own two axes, named as the web names them,
+# because the adopters write React.
+Align
+Presentation
+# `Bar`, in `ProgressBar` — the WIDGET, distinct from the `Progress` VALUE it draws. Both words are
+# needed: `Progress` is the number on the state, `ProgressBar` is the element that renders it.
+Bar
+# `Components` — the plural, for `LiveActivityComponents`, the ready-made activities. Same reasoning as
+# `Commands`: the SET is a distinct thing from what it produces. ⚠ They are factories of ordinary public
+# elements; the moment one carries a colour or a font it is a theme engine and this word should go.
+Components
+Spacer
+Role
+Axis
 # Core resource serving, re-layered 2026-08-04 (D45). `Derived` names WHAT is cached (anything derived
 # from a source file) rather than the feature that caches it — the family shares this helper.
 Content
@@ -440,3 +722,12 @@ Safe
 Area
 Insets
 Script
+# `System` (2026-08-07) — admitted ONLY as the second half of `FileSystem`, in `FileSystemExtensions`: the
+# one-call registration for the file-update engine, so an adopter meets it the same way they meet
+# `UseMediaPlayer`. It is the platform's own word for the thing — `System.IO`,
+# `java.nio.file.FileSystem` and `Microsoft.Maui.Storage.FileSystem` all call it the file system — which is
+# the `ProfileDirectory` test: genuine mechanism vocabulary the platforms themselves use.
+# ⚠ Watch this one harder than most. As a SUFFIX, `System` is nearly contentless: a `NotificationSystem`,
+# a `PluginSystem` or a `LicensingSystem` would each be a scenario name wearing a mechanism's clothes. It
+# earns its place because "file system" is ONE noun, not a noun with `System` appended.
+System

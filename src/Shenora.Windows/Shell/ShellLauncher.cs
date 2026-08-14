@@ -1,5 +1,6 @@
 using System.Diagnostics;
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
@@ -7,9 +8,9 @@ namespace Shenora.Windows;
 /// Shell integrations: reveal in Explorer, open a folder, open a URL, launch a process.
 /// <para>
 /// Opening a URL is meaningful on ANY host, so it lives on <see cref="IUrlLauncher"/> in
-/// <c>Shenora.Core</c> and is inherited here — app logic that only opens links should depend on that
+/// <c>Shenora</c> and is inherited here — app logic that only opens links should depend on that
 /// and stay platform-neutral (D20). Revealing in a file manager and launching a process are
-/// desktop-only CONCEPTS, so they stay on this interface. <c>UseWinForms</c> registers both faces of
+/// desktop-only CONCEPTS, so they stay on this interface. <c>UseWindows</c> registers both faces of
 /// the same instance. <c>OpenUrl</c> is deliberately NOT redeclared: re-declaring an inherited member
 /// is CS0108, a build error now that warnings are errors.
 /// </para>

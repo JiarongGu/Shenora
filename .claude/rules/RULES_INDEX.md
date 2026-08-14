@@ -6,9 +6,14 @@ body out of context until it is needed is the point.
 
 Add one with `node devtools/dev.mjs knowledge new <kebab-name> [--core]`; check with `… knowledge
 check|footprint`. **This INDEX is always loaded, so every rule costs core bytes for its row** — one
-clause per row, and trim here before raising the cap — raise it only when the growth is earned, with
-the reason written next to the constant (once so far, 16→17 KB). The budget WARNS, never fails: a
-style budget must not block a release.
+clause per row, and trim here before raising the cap.
+
+⚠ **The 32 KB core budget is deliberately SLACK** (owner: *"lets do not care too much of the core
+size"*) — it exists to notice a rule base that DOUBLES, not to make you argue for a paragraph. Keep
+rows to one clause because it reads better, not to save bytes. **It WARNS, never fails**: a style
+budget must not block a release. 🔴 **Prefer a GATE or a TEST to a rule** — `phase-workflow.md` carries
+the scoring that earned it: every failure caught was caught by a mechanism, every failure that landed
+walked past a rule already describing the correct behaviour.
 
 ## Core (always loaded)
 
@@ -26,8 +31,10 @@ style budget must not block a release.
 |---|---|---|
 | [extraction-sources](../knowledge/extraction-sources.md) | extracting/porting host, IPC, window or native-service code from a sibling; deciding where a component should come from | which sibling proved which component, the gaps to FIX during the port, and the port discipline (keep the post-mortem comments) |
 | [generic-library](../knowledge/generic-library.md) | designing or changing ANY public API, naming a type/package, **deciding which package a type belongs in**, or a consumer asks for a feature | generalize the request, never ship its shape; mechanism names not scenario names; seams over flags; every public type earns its keep; the D19/D20 placement law |
-| [webview2-hosting](../knowledge/webview2-hosting.md) | changing WebView2 hosting/serving/session code, adding a resource scheme or injected script, **or touching UI-thread marshalling in ANY package** | environment thread-affinity; the ONE marshalling owner and its four invariants; the sync-bundle vs deferred-scheme split; init timeout; guarded app callbacks; CDP re-append |
-| [ipc-contracts](../knowledge/ipc-contracts.md) | touching the IPC stack on either side (`src/Shenora.Ipc/`, `WebViewIpcBridge`, `src/Shenora.React/src/`), adding a transport, or writing adoption shims | C#⇄TS wire mirror kept by tripwires; no raw exception text on any error path; never-throws dispatch; always-batched notifications; context-preserving pipeline |
-| [winforms-shell](../knowledge/winforms-shell.md) | touching any desktop primitive in `src/Shenora.Windows/` — bootstrap, frameless chrome/maximize, tray, secondary windows, single-instance, window state, clipboard | STA-or-fail; idempotent init; `UserClosing` also means a PROGRAMMATIC close; manual maximize via `IAppMaximizable`; `FormClosed` ≠ pump finished; pre-handle intent in a flag |
+| [webview2-hosting](../knowledge/webview2-hosting.md) | changing WebView2 hosting/serving/session code, adding a resource scheme or injected script, **or touching UI-thread marshalling in ANY package** | the ONE marshalling owner and its invariants; environment thread-affinity; the sync-bundle vs deferred-scheme split |
+| [ipc-contracts](../knowledge/ipc-contracts.md) | touching the IPC stack on either side (`src/Shenora/Core/Ipc/`, `WebViewIpcBridge`, `src/Shenora.React/src/`), adding a transport, or writing adoption shims | C#⇄TS wire mirror kept by tripwires; no raw exception text on any error path; never-throws dispatch; always-batched notifications; context-preserving pipeline |
+| [winforms-shell](../knowledge/winforms-shell.md) | touching any desktop primitive in `src/Shenora.Windows/` — bootstrap, frameless chrome/maximize, tray, secondary windows, single-instance, window state, clipboard | STA-or-fail; idempotent init; `UserClosing` also means a PROGRAMMATIC close; `FormClosed` ≠ pump finished |
 | [doc-claims](../knowledge/doc-claims.md) | writing prose about what the code DOES — XML comments, `ADOPTION.md`, a README | verify against the SOURCE, not the design doc; pin a surprise with a test |
-| [mobile-shells](../knowledge/mobile-shells.md) | touching the mobile shell (`src/Shenora.Mobile` → `Shenora.Android`/`.iOS`), a page shipping to more than one shell, or a device harness (`dev.mjs android\|mac`) | the C# ports for free, so the cost lands elsewhere — page written for the SUPERSET, RID matched to the target, device log filtered BEFORE tailing, the iOS Xcode/workload pairing |
+| [mobile-shells](../knowledge/mobile-shells.md) | touching the mobile shell (`src/Shenora.Mobile` → `Shenora.Android`/`.iOS`), a page shipping to more than one shell, or a device harness (`dev.mjs android\|mac`) | the C# ports for free, so the cost lands elsewhere — the PAGE, the build host, the device harness |
+| [probe-diagnostics](../knowledge/probe-diagnostics.md) | writing or debugging a sample probe, or a probe reports FAIL | a probe reading system-wide state survives other processes' failures; a diagnostic naming a bare exception reads as evidence and is worse than none |
+| [standing-habits](../knowledge/standing-habits.md) | looking for maintenance work, or about to file a recurring pass as a TASKS entry | the passes that are never "done" (audits, sweeps, re-measurements) — habits to re-run, which is why they are not backlog |

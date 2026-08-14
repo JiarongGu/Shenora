@@ -7,6 +7,7 @@ obj/
 # npm
 node_modules/
 src/Shenora.React/dist/
+src/Shenora.Cli/dist/
 *.tgz
 
 # Sample packaged frontend (built by `npm run build` in samples/Shenora.Sample.Web)
@@ -36,3 +37,11 @@ local/
 # Subagent-driven-execution scratch: per-plan ledgers, task briefs, review packages. Working state
 # for an in-flight plan, not a record — the record is the plan doc, the commits, and PROJECT_NOTES.
 .superpowers/
+
+# 🔴 Agent worktrees — a SECOND CHECKOUT of this repo, living inside it. Untracked until 2026-08-10,
+# which meant one `git add -A` would have committed a whole duplicate tree, and every prose gate walked
+# it as if it were ours: doc-drift went green → 114 failures, cite-scan 36 docs → 77, stale-scan 305
+# occurrences → 594. Each hit named a real path in the WRONG COPY, so the repo reads as suddenly rotten
+# and the obvious fix is to edit files that are about to be deleted. The scanners now skip any directory
+# that is itself a checkout; this line is the other half, so the mistake cannot be committed either.
+.claude/worktrees/

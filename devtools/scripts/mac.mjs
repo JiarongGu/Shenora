@@ -13,7 +13,17 @@
 //   node devtools/dev.mjs mac safari-eval <js…>           run JS in the page and print the VALUE
 //   node devtools/dev.mjs mac mirror [port]  live view on the LAN; click to tap, scroll to swipe
 //   node devtools/dev.mjs mac log [-n N]     the sample's own log lines from the simulator
+//   node devtools/dev.mjs mac devices        iPhones connected to the Mac
+//   node devtools/dev.mjs mac device         build, SIGN, install and launch on a real iPhone
+//   node devtools/dev.mjs mac device-log     the app's log lines from the device
+//   node devtools/dev.mjs mac provision [<bundle-id>…]  mint provisioning profiles the kit owns (see below)
+//   node devtools/dev.mjs mac profiles       what profiles this Mac has, and when they expire
 //   node devtools/dev.mjs mac awake [on|off] stop the Mac sleeping/locking while it is a build machine
+//   node devtools/dev.mjs mac put <file>     copy ONE file into the Mac clone, no commit needed
+//   node devtools/dev.mjs mac layout-check   compile the SHIPPED Live Activity decoder and run it against
+//                                            the committed golden payload (no simulator, no device, ~5 s)
+//   node devtools/dev.mjs mac island-watch   does the Dynamic Island REPAINT? counts distinct cropped
+//                                            frames, so the answer is mechanical rather than a human squint
 //   node devtools/dev.mjs mac ssh <command…> run anything on the Mac (escape hatch)
 //
 // PORTED from the public sibling Sonora's `devtools/scripts/mac.mjs`, keeping its post-mortems —
@@ -30,6 +40,7 @@
 //
 // The Mac's address, user and paths live in local/mac.json, which is gitignored — this file is public.
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -102,9 +113,88 @@ Then: node devtools/dev.mjs mac doctor`);
 }
 
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;   // single-quote for the remote shell
+/** `--name value` out of an argv tail, or undefined. */
+const flag = (args, name) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : undefined);
 
 /** Run something on the Mac. Returns {status, stdout, stderr}; `inherit` streams instead of capturing. */
+/**
+ * Run a script in the Mac's GUI LOGIN SESSION rather than over ssh, and wait for it.
+ *
+ * 🔴 This exists for exactly one reason and it is not convenience: **codesign cannot use a login-keychain
+ * key from an ssh session.** An ssh login is a different AUDIT SESSION, so any signing attempt dies with
+ * `errSecInternalComponent` — proven here 2026-08-06 by signing a copy of `/bin/echo`, which has nothing to
+ * do with this repo and failed identically. That wall is what stopped every device build; a simulator build
+ * signs ad-hoc and never meets it.
+ *
+ * The way through is to ask the GUI session to run the command: `osascript` tells Terminal.app to run a
+ * script, Terminal is already in the user's session, and the keychain opens. Ported from the sibling repo
+ * that solved this first (D15) — the technique is theirs, and the comment above is the part worth carrying.
+ *
+ * ⚠ Its output CANNOT be streamed back: the script is detached in another session, so it writes a log and an
+ * exit-code file and this polls for them. A script that never finishes leaves no `.done` and hits the
+ * timeout — which is why the timeout is generous and the log is returned either way.
+ *
+ * ⚠ The script is shipped base64-encoded. It crosses ssh's own shell, then a login shell, then AppleScript's
+ * string parser, and every one of those would otherwise eat a quote or expand a `$`.
+ */
+async function guiRun(cfg, script, { tag = 'run', timeoutMs = 20 * 60_000 } = {}) {
+  const sh = `/tmp/shenora-gui-${tag}.sh`;
+  const log = `/tmp/shenora-gui-${tag}.log`;
+  const done = `/tmp/shenora-gui-${tag}.done`;
+
+  // `exit` at the end so the Terminal window closes itself; without it they accumulate one per run.
+  const body = `#!/bin/bash\n{\n${script}\n} > ${log} 2>&1\necho $? > ${done}\nexit\n`;
+  const encoded = Buffer.from(body, 'utf8').toString('base64');
+
+  ssh(cfg, `rm -f ${done} ${log}`, { check: true });
+  ssh(cfg, `printf %s ${q(encoded)} | base64 -d > ${sh} && chmod +x ${sh}`, { check: true });
+  ssh(cfg, `osascript -e ${q(`tell application "Terminal" to do script "bash ${sh}"`)} >/dev/null`,
+    { check: true });
+
+  const started = Date.now();
+  let ticks = 0;
+  while (Date.now() - started < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const code = (ssh(cfg, `cat ${done} 2>/dev/null`).stdout ?? '').trim();
+    if (code !== '') {
+      process.stdout.write('\n');
+      return { status: Number(code), log: (ssh(cfg, `cat ${log} 2>/dev/null`).stdout ?? '') };
+    }
+    if (++ticks % 6 === 0) process.stdout.write(`  …${Math.round((Date.now() - started) / 1000)}s\n`);
+    else process.stdout.write('.');
+  }
+  return {
+    status: 1,
+    log: (ssh(cfg, `cat ${log} 2>/dev/null`).stdout ?? '') + `\n\n(timed out after ${timeoutMs / 1000}s)`,
+  };
+}
+
+/**
+ * 🔴 A REMOTE COMMAND OVER ~8 KB IS SILENTLY TRUNCATED, AND THE TRUNCATED FORM CAN EXIT 0.
+ *
+ * Measured 2026-08-10 against this Mac, bisected to the byte: a remote command string of 8185 bytes runs
+ * correctly and 8195 does not. Past the cliff the tail is simply cut off — so
+ * `printf %s '<blob>' | base64 -d > file` loses its redirection, prints the blob to stdout and **reports
+ * success**, and a slightly different length instead leaves an unbalanced quote and fails with the
+ * remote shell's `unmatched '` — an error that names quoting, in a command whose quoting is fine.
+ *
+ * That is the `| tail` trap this file already documents twice, arriving from a new direction: a harness
+ * that converts a failure into a success. So the length is CHECKED rather than written down — a rule in a
+ * doc would not have stopped the upload that found this.
+ *
+ * ⚠ Anything bigger than a shell command belongs in `scpTo`. `uploadProvisionStub` sits at ~7.3 KB, which
+ * is under the cliff and not comfortably.
+ */
+const SSH_COMMAND_LIMIT = 8192;
+
 function ssh(cfg, command, { inherit = false, check = false } = {}) {
+  const remote = `bash -lc ${q(command)}`;
+  if (Buffer.byteLength(remote) >= SSH_COMMAND_LIMIT) {
+    console.error(`mac: remote command is ${Buffer.byteLength(remote)} bytes, over the ${SSH_COMMAND_LIMIT}-byte\n`
+      + '  limit past which ssh truncates it silently (a truncated command can still exit 0 — see\n'
+      + '  SSH_COMMAND_LIMIT). Copy the payload with scpTo() instead of inlining it.');
+    process.exit(1);
+  }
   const args = [
     '-i', cfg.key,
     '-o', 'BatchMode=yes',              // never prompt: this runs unattended, and a prompt would just hang
@@ -119,7 +209,7 @@ function ssh(cfg, command, { inherit = false, check = false } = {}) {
     // every `$var` expanded by that outer shell first, against its own (empty) environment. A probe that
     // set X and used $X silently read an empty string and reported a missing file. Single quotes survive
     // both parses.
-    `bash -lc ${q(command)}`,
+    remote,
   ];
   const r = spawnSync('ssh', args, { encoding: 'utf8', stdio: inherit ? 'inherit' : 'pipe' });
   if (check && r.status !== 0) {
@@ -200,6 +290,15 @@ function closeWorker() {
 function scpFrom(cfg, remotePath, localPath) {
   return spawnSync('scp', ['-i', cfg.key, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
     `${cfg.user}@${cfg.host}:${remotePath}`, localPath], { encoding: 'utf8' });
+}
+
+/**
+ * Push a file. ⚠ Use this rather than `printf | base64 -d` for anything that is not tiny — the inline
+ * form is capped at 8 KB and fails by silently truncating the command (see `SSH_COMMAND_LIMIT`).
+ */
+function scpTo(cfg, localPath, remotePath) {
+  return spawnSync('scp', ['-i', cfg.key, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
+    localPath, `${cfg.user}@${cfg.host}:${remotePath}`], { encoding: 'utf8' });
 }
 
 // ---------------------------------------------------------------- doctor
@@ -950,8 +1049,17 @@ function activities(cfg) {
   console.log(launched || '  no launch recorded. An activity can be ACTIVE with the widget never launched — '
     + 'that is the shape of a module-name mismatch between the shim and the extension.');
 
-  console.log('\n⚠ An empty Dynamic Island on a SIMULATOR is expected: an activity there reports only a '
-    + 'lockscreen scene target, so the pill stays blank however long you wait. Use a device to see it.');
+  // 🔴 THIS LINE USED TO SAY AN EMPTY PILL WAS EXPECTED ON A SIMULATOR, AND IT HAD BEEN FALSE SINCE
+  // 2026-08-09 — the iOS 26.3 / iPhone 17 Pro simulator renders the compact Island, which is measured and
+  // in mobile-shells.md. It was true of an iOS 17-era simulator, where an activity reported only a
+  // lockscreen scene target. **A tool that tells you a real symptom is expected is worse than a tool that
+  // says nothing**: this is the command a session runs precisely when the pill looks blank, and it was
+  // handing out a reason to stop looking. Found 2026-08-10 while screenshotting the pill it says cannot
+  // be seen.
+  console.log('\n⚠ The pill only draws while the app is BACKGROUNDED, and nothing draws once the activity '
+    + 'has ENDED — a blank pill after a probe finishes looks identical to a widget that failed.');
+  console.log('  A modern simulator DOES render the compact Island (measured on iOS 26.3 / iPhone 17 Pro). '
+    + 'For a verdict rather than a squint: node devtools/dev.mjs mac island-watch');
 }
 
 const AGENT_LABEL = 'dev.shenora.caffeinate';
@@ -997,6 +1105,610 @@ function awake(cfg, mode = 'on') {
   console.log('  Sleep on BATTERY is untouched (that needs sudo); the caffeinate assertion covers it while loaded.');
 }
 
+// ---------------------------------------------------------------- provision
+//
+// Mint a provisioning profile for a bundle id, using an Xcode project THIS KIT owns.
+//
+// 🔴 Why any of this is needed: **.NET cannot mint a profile.** It consumes them —
+// `-p:CodesignProvision=Automatic` picks one that already exists and fails with "Could not find any
+// available provisioning profiles" when none does. Only `xcodebuild -allowProvisioningUpdates` creates
+// one, and it needs *an* Xcode project to point at. So without this, reaching a device at all required
+// owning an Xcode project — in a kit whose stated measure is how little native code an adopter writes.
+//
+// ⚠ The wrong fix, tried and rejected (2026-08-06): borrow a sibling app's Capacitor project. It works and
+// it is wrong three ways — slow, drags that app's SPM checkouts into an unrelated build, and makes the kit
+// depend on a consumer having Capacitor. Owner: *"why you rely on capacitor instead create your own one"*.
+//
+// ⚠ It does NOT call `push`, deliberately. A provisioning profile is state of the MACHINE, not of the
+// repo, and `push` refuses a dirty tree — so tying the two would make "I cannot sign" depend on whether
+// some unrelated edit happened to be committed. The stub is three small text files, uploaded directly.
+
+const PROVISION_FILES = ['README.md', 'ShenoraProvision/main.swift', 'ShenoraProvision.xcodeproj/project.pbxproj'];
+const PROVISION_DIR = 'shenora-provision';
+
+/** Upload the stub project, so provisioning works from any tree state. */
+function uploadProvisionStub(cfg) {
+  const local = path.join(repo, 'devtools', 'ios-provision');
+  ssh(cfg, `rm -rf ~/${PROVISION_DIR} && mkdir -p ~/${PROVISION_DIR}/ShenoraProvision ~/${PROVISION_DIR}/ShenoraProvision.xcodeproj`, { check: true });
+  for (const rel of PROVISION_FILES) {
+    const encoded = fs.readFileSync(path.join(local, rel)).toString('base64');
+    // Through base64 for the same reason guiRun encodes its script: the content crosses ssh's own shell
+    // before anything else sees it, and a pbxproj is full of quotes, braces and dollar signs.
+    ssh(cfg, `printf %s ${q(encoded)} | base64 -d > ~/${PROVISION_DIR}/${rel}`, { check: true });
+  }
+}
+
+/**
+ * The Apple Developer team, from local/mac.json or derived from the signing certificate.
+ *
+ * ⚠ Derived rather than hardcoded because a team id is a PERSONAL identifier — `sensitive-info.md` keeps
+ * those out of tracked files, and this file is public. The certificate already on the machine knows it.
+ */
+function teamId(cfg) {
+  if (cfg.team) return cfg.team;
+  const r = ssh(cfg, `set -e
+    name=$(security find-identity -v -p codesigning | head -1 | sed -n 's/.*"\\(.*\\)".*/\\1/p')
+    [ -n "$name" ] || exit 3
+    security find-certificate -c "$name" -p | openssl x509 -noout -subject | tr ',' '\\n' | sed -n 's/.*OU=//p' | head -1`);
+  const derived = (r.stdout ?? '').trim();
+  if (r.status !== 0 || !derived) {
+    console.error('mac: no codesigning identity on the Mac, so there is no team to provision against.\n'
+      + '     Sign in to Xcode → Settings → Accounts with the Apple ID that owns the device, then retry.\n'
+      + '     Or set "team" in local/mac.json if you know the id.');
+    process.exit(1);
+  }
+  return derived;
+}
+
+/**
+ * Every profile on the Mac, with the bundle id it is FOR — the only thing that proves one was minted.
+ *
+ * 🔴 <b>TWO locations, and looking in only the classic one is a trap that has already cost a session.</b>
+ * Xcode wrote profiles to `~/Library/MobileDevice/Provisioning Profiles/` for a decade; **Xcode 16 moved
+ * them to `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`**. A check against the old path on a
+ * current Xcode reports "zero provisioning profiles on disk" about a machine that has several — which reads
+ * as "provisioning has never worked here" and sends the next session off to mint profiles that already
+ * exist. Measured on Xcode 26.3, where minting put all three in the NEW path and left the old one absent.
+ */
+function installedProfiles(cfg) {
+  const r = ssh(cfg, `for dir in ~/Library/MobileDevice/Provisioning\\ Profiles ~/Library/Developer/Xcode/UserData/Provisioning\\ Profiles; do
+    [ -d "$dir" ] || continue
+    for f in "$dir"/*.mobileprovision; do
+      [ -e "$f" ] || continue
+      plist=$(security cms -D -i "$f" 2>/dev/null)
+      app=$(printf %s "$plist" | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)
+      exp=$(printf %s "$plist" | plutil -extract ExpirationDate raw - 2>/dev/null)
+      echo "$app|$exp|$dir"
+    done
+  done`);
+  return (r.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+    .map((line) => {
+      const [app, expires, dir] = line.split('|');
+      // The application-identifier is prefixed with the team id; the bundle id is what follows it.
+      return { app, bundleId: app.includes('.') ? app.slice(app.indexOf('.') + 1) : app, expires, dir };
+    });
+}
+
+async function provision(cfg, bundleIds) {
+  // The sample's two ids by default: the app, and the Live Activity extension it embeds. An extension
+  // needs its OWN profile, and forgetting the second one fails at the very end of a device install with
+  // an error that names the app.
+  const ids = bundleIds.length > 0 ? bundleIds : [cfg.bundleId, `${cfg.bundleId}.shenoraliveactivity`];
+  const team = teamId(cfg);
+  console.log(`mac: provisioning ${ids.length} bundle id(s) for team ${team}…`);
+
+  uploadProvisionStub(cfg);
+
+  const failures = [];
+  for (const id of ids) {
+    console.log(`\nmac: ${id}`);
+    // 🔴 Through guiRun, NOT ssh, and this is the whole reason guiRun exists: codesign cannot use a
+    // login-keychain key from an ssh session (errSecInternalComponent — proven on a copy of /bin/echo, so
+    // it is nothing to do with this repo). Xcode's stored Apple ID session has the same problem. The GUI
+    // login session has both.
+    const script = `set -o pipefail
+cd ~/${PROVISION_DIR}
+xcodebuild -project ShenoraProvision.xcodeproj -target ShenoraProvision \\
+  -sdk iphoneos -configuration Debug -allowProvisioningUpdates \\
+  SYMROOT=~/${PROVISION_DIR}/build OBJROOT=~/${PROVISION_DIR}/build/obj \\
+  PRODUCT_BUNDLE_IDENTIFIER=${q(id)} DEVELOPMENT_TEAM=${q(team)} CODE_SIGN_STYLE=Automatic 2>&1 | tail -40`;
+    const { status, log } = await guiRun(cfg, script, { tag: `provision`, timeoutMs: 10 * 60_000 });
+    if (status !== 0) {
+      failures.push(id);
+      console.log(log.split('\n').slice(-20).join('\n'));
+    } else {
+      console.log('  minted ok');
+    }
+  }
+
+  // Report what is actually ON DISK rather than what xcodebuild said. A build can succeed against a
+  // profile it already had, so "exit 0" does not mean a profile now exists for the id that was asked for.
+  const profiles = installedProfiles(cfg);
+  console.log('\nmac: provisioning profiles now on the Mac:');
+  if (profiles.length === 0) console.log('  (none)');
+  for (const p of profiles) console.log(`  ${p.bundleId}   expires ${p.expires ?? '?'}`);
+
+  const missing = ids.filter((id) => !profiles.some((p) => p.bundleId === id));
+  if (missing.length > 0) {
+    console.error(`\nmac: NO PROFILE for: ${missing.join(', ')}`);
+    console.error('  If xcodebuild asked to sign in, do it once in Xcode on the Mac and re-run.');
+    process.exit(1);
+  }
+
+  console.log('\nmac: all requested ids have a profile.');
+  console.log('  ⚠ A free / personal-team profile expires after 7 DAYS — re-run this when signing starts failing.');
+  console.log('  ⚠ A FIRST install also needs the certificate trusted ON THE PHONE:');
+  console.log('    Settings → General → VPN & Device Management → the developer account → Trust.');
+  if (failures.length > 0) console.log(`  (xcodebuild reported failures for ${failures.join(', ')}, but the profiles exist.)`);
+}
+
+// ---------------------------------------------------------------- device
+//
+// Build, install and launch on a REAL iPhone — the peer of `dev.mjs android`, and the half the kit was
+// missing entirely. Everything above this line is the SIMULATOR loop; a simulator cannot answer whether a
+// Dynamic Island renders, whether a hardware decoder exists, or whether the app signs.
+//
+// The split that makes it work, and it is not obvious:
+//   · BUILDING needs the login keychain, so it goes through `guiRun` (an ssh session is a different audit
+//     session and codesign dies with errSecInternalComponent — proven on a copy of /bin/echo).
+//   · INSTALLING and LAUNCHING need no keychain at all, so plain ssh + `xcrun devicectl` is enough.
+// Getting that backwards is what makes people reach for a GUI on the Mac.
+
+/**
+ * Connected devices, from devicectl's own JSON rather than its column layout.
+ *
+ * 🔴 <b>An unreachable MAC must not report as "no devices".</b> This returned <c>[]</c> for any failure,
+ * so when the Mac's mDNS name stopped resolving the harness said "no iPhone connected to the Mac" — and
+ * sent two people to check a phone that was fine, over the LAN, the whole time. It is the same defect
+ * `CodecProbe` had (a failed query indistinguishable from a negative result), committed again in the same
+ * session, which is why it is worth the comment: **the two states are not the same answer and must never
+ * print the same sentence.**
+ */
+function devices(cfg) {
+  const r = ssh(cfg, `f=$(mktemp) && xcrun devicectl list devices --json-output "$f" >/dev/null 2>&1 && cat "$f" && rm -f "$f"`);
+  const failure = (r.stderr ?? '') + (r.stdout ?? '');
+  if (/Could not resolve hostname|Connection refused|Operation timed out|No route to host|Connection closed/i.test(failure)) {
+    console.error(`mac: CANNOT REACH THE MAC (${cfg.host}) — this is not a statement about the phone.\n`
+      + `  ${failure.trim().split('\n')[0]}\n`
+      + '  Wake it, check the LAN, or set "host" to its IP in local/mac.json if mDNS is flapping.');
+    process.exit(1);
+  }
+  if (r.status !== 0 || !(r.stdout ?? '').trim()) return [];
+  try {
+    const parsed = JSON.parse(r.stdout);
+    return (parsed?.result?.devices ?? []).map((d) => ({
+      id: d?.identifier,
+      name: d?.deviceProperties?.name ?? '(unnamed)',
+      model: d?.hardwareProperties?.marketingName ?? d?.hardwareProperties?.productType ?? '?',
+      os: d?.deviceProperties?.osVersionNumber ?? '?',
+      state: d?.connectionProperties?.pairingState ?? '?',
+      available: (d?.connectionProperties?.tunnelState ?? '') !== 'unavailable',
+    })).filter((d) => d.id);
+  } catch { return []; }
+}
+
+/**
+ * Pick the device to work with.
+ * ⚠ Refuses when several are connected rather than guessing. `dev.mjs android` already learned this the
+ * expensive way: with two targets attached an unqualified command silently picked the wrong one and a whole
+ * deploy/launch/log cycle was read as the other device's.
+ */
+function pickDevice(cfg, wanted) {
+  const found = devices(cfg).filter((d) => d.available);
+  if (found.length === 0) {
+    console.error('mac: no iPhone connected to the Mac.\n'
+      + '  Plug it in (or pair over Wi-Fi), unlock it, and trust the computer if asked.\n'
+      + '  Check with: node devtools/dev.mjs mac devices');
+    process.exit(1);
+  }
+  if (wanted) {
+    const match = found.find((d) => d.id === wanted || d.name === wanted);
+    if (!match) {
+      console.error(`mac: no connected device matches ${wanted}. Connected: ${found.map((d) => d.name).join(', ')}`);
+      process.exit(1);
+    }
+    return match;
+  }
+  if (found.length > 1) {
+    console.error(`mac: ${found.length} devices connected — name one with --device <name|id>:`);
+    for (const d of found) console.error(`  ${d.name}  (${d.model}, iOS ${d.os})  ${d.id}`);
+    process.exit(1);
+  }
+  return found[0];
+}
+
+/**
+ * Is every embedded app EXTENSION actually installable-and-launchable on a device?
+ *
+ * 🔴 **This exists because the Dynamic Island rendered an empty black capsule for a whole release band and
+ * nothing anywhere said why** (2026-08-07). ActivityKit reported success at every step — the activity
+ * started, took three updates and returned an id — the system reserved Island space for it, and the widget
+ * simply never rendered. The cause was that the `.appex` was signed with **no entitlements and no
+ * `embedded.mobileprovision`**, so iOS would not launch the extension process. Apple's rule is explicit:
+ * an extension is provisioned separately from its container and needs its own profile at
+ * `…app/PlugIns/NAME.appex/embedded.mobileprovision`, and an extension missing required entitlements is
+ * not launched.
+ *
+ * ⚠ **A SIMULATOR CANNOT CATCH THIS AND NEVER WILL** — it does not enforce code signing, so the extension
+ * loads there regardless. That is the 0.9.0 lesson repeated exactly: the one configuration that was ever
+ * exercised was the one that worked. This check is the device-shaped half, and it needs no device: it reads
+ * the BUILD OUTPUT, so it runs in seconds on the Mac and fails before anything is installed.
+ *
+ * It asserts what the OS asserts, in the OS's own terms — never "did the build step run".
+ */
+function checkAppExtensions(cfg, app) {
+  const plugins = `${app}/PlugIns`;
+  const listing = ssh(cfg, `ls -1 ${q(plugins)} 2>/dev/null | grep '\\.appex$' || true`);
+  const found = (listing.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (found.length === 0) return { ok: true, checked: 0, problems: [] };
+
+  const problems = [];
+  for (const name of found) {
+    const appex = `${plugins}/${name}`;
+    const plist = `${appex}/Info.plist`;
+    const r = ssh(cfg, `set -e
+      id=$(plutil -extract CFBundleIdentifier raw ${q(plist)} 2>/dev/null || echo '')
+      ents=$(codesign -d --entitlements - ${q(appex)} 2>/dev/null | tr -d '\\0' || true)
+      appid=$(printf %s "$ents" | grep -A2 'application-identifier' | grep -o '[A-Z0-9]\\{10\\}\\.[A-Za-z0-9._-]*' | head -1)
+      prof=no; [ -f ${q(`${appex}/embedded.mobileprovision`)} ] && prof=yes
+      echo "id=$id"; echo "appid=$appid"; echo "profile=$prof"
+      for k in CFBundleSupportedPlatforms DTPlatformName DTSDKName UIDeviceFamily; do
+        v=$(plutil -extract $k xml1 -o - ${q(plist)} 2>/dev/null | grep -c '<' || echo 0)
+        echo "key_$k=$v"
+      done`);
+
+    const read = (key) => ((r.stdout ?? '').match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').trim();
+    const bundleId = read('id');
+    const appId = read('appid');
+    const hasProfile = read('profile') === 'yes';
+
+    // An extension is provisioned SEPARATELY from its container; the container's profile does not cover it.
+    if (!hasProfile) problems.push(`${name}: no embedded.mobileprovision — iOS will not launch it on a device`);
+    if (!appId) problems.push(`${name}: signed with NO entitlements — an extension without application-identifier is not launched`);
+    // A prefix mismatch is the other half of the same rule, and it is what the installer rejects outright.
+    else if (bundleId && !appId.endsWith(`.${bundleId}`)) {
+      problems.push(`${name}: entitlement application-identifier "${appId}" does not match CFBundleIdentifier "${bundleId}"`);
+    }
+
+    // 🔴 The PLATFORM keys. Xcode writes these into everything it builds, so nobody building extensions the
+    // normal way learns they exist — and a hand-written Info.plist that omits them yields an .appex that
+    // installs, signs, validates, and is then NEVER REGISTERED as an extension. Every layer reports success
+    // and the widget simply never loads, which is the hardest shape of failure there is.
+    for (const key of ['CFBundleSupportedPlatforms', 'DTPlatformName', 'DTSDKName', 'UIDeviceFamily']) {
+      if (read(`key_${key}`) === '0') {
+        problems.push(`${name}: Info.plist has no ${key} — the system will not register it as an extension`);
+      }
+    }
+  }
+
+  return { ok: problems.length === 0, checked: found.length, problems };
+}
+
+/** The built .app, found rather than composed — the MAUI output layout has moved between SDK versions. */
+function findApp(cfg, rid) {
+  const sampleDir = cfg.project.replace(/\/[^/]+\.csproj$/, '');
+  const r = ssh(cfg, `find ~/${cfg.work}/${sampleDir}/bin/Debug/${cfg.tfm}/${rid} -maxdepth 2 -name '*.app' -type d 2>/dev/null | head -1`);
+  return (r.stdout ?? '').trim();
+}
+
+async function device(cfg, args) {
+  const wanted = args.includes('--device') ? args[args.indexOf('--device') + 1] : null;
+  const target = pickDevice(cfg, wanted);
+  console.log(`mac: target — ${target.name} (${target.model}, iOS ${target.os})`);
+
+  // A profile must exist BEFORE the build, or the failure arrives 90 seconds later wearing a signing
+  // error that reads like a certificate problem.
+  const profiles = installedProfiles(cfg);
+  const missing = [cfg.bundleId].filter((id) => !profiles.some((p) => p.bundleId === id));
+  if (missing.length > 0) {
+    console.error(`mac: no provisioning profile for ${missing.join(', ')}.\n`
+      + '  Run: node devtools/dev.mjs mac provision');
+    process.exit(1);
+  }
+  const expiring = profiles.filter((p) => p.bundleId.startsWith(cfg.bundleId) && Date.parse(p.expires) - Date.now() < 24 * 3600_000);
+  for (const p of expiring) console.log(`mac: ⚠ ${p.bundleId} expires ${p.expires} — re-run \`mac provision\` soon.`);
+
+  if (!args.includes('--no-push')) push(cfg);
+  fs.mkdirSync(OUT, { recursive: true });
+  buildClientPackage(cfg);
+
+  const rid = 'ios-arm64';
+  const skipXcode = cfg.skipXcodeVersionCheck ? ' -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly' : '';
+  if (skipXcode) {
+    console.log('mac: ⚠ skipXcodeVersionCheck is on, and on a DEVICE build that matters more than on a\n'
+      + '     simulator one: full trimming is off and the Xcode/workload pair is mismatched. Fine for a\n'
+      + '     dev loop and a measurement; NOT a shipping configuration.');
+  }
+
+  // 🔴 Through guiRun, because this is the step that SIGNS. An ssh session cannot use a login-keychain key.
+  console.log(`\nmac: dotnet build ${cfg.tfm} (${rid}), signing in the GUI session…`);
+  const build = await guiRun(cfg, `set -o pipefail
+cd ~/${cfg.work}
+dotnet build ${q(cfg.project)} -c Debug -f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${skipXcode} \\
+  -p:CodesignProvision=Automatic -p:CodesignKey=${q('Apple Development')} 2>&1 | tail -60`,
+    { tag: 'device-build', timeoutMs: 30 * 60_000 });
+
+  fs.writeFileSync(path.join(OUT, 'device-build.log'), build.log);
+  if (build.status !== 0) {
+    console.error(build.log.split('\n').slice(-30).join('\n'));
+    console.error('\nmac: DEVICE BUILD FAILED — full output: devtools/_mac/device-build.log');
+    process.exit(build.status || 1);
+  }
+  console.log('mac: build + sign ok');
+
+  const app = findApp(cfg, rid);
+  if (!app) {
+    console.error(`mac: the build succeeded but no .app was found under bin/Debug/${cfg.tfm}/${rid}.`);
+    process.exit(1);
+  }
+  console.log(`mac: ${app.replace(/^.*\//, '')}`);
+
+  // Before installing, not after: an extension that cannot launch installs perfectly happily and then does
+  // nothing, which is the hardest possible thing to notice.
+  const extensions = checkAppExtensions(cfg, app);
+  if (extensions.checked > 0 && extensions.ok) {
+    console.log(`mac: app extensions ok (${extensions.checked}) — entitlements + embedded profile present`);
+  }
+  if (!extensions.ok) {
+    console.error('\nmac: APP EXTENSION NOT DEVICE-LAUNCHABLE:');
+    for (const problem of extensions.problems) console.error(`  ${problem}`);
+    console.error('\n  The app will install and run, and the extension will silently do NOTHING — a Live\n'
+      + '  Activity shows as an empty black capsule while every ActivityKit call reports success.\n'
+      + '  A simulator cannot catch this: it does not enforce code signing.');
+    process.exit(1);
+  }
+
+  // Install and launch need NO keychain, so they go over plain ssh — much faster and easier to read.
+  //
+  // 🔴 `set -o pipefail` on BOTH, and it is not decoration. Without it a pipeline reports TAIL's exit
+  // status, which is always 0 — so a failed install sails through, the launch is attempted against an app
+  // that was never installed, and the command finishes by printing "running on the device". Measured on
+  // the first real device run, which reported success while the install had been REJECTED. This file
+  // already documents the identical trap on the build step; it was reintroduced here the same day.
+  console.log('\nmac: installing…');
+  const install = ssh(cfg, `set -o pipefail; xcrun devicectl device install app --device ${q(target.id)} ${q(app)} 2>&1 | tail -20`);
+  console.log((install.stdout ?? '').trim());
+  if (install.status !== 0) {
+    console.error('\nmac: INSTALL FAILED.');
+    console.error('  If it says the app could not be verified, the certificate is not TRUSTED on the phone yet:');
+    console.error('  Settings → General → VPN & Device Management → the developer account → Trust.');
+    process.exit(install.status ?? 1);
+  }
+
+  console.log('\nmac: launching…');
+  const launch = ssh(cfg, `set -o pipefail; xcrun devicectl device process launch --device ${q(target.id)} ${q(cfg.bundleId)} 2>&1 | tail -20`);
+  console.log((launch.stdout ?? '').trim());
+  if (launch.status !== 0) { console.error('\nmac: LAUNCH FAILED.'); process.exit(launch.status ?? 1); }
+
+  console.log('\nmac: running on the device. Logs: node devtools/dev.mjs mac device-log');
+}
+
+/**
+ * The app's own log lines, from the DEVICE.
+ * ⚠ Filtered at the source, not tailed and grepped here. `android.mjs` already records why: an unfiltered
+ * device log is a firehose that rotates the interesting lines out while you are reading them.
+ */
+/**
+ * Read the app's own log off the device by RELAUNCHING it with a console attached.
+ *
+ * ⚠ It relaunches, and that is deliberate rather than a compromise: this repo's probes run at STARTUP, so
+ * a reader that attached to an already-running app would miss everything it came for.
+ *
+ * ⚠⚠ THIS FUNCTION WAS BROKEN AND SAID NOTHING (fixed 2026-08-07). It called
+ * `devicectl device console`, which is not a subcommand on any Xcode — `devicectl device` offers copy,
+ * info, install, notification, orientation, process, reboot, sysdiagnose, uninstall and nothing else. The
+ * invocation piped through `2>/dev/null | head`, so the error text was discarded AND the exit status became
+ * head's, which is always 0. The tool printed nothing, reported success, and the fallback advice below its
+ * status check could never fire. **That is the exact trap `.claude/knowledge/mobile-shells.md` records for
+ * `mac device` — the same mistake, in a sibling function, surviving the write-up of the first one.**
+ * `set -o pipefail` is now on, as it is on the launch path.
+ */
+function deviceLog(cfg, count, wanted) {
+  const target = pickDevice(cfg, wanted);
+  const lines = Number(count) || 200;
+  console.log(`mac: relaunching ${cfg.bundleId} with a console attached (startup output is the point)…`);
+  const r = ssh(cfg,
+    `set -o pipefail; xcrun devicectl device process launch --console --terminate-existing `
+    + `--device ${q(target.id)} ${q(cfg.bundleId)} 2>&1 | head -${lines}`,
+    { inherit: true });
+  // head closing the pipe kills the stream, which is how this returns at all — so SIGPIPE (141) is the
+  // expected success path, not a failure.
+  if (r.status !== 0 && r.status !== 141) {
+    console.log('\nmac: could not attach a console. Check the app is installed (`mac device`), or read it\n'
+      + '     on the Mac with Console.app filtered to the device.');
+  }
+}
+
+// ---------------------------------------------------------------- island-watch
+//
+// 🔴 DOES THE DYNAMIC ISLAND ACTUALLY REPAINT? A MECHANICAL ANSWER, so nobody has to look.
+//
+// Every previous attempt at this question ended in a human squinting at a screenshot — `mac.mjs`'s own
+// header says "copy the PNG back and LOOK at it" — and that is how a whole session was spent handing the
+// owner a build and asking what the pill said. A session that cannot tell its own success from its own
+// failure starts inventing: the `staleDate` premise in `TASKS.md` was promoted to a measured fact exactly
+// that way, and the owner caught it twice.
+//
+// So: sample the pill N times, crop it, and count DISTINCT frames. More than one = it repainted. Exactly
+// one = it is frozen. No judgement, no eye, and a saved PNG per sample so the crop can be confirmed once.
+//
+// ⚠ THE CROP MUST EXCLUDE THE CLOCK AND THE BATTERY, and that is the whole reason it is a fixed rect
+// rather than the top strip: the clock changes every minute, so a crop containing it reports "repainted"
+// for a pill that never moved — a false PASS on the exact question being asked. The window between them
+// was measured off a 1206×2622 screenshot (iPhone 17 Pro): the clock ends near x=230 and the Wi-Fi glyph
+// starts near x=940, so the pill's span (x≈327…905) sits comfortably inside 300…930.
+const ISLAND_CROP = {
+  // `sips -c H W --cropOffset Y X` — height and width first, which is the opposite of every other tool
+  // here and is worth stating rather than rediscovering.
+  device: 'iPhone 17 Pro', width: 1206, height: 2622,
+  x: 300, y: 40, w: 630, h: 110,
+};
+
+/**
+ * The verdict, as a pure function of the frame hashes — separated so it can be exercised on Windows with
+ * `mac island-watch --replay <dir>` rather than only against a live simulator.
+ *
+ * 🔴 THIS RESTS ON `simctl` + `sips` BEING BYTE-DETERMINISTIC, and that is measured rather than assumed:
+ * two independent capture-and-crop runs over an unchanging pill produced the SAME sha256. If the encoder
+ * varied, every frame would differ and the tool would report REPAINTED for a pill that never moved —
+ * the dangerous direction, since that is the answer this question wants to hear.
+ */
+function islandVerdict(hashes) {
+  const distinct = [...new Set(hashes)];
+  return { distinct: distinct.length, frozen: distinct.length === 1, frames: hashes.length };
+}
+
+/** The ONE booted simulator, by UDID. Refuses to guess when two are up. */
+function bootedSimulator(cfg) {
+  const out = ssh(cfg, 'xcrun simctl list devices booted -j').stdout ?? '';
+  let devices = [];
+  try {
+    devices = Object.values(JSON.parse(out).devices ?? {}).flat();
+  } catch { /* fall through to the refusal below */ }
+  if (devices.length === 1) return devices[0];
+  // ⚠ `booted` IS AMBIGUOUS the moment two simulators are up, and it fails SILENTLY: a screenshot and an
+  // action can resolve to DIFFERENT devices, so the capture looks untouched by something that reported
+  // success. Recorded in mobile-shells.md, and this is the tool that would be worst hit by it.
+  console.error(devices.length === 0
+    ? 'mac: no simulator is booted — `mac run` first.'
+    : `mac: ${devices.length} simulators are booted, so "booted" resolves unpredictably. `
+      + `Shut the spares down:\n${devices.map((d) => `  xcrun simctl shutdown ${d.udid}   # ${d.name}`).join('\n')}`);
+  process.exit(1);
+}
+
+async function islandWatch(cfg, args) {
+  const count = Number(flag(args, '--count')) || 4;
+  const interval = Number(flag(args, '--interval')) || 5;
+  const label = flag(args, '--label') ?? 'island';
+  const replay = flag(args, '--replay');
+  const dir = path.join(OUT, `island-${label}`);
+
+  if (!replay) {
+    const device = bootedSimulator(cfg);
+    if (device.name !== ISLAND_CROP.device) {
+      console.log(`mac: ⚠ the crop rect was measured on an ${ISLAND_CROP.device}; this is a ${device.name}.\n`
+        + '     Check the first saved frame before trusting the verdict.');
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    const { x, y, w, h } = ISLAND_CROP;
+    console.log(`mac: ${count} frames, ${interval}s apart, cropped to ${w}×${h} at (${x},${y}) on ${device.name}`);
+    for (let i = 0; i < count; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, interval * 1000));
+      // Explicit UDID on BOTH simctl calls, and the size is asserted: a device whose screenshot is not
+      // the size the rect was measured on would be cropped somewhere meaningless, and a wrong crop of a
+      // frozen pill and a wrong crop of a live one look identical (both "1 distinct frame").
+      const r = ssh(cfg, `set -e
+        xcrun simctl io ${q(device.udid)} screenshot /tmp/shenora-island.png >/dev/null 2>&1
+        SIZE=$(sips -g pixelWidth -g pixelHeight /tmp/shenora-island.png | awk '/pixel/{printf "%s ", $2}')
+        echo "size: $SIZE"
+        sips -c ${h} ${w} --cropOffset ${y} ${x} /tmp/shenora-island.png --out /tmp/shenora-island-crop.png >/dev/null`);
+      if (r.status !== 0) { console.error(`mac: frame ${i} failed\n${r.stderr ?? ''}`); process.exit(1); }
+      const size = (r.stdout ?? '').match(/size: (\d+) (\d+)/);
+      if (!size || Number(size[1]) !== ISLAND_CROP.width || Number(size[2]) !== ISLAND_CROP.height) {
+        console.error(`mac: screenshot is ${size ? `${size[1]}×${size[2]}` : 'an unknown size'}, not `
+          + `${ISLAND_CROP.width}×${ISLAND_CROP.height}. The crop rect is measured in the NATIVE pixels of `
+          + 'that screen, so it would land somewhere meaningless here — and a wrong crop reads exactly '
+          + 'like a frozen pill. Re-measure ISLAND_CROP for this device before using the verdict.');
+        process.exit(1);
+      }
+      const copy = scpFrom(cfg, '/tmp/shenora-island-crop.png', path.join(dir, `${i}.png`));
+      if (copy.status !== 0) { console.error(`mac: frame ${i} copy failed\n${copy.stderr}`); process.exit(1); }
+      process.stdout.write(`  frame ${i}\n`);
+    }
+  }
+
+  const from = replay ? path.resolve(repo, replay) : dir;
+  const files = fs.readdirSync(from).filter((f) => f.endsWith('.png')).sort();
+  const hashes = files.map((f) =>
+    createHash('sha256').update(fs.readFileSync(path.join(from, f))).digest('hex').slice(0, 12));
+  for (const [i, f] of files.entries()) console.log(`  ${f}  ${hashes[i]}`);
+
+  const verdict = islandVerdict(hashes);
+  console.log(verdict.frozen
+    ? `\nmac: FROZEN — ${verdict.frames} frames, 1 distinct image. The pill did not change.`
+    : `\nmac: REPAINTED — ${verdict.frames} frames, ${verdict.distinct} distinct images.`);
+  // ⚠ FROZEN is the weaker of the two answers and must say so. REPAINTED cannot be produced by a broken
+  // harness (a wrong crop of a static region yields ONE image, not several), but FROZEN is exactly what a
+  // mis-aimed crop, a dismissed activity or a sample window shorter than the update cadence all look
+  // like. Confirm those before reporting it as a finding.
+  if (verdict.frozen) {
+    console.log(`  ⚠ Before calling that a finding: LOOK at ${path.relative(repo, from)}/0.png and confirm it\n`
+      + '    is the pill; check the activity is still running (`mac activity`, and an update to an ENDED\n'
+      + '    activity is silently ignored); confirm the sampling window outlasts the update cadence; and\n'
+      + "    check the system AUDIO INDICATOR has not taken the trailing region — once the sample's media\n"
+      + '    probes start, that glyph replaces the value and the pill is genuinely static from then on.');
+  }
+  return verdict;
+}
+
+// ---------------------------------------------------------------- the layout golden check
+//
+// 🔴 THE OTHER HALF OF `LiveActivityGoldenTests`, AND THE ONLY THING IN THIS REPO THAT COMPILES SWIFT AS A
+// TEST. Before this, the C#⇄Swift layout wire was guarded entirely by TEXT assertions — nine tests that
+// read the Swift as a string and check the two sides LOOK like they agree. Both defects the wire has ever
+// had were pure DATA bugs that passed every one of them (a stub `encode(to:)`; enums crossing as NUMBERS)
+// and were found by eye on a phone, because a phone reports "wrong picture" and not which leg dropped it.
+//
+// ⚠ IT NEEDS NO SIMULATOR, NO DEVICE AND NO SDK — just swiftc, because `ShenoraLayoutWire.swift` imports
+// nothing. That is why the wire types were split out of `ShenoraLayout.swift`; keep it that way.
+//
+// ⚠ CI IS windows-latest + ubuntu-latest. There is no macOS runner, so this gates only when a human runs
+// it. Say so when reporting coverage of this wire: the C# half runs on every push, this one does not.
+const LAYOUT_CHECK_DIR = 'shenora-layout-check';
+
+/** The files this check needs, and the name each takes on the Mac. */
+const LAYOUT_CHECK_FILES = [
+  ['src/Shenora.iOS/buildTransitive/swift/ShenoraLayoutWire.swift', 'ShenoraLayoutWire.swift'],
+  // ⚠ RENAMED on the way over. swiftc only accepts top-level code in a file called `main.swift`; anything
+  // else needs `-parse-as-library` and an `@main` type, which is ceremony for a 100-line check. The repo
+  // keeps the descriptive name because `main.swift` in devtools/swift/ would say nothing.
+  ['devtools/swift/layout-golden-check.swift', 'main.swift'],
+  ['tests/Shenora.Tests/Api/Goldens/live-activity.json', 'live-activity.json'],
+  ['tests/Shenora.Tests/Api/Goldens/live-activity.tree.txt', 'live-activity.tree.txt'],
+];
+
+function layoutCheck(cfg) {
+  // ⚠ Uploaded directly rather than through `mac push`, for the reason `provision` records: push refuses a
+  // dirty tree and force-resets the Mac's clone, so tying a four-file check to it would make "is my wire
+  // correct?" depend on whether some unrelated edit happened to be committed. This check is most wanted
+  // exactly while the wire is being changed.
+  ssh(cfg, `rm -rf ~/${LAYOUT_CHECK_DIR} && mkdir -p ~/${LAYOUT_CHECK_DIR}`, { check: true });
+  for (const [rel, name] of LAYOUT_CHECK_FILES) {
+    const local = path.join(repo, ...rel.split('/'));
+    if (!fs.existsSync(local)) {
+      console.error(`mac: ${rel} is missing. The goldens are written by the C# suite — run\n`
+        + '  SHENORA_UPDATE_GOLDEN=1 node devtools/dev.mjs test\n'
+        + 'and READ THE DIFF before committing them.');
+      process.exit(1);
+    }
+    // ⚠ scp, NOT the `printf | base64 -d` form `uploadProvisionStub` uses. That form was written here
+    // first and it does not survive these files: a remote command over 8 KB is truncated silently, and
+    // the wire Swift alone is 9.9 KB base64-encoded. See `SSH_COMMAND_LIMIT` for the measurement.
+    const copy = scpTo(cfg, local, `${LAYOUT_CHECK_DIR}/${name}`);
+    if (copy.status !== 0) {
+      console.error(`mac: could not copy ${rel}\n${copy.stderr ?? ''}`);
+      process.exit(1);
+    }
+  }
+
+  console.log('mac: compiling the shipped Live Activity decoder (swiftc, host target)…');
+  // `set -o pipefail` and NO pipe through head/tail — this file's own history records twice that piping a
+  // tool through either converts every failure into a success.
+  const r = ssh(cfg,
+    `set -o pipefail; cd ~/${LAYOUT_CHECK_DIR} && `
+    + 'xcrun swiftc -o layout-golden-check ShenoraLayoutWire.swift main.swift && '
+    + './layout-golden-check live-activity.json live-activity.tree.txt',
+    { inherit: true });
+
+  if (r.status !== 0) {
+    console.error('\nmac: layout-check FAILED (exit ' + r.status + ').\n'
+      + '  A COMPILE error is the wire file having grown an import or a syntax error; a FAIL: line is the\n'
+      + '  decoder disagreeing with what C# says it sent, and the line it names is the node.');
+    process.exit(r.status ?? 1);
+  }
+}
+
 // ---------------------------------------------------------------- dispatch
 const [cmd, ...rest] = process.argv.slice(2);
 const cfg = cmd ? config() : null;
@@ -1023,10 +1735,100 @@ switch (cmd) {
     break;
   }
   case 'activity': activities(cfg); break;
+  case 'device': await device(cfg, rest); break;
+  case 'appex-check': {
+    // Standalone so the check can be run against an EXISTING build without rebuilding or installing.
+    const built = findApp(cfg, 'ios-arm64');
+    if (!built) { console.error('mac: no ios-arm64 .app built yet — run `mac device` first.'); process.exit(1); }
+    const result = checkAppExtensions(cfg, built);
+    if (result.checked === 0) { console.log('mac: no app extensions embedded.'); break; }
+    for (const problem of result.problems) console.error(`  ${problem}`);
+    console.log(result.ok
+      ? `mac: app extensions ok (${result.checked}) — entitlements + embedded profile present`
+      : `mac: ${result.problems.length} problem(s) — the extension will NOT launch on a device`);
+    if (!result.ok) process.exit(1);
+    break;
+  }
+  case 'devices': {
+    // ⚠ PRINT AVAILABILITY, not just pairing. This listing showed `pairingState` ("paired") while
+    // `pickDevice` filters on `tunnelState` — so a phone that was paired but not currently reachable
+    // listed as if it were ready, `mac device` failed with "no iPhone connected", and that error told you
+    // to check with THIS command, which said everything was fine. A diagnostic that contradicts the thing
+    // it diagnoses is worse than none. Hit live 2026-08-07.
+    const found = devices(cfg);
+    if (found.length === 0) console.log('mac: no devices known to this Mac.');
+    for (const d of found) {
+      const status = d.available ? 'READY' : 'NOT CONNECTED';
+      console.log(`${d.name}  (${d.model}, iOS ${d.os})  ${d.state}/${status}  ${d.id}`);
+    }
+    if (found.length > 0 && !found.some((d) => d.available)) {
+      console.log('\nmac: every device above is PAIRED but none is connected — `mac device` will refuse.\n'
+        + '  Plug it in (or bring it onto the same network for Wi-Fi pairing), unlock it, and keep it awake.');
+    }
+    break;
+  }
+  case 'device-log': {
+    const i = rest.indexOf('-n');
+    deviceLog(cfg, i >= 0 ? rest[i + 1] : 200,
+      rest.includes('--device') ? rest[rest.indexOf('--device') + 1] : null);
+    break;
+  }
+  case 'provision': await provision(cfg, rest.filter((a) => !a.startsWith('-'))); break;
+  case 'gui': {
+    // Run an ARBITRARY command in the Mac's GUI login session, which is the only place codesign can
+    // reach the login keychain. `guiRun` already existed but only ever ran this file's own hardcoded
+    // scripts — so anything else that needs signing (notably `@shenora/cli`'s own device path, D67) had
+    // no way to be exercised from here at all, and "cannot be tested" was being read as "does not work".
+    // ⚠ The command is base64-encoded on the way over, so quoting survives ssh + a login shell +
+    // AppleScript's string parser. That is worth knowing independently: those three layers between here
+    // and the Mac eat quotes, `$` and `|`, which makes any inline pipeline unreliable.
+    const command = rest.join(' ').trim();
+    if (!command) {
+      console.error('mac: gui needs a command, e.g. `mac gui "cd ~/Shenora && npx shenora ios deploy"`.');
+      process.exit(1);
+    }
+    console.log(`mac: running in the GUI session — ${command}`);
+    const result = await guiRun(cfg, `cd ~/${cfg.repoDir ?? 'Shenora'} 2>/dev/null || true\n${command}`,
+      { tag: 'gui', timeoutMs: 30 * 60_000 });
+    process.stdout.write(result.log);
+    if (result.status !== 0) process.exit(result.status);
+    break;
+  }
+  case 'profiles': {
+    const found = installedProfiles(cfg);
+    if (found.length === 0) console.log('mac: no provisioning profiles on this Mac — run `mac provision`.');
+    for (const p of found) console.log(`${p.bundleId}   expires ${p.expires ?? '?'}`);
+    break;
+  }
   case 'awake': awake(cfg, rest[0]); break;
+  case 'put': {
+    // ⚠ ONE FILE INTO THE MAC'S CLONE, WITHOUT A COMMIT — the loop `mobile-shells.md` documents and every
+    // session so far has hand-rolled with a raw scp. `push` refuses a dirty tree AND force-resets the
+    // clone, so using it to test an edit means committing the edit first; that tax was a habit, not a
+    // rule, and it is what makes an iOS round trip feel expensive.
+    // ⚠ The Mac's copy is now DIFFERENT from any commit — say so, because a result read off it while
+    // believing it came from HEAD is the "never diagnose a Mac build without checking what it built"
+    // trap in a new coat.
+    const local = rest[0];
+    if (!local) { console.error('mac: put needs a path, e.g. `mac put src/Shenora.iOS/…/File.swift`'); process.exit(1); }
+    const abs = path.resolve(repo, local);
+    if (!fs.existsSync(abs)) { console.error(`mac: ${local} does not exist here.`); process.exit(1); }
+    const remote = rest[1] ?? `${cfg.work}/${path.relative(repo, abs).split(path.sep).join('/')}`;
+    const r = scpTo(cfg, abs, remote);
+    if (r.status !== 0) { console.error(`mac: put failed\n${r.stderr ?? ''}`); process.exit(1); }
+    console.log(`mac: ~/${remote}  ⚠ the Mac's clone no longer matches any commit — \`mac push\` restores it.`);
+    break;
+  }
+  case 'layout-check': layoutCheck(cfg); break;
+  case 'island-watch': await islandWatch(cfg, rest); break;
   case 'ssh': ssh(cfg, rest.join(' '), { inherit: true, check: true }); break;
   default:
     console.log('usage: node devtools/dev.mjs mac <doctor|setup|push|build|run|shot|tap|type|swipe|'
-      + 'safari-eval|mirror|log|activity|awake|ssh>');
+      + 'safari-eval|mirror|log|activity|devices|device|device-log|provision|profiles|awake|put|layout-check|'
+      + 'island-watch|ssh|gui>');
+    console.log('  island-watch [--count N] [--interval S] [--label X] [--replay <dir>] — sample the');
+    console.log('  Dynamic Island and count DISTINCT frames: >1 = it repaints, 1 = frozen. No eye needed.');
+    console.log('  ssh <cmd> runs over ssh; gui <cmd> runs in the GUI LOGIN SESSION — the only place');
+    console.log('  codesign can reach the login keychain, so anything that SIGNS needs `gui`.');
     process.exit(cmd ? 1 : 0);
 }

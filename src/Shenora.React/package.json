@@ -1,7 +1,7 @@
 {
   "name": "@shenora/react",
   "version": "0.10.0",
-  "description": "React client for Shenora desktop hosts: correlated invoke/send/subscribe over the WebView2 bridge, typed module services, hooks, and a browser fallback for pure-UI development.",
+  "description": "React client for Shenora hosts on Windows, Android and iOS: correlated invoke/send/subscribe over the desktop postMessage bridge or the MAUI HybridWebView transport, typed module services, host-backed stores, and hooks for request tracking and media playback. Drop zones and window commands are desktop-only, because the capabilities are. Ships a browser fallback for pure-UI development.",
   "license": "MIT",
   "author": "Jiarong Gu",
   "repository": {
@@ -14,6 +14,10 @@
     "shenora",
     "webview2",
     "desktop",
+    "android",
+    "ios",
+    "maui",
+    "hybrid",
     "ipc",
     "react",
     "winforms",

@@ -1,5 +1,6 @@
-using Shenora.Core;
+using Shenora;
 using Shenora.Tests.TestSupport;
+using Shenora.Modules.FileDialog;
 
 namespace Shenora.Tests.WinForms;
 

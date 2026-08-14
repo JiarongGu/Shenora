@@ -22,7 +22,7 @@
     <!-- IsPackable stays INLINE — the coverage gate finds shipped projects by text-matching it. -->
     <IsPackable>true</IsPackable>
     <PackageId>Shenora.Launcher</PackageId>
-    <Description>Shenora launcher: the native applier that runs BEFORE your app and applies a staged update, for framework-dependent apps whose runtime may be absent and whose files may be held open. Ships per-RID binaries (win-x64, linux-x64) plus the C++17 library sources and the main.cpp template, so you can use the stock launcher or build your own from the same library. A self-contained app needs none of this — Shenora.IO's UpdateStage.ApplyAsync already applies updates in portable .NET.</Description>
+    <Description>Shenora launcher: the native applier that runs BEFORE your app and applies a staged update, for framework-dependent apps whose runtime may be absent and whose files may be held open. Ships per-RID binaries (win-x64, linux-x64) plus the C++17 library sources and the main.cpp template, so you can use the stock launcher or build your own from the same library. A self-contained app needs none of this — the Shenora package's UpdateStage.ApplyAsync already applies updates in portable .NET.</Description>
 
     <!--
       ⚠ THIS PACKAGE HAS NO MANAGED SURFACE, and that is declared rather than inferred.

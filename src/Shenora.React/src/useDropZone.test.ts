@@ -193,4 +193,67 @@ describe('useDropZone', () => {
 
     expect(transport.routes()).toEqual(['REGISTER', 'UNREGISTER']);
   });
+
+  /**
+   * The zone MOVED, so the native overlay must follow — and it must NOT be told when nothing moved.
+   *
+   * Both directions are the test. The overlay is a separate native window positioned by these
+   * numbers, so a broken UPDATE leaves it at the rectangle the element had on mount: drops land
+   * somewhere the user is not pointing, or nowhere, with the page looking entirely correct. And a
+   * missing `changed` guard is the opposite failure — this fires from a ResizeObserver, an
+   * IntersectionObserver, every scroll (capturing) and every resize, so an unguarded sync posts an
+   * IPC message per tick of a scroll.
+   */
+  it('sends UPDATE when the zone MOVES, and posts nothing when it has not', async () => {
+    const { transport, bus, bridge, element, targetRef } = createFixture();
+    renderHook(() => useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z1', bridge, bus }));
+    await flush();
+    expect(transport.routes()).toEqual(['REGISTER']);
+
+    // Unmoved: jsdom reports a zero rect, which is what REGISTER already carried.
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    await flush();
+    expect(transport.routes()).toEqual(['REGISTER']);
+
+    element.getBoundingClientRect = () =>
+      ({ left: 40.4, top: 12.6, width: 200, height: 100 }) as DOMRect;
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    await flush();
+
+    expect(transport.routes()).toEqual(['REGISTER', 'UPDATE']);
+    // Rounded, not truncated — the host places a native window at these pixels.
+    expect(transport.posted[1]?.payload).toMatchObject({
+      zoneId: 'z1', x: 40, y: 13, width: 200, height: 100,
+    });
+  });
+
+  /**
+   * ⚠ The overlay is re-armed from the PAGE on `mouseleave` and on the window losing focus, because
+   * the native `MouseLeave` alone is unreliable through the WebView — the hook's own comment, and a
+   * behaviour with no other witness. Lose these two listeners and drag-and-drop works exactly once
+   * per page load: the overlay hides on the first hover-out and nothing ever shows it again.
+   */
+  it('re-arms the overlay on mouseleave and on the window losing focus', async () => {
+    const { transport, bus, bridge, element, targetRef } = createFixture();
+    renderHook(() => useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z1', bridge, bus }));
+    await flush();
+    expect(transport.routes()).toEqual(['REGISTER']);
+
+    act(() => {
+      element.dispatchEvent(new MouseEvent('mouseleave'));
+    });
+    await flush();
+    expect(transport.routes()).toEqual(['REGISTER', 'SHOW']);
+
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    await flush();
+    expect(transport.routes()).toEqual(['REGISTER', 'SHOW', 'SHOW']);
+    expect(transport.posted[2]?.payload).toMatchObject({ zoneId: 'z1' });
+  });
 });

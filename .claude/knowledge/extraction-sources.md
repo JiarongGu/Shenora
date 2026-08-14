@@ -45,14 +45,14 @@ read BOTH before porting anything). Foundation: 2026-07-30 survey of all five fa
   the DPI-pure-function testability of one with the RestoreBounds/never-block-close discipline of
   the other).
 
-- **A declared dependency edge that nothing crosses is a duplication smell.** Found live:
-  `Shenora.Windows` declared its `ProjectReference` to `Shenora.Windows` and then imported
-  nothing from it — so the port re-implemented browser-argument building (re-introducing the CDP
+- **A declared dependency edge that nothing crosses is a duplication smell.** Found live: the web-hosting
+  package declared its `ProjectReference` to the WinForms one and then imported nothing from it
+  — so the port re-implemented browser-argument building (re-introducing the CDP
   env-var gotcha from `windows-dev-gotchas`), environment creation, the init-timeout guard, and
   settings hardening, and shipped WITHOUT the `NewWindowRequested`/`PermissionRequested`/
   `ProcessFailed` policies this file lists as must-fix. Before porting a helper a second time, grep
   the packages you already reference for an owner. **After D19/D20 a ported helper's home is decided
-  by LAYER, not by which sibling proved it** (portable contract → `Shenora.Core`; Windows
+  by LAYER, not by which sibling proved it** (portable contract → `Shenora`; Windows
   implementation → `Shenora.Windows`; web hosting on top).
 
 ## Gotchas / traps
@@ -63,3 +63,68 @@ read BOTH before porting anything). Foundation: 2026-07-30 survey of all five fa
   options must support both — don't "unify" one away.
 - Keep sibling names out of tracked code/docs while porting (see `sensitive-info`) — attribution
   comments say "ported from a family app", nothing more.
+
+## Harvesting the media stack from Sonora — what to lift, and what NOT to
+
+⚠ **Moved out of `TASKS.md` on 2026-08-09**, where it had become 57 lines carrying no open work. It is
+reference for a PORT, not a backlog item: read it before lifting anything from that sibling.
+
+
+> DIRECTION (user, 2026-08-06): *"sonora actually got proper solution for media play and you can get its
+> binary you can create resource pack to store them"* and, on where the bytes live, *"because this is a
+> library so we need to ship this for adoption"*. So the kit SHIPS an engine for adopters — the open
+> question was only which package carries it, not whether.
+
+Sonora built on-device conversion + an HLS segment stream, proved both on a device, and wrote a hand-off
+spec naming exactly what should and should not move — `2026-08-06-shenora-media-handoff.md`, in THAT repo
+under its superpowers specs (not a doc of this repo). This entry tracks taking it. **Read that spec before
+designing any of this** — every ⚠ in it is a bug that was actually hit, not a guess.
+
+> **SUPERSEDED BY D52 — read that first.** The scope settled while this was being built: the package is a
+> TRANSLATION LAYER (the minimum transformation that makes a file playable in a webview), not a media
+> toolkit, and the kit ships NO ffmpeg bytes (D51). The build order below replaces what this entry
+> originally proposed.
+
+**Built so far:** `ResourcePack` (`Shenora.Modules.Update.Compression`) · `MatroskaProbe` (`Probe/`) ·
+`MediaPlaybackPlanner` (`Plan/`) · `UseMediaConversion` + `UseSegmentStream` (`Deliver/`) · `Mp4Remuxer` +
+the `ISegmentEngine` seam (`Engine/`). **Slices 1 and 2 are CLOSED** (2026-08-07 — the pipeline reshape and
+the remuxer). The pipeline is **probe → plan → deliver → transform**, and
+what remains of transform is the AUDIO, which is the half that needs a codec.
+
+**✅ SLICE 3 IS MEASURED (2026-08-07) — and the answer is SPLIT PER PLATFORM, which is the finding.**
+`CodecProbe` in the MAUI sample asks each platform directly; run on an iPhone 17 Pro (iOS 26.5.2, a real
+device) and an API 36 AOSP emulator:
+
+| | AC-3 decode | E-AC-3 decode | AAC decode | AAC encode |
+|---|---|---|---|---|
+| **iOS 26.5.2, iPhone 17 Pro** | **YES** (5.1 *and* stereo) | **YES** | YES | YES |
+| **Android API 36, AOSP** | no | no | YES | YES |
+
+- **So D52's "yes → a platform call" holds on iOS and fails on Android.** There is no single answer, and a
+  design that assumes either one is wrong half the time.
+- 🔴 **The ENCODE half is free EVERYWHERE** — both platforms encode AAC. That is a much narrower gap than
+  "there is no engine": what is missing is one DECODER, on one platform.
+- ⚠ **"AOSP does not" is not "Android does not."** Codec support is vendor-declared per device, which is
+  exactly why `MediaCodecList` is a runtime query. A handset may well carry AC-3; this measures the
+  emulator. **Never bake either answer in — ask the device.**
+- ⚠ Two probe defects had to be fixed before the number meant anything:
+  `kAudioFormatProperty_DecodeFormatIDs` is **macOS-only** (`'prop'` on iOS), and
+  a failed query was reporting as a NEGATIVE. The AAC control is what caught it.
+
+**Slice 4 — MOSTLY DONE (2026-08-07).** Owner: *"we still support for consumer use their own
+decoder/encoder just if they needed, and we built something that can work by default"*. Shipped:
+
+- **`IMediaCapability`** — asks the DEVICE what it decodes and encodes, implemented on both mobile shells.
+  Every adopter used to hand-write `MediaPlaybackPolicy`'s codec sets as a guess; the kit now ships the
+  QUESTION rather than the answer, which keeps D42 intact. Cross-checked against an independent platform
+  query on the iPhone: `ac3 repairable=True`.
+- **`new Mp4Remuxer().ToConverter()`** — the default `MediaConversionOptions.Convert`. Container repair
+  with no engine, no binary, no licence weight. This is "working playback with NOTHING supplied" for the
+  case D52 calls the common one.
+  ⚠ It is an extension on `IMediaContainerWriter`, not a method on the remuxer: wrapping a writer is the
+  INTERFACE's job, so a class named "Remuxer" does not mint a route delegate that might run a different
+  muxer.
+- **`IMediaStreamConversion`** (+ `IMediaStreamConversionRun`) — the transcode tier, ONE seam keyed by
+  `MediaStreamKind`: a stream MP4 cannot carry goes through the device's codecs and everything carriable is
+  copied untouched. Both mobile shells implement it (Android chains a `MediaCodec` decoder → AAC encoder; iOS
+  uses AudioToolbox).

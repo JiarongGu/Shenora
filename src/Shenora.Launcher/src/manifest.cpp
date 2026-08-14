@@ -111,6 +111,42 @@ bool expect(const std::string& s, std::size_t& i, char c) {
     return true;
 }
 
+// 🔴 A manifest path may only ever resolve INSIDE the tree it is combined with, and this program
+// combines it with the app root and then calls `fs::remove` on the result. Two shapes escape:
+//
+//   1. A ROOTED path. `std::filesystem::operator/` REPLACES its left-hand side when the right is
+//      absolute — byte for byte the trap C#'s `Path.Combine` has, which `UpdateStage` documents as
+//      "the exact behaviour this repo already had to fix a security bug over".
+//   2. A `..` segment, which walks out the ordinary way.
+//
+// Refused HERE, at parse, so every consumer inherits it and `apply_pending_update` needs no check of
+// its own: step 2 already treats a manifest that fails to parse as a refusal, and step 3 treats an
+// unreadable baseline as "apply without removals" — both are the safe direction. The C# owner is
+// `ManifestDiff.IsSafeRelativePath`; these two must agree.
+bool is_safe_relative(const std::string& path) {
+    if (path.empty()) return false;
+
+    // Leading separator = rooted, on either platform's spelling.
+    if (path[0] == '/' || path[0] == '\\') return false;
+
+    // A Windows drive spec — `C:\x`, `C:x` — is rooted too, and this launcher ships for win-x64. Checked
+    // unconditionally rather than under _WIN32: a manifest is written by whatever packaged the release,
+    // which is not necessarily the machine applying it.
+    if (path.size() >= 2 && path[1] == ':') return false;
+
+    // Any `..` SEGMENT, not a substring — a file legitimately named `..foo` is not a traversal.
+    std::size_t start = 0;
+    while (start <= path.size()) {
+        std::size_t end = path.find_first_of("/\\", start);
+        if (end == std::string::npos) end = path.size();
+        if (end - start == 2 && path[start] == '.' && path[start + 1] == '.') return false;
+        if (end == path.size()) break;
+        start = end + 1;
+    }
+
+    return true;
+}
+
 }  // namespace
 
 std::string normalize_path(std::string path) {
@@ -187,8 +223,9 @@ bool parse_manifest(const std::string& json, Manifest& out) {
                             break;
                         }
                     }
-                    // A path is the only member this program cannot work without.
-                    if (file.path.empty()) return false;
+                    // A path is the only member this program cannot work without — and it must be one
+                    // that cannot escape the app root, because it drives `fs::remove`.
+                    if (!is_safe_relative(file.path)) return false;
                     out.files.push_back(file);
                     skip_ws(json, i);
                     if (i < json.size() && json[i] == ',') { ++i; continue; }

@@ -1,9 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
-using Shenora.Core;
-using Shenora.IO;
-using Shenora.Ipc;
+using Shenora;
 using Shenora.Mobile;
 using Shenora.Sample.Logic;
+using Shenora.Engine.Files;
+using Shenora.Engine.Missions;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Sample.Maui;
 
@@ -75,35 +77,43 @@ public static class MauiProgram
 		// which IS the UI thread, so asking the thread directly is both correct and earlier-safe.
 		var dispatcher = Dispatcher.GetForCurrentThread()
 			?? throw new InvalidOperationException("CreateMauiApp is not running on a dispatcher thread.");
-		shenora.UseMobile(dispatcher, ex => Log($"UI work failed: {ex}"));
+		// Named for the PLATFORM (D65) — the shell call is the one thing an adopter genuinely picks, so
+		// it says which platform it is picking. A multi-targeted app writes the `#if`; a single-platform
+		// one writes one line and never sees this.
+#if ANDROID
+		shenora.UseAndroid(dispatcher, ex => Log($"UI work failed: {ex}"));
+#elif IOS || MACCATALYST
+		shenora.UseIOS(dispatcher, ex => Log($"UI work failed: {ex}"));
+#endif
 
-		// Opt-in, exactly as the desktop sample does.
-		shenora.Services.AddShenoraOperations();
 
-		shenora.Services.AddSingleton<IMissionScheduler>(sp => new MissionScheduler(new MissionSchedulerOptions
+		// The scheduler and the file queue are ALREADY REGISTERED (D64); this only says where the sample
+		// disagrees with a default. The file queue is left entirely alone — its defaults are right.
+		shenora.UseMissions(options =>
 		{
-			GlobalLaneCapacity = 4,
-			Scopes = [PathClaims.Scope],
-			Observers = [new MissionOperationObserver(
-				sp.GetRequiredService<IOperationRegistry>(), PortableSampleFacade.Module)],
-			Log = Log,
-		}));
-		shenora.Services.AddSingleton<IFileUpdateQueue>(_ =>
-			new FileUpdateQueue(new FileUpdateQueueOptions { Log = Log }));
+			options.GlobalLaneCapacity = 4;
+			options.Scopes = [PathClaims.Scope];
+			options.Log = Log;
+		});
+		// ⚠ The observer needs a SERVICE, so it attaches once a provider exists rather than in the
+		// options above. Shenora must never learn what an operation is (D19/D20), so this mapping stays
+		// the app's — it is the whole cost of the pairing, and it is the same on both samples.
+		shenora.OnStarting(app =>
+			app.Services.GetRequiredService<MissionSchedulerOptions>().Observers =
+				[new MissionEventPublisher(
+					app.Services.GetRequiredService<IEventBus>(), PortableSampleModule.Module)]);
 
 		// THE POINT OF THIS SAMPLE: the same facade the desktop sample hosts, from the same net10.0
 		// assembly, with no Windows anywhere in the graph. If D20's portability were only a claim,
 		// this line would not compile.
-		shenora.Services.AddModuleFacade<PortableSampleFacade>();
+		shenora.Services.AddIpcModule<PortableSampleModule>();
 		// Mobile-only, and the reason is measured: `mac safari-eval` cannot be installed on this build Mac
 		// and WebKit does not forward a page's console.log to the unified log, so this is the only way page
-		// state arrives as TEXT rather than as pixels. See PageDiagFacade.
-		shenora.Services.AddModuleFacade<PageDiagFacade>();
-		// The SAME line the desktop sample writes, over the SAME routes — the mobile shell's IFileDialogs
-		// is what differs, and the page never learns which. What the page DOES learn is which of the four
-		// routes this shell will honour, from the capabilities advertised in MainPage's handshake.
-		shenora.Services.AddShenoraFileDialogs();
-		shenora.Services.AddMessageDispatcher();
+		// state arrives as TEXT rather than as pixels. See PageDiagModule.
+		shenora.Services.AddIpcModule<PageDiagModule>();
+		// ⚠ NOTHING here registers the kit's dialog routes, the dispatcher or the operations registry —
+		// Build() and UseAndroid/UseIOS do (D64/D65). What the page still learns from the handshake is
+		// which of the four dialog routes THIS shell will honour; two of them are desktop-only (D35).
 
 		// The on-device probe for Start's idempotency. It must appear exactly ONCE per process.
 		// What that measurement actually found, kept because it corrects a claim rather than
@@ -116,5 +126,12 @@ public static class MauiProgram
 
 		Shenora = shenora.Build();
 		Log("Shenora application built");
+
+		// The pipeline surface, declared HERE because it must precede the first webview — the pipeline
+		// freezes on first application by design. This is the mobile counterpart of the desktop sample's
+		// `INTERCEPTOR SEAM` probe, and it exists because the mobile half had never actually run: the
+		// sample handed every interceptor a fresh pipeline, so `app.Use(…)` reached nothing on Android or
+		// iOS while compiling perfectly (D63 — absent is indistinguishable from working).
+		PageProbe.RegisterAppPipelineRoute(Shenora.Pipeline, Log);
 	}
 }

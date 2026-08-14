@@ -1,6 +1,8 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Shenora.Core.Events;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Api;
 
@@ -13,7 +15,7 @@ namespace Shenora.Tests.Api;
 /// break shape:
 /// </para>
 /// <list type="bullet">
-/// <item><b>protected members.</b> <c>BaseFacade.RouteMessageAsync</c> — the one member EVERY consumer
+/// <item><b>protected members.</b> <c>ModuleBase.RouteMessageAsync</c> — the one member EVERY consumer
 /// overrides — was entirely outside the gate.</item>
 /// <item><b>Default parameter values.</b> <c>new EventBus()</c> compiles because the logger parameter is
 /// optional; the old dump rendered the constructor as if it were not, so DROPPING a <c>= null</c> — a
@@ -402,7 +404,7 @@ internal static class ApiSurfaceDump
     /// wrapper (e.g. <c>System.Double&amp;</c>), which reports <c>IsValueType == false</c> regardless of
     /// what it points to. For an ordinary reference type that coincidentally reads as correct; for a
     /// nullable VALUE type passed by reference (a record's synthesized <c>Deconstruct(out double? Total,
-    /// …)</c>, first hit by <c>OperationProgress</c>) it made <see cref="Annotate"/> add a second <c>?</c>
+    /// …)</c>, first hit by <c>IpcProgress</c>) it made <see cref="Annotate"/> add a second <c>?</c>
     /// on top of the one <see cref="TypeName(Type)"/>'s own <c>Nullable&lt;T&gt;</c> unwrap already
     /// produced — rendering the invalid <c>double??</c>. Unwrap the byref FIRST, matching what
     /// <see cref="TypeName(Type)"/> itself already does, so <c>Annotate</c> sees the pointee's real

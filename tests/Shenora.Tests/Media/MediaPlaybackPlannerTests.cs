@@ -1,4 +1,4 @@
-using Shenora.Media;
+using Shenora.Modules.Media;
 
 namespace Shenora.Tests.Media;
 
@@ -13,10 +13,14 @@ public class MediaPlaybackPlannerTests
     private static MediaPlaybackPolicy Browser(bool canEncodeVideo = true, bool canEncodeAudio = true) => new()
     {
         Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm" },
-        VideoCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9" },
-        AudioCodecs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus" },
-        CanEncodeVideo = canEncodeVideo,
-        CanEncodeAudio = canEncodeAudio,
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        {
+            [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9" },
+            [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus" },
+        },
+        Encodable = new HashSet<MediaStreamKind>(
+            (canEncodeVideo ? [MediaStreamKind.Video] : Array.Empty<MediaStreamKind>())
+            .Concat(canEncodeAudio ? [MediaStreamKind.Audio] : Array.Empty<MediaStreamKind>())),
     };
 
     private static MediaProbeResult Probe(string? container, params MediaStreamInfo[] streams) =>
@@ -157,7 +161,8 @@ public class MediaPlaybackPlannerTests
     [Fact]
     public void Video_and_audio_are_checked_against_SEPARATE_sets()
     {
-        // "aac" as a VIDEO codec is nonsense, and that is the point: it appears in AudioCodecs only.
+        // "aac" as a VIDEO codec is nonsense, and that is the point: the browser declares it under the
+        // AUDIO kind only, so a planner that ignored the kind would wrongly call this playable.
         var plan = MediaPlaybackPlanner.Plan(Probe(".mp4", Video("aac")), Browser());
 
         Assert.Equal(MediaPlaybackAction.Transcode, plan.Action);

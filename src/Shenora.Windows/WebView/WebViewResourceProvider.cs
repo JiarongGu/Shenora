@@ -113,14 +113,14 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     }
 
     /// <summary>
-    /// Guarded + lazy, via the one owner (<see cref="Shenora.Core.AppCallback.Log"/>). This type used
+    /// Guarded + lazy, via the one owner (<see cref="Shenora.AppCallback.Log"/>). This type used
     /// to call <c>_options.Log?.Invoke(…)</c> directly at seven sites; two of them sit inside
     /// <see cref="BeginWarmup"/>'s fire-and-forget <c>Task.Run</c>, where a throwing sink escapes the
     /// very <c>catch</c> it reports from and becomes an unobserved task exception. Laziness also
     /// matters for the constructor's "serves nothing" hint, which enumerates the assembly's manifest
     /// to compose itself.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.Core.AppCallback.Log(_options.Log, message);
+    private void Log(Func<string> message) => Shenora.AppCallback.Log(_options.Log, message);
 
     /// <summary>True = serving embedded resources; false = serving <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/>.</summary>
     public bool IsEmbedded { get; }
@@ -153,7 +153,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                 }
                 catch (Exception ex)
                 {
-                    // GUARDED (Shenora.Core.AppCallback), unlike this type's other Log calls: those sit
+                    // GUARDED (Shenora.AppCallback), unlike this type's other Log calls: those sit
                     // under a caller that would observe a throwing sink, whereas this body is a
                     // fire-and-forget Task.Run with nothing above it — an app logger throwing here
                     // escapes the very catch it is reporting from and becomes an unobserved task

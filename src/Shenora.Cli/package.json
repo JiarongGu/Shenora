@@ -1,0 +1,51 @@
+{
+  "name": "@shenora/cli",
+  "version": "0.10.0",
+  "description": "Build-time CLI for Shenora — a devDependency that runs on your machine and ships inside nothing. Takes an app onto a device: build, sign, install, launch, tail the log. iOS simulators and real iPhones with no Xcode project of your own; Android emulators and handsets with APK or AAB output.",
+  "license": "MIT",
+  "author": "Jiarong Gu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JiarongGu/Shenora.git",
+    "directory": "src/Shenora.Cli"
+  },
+  "homepage": "https://github.com/JiarongGu/Shenora#readme",
+  "keywords": [
+    "shenora",
+    "ios",
+    "android",
+    "deploy",
+    "simulator",
+    "emulator",
+    "maui",
+    "dotnet",
+    "cli"
+  ],
+  "type": "module",
+  "bin": {
+    "shenora": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "clean": "node --eval \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

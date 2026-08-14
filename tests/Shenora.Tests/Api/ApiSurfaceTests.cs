@@ -34,7 +34,7 @@ public class ApiSurfaceTests
     /// <summary>
     /// The gate is only as good as its coverage: deriving the cases from the baseline directory means a
     /// NEW package with no baseline would simply not be checked. This walks the test assembly's
-    /// transitive references (so a package reached only indirectly — as <c>Shenora.Core</c> is — still
+    /// transitive references (so a package reached only indirectly — as <c>Shenora</c> is — still
     /// counts) and fails if any shipped assembly has no baseline file.
     /// </summary>
     [Fact]

@@ -19,7 +19,50 @@
   <PropertyGroup>
     <!-- The kit's own Swift, beside this file inside the package. -->
     <_ShenoraLiveActivitySwift>$(MSBuildThisFileDirectory)swift/ShenoraLiveActivity.swift</_ShenoraLiveActivitySwift>
-    <_ShenoraLiveActivityOut>$(IntermediateOutputPath)shenora-liveactivity</_ShenoraLiveActivityOut>
+    <!--
+      The layout interpreter, in two files. Both are compiled into BOTH artifacts, and all four
+      combinations are load-bearing: the appex renders the tree, and the app-side static library needs the
+      types because `ShenoraActivityAttributes` carries them. Leaving one out of either is a link error at
+      the far end of a long build.
+
+      ⚠ The WIRE half is separate so that it imports nothing — no SwiftUI, no ActivityKit — which is what
+      lets `node devtools/dev.mjs mac layout-check` compile the decoder with a bare `swiftc` and run it
+      against the same golden payload the C# suite asserts. Adding an import to that file removes the only
+      mechanical test this wire has; see its header.
+    -->
+    <_ShenoraLayoutWireSwift>$(MSBuildThisFileDirectory)swift/ShenoraLayoutWire.swift</_ShenoraLayoutWireSwift>
+    <_ShenoraLayoutSwift>$(MSBuildThisFileDirectory)swift/ShenoraLayout.swift</_ShenoraLayoutSwift>
+
+    <!--
+      🔴 D69: `<ShenoraLiveActivity>true</ShenoraLiveActivity>` and the app writes NO SWIFT AT ALL. The
+      kit's generic views are compiled instead, and they read the look from `LiveActivityAppearance` —
+      config the app describes in C#, not code the build generates.
+
+      Setting `ShenoraLiveActivityViews` still wins, and that ordering is the decision: an app's own
+      SwiftUI is a first-class path rather than an escape hatch, which is what keeps the kit's look a
+      DEFAULT rather than a ceiling (D13 — no design system ships here).
+    -->
+    <ShenoraLiveActivityViews Condition="'$(ShenoraLiveActivityViews)' == '' And '$(ShenoraLiveActivity)' == 'true'">$(MSBuildThisFileDirectory)swift/ShenoraDefaultViews.swift</ShenoraLiveActivityViews>
+    <!--
+      🔴 `BaseIntermediateOutputPath`, NOT `IntermediateOutputPath`, and the path carries the RID — two bugs
+      in one line, both found by the first DEVICE build (2026-08-06) and both invisible to a simulator-only
+      repo.
+
+      1. This PropertyGroup evaluates at IMPORT time, and a consumer imports this file from its project
+         BODY. `IntermediateOutputPath` is defined by the SDK targets imported AFTER the body, so it was
+         EMPTY here — the shim landed in the consumer's project ROOT (`./shenora-liveactivity/`) rather than
+         under `obj/`. `BaseIntermediateOutputPath` comes from Microsoft.Common.props at the TOP, so it is
+         genuinely available.
+      2. With no RID in the path, one architecture's `.a` satisfies another's incremental check. A simulator
+         build left an x86_64 archive; the device build then reported *"Skipping target
+         ShenoraBuildLiveActivityShim because all output files are up-to-date"* and linked x86_64 objects
+         into an arm64 app — `Undefined symbols for architecture arm64: _shenora_activity_end …`, which
+         reads exactly like the 0.9.0 packaging defect and is not it.
+
+      ⚠ It has to be computed HERE rather than inside a target, because the NativeReference and
+      AdditionalAppExtensions items below are deliberately static (see their comment).
+    -->
+    <_ShenoraLiveActivityOut>$(BaseIntermediateOutputPath)shenora-liveactivity/$(Configuration)/$(TargetFramework)/$(RuntimeIdentifier)</_ShenoraLiveActivityOut>
     <_ShenoraLiveActivityAppex>$(_ShenoraLiveActivityOut)/ShenoraLiveActivity.appex</_ShenoraLiveActivityAppex>
     <_ShenoraLiveActivityLib>$(_ShenoraLiveActivityOut)/libshenoraliveactivity.a</_ShenoraLiveActivityLib>
     <!--
@@ -37,7 +80,7 @@
   <Target Name="ShenoraBuildLiveActivity"
           Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'"
           BeforeTargets="_ExpandNativeReferences;_ExtendAppExtensionReferences;_CompileToNative"
-          Inputs="$(_ShenoraLiveActivitySwift);$(ShenoraLiveActivityViews)"
+          Inputs="$(_ShenoraLiveActivitySwift);$(_ShenoraLayoutWireSwift);$(_ShenoraLayoutSwift);$(ShenoraLiveActivityViews)"
           Outputs="$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity">
 
     <Error Condition="!Exists('$(ShenoraLiveActivityViews)')"
@@ -71,33 +114,123 @@
       MacOSX sysroot; the binary happened to work anyway, which is exactly why it is worth fixing rather
       than tolerating.
     -->
-    <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
-
     <!--
-      The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
-      the whole app at install; PackageType is XPC!; a WidgetKit extension declares only the point
-      identifier because the @main WidgetBundle is the entry point.
+      🔴 `-e _NSExtensionMain` AND `-application_extension` ARE THE WHOLE THING, and without them this
+      produces a binary that starts and immediately exits (2026-08-07, after four device deploys chasing
+      other causes).
+
+      An app extension does NOT start at `main`. Xcode's Widget Extension template links with
+      `-e _NSExtensionMain`, so the process begins in Foundation's extension entry point, which reads the
+      `NSExtension` dict from Info.plist and enters the XPC run loop the host talks to. Link it as an
+      ordinary executable instead and SwiftUI's `@main` runs `WidgetBundle.main()`, **that returns**, and
+      the process exits without ever serving anything. Every layer still reports success: ActivityKit
+      starts the activity and hands back an id, the system reserves Island space, and the widget that
+      would draw it died instantly.
+
+      ⚠ This is the structural reason a hand-rolled `.appex` is hard: SwiftPM and a bare `swiftc` have no
+      notion of an extension target, so none of the extension-specific linker setup is applied and the
+      output looks like a perfectly good executable. `-application_extension` is the matching half — it
+      marks the binary as extension-safe, which is what the linker checks API availability against.
     -->
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaTriple) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -module-name $(ShenoraLiveActivityModule) -framework ActivityKit -framework WidgetKit -framework SwiftUI -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -Xlinker -e -Xlinker _NSExtensionMain -Xlinker -application_extension -o &quot;$(_ShenoraLiveActivityAppex)/ShenoraLiveActivity&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(_ShenoraLayoutWireSwift)&quot; &quot;$(_ShenoraLayoutSwift)&quot; &quot;$(ShenoraLiveActivityViews)&quot;" />
+
+    <Message Importance="high" Text="Shenora: built ShenoraLiveActivity.appex ($(_ShenoraLaTriple)) from $(ShenoraLiveActivityViews)" />
+  </Target>
+
+  <!--
+    The extension's Info.plist. CFBundleIdentifier MUST be prefixed by the container app's or iOS rejects
+    the whole app at install; PackageType is XPC!; a WidgetKit extension declares only the point identifier
+    because the @main WidgetBundle is the entry point.
+
+    🔴 ITS OWN TARGET, WITH NO INCREMENTAL CHECK, AND THAT IS A FIX — found on the first real DEVICE install
+    (2026-08-07), which failed with:
+
+        Appex bundle … with identifier "<another app>.shenoraliveactivity" does not have expected
+        identifier prefix "com.shenora.sample.maui."   (MIInstallerErrorDomain error 37)
+
+    The plist used to be written inside ShenoraBuildLiveActivity, whose check is
+    Inputs = the two Swift files, Outputs = the EXECUTABLE. The plist is neither, and `$(ApplicationId)` —
+    the thing its content depends on — cannot be an Input at all, because MSBuild's up-to-date check
+    compares FILES and not property values. So whenever swiftc was up to date the whole target was skipped
+    and a stale plist survived, still naming whatever bundle id was current when it was last generated.
+
+    ⚠ **The consequence for an ADOPTER is worse than for us**: rename your app, or reuse an obj/ directory,
+    and the extension keeps the old identifier. The build succeeds, the simulator is perfectly happy — an
+    install to a simulator does not enforce the prefix — and only a real DEVICE rejects it, wearing an
+    error that names a bundle id the project no longer contains anywhere.
+
+    This is the SECOND bug of exactly this shape in this one target: the first was one architecture's `.a`
+    satisfying another's up-to-date check (see the RID in `_ShenoraLiveActivityOut` above). The lesson both
+    times is the same — **an incremental check must cover everything the target WRITES, and a target whose
+    output depends on a PROPERTY cannot be made incremental on files at all.** Splitting it out is the fix:
+    swiftc keeps its check because compiling is expensive, and writing ~15 lines of plist does not need one.
+    `WriteOnlyWhenDifferent` keeps the file's timestamp stable when nothing changed, so nothing downstream
+    rebuilds needlessly.
+  -->
+  <Target Name="ShenoraWriteLiveActivityPlist"
+          Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'"
+          BeforeTargets="_ExpandNativeReferences;_ExtendAppExtensionReferences;_CompileToNative">
+
+    <MakeDir Directories="$(_ShenoraLiveActivityAppex)" />
     <PropertyGroup>
       <_ShenoraLaPlist>$(_ShenoraLiveActivityAppex)/Info.plist</_ShenoraLaPlist>
+      <!-- Recomputed here rather than shared with the build target: this target must stand alone, because
+           it deliberately has no incremental check (see the remarks above). -->
+      <_ShenoraLaPlistSdk Condition="'$(_SdkIsSimulator)' == 'true'">iphonesimulator</_ShenoraLaPlistSdk>
+      <_ShenoraLaPlistSdk Condition="'$(_ShenoraLaPlistSdk)' == ''">iphoneos</_ShenoraLaPlistSdk>
+      <_ShenoraLaPlatform Condition="'$(_SdkIsSimulator)' == 'true'">iPhoneSimulator</_ShenoraLaPlatform>
+      <_ShenoraLaPlatform Condition="'$(_ShenoraLaPlatform)' == ''">iPhoneOS</_ShenoraLaPlatform>
     </PropertyGroup>
+    <Error Condition="'$(ApplicationId)' == ''"
+           Text="Shenora: the Live Activity extension needs the app's ApplicationId to derive its own bundle identifier, and it is empty. iOS requires the extension's id to be prefixed by the app's." />
+
+    <!-- The SDK's real version, so DTSDKName names the SDK this was actually built against. -->
+    <Exec Command="xcrun --sdk $(_ShenoraLaPlistSdk) --show-sdk-version" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_ShenoraLaSdkVersion" />
+    </Exec>
+
+    <!--
+      🔴 THE PLATFORM KEYS ARE NOT OPTIONAL, and leaving them out is why the Dynamic Island stayed empty
+      through four device deploys (2026-08-07). Xcode writes them into every bundle it produces, so nobody
+      building extensions the normal way ever learns they exist — and a HAND-WRITTEN Info.plist that omits
+      them produces an .appex which installs, signs, validates and is then **never registered as an
+      extension by the system**. Measured: `devicectl device info apps` listed only the container app, and
+      the extension process never appeared in `device info processes` while `chronod` ran happily.
+
+      That failure mode is brutal to diagnose because every layer reports success — ActivityKit starts the
+      activity and returns an id, the system reserves Island space for it, and the widget that would draw it
+      was never loaded. Apple's guidance for building bundles outside Xcode names exactly these four:
+      CFBundleSupportedPlatforms, DTPlatformName, DTSDKName and UIDeviceFamily.
+
+      ⚠ They are per-SDK, so they are read from the SDK rather than hardcoded: a simulator build must say
+      iPhoneSimulator, and a device build iPhoneOS. Hardcoding either makes the bundle silently wrong on the
+      other, which is the same class of bug as the arch and the bundle-id ones this file already records.
+    -->
     <WriteLinesToFile File="$(_ShenoraLaPlist)" Overwrite="true" WriteOnlyWhenDifferent="true" Lines="
 &lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;;
 &lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;;
 &lt;plist version=&quot;1.0&quot;&gt;&lt;dict&gt;;
+  &lt;key&gt;CFBundleDevelopmentRegion&lt;/key&gt;&lt;string&gt;en&lt;/string&gt;;
   &lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
   &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;$(ApplicationId).shenoraliveactivity&lt;/string&gt;;
+  &lt;key&gt;CFBundleInfoDictionaryVersion&lt;/key&gt;&lt;string&gt;6.0&lt;/string&gt;;
   &lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
+  &lt;key&gt;CFBundleDisplayName&lt;/key&gt;&lt;string&gt;ShenoraLiveActivity&lt;/string&gt;;
   &lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;XPC!&lt;/string&gt;;
   &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;1.0&lt;/string&gt;;
   &lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;1&lt;/string&gt;;
+  &lt;key&gt;CFBundleSupportedPlatforms&lt;/key&gt;&lt;array&gt;&lt;string&gt;$(_ShenoraLaPlatform)&lt;/string&gt;&lt;/array&gt;;
+  &lt;key&gt;DTPlatformName&lt;/key&gt;&lt;string&gt;$(_ShenoraLaPlistSdk)&lt;/string&gt;;
+  &lt;key&gt;DTPlatformVersion&lt;/key&gt;&lt;string&gt;$(_ShenoraLaSdkVersion)&lt;/string&gt;;
+  &lt;key&gt;DTSDKName&lt;/key&gt;&lt;string&gt;$(_ShenoraLaPlistSdk)$(_ShenoraLaSdkVersion)&lt;/string&gt;;
+  &lt;key&gt;UIDeviceFamily&lt;/key&gt;&lt;array&gt;&lt;integer&gt;1&lt;/integer&gt;&lt;integer&gt;2&lt;/integer&gt;&lt;/array&gt;;
   &lt;key&gt;MinimumOSVersion&lt;/key&gt;&lt;string&gt;$(ShenoraLiveActivityMinimumOS)&lt;/string&gt;;
   &lt;key&gt;NSExtension&lt;/key&gt;&lt;dict&gt;;
     &lt;key&gt;NSExtensionPointIdentifier&lt;/key&gt;&lt;string&gt;com.apple.widgetkit-extension&lt;/string&gt;;
   &lt;/dict&gt;;
 &lt;/dict&gt;&lt;/plist&gt;" />
 
-    <Message Importance="high" Text="Shenora: built ShenoraLiveActivity.appex ($(_ShenoraLaTriple)) from $(ShenoraLiveActivityViews)" />
+    <Message Importance="high" Text="Shenora: ShenoraLiveActivity.appex declares $(ApplicationId).shenoraliveactivity for $(_ShenoraLaPlatform) $(_ShenoraLaSdkVersion)" />
   </Target>
 
   <!--
@@ -121,7 +254,7 @@
   <Target Name="ShenoraBuildLiveActivityShim"
           Condition="'$(IsMacEnabled)' == 'true'"
           BeforeTargets="_ExpandNativeReferences;_CompileToNative"
-          Inputs="$(_ShenoraLiveActivitySwift)"
+          Inputs="$(_ShenoraLiveActivitySwift);$(_ShenoraLayoutWireSwift);$(_ShenoraLayoutSwift)"
           Outputs="$(_ShenoraLiveActivityLib)">
 
     <PropertyGroup>
@@ -142,7 +275,7 @@
       Compiled at the APP's floor, not ActivityKit's, with availability guarded inside the Swift — a static
       library built for a higher minimum than its host is an argument nobody needs.
     -->
-    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot;" />
+    <Exec Command="xcrun swiftc -target $(_ShenoraLaArch)-apple-ios$(SupportedOSPlatformVersion)$(_ShenoraLaSuffix) -sdk &quot;$(_ShenoraLaSdkPath)&quot; -parse-as-library -emit-library -static -module-name $(ShenoraLiveActivityModule) -Xlinker -syslibroot -Xlinker &quot;$(_ShenoraLaSdkPath)&quot; -o &quot;$(_ShenoraLiveActivityLib)&quot; &quot;$(_ShenoraLiveActivitySwift)&quot; &quot;$(_ShenoraLayoutWireSwift)&quot; &quot;$(_ShenoraLayoutSwift)&quot;" />
 
     <Message Importance="high" Text="Shenora: built the live-activity shim ($(_ShenoraLiveActivityLib))" />
   </Target>
@@ -156,6 +289,70 @@
     Inputs/Outputs are computed early. The FILES only have to exist by the time those run, which the
     BeforeTargets above guarantees.
   -->
+  <!--
+    🔴 PROVISION AND SIGN THE EXTENSION ITSELF, on a DEVICE build. Without this the Dynamic Island renders
+    an EMPTY BLACK CAPSULE while every ActivityKit call reports success — the activity starts, accepts
+    updates and returns an id, the system reserves Island space, and the widget never runs. Measured on an
+    iPhone 17 Pro (2026-08-07); it had been shipping that way since the devkit landed.
+
+    An app extension is **provisioned separately from its container** — the container's profile does not
+    cover it. Apple requires the extension's own profile at `…app/PlugIns/NAME.appex/embedded.mobileprovision`,
+    and an extension whose signature carries no `application-identifier` entitlement is simply not launched.
+    `AdditionalAppExtensions` embeds and re-signs the bundle but supplies NEITHER, because it expects a
+    bundle Xcode already provisioned.
+
+    ⚠ **A SIMULATOR CANNOT CATCH THIS**, ever: it does not enforce code signing, so the widget loads there
+    whatever the signature says. This is the 0.9.0 lesson repeated exactly — the only configuration anyone
+    exercised was the one that worked. `node devtools/dev.mjs mac appex-check` is the device-shaped gate, and
+    it reads the build output rather than needing a device.
+
+    The entitlements are taken from the PROFILE rather than hand-written, because the profile is what
+    actually authorises them — writing a set the profile does not grant produces a signature the installer
+    rejects, which is a different and more confusing failure.
+  -->
+  <Target Name="ShenoraProvisionLiveActivity"
+          Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true' And '$(_SdkIsSimulator)' != 'true'"
+          AfterTargets="ShenoraWriteLiveActivityPlist"
+          BeforeTargets="_CompileToNative">
+
+    <PropertyGroup>
+      <_ShenoraLaAppexId>$(ApplicationId).shenoraliveactivity</_ShenoraLaAppexId>
+      <_ShenoraLaEnts>$(_ShenoraLiveActivityOut)/shenoraliveactivity.entitlements</_ShenoraLaEnts>
+    </PropertyGroup>
+
+    <!--
+      Both profile locations are searched: Xcode 16 MOVED them from ~/Library/MobileDevice/Provisioning
+      Profiles to ~/Library/Developer/Xcode/UserData/Provisioning Profiles, and looking in only the classic
+      one reports "no profile" on a machine that has several.
+    -->
+    <Exec Command="&#xA;
+      set -e&#xA;
+      appex=&quot;$(_ShenoraLiveActivityAppex)&quot;&#xA;
+      want=&quot;$(_ShenoraLaAppexId)&quot;&#xA;
+      match=''&#xA;
+      for dir in &quot;$HOME/Library/MobileDevice/Provisioning Profiles&quot; &quot;$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles&quot;; do&#xA;
+        [ -d &quot;$dir&quot; ] || continue&#xA;
+        for f in &quot;$dir&quot;/*.mobileprovision; do&#xA;
+          [ -e &quot;$f&quot; ] || continue&#xA;
+          appid=%24(security cms -D -i &quot;$f&quot; 2>/dev/null | plutil -extract Entitlements.application-identifier raw - 2>/dev/null || true)&#xA;
+          case &quot;$appid&quot; in *.&quot;$want&quot;) match=&quot;$f&quot;; break 2;; esac&#xA;
+        done&#xA;
+      done&#xA;
+      if [ -z &quot;$match&quot; ]; then&#xA;
+        echo &quot;Shenora: no provisioning profile for $want.&quot; >&amp;2&#xA;
+        echo &quot;  An app EXTENSION needs its own profile - the app's does not cover it.&quot; >&amp;2&#xA;
+        echo &quot;  Mint one with: node devtools/dev.mjs mac provision $want&quot; >&amp;2&#xA;
+        exit 1&#xA;
+      fi&#xA;
+      cp &quot;$match&quot; &quot;$appex/embedded.mobileprovision&quot;&#xA;
+      security cms -D -i &quot;$match&quot; | plutil -extract Entitlements xml1 -o &quot;$(_ShenoraLaEnts)&quot; -&#xA;
+      ident=&quot;$(CodesignKey)&quot;&#xA;
+      case &quot;$ident&quot; in ''|'Apple Development') ident=%24(security find-identity -v -p codesigning | head -1 | sed -n 's/.*&quot;\(.*\)&quot;.*/\1/p');; esac&#xA;
+      codesign --force --sign &quot;$ident&quot; --entitlements &quot;$(_ShenoraLaEnts)&quot; --timestamp=none &quot;$appex&quot;&#xA;
+      echo &quot;Shenora: signed ShenoraLiveActivity.appex as $want&quot;&#xA;
+    " />
+  </Target>
+
   <!-- The WIDGET is opt-in: it needs the app's own SwiftUI views. -->
   <ItemGroup Condition="'$(ShenoraLiveActivityViews)' != '' And '$(IsMacEnabled)' == 'true'">
     <AdditionalAppExtensions Include="$(_ShenoraLiveActivityOut)">

@@ -23,10 +23,10 @@ describe('WindowCommands', () => {
     void commands.setTheme(false);
 
     expect(transport.posted.map((r) => `${r.module}.${r.type}`)).toEqual([
-      'WINDOW.MINIMIZE',
-      'WINDOW.START_DRAG',
-      'WINDOW.START_RESIZE',
-      'WINDOW.SET_THEME',
+      'SHENORA.WINDOW.MINIMIZE',
+      'SHENORA.WINDOW.START_DRAG',
+      'SHENORA.WINDOW.START_RESIZE',
+      'SHENORA.WINDOW.SET_THEME',
     ]);
     expect(transport.posted[2]?.payload).toEqual({ edge: 'topLeft' });
     expect(transport.posted[3]?.payload).toEqual({ dark: false });

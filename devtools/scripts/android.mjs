@@ -6,6 +6,9 @@
 //   android run    [--device id]    deploy, then launch it
 //   android log    [--device id] [--all] [-n N]   the app's log (SHENORA tag; --all = everything)
 //   android shot   [name] [--device id]           screenshot -> devtools/_android/
+//   android eval   "<js>"  [--device id]          run JS in the app's webview and print the VALUE (CDP)
+//   android tap    "<sel>" [--device id]          click an element with a TRUSTED event (grants user
+//                                                 activation — an injected click() does not)
 //
 // Everything here exists because the loop was run by hand first and each step cost something:
 //
@@ -77,6 +80,89 @@ function target(args) {
   console.error(`android: ${attached.length} devices attached — name one with --device <id>:\n  ` +
     attached.join('\n  '));
   return null;
+}
+
+/**
+ * Talk to the app's webview over CDP: evaluate an expression, or click an element with a TRUSTED event.
+ *
+ * ⚠ The socket is picked by the app's OWN PID rather than by taking the first one listed. A device
+ * routinely has several debuggable webviews (Messages ships one here), and picking the wrong one returns
+ * perfectly well-formed answers about somebody else's page — the worst kind of wrong.
+ */
+async function cdp(device, mode, argument) {
+  const sockets = capture(['-s', device, 'shell', 'cat', '/proc/net/unix'])
+    .split('\n').map((l) => l.match(/@(webview_devtools_remote_\d+)/)).filter(Boolean).map((m) => m[1]);
+  const pid = capture(['-s', device, 'shell', 'pidof', config.androidPackageId]).trim().split(/\s+/)[0];
+  const socket = sockets.find((s) => s.endsWith(`_${pid}`));
+  if (!socket) {
+    console.error(`android: no debuggable webview for ${config.androidPackageId} (pid ${pid || 'not running'}).\n`
+      + '  The app must be RUNNING, and the webview is only debuggable in a Debug build.');
+    return false;
+  }
+
+  // A distinct port, for the family's one-dev-port-per-tool rule — 9222 is what every other Chromium
+  // tool on the machine grabs, and the collision presents as a valid answer from the wrong target.
+  const port = 9421;
+  spawnSync(adb, ['-s', device, 'forward', '--remove', `tcp:${port}`], { encoding: 'utf8' });
+  const forwarded = spawnSync(adb, ['-s', device, 'forward', `tcp:${port}`, `localabstract:${socket}`],
+    { encoding: 'utf8' });
+  if (forwarded.status !== 0) {
+    console.error(`android: adb forward failed — ${forwarded.stderr?.trim()}`);
+    return false;
+  }
+
+  try {
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    const page = targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
+    if (!page) { console.error('android: the webview exposes no page target.'); return false; }
+
+    const ws = new WebSocket(page.webSocketDebuggerUrl);
+    let nextId = 1;
+    const call = (method, params) => new Promise((resolve, reject) => {
+      const id = nextId++;
+      const onMessage = (evt) => {
+        const m = JSON.parse(evt.data);
+        if (m.id === id) { ws.removeEventListener('message', onMessage); resolve(m); }
+      };
+      ws.addEventListener('message', onMessage);
+      ws.send(JSON.stringify({ id, method, params }));
+      setTimeout(() => reject(new Error(`CDP timed out: ${method}`)), 15000);
+    });
+    await new Promise((resolve, reject) => {
+      ws.addEventListener('open', resolve);
+      ws.addEventListener('error', () => reject(new Error('CDP websocket refused')));
+    });
+
+    // awaitPromise, so an `async` expression resolves before we read it.
+    const evaluate = async (expression) => {
+      const r = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+      const details = r.result?.exceptionDetails;
+      if (details) throw new Error(details.exception?.description ?? JSON.stringify(details));
+      return r.result?.result?.value;
+    };
+
+    if (mode === 'eval') {
+      const value = await evaluate(argument);
+      console.log(typeof value === 'string' ? value : JSON.stringify(value));
+    } else {
+      const box = await evaluate(
+        `(function(){var e=document.querySelector(${JSON.stringify(argument)});if(!e)return null;`
+        + 'var r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()');
+      if (!box) { console.error(`android: no element matches ${argument}`); ws.close(); return false; }
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await call('Input.dispatchMouseEvent',
+          { type, x: box.x, y: box.y, button: 'left', clickCount: 1, buttons: type === 'mousePressed' ? 1 : 0 });
+      }
+      console.log(`android: tapped ${argument} at (${box.x.toFixed(0)}, ${box.y.toFixed(0)}) css px — a TRUSTED event`);
+    }
+    ws.close();
+    return true;
+  } catch (e) {
+    console.error(`android: ${e.message ?? e}`);
+    return false;
+  } finally {
+    spawnSync(adb, ['-s', device, 'forward', '--remove', `tcp:${port}`], { encoding: 'utf8' });
+  }
 }
 
 const [sub, ...rest] = process.argv.slice(2);
@@ -239,7 +325,39 @@ switch (sub) {
     break;
   }
 
+  // ---------------------------------------------------------------- eval / tap (CDP)
+  //
+  // 🔴 READ THE PAGE'S STATE AS TEXT, AND PRESS ITS BUTTONS FOR REAL. This is the Android peer of
+  // `mac safari-eval`, and its absence cost a whole task entry: `UI-PLAY` was filed as an Android/iOS
+  // shell divergence for a day because nothing here could ask the page a question or produce a gesture
+  // the platform would trust. Two commands answered it in minutes.
+  //
+  // The webview is debuggable in a Debug build, so CDP is already there — `@webview_devtools_remote_<pid>`
+  // in /proc/net/unix, forwarded to a local port. No dependency, no instrumentation in the app.
+  //
+  // ⚠ `tap` dispatches through `Input.dispatchMouseEvent`, which enters via the browser's own input
+  // pipeline and is therefore TRUSTED: the renderer sees `isTrusted:true` and GRANTS USER ACTIVATION.
+  // That is the difference that matters — an injected `element.click()` grants none, so anything gated on
+  // a user gesture (autoplay being the obvious one) refuses it and looks like a fault. `adb shell input
+  // tap <x> <y>` is the even more faithful arm when you want a real touch; both were used to settle this.
+  case 'eval':
+  case 'tap': {
+    const device = target(rest);
+    if (!device) { process.exitCode = 1; break; }
+    const argument = rest.filter((a) => a !== '--device' && a !== device).join(' ').trim();
+    if (!argument) {
+      console.error(sub === 'eval'
+        ? 'usage: android eval "<javascript expression>"'
+        : 'usage: android tap "<css selector>"');
+      process.exitCode = 1;
+      break;
+    }
+    const ok = await cdp(device, sub, argument);
+    if (!ok) process.exitCode = 1;
+    break;
+  }
+
   default:
-    console.error('usage: node devtools/dev.mjs android <devices|connect <host:port>|deploy|run|log|shot [name]|bench [--runs N]> [--device id]');
+    console.error('usage: node devtools/dev.mjs android <devices|connect <host:port>|deploy|run|log|shot [name]|eval <js>|tap <selector>|bench [--runs N]> [--device id]');
     process.exitCode = sub ? 1 : 0;
 }

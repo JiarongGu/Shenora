@@ -67,4 +67,19 @@
     <InternalsVisibleTo Include="Shenora.Tests" />
   </ItemGroup>
 
+  <!--
+    ⚠ TEMPORARY, and it exists to avoid a WORSE change. `DefaultSegmentEngine` (D71 piece 3) is internal
+    and unverified on hardware: the append path, whether the platform encoders reorder, and whether a real
+    ManagedMediaSource accepts the kit's fragments are all unmeasured. Making it PUBLIC to run that
+    measurement would commit SemVer surface to a shape the measurement might change — exactly backwards.
+    So the SAMPLE borrows it for the device run instead, and the public entry point gets designed once the
+    numbers are in.
+    🔴 REMOVE THIS with the same commit that makes the engine reachable properly. A temporary grant that
+    outlives its reason is indistinguishable from a deliberate one, and this file is not somewhere anyone
+    re-reads.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Shenora.Sample.Maui" />
+  </ItemGroup>
+
 </Project>

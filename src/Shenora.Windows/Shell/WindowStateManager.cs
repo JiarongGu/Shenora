@@ -25,9 +25,10 @@ namespace Shenora.Windows;
 /// handle to the saved position FIRST (Windows fires <c>WM_DPICHANGED</c> synchronously as the
 /// move crosses monitors, updating <c>DeviceDpi</c> to the target), then resolves the scale
 /// against that updated DPI. This is not optional and there is no auto-heal to fall back on:
-/// verified live in <c>devtools/_dpi-probe/</c> that WinForms' default <c>WM_DPICHANGED</c>
-/// handler does NOT rescale a Form's outer <c>Size</c> - Windows' <c>SuggestedRectangle</c>
-/// comes back as the current width/height unchanged, and the handler leaves it alone.
+/// measured live against a throwaway probe (gitignored, long gone) that WinForms' default
+/// <c>WM_DPICHANGED</c> handler does NOT rescale a Form's outer <c>Size</c> - Windows'
+/// <c>SuggestedRectangle</c> comes back as the current width/height unchanged, and the handler
+/// leaves it alone.
 /// Positioning first makes <c>DeviceDpi</c> authoritative before <c>Size</c> is computed.
 /// </summary>
 public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptions? options = null)
@@ -71,8 +72,8 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
         // that DPI is wrong. MOVE the window to the saved position first (Windows sends
         // WM_DPICHANGED synchronously as the move crosses monitors, updating form.DeviceDpi to
         // the target monitor), THEN resolve the scale. WinForms' default WM_DPICHANGED handler
-        // does NOT auto-rescale a Form's outer Size (verified in devtools/_dpi-probe/ — Windows'
-        // SuggestedRectangle came back unchanged and the handler left Size alone), so there is
+        // does NOT auto-rescale a Form's outer Size (measured against a gitignored throwaway probe —
+        // Windows' SuggestedRectangle came back unchanged and the handler left Size alone), so there is
         // no self-heal to fall back on: this positioning step is load-bearing, not defence.
         void OnHandleCreated(object? sender, EventArgs e)
         {

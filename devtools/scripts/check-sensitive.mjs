@@ -113,7 +113,18 @@ if (existsSync(localFile)) {
   console.error('  Without it only the two structural path patterns run — the brand/sibling-name');
   console.error('  half of the guard does NOT. Refusing to report a half-scan as clean.');
   console.error('  Fix: restore local/sensitive-patterns.txt (see .claude/rules/sensitive-info.md),');
-  console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.\n');
+  console.error('  or pass --allow-builtins-only if a builtins-only scan is genuinely what you want.');
+  // 🔴 NAME THE SITUATION, or the reader invents a worse fix. `local/` is gitignored, so it CANNOT
+  // exist in a fresh clone, in CI, or in an agent worktree — and this message used to describe only a
+  // corrupted primary checkout. A subagent hitting it on 2026-08-10 concluded the file was missing and
+  // COPIED IT IN from the main checkout to get a green run: a reasonable inference from what it was
+  // told, and the one outcome this repo's privacy rule most wants to prevent. Telling it which world
+  // it is in costs three lines and removes the incentive.
+  console.error('');
+  console.error('  ⚠ In a WORKTREE, a fresh clone or CI? Then this is EXPECTED — `local/` is gitignored');
+  console.error('    and cannot be there. Use --allow-builtins-only (or');
+  console.error('    SHENORA_ALLOW_BUILTIN_PATTERNS_ONLY=1). Do NOT copy local/ across checkouts:');
+  console.error('    duplicating private context is the leak this guard exists to prevent.\n');
   process.exit(1);
 }
 

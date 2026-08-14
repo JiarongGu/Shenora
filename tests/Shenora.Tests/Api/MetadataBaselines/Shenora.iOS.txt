@@ -4,14 +4,17 @@ Shenora.Mobile.MobileClipboardService
   method SetImageFromFileAsync
   method SetTextAsync
   method TrySaveImageToFileAsync
-Shenora.Mobile.MobileFileDialogs
+Shenora.Mobile.MobileFileDialogsBase
   method .ctor
+  method DiscardTemp
+  method NewTempPath
   method OpenFileAsync
   method OpenFolderAsync
   method SaveAsync
   method SaveFileAsync
+  method SuggestedName
 Shenora.Mobile.MobileHostExtensions
-  method UseMobile
+  method UseIOS
 Shenora.Mobile.MobileIpcBridge
   method .ctor
   method Attach
@@ -28,33 +31,13 @@ Shenora.Mobile.MobileIpcBridgeOptions
   property NotificationInterval
   property OnClientReady
   property Shell
-Shenora.Mobile.MobileLiveActivities
-  method .ctor
-  method End
-  method Start
-  method Update
-  property Unavailable
-Shenora.Mobile.MobilePlaybackSession
-  event CommandReceived
-  method .ctor
-  method Clear
-  method Dispose
-  method Publish
-  method Report
-  property SkipInterval
-  property Supported
 Shenora.Mobile.MobileSafeArea
   method .ctor
   method Dispose
   method Report
 Shenora.Mobile.MobileUiDispatcher
   method .ctor
-  method InvokeAsync
-  method InvokeAsync
-  method InvokeAsync
-  method InvokeOrDefaultAsync
-  method Post
-  method Post
+  method TryPost
   property IsOnUiThread
   property State
 Shenora.Mobile.MobileUiInteraction
@@ -69,3 +52,44 @@ Shenora.Mobile.MobileWebViewInterceptor
   method Dispose
   method Use
   property RangeDelivery
+Shenora.iOS.IosFileDialogs
+  method .ctor
+  method SaveAsync
+Shenora.iOS.IosLiveActivities
+  method .ctor
+  method End
+  method PushToken
+  method Start
+  method Update
+  property Unavailable
+Shenora.iOS.IosMediaAudioConversion
+  method Use
+  property Claims
+Shenora.iOS.IosMediaCapability
+  method .ctor
+  method Decodable
+  method Encodable
+Shenora.iOS.IosMediaPlayer
+  method .ctor
+  method ApplyRateCore
+  method ApplyStartAt
+  method OpenCore
+  method PauseCore
+  method PlayCore
+  method SeekCore
+  method TeardownCore
+  property DurationCore
+  property PositionCore
+Shenora.iOS.IosMediaVideoConversion
+  method CanConvert
+  method Use
+  property Claims
+Shenora.iOS.IosPlaybackSession
+  event CommandReceived
+  method .ctor
+  method Clear
+  method Dispose
+  method Publish
+  method Report
+  property SkipInterval
+  property Supported

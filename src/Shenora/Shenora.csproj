@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Shenora</PackageId>
+    <Description>Shenora: the hybrid app framework for .NET + React, portable across Windows, Android and iOS — reference it plus ONE shell package. Three layers: Core is the contract (the typed IPC stack with its middleware dispatcher and scoped router, the event bus, the webview interception and file-serving pipeline, and the platform-neutral shell contracts — the IUiDispatcher UI-thread seam plus file dialogs, clipboard, URL launching and UI blocking, so application logic compiles with no Windows reference). Engine is the brain (the mission scheduler with claims, lanes and durable queues; journalled safe file mutation with path locks). Modules bridge .NET to the web (media probing, planning, remuxing, streamed range delivery and platform codec conversion; native file dialogs; Live Activities and playback sessions; request tracking; staged self-update with safe archive extraction). Application host and builder via ShenoraApplication.CreateBuilder. Depends on Microsoft.Extensions DI (implementation) + logging abstractions.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The DI IMPLEMENTATION (not just Abstractions) is required: the builder calls
+         BuildServiceProvider, which lives there. D17. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      ⚠ ONE package, ONE type, and it is the narrower of two bad trades rather than a precedent.
+      `generic-library.md` says a helper two packages need should be PUBLIC, because a ProjectReference
+      does not grant internal access — that is why WinFormsUiDispatcher is public. `ActivityWire` is the
+      exception the same rule allows: it is serializer OPTIONS, no adopter has asked for it (D15), and
+      making it public would put a mutable JsonSerializerOptions on the SemVer surface forever to save
+      one line here. The alternative that was actually in place — a copy in Shenora.iOS and another in
+      the test — is what let the shipped payload and the golden payload diverge silently.
+    -->
+    <InternalsVisibleTo Include="Shenora.iOS" />
+  </ItemGroup>
+
+</Project>

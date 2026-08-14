@@ -134,6 +134,26 @@ test('refuses when the staged manifest lists nothing', (box) => {
   assert(apply(box).applied === '0', 'an empty release manifest must be refused, not obeyed');
 });
 
+test('REFUSES a staged manifest whose path escapes the app root', (box) => {
+  // 🔴 The manifest is the only input this program takes from a remote server, and it drives
+  // `fs::remove`. `std::filesystem::operator/` REPLACES its left side when the right is absolute —
+  // byte for byte the trap C#'s `Path.Combine` has — so a rooted or `..` path would delete outside
+  // the tree. `parse_manifest` refuses the whole manifest, and step 2 turns that into a refusal.
+  // The C# owner is `ManifestDiff.IsSafeRelativePath`; these two must agree, which is why this case
+  // lives beside the "reads what the C# side WRITES" mirror rather than in the C# suite.
+  write(path.join(box.release, 'app.dll'), 'v2');
+  stage(box);
+  const staged = path.join(box.root, '.update', 'staged', 'manifest.json');
+  for (const escaping of ['../escape.txt', '..\\escape.txt', '/etc/passwd', 'C:\\Windows\\evil.dll']) {
+    write(staged, JSON.stringify({
+      version: '2.0',
+      files: [{ path: escaping, size: 2, sha256: 'x' }],
+    }));
+    assert(apply(box).applied === '0',
+      `an escaping manifest path was accepted and applied: ${escaping}`);
+  }
+});
+
 test('the manifest parser reads what the C# side WRITES', (box) => {
   // The conformance case proper. `update-probe --stage-only` wrote this file with System.Text.Json:
   // camelCase names, indented, and it carries members the C++ parser does not model. If the parser

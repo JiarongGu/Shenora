@@ -1,4 +1,5 @@
-using Shenora.Core;
+using Shenora;
+using Shenora.Engine.Missions;
 
 namespace Shenora.Tests.Missions;
 
@@ -10,7 +11,7 @@ namespace Shenora.Tests.Missions;
 /// that quietly stops being true.
 ///
 /// <para>
-/// See <c>docs/2026-08-02-shenora-mission-scheduling-design.md</c> §8.
+/// See <c>docs/DECISIONS.md</c> D27–D31; the de-identified mapping table is <c>local/ADOPTION.md</c>.
 /// </para>
 /// </summary>
 public class MissionSchedulerAdoptionTests

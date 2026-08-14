@@ -24,20 +24,17 @@ export default {
   solution: 'Shenora.slnx',
   /** Packable .NET projects (lockstep version; `pack` runs dotnet pack on each). */
   packableProjects: [
-    'src/Shenora.Core',
-    'src/Shenora.Ipc',
-    // net10.0 and portable, so it packs and gates exactly like Core/Ipc — no platform host needed.
-    // Compression: net10.0, no native engine, packs and gates exactly like Core/Ipc/Media.
-    // The file-operation engine, split out of Core (D48): 1,700 lines an app that never mutates
-    // a file tree should not carry.
-    'src/Shenora.IO',
-    'src/Shenora.IO.Compression',
+    'src/Shenora',
+    // ⚠ Shenora.Ipc is NOT here either: it folded into Core on 2026-08-07 (D65). IPC is a CORE — the
+    // contract both sides agree on — and a separate package id said 'optional', the claim D53/D55 killed.
+    // ⚠ Shenora.IO and Shenora.IO.Compression are NOT here: they folded into Core on 2026-08-07
+    // (D55), the same call as Media. Their namespaces live on inside Core, so nothing here needs a
+    // rename — the packages simply stopped existing.
     // The native launcher's packaging project. Listed here because it IS shipped and the
     // coverage check reads IsPackable as the definition of "shipped" — but it packs DOWNLOADED CI
     // artifacts, not anything built on this machine, so `pack` skips it unless they are staged. See
     // artifactPackableProjects below.
     'src/Shenora.Launcher',
-    'src/Shenora.Media',
     'src/Shenora.Windows',
     // The two mobile faces. Both are listed because the API-baseline coverage check reads IsPackable
     // as the definition of "shipped", so a project claiming it while the tooling skips it is the two
@@ -67,12 +64,22 @@ export default {
    * only way to ship an empty native package is to work at it.
    */
   artifactPackableProjects: ['src/Shenora.Launcher'],
-  /** The npm package dir (version synced from VersionPrefix by pack/doctor). */
+  /**
+   * The npm package that has a BUILD and TESTS — `verify` builds and vitests this one, and the sample
+   * web app consumes it. Kept singular because those steps are genuinely about the React client.
+   */
   npmDir: 'src/Shenora.React',
+  /**
+   * EVERY npm package, for the checks that must not miss one: version lockstep against
+   * `<VersionPrefix>`, the shipped LICENSE copy, and `pack`. ⚠ Adding a package and forgetting this list
+   * is how one gets published outside the lockstep — the failure that consumed 0.2.0 without ever
+   * shipping. `@shenora/cli` is pure Node with no build step, which is why it is here but not above.
+   */
+  npmPackages: ['src/Shenora.React', 'src/Shenora.Cli'],
   /** Pack output (gitignored). */
   packagesDir: 'publish/packages',
 
-  // ---- Sample-app desktop loop (wired in Phase 2; see docs/ROADMAP.md) ----
+  // ---- Sample-app desktop loop ----
   /** Sample desktop project — `sample` runs it; capture/input tools target its process. */
   sampleProject: 'samples/Shenora.Sample.Desktop',
   processName: 'Shenora.Sample.Desktop',
@@ -83,7 +90,7 @@ export default {
    *
    * They are gitignored, transient verification artifacts and capture is cheap, so without a cap
    * they only ever grow — 53 files / 7.5 MB by the first release, and no doc referenced any of
-   * them, because evidence here is recorded as NUMBERS and prose (ROADMAP, FIX-LOG), never as a
+   * them, because evidence here is recorded as NUMBERS and prose (commit messages), never as a
    * PNG. Raise it if you are mid-investigation and want a longer trail; `--keep N` overrides once.
    */
   shotRetention: 24,

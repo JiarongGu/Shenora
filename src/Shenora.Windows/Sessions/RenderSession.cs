@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Shell;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Windows;
 
@@ -24,7 +26,7 @@ public sealed class RenderSession : IAsyncDisposable
 
     private readonly RenderSessionPool _pool;
     private readonly RenderSessionPool.PoolInstance _instance;
-    private readonly Shenora.Core.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
+    private readonly Shenora.Core.Shell.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly TimeSpan _opTimeout;

@@ -1,6 +1,7 @@
 using System.Drawing;
 using Microsoft.Web.WebView2.Core;
-using Shenora.Core;
+using Shenora;
+using Shenora.Core.WebView;
 
 namespace Shenora.Windows;
 
@@ -68,6 +69,22 @@ public sealed class WebViewHostOptions
     /// <c>ShenoraEnvironment.IsDevelopment</c>.
     /// </summary>
     public required WebViewEnvironmentOptions Environment { get; init; }
+
+    /// <summary>
+    /// The app-level resource pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied to
+    /// this host's interceptor at construction. Wire it from the built app —
+    /// <c>Pipeline = sp.GetRequiredService&lt;WebViewPipeline&gt;()</c> — and every window built from these
+    /// options serves the same routes, including secondary windows and session browsers.
+    /// <para>
+    /// ⚠ <b>Null means this host serves only what is registered on its own interceptor</b>, which is a
+    /// legitimate choice for a deliberately isolated webview — and a silent mistake everywhere else, since
+    /// a window serving no routes looks exactly like a window whose routes were never needed. It is
+    /// nullable rather than required only because the options object is constructed by the APP, and
+    /// forcing it would break every existing construction site including the ones that genuinely want
+    /// nothing. Set it unless you mean the isolation.
+    /// </para>
+    /// </summary>
+    public Shenora.Core.WebView.WebViewPipeline? Pipeline { get; init; }
 
     /// <summary>
     /// True (default) = the process-wide shared environment (main window, main UI thread).

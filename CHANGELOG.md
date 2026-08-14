@@ -1,16 +1,860 @@
 # Changelog
 
-All packages (NuGet `Shenora.*` + npm `@shenora/react`) version in lockstep from
+All packages (NuGet `Shenora.*` + npm `@shenora/react` and `@shenora/cli`) version in lockstep from
 `src/Directory.Build.props` (`VersionPrefix`). From 1.0, SemVer 2.0 applies, gated by the
 API-surface baseline tests; while every consumer is one of the author's own applications, a
 **documented** break may ship in a MINOR release — always called out under a `### Breaking`
-heading here. Released versions are listed newest first; within `## Unreleased`, entries are in
-landing order (oldest first) because they narrate one version being built.
+heading here. Released versions are listed newest first.
+
+🔴 **`## Unreleased` states the END STATE of the release, not the order it was built in** (changed
+2026-08-09). It used to be kept in landing order, on the reasoning that the entries narrate one version
+being built — and that is exactly what went wrong: a shape reworked twice before shipping got two entries,
+the earlier one naming types the later one had renamed, and **this file is exempt from every prose gate by
+construction**, so nothing could see it. When a change supersedes an earlier entry in the SAME unreleased
+version, REWRITE that entry rather than appending beside it. Released sections are frozen and stay as they
+were published.
+
+🔴 **AN ENTRY BELONGS UNDER `### Breaking` ONLY IF ITS OLD SIDE WAS ACTUALLY RELEASED, AND THAT IS
+CHECKABLE:** `git grep <old-name> <last-tag> -- src/`. If the name was introduced in the same unreleased
+window, nobody can migrate from it and the entry is development churn wearing a migration note — describe
+the FINAL shape under `### Added` instead. Five entries failed this test on 2026-08-09 (the media seams
+reshape, which said so in its own text; `WithDeviceEncoders`' extra parameter; the mobile shells' type
+split; the native-player registration; the whole activity-drawing vocabulary, renamed twice before it
+shipped). **This matters beyond tidiness: `### Breaking` is the SemVer gate at 1.0, so padding it with non-breaks is how a real break gets
+lost in the noise.**
 
 **Each `###` heading appears AT MOST ONCE per version** — append to the existing group, never open a
 second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7), which is worse
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
+
+## Unreleased
+
+### Breaking
+
+**`WinFormsUiDispatcher` and `MobileUiDispatcher` now derive from `UiDispatcherBase`.** Source-compatible
+— every member is still there and still called the same way — but the inherited ones now live on the base,
+so code compiled against 0.10.0 must be **recompiled** rather than dropped in. Nothing to change in your
+source. (Subclassing either is not affected: both were and remain `sealed`.)
+
+🔴 **The conversion seam is one path for every stream kind, and two of its members changed on you.**
+
+`MediaConversionOptions.AudioConversion` → **`Conversion`**, now typed `IMediaStreamConversion`.
+
+**`MediaStreamInfo` gained `Width`, `Height` and `FrameRate`** (optional, at the end) — what configures a
+platform video codec, exactly as rate and channels configure an audio one. Positional construction with
+the first five arguments is unaffected; anything constructing it with ALL arguments positionally now
+needs the new ones, or named arguments.
+
+⚠ **The rest of that reshape is NOT a break and has moved to `### Added`.** `IMediaAudioConversion`,
+`IMediaAudioConversionRun`, `MediaAudioPipeline`, `MediaAudioMiddleware` and `IMediaContainerWriter` were
+all introduced AFTER v0.10.0 and renamed before shipping, so nobody can migrate from them — checked the
+way this file's own header says to (`git grep <name> v0.10.0 -- src/` finds nothing). Listing development
+churn here is how a real break gets lost in the noise.
+
+🔴 **The package set, the namespaces and the entry points all moved. This is the whole migration:**
+
+```diff
+- <PackageReference Include="Shenora.Core"  Version="…" />
+- <PackageReference Include="Shenora.Ipc"   Version="…" />
+- <PackageReference Include="Shenora.Media" Version="…" />
+- <PackageReference Include="Shenora.IO"    Version="…" />
+- <PackageReference Include="Shenora.IO.Compression" Version="…" />
++ <PackageReference Include="Shenora"       Version="…" />
+```
+
+| namespace was | namespace is |
+|---|---|
+| `Shenora.Core` | `Shenora` |
+| `Shenora.Ipc` | `Shenora.Core.Ipc` |
+| `Shenora.Media` | `Shenora.Modules.Media` |
+| `Shenora.IO` | `Shenora.Engine.Files` |
+| `Shenora.IO.Compression` | `Shenora.Modules.Update.Compression` |
+| (missions, previously flat in `Shenora.Core`) | `Shenora.Engine.Missions` |
+
+- **The package set is `Shenora` + ONE shell (`Shenora.Windows` / `.Android` / `.iOS`) + `@shenora/react`**,
+  plus the native `Shenora.Launcher` and the build-time `@shenora/cli`. **There is no optional-feature tier
+  at all** (D53/D55): a capability gets a folder, never a package id. The reason is identity rather than
+  size — a nuget.org listing of single-domain libraries makes a claim about the product nobody meant.
+- **The layers are the folder structure and the namespaces** (D65): `Core/` is the CONTRACT (Ipc · Events ·
+  WebView · Shell), `Engine/` is the BRAIN (Missions · Files), `Modules/` BRIDGE .NET to the web (Media ·
+  FileDialog · Platform · Requests · Update).
+- Each fold was proven a PURE move against the API baselines — symbols accounted for in both directions,
+  none added, changed or lost.
+
+- 🔴 **The pipeline phase moves onto the built application (D64).** `app.UseFiles(…)`,
+  `app.UseMediaPlayer()`, `app.MapModule<T>()` and `app.Use(…)`:
+  ```csharp
+  using var app = builder.Build();
+  app.UseFiles(new WebViewFileOptions { … });   // order matters, like app.UseAuthentication()
+  app.UseMediaPlayer();
+  app.Run();
+  ```
+  - 🔴 **A real change in meaning, adopted deliberately: a step describes the pipeline for EVERY webview
+    the app hosts.** Secondary windows and auxiliary session browsers previously got nothing unless the app
+    wired each one by hand — invisible, because a window serving no routes looks exactly like a window
+    whose routes were never needed. Per-interceptor overloads stay for one webview that must differ.
+  - **`WebViewPipeline` FREEZES on first use by a webview**, and throws with a message naming the fix if a
+    step is declared afterwards. A window opened later still gets every step.
+
+- 🔴 **The FACADE vocabulary is gone: a module's root type is `XxxModule` (D65).** The rename most likely
+  to hit you, because `BaseFacade` is what an adopter's own IPC modules derived from.
+
+  | was | is |
+  |---|---|
+  | `BaseFacade` | `ModuleBase` |
+  | `IModuleFacade` | `IIpcModule` |
+  | `services.AddModuleFacade<T>()` | `services.AddIpcModule<T>()` |
+  | `FileDialogFacade` | `FileDialogModule` |
+  | `DropZoneFacade` | `DropZoneModule` (`Shenora.Windows`) |
+  | `WindowCommandFacade` | `WindowCommandModule` (`Shenora.Windows`) |
+
+  **Migration is a rename and nothing else** — no member, signature or behaviour changed.
+
+- 🔴 **"Operations" is MERGED INTO `IpcRequest` and no longer exists (D66).** Not a rename: the entity was
+  duplicating the request that caused it, and every consumer paid for the join.
+  - **Deleted:** `OperationOptions`, `IOperation`, `IOperationRegistry`, `OperationRegistry`,
+    `OperationEvents`, `OperationsModule`, `AddShenoraOperations`, `IModuleContext.Start`/`Run`, the
+    `Waiting` status and everything around it (`WaitReason`, `Wait`/`Resume`, `Dismiss`, `RequestResume`,
+    `RequestWait`, `Find`, the `WAIT`/`RESUME`/`DISMISS` routes and their events).
+  - **What replaces them** is the genuinely-new part — the LIVE STATE of a request: `IpcRequestState`,
+    `IpcRequestStatus`, `IpcProgress`, `IpcLabel`, `IIpcRequestTracker`, `IpcRequestsModule`,
+    `AddShenoraRequests`. Wire: `SHENORA.REQUESTS`, `REQUEST_UPDATED`/`REQUEST_REMOVED`, and `CANCEL`
+    carries a **`requestId`** — the id the page already had when it sent the request.
+  - **`IModuleContext` is now PER REQUEST** and gains `RequestId` + `Report(progress, detail)`. A route
+    reports progress with no id, because there is only one.
+  - 🔴 **THE GRACE PERIOD replaces the declaration.** Every request is tracked automatically and nothing is
+    emitted unless one outlives `IpcRequestTrackerOptions.GracePeriod` (50 ms). A request that finishes
+    inside the window leaves no event, no history entry and no wire traffic — which is what makes tracking
+    everything affordable. ⚠ It never delays the RESPONSE; it suppresses notifications only.
+  - **Migrate:** delete the `OperationOptions` and the `Run(...)` wrapper; `await` the work in the route and
+    call `context.Report(...)`. Observe the route's own `cancellationToken` — `CANCEL` now targets it.
+    Client: `useShenoraOperations` → `useShenoraRequests`, `createOperationsStore` → `createRequestsStore`,
+    `status` → `state`, `kind` → `type`; `title` and `cancellable` are gone.
+  - **`ModuleBase`'s third constructor parameter (`IIpcRequestTracker? requests`) is GONE** —
+    `base(logger, events, requests)` becomes `base(logger, events)`. A module that used it GAINS tracking,
+    because the dispatcher now does the work.
+  - **A CORE module is CONFIGURED by the application's setup, never added to it.** The registration is
+    `internal`; the app-facing surface is **`builder.UseRequests(x => …)`**, beside
+    `UseMissions`/`UseFileSystem`/`UseMediaPlayer`.
+
+- 🔴 **`OperationException` → `ShenoraException`, `OperationError` → `ShenoraError`.** The framework's ONE
+  structured error — a code plus interpolation parameters, the only exception whose details cross the
+  bridge. It never had anything to do with the "operation" concept; it inherited the word from the
+  subsystem it was written beside.
+  ```diff
+  - throw new OperationException("IMPORT_FAILED", "file", name);
+  + throw new ShenoraException("IMPORT_FAILED", "file", name);
+  - catch (err) { if (err instanceof OperationError) show(t(`errors.${err.code}`)); }
+  + catch (err) { if (err instanceof ShenoraError) show(t(`errors.${err.code}`)); }
+  ```
+  ⚠ **`error.name` changes too**, so client code matching on the name STRING rather than `instanceof` needs
+  updating. Matching on `code` was always the intended path and is unaffected.
+
+- 🔴 **EVERY kit module moved onto a reserved `SHENORA.` prefix.** A WIRE break: both halves must move
+  together or they fail with `UNKNOWN_MODULE` while compiling perfectly on each side.
+
+  | was | now |
+  |---|---|
+  | `FILE_DIALOGS` | `SHENORA.DIALOGS` |
+  | `OPERATIONS` | `SHENORA.REQUESTS` |
+  | `WINDOW` | `SHENORA.WINDOW` |
+  | `DROP_ZONE` | `SHENORA.DROPZONE` |
+  | `MEDIA` | `SHENORA.MEDIA` |
+
+  **Migration:** update any hard-coded module string. If you use `@shenora/react`'s clients you change
+  nothing — they carry the names. The handshake's bare `SHENORA` is unchanged.
+  **The point is what it gives BACK: those plain names are now yours.** A reserved prefix cannot collide
+  with an app's, which is also what makes registering the kit's own modules by default safe (D64).
+
+- **`NO_HANDLER` split in two.** It still means nothing claimed the MODULE name; **`NO_ROUTE` (new) means
+  the module answered and has no such type.** The two need OPPOSITE fixes — wire the module up, versus
+  correct a route name — and they were indistinguishable on the wire. A client branching on `NO_HANDLER`
+  for a bad route name should read `NO_ROUTE`; `IpcErrorCodes.noRoute` is exported from `@shenora/react`.
+
+- **The shell entry points are named for the PLATFORM (D65).** `UseWinForms()` → **`UseWindows()`**,
+  `UseMobile()` → **`UseAndroid()` / `UseIOS()`**; `WinFormsHostOptions` → `WindowsHostOptions`,
+  `WinFormsHostExtensions` → `WindowsHostExtensions`. D37 made the package set one-per-platform in 0.5.0
+  and the calls never followed. ⚠ A multi-targeted MAUI app now writes an `#if`; a single-platform app
+  writes one line and never notices.
+
+- **`AddMessageDispatcher` → `UseMessageDispatcher`.** One rename; no receiver moved and no signature
+  changed. The rule: **`Use` means a wider configuration INCLUDING its pipeline; `Add` is the
+  service-collection level only.** ⚠ `AddIpcModule<T>`, `AddShenoraFileDialogs` and `AddShenoraRequests`
+  keep `Add` and are unchanged — each is plain DI registration.
+
+- 🔴 **`MobileWebViewInterceptor` now takes the app's `WebViewPipeline` as a REQUIRED second constructor
+  argument.** Migration: `new MobileWebViewInterceptor(webView, app.Pipeline, log)`. Pass a fresh
+  `new WebViewPipeline()` for a webview that must deliberately serve nothing.
+  ⚠ **No gate catches this one** — the mobile API baselines are NAME-level and the mobile samples do not
+  build on a Windows host, so this entry is the only warning an adopter gets.
+
+- **`MissionScheduler` now implements `IDisposable` as well as `IAsyncDisposable`.** Additive for callers,
+  listed because it changes what `using var app = …` does. See `### Fixed` — it was a crash.
+
+- 🔴 **Media containment is stated once: `MediaAccessOptions`.** `MediaConversionOptions` no longer carries
+  its own `AllowedRoots`, `CacheRoot`, `Resolve`, `Module` or `Log` — it takes an `Access` object instead.
+  **Migration:** move those five into `Access = new MediaAccessOptions { … }`. The compiler names every site.
+  ⚠ **Only `MediaConversionOptions` is a migration** — `SegmentStreamOptions` and `MediaPlayerOptions` are
+  new in this release and were never shaped any other way.
+  **Why:** `AllowedRoots` is a security boundary, and it was heading for three separate declarations that
+  could drift.
+  ⚠ **`MediaPlayerOptions.Access` is the one place this is `{ get; set; }` rather than `{ get; init; }`** —
+  unlike the other two types, it is configured through `UseMediaPlayer((options, services) => …)`'s callback
+  AFTER construction, and an `init` accessor cannot be assigned outside an object initializer. It also stays
+  free to swap the whole object once `CacheRoot` needs the `paths.DataArea("media")` default `UseMediaPlayer`
+  has always applied when none was named. `MediaAccessOptions.Resolve` is `required` even here, though this
+  particular `Access` never calls it — `MediaPlayerOptions` resolves its route through `MediaPlayerRoute`
+  instead, so `static _ => null` is the correct value to give it.
+
+### Added
+
+- 🔴 **THE FRAMEWORK IS ON BY DEFAULT (D64).** `Build()` registers missions, the file system and the media
+  player; `UseMissions`, `UseFileSystem` and `UseMediaPlayer` now only CONFIGURE them — the way
+  `WebApplication.CreateBuilder` brings Kestrel without anyone calling `AddKestrel()`. An explicit call
+  still wins: it registers first, and the defaults are `TryAdd`.
+  - **Why it is safe:** none of these does anything until the frontend asks over IPC or requests a URL.
+    They are interceptors on the kit's three fixed pipelines, so one nothing routes to is inert by
+    construction. Containment (`AllowedRoots`, `WebViewFileOptions`) is unchanged and still fails closed —
+    `UseMediaPlayer()` still refuses to guess a root, which is why conversion remains opt-in.
+  - ⚠ **Registration touches NO disk.** Building a journal and locker at registration time would have given
+    every app a `journal/` and a `locks/` folder it never asked for, because `Paths.DataArea` CREATES the
+    directory it names. Both construct inside the DI factory, pinned by a test.
+  - ⚠ **Nothing to migrate from 0.10.0** — none of these three entry points existed in that release. What a
+    0.10.0 adopter actually renames is `AddShenoraOperations`, `UseWinForms` and `UseMobile`, each under
+    `### Breaking` above.
+
+- 🔴 **The kit now ships a DEFAULT segment engine, so `UseSegmentStream` works out of the box on mobile**
+  (D71 piece 3). `ISegmentEngine` had shipped as a seam with no implementation; supplying one was the app's
+  job, and most apps have no way to write a fragmenting muxer. The default is composition only — the
+  demuxer the kit already had for remuxing, the codecs the shell already registers for conversion, and a new
+  fMP4 fragment writer — so **no engine bytes ship and no licence is inherited**. An app past the platform's
+  reach still supplies its own through the same seam.
+  - **Segments are fMP4 (`seg{k}.m4s` + `init.mp4`), not MPEG-TS.** `isTypeSupported('video/mp2t')`
+    answered `true` on both mobile shells and that claim is not trusted — `canPlayType` produced exactly
+    such a `true` for HLS the same day, and a MediaSource append failure is silent. fMP4 is what
+    `MediaSource`/`ManagedMediaSource` actually consume, and it makes `HasRenderedPicture` answerable: the
+    sample sizes are in the file, where MPEG-TS only ever declared the stream in its PMT.
+  - The manifest is **HLS version 7 with `#EXT-X-MAP`**, which the segment format requires — an
+    `#EXT-X-MAP` is illegal below version 6, so the two move together.
+  - **The init segment is PRODUCED, not stored.** Its decoder configuration is knowable only once an
+    encoder has emitted output, so the engine writes it beside its first fragment and the route answers
+    `503 Retry-After: 1` until then — the same not-ready reply the conversion and computed-remux routes give.
+    A page following `#EXT-X-MAP` must tolerate that, exactly as it does for a segment.
+  - `SegmentRunRequest` gained `InitSegmentName` and `SegmentExtension`: the file names are part of the
+    engine contract, so a third-party engine needs them rather than a comment describing them.
+  - ⚠ **Desktop reports `IsAvailable = false`**, because `Shenora.Windows` implements no
+    `IMediaStreamConversion`. That is the honest answer rather than a broken one: WebView2 serves byte
+    ranges properly, so the desktop's path is the computed-remux route.
+  - ⚠ **The grid must be a whole number of seconds.** The kit's encoders emit a keyframe every second, so
+    only whole multiples land on one; a fractional `SegmentSeconds` is refused at composition time rather
+    than producing segments that play and misbehave only when seeked.
+  - ⚠ **Proven against a fake codec, not on a device.** The pump, the cutting, the seeking and the fragment
+    bytes are unit-tested end to end; whether the PLATFORM's encoders behave as the fake does is not yet
+    measured on hardware.
+
+- 🔴 **`UiDispatcherBase` — the shell-independent half of `IUiDispatcher`, implemented once.** The two
+  shipped dispatchers were deliberate member-for-member mirrors, on the reasoning that *"the invariants
+  are the CONTRACT, not the platform"* — which is the argument for stating them once rather than twice.
+  A shell now supplies three hooks (`State`, `IsOnUiThread`, `TryPost`) and inherits everything a caller
+  can observe: the guarded inline and posted paths, the load-bearing `(Action)` cast that stops
+  `Post(Func<Task>)` recursing into an uncatchable `StackOverflowException`, the state-shaped failures,
+  and the cancellation-observing awaits. **An app implementing `IUiDispatcher` for its own host should
+  derive from this** instead of re-deriving the invariants.
+  - Behaviour is unchanged on both shells, including which exception a refused post surfaces: `TryPost`
+    hands the platform's own failure back, so WinForms still faults with what `BeginInvoke` threw and
+    MAUI still reports `ObjectDisposedException` when `Dispatch` returns false.
+
+- **`AppCallback.RunAsync(Func<Task>, Action<Exception>?)`** — the async form of the guarded app-callback
+  helper, for the fire-and-forget UI post whose exceptions have no caller left to catch them. It keeps
+  `ConfigureAwait(true)` deliberately, because every caller is already on the UI thread and the
+  continuation must stay there. Both `IUiDispatcher` implementations now use it instead of each carrying
+  a private `RunGuardedAsync` plus a private `Report` byte-identical to `AppCallback`'s own.
+
+- 🔴 **ONE conversion seam for every stream kind** — `IMediaStreamConversion` / `IMediaStreamConversionRun`
+  / `MediaConversionPipeline` / `MediaConversionMiddleware`, plus `IMediaContainerWriter`. A converter
+  DECLINES a kind it does not handle (`source.Kind`) rather than being registered into a per-kind
+  registry, so there is nothing to register into the wrong one. `Push`/`Drain` speak `MediaFrame` (bytes,
+  presentation time, keyframe flag) rather than bare buffers: video needs a sync-sample table and
+  composition offsets, and only the encoder knows them. Audio passes `IsKeyframe: true`, which is a value
+  rather than a different shape.
+  - **What this buys:** a picture the device decodes and its webview refuses — measured `mpeg4` on API 36,
+    which reaches `readyState = 4` with **no error** and a 0×0 picture — is re-encoded to H.264 instead of
+    being served as sound over a blank rectangle. A file whose picture cannot be produced is REFUSED, not
+    quietly shipped without it.
+  - ⚠ Described here rather than under `### Breaking` because an audio-only ancestor of this seam existed
+    only WITHIN this unreleased window: there is no released name to migrate from. The two members that
+    genuinely changed for a 0.10.0 adopter (`MediaConversionOptions.Conversion` and `MediaStreamInfo`'s
+    new members) are under `### Breaking`.
+
+- 🔴 **iOS HAS a picture converter now** — `IosMediaVideoConversion` (VideoToolbox:
+  `VTDecompressionSession` → `VTCompressionSession` → H.264), registered on both mobile shells beside the
+  audio converter, with both declining what they do not handle so one pipeline serves both kinds.
+  - ⚠ **What it does NOT do, measured rather than assumed:** convert `mpeg4` on an iPhone 17 Pro / iOS 26.6.
+    **That device has no MPEG-4 Part 2 decoder** — 47 bytes of ESDS present and `VTDecompressionSession`
+    still refuses — so the track is dropped and the conversion refused, which is the correct answer and the
+    one the kit gave before this converter existed. `h263` creates a session on the same device, so the
+    converter itself works; the codec is the limit, not the code.
+  - **So the honest summary is a SEAM, not a capability:** the kit now asks iOS the picture question instead
+    of never asking, and iOS answers per codec. A device or OS that carries an `mp4v` decoder gets the
+    conversion for free.
+  - **The gap was measured, and the reason it stayed open was a claim contradicted by its own evidence.**
+    Both `TASKS.md` and the registration site said iOS needed no picture converter because *"iOS decodes
+    what its webview accepts"*. The opposite was already recorded: this device decodes `mpeg4` and **its own
+    webview refuses it**, so a page got sound and a blank picture with **no error at all**.
+  - ⚠ **VideoToolbox emits AVCC (length-prefixed) samples natively**, so none of the Android peer's Annex-B
+    splitting applies here — the `avcC` is rebuilt from the encoder's own parameter sets, and keyframes come
+    from `NotSync` INVERTED (absent means sync). ⚠ **Not yet proven on hardware** — it compiles and is
+    registered; the device run is the outstanding step, and the simulator is not evidence for codecs here.
+
+- 🔴 **`BackgroundPlaybackTransfer` — playback that survives the app going away**, by moving the playhead
+  from the page's element to the platform's own player and back. The one media job a page provably cannot
+  do for itself, which is what makes it the kit's (D54): measured, a page `<audio>` already playing is
+  suspended after **~15.3 s** in the background while the native player ran **45 s** with no foreground
+  service, and the page cannot even START audio at background time (`NotAllowedError` — user activation is
+  transient and pressing HOME is not a gesture).
+
+  ```csharp
+  var transfer = new BackgroundPlaybackTransfer(
+      services.GetRequiredService<IMediaPlayer>(),          // the page-backed player
+      services.GetRequiredService<AndroidMediaPlayer>(),    // the shell's own, resolved BY TYPE
+      new BackgroundPlaybackOptions { ResolveNativeSource = () => currentFile });
+
+  window.Stopped += async (_, _) => await transfer.ToBackgroundAsync();
+  window.Resumed += async (_, _) => await transfer.ToForegroundAsync();
+  ```
+
+  - **Your half is `ResolveNativeSource` and nothing else.** The page plays a URL your own routes serve and
+    a native player cannot fetch that, so something must map it to a file the device can open — the same
+    knowledge `MediaAccessOptions.Resolve` already encodes.
+  - **iOS also needs `UIBackgroundModes: [audio]`** and the active `AVAudioSession` the shell's player takes.
+  - 🔴 **A playback that FINISHES while you are away parks the page at the end rather than restarting it.**
+    Seeking a 60 s element to 60.00 rewinds it and the follow-up `play()` runs the opening titles.
+  - ⚠ **It reports what happened; it does not promise a window.** Measured to ~45 s on Android and ~43 s on
+    iOS with clips that then ended — **minutes are unmeasured**, and a foreground service remains the app's
+    to post.
+  - Requires the page half (`useMediaPlayer(ref)` in `@shenora/react`) in BOTH directions: the transfer
+    reads `IMediaPlayer.Status`, which the page's `PLAYER_REPORT` feeds, and hands back by driving the
+    element with `PLAYER_SEEK`/`PLAYER_PLAY`. An app that reports but ignores commands gets a handback that
+    silently moves nothing.
+
+- 🔴 **A DEFAULT CONVERSION ENGINE, and it is the PLATFORM's own hardware.** `MediaConversionOptions` takes
+  `Conversion` — the codec seam your shell already registers — and `Convert` is no longer `required`: omit
+  it and the kit runs `Mp4Remuxer` joined to those decoders. **Zero shipped codec bytes**, because this is
+  wiring rather than a codec, so D51 stands unamended; code that sets `Convert` behaves identically.
+
+  ```csharp
+  Conversion = services.GetService<IMediaStreamConversion>(),   // the platform's decoders
+  // Convert: omitted — the kit supplies the engine.
+  ```
+  - ⚠ **Its reach is D59's line and no wider — what the DEVICE decodes and its WEBVIEW refuses.** Measured
+    2026-08-10: an API 36 Android device decodes mp3/flac/vorbis and NOT ac3/eac3/dts/alac; an iPhone
+    decodes ac3/eac3 — ask `IMediaCapability`. **Past that line the work is yours**, which is what `Convert`
+    is now for. Omit `AudioConversion` as well and the default repairs CONTAINERS, needing no codecs at all.
+  - 🔴 **AND A DROPPED STREAM IS NOW A FAILURE, not a caveat on a success.** Losing a soundtrack reports
+    `FAILED` with `reason: UNSUPPORTED_CODEC` plus the codecs, and **caches nothing**; it used to `Commit`
+    first and put `dropped` beside `READY`, serving — and caching for ever — a SILENT FILM as a 200.
+    **Wire change:** `READY` no longer carries `dropped`, the codecs travel on `FAILED`, and
+    `MediaConversionErrorCodes` + `MediaConversionEvents` join `docs/reference/wire.md`.
+  - ⚠ **The host log separates the two CAUSES, which need opposite responses.** Dropped WITH a codec seam
+    supplied is genuinely unsupported on this device; dropped with NONE means the platform was never asked
+    — the adopter's composition rather than the file — and the message says to set `AudioConversion` before
+    concluding anything about the codec.
+  - ⚠ **Setting both `Convert` and `AudioConversion` THROWS at registration** rather than silently
+    preferring one: the second configures the default engine, so a custom `Convert` would make it dead
+    configuration (D63).
+
+- 🔴 **`Mp4Remuxer.Plan(source)` — the remuxer can describe the file it WOULD write, without writing it.**
+  Returns an `Mp4Layout` (`Header`, `Samples`, `TotalLength`) after ONE metadata pass, or `null` when the
+  source cannot be described that way. A remux copies frames, so the output follows from the source's frame
+  index and every byte has a known provenance before any of it exists — which is what makes
+  `UseComputedRemux` able to answer a `206` with a real total, cold.
+
+  ```csharp
+  var layout = Mp4Remuxer.Plan(source);          // null → this source belongs on the segment path
+  // layout.TotalLength      — the whole file, before a byte of it exists
+  // layout.Header           — ftyp + moov + the mdat box header, i.e. the output's first Header.Length bytes
+  ```
+
+  - ⚠ **`null` is a ROUTING answer, not an error** — unreadable, not Matroska, no carriable stream, or a
+    missing decoder configuration. It means "not this path", and the caller falls through to the next route.
+  - **The plan describes the PURE COPY**, which for a source it accepts is the only write the remuxer makes;
+    the plan and the write share one pipeline and one header composition, because two implementations of the
+    same layout would drift into serving bytes the writer would not have produced.
+  - ⚠ **Cost is a PEAK, not a total:** one walk of the clusters (metadata, never payloads) — ~110–150 MB for
+    a two-hour film. `MatroskaSampleReader.ReadSamples` takes a `CancellationToken` and checks it, so the
+    walk is abandonable.
+  - 🔴 **`Mp4LayoutReader.CopyRange(layout, source, start, endInclusive, destination)` reads any byte range
+    of that file without building it.** `endInclusive` matches HTTP `Range` semantics so a route passes the
+    header's two numbers straight through. Header bytes come verbatim from `layout.Header`; the rest is a
+    binary search into `layout.Samples` plus one seek-and-copy per overlapping span, so only the source
+    bytes the range covers are ever read. **A range ordinarily starts AND ends mid-sample** — an element
+    picks offsets with no idea where a frame begins. Zero-length spans (a degenerate laced frame) are
+    stepped past rather than matched on offset alone, and an out-of-range ask throws rather than returning
+    silence.
+  - ⚠ **`CopyRange` trusts `source` to be the stream `layout` was planned from, deliberately.** A layout
+    carries no identity because `Plan` takes a `Stream`, and an in-memory or network source has none to
+    carry. That check belongs to whoever has a PATH — the route, keyed the way `SegmentStream` and
+    `MediaConversion` already key their caches (`DerivedCacheKey.For(path, length, mtime)`).
+
+- 🔴 **`interceptor.UseComputedRemux(IMissionScheduler, MediaAccessOptions)` — a container repair served as
+  one ordinary URL, over ranges, without the file ever being written.** The route that joins `Mp4Remuxer.Plan`
+  to `Mp4LayoutRangeStream`, and the payoff of D71: a page points one `<video src>` at it, requests answer
+  `206` with a real `Content-Range` total, the whole timeline is seekable, and a seek to the last minute is
+  serviceable cold. Nothing is transcoded and nothing reaches disk. **Any size — there is no ceiling.**
+
+  🔴 **WARM THE PLAN FROM APP CODE, AND THE PAGE STAYS ONE PLAIN `<video src>` (D72).** A source nobody has
+  planned answers `503 Retry-After: 1` while the metadata walk runs, and a media element cannot ride that out
+  — measured on both mobile shells, it errors within ~70 ms (`error.code 4`, `networkState 3`) and never
+  retries. So the wait moves EARLIER than the request, into the app, which already knows what it is about to
+  play. **There is deliberately no readiness event and no page-side retry loop:** a page that must subscribe
+  and set `src` from a handler is no longer a plain element, and at that integration cost segments are
+  strictly more capable. So `UseComputedRemux` returns an `IComputedRemuxRoute` — keep it, do not just
+  `using` it:
+
+  ```csharp
+  using var computed   = interceptor.UseComputedRemux(scheduler, access);              // FIRST — serves what it can plan
+  using var conversion = interceptor.UseMediaConversion(scheduler, events, options);   // then the rest
+
+  if (await computed.PlanAsync(path, ct) is MediaPlanOutcome.Ready)                    // ~2 s for a 79 MiB film
+      ShowPlayer(url);                                                                 // its first request is a 206
+  ```
+
+  - **`PlanAsync` answers one of four things an app acts on differently** (`MediaPlanOutcome`): `Ready`;
+    `Unplannable` (remote, or the output would lose a stream — use the conversion or segment path); `Refused`
+    (outside `AllowedRoots`, or no such file — an app bug, not a retry); `Failed` (no answer; retryable, and
+    nothing is remembered).
+  - 🔴 **REGISTER IT BEFORE THE CONVERSION ROUTE.** Middleware run in registration order, so the other way
+    round the conversion route answers everything its own `Resolve` matches and this one becomes dead code
+    that still passes its own tests. **A source it cannot plan FALLS THROUGH, and that fall-through IS the
+    D71 split** between a computed file and a re-encode.
+  - ⚠ **`PlanAsync` applies the request path's authorisation, not a shortened one** — same remote check, same
+    containment, same identity key, one implementation. A warm entry point that skipped it would be a way to
+    make the kit walk any file the process can read. Cancelling stops the WAIT, not the walk.
+  - **Caching and failure:** the layout is cached per source IDENTITY (`DerivedCacheKey` over path, length and
+    mtime), and a body-production failure DROPS the cached plan so the next request re-plans. `Content-Type`
+    is the OUTPUT's container (`video/mp4`), never the source file's. `RangeDelivery` is honoured for a
+    computed body through the same single implementation `UseFiles` uses (D44).
+  - ✅ **Proven on hardware, both shells** — a 60 s Matroska plays at `seekable=60.02` with a cold seek to
+    80 % landing, and a 79 MiB film cold-seeks to 800 s. The walk runs in an `IMissionScheduler` mission
+    because both mobile shells resolve a webview resource SYNCHRONOUSLY; blocking that thread deadlocked the
+    iOS main thread, which is why the scheduler is a parameter rather than an option.
+
+- 🔴 **`IMediaPlayer` — the host plays, the page drives (D54).** A portable contract in `Shenora`
+  (`Shenora.Modules.Media`) with one implementation per shell, the same shape as `IPlaybackSession`:
+  `OpenAsync`/`PlayAsync`/`PauseAsync`/`SeekAsync`/`CloseAsync`, a `Status` snapshot, a settable `Rate`,
+  and a `StateChanged` event raised on transitions rather than on a timer. **Why it exists:** iOS PAUSES a
+  `<video>` the moment the app backgrounds — the video track cannot render — and a native player is not
+  subject to that. No amount of JavaScript closes that gap.
+  - **All three shells ship one:** `IosMediaPlayer` (AVPlayer), `AndroidMediaPlayer`
+    (`android.media.MediaPlayer` — deliberately NOT ExoPlayer, an engine D51 forbids shipping),
+    `WindowsMediaPlayer` (Media Foundation; needs the versioned TFM and refuses by name on plain
+    `net10.0-windows`). Each is registered BY ITS OWN TYPE — opt in by name. **`MediaPlayerBase`** holds the
+    state machine with the platform left abstract, so a shell writes ~40 lines instead of ~150.
+  - 🔴 **`MediaPlayer` + `MediaPlayerEvents` — the interceptor's media route is the PLAYER's output pipe
+    (D58).** `MediaPlayer` owns probe → plan → resolve-the-URL and publishes to the page over `IEventBus`,
+    so a media request is a question **.NET** answers and the page never decides anything about format.
+    **This is what makes a consumer's own converter reusable by the player** — the resolved URL points at
+    the conversion route, so nobody writes a second converter to get a player.
+  - **`useMediaPlayer(ref)` in `@shenora/react`** binds a `<video>`/`<audio>` element to the host's player
+    and posts one `PLAYER_REPORT` per element TRANSITION — never on `timeupdate`. New exports:
+    `useMediaPlayer`, `MEDIA_PLAYER_MODULE`, `MEDIA_PLAYER_REPORT`, `MediaPlayerCommands`, and the
+    `MediaPlayerReport` / `MediaPlayerReportState` / `UseMediaPlayerOptions` types.
+  - **The page can also DRIVE the host's player over IPC** — `PLAYER_LOAD`, `PLAYER_PLAY`, `PLAYER_PAUSE`,
+    `PLAYER_SEEK`, `PLAYER_RATE`, `PLAYER_UNLOAD`, `PLAYER_STATUS` on `MediaPlayerModule`. **The same verbs
+    as `MediaPlayerEvents`, and the CHANNEL is the direction**: an EVENT named `PLAYER_PLAY` is the host
+    telling the page's element to play; a REQUEST of that name is the page telling the host's player to.
+    ⚠ A drive command with no registered player FAILS (`MEDIA_PLAYER_UNAVAILABLE`) where a report with no
+    player is ignored — a report describes the page's own element, a command is something it WAITS for.
+  - **`player.ReportTo(session)`** keeps the OS transport surface honest — `IPlaybackSession` used to
+    publish whatever the app CLAIMED, so a lock screen could say "playing" while the audio had stalled.
+    ⚠ It calls `Report` and never `Publish`, so the app's metadata is not blanked.
+  - **`MediaPlayerOptions.OpenTimeout` (30 s)** — `OpenAsync` completes on the page's first non-`Opening`
+    report and on nothing else, so an app whose `PLAYER_REPORT` route is missing got an await that never
+    returned. The message names the route, the module to route it on, and the knob to raise;
+    `TimeSpan.Zero` restores the unbounded wait.
+
+- **`services.AddShenoraMedia(access)` — the media tier's CONTAINER half, following the kit's own
+  `Add`/`Use` rule (D73).** `Add` is the service-collection level; `Use` is a wider configuration including
+  its pipeline — the rule D66 shipped with the `AddMessageDispatcher` → `UseMessageDispatcher` rename. It
+  registers ONE `MediaAccessOptions` (`TryAdd`, so your own registration wins), which is what makes the
+  sharing three delivery routes need automatic instead of something each construction site has to remember.
+  ```csharp
+  builder.Services.AddShenoraMedia(new MediaAccessOptions
+  {
+      Resolve = uri => MyRouteToSourceFile(uri),
+      AllowedRoots = [libraryDir],      // EMPTY serves NOTHING — fail-closed
+      CacheRoot = convertedDir,
+      Log = line => MyLog(line),        // ⚠ reaches the PLATFORM CONVERTERS too — see below
+  });
+  ```
+  - 🔴 **SET `Log`, even if you discard it in release.** The mobile shells register their platform converters
+    with no sink, so without one they are MUTE — and a picture that cannot be converted then reports only
+    `dropped:["mpeg4"]`: the codec, and nothing about why. Reaching those lines used to require
+    `GetService<IMediaStreamConversion>() as MediaConversionPipeline` and a re-registration; the shells
+    resolve this object's `Log` now, so that downcast is no longer the only way in. It is deliberately the
+    SAME sink the routes use, so an app configures the tier's diagnostics once.
+  - **Full worked example — the `Add`, both routes in order, the warm, and the page — is
+    `docs/guides/media.md`'s "What a whole adoption looks like".**
+
+- **The media tier, whole — `Probe/` → `Plan/` → `Engine/` → `Deliver/` (`Shenora.Modules.Media`).** The
+  TRANSLATION LAYER for the web (D52): the minimum transformation that makes a file the user already has
+  playable in a webview, and never more.
+  - **`MatroskaProbe`** answers "what is inside this file?" in managed code with no external tool, reading
+    the HEADER only under a bounded budget. Returns the same `MediaProbeResult` the planner takes, or
+    **null** for "I could not tell" — an ordinary answer rather than a failure.
+  - **`Mp4Remuxer`** rewrites a Matroska file as MP4 with **every frame copied untouched**. The video in an
+    ordinary `.mkv` is almost always H.264 or HEVC and the device decodes both in hardware; what the
+    webview refuses is the BOX. No decoding, no encoding, no shipped binary, no licence weight.
+    ⚠ **B-frames and laced blocks are handled** — the two things a remuxer usually gets wrong, and both
+    produce a file that validates while mangling real content.
+  - **`IMediaStreamConversion` — the TRANSCODE tier**, per-FRAME rather than per-file (a two-hour
+    soundtrack is gigabytes as PCM). **Both mobile shells ship one**: Android through `MediaCodec`, iOS
+    through `AudioConverter`/VideoToolbox. An H.264 + AC-3 film the remuxer alone refuses becomes fully
+    playable — the picture is still copied, only the soundtrack goes through the device's codecs.
+    ⚠ Zero outputs from `Push` is NORMAL (codecs buffer), and 🔴 **`Drain` is not optional** — skip it and
+    the tail stays inside the codec, producing a well-formed file whose audio stops early.
+  - 🔴 **Conversion is a MIDDLEWARE PIPELINE, not a replaceable implementation** —
+    `MediaConversionPipeline` with `Use(...)`, the shape `IWebViewInterceptor` already has. An app
+    supplying its own converter **adds it to the chain and keeps the kit's behind it**, so wanting a better
+    DTS decoder does not mean re-providing AC-3 and AAC. **`IMediaContainerWriter`** is the muxer's own
+    seam, so a consumer can replace the muxer and keep the kit's demuxing and timing, or vice versa.
+  - **`IMediaCapability` + `MediaCapabilityExtensions`** — what THIS DEVICE can decode and encode, asked at
+    runtime. `MediaPlaybackPolicy` is still the app's and the kit still ships no codec list (D42), but "the
+    app's" had meant "the app GUESSES". **The kit now ships the QUESTION rather than the answer.**
+    🔴 It reports the PLATFORM's stack, which is NOT what the webview will play — a device routinely
+    decodes more than its browser plays, and **that gap is the transcode tier's whole reason to exist**.
+    ⚠ **`WithDeviceEncoders` intersects the device's answer with what your PIPELINE can convert, and
+    defaults to the kit's own reach — AUDIO.** The two are different questions and they disagree on
+    Android, where `MediaCodecList` reports video encoders the kit has no engine behind: without the
+    intersection a VP9 film planned as `Transcode (video)` and the remuxer then dropped the track. If you
+    supply your own engine, name what it can really do: `WithDeviceEncoders(device, [Audio, Video])`.
+  - **`interceptor.UseSegmentStream(…)` + `ISegmentEngine`** — play a source the webview cannot decode
+    WITHOUT converting it first. The route publishes an HLS manifest computed from the duration alone, so
+    the scrub bar is the right length and a seek is expressible before a single segment exists. An
+    hour-long source is an hour-long wait through whole-file conversion and a few seconds through this.
+
+- 🔴 **A Live Activity needs NO SWIFT in the adopting app (D69).** `<ShenoraLiveActivity>true</…>` is the
+  whole adoption: the kit compiles its own generic widget into the extension, and what it draws comes from
+  C# — config the Swift side reads at RUNTIME, not Swift the build generates.
+  - **`Components.ProgressCard` / `StatusCard` / `CounterCard`** — a complete, proportioned activity in ONE
+    call, because an adopter's activity is usually one of three shapes whose metrics are fiddly to get
+    right and invisible when wrong. Each returns an ordinary `Presentation`, so `with` overrides any
+    surface and no rendering path is hidden.
+  - **`LiveActivityAppearance`** — an SF Symbol and a `#RRGGBB` tint. **`Presentation`** — one element per
+    Island SURFACE, with `{title}` / `{subtitle}` / `{progress}` bound at every RENDER; a surface left
+    unset keeps the kit's own arrangement, so you can adopt one at a time. (*Surface*, not *region*: iOS
+    spends "region" on the three sub-views it slices the expanded one into.) Both cross as ActivityKit
+    *attributes*, so they are fixed for the activity's lifetime.
+  - **`Layout`** is the container — the `div` a web developer would reach for, because this kit's adopters
+    write React — carrying flexbox's two axes: **`Justify`** (`Start` / `Center` / `End` / `SpaceBetween`)
+    along the axis and **`Align`** (`Leading` / `Center` / `Trailing` / `Fill`) across it. With `Text` /
+    `Icon` / `ProgressBar` / `Spacer` that is the whole vocabulary, in
+    `Shenora.Modules.Platform.Activities`; `Text` and `Icon` take their content positionally
+    (`new Icon("bolt.fill")`). ⚠ **There is no grid, and that is a decision rather than a gap** — if a
+    design needs columns that agree ACROSS rows, say so, because that measurement is what earns it.
+  - 🔴 **`Cutout` — the sensor housing as a placeholder, and it is what lets an app describe the Island as
+    ONE panel.** iOS hands the expanded presentation to the widget as three SEPARATE views and nothing
+    drawn in one can cross into another, so the kit splits the panel instead: children before the cutout go
+    to the leading view, after it to the trailing view, the rest to the strip below. Outside the Island a
+    cutout is simply flexible blank space.
+  - A text names a **ROLE**, not a font (`Headline` / `Body` / `Caption` / `Value`) — D13 holding, since a
+    `Style` property would be the first brick of a design system the kit must not become.
+  - **Setting `ShenoraLiveActivityViews` still wins**: an app's own SwiftUI is a first-class path, not an
+    escape hatch. **`ILiveActivities.PushToken`** exposes the one part of push updates an app cannot reach
+    from C# — ⚠ its path needs an App ID with the Push Notifications entitlement, which a free team cannot
+    create, so the seam is exercised and the token itself is not.
+
+- 🔴 **`@shenora/cli` — a second npm package, and the `shenora` binary (D67).** Take a built app onto a
+  simulator or a real device with **no Xcode project of your own**, in the shape `cap`/`electron` adopters
+  expect. `npm i -D @shenora/cli`, then `shenora init` · `copy`/`sync` · `ios …` · `android …`.
+  Configuration is `shenora.deploy.json`, searched upward from the cwd so a monorepo runs it anywhere.
+  - **It is a `devDependency` and ships inside NOTHING you deploy**, which is why it does not contradict
+    "a capability gets a folder, never a package" — that rule governs what an app carries at RUN TIME.
+  - **iOS:** `doctor|devices|simulators|deploy|log|shot|build`. `build` runs `dotnet publish`, Release by
+    default, `-p:ArchiveOnBuild=true` so the SDK packages an `.ipa`. Verified end to end on an iPhone 17
+    Pro over the LAN with no cable.
+  - **Android, and it runs on WINDOWS** where most .NET Android work happens: `doctor|devices|deploy|log|build`.
+    **It finds the JDK and `adb`** instead of demanding `JAVA_HOME` (Android Studio ships one in `jbr/` and
+    sets no variable, so the common case is a machine that HAS one and cannot say where).
+    🔴 **`android log` filters by PID, not by tag** — a tag filter has to know how the app logs, and there
+    is no right default.
+  - ⚠ **The config describes your PROJECT; the command line describes your MACHINE.** Anything after `--`
+    is passed to `dotnet build`, deliberately not a config field: a committed override silences a
+    machine-specific mismatch for everyone who clones the repo.
+
+- **`UseMissions`, `UseFileSystem` and `UseMediaPlayer` gain an `(options, services)` overload** —
+  configure a capability and SUBSTITUTE its collaborators in one place.
+  ```csharp
+  builder.UseMediaPlayer((x, services) =>
+  {
+      x.Access = new MediaAccessOptions { Resolve = static _ => null, AllowedRoots = [libraryDir], CacheRoot = "" };
+      services.AddSingleton<IMediaPlayer>(sp => sp.GetRequiredService<WindowsMediaPlayer>());
+  });
+  ```
+  Substituting a kit default already worked; what an app could not do is KNOW that, which took reading the
+  kit's source to learn these are `TryAdd`.
+
+- **`EventMessage.CoalesceKey` / `IpcNotification.CoalesceKey`** — an event may declare that it SUPERSEDES
+  an earlier undelivered one with the same module, type, scope and key. The pump has always coalesced
+  ROUND TRIPS while still carrying every payload inside them, so a request reporting progress in a tight
+  loop cost the page a hundred fold operations to render one number.
+  ⚠ **Opt-in, and it must stay so:** the pump cannot tell a snapshot from a delta, and coalescing deltas
+  loses data — so only the emitter may set a key.
+
+- **`ResourcePack` + `ResourcePackOptions` (`Shenora.Modules.Update.Compression`)** — a named, versioned
+  set of files an app needs ON DISK at runtime: a native binary for the current ABI, a model, a font set.
+  Delivered as one archive, extracted under the kit's existing containment and limits, and marked ready
+  **last** so a half-extracted pack is never used.
+  ```csharp
+  var pack = new ResourcePack("engine", "7.1.2", new ResourcePackOptions { Root = ShenoraPaths.Data });
+  await pack.StageAsync(File.OpenRead(archivePath));   // no-op once ready
+  var exe = pack.PathOf("arm64-v8a/libengine.so");     // null if absent, escaping, or not ready
+  pack.PruneOthers();                                  // at STARTUP — the old one is still loaded at stage time
+  ```
+  ⚠ **This is also how you use a copyleft payload with an MIT kit (D51).** Shenora ships no engine and will
+  never redistribute a GPL/LGPL binary from an MIT package — that would hand attribution and relinking
+  duties to every consumer. Supply it yourself and the obligation stays with your app, where the choice
+  was made.
+
+- **`WebViewResourceRequest.IsRootWithFragment(Uri)`** — true when a request is for the site root and
+  carries a `#fragment`. It is what the mobile reload repair keys on, and it is public because a middleware
+  answering the root itself needs to recognise the same shape. `WebViewResourceRequest.Uri` now documents
+  that it CARRIES a fragment, and which readings survive it: `AbsolutePath` is safe, `ToString()` and
+  `PathAndQuery` mis-resolve — and the trap is that the safe reading also HIDES the fragment.
+
+### Fixed
+
+- 🔴 **`app.UseMediaPlayer()` no longer throws when you follow the documented setup.** The pair
+  `docs/guides/media.md` tells you to write — `builder.UseMediaPlayer(x => x.Access = new MediaAccessOptions
+  { …, CacheRoot = "" })`, then `app.UseMediaPlayer()` — failed with
+  `ArgumentException: options.Access.CacheRoot`. The blank cache root is how you ask for the free default
+  under `Paths.DataArea("media")`, but that default was applied only inside the `IMediaPlayer` factory,
+  while the mount reads the options directly and hands the still-blank value to `UseMediaConversion`, which
+  rejects it. It is now applied by both phases from one owner.
+  - **It fired for exactly the apps that followed the guide.** Resolving `IMediaPlayer` yourself first hid
+    it; composing IPC did not (the dispatcher resolves its modules lazily). If you worked around this by
+    naming an explicit `CacheRoot`, that still works and needs no change.
+
+- **Windows: a resource response abandoned during startup or teardown leaked an OS file handle.**
+  `WebViewHost` marshals the response build to the UI thread, and disposed the body only when
+  `CreateWebResourceResponse` itself failed — so the two paths where that build never runs at all (the
+  marshal declines because there is no handle yet or the control is gone, or it throws) dropped the body
+  with nothing left to close it. Since 0.9.1 that body is lazy over a real `FileStream`, so the leak held a
+  file handle until finalization, which on Windows also blocks deleting or moving the file being served.
+  Both paths are races, so they arrive in bursts rather than singly.
+
+- **Six shipped XML docs documented the wrong member, and one shipped none.** A declaration inserted at the
+  top of a file adopts the doc block above it, so `MediaPlanOutcome` carried `ComputedRemuxExtensions`'
+  entire design essay (leaving the call you write documented in five words),
+  `UseMediaPlayer(IWebViewInterceptor, IServiceProvider)` shipped with no summary at all, and
+  `MediaConversionPipeline`'s stranded copy still described the two-state claim check that three-state
+  `Ask` replaced. Each is now attached to the member it describes, and `dev.mjs doc-drift` fails on any doc
+  comment carrying two `<summary>` elements so it cannot recur.
+
+- **`IWebViewInterceptor.Use` now states what blocking actually costs on mobile.** It said a blocking
+  middleware stops the webview painting; on Android and iOS the shell resolves the pipeline synchronously on
+  the main thread, so a middleware that `await`s anything without `ConfigureAwait(false)` **deadlocks the
+  app** — and the symptom names nothing (the app stays alive and simply stops answering). The kit's own
+  fragment repair did exactly this once and it blocked an adopter's bug for three days; the contract now
+  says so where a middleware author reads it.
+
+- 🔴 **SECURITY: an update manifest could write and delete files OUTSIDE the tree being updated.**
+  `UpdateManifest`'s `files[].path` is the one input this kit takes from a remote server, and nothing
+  validated it. A ROOTED path made `Path.Combine` discard the root it was combined with (and C++'s
+  `std::filesystem::operator/` does the same), while a `..` segment escaped the ordinary way — reaching
+  `File.Create` when staging, `File.Delete` when applying, and `fs::remove` in `Shenora.Launcher`, which
+  may run elevated. Neither hash verification (it checks CONTENT, never the PATH) nor the staged-tree
+  intrusion check could see it: an escaped file is not in the directory the check walks, and is then
+  looked for at the same escaped location and found.
+  - **Fixed in one owner per language.** `ManifestDiff.IsSafeRelativePath` refuses a rooted path or a
+    `..` segment; `UpdateManifest.Parse` and `ManifestDiff.Compute` both reject such a manifest whole, and
+    `UpdateStage` resolves every manifest path through `Path.GetFullPath` + `PathClaims.IsContained`
+    instead of `Path.Combine`. The launcher's `parse_manifest` refuses the same shapes.
+  - ⚠ **A poisoned BASELINE does not brick updating**: it takes the existing "no usable installed
+    manifest — applying without removals" branch, so the app still updates and simply removes nothing.
+  - **No action needed by an adopter** beyond upgrading, unless you generate manifests with absolute
+    paths — which never worked correctly anyway.
+
+- **`@shenora/react`: an async `fallback` no longer leaves a pending timer behind.** `invoke`'s
+  development fallback raced the call against a timeout and never cleared the loser, so every call left
+  a live timer for the full timeout (30 s by default) holding its closure. Dev-seam only — the real
+  transport path always cleared correctly — and invisible to callers, but it kept timers pending in an
+  app's test run.
+
+- 🔴 **An EBML-laced Matroska block carrying a single frame is no longer misparsed.** The lacing header
+  byte is *frames − 1* and EBML lacing codes exactly that many sizes — the last is always implied — so a
+  one-frame block codes none. The reader read one anyway, consuming the frame's own first bytes as a
+  length: usually the file was refused outright (the plan returned null and the computed-remux route
+  declined, so the film simply did not play), occasionally the plan pointed at the wrong bytes. Xiph and
+  fixed lacing were always correct; EBML was the one scheme with no test, and now has two.
+
+- **Path containment is platform-correct, so it can no longer be wider than the filesystem.**
+  `WebViewFiles.ResolveContained` (what authorises every file a PAGE can load) and `ZipExtraction`'s
+  zip-slip fence compared case-insensitively on every OS. On Android, whose filesystem is
+  case-SENSITIVE, an allowed root of `…/files/public` therefore also admitted `…/files/Public` — a
+  different directory the app never allowed. Both now match `PathClaims.IsContained`, which had it right.
+
+- **A notification batch is serialized once, not twice.** `NotificationPump` used to serialize every
+  notification individually as a validity probe, discard the result, and then serialize the whole batch —
+  `2N` serializations of app payloads on the IPC hot path in the case where nothing is wrong. It now
+  serializes the batch and falls back to the per-notification pass only when that fails, so the isolation
+  property (one bad payload never takes its batch down) is unchanged and only an actual offender pays.
+
+- **A lifecycle hook that throws while stopping is logged instead of vanishing.** `ShenoraApplication.Stop`
+  swallowed it with a bare `catch { }`, so "my cleanup did not run" had no diagnostic at all. It still
+  never blocks shutdown.
+
+- 🔴 **A Matroska track wrapped in Video-for-Windows now reports the codec its FourCC names, not `"vfw"`.**
+  Matroska has native ids for h264, HEVC, MPEG-2, MPEG-4 Part 2, VP8/9 and AV1 — and for **everything else**
+  it uses `V_MS/VFW/FOURCC`, with the real codec as a FourCC inside a `BITMAPINFOHEADER`. h263 has no native
+  id at all, so a muxer has no other legal choice, and the kit named the WRAPPER.
+  - ⚠ **Two adopter-visible consequences.** A `FAILED` event's `dropped` list changes: where it said
+    `["vfw"]` — the name of a container CONVENTION, which no app can act on — it now says `["h263"]` or
+    whichever codec is really there. And **a track that was declined may now CONVERT**, because the
+    converter is finally asked about a codec it offers: an h263 clip that reported `dropped:["vfw"]` on an
+    iPhone 17 Pro now converts to H.264 and plays.
+  - ⚠ Families that arrive as a FourCC even though a native id exists (`DIVX`, `XVID`, `MP4V`, `FMP4`) all
+    answer `mpeg4`, so one file does not report a different codec from another tool's output of the same
+    content. A native id is never second-guessed by the private data, and an unknown FourCC still falls back
+    to `vfw` — which is honest, since it is all the container said.
+  - **Found by building a fixture rather than by reading code:** an h263 clip was made to prove iOS's
+    picture conversion end to end, and it failed for a reason that had nothing to do with the converter under
+    test.
+
+- 🔴 **CONVERSION IS POLICY-BASED: what the kit CLAIMS is now separate from what the DEVICE can do.**
+  `pipeline.Use(converter, claims)` declares the `(kind, codec)` pairs a converter offers — a list of the new
+  `MediaStreamClaim` record struct — and `CanConvert` answers **claim ∩ device**: the declaration first,
+  because it is free and a no there is final, then `IMediaCapability`. `pipeline.Claims` is readable without
+  building a single codec, which is the cheap answer to *"what does this shell support?"* that nothing could
+  ask before. ⚠ The claim-less `Use(converter)` overload is unchanged and still asked about anything, so no
+  existing converter needs touching.
+  - **Why:** `CanConvert` used to answer by CONSTRUCTING the converter's decoder and encoder on every ask,
+    which fused two different questions and produced both failures in one evening — an over-claim (a promise
+    made from an encoder alone, so the muxer failed *after* accepting a track and spending the walk) and an
+    under-claim (a refusal of a codec that merely could not open a session without its file's ESDS).
+  - **Overriding stays what it was:** later registrations are asked first, and declining in the converter
+    still wins per stream. A claim only makes a NO cheap and the offer inspectable — deliberately not a
+    second mechanism for the same job.
+  - ⚠ **Nothing that worked stops working:** a converter registered with the claim-less overload is still
+    asked about anything, *per registration* — absent is UNKNOWN, never NONE — and with no
+    `IMediaCapability` the device half is answered exactly as before, by seeing whether a run starts.
+  - **`IosMediaCapability` answers for VIDEO now**, having returned empty "rather than guessed". That gap was
+    what forced the fused question: with no device answer for pictures, building codecs was the only way to
+    ask. Probed once and cached, because a session costs a real codec instance and a device has few.
+
+- 🔴 **`UseMediaConversion` remembers a source it CANNOT carry, instead of re-running the whole transcode
+  once per retry, for ever.** Found on the iOS simulator: the sample's picture fixture failed six times in
+  six seconds (missions m19–m24), because each poll of the `503` started a fresh conversion. The cost is
+  not the retry, it is that `request.Dropped` is only populated AFTER the writer finishes — so discovering
+  "this codec cannot be carried" costs a COMPLETE conversion every time: about a second on a fixture,
+  minutes on a film, repeating for as long as the page is open.
+  - ⚠ **Behaviour change adopters can see:** the second and later requests for such a source now answer
+    **`404` rather than `503`**. A permanent "not ready" is what invites the retry loop, and the page has
+    already been told what is wrong, by codec name, on the `FAILED` event the first attempt emitted.
+  - ⚠ **Only DETERMINISTIC failures are remembered** — a dropped stream is a property of the file and
+    re-running cannot change it. An IO error, an out-of-memory or a cancellation says nothing about the
+    source and stays retryable, which is the same split `UseComputedRemux` already makes between
+    `Unplannable` and `Failed`. The record is written BEFORE the `FAILED` event, so a page that re-requests
+    the instant it hears cannot buy itself one more transcode.
+
+- 🔴 **`Shenora.iOS` now SHIPS the whole Live Activity devkit — two of its four Swift files were missing
+  from the package, which would have failed EVERY consuming iOS build.** The csproj packed
+  `ShenoraLiveActivity.swift` and nothing else; that was correct at 0.10.0, when it was the only Swift
+  file, and was never extended when the layout interpreter and the kit's generic views landed in this same
+  band. `ShenoraBuildLiveActivityShim` compiles the layout for every app that references the package —
+  unconditional since the 0.9.0 link defect — so a consumer would have hit
+  `swiftc: error: no such file or directory` naming a path inside the nupkg, whether or not they used the
+  feature. **Found before it shipped, and it is the 0.9.0 lesson exactly: only an app-shaped PACKAGE
+  consumer resolves `buildTransitive/`, so this repo's own builds and every gate stayed green throughout.**
+  The folder is globbed now rather than listed, and `LiveActivityPackagingTests` names the file if anyone
+  lists them again.
+
+- 🔴 **Reloading at a hash route now works on iOS as well as Android — an adopter writes nothing.**
+  `location.reload()` at `/#/library` left iOS showing the PREVIOUS document forever (WKWebView keeps the
+  page on screen when a provisional navigation fails, so the app looked perfectly healthy), and on Android
+  a MAUI defect mapped the fragment into the asset name, 404'd, and produced the webview's error page.
+  `Shenora.Mobile` serves the app's own document for a root-plus-fragment request on both shells, and
+  DECLINES when the bundle cannot be read so an app serving its document another way is untouched.
+  ⚠ The iOS half went unrepaired for three days because the Android repair read the bundle with a blocking
+  `.GetAwaiter().GetResult()` inside the resource handler, which **deadlocks the iOS main thread** — the
+  silence that followed was read as evidence the approach was wrong.
+
+- 🔴 **`ServiceProvider.Dispose()` threw on any app holding a `MissionScheduler` — and D64 was about to
+  make that every app.** Microsoft DI's SYNCHRONOUS dispose refuses a captured singleton implementing only
+  `IAsyncDisposable`, so the documented `using var app = builder.Build(); app.Run();` threw once anything
+  had resolved `IMissionScheduler`. `Dispose()` now cancels queued missions and signals shutdown **without
+  awaiting in-flight bodies** — deliberately weaker than `DisposeAsync`, which still awaits them, because
+  awaiting here would block whatever thread disposes, routinely the UI thread.
+  **Prefer `await using var app = …` when a mission may be mid-write.**
+
+- **Safe-area insets are re-read when the device ROTATES.** Rotation moves an inset to a different EDGE
+  rather than resizing it, so a shell that reads once publishes the wrong SHAPE for the session.
+  ⚠ **iOS was affected worse than the symptom suggested: it had never published a real inset at all** — its
+  single read happened before layout and returned zeros, so an iOS app was laying out against its own
+  default guess in every orientation. **If you set a `Default` that looked right, this is the fix that
+  makes the real numbers arrive.**
+
+- 🔴 **`Shenora.iOS`: the Live Activity shim was built once per APP instead of once per ARCHITECTURE**, so
+  a DEVICE build linked the simulator's `x86_64` archive into an `arm64` app. The path used
+  `IntermediateOutputPath`, which is not yet defined where a consumer imports the targets file, so the shim
+  landed in the project ROOT; with no RID in the path, one architecture's `.a` satisfied another's
+  incremental check. ⚠ **The symptom is a decoy** — `Undefined symbols for architecture arm64` is
+  character-for-character the 0.9.0 packaging defect, and invites re-fixing something already correct.
+  **If you hit this, delete any `shenora-liveactivity/` folder in your project root.**
+
+- 🔴 **The iOS Live Activity devkit RENDERS ON A REAL DEVICE** (iPhone 17 Pro), both Island regions, with
+  updates repainting. An earlier `### Known broken` block told adopters not to use it; its stated root
+  cause did not survive checking, and `docs/guides/mobile.md` keeps the retraction visible.
+    ⚠ **The lesson worth carrying, since it outlived its bug:** an update has three outcomes — accepted,
+    applied and REPAINTED — and the app process can only observe the first two, so a repaint question can
+    never be closed with a log line. `node devtools/dev.mjs mac island-watch` answers it by frame hash.
+  - **The kit sets NO `staleDate`, so it makes no claim about an activity's content freshness.** A 60 s
+    horizon lived on `update` (and not on `start`) for one day inside this band and is gone: `staleDate`
+    tells the system when to mark content out of date for `context.isStale`, not when to repaint, so it
+    declared every activity stale a minute after its last update — wrong for a status activity that
+    legitimately does not change — while nothing in the kit read the flag. **Nothing to migrate:** 0.10.0
+    shipped no horizon either, and an app wanting one writes its own SwiftUI views today.
+  - 🔴 **An app-described layout reached the widget EMPTY, then WRONG.** The Swift mirror's
+    `encode(to:)` was a stub — ActivityKit ENCODES the attributes to reach the widget PROCESS, so every
+    region arrived as one unknown node. And the layout enums crossed as NUMBERS, so `Horizontal` fell back
+    to `Vertical`: a plausible WRONG layout, which is worse than a blank one. Both halves are pinned by
+    `LiveActivityMirrorTests`, sabotage-verified in both directions.
+
+- **The Live Activity Swift shim no longer takes an `NSLock` inside an `async` context** — a warning in
+  every adopter's build today and a hard ERROR in the Swift 6 language mode, in a file the adopter compiles
+  but cannot fix.
+
+- ⚠ **Adopter-visible: the runtime log tags follow the namespaces** — `[Shenora.Ipc]` →
+  `[Shenora.Core.Ipc]`, `[Shenora.Media]` → `[Shenora.Modules.Media]`, `[Shenora.IO]` →
+  `[Shenora.Modules.Update]`. Nothing asserts on them, but a log filter might.
+
+- 🔴 **`UseFiles` no longer allocates a served file's whole window — on Android that was ALREADY every
+  file, of any size.** `WebViewFiles.Read` did `new byte[count]` then `ReadExactly`, and under
+  `WebViewRangeDelivery.Unsliced` (D44) the requested window IS the whole file, so every `UseFiles`
+  response on that shell allocated the entire file whatever the `Range` header asked for — shipped since
+  the middleware landed in 0.9.1, and independent of the media routes in front of it. The body is now
+  `BoundedBodyStream`, a lazy window over a still-open `FileStream`: it closes the handle itself at its
+  bound and tolerates a second close, because the two mobile shells disagree about who closes a response
+  body (Android disposes `Content` at EOF, iOS never does). **No signature moved** — `ServeRange`'s seam
+  already took a `Stream`.
+
+  ⚠ **One adopter-visible consequence, shared with the computed-remux route: a mid-read IO failure now
+  fails MID-RESPONSE instead of answering a clean 404**, because the status line and headers are already
+  committed by the time the body is read. Measured on all three shells 2026-08-13, and they do not agree:
+
+  | shell | what the page sees |
+  |---|---|
+  | Android | a failed load the page can observe. ⚠ That throw used to KILL THE PROCESS |
+  | iOS | a committed `200` and a short body, silently |
+  | Windows | the same as iOS — a silent short body |
+
+  - ✅ **The kit now says so, which is the one thing it can do:** `BoundedBodyStream` reports a truncated
+    body to the host log with the route and the byte count, so a silent short read is diagnosable from the
+    host even where the page cannot see it.
+  - 🔴 **So an adopter treats a mid-read failure as POSSIBLE on every shell** — verify a media load
+    completed rather than assuming a `200` means a whole file arrived. Two of three shells give you
+    nothing page-side.
 
 ## 0.10.0 — 2026-08-05
 
@@ -103,7 +947,7 @@ kit, prefer the correct shape over the compatible one). All three are mechanical
   ```
 
   **Nothing else changes** — no member was added, removed or resigned, which the API baselines show
-  exactly: `Shenora.Core.txt` lost 206 lines and gained none. An app that never mutates a file tree simply
+  exactly: `Shenora.txt` lost 206 lines and gained none. An app that never mutates a file tree simply
   does not reference the package, which is the point: `Io/` was **34% of `Shenora.Core`** (2,244 lines) and
   `Shenora.Core` is what every other package references, so a phone app that hosts a page and plays a file
   was carrying a self-updater it will never call.
@@ -734,7 +1578,7 @@ finding was in what a gate is structurally blind to — shipped package metadata
   `Shenora.Windows` to `Shenora.Core`** (namespace `Shenora.Windows` → `Shenora.Core`).
   `WebViewDeferredScheme.Handler`'s signature now names the Core types; the member is otherwise unchanged.
 
-  **Migration: add `using Shenora.Core;` to files that name these types.** That is the whole fix, and it
+  **Migration: add `using Shenora;` to files that name these types.** That is the whole fix, and it
   was measured rather than asserted — the move broke exactly three files in this repo (one sample, two test
   files) and each needed exactly that one line. Code that already has both usings does not change at all.
 
@@ -955,7 +1799,7 @@ Left published rather than unlisted, deliberately: it is a valid, working build 
   disk; a share that will not honour the rename) and is pinned by a test asserting it does NOT protect
   the previous file, so the trade is stated rather than implied.
 
-  It cannot be called `File`: a consumer with both `using System.IO;` and `using Shenora.Core;` would
+  It cannot be called `File`: a consumer with both `using System.IO;` and `using Shenora;` would
   get an ambiguity error on every existing `File.` call.
 
   **The failure it prevents is a silent one.** `File.WriteAllText` truncates the target and then writes
@@ -1898,7 +2742,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   leak what those apps do. Derived from the 147 public types then shipping: 134 words, every one a
   mechanism, so the kit passed its own criterion on the day the gate was written. Sabotage-verified
   both ways, and a second test fails if the lexicon keeps words no type uses. No surface change.
-- **`Shenora.Core.AppCallback.Log(Action<string>? sink, Func<string> message)`** — the guarded, lazy
+- **`Shenora.AppCallback.Log(Action<string>? sink, Func<string> message)`** — the guarded, lazy
   diagnostic helper existed as FIVE byte-identical private copies (`WebViewHost`,
   `WebViewIpcBridge`, `EmbeddedResourceProvider`, `NotificationPump`, `OperationRegistry`), the same
   "N copies of the rule that must never be broken" shape `IpcErrorMapping` was collapsed for. One
@@ -2121,13 +2965,13 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   `Shenora.WebView2` now depends on `Shenora.WinForms` — the boundary is Windows *primitives* and
   *web hosting on top of them*, not two peers. `WinForms` still carries no `Shenora.Ipc` dependency,
   and `WinForms → WebView2` remains forbidden.
-  **What a consumer must change:** add `using Shenora.Core;` where these types are referenced —
+  **What a consumer must change:** add `using Shenora;` where these types are referenced —
   `IFileDialogs`, `IFileDialogPathStore`, `FileDialogOptions`, `FileDialogFilter`,
   `FileDialogResult`, `IClipboardService` moved namespace (identical signatures otherwise). Nothing
   needs re-registering: `UseWinForms` registers the same implementations, now behind both the
   Windows and the portable interface.
   `IShellLauncher` and `IFormInteraction` were **split**, not changed: they now derive from
-  `Shenora.Core.IUrlLauncher` and `Shenora.Core.IUiInteraction` respectively, so `OpenUrl`,
+  `Shenora.IUrlLauncher` and `Shenora.IUiInteraction` respectively, so `OpenUrl`,
   `BlockInteraction` and `UnblockInteraction` are inherited rather than declared. Existing call
   sites compile unchanged; code that *implements* these interfaces still implements the same member
   set. Depend on the portable base where you only need the portable operation, and your logic
@@ -2405,7 +3249,7 @@ event hub … async from the UI, progress synced") while the HOST contract did n
   file-name characters and Windows reserved device names. Per-provider/per-account scoping is the
   session stack's isolation boundary, and the library previously documented that boundary while
   shipping no safe way to construct the path.
-- **`Shenora.Core.AppCallback`** (P5.5 H2) — the one guard for invoking APP-SUPPLIED code from a place
+- **`Shenora.AppCallback`** (P5.5 H2) — the one guard for invoking APP-SUPPLIED code from a place
   where an escaping exception is fatal rather than catchable: a UI-thread event handler, a timer tick, a
   posted delegate, a dispose path. `Run` returns whether the callback completed; `RunOrDefault` returns
   its answer or an explicit policy fallback. Both swallow, deliberately — at these sites the

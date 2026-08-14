@@ -3,14 +3,30 @@
 Prose is the one surface with no compiler, and `doc-drift` deliberately checks only three exact things
 (retired names, `docs/` links, the dependency graph). A remark that says *what the code does* sits
 below that gate: it can be wrong for a whole release with every check green. This rule is what caught
-three such claims in one pass on 2026-08-02 — two of them in **shipped XML** (`docs/archive/fix-log.md`,
-commit `49bfc0c`).
+three such claims in one pass on 2026-08-02 — two of them in **shipped XML** (commit `49bfc0c`).
+
+🔴 **AND THE CORRECTION IS AS DANGEROUS AS THE CLAIM — trace the call chain to its END before rewriting
+one.** Earned three times in one audit (2026-08-09), the third being the worst because it created a NEW
+false claim while removing an old one:
+
+- `MediaPlayerModule`'s remark said *"Registered by default with `UseMessageDispatcher()`"*. The core
+  registers no feature, so that mechanism is wrong — and I rewrote it to *"registered by
+  `UseMediaPlayer()`, **not** by `Build()`… an app that never calls it has no player routes at all"*, then
+  propagated that into the CHANGELOG and `TASKS.md`.
+- **`Build()` calls `UseMediaPlayer()` itself.** The original's CONCLUSION was right and only its
+  mechanism was wrong; my correction inverted a true statement about adopter-visible behaviour.
+- **The tell I ignored:** I verified the claim's *named mechanism* (grep `UseMessageDispatcher`) and
+  stopped, instead of asking the question the sentence was actually about — *does an app get this without
+  asking?* One more file (`ShenoraApplicationBuilder.Build`) had the answer.
+- **So: a claim has a SUBJECT and a MECHANISM, and they fail independently.** Disproving the mechanism
+  disproves nothing about the subject. Check both, and when only the mechanism is wrong, fix only the
+  mechanism.
 
 ## The rules
 
 - **Write behavioural prose from the implementation, not from the design doc.** The docs for
-  `Shenora.Core`'s mission scheduler were written from `docs/2026-08-02-shenora-mission-scheduling-design.md`
-  and three claims did not survive a read of `src/Shenora.Core/Missions/`: an unknown LANE was documented
+  `Shenora`'s mission scheduler were written from `docs/2026-08-02-shenora-mission-scheduling-design.md`
+  and three claims did not survive a read of `src/Shenora/Engine/Missions/`: an unknown LANE was documented
   as throwing when `MissionScheduler.CreateEntry` creates it at the default capacity; `IMissionObserver` read
   as though the kit ships the operation-registry adapter, which nothing implements; and the design's
   `IFileSystem` + atomic-replace helper had never shipped at all. **A design doc states intent, and
@@ -26,6 +42,20 @@ commit `49bfc0c`).
 - **Say which claims the gate did not check.** `dev.mjs verify` compiles and runs tests; on a
   docs-only change it proves nothing about the prose. Report that explicitly rather than letting a
   green gate imply the words were checked.
+
+- 🔴 **AUDIT THE SENTENCES, NOT THE CODE FENCES — measured, and it settles where the effort goes.** The
+  snippets are fine and always have been: a checker that reads every `.Method(…)` in a `csharp` fence and
+  compares its ARITY against the tracked API baseline found **0 mismatches at every release tag** (v0.3.0 →
+  HEAD, 7 → 40 call sites), while proving it fires — planted calls were caught with the right allowed sets.
+  So it was NOT kept; a gate that has never fired only costs attention. **Every doc defect this repo has
+  actually found was in the PROSE AROUND the snippet** — the `required` claim (D70), the mission-scheduler
+  three, the `MediaPlayerModule` mechanism. A snippet is copied from working code; a sentence is written
+  from memory of what the code used to do.
+- **A MODIFIER is a claim too, and it is the one no gate can see.** `MediaConversionOptions.Convert` stopped
+  being `required` and two docs said it still was, with the API baseline and the CHANGELOG both correct —
+  nothing was renamed, so every name gate had nothing to match. `dev.mjs retired-audit` now prints
+  `required` deltas for exactly this; **read its `NO LONGER required` list as a list of paragraphs to
+  re-read.**
 
 ## Gotchas / traps
 

@@ -1,5 +1,5 @@
-using Shenora.Ipc;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Ipc;
 
 namespace Shenora.Windows;
 
@@ -20,15 +20,15 @@ public sealed class SessionResult
     internal static SessionResult Fail(string errorCode) => new() { Success = false, ErrorCode = errorCode };
 
     /// <summary>
-    /// Throw this outcome's failure as an <see cref="OperationException"/> — the bridge from
+    /// Throw this outcome's failure as an <see cref="ShenoraException"/> — the bridge from
     /// <see cref="SessionErrorCodes"/> into the IPC error contract (P5.5 H9.4). No-op on success.
     /// <para>
     /// The two vocabularies were never really separate: these codes are already SCREAMING_SNAKE i18n
     /// keys in the shape <c>IpcErrorCodes</c> uses, so the only thing missing was a typed path between
     /// them — and without one, every app routing a session over IPC hand-wrote the same
-    /// <c>if (!result.Success) throw new OperationException(result.ErrorCode!)</c>. Throwing (rather
+    /// <c>if (!result.Success) throw new ShenoraException(result.ErrorCode!)</c>. Throwing (rather
     /// than returning an error object) is what plugs into the dispatcher's documented boundary:
-    /// <c>BaseFacade</c> and <c>MessageDispatcher</c> already turn an <see cref="OperationException"/>
+    /// <c>ModuleBase</c> and <c>MessageDispatcher</c> already turn an <see cref="ShenoraException"/>
     /// into the structured wire error, so a facade route becomes a single call.
     /// </para>
     /// <code>
@@ -37,13 +37,13 @@ public sealed class SessionResult
     /// return new { blob = result.Blob };
     /// </code>
     /// </summary>
-    /// <exception cref="OperationException">When <see cref="Success"/> is false.</exception>
+    /// <exception cref="ShenoraException">When <see cref="Success"/> is false.</exception>
     public void ThrowIfFailed()
     {
         if (Success) return;
         // A failure with no code should be impossible (every Fail site passes one), but reporting
         // UNKNOWN_ERROR beats throwing a NullReference out of an error path.
-        throw new OperationException(ErrorCode ?? IpcErrorCodes.UnknownError);
+        throw new ShenoraException(ErrorCode ?? IpcErrorCodes.UnknownError);
     }
 }
 
@@ -281,7 +281,7 @@ public sealed class InteractiveSession
                 fallback.Tick += (_, _) =>
                 {
                     fallback.Stop();
-                    Shenora.Core.AppCallback.Run(() => onLoading(false));
+                    Shenora.AppCallback.Run(() => onLoading(false));
                 };
                 fallback.Start();
             }

@@ -55,6 +55,13 @@ const step = (label, fn) => {
 const npmDirAbs = path.join(repo, ...config.npmDir.split('/'));
 const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'package.json'), 'utf8'));
 
+// `@shenora/cli` is TypeScript with a real build, like the React package — so it is BUILT and
+// TYPE-CHECKED by the gate rather than trusted. A CLI that ships broken output is worse than one that
+// does not ship: the adopter meets it at the moment they are trying to reach a device for the first time.
+const cliDirAbs = path.join(repo, 'src', 'Shenora.Cli');
+const buildCliPackage = () => ensureNpmDeps(cliDirAbs)
+  && step('npm build (cli package)', () => runNpm('run build', { cwd: cliDirAbs }));
+
 // ---- The Android TFM needs a JDK, and the failure without one is unhelpful.
 //
 // Shenora.Mobile targets net10.0-android, so `dotnet build` of the solution shells out to the Android
@@ -111,6 +118,96 @@ function androidBuildEnv() {
 // `--no-cache` does NOT help (that is HTTP caching). Since a fresh pack makes any cached copy of
 // these exact ids stale by definition, evicting them here removes the trap instead of documenting
 // it. Scoped strictly to the ids this repo produces.
+/**
+ * Entry NAMES inside a zip, without inflating anything — enough to ask "is this file in the package?".
+ *
+ * Hand-rolled because devtools has no dependencies and listing names needs no decompression: walk the
+ * central directory and read each header's file name. ⚠ Zip64 is not handled; it announces itself with
+ * 0xffff entries and we say so rather than silently reporting a short list, because a check that quietly
+ * inspects less than it claims is the failure mode this whole gate exists to prevent.
+ */
+function zipEntryNames(file) {
+  const buf = fs.readFileSync(file);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 66_000; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error(`${path.basename(file)}: no zip end-of-central-directory record`);
+  const count = buf.readUInt16LE(eocd + 10);
+  if (count === 0xffff) throw new Error(`${path.basename(file)}: Zip64, which this reader does not handle`);
+
+  const names = [];
+  let at = buf.readUInt32LE(eocd + 16);
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(at) !== 0x02014b50) throw new Error(`${path.basename(file)}: bad central header at ${at}`);
+    const nameLen = buf.readUInt16LE(at + 28);
+    const extraLen = buf.readUInt16LE(at + 30);
+    const commentLen = buf.readUInt16LE(at + 32);
+    names.push(buf.toString('utf8', at + 46, at + 46 + nameLen).replace(/\\/g, '/'));
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return names;
+}
+
+/**
+ * 🔴 EVERY FILE A SHIPPED `.targets` NAMES MUST BE INSIDE THE SHIPPED PACKAGE.
+ *
+ * This exists because that invariant broke and nothing noticed: `Shenora.iOS.csproj` packed
+ * `ShenoraLiveActivity.swift` by NAME — correct when it was the only Swift file — and was never extended
+ * when two more landed. `ShenoraBuildLiveActivityShim` compiles them for EVERY consuming iOS app, so the
+ * next release would have failed every adopter's build at `swiftc: no such file or directory`, naming a
+ * path inside the nupkg. Found 2026-08-10, one release band after it appeared.
+ *
+ * ⚠ **NO PROJECT-REFERENCE CHECK CAN SEE THIS**, which is the whole point of putting it here rather than in
+ * a unit test: this repo's own builds resolve `buildTransitive/` from the SOURCE tree, so the sample and
+ * every gate stayed green. It is the same layer as the 0.9.0 defect (five undefined symbols in a published
+ * package), and the same lesson — read the artifact, do not trust "Build succeeded".
+ *
+ * The referenced paths come from the SOURCE targets rather than the packed copy, so no inflate is needed;
+ * what is asserted is that the package CARRIES them.
+ */
+function checkPackagedBuildAssets(outDir) {
+  const packages = fs.readdirSync(outDir).filter((f) => f.endsWith('.nupkg'));
+  let checked = 0;
+  let ok = true;
+
+  for (const pkg of packages) {
+    // `Shenora.iOS.0.10.0.nupkg` -> `Shenora.iOS`. The version is always the trailing three numeric parts.
+    const id = pkg.replace(/\.nupkg$/, '').replace(/\.\d+\.\d+\.\d+$/, '');
+    const targetsDir = path.join(repo, 'src', id, 'buildTransitive');
+    if (!fs.existsSync(targetsDir)) continue;
+
+    const referenced = new Set();
+    for (const entry of fs.readdirSync(targetsDir)) {
+      if (!entry.endsWith('.targets') && !entry.endsWith('.props')) continue;
+      const text = fs.readFileSync(path.join(targetsDir, entry), 'utf8');
+      for (const m of text.matchAll(/\$\(MSBuildThisFileDirectory\)([A-Za-z0-9_./\\-]+)/g)) {
+        referenced.add(m[1].replace(/\\/g, '/'));
+      }
+      referenced.add(entry);
+    }
+    if (referenced.size === 0) continue;
+
+    const names = new Set(zipEntryNames(path.join(outDir, pkg)));
+    const missing = [...referenced].filter((rel) => !names.has(`buildTransitive/${rel}`)).sort();
+    checked++;
+
+    if (missing.length > 0) {
+      ok = false;
+      console.error(`  ✖ ${pkg} is missing ${missing.length} file(s) its own targets name:`);
+      for (const rel of missing) console.error(`      buildTransitive/${rel}`);
+      console.error('    A consumer resolves these from the PACKAGE, so their build fails where ours cannot.');
+    } else {
+      // Printed, not silent: this gate's clean answer would otherwise be indistinguishable from a gate
+      // that found no packages to inspect.
+      console.log(`  ok  ${pkg} carries all ${referenced.size} file(s) its targets name`);
+    }
+  }
+
+  if (checked === 0) console.log('  ok  no package ships a buildTransitive/ targets file — nothing to check');
+  return ok;
+}
+
 function evictGlobalCache() {
   const home = process.env.USERPROFILE || process.env.HOME;
   if (!home) { console.log('  (no home dir — skipped)'); return true; }
@@ -261,14 +358,18 @@ function doctor({ fix = false } = {}) {
   let problems = 0;
   const fail = (msg) => { problems++; console.error('  FAIL ' + msg); };
 
-  const pkgPath = path.join(npmDirAbs, 'package.json');
-  const pkg = readNpmPackage();
-  if (pkg.version !== config.version) {
+  // EVERY npm package, not just the first. `@shenora/cli` was added on 2026-08-08 and the version check
+  // read one hardcoded directory — so the new package would have been born outside the lockstep this
+  // repo treats as load-bearing (a hand-bump consumed 0.2.0 outright). One list, checked in a loop.
+  for (const dir of config.npmPackages) {
+    const pkgPath = path.join(repo, ...dir.split('/'), 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    if (pkg.version === config.version) continue;
     if (fix) {
       fs.writeFileSync(pkgPath, fs.readFileSync(pkgPath, 'utf8')
         .replace(/"version":\s*"[^"]+"/, `"version": "${config.version}"`));
-      console.log(`  fixed ${config.npmDir}/package.json version -> ${config.version}`);
-    } else fail(`${config.npmDir}/package.json version ${pkg.version} != VersionPrefix ${config.version}`);
+      console.log(`  fixed ${dir}/package.json version -> ${config.version}`);
+    } else fail(`${dir}/package.json version ${pkg.version} != VersionPrefix ${config.version}`);
   }
 
   const readmePath = path.join(repo, 'README.md');
@@ -302,17 +403,18 @@ function doctor({ fix = false } = {}) {
   // package needs its own copy because npm packs only files under the package directory — so the root
   // LICENSE is the source and this is checked against it, rather than trusting two files to stay equal.
   const rootLicense = path.join(repo, 'LICENSE');
-  const npmLicense = path.join(npmDirAbs, 'LICENSE');
   if (fs.existsSync(rootLicense)) {
     const expected = fs.readFileSync(rootLicense, 'utf8');
-    const actual = fs.existsSync(npmLicense) ? fs.readFileSync(npmLicense, 'utf8') : null;
-    if (actual !== expected) {
+    for (const dir of config.npmPackages) {
+      const npmLicense = path.join(repo, ...dir.split('/'), 'LICENSE');
+      const actual = fs.existsSync(npmLicense) ? fs.readFileSync(npmLicense, 'utf8') : null;
+      if (actual === expected) continue;
       if (fix) {
         // readFileSync/writeFileSync, never fs.cpSync — it hard-crashes Node 24 on this machine
         // (see .claude/rules/windows-dev-gotchas.md).
         fs.writeFileSync(npmLicense, expected);
-        console.log(`  fixed ${config.npmDir}/LICENSE (copied from the root LICENSE)`);
-      } else fail(`${config.npmDir}/LICENSE ${actual === null ? 'is missing' : 'differs from'} the root LICENSE`);
+        console.log(`  fixed ${dir}/LICENSE (copied from the root LICENSE)`);
+      } else fail(`${dir}/LICENSE ${actual === null ? 'is missing' : 'differs from'} the root LICENSE`);
     }
   }
 
@@ -462,13 +564,71 @@ function doctor({ fix = false } = {}) {
     console.log('  ..  stray-file sweep skipped (not a git checkout)');
   }
 
+  // GIT HOOKS — WHERE THEY ACTUALLY LIVE, because looking in the obvious place gives the wrong answer.
+  //
+  // 🔴 `.git/hooks/` IS NOT WHERE THIS REPO'S HOOKS ARE. `install-hooks` sets `core.hooksPath` to the
+  // TRACKED `devtools/hooks/`, so `.git/hooks/` keeps only git's `.sample` files forever — and that
+  // reads as "the sensitive guard is not installed" to anyone who checks. TWO separate agents concluded
+  // exactly that in ONE session (2026-08-12/13), and one of them re-ran `install-hooks` to fix a thing that
+  // was never broken. The next reader will look in the same wrong directory, so the answer belongs one
+  // command away rather than in a rule nobody re-reads.
+  //
+  // ⚠ REPORTED, NEVER FAILED, and that is about WHERE THIS RUNS. `doctor` runs inside `verify`, which
+  // runs in CI — where hooks are meaningless (nothing commits) and `core.hooksPath` is never set. A FAIL
+  // would break every CI run to state a fact that is only actionable on a developer's clone. The real
+  // protection is the hook itself; this is the line that tells you whether you have it.
+  //
+  // ⚠ "IS THIS A CHECKOUT?" IS THE `git ls-files` RESULT ABOVE, NOT THIS COMMAND'S EXIT CODE. `git config
+  // --get` answers from the GLOBAL config outside a repo and exits 1 for "unset" there exactly as it does
+  // inside one — so a status check here cannot tell the two apart, and a source archive would be told to
+  // run `install-hooks` on a repo it does not have. Reusing the sweep's signal keeps the two lines saying
+  // the same thing about the same tree.
+  const hooksPath = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: repo, encoding: 'utf8' });
+  if (tracked.status !== 0 || hooksPath.error) {
+    console.log('  ..  git-hooks check skipped (not a git checkout)');
+  } else {
+    const configured = (hooksPath.stdout ?? '').trim();
+    // The two the repo ships: staged content+paths on commit, the MESSAGE (and history) on commit-msg.
+    const present = ['pre-commit', 'commit-msg']
+      .filter((h) => configured && fs.existsSync(path.join(repo, ...configured.split('/'), h)));
+    if (!configured) {
+      console.log('  !!  git hooks: core.hooksPath is NOT set, so the sensitive-info guard does NOT run on '
+        + 'commit (a fresh clone starts this way, and .git/hooks/ holds only git\'s .sample files either '
+        + 'way). Install once: node devtools/dev.mjs install-hooks');
+    } else if (present.length === 2) {
+      console.log(`  ok  git hooks: core.hooksPath = ${configured} (pre-commit + commit-msg present) — `
+        + 'NOT .git/hooks/, which keeps only git\'s .sample files in this repo');
+    } else {
+      console.log(`  !!  git hooks: core.hooksPath = ${configured}, but ${['pre-commit', 'commit-msg']
+        .filter((h) => !present.includes(h)).join(' + ')} is missing there — the guard cannot run. `
+        + 'Re-run: node devtools/dev.mjs install-hooks');
+    }
+  }
+
+  // 🔴 A SCANNER THAT ROOTS AT `process.cwd()` SILENTLY UNDER-SCANS FROM ANYWHERE ELSE, and this is a
+  // gate rather than a rule because the rule version already failed: three scanners were fixed in one
+  // commit and the fourth was missed the same day, because the population was "the files I happened to
+  // open". Run from `devtools/`, `cite-scan` discovered ONE doc instead of thirty-six and reported the
+  // rest of the repo's prose as clean — a partial scan is indistinguishable from a clean one when the
+  // clean answer is silence. Deriving the set from a query is the whole fix, so the query lives here.
+  for (const entry of fs.readdirSync(path.join(repo, 'devtools', 'scripts'))) {
+    if (!entry.endsWith('.mjs')) continue;
+    const src = fs.readFileSync(path.join(repo, 'devtools', 'scripts', entry), 'utf8');
+    if (!/^\s*const\s+repo\s*=/m.test(src)) continue;          // does not resolve a repo root at all
+    if (/const\s+repo\s*=\s*process\.cwd\(\)/.test(src)) {
+      fail(`devtools/scripts/${entry} roots at process.cwd(), so it silently scans less (or nothing) `
+        + 'when run from any other directory. Use the script\'s own location: '
+        + 'path.resolve(path.dirname(fileURLToPath(import.meta.url)), \'..\', \'..\').');
+    }
+  }
+
   if (problems === 0)
     // Don't claim the tag matched when the check was skipped — a success line that overstates what
     // ran is the same defect class as a doc that overstates what the code does.
     console.log(`  ok  version ${config.version} consistent (props · npm · README · ARCHITECTURE · LICENSE)`
       + (releasing ? ' — tag check skipped, this is the release' : ' and matches the newest tag')
       + `; ${config.packableProjects.length} packable project(s) agree with their csprojs`
-      + '; no stray tracked filenames');
+      + '; no stray tracked filenames; every scanner roots at its own location');
   return problems === 0;
 }
 
@@ -564,7 +724,8 @@ switch (cmd) {
     const ok = buildEnv !== null
       && step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv }))
       && ensureNpmDeps(npmDirAbs)
-      && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
+      && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }))
+      && buildCliPackage();
     process.exitCode = ok ? 0 : 1;
     break;
   }
@@ -590,8 +751,13 @@ switch (cmd) {
         && step('dotnet test', () => run('dotnet', ['test', config.solution, '-v', 'minimal', '--nologo'], { env: testEnv }))
         && ok;
     }
-    if (which === 'all' || which === 'npm')
+    if (which === 'all' || which === 'npm') {
       ok = (ensureNpmDeps(npmDirAbs) && step('vitest (react package)', () => runNpm('test', { cwd: npmDirAbs }))) && ok;
+      // BOTH npm packages have suites now. `@shenora/cli`'s covers the decisions that fail SILENTLY —
+      // pipefail (a rejected install reported as success) and the `--` split (a build property read as a
+      // simulator name). Both sabotage-verified in each direction on 2026-08-09.
+      ok = (ensureNpmDeps(cliDirAbs) && step('vitest (cli package)', () => runNpm('test', { cwd: cliDirAbs }))) && ok;
+    }
     process.exitCode = ok ? 0 : 1;
     break;
   }
@@ -622,6 +788,11 @@ switch (cmd) {
         // something type-checks them (P5.5 H6).
         return runNpm('run typecheck', { cwd: path.join(repo, ...config.npmDir.split('/')) });
       }],
+      // The CLI's own strict pass, and it now DOES cover tests (added 2026-08-09) — `tsconfig.json`
+      // includes them while `tsconfig.build.json` excludes them, so this is the only thing type-checking
+      // the suite. Kept as its own step for exactly the reason it earned: the React package's equivalent
+      // was inert for five phases because nothing ran it.
+      ['cli typecheck', () => ensureNpmDeps(cliDirAbs) && runNpm('run typecheck', { cwd: cliDirAbs })],
       ['sample web typecheck', () => {
         // The e2e subject's TS was never type-checked by any gate (P5.5 H5). Skipped only when the
         // sample web app doesn't exist yet.
@@ -643,6 +814,16 @@ switch (cmd) {
       // never existed. Two precise checks only (graph vs csproj, retired names stated as current),
       // because a fuzzy "does this symbol exist" sweep would drown the signal and get switched off.
       ['doc-drift', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-drift.mjs')], { stdio: 'inherit', cwd: repo }).status === 0],
+      // doc-shape is doc-drift's other half: doc-drift asks whether a claim matches the tree, this asks
+      // whether a doc is narrating its own past — the habit that BLINDS doc-drift, because its history
+      // suppression stays permanently on inside an amendment stack. Only the narration rows gate; the
+      // D-entry line cap is a style budget and warns, the same call the knowledge footprint above
+      // already makes and for the same reason (a fatal budget blocked a release by 0.2 KB).
+      ['doc-shape', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'doc-shape.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // The generated wire reference must match the source constants. It is the one page in `docs/`
+      // that restates something the code owns, which D57 says goes stale — so it is only defensible
+      // while this gate makes that impossible.
+      ['wire-reference', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'wire-reference.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
       // doctor LAST and non-fixing: verify must FAIL on version/README drift rather than leave it to
       // `pack` (which runs doctor --fix, so verify was scanning pre-sync files) — P5.5 H5.
       ['doctor', () => doctor({ fix: false })],
@@ -686,9 +867,16 @@ switch (cmd) {
     // ordinary dev-box run — and packed normally once a release workflow has staged them. It is NOT
     // silently skipped when present, and it FAILS LOUD rather than shipping an empty runtimes/ folder;
     // both halves of that matter, because an empty native package restores fine and breaks the consumer.
-    // Skipped only when there is NOTHING to pack — neither a committed `runtimes/` nor a downloaded
-    // `artifacts/runtimes/`. Since win-x64 is committed, this no longer skips in practice; it still
-    // catches the case where someone removes the committed binaries and has not staged CI's.
+    // Skipped only when there is NOTHING to pack — neither a `runtimes/` on disk nor a downloaded
+    // `artifacts/runtimes/`.
+    // ⚠ This said "since win-x64 is committed, this no longer skips in practice" until 2026-08-14, and it
+    // was FALSE the day it was written: the commit that wrote it (`b2f3b50`) is the one that REMOVED the
+    // committed binary — its own subject line is "no binary in git" — and `git ls-files` has never
+    // matched a `runtimes/` path since. So an ordinary dev-box `pack` DOES skip the launcher and emits
+    // four nupkgs, not five. That matters because a reader checking release readiness against that
+    // sentence reads four-of-five as complete, which is exactly how 0.5.0 shipped four of five
+    // (`docs/REVIEW-GUIDE.md` §4.4). The RELEASE is unaffected: `release.yml`'s launcher matrix builds
+    // both RIDs, stages them here, and asserts both are present before packing.
     const needsArtifacts = (config.artifactPackableProjects ?? []);
     const artifactless = needsArtifacts.filter((p) =>
       !fs.existsSync(path.join(repo, p, 'runtimes'))
@@ -725,7 +913,14 @@ switch (cmd) {
       ok = ok && ensureNpmDeps(npmDirAbs);
       ok = ok && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
       ok = ok && step('npm pack (react package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: npmDirAbs }));
+      // 🔴 BOTH npm packages, or the second one silently never ships. `@shenora/cli` (D67) was added on
+      // 2026-08-08 and this loop packed only the React package for its first two days — `doctor` held the
+      // version in lockstep the whole time, which is exactly what made the gap invisible: every check said
+      // "consistent" about a tarball that was never produced.
+      ok = ok && buildCliPackage();
+      ok = ok && step('npm pack (cli package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: cliDirAbs }));
     }
+    if (ok) ok = step('build assets the targets NAME are inside the package', () => checkPackagedBuildAssets(out));
     if (ok) ok = step('evict stale Shenora.* from the NuGet global cache', () => evictGlobalCache());
     if (ok) {
       console.log('\npacked:');
@@ -761,11 +956,11 @@ switch (cmd) {
     break;
   }
 
-  // ---- Sample-app loop (Phase 2+; see docs/ROADMAP.md). The capture/input tools below already
+  // ---- Sample-app loop. The capture/input tools below already
   // work against any process named in project.config.mjs once the sample exists.
   case 'sample': {
     const projDir = path.join(repo, ...config.sampleProject.split('/'));
-    if (!fs.existsSync(projDir)) { console.error(`sample project not created yet (${config.sampleProject}) — Phase 2, see docs/ROADMAP.md`); process.exitCode = 1; break; }
+    if (!fs.existsSync(projDir)) { console.error(`sample project not created yet (${config.sampleProject})`); process.exitCode = 1; break; }
     const env = { ...process.env };
     if (args.includes('--dev')) {
       const cdpPort = config.cdpPortBase + Math.floor(Math.random() * 500);
@@ -796,7 +991,7 @@ switch (cmd) {
 
   case 'vite': {
     const webDir = path.join(repo, ...config.sampleWebDir.split('/'));
-    if (!fs.existsSync(webDir)) { console.error(`sample web not created yet (${config.sampleWebDir}) — Phase 2, see docs/ROADMAP.md`); process.exitCode = 1; break; }
+    if (!fs.existsSync(webDir)) { console.error(`sample web not created yet (${config.sampleWebDir})`); process.exitCode = 1; break; }
     // Install the SAMPLE's deps too (it was only ever done for the react package, so a fresh clone
     // got a bare "vite: not found" — P5.5 H5). Its @shenora/react dep is a file: link, so the
     // package must be built first or the sample resolves an empty dist.
@@ -955,7 +1150,7 @@ switch (cmd) {
   case 'clean': {
     // Reclaim the BUILD OUTPUT under devtools/_* (and publish/), never the sources. Those scratch
     // folders are gitignored probes — the P6 consumers, the adoption adapters, the P7 profile
-    // proofs — and docs/ROADMAP + task-archive describe them as RE-RUNNABLE, so deleting their
+    // proofs — and they are RE-RUNNABLE, so deleting their
     // sources would quietly destroy the thing those entries point at. Their bin/obj/node_modules is
     // ~60 MB of regenerable weight and is fair game.
     //
@@ -1006,6 +1201,56 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), ...args]);
     break;
 
+  // stale-scan [path] — every retired name, WITHOUT doc-drift's history suppression. A review tool,
+  // never a gate: it is deliberately noisy and the triage is a human's. Run it in the same commit as
+  // a rename — see the script header for the three commits that shipped a deleted API without it.
+  case 'stale-scan':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'stale-scan.mjs'), ...args]);
+    break;
+
+  // self-rename-scan — sentences naming one identifier on BOTH sides of a relation ("`X` depends on
+  // `X`"), which is what a repo-wide rename leaves in the one sentence whose subject was the old name.
+  // Five of these were found across the docs on 2026-08-09/10, three of them after two prose audits had
+  // run clean: doc-drift and cite-scan cannot see it, because both names exist and they are the same
+  // name. Noisy on purpose, never a gate — same standing as stale-scan.
+  case 'self-rename-scan':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'self-rename-scan.mjs'), ...args]);
+    break;
+
+  // cite-scan [doc…] — identifiers a doc cites that exist NOWHERE in the source. Starts from the DOCS
+  // rather than from retired-names.txt, so it is the only one of the three that catches a rename whose
+  // step 2 was skipped — which is every one it found on its first run. Review tool, never a gate.
+  case 'cite-scan':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'cite-scan.mjs'), ...args]);
+    break;
+
+  // decision-audit [D<n>…] [--verbose] — per-ENTRY truth check for DECISIONS.md, ranked worst-first.
+  // cite-scan's unit is a LINE; the unit a session trusts (and the unit that gets rewritten) is an
+  // ENTRY, and this also checks the three claim kinds that file keeps getting wrong: dead package ids,
+  // a live namespace called a package, and a retired name stated as current. It separates a live lie
+  // from correct past tense, which is what makes the output triageable.
+  // ⚠ TRUTH ONLY — whether a decision is still REASONABLE is a judgement no script makes.
+  case 'decision-audit':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'decision-audit.mjs'), ...args]);
+    break;
+
+  // doc-shape [--check] — the shape rules made mechanical: no dated self-narration in a tracked doc,
+  // a D-entry cap, D-number integrity, TASKS.md holds no done-markers, PROJECT_NOTES.md is not a
+  // session log. Report-only without `--check`; `verify` passes `--check`.
+  case 'doc-shape':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'doc-shape.mjs'), ...args]);
+    break;
+
+  // retired-audit [tag] [rev=HEAD] — which public types left the SHIPPED surface without a retired-names
+  // entry. The question BEFORE stale-scan's: not "is this name still described as current?" but "is this
+  // removal recorded at all?" Release step, not part of verify — it needs tags.
+  // Also reports `required` DELTAS, the contract change that keeps every name: GAINING it on a property
+  // that already shipped is a hard source break (an adopter's object initializer stops compiling) and
+  // fails unless the CHANGELOG names it; LOSING it only invalidates prose, so it prints and passes.
+  case 'retired-audit':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'retired-audit.mjs'), ...args]);
+    break;
+
   case 'install-hooks':
     // Point git at the tracked hooks dir so the sensitive-info pre-commit guard runs (a clone only
     // needs this once — core.hooksPath is local config, the hook script itself is versioned).
@@ -1014,6 +1259,13 @@ switch (cmd) {
     break;
 
   default:
+    // ⚠ THIS STRING IS THE ONLY DISCOVERY SURFACE FOR A VERB, so a verb missing from it is a tool nobody
+    // finds. `stale-scan` and `cite-scan` were both absent for their whole lives until 2026-08-10 — each
+    // shipped with a `case` and a rule telling you to run it, and neither appeared here.
     console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
+    console.log('  probes         : update-probe [dir] | android-jdk');
+    console.log('  prose review (never gates, triage by hand): stale-scan | cite-scan | self-rename-scan | decision-audit');
+    console.log('  doc shape      : doc-shape [--check]        (verify runs --check: self-narration FAILS, the D-entry line cap WARNS)');
     process.exitCode = cmd ? 1 : 0;
 }

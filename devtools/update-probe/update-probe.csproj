@@ -13,7 +13,7 @@
        indexed, and so on) and that is the habit this turns into a re-runnable step, for THEM as much as
        for us: point it at any directory and it reports the same numbers. `dev.mjs update-probe`.
 
-       net10.0, not -windows: everything here is portable and the whole point of Shenora.IO is that the
+       net10.0, not -windows: everything here is portable and the whole point of the file-operation engine is that the
        same code runs on every shell. A probe that could only run on Windows would be unable to check the
        Linux half of a claim this kit intends to keep making. Dev tool — never shipped. -->
   <PropertyGroup>
@@ -31,6 +31,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Shenora.IO\Shenora.IO.csproj" />
+    <!-- Shenora, because the file-operation engine folded into it on 2026-08-07 (D55). The
+         namespace this probe drives became Shenora.Modules.Update when D65 relayered the package. -->
+    <ProjectReference Include="..\..\src\Shenora\Shenora.csproj" />
   </ItemGroup>
 </Project>

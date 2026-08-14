@@ -17,5 +17,6 @@ committing.
 **Skip the gate only for genuinely trivial edits** (a typo, a one-line fix, a doc tweak) — forcing
 it there is noise. The point stands: never hand-roll what a skill covers, and never miss an
 invariant that an on-demand knowledge rule holds. When you finish something reusable, evolve the
-system — add a rule (`node devtools/dev.mjs knowledge new <name>`) or a skill so the next task
-starts ahead.
+system — but **reach for a GATE or a TEST first, and a rule only when neither can exist**
+(`phase-workflow.md` has the ordering and the score that earned it). Prose competes for attention with
+every other rule; a mechanism runs every time and names the file.
