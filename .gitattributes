@@ -1,7 +1,9 @@
-* text=auto
-*.sh text eol=lf
-devtools/hooks/* text eol=lf
-*.ps1 text eol=crlf
-*.png binary
-*.ico binary
-*.tgz binary
+# 🔴 .gitignore MUST CHECK OUT AS LF, whatever the machine's autocrlf says — this is a correctness
+# rule, not a style one. GitHub's Windows runners set autocrlf, so a fresh clone there materialized
+# the (LF-committed) .gitignore as CRLF, an EMPTY line became a lone CR, and git's ignore parser
+# treats a lone-CR line as a pattern matching EVERY directory. `git check-ignore <anything>/`
+# answered "ignored" for the whole tree, the doc-drift citation scanner believed it, and the release
+# stopped on 1,600 findings about prose that was fine. Minimal repro, git 2.53:
+# a .gitignore of `bin/\r\n` + `\r\n` calls `zzz/qqq/` ignored, attributed to the blank line.
+.gitignore text eol=lf
+.gitattributes text eol=lf

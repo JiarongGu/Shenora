@@ -166,22 +166,34 @@ export function citedOutOfScope(paths) {
   // Both spellings of each candidate — see the slash note above.
   const probes = [...new Set(safe.flatMap((p) => (p.endsWith('/') ? [p] : [p, `${p}/`])))];
 
-  // 🔴 THE REPO'S OWN RULES ONLY — global and system git config are pointed at an empty file for this
+  // THE REPO'S OWN RULES ONLY — global and system git config are pointed at an empty file for this
   // one query. The question is "would a CLONE have this path", and a clone's ignore set is the tree's
-  // .gitignore files, never one machine's personal config. The header's "hostile global excludesFile"
-  // paragraph called that configuration rare and chose to name it rather than defend against it — and
-  // then the RELEASE RUNNER turned out to be one (2026-08-18): its git called word-pairs scraped from
-  // comments (`FormClosing/FormClosed`, `size/min`) ignored, doctor --fix exploded with citation
-  // findings no other machine could reproduce, and the release stopped on prose that was fine. The
-  // WALK keeps the standard sources on purpose: for tracked files `--others` makes it airtight anyway,
-  // and there a personal rule can only hide personal junk, which is the safe direction.
+  // .gitignore files, never one machine's personal config (the header's "hostile global excludesFile"
+  // measurement). ⚠ This was FIRST shipped as the fix for the 2026-08-18 release failure and was the
+  // wrong diagnosis for it — the canary below tells that story; the env stays because the hostile
+  // configuration it neutralizes is real and was measured. The WALK keeps the standard sources on
+  // purpose: for tracked files `--others` makes it airtight anyway, and there a personal rule can
+  // only hide personal junk, which is the safe direction.
+  //
+  // 🔴 THE CANARY: one probe that is certainly not a repo path rides along, and if git calls IT
+  // ignored the whole answer is poisoned and this returns null — the caller's LOUD fallback — rather
+  // than a verdict. Earned by the 2026-08-18 release run: the runner's autocrlf materialized the
+  // LF-committed .gitignore as CRLF, a blank line became a lone CR, and git's parser treats a
+  // lone-CR line as matching EVERY directory — check-ignore answered "ignored" for every `x/y/`
+  // spelling, and the citation check exploded with 1,600 findings about prose that was fine
+  // (.gitattributes now pins .gitignore to LF; this guard is for whatever poisons the answer NEXT,
+  // because a query that failed must never look like a result — probe-diagnostics' rule).
+  const CANARY = 'zz-shenora-canary-not-a-path/zz';
   const res = spawnSync('git', ['check-ignore', '--stdin', '-z'],
     {
-      cwd: repo, encoding: 'utf8', input: probes.join('\0'), maxBuffer: 64 * 1024 * 1024,
+      cwd: repo, encoding: 'utf8', input: [...probes, CANARY, `${CANARY}/`].join('\0'),
+      maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, GIT_CONFIG_GLOBAL: emptyConfig(), GIT_CONFIG_SYSTEM: emptyConfig() },
     });
   if (res.error || (res.status !== 0 && res.status !== 1)) return null;
-  return new Set(res.stdout.split('\0').filter(Boolean).map((p) => p.replace(/\/+$/, '')));
+  const answered = new Set(res.stdout.split('\0').filter(Boolean).map((p) => p.replace(/\/+$/, '')));
+  if (answered.has(CANARY)) return null;
+  return answered;
 }
 
 // An empty file both GIT_CONFIG_* variables can point at — created once per process. An env value of
