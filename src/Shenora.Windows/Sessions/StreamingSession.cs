@@ -9,43 +9,57 @@ using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 
-/// <summary>A CSS viewport the co-browse page emulates (device metrics, DPI-independent).</summary>
-public readonly record struct SessionViewport(int Width, int Height, double DeviceScaleFactor);
-
 /// <summary>
-/// One captured frame: the JPEG bytes plus the CSS viewport they depict.
+/// The CSS viewport a streamed page believes it has, applied through CDP device metrics — never a
+/// physical window resize, and DPI-independent.
 /// <para>
-/// The geometry is the point (P5.5 H9.3 / D21). Frames used to arrive as bare <c>byte[]</c>, so an app
-/// received pixels with no idea what viewport they represented — and since input coordinates are
-/// FRACTIONS of the viewport, it could not map a click back reliably without inventing its own
-/// side-channel. That is precisely the "you end up needing the app's own protocol anyway" trap D21
-/// names. The values come from the screencast frame's own metadata, so they describe THAT frame
-/// rather than whatever the viewport happens to be by the time the app reads it.
+/// ⚠ <b>CLAMPED, and this is the ONE place the bounds are written down.</b> Width 320–1560, height
+/// 240–1080, scale 1–2; <c>StreamingSession.ClampViewport</c> is the authority and a test pins the upper
+/// edge. A viewer larger than that is fitted to the maximum rather than refused, so a 4K client sees a
+/// 1560-wide page scaled up — worth knowing before concluding the stream is blurry for another reason.
 /// </para>
 /// </summary>
-/// <param name="Jpeg">The encoded frame.</param>
+/// <param name="Width">CSS px, clamped to 320–1560.</param>
+/// <param name="Height">CSS px, clamped to 240–1080.</param>
+/// <param name="DeviceScaleFactor">Device pixel ratio, clamped to 1–2.</param>
+public readonly record struct SessionViewport(int Width, int Height, double DeviceScaleFactor);
+
+/// <summary>How a captured frame is encoded. The platform offers both; the kit picks neither for you.</summary>
+public enum StreamingSessionFrameFormat
+{
+    /// <summary>Lossy, small, and what a live viewer wants. Honours quality.</summary>
+    Jpeg,
+
+    /// <summary>Lossless and much larger — for capture or a preview a user will inspect. Quality is ignored.</summary>
+    Png,
+}
+
+/// <summary>
+/// One captured frame: the encoded bytes, HOW they are encoded, and the CSS viewport they depict, read
+/// from the frame's OWN metadata. Input coordinates are FRACTIONS of the viewport, so a click maps back
+/// against these.
+/// </summary>
+/// <param name="Bytes">The encoded frame.</param>
+/// <param name="Format">Which encoding <paramref name="Bytes"/> is in — label your transport with it.</param>
 /// <param name="Width">CSS width of the viewport this frame depicts.</param>
 /// <param name="Height">CSS height of the viewport this frame depicts.</param>
-public readonly record struct SessionFrame(byte[] Jpeg, int Width, int Height);
+public readonly record struct StreamingSessionFrame(byte[] Bytes, StreamingSessionFrameFormat Format, int Width, int Height);
 
 /// <summary>Why a <see cref="StreamingSession"/> ended.</summary>
-public enum SessionEndReason
+public enum StreamingSessionEndReason
 {
     /// <summary>The app disposed the session — the ordinary path.</summary>
     Disposed,
 
-    /// <summary>
-    /// The page's RENDERER died (crash, OOM, kill). The stream cannot resume; dispose and start again.
-    /// Distinguishing this from <see cref="Disposed"/> is the whole reason the hook carries a reason:
-    /// both complete the frame channel, so a reader alone cannot tell a crash from a clean shutdown.
-    /// </summary>
+    /// <summary>The page's RENDERER died (crash, OOM, kill). The stream cannot resume; dispose and start
+    /// again.</summary>
     RendererFailed,
 }
 
 /// <summary>Why a session ended, handed to <see cref="StreamingSessionOptions.OnEnded"/>.</summary>
 /// <param name="Reason">Ordinary dispose, or a renderer failure.</param>
 /// <param name="Detail">Diagnostic text when the platform supplied any; null otherwise.</param>
-public sealed record SessionEnded(SessionEndReason Reason, string? Detail = null);
+public sealed record StreamingSessionEnded(StreamingSessionEndReason Reason, string? Detail = null);
 
 /// <summary>Inputs for <see cref="StreamingSession"/>.</summary>
 public sealed class StreamingSessionOptions
@@ -54,122 +68,76 @@ public sealed class StreamingSessionOptions
     public required Control Anchor { get; init; }
 
     /// <summary>
-    /// Browser configuration — same scoping rule as <see cref="InteractiveSessionOptions.ProfileDirectory"/>:
-    /// one profile per (provider, sub-account), NEVER one shared jar (the source's measured leak:
-    /// definitions sharing a profile could read back each other's sessions). Set
-    /// <see cref="SessionBrowserOptions.KeepAliveInBackground"/> — the page renders off-screen and
-    /// must keep painting/animating for the screencast; wire ad/tracker stripping through
-    /// <see cref="SessionBrowserOptions.RequestFilter"/> (the page is STREAMED — a clean window is
-    /// bandwidth AND UX).
+    /// Browser configuration — same scoping rule as <see cref="SessionBrowserOptions.ProfileDirectory"/>:
+    /// one profile per (provider, sub-account), NEVER one shared jar, or definitions sharing a profile
+    /// read back each other's sessions. Set <see cref="SessionBrowserOptions.KeepAliveInBackground"/>:
+    /// the page renders off-screen and must keep painting for the screencast.
     /// </summary>
     public required SessionBrowserOptions Browser { get; init; }
-    /// <summary>
-    /// Diagnostics. Null = silent. The sessions package shipped with NO logging of any kind against
-    /// ~30 swallowed catches, so a wedged co-browse session was undiagnosable in production (P5.5 H4.7). Note the
-    /// browser-level events (init failure, suppressed popups, denied permissions, a dead renderer)
-    /// report through <see cref="SessionBrowserOptions.Log"/> on <see cref="Browser"/>.
-    /// </summary>
+    /// <summary>Diagnostics. Null = silent. Browser-level events (init failure, suppressed popups, denied
+    /// permissions, a dead renderer) report through <see cref="SessionBrowserOptions.Log"/> instead.</summary>
     public Microsoft.Extensions.Logging.ILogger? Log { get; init; }
 
 
-    /// <summary>
-    /// Consulted before every controller navigation (return false to refuse) — the same
-    /// SSRF-shaped seam as the pool and the interactive session: co-browse URLs are data-driven, and
-    /// this session both DISCLOSES the rendered page (streamed frames) and accepts input.
-    /// </summary>
+    /// <summary>Consulted before every controller navigation; return false to refuse. This session both
+    /// DISCLOSES the rendered page and accepts input, so a data-driven URL is SSRF-shaped.</summary>
     public Func<Uri, CancellationToken, Task<bool>>? NavigationGuard { get; init; }
 
-    /// <summary>Screencast JPEG quality (1–100).</summary>
-    public int JpegQuality { get; init; } = 72;
+    /// <summary>How frames are encoded. Default JPEG — a live viewer wants small frames.</summary>
+    public StreamingSessionFrameFormat FrameFormat { get; init; } = StreamingSessionFrameFormat.Jpeg;
 
-    /// <summary>Max captured frame width — generous so a client-mirrored viewport
-    /// (up to ~1200 CSS × dpr 2) is captured crisp.</summary>
+    /// <summary>
+    /// Encoder quality (1–100). ⚠ JPEG only — PNG is lossless, and the platform ignores this for it.
+    /// </summary>
+    public int FrameQuality { get; init; } = 72;
+
+    /// <summary>Max captured frame width — generous, so a client-mirrored viewport (~1200 CSS × dpr 2)
+    /// is captured crisp.</summary>
     public int MaxFrameWidth { get; init; } = 2560;
 
     /// <summary>Max captured frame height (see <see cref="MaxFrameWidth"/>).</summary>
     public int MaxFrameHeight { get; init; } = 1800;
 
-    /// <summary>
-    /// FALLBACK viewport: a sane desktop CSS viewport decoupled from the host's DPI, used only
-    /// until the client's own <c>viewport</c> input message arrives (which then MIRRORS the
-    /// client's display box 1:1 — see <see cref="SessionViewportInput"/>).
-    /// deviceScaleFactor 1.5 keeps it crisp regardless of host DPI.
-    /// </summary>
+    /// <summary>FALLBACK viewport, used only until the client's own <c>viewport</c> input arrives —
+    /// which then MIRRORS the client's display box 1:1 (see <see cref="SessionViewportInput"/>).</summary>
     public SessionViewport InitialViewport { get; init; } = new(1280, 860, 1.5);
 
-    /// <summary>
-    /// Frames buffered between the capture (UI thread) and the app's transport pump — latest-
-    /// frame-wins: a slow client never backs up the compositor, the oldest frame is dropped.
-    /// </summary>
+    /// <summary>Frames buffered between the capture (UI thread) and the app's transport pump.
+    /// Latest-frame-wins: the oldest is dropped, so a slow client never backs up the compositor.</summary>
     public int FrameBuffer { get; init; } = 2;
 
     /// <summary>
-    /// Called exactly ONCE when the session ends, with why (P5.5 H9.3 / D21 — the lifecycle hook the
-    /// feature was missing). Both a clean dispose and a dead renderer complete
-    /// <see cref="StreamingSession.Frames"/>, so a reader alone cannot tell them apart; this can. Use it
-    /// to tear down the transport, tell the user, or decide whether restarting is worth it.
+    /// Called exactly ONCE when the session ends, with why. Invoked GUARDED — a throw here cannot take
+    /// down the session or the UI thread. It may run on the UI thread or on a WebView2 event callback,
+    /// so keep it short and marshal anything heavy yourself.
     /// <para>
-    /// App code, so it is invoked GUARDED — a throw here cannot take down the session or the UI
-    /// thread. It may run on the UI thread or on a WebView2 event callback, so keep it short and
-    /// marshal anything heavy yourself.
+    /// 🔴 <b>DISPOSE THE SESSION FROM HERE when the reason is <see cref="StreamingSessionEndReason.RendererFailed"/>.</b>
+    /// Nothing else will: a dead renderer ends the session without anyone calling stop, so the off-screen
+    /// window and the browser process holding the profile lock survive for the life of the app. The kit's
+    /// own sample leaked exactly that way by clearing its handle instead of disposing it.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>It deliberately does NOT hand you the session</b>, because it can fire before one exists — a
+    /// renderer that dies during <c>StartAsync</c> raises this while the object is still being built, and
+    /// a parameter that is sometimes null invites the null check to be skipped. Keep your own handle and
+    /// read it here; <c>StartAsync</c> owns the teardown for the window where you have none.
     /// </para>
     /// </summary>
-    public Action<SessionEnded>? OnEnded { get; init; }
+    public Action<StreamingSessionEnded>? OnEnded { get; init; }
 }
 
 /// <summary>
-/// An off-screen browser session that STREAMS what it renders and ACCEPTS synthetic input — the two
-/// browser capabilities, exposed as primitives. Everything else is the app's.
-///
+/// An off-screen browser session that STREAMS what it renders and ACCEPTS synthetic input. The kit owns
+/// the browser mechanics — off-screen window, profile isolation, the CDP screencast and its ack protocol,
+/// latest-wins frame dropping, viewport mirroring through device metrics within
+/// <see cref="SessionViewport"/>'s bounds (⚠ never a physical resize, which desyncs CSS layout), input
+/// replay at fraction coordinates. The app owns the transport, the viewer and the product: drive
+/// <see cref="Controller"/>, pump <see cref="Frames"/> out, feed <see cref="SessionInput"/> back, and
+/// dispose YOUR handle when <see cref="StreamingSessionOptions.OnEnded"/> says the session is over.
 /// <para>
-/// THE LIFECYCLE IS THE CONTRACT. An app plugs into these four points and builds its own product on
-/// them; the kit decides none of it:
-/// </para>
-/// <list type="number">
-/// <item><b>Started</b> — <see cref="StartAsync"/> completes. The browser is live on its isolated
-/// profile and nothing has navigated yet; the app's driver decides where to go.</item>
-/// <item><b>Navigating / navigated</b> — <see cref="Controller"/>'s taps
-/// (<c>OnNavigation</c>, <c>OnMessage</c>, <c>OnDownload</c>, <c>OnNewWindow</c>), plus the
-/// <see cref="StreamingSessionOptions.NavigationGuard"/> that can refuse a hop outright.</item>
-/// <item><b>Frames</b> — <see cref="Frames"/>, a bounded latest-wins channel of
-/// <see cref="SessionFrame"/>, each carrying the viewport it depicts.</item>
-/// <item><b>Ended or faulted</b> — <see cref="StreamingSessionOptions.OnEnded"/>, exactly once, with
-/// a <see cref="SessionEndReason"/> so a crash is distinguishable from a clean shutdown.</item>
-/// </list>
-///
-/// <para>
-/// WHAT THE KIT OWNS is the earned browser mechanics, none of which is about any particular feature:
-/// the off-screen window and profile isolation, the CDP screencast and its ack protocol, latest-wins
-/// frame dropping so a slow reader never backs up the compositor, 1:1 viewport mirroring through
-/// device metrics ALONE (never a physical resize, which desyncs CSS layout), and input replay at
-/// resolution-independent fraction coordinates.
-/// </para>
-/// <para>
-/// WHAT THE APP OWNS is the product: the TRANSPORT (WebSocket, the IPC bridge, anything — pump
-/// <see cref="Frames"/> out, feed <see cref="SessionInput"/> back), the viewer UI, hover/hotspot
-/// affordances, recording, permissions, and what any of it is FOR. Screen-sharing a checkout,
-/// letting a user clear a verification challenge in-app, remote support, visual regression capture,
-/// a headless preview pane — those are compositions, not features of this type.
-/// </para>
-/// <para>
-/// This was called <c>CoBrowseSession</c> until P5.5 H9.8, which is the mistake worth remembering:
-/// the mechanics were always generic, but naming the type after ONE product it enables made the kit
-/// look like it shipped that product, and invited the next contributor to add more of it. The sibling
-/// sessions are named the same way — <see cref="RenderSession"/> reads a rendered page,
-/// <see cref="InteractiveSession"/> lets a human drive one. Name the mechanism (D22).
-/// </para>
-/// <para>
-/// <see cref="Controller"/> is the SAME primitive set an interactive session drives (as a BACKGROUND
-/// controller — its window-managing calls are inert), so a driver's navigate/script/cookie-capture
-/// hooks run identically over the stream, and it is the seam for anything page-specific an app wants
-/// (element geometry, readiness probes) that the kit does not decide for it. Dispose with the flow
-/// (stops the screencast, closes the hidden window).
-/// </para>
-/// <para>
-/// ORDERING: <see cref="DispatchAsync"/> is a SINGLE-CONSUMER contract — the caller must
-/// await each call before the next (a transport pump does exactly this). Input is
-/// stateful (a held mouse button, the current viewport), so overlapping calls could reorder a
-/// press/move/release or transpose typed keys.
+/// 🔴 <see cref="DispatchAsync"/> is SINGLE-CONSUMER — await each call before the next. Input is stateful
+/// (a held button, the current viewport), so overlapping calls reorder a press/move/release or transpose
+/// typed keys.
 /// </para>
 /// </summary>
 public sealed class StreamingSession : IAsyncDisposable
@@ -177,29 +145,25 @@ public sealed class StreamingSession : IAsyncDisposable
     private readonly Form _form;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
     private readonly WebView2Control _web;
-    private readonly Channel<SessionFrame> _frames;
+    private readonly Channel<StreamingSessionFrame> _frames;
 
-    // The screencast subscription, ROOTED for the session's lifetime (P5.5 H2). It used to live only
-    // in a local inside StartAsync: nothing referenced the receiver once that method returned, so the
-    // frame stream depended on the WebView2 SDK caching the receiver internally — unspecified
-    // behaviour, and a stream that stops after an arbitrary GC reports NO error at all (the app just
-    // sees a page that quietly went still). Held here, and detached in DisposeAsync.
+    // The screencast subscription, ROOTED for the session's lifetime: nothing else references the
+    // receiver, and a stream that stops after a GC reports NO error — the page just quietly goes still.
     private readonly CoreWebView2DevToolsProtocolEventReceiver _frameReceiver;
     private readonly EventHandler<CoreWebView2DevToolsProtocolEventReceivedEventArgs> _onFrame;
     private int _disposed;
-    // UI-thread-only state (mutated inside marshalled bodies; safe under the single-consumer
-    // input contract): the current emulated viewport (so we never round-trip to read it) and
-    // whether the left button is held (so drags emit buttons:1 on move, not 0).
+    // UI-thread-only state, safe under the single-consumer input contract: the emulated viewport (so
+    // pointer/wheel need no round-trip) and whether the left button is held (drags emit buttons:1).
     private double _viewportWidth;
     private double _viewportHeight;
     private bool _buttonDown;
 
-    // The options + the shared once-only latch, so DisposeAsync can raise OnEnded through the SAME
-    // gate the ProcessFailed callback uses (see SignalEnded for why the race is real).
+    // The shared once-only latch, so DisposeAsync raises OnEnded through the SAME gate the
+    // ProcessFailed callback uses.
     private readonly StreamingSessionOptions _options;
     private readonly StrongBox<int> _endedLatch;
 
-    private StreamingSession(Form form, WebView2Control web, Channel<SessionFrame> frames, SessionController controller,
+    private StreamingSession(Form form, WebView2Control web, Channel<StreamingSessionFrame> frames, SessionController controller,
         StreamingSessionOptions options, StrongBox<int> endedLatch,
         CoreWebView2DevToolsProtocolEventReceiver frameReceiver,
         EventHandler<CoreWebView2DevToolsProtocolEventReceivedEventArgs> onFrame)
@@ -217,47 +181,57 @@ public sealed class StreamingSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// Captured frames, newest last — a bounded latest-wins buffer (drop-oldest), so a slow client
-    /// never backs up the compositor. Pump these to the client; each carries the CSS viewport it
-    /// depicts (see <see cref="SessionFrame"/>).
-    /// <para>
-    /// The reader COMPLETES when the session ends — but completion alone does not say why, so pair it
-    /// with <see cref="StreamingSessionOptions.OnEnded"/> to tell a clean dispose from a dead renderer.
-    /// </para>
+    /// Captured frames, newest last — a bounded latest-wins buffer (drop-oldest), so a slow client never
+    /// backs up the compositor; each carries the CSS viewport it depicts. The reader COMPLETES when the
+    /// session ends, but completion alone does not say why: pair it with
+    /// <see cref="StreamingSessionOptions.OnEnded"/> to tell a clean dispose from a dead renderer.
     /// </summary>
-    public ChannelReader<SessionFrame> Frames => _frames.Reader;
+    public ChannelReader<StreamingSessionFrame> Frames => _frames.Reader;
 
     /// <summary>
     /// The driver primitives over the streamed page — navigate (guarded), script, origin-scoped
-    /// cookies, message/download/new-window/navigation taps. Deliberately the SAME controller the
-    /// interactive session runs, so one driver serves both shapes; here it is a BACKGROUND controller,
-    /// so its window-managing calls (Reveal/FitToBox, hold-close) are inert.
+    /// cookies. A BACKGROUND controller here, so its window-managing calls (Reveal/FitToBox,
+    /// hold-close) are inert. What the page DOES arrives on the bus as <see cref="SessionEvents"/>,
+    /// scoped by <see cref="Id"/>.
     /// </summary>
     public SessionController Controller { get; }
 
     /// <summary>
-    /// Create the off-screen browser and start the screencast, on the anchor's UI thread. No
-    /// navigation happens here — the caller's driver navigates via <see cref="Controller"/>.
+    /// This session's identity — the SCOPE its browser publishes every <see cref="SessionEvents"/>
+    /// under. Same value as <c>Controller.Id</c>.
     /// </summary>
-    public static Task<StreamingSession> StartAsync(StreamingSessionOptions options, CancellationToken cancellationToken = default)
+    public string Id => Controller.Id;
+
+    /// <summary>Create the off-screen browser and start the screencast, on the anchor's UI thread. No
+    /// navigation happens here — the caller's driver navigates via <see cref="Controller"/>.</summary>
+    public static async Task<StreamingSession> StartAsync(StreamingSessionOptions options, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
-        if (options.JpegQuality is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(options), "JpegQuality must be 1-100.");
+        if (options.FrameQuality is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(options), "FrameQuality must be 1-100.");
         if (options.MaxFrameWidth < 1 || options.MaxFrameHeight < 1) throw new ArgumentOutOfRangeException(nameof(options), "Max frame size must be positive.");
         if (options.FrameBuffer < 1) throw new ArgumentOutOfRangeException(nameof(options), "FrameBuffer must be at least 1.");
 
-        // Latest-frame-wins: a slow client never backs up the compositor — only the newest
-        // frames are kept.
-        var frames = Channel.CreateBounded<SessionFrame>(new BoundedChannelOptions(options.FrameBuffer)
+        var frames = Channel.CreateBounded<StreamingSessionFrame>(new BoundedChannelOptions(options.FrameBuffer)
         { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = true });
 
         // Shared by both end paths (renderer death and dispose) so OnEnded fires exactly once.
         var ended = new StrongBox<int>(0);
-        // The viewport the page is told to emulate — the label a frame gets when its own metadata
-        // is absent or unusable.
+        // The label a frame gets when its own metadata is absent or unusable.
         var (fallbackWidth, fallbackHeight) = ClampViewport(options.InitialViewport.Width, options.InitialViewport.Height);
 
         var tcs = new TaskCompletionSource<StreamingSession>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 🔴 THE TOKEN HAS TO REACH THE RETURNED TASK, not only the posted body — see the same
+        // registration in RenderSessionPool.CreateInstanceAsync for the full reasoning. `BeginInvoke`
+        // succeeds whenever the handle exists, including after `Application.Run` has returned, and every
+        // check inside the body is unreachable if nothing ever pumps it. `StartAsync(options, ct)` then
+        // never returns even with `ct` ALREADY cancelled.
+        using var cancelled = cancellationToken.Register(() =>
+        {
+            frames.Writer.TryComplete();
+            tcs.TrySetCanceled(cancellationToken);
+        });
+
         try
         {
             options.Anchor.BeginInvoke(new Action(async () =>
@@ -266,39 +240,33 @@ public sealed class StreamingSession : IAsyncDisposable
                 try
                 {
                     if (cancellationToken.IsCancellationRequested) { frames.Writer.TryComplete(); tcs.TrySetCanceled(cancellationToken); return; }
-                    // A generous FIXED physical surface — big enough that any client-mirrored
-                    // viewport fits without clipping. The real CSS viewport is driven purely by
-                    // Emulation.setDeviceMetricsOverride (below + the "viewport" input case), which
-                    // is DPI-independent, so this physical size must NOT track the box.
-                    // A MECHANISM name, not a scenario one (D22) — this string is the native window's
-                    // caption, which is externally readable (Task Manager, window enumeration, a
-                    // GetWindowText probe), so it is user-visible surface in the same way the package
-                    // description is, even though the window itself never shows.
+                    // A generous FIXED physical surface: the real CSS viewport comes purely from
+                    // Emulation.setDeviceMetricsOverride (DPI-independent), so this must NOT track the
+                    // box. The caption is externally readable (Task Manager, window enumeration), so it
+                    // takes a MECHANISM name (D22) even though the window never shows.
                     form = OffscreenWindow.Create("Streaming session", new Size(1600, 1100));
                     var web = new WebView2Control { Dock = DockStyle.Fill };
                     form.Controls.Add(web);
-                    // A dead renderer must COMPLETE the frame channel (P5.5 H4.4), or the app's
-                    // `await foreach` over Frames waits forever for a stream that can never resume.
-                    // H9.3 adds the other half D21 asked for: completing the channel tells a reader
-                    // "no more frames" but NOT WHY, so a crash is indistinguishable from a clean
-                    // shutdown — the ended hook carries the reason.
+                    // A dead renderer must COMPLETE the frame channel, or the app's `await foreach` over
+                    // Frames waits forever for a stream that can never resume.
+                    var sessionId = SessionBrowser.NewSessionId();
                     await SessionBrowser.InitializeAsync(web, options.Browser,
                         onProcessFailed: e =>
                         {
                             frames.Writer.TryComplete();
-                            SignalEnded(options, ended, new SessionEnded(SessionEndReason.RendererFailed,
+                            SignalEnded(options, ended, new StreamingSessionEnded(StreamingSessionEndReason.RendererFailed,
                                 $"{e.ProcessFailedKind}"));
                         },
-                        // Gates the await only (P5.5 H9.6) — a start cancelled during the multi-second
-                        // init now escapes there instead of waiting out the whole InitTimeout to reach
-                        // the re-check below.
+                        // One browser, one session — but still SCOPED, because the app's bus is shared and
+                        // an unscoped emit is a broadcast to every other session's subscribers.
+                        sessionScope: () => sessionId,
+                        // Gates the await, so a cancelled start escapes here instead of waiting out the
+                        // whole InitTimeout to reach the re-check below.
                         cancellationToken: cancellationToken).ConfigureAwait(true);
 
-                    // Re-check AFTER the multi-second init (P5.5 H2). The pre-check above was the only
-                    // one, so a start cancelled during those seconds still published nothing to the
-                    // caller while leaving behind a live off-screen window, a browser process holding
-                    // the profile lock, and — once the screencast started — frames being written into a
-                    // channel no reader would ever be handed.
+                    // Re-check AFTER the multi-second init: a start cancelled during it would otherwise
+                    // publish nothing while leaving a live off-screen window and a held profile lock
+                    // behind, with no owner left to dispose either.
                     if (cancellationToken.IsCancellationRequested)
                     {
                         try { form.Dispose(); } catch { }
@@ -318,39 +286,36 @@ public sealed class StreamingSession : IAsyncDisposable
                             var data = doc.RootElement.GetProperty("data").GetString();
                             if (!string.IsNullOrEmpty(data))
                             {
-                                // Geometry from the frame's OWN metadata rather than the session's
-                                // current viewport (H9.3): a resize in flight would otherwise label
-                                // this frame with the NEW viewport it does not depict, which is
-                                // exactly when a mis-mapped click hurts.
+                                // The frame's OWN metadata, not the session's current viewport: a resize
+                                // in flight would label this frame with a viewport it does not depict.
                                 var (w, h) = ReadFrameViewport(doc.RootElement, fallbackWidth, fallbackHeight);
-                                frames.Writer.TryWrite(new SessionFrame(Convert.FromBase64String(data), w, h));
+                                frames.Writer.TryWrite(new StreamingSessionFrame(Convert.FromBase64String(data), options.FrameFormat, w, h));
                             }
-                            _ = core.CallDevToolsProtocolMethodAsync("Page.screencastFrameAck", $"{{\"sessionId\":{sid}}}");
+                            // Observed, not bare-discarded: the catch below covers only the SYNCHRONOUS
+                            // half, and a CDP call faulting mid-teardown otherwise surfaces as an
+                            // UnobservedTaskException (FileDialogs' RememberPathAsync is the precedent).
+                            core.CallDevToolsProtocolMethodAsync("Page.screencastFrameAck", $"{{\"sessionId\":{sid}}}")
+                                .ContinueWith(static t => { var observed = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
                         }
                         catch { /* one bad frame shouldn't sink the stream */ }
                     }
                     receiver.DevToolsProtocolEventReceived += OnFrame;
-                    // Reuse the SAME controller an interactive session uses (a BACKGROUND one — no
-                    // hold-close, no reveal), so a driver's capture hooks run identically over
-                    // the stream without the off-screen host ever vetoing app shutdown.
-                    var controller = new SessionController(form, web, options.NavigationGuard, onLoading: null, foreground: false);
+                    // A BACKGROUND controller — no hold-close, no reveal — so the off-screen host can
+                    // never veto app shutdown.
+                    var controller = new SessionController(form, web, options.NavigationGuard, onLoading: null,
+                        foreground: false, id: sessionId);
                     await core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").ConfigureAwait(true);
                     var vp = options.InitialViewport;
                     await core.CallDevToolsProtocolMethodAsync("Emulation.setDeviceMetricsOverride",
                         BuildMetricsOverrideJson(vp.Width, vp.Height, vp.DeviceScaleFactor)).ConfigureAwait(true);
-                    // Bandwidth: CDP screencast only emits a frame when the page VISUALLY CHANGES
-                    // (a settled page → ~nothing), so it's naturally idle-cheap. everyNthFrame:1
-                    // streams every changed frame (smoother typing/cursor/verification animation)
-                    // rather than halving the rate; the event-driven nature keeps idle bandwidth
-                    // ~0. If a busy page ever makes this too heavy, the next step is a real video
-                    // codec (H.264/WebRTC) over JPEG frames.
+                    // CDP screencast emits only when the page VISUALLY CHANGES, so idle bandwidth is
+                    // ~0; everyNthFrame:1 streams every changed frame rather than halving the rate.
                     await core.CallDevToolsProtocolMethodAsync("Page.startScreencast",
                         string.Create(CultureInfo.InvariantCulture,
-                            $"{{\"format\":\"jpeg\",\"quality\":{options.JpegQuality},\"maxWidth\":{options.MaxFrameWidth},\"maxHeight\":{options.MaxFrameHeight},\"everyNthFrame\":1}}")).ConfigureAwait(true);
+                            $"{{\"format\":\"{(options.FrameFormat == StreamingSessionFrameFormat.Png ? "png" : "jpeg")}\",\"quality\":{options.FrameQuality},\"maxWidth\":{options.MaxFrameWidth},\"maxHeight\":{options.MaxFrameHeight},\"everyNthFrame\":1}}")).ConfigureAwait(true);
 
-                    // Last gate before publishing: the CDP round-trips above are cheap but not free,
-                    // and past this line the caller owns teardown — so anything cancelled up to here
-                    // must be torn down by US, not left running.
+                    // Past this line the caller owns teardown, so anything cancelled up to here must be
+                    // torn down here rather than left running.
                     if (cancellationToken.IsCancellationRequested)
                     {
                         try { receiver.DevToolsProtocolEventReceived -= OnFrame; } catch { }
@@ -360,8 +325,18 @@ public sealed class StreamingSession : IAsyncDisposable
                         return;
                     }
 
-                    tcs.TrySetResult(new StreamingSession(form, web, frames, controller, options, ended,
-                        receiver, OnFrame));
+                    var session = new StreamingSession(form, web, frames, controller, options, ended,
+                        receiver, OnFrame);
+                    // ⚠ A false return means the registration below already cancelled the task, so the
+                    // caller is gone and nothing owns this session — tear it down rather than leak an
+                    // off-screen form and a live browser process. Handing ownership over is what
+                    // TrySetResult MEANS here.
+                    if (!tcs.TrySetResult(session))
+                    {
+                        try { receiver.DevToolsProtocolEventReceived -= OnFrame; } catch { }
+                        try { form.Dispose(); } catch { }
+                        frames.Writer.TryComplete();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -373,35 +348,31 @@ public sealed class StreamingSession : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // The anchor's handle isn't created / is gone — surface it through the task instead of
+            // The anchor's handle isn't created / is gone — surface it through the task, not
             // synchronously out of a Task-returning API, and don't leave the reader hanging.
             frames.Writer.TryComplete();
             tcs.TrySetException(ex);
         }
-        return tcs.Task;
+
+        // ⚠ AWAITED, not returned. `using var` on a non-async method disposes at the `return`, which is
+        // immediately — the registration above would be gone before the token could ever fire, and the
+        // fix would be inert while looking correct. `InteractiveSession.RunAsync` is async for this
+        // reason; these two were not, which is half of why they had the defect.
+        return await tcs.Task.ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Replay ONE client input into the page. Coordinates arrive as FRACTIONS (0..1) of the viewport
-    /// and map to CSS px via the emulated viewport the session itself set, so there is no round-trip
-    /// to the page.
+    /// Replay ONE client input into the page. Coordinates arrive as FRACTIONS (0..1) of the viewport and
+    /// map to CSS px via the emulated viewport the session itself set, so there is no round-trip.
     /// <para>
-    /// This replaced <c>DispatchInputAsync(string json)</c> (P5.5 H9.1 / D21), which took the
-    /// originating app's wire protocol as an opaque JSON string — see <see cref="SessionInput"/> for
-    /// why that was the wrong contract and for <see cref="SessionInput.TryParseLegacyJson"/>, the
-    /// mechanical migration path. The mechanics below are unchanged.
-    /// </para>
-    /// <para>
-    /// Never faults the session: a body that throws is swallowed by the marshalling owner, because one
-    /// bad input must not end a stream someone is watching. SINGLE-CONSUMER — await each call before
-    /// the next (see the class doc); the held-button state below is why order matters.
+    /// Never faults the session: a body that throws is swallowed by the marshalling owner — one bad input
+    /// must not end a stream someone is watching. SINGLE-CONSUMER — await each call before the next (see
+    /// the class doc); the held-button state below is why order matters.
     /// </para>
     /// </summary>
     /// <param name="input">The input to replay.</param>
-    /// <param name="cancellationToken">
-    /// Abandons the WAIT for the UI thread. It cannot un-send an input already handed to CDP, so this
-    /// bounds the caller, not the page.
-    /// </param>
+    /// <param name="cancellationToken">Abandons the WAIT for the UI thread. It cannot un-send an input
+    /// already handed to CDP, so this bounds the caller, not the page.</param>
     public Task DispatchAsync(SessionInput input, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -445,23 +416,19 @@ public sealed class StreamingSession : IAsyncDisposable
                 }
                 case SessionKeyInput key:
                 {
-                    // A key that ACTS rather than types: a special key (arrows / editing / nav) or a
-                    // shortcut (Ctrl/Meta + key). Plain typed characters go through SessionTextInput
-                    // (insertText); here we synthesize a real key event with the MODIFIER bitmask, the
-                    // Windows virtual-key code and the DOM code, which CDP needs for navigation keys
-                    // and shortcuts (Ctrl+A/C/V/X/Z, arrows, Home/End, Delete) to take effect at all.
+                    // A key that ACTS rather than types (arrows / editing / nav, or a Ctrl/Meta
+                    // shortcut); plain characters go through SessionTextInput. CDP needs the modifier
+                    // bitmask, the virtual-key code and the DOM code for those to take effect at all.
                     foreach (var payload in BuildKeyEventJsons(key.Key, key.Alt, key.Ctrl, key.Meta, key.Shift))
                         await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", payload).ConfigureAwait(true);
                     break;
                 }
 
                 default:
-                    // Not assumed unreachable. `SessionInput`'s private-protected constructor makes
-                    // the cases above the intended whole set, but a record's copy constructor is
-                    // protected, so the seal is not airtight — and a case added here later could
-                    // simply be forgotten. Either way the failure mode without this arm is an input
-                    // that vanishes in silence, which on a stream someone is watching looks like the
-                    // page hung. Say so instead.
+                    // Not assumed unreachable: `SessionInput`'s seal is not airtight (a record's copy
+                    // constructor is protected) and a case added later could be missed. Without this
+                    // arm the input vanishes in silence, which on a stream someone is watching looks
+                    // like the page hung.
                     SessionLog.Try(_options.Log, log =>
                         log.LogWarning("Streaming session: input of unsupported type {InputType} was ignored",
                             input.GetType().Name));
@@ -470,23 +437,20 @@ public sealed class StreamingSession : IAsyncDisposable
         }, cancellationToken);
     }
     /// <summary>Stop the screencast, complete <see cref="Frames"/>, and close the hidden window.
-    /// Idempotent. The frame reader is completed FIRST so the app's pump unblocks even if the
-    /// message loop is already gone (the UI cleanup is then best-effort, never awaited — a dead
-    /// loop must not hang dispose).</summary>
+    /// Idempotent. The frame reader is completed FIRST so the app's pump unblocks even if the message
+    /// loop is already gone; the UI cleanup is best-effort and never awaited.</summary>
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
         _frames.Writer.TryComplete(); // FIRST: unblock any reader regardless of the UI loop's state
-        // Then say WHY, through the shared latch — so a dispose that races a renderer crash reports
-        // whichever happened first and never both (H9.3). Raised before the UI teardown below, which
-        // is fire-and-forget and may never run if the message loop is already gone.
-        SignalEnded(_options, _endedLatch, new SessionEnded(SessionEndReason.Disposed));
+        // Then say WHY, through the shared latch — a dispose racing a renderer crash reports whichever
+        // happened first, never both. Before the UI teardown below, which may never run.
+        SignalEnded(_options, _endedLatch, new StreamingSessionEnded(StreamingSessionEndReason.Disposed));
         Controller.Finish();          // (a background controller doesn't hold closes, but stay symmetric)
         RunOnUiFireAndForget(async () =>
         {
-            // Detach the screencast subscription before stopping it: the handler closes over the
-            // channel and the core, and leaving it attached to a receiver we still hold keeps both
-            // reachable from the SDK's event plumbing after this session is gone.
+            // Detach before stopping: the handler closes over the channel and the core, so leaving it
+            // attached keeps both reachable from the SDK's event plumbing after this session is gone.
             try { _frameReceiver.DevToolsProtocolEventReceived -= _onFrame; } catch { }
             try { if (TryGetCore() is { } core) await core.CallDevToolsProtocolMethodAsync("Page.stopScreencast", "{}").ConfigureAwait(true); } catch { }
             try { _form.Close(); _form.Dispose(); } catch { }
@@ -506,51 +470,31 @@ public sealed class StreamingSession : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Marshal an async body onto the WinForms UI thread (WebView2 must be touched there) and
-    /// await its result. Centralizes the BeginInvoke + TaskCompletionSource + try/catch each UI
-    /// op otherwise repeats — and, crucially, catches an exception a raw
-    /// <c>BeginInvoke(async …)</c> (an async void) would otherwise turn into an UNOBSERVABLE
-    /// UI-thread crash. A throwing body, or a control whose handle is already gone, yields the
-    /// fallback.
-    /// </summary>
+    /// <summary>Marshal an async body onto the WinForms UI thread (WebView2 must be touched there) and
+    /// await it, through the ONE marshal owner in its never-faulting mode. A throwing body, or a control
+    /// whose handle is gone, yields the fallback — one input dispatch must not fault the session.</summary>
     private Task<T> RunOnUiAsync<T>(Func<Task<T>> body, T fallback) =>
-        // The ONE marshal owner (P5.5 H4.2), in its never-faulting mode — which exists BECAUSE of
-        // this contract: a per-message input dispatch must not fault the whole session. That is also
-        // why the dispatcher needed an InvokeOrDefault overload rather than only faulting ones; an
-        // adversarial review of the design caught that collapsing this site onto a plain InvokeAsync
-        // would have silently inverted its behaviour.
         _ui.InvokeOrDefaultAsync(body, fallback);
 
-    /// <summary>Void variant — run a UI-thread action to completion, swallowing failures (a
-    /// per-message input dispatch must never fault the session). The token bounds the WAIT for the UI
-    /// thread only; it cannot un-send work already handed to CDP.</summary>
+    /// <summary>Void variant — run a UI-thread action to completion, swallowing failures. The token
+    /// bounds the WAIT for the UI thread only; it cannot un-send work already handed to CDP.</summary>
     private Task RunOnUiAsync(Func<Task> body, CancellationToken cancellationToken = default) =>
         _ui.InvokeOrDefaultAsync<bool>(
             async () => { await body().ConfigureAwait(true); return true; }, false, cancellationToken);
 
-    /// <summary>Post UI cleanup WITHOUT awaiting — dispose must never hang on a stopped message
-    /// loop. The dispatcher's async Post guards the body, so no fault escapes as an async-void crash.</summary>
+    /// <summary>Post UI cleanup WITHOUT awaiting — dispose must never hang on a stopped message loop.
+    /// The dispatcher's async Post guards the body, so no fault escapes as an async-void crash.</summary>
     private void RunOnUiFireAndForget(Func<Task> body) => _ui.Post(body);
 
     // ---- pure protocol builders (internal: unit-tested without a browser) ------------------
 
     /// <summary>
-    /// Fire <see cref="StreamingSessionOptions.OnEnded"/> AT MOST ONCE, guarded.
-    /// <para>
-    /// The latch is shared with the instance (it is created in <c>StartAsync</c> and handed to the
-    /// constructor) because the two end paths race by nature: a renderer can die while the app is
-    /// disposing, and the WebView2 callback runs on a different stack from <c>DisposeAsync</c>.
-    /// "Exactly once" is a contract an app will build teardown on, so it is enforced with an
-    /// interlocked latch rather than by hoping the paths are mutually exclusive.
-    /// </para>
-    /// <para>
-    /// GUARDED because an <c>Action</c> from options is APP CODE (the kit-wide rule): here it runs
-    /// inside a WebView2 event handler, where an escaping exception has no caller on the stack and
-    /// surfaces as the family bootstrap's crash dialog — while the session is already failing.
-    /// </para>
+    /// Fire <see cref="StreamingSessionOptions.OnEnded"/> AT MOST ONCE, guarded. The latch is shared with
+    /// the instance because the two end paths race by nature: a renderer can die while the app disposes,
+    /// on a different stack from <c>DisposeAsync</c>. GUARDED because an escaping exception in a WebView2
+    /// event handler has no caller on the stack and surfaces as the bootstrap's crash dialog.
     /// </summary>
-    private static void SignalEnded(StreamingSessionOptions options, StrongBox<int> latch, SessionEnded ended)
+    private static void SignalEnded(StreamingSessionOptions options, StrongBox<int> latch, StreamingSessionEnded ended)
     {
         if (options.OnEnded is not { } handler) return;
         if (Interlocked.Exchange(ref latch.Value, 1) != 0) return;
@@ -558,11 +502,9 @@ public sealed class StreamingSession : IAsyncDisposable
             onError: ex => SessionLog.Try(options.Log, log => log.LogError(ex, "Streaming session: OnEnded handler threw")));
     }
 
-    /// <summary>
-    /// The CSS viewport a screencast frame depicts, from its own <c>metadata</c>. Falls back to the
-    /// session's configured viewport when the platform omits or mangles it — a frame with plausible
-    /// geometry beats dropping the frame, since the fallback is what the page was told to emulate.
-    /// </summary>
+    /// <summary>The CSS viewport a screencast frame depicts, from its own <c>metadata</c>. Falls back to
+    /// the session's configured viewport — what the page was told to emulate — when the platform omits
+    /// or mangles it.</summary>
     internal static (int Width, int Height) ReadFrameViewport(JsonElement frameParams, int fallbackWidth, int fallbackHeight)
     {
         if (!frameParams.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object)
@@ -578,14 +520,13 @@ public sealed class StreamingSession : IAsyncDisposable
                 Dimension(metadata, "deviceHeight", fallbackHeight));
     }
 
-    /// <summary>The source's viewport clamps (width 320–1560, height 240–1080), shared by the
-    /// metrics JSON and the cached mapping viewport so they never disagree.</summary>
+    /// <summary>Viewport clamps (width 320–1560, height 240–1080), shared by the metrics JSON and the
+    /// cached mapping viewport so they never disagree.</summary>
     internal static (int Width, int Height) ClampViewport(double width, double height) =>
         ((int)Math.Clamp(width, 320, 1560), (int)Math.Clamp(height, 240, 1080));
 
-    /// <summary>Device-metrics JSON with the source's clamps (dpr 1–2, default 1.5) —
-    /// invariant-culture dpr, because "1,50" on a comma-decimal locale is broken JSON (the source
-    /// fixed this live).</summary>
+    /// <summary>Device-metrics JSON (dpr clamped 1–2, default 1.5). Invariant-culture dpr — "1,50" on
+    /// a comma-decimal locale is broken JSON.</summary>
     internal static string BuildMetricsOverrideJson(double width, double height, double? dpr)
     {
         var (w, h) = ClampViewport(width, height);
@@ -629,9 +570,7 @@ public sealed class StreamingSession : IAsyncDisposable
         return pair;
     }
 
-    // Map a DOM key name → its Windows virtual-key code + DOM `code`, so CDP can synthesize
-    // navigation keys and shortcuts. 0 = no VK (let CDP infer from `key` alone). Covers
-    // editing/nav keys + letters/digits (for Ctrl-combos).
+    // A DOM key name → its Windows virtual-key code + DOM `code`. 0 = no VK (CDP infers from `key`).
     internal static (int Vk, string? Code) KeyInfo(string key) => key switch
     {
         "Backspace" => (8, "Backspace"),

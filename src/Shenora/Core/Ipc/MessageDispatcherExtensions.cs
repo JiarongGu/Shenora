@@ -3,29 +3,13 @@ using Microsoft.Extensions.Logging;
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// The composition surface of <see cref="IMessageDispatcher"/> — every mapping and middleware helper,
-/// built on the single <see cref="IMessageDispatcher.Use"/> primitive.
-/// <para>
-/// These were instance methods on <see cref="MessageDispatcher"/>, which meant they were unreachable
-/// through the interface — so a composition that maps a facade AFTER the container is built (the
-/// documented pattern for anything needing the live window) had to DOWNCAST. The reference composition
-/// did, and its <c>if (dispatcher is MessageDispatcher concrete)</c> had no <c>else</c>: a different
-/// <see cref="IMessageDispatcher"/> registration, or any decorator, silently dropped three whole
-/// modules — the frameless title bar just stopped working with no error anywhere, in the exact code
-/// adopters copy (P5.5 H6).
-/// </para>
-/// <para>
-/// Extension methods rather than interface members on purpose: the interface stays at the FOUR things a
-/// dispatcher genuinely is (dispatch, two sends, and compose), so a custom implementation or a decorator
-/// has four members to write instead of ten, and every helper below is automatically available on it.
-/// </para>
+/// Every mapping and middleware helper for <see cref="IMessageDispatcher"/>, built on its single
+/// <see cref="IMessageDispatcher.Use"/> primitive — so they work on any implementation or decorator.
 /// </summary>
 public static class MessageDispatcherExtensions
 {
-    /// <summary>
-    /// Give every request for <paramref name="module"/> (case-insensitive) to
-    /// <paramref name="handler"/>; a null result falls through to the rest of the pipeline.
-    /// </summary>
+    /// <summary>Give every request for <paramref name="module"/> (case-insensitive) to
+    /// <paramref name="handler"/>; a null result falls through to the rest of the pipeline.</summary>
     public static IMessageDispatcher UseModule(this IMessageDispatcher dispatcher, string module,
                                                Func<IpcRequest, CancellationToken, Task<IpcResponse?>> handler)
     {
@@ -34,10 +18,8 @@ public static class MessageDispatcherExtensions
     }
 
     /// <summary>
-    /// The module-matching rule, in ONE place. <see cref="UseModule"/> composes it through
-    /// <see cref="IMessageDispatcher.Use"/>; <see cref="MessageDispatcher.TryClaimModule"/> installs
-    /// it directly so it can keep the reference and take it out again on release. Two copies of
-    /// "does this request belong to this module?" is the sort of duplication that drifts (P5.5 H4.5).
+    /// The module-matching rule, in ONE place. <see cref="MessageDispatcher.TryClaimModule"/> installs
+    /// it directly and keeps the reference, which is what makes release possible.
     /// </summary>
     internal static MessageMiddleware ModuleMiddleware(string module,
                                                        Func<IpcRequest, CancellationToken, Task<IpcResponse?>> handler)
@@ -79,12 +61,7 @@ public static class MessageDispatcherExtensions
     public static IMessageDispatcher UseLogging(this IMessageDispatcher dispatcher, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
-        // Fall back to the dispatcher's OWN logger, not NullLogger: these used to be instance methods
-        // that closed over it, so defaulting to "silent" would quietly stop reporting errors that a
-        // pipeline composed the old way has always logged.
-        var log = logger
-            ?? (dispatcher as MessageDispatcher)?.Logger
-            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        var log = ResolveLogger(dispatcher, logger, nameof(UseLogging));
         return dispatcher.Use(async (request, next, ct) =>
         {
             log.LogDebug("Processing {Module}/{Type}", request.Module, request.Type);
@@ -102,18 +79,12 @@ public static class MessageDispatcherExtensions
     /// FIRST so it wraps everything after it. <see cref="ShenoraException"/> crosses as its structured
     /// error; cancellation crosses as <see cref="IpcErrorCodes.OperationCancelled"/>; anything else is
     /// logged host-side and crosses only as <see cref="IpcErrorCodes.UnknownError"/> plus the exception
-    /// type name. <see cref="MessageDispatcher.DispatchAsync"/> keeps a last-resort copy of this mapping
-    /// for pipelines composed without it.
+    /// type name — raw exception text never reaches the wire.
     /// </summary>
     public static IMessageDispatcher UseErrorHandler(this IMessageDispatcher dispatcher, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
-        // Fall back to the dispatcher's OWN logger, not NullLogger: these used to be instance methods
-        // that closed over it, so defaulting to "silent" would quietly stop reporting errors that a
-        // pipeline composed the old way has always logged.
-        var log = logger
-            ?? (dispatcher as MessageDispatcher)?.Logger
-            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        var log = ResolveLogger(dispatcher, logger, nameof(UseErrorHandler));
         return dispatcher.Use(async (request, next, ct) =>
         {
             try
@@ -148,15 +119,9 @@ public static class MessageDispatcherExtensions
     }
 
     /// <summary>
-    /// Route a whole module to a facade. This replaces the source app's static mutable service
-    /// registry: facades live in DI (registered as <see cref="IIpcModule"/>) and are mapped here.
-    /// <para>
-    /// THROWS if the module is already mapped, matching the eager DI path
-    /// (<c>MapRegisteredModules</c>) which has always guarded this. A facade answers every request
-    /// for its module, so a second mapping is dead code — it used to be accepted silently and simply
-    /// never run. Use <see cref="TryMapModule"/> when a name being taken is a normal outcome rather
-    /// than a composition bug.
-    /// </para>
+    /// Route a whole module to a facade (registered in DI as <see cref="IIpcModule"/>). THROWS if the
+    /// module is already mapped — a facade answers every request for its module, so a second mapping
+    /// would never run. Use <see cref="TryMapModule"/> when a taken name is a normal outcome.
     /// </summary>
     public static IMessageDispatcher MapModule(this IMessageDispatcher dispatcher, IIpcModule facade)
     {
@@ -173,50 +138,30 @@ public static class MessageDispatcherExtensions
             }
             return dispatcher;
         }
-        // A dispatcher that does not track modules gets the route with no duplicate guard — the same
-        // behaviour it has always had, and the reason TryMapModule refuses to answer for one.
+        // A dispatcher that does not track modules gets the route with NO duplicate guard: a second
+        // facade for the same module maps silently and never runs. Hence TryMapModule's refusal.
         return dispatcher.UseModule(facade.ModuleName, async (request, ct) => await facade.HandleMessageAsync(request, ct));
     }
 
     /// <summary>
     /// Map <paramref name="facade"/> unless its module name is already taken; returns false if it is.
-    /// <para>
-    /// The primitive for a DYNAMICALLY composed IPC surface — modules an app does not write itself
-    /// and cannot check at compile time: plug-ins, optional features behind a licence or flag,
-    /// per-tenant modules, lazily loaded areas. For anything arriving from outside the app this is a
-    /// boundary, not tidiness: without it a late mapping could quietly take a name an earlier module
-    /// owns. Map the app's own modules FIRST, then offer the rest through this.
-    /// </para>
+    /// The claim is ATOMIC — check and install under one lock — so two threads offering the same
+    /// plug-in name cannot both win. The primitive for a dynamically composed IPC surface (plug-ins,
+    /// licence-gated features, per-tenant or lazily loaded modules): map the app's own modules FIRST,
+    /// then offer the rest through this. Pair it with <see cref="TryReleaseModule"/>.
     /// <para>
     /// Throws <see cref="NotSupportedException"/> when the dispatcher cannot answer the question —
-    /// never "false", and never a silent map. A dispatcher that does not know what it routes must not
-    /// be able to report a name as free; a permissive wrong answer is the dangerous one. Custom
-    /// dispatchers and decorators opt in by implementing <see cref="IModuleRegistry"/>.
+    /// never "false", and never a silent map. Custom dispatchers and decorators opt in by
+    /// implementing <see cref="IModuleRegistry"/>.
     /// </para>
     /// <para>
-    /// The claim is ATOMIC — check and install happen under one lock — because two threads offering
-    /// the same plug-in name concurrently is precisely the case this exists for. A check followed by a
-    /// separate map would let both win.
-    /// </para>
-    /// <para>
-    /// <b>KNOWN LIMIT: this does not see facades registered through DI.</b>
-    /// <see cref="IpcServiceCollectionExtensions.UseMessageDispatcher"/> maps those through
-    /// <see cref="IpcServiceCollectionExtensions.MapRegisteredModulesLazily"/> — ONE terminal
-    /// middleware that resolves them on the first dispatch — rather than through
-    /// <see cref="IModuleRegistry.TryClaimModule"/>, because claiming needs the module NAMES and
-    /// reading those means resolving the facades, which inside the <see cref="IMessageDispatcher"/>
-    /// singleton factory is the silent <c>StackOverflow</c> that method's own doc describes. So a
-    /// module owned by a DI-registered facade reports <c>false</c> from
-    /// <see cref="IModuleRegistry.IsModuleMapped"/>, and this method answers <c>true</c> for its
-    /// name — after which the plug-in never runs, because the lazy middleware sits EARLIER in the
-    /// pipeline and answers first. The PRECEDENCE is the intended one (the app's own modules win);
-    /// the honest answer is what is missing. So map anything a plug-in must be able to collide with
-    /// through <see cref="MapModule(IMessageDispatcher, IIpcModule)"/> or this method explicitly,
-    /// rather than through <c>AddIpcModule</c>. Recorded rather than solved: closing it needs
-    /// either a name-reservation seam the registry does not have, or re-opening that deadlock.
-    /// </para>
-    /// <para>
-    /// Pair it with <see cref="TryReleaseModule"/> when the composition is genuinely dynamic.
+    /// ⚠ <b>KNOWN LIMIT: this does not see facades registered through DI.</b>
+    /// <see cref="IpcServiceCollectionExtensions.UseMessageDispatcher"/> maps those through one lazy
+    /// terminal middleware, not through <see cref="IModuleRegistry.TryClaimModule"/> — so
+    /// <see cref="IModuleRegistry.IsModuleMapped"/> reports <c>false</c> for such a module, this method
+    /// answers <c>true</c> for its name, and the plug-in then NEVER RUNS, silently, because that
+    /// middleware sits EARLIER in the pipeline. Map anything a plug-in must be able to collide with
+    /// through <see cref="MapModule(IMessageDispatcher, IIpcModule)"/> or this method explicitly.
     /// </para>
     /// </summary>
     /// <returns>True if the module was mapped; false if the name was already claimed.</returns>
@@ -227,20 +172,12 @@ public static class MessageDispatcherExtensions
     }
 
     /// <summary>
-    /// Release a mapped module: it stops answering and its name becomes free to claim again.
+    /// Release a mapped module: it stops answering and its name becomes free to claim again — the
+    /// other half of a dynamic IPC surface (disabling a plug-in, dropping a per-tenant module).
     /// <para>
-    /// The other half of a dynamic IPC surface — disabling a plug-in, dropping a per-tenant module
-    /// when the tenant goes away, unloading a lazily loaded area. Until this existed the pipeline only
-    /// grew, so turning a module off meant restarting the app; it was a recorded capability gap rather
-    /// than a decision, and it is closed here because "restart to disable a plug-in" is not something
-    /// an adopter should have to design around.
-    /// </para>
-    /// <para>
-    /// TWO THINGS IT DELIBERATELY DOES NOT DO. Requests already executing inside the facade run to
-    /// completion — this removes the ROUTE, it does not abort work in flight, and a caller mid-request
-    /// gets its answer. And the facade is not disposed: its lifetime belongs to whoever created it
-    /// (usually the DI container), so disposing it here would kill a shared instance under another
-    /// caller. Dispose it yourself if you own it, after releasing.
+    /// It removes the ROUTE and nothing else. Requests already executing inside the facade run to
+    /// completion, and the facade is NOT disposed: its lifetime belongs to whoever created it (usually
+    /// the DI container). Dispose it yourself if you own it, after releasing.
     /// </para>
     /// <para>
     /// Only modules mapped from a FACADE can be released — those are the ones the registry claimed.
@@ -248,10 +185,7 @@ public static class MessageDispatcherExtensions
     /// <see cref="ModuleRouteBuilder"/> form are plain middleware and were never tracked, so they are
     /// not releasable; <see cref="IModuleRegistry.MappedModules"/> tells you what is.
     /// </para>
-    /// <para>
-    /// Throws <see cref="NotSupportedException"/> when the dispatcher cannot answer — see
-    /// <see cref="TryMapModule"/> for why that is better than a permissive false.
-    /// </para>
+    /// <para>Throws <see cref="NotSupportedException"/> when the dispatcher cannot answer.</para>
     /// </summary>
     /// <returns>True if the module was mapped and is now released; false if it was not mapped.</returns>
     public static bool TryReleaseModule(this IMessageDispatcher dispatcher, string module)
@@ -261,9 +195,38 @@ public static class MessageDispatcherExtensions
     }
 
     /// <summary>
-    /// The registry seam, or a refusal that says what to do about it — never a permissive wrong
-    /// answer. A dispatcher that does not know what it routes must not be able to report a name as
-    /// free, nor to claim a release succeeded.
+    /// The logger a middleware reports through: the caller's, else the dispatcher's OWN.
+    /// <para>
+    /// 🔴 <b>REFUSES rather than answering silently</b>, for the same reason <see cref="Registry"/> below
+    /// does: a pipeline that cannot report an error must not pretend it can. The dispatcher's own logger
+    /// is reachable only on the kit's concrete type, so behind a DECORATOR — which
+    /// <see cref="IModuleRegistry"/>'s own docs positively encourage — the lookup finds nothing and every
+    /// unhandled exception would be mapped to <c>UNKNOWN_ERROR</c> for the client and logged NOWHERE.
+    /// That is the one place the kit promises the detail stays host-side.
+    /// </para>
+    /// <para>
+    /// It throws at COMPOSITION, never per request, which is the convention the shells already use for a
+    /// half-configured pipeline. Want silence deliberately? Pass <c>NullLogger.Instance</c> — that is a
+    /// decision, and it should have to be typed.
+    /// </para>
+    /// </summary>
+    private static ILogger ResolveLogger(IMessageDispatcher dispatcher, ILogger? logger, string operation)
+    {
+        if (logger is not null) return logger;
+        // Non-null by construction — a dispatcher built without one holds NullLogger — so the concrete
+        // path never reaches the throw below.
+        if (dispatcher is MessageDispatcher concrete) return concrete.Logger;
+        throw new InvalidOperationException(
+            $"{operation} could not find a logger: this dispatcher is a " +
+            $"'{dispatcher.GetType().Name}', not the kit's {nameof(MessageDispatcher)}, so its own logger " +
+            "cannot be reached — and errors mapped here are logged host-side, so they would be lost " +
+            $"entirely. Pass one explicitly: {operation}(logger). For deliberate silence, pass " +
+            "NullLogger.Instance.");
+    }
+
+    /// <summary>
+    /// The registry seam, or a refusal — never a permissive wrong answer: a dispatcher that does not
+    /// know what it routes must not report a name as free, nor claim a release succeeded.
     /// </summary>
     private static IModuleRegistry Registry(IMessageDispatcher dispatcher, string operation)
     {

@@ -1,6 +1,5 @@
 using System.Text.Json;
-
-using Shenora;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.Engine.Files;
 
@@ -99,7 +98,7 @@ public sealed class FileUpdateJournalOptions
     public required string Directory { get; init; }
 
     /// <summary>Diagnostics sink, guarded through <see cref="AppCallback.Log"/>.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 }
 
 /// <summary>

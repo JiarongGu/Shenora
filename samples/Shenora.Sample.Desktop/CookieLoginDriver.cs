@@ -32,8 +32,28 @@ public sealed class CookieLoginDriverOptions
     /// </summary>
     public required IReadOnlyList<string> AuthCookiePatterns { get; init; }
 
-    /// <summary>How often the cookie jar is polled while the login window is open.</summary>
+    /// <summary>
+    /// How often the cookie jar is polled while the login window is open.
+    /// <para>
+    /// ⚠ The poll is the CORRECTNESS mechanism and stays even with <see cref="Events"/> set — a cookie
+    /// written by JS (<c>document.cookie</c>) appears in no response header, so nothing would report it.
+    /// The event only shortens the wait.
+    /// </para>
+    /// </summary>
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(800);
+
+    /// <summary>
+    /// Optional: the bus the session publishes on, which turns the poll from the only mechanism into a
+    /// backstop — a <c>Set-Cookie</c> on an observed response wakes the loop immediately instead of it
+    /// waiting out <see cref="PollInterval"/>.
+    /// <para>
+    /// ⚠ <b>Needs BOTH halves configured on the session</b>: <c>InteractiveSessionOptions.Events</c> (the
+    /// same bus) and <c>ObserveResponse</c> (which responses are worth reporting — it is off by default,
+    /// being the one per-subresource event). With only one of them the driver still works, just at poll
+    /// speed.
+    /// </para>
+    /// </summary>
+    public IEventBus? Events { get; init; }
 
     /// <summary>
     /// How long a hidden window (<see cref="InteractiveSessionOptions.RevealImmediately"/> = false)
@@ -115,16 +135,79 @@ public sealed class CookieLoginDriver
     }
 
     /// <summary>Drive one login over the window's controller (pass this to <see cref="InteractiveSession.RunAsync"/>).</summary>
-    public Task<string?> DriveAsync(SessionController controller, CancellationToken cancellationToken = default)
+    public async Task<string?> DriveAsync(SessionController controller, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(controller);
-        return DriveAsync(new Hooks
+
+        // The composition the kit's event catalogue is FOR, and the whole point of this file: a login
+        // flow built from generic parts, with the library never learning the word "login". The hint is
+        // `Set-Cookie` on a response — a mechanism — and the driver decides that means "check the jar".
+        using var hint = _options.Events is { } bus ? new CookieHint(bus, controller.Id) : null;
+
+        return await DriveAsync(new Hooks
         {
             ReadCookies = controller.GetCookiesAsync,
             Navigate = controller.NavigateAsync,
             Reveal = controller.Reveal,
             SetLoading = controller.SetLoading,
-        }, cancellationToken);
+            WaitForHint = hint is null ? null : hint.WaitAsync,
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Bridges <see cref="SessionEvents.ResponseReceived"/> to something the poll loop can wait on:
+    /// signalled whenever an observed response carries a <c>Set-Cookie</c>.
+    /// <para>
+    /// ⚠ <b>A one-permit semaphore, deliberately.</b> An unbounded <c>Release()</c> accumulates permits,
+    /// and the very next thing the loop does with them is NOT wait — so a page setting five cookies
+    /// would turn the next five polls into a spin. Capped at one, a burst costs at most one extra
+    /// immediate re-read, which is exactly the behaviour wanted.
+    /// </para>
+    /// </summary>
+    public sealed class CookieHint : IDisposable
+    {
+        private readonly SemaphoreSlim _signal = new(0, 1);
+        private readonly IDisposable _subscription;
+
+        public CookieHint(IEventBus bus, string scope)
+        {
+            ArgumentNullException.ThrowIfNull(bus);
+            _subscription = bus.Subscribe(SessionEvents.Module, SessionEvents.ResponseReceived, scope, message =>
+            {
+                if (CarriesACookie(message.Payload)) Signal();
+                return Task.CompletedTask;
+            });
+        }
+
+        /// <summary>True when this event's payload is a response that sets at least one cookie.</summary>
+        public static bool CarriesACookie(object? payload) =>
+            payload is SessionResponse response
+            && response.Headers.Any(h => string.Equals(h.Key, "Set-Cookie", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Completes on the next signal (or immediately if one is already pending).</summary>
+        public Task WaitAsync(CancellationToken cancellationToken) => _signal.WaitAsync(cancellationToken);
+
+        /// <summary>
+        /// Is a signal pending right now? ⚠ Peeking with <see cref="WaitAsync"/> instead does not work
+        /// and does not look broken: on an empty semaphore it leaves a QUEUED WAITER behind, so the next
+        /// signal is handed to that abandoned task and the real waiter never wakes.
+        /// </summary>
+        public bool IsSignalled => _signal.CurrentCount > 0;
+
+        public void Dispose()
+        {
+            _subscription.Dispose();
+            _signal.Dispose();
+        }
+
+        private void Signal()
+        {
+            // Racing another signal is normal — two responses can land together. Losing that race means
+            // a permit is already waiting, which is the state we wanted anyway.
+            try { if (_signal.CurrentCount == 0) _signal.Release(); }
+            catch (SemaphoreFullException) { }
+            catch (ObjectDisposedException) { /* the flow finished while a response was in flight */ }
+        }
     }
 
     /// <summary>Deserialize a blob this flow captured.</summary>
@@ -142,6 +225,12 @@ public sealed class CookieLoginDriver
         public required Func<string, CancellationToken, Task> Navigate { get; init; }
         public required Action Reveal { get; init; }
         public required Action<bool> SetLoading { get; init; }
+
+        /// <summary>
+        /// Optional: completes when something suggests the jar is worth re-reading NOW, racing the poll
+        /// interval. Null = poll only, which is the behaviour with no bus configured.
+        /// </summary>
+        public Func<CancellationToken, Task>? WaitForHint { get; init; }
     }
 
     /// <summary>The poll/capture loop, over the seam rather than a live browser.</summary>
@@ -174,7 +263,7 @@ public sealed class CookieLoginDriver
                     revealed = true;
                     hooks.Reveal();
                 }
-                await Task.Delay(_options.PollInterval, cancellationToken).ConfigureAwait(false);
+                await WaitForNextReadAsync(hooks, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -195,6 +284,38 @@ public sealed class CookieLoginDriver
             }
             throw;
         }
+    }
+
+    /// <summary>
+    /// Wait before the next jar read: the poll interval, or whichever of it and a hint arrives first.
+    /// </summary>
+    private async Task WaitForNextReadAsync(Hooks hooks, CancellationToken cancellationToken)
+    {
+        if (hooks.WaitForHint is not { } hint)
+        {
+            await Task.Delay(_options.PollInterval, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Its own CTS so the LOSING wait is cancelled rather than abandoned. Not merely tidiness: an
+        // abandoned `WaitAsync` stays QUEUED on the hint's semaphore, and the next signal is handed to
+        // that dead waiter instead of the live one — the hint would then fire once and never again.
+        using var race = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var timer = Task.Delay(_options.PollInterval, race.Token);
+        var hinted = hint(race.Token);
+        await Task.WhenAny(timer, hinted).ConfigureAwait(false);
+        race.Cancel();
+
+        // ⚠ AWAIT THE LOSER before `using` disposes the source. Disposing a linked CTS while a waiter is
+        // still unwinding its just-fired cancellation is the shape `webview2-hosting.md` records from the
+        // pool's semaphore teardown, where it left a task PERMANENTLY INCOMPLETE. Both tasks are expected
+        // to end cancelled, which is not a failure here.
+        try { await Task.WhenAll(timer, hinted).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+
+        // WhenAny never throws, so the caller's cancellation has to be re-observed by hand — without
+        // this a cancelled flow would spin the loop instead of unwinding to the final-read handler.
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     /// <summary>Identity-keyed values of the whole jar (freshness is judged per cookie identity —

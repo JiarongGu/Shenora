@@ -23,7 +23,16 @@ namespace Shenora.Windows;
 /// an unhandled UI-thread exception — the crash dialog under the family bootstrap.</item>
 /// </list>
 /// <para>
-/// So every diagnostic in this package goes through here. Swallowing is the only correct policy: the
+/// So every diagnostic in the SESSIONS stack goes through here — all 21 of them, and the scope is the
+/// point: the rest of <c>Shenora.Windows</c> logs through <see cref="Shenora.AppCallback.Log"/>, which
+/// takes a rendered <c>Func&lt;string&gt;</c>. This overloadful exists beside it because a session's
+/// diagnostics are STRUCTURED — <c>{Kind}</c>, <c>{ExitCode}</c>, <c>{Uri}</c> — and a pre-rendered
+/// string throws those fields away before any sink can index them.
+/// </para>
+/// <para>
+/// ⚠ <b>It is not a second owner of the guarding policy</b>, which would be the real smell: the body
+/// below delegates to <see cref="Shenora.AppCallback.Run"/>, so there is still exactly one place that
+/// decides what happens when app code throws. Swallowing is the only correct answer here: the
 /// alternative to a lost log line must never be a lost session.
 /// </para>
 /// </summary>

@@ -49,14 +49,19 @@ public sealed class IpcResponse
     /// <c>parameters</c>, then <c>message</c> (P5.5 H6). The two are siblings: they build the same
     /// structured error from the same three pieces, and they used to disagree about the order of the
     /// last two, so which one you were calling decided what a positional third argument meant. The
-    /// shared order puts the WIRE-relevant piece first: <c>parameters</c> crosses to the client as the
-    /// i18n interpolation values, while <c>message</c> is host-log only.
+    /// shared order puts the piece a CLIENT interpolates first: <c>parameters</c> carries the i18n
+    /// values, <c>message</c> is the untranslated fallback.
     /// </para>
     /// </summary>
     /// <param name="id">Correlation id of the request being answered.</param>
     /// <param name="code">Error code / i18n key.</param>
-    /// <param name="parameters">Optional interpolation values — these DO cross the wire.</param>
-    /// <param name="message">Optional untranslated message for host logs.</param>
+    /// <param name="parameters">Optional interpolation values — these cross the wire.</param>
+    /// <param name="message">
+    /// Optional untranslated message. 🔴 <b>IT CROSSES THE WIRE TOO</b> — the client surfaces it as the
+    /// JavaScript <c>Error.message</c>, so it reaches the console and any error-reporting SDK the page
+    /// runs. Never put a filesystem path, a connection string or raw exception text here; that is what
+    /// the host log is for, and <c>IpcErrorMapping</c> keeps it out of this field on every path it owns.
+    /// </param>
     public static IpcResponse CreateError(
         string id, string code, IReadOnlyDictionary<string, string>? parameters = null, string? message = null) =>
         CreateError(id, new IpcError { Code = code, Message = message, Parameters = parameters });

@@ -33,7 +33,7 @@ internal static class PlaybackSessionProbe
         WindowsPlaybackSession session;
         try
         {
-            session = new WindowsPlaybackSession(m => Console.WriteLine(m));
+            session = new WindowsPlaybackSession(AppCallback.Logger(Console.WriteLine));
         }
         catch (Exception ex)
         {

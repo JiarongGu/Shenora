@@ -23,8 +23,41 @@ public interface IShellLauncher : IUrlLauncher
     /// <summary>Open a directory in the shell's file manager.</summary>
     void OpenDirectory(string directoryPath);
 
-    /// <summary>Launch an executable (working directory defaults to the exe's folder).</summary>
-    void LaunchProcess(string executablePath, string? arguments = null, string? workingDirectory = null);
+    /// <summary>
+    /// Launch an executable.
+    /// </summary>
+    /// <param name="options">What to run, and how.</param>
+    /// <returns>
+    /// The new process's id, or <c>null</c> when the shell satisfied the request WITHOUT starting one
+    /// (it handed the work to an already-running instance). ⚠ <c>null</c> is not a failure — a launch
+    /// that did not happen THROWS. It means there is no process for you to wait on or kill.
+    /// </returns>
+    /// <exception cref="FileNotFoundException"><c>ExecutablePath</c> does not exist.</exception>
+    int? LaunchProcess(ProcessLaunchOptions options);
+}
+
+/// <summary>
+/// What to launch, and how — for <see cref="IShellLauncher.LaunchProcess"/>.
+/// <para>
+/// A record rather than parameters because every plausible next requirement — an elevation verb,
+/// environment variables, an argument LIST instead of a hand-quoted string, a window style — would
+/// otherwise change the method's signature and break every caller. On a record each is an added
+/// property, which is additive.
+/// </para>
+/// </summary>
+public sealed class ProcessLaunchOptions
+{
+    /// <summary>The executable to run. Must exist.</summary>
+    public required string ExecutablePath { get; init; }
+
+    /// <summary>
+    /// The command line, already quoted. ⚠ Windows argument quoting is the CALLER's problem here; the
+    /// string is passed through untouched.
+    /// </summary>
+    public string? Arguments { get; init; }
+
+    /// <summary>Working directory. Null uses the executable's own folder.</summary>
+    public string? WorkingDirectory { get; init; }
 }
 
 /// <summary>
@@ -82,18 +115,23 @@ public sealed class ShellLauncher : IShellLauncher
     }
 
     /// <inheritdoc />
-    public void LaunchProcess(string executablePath, string? arguments = null, string? workingDirectory = null)
+    public int? LaunchProcess(ProcessLaunchOptions options)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
-        if (!File.Exists(executablePath))
-            throw new FileNotFoundException("Executable does not exist.", executablePath);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.ExecutablePath);
+        if (!File.Exists(options.ExecutablePath))
+            throw new FileNotFoundException("Executable does not exist.", options.ExecutablePath);
 
-        Process.Start(new ProcessStartInfo
+        using var started = Process.Start(new ProcessStartInfo
         {
-            FileName = executablePath,
-            Arguments = arguments ?? string.Empty,
+            FileName = options.ExecutablePath,
+            Arguments = options.Arguments ?? string.Empty,
             UseShellExecute = true,
-            WorkingDirectory = workingDirectory ?? Path.GetDirectoryName(executablePath) ?? string.Empty,
-        })?.Dispose();
+            WorkingDirectory = options.WorkingDirectory
+                ?? Path.GetDirectoryName(options.ExecutablePath) ?? string.Empty,
+        });
+        // Read the id BEFORE the handle is disposed — and the handle IS disposed, because a drifted
+        // hand-copy of this method once leaked one per launch.
+        return started?.Id;
     }
 }

@@ -130,15 +130,14 @@ public static class WindowsHostExtensions
         // WindowsPlaybackSession creates a MediaPlayer in its constructor, and an app that never plays
         // anything should not pay for a media pipeline just by calling UseWindows(). DI disposes it.
         builder.Services.TryAddSingleton<IPlaybackSession>(sp =>
-            new WindowsPlaybackSession(message =>
-                sp.GetService<ILogger<WindowsPlaybackSession>>()?.LogDebug("{Message}", message)));
+            new WindowsPlaybackSession(sp.GetService<ILogger<WindowsPlaybackSession>>()));
 
         // "Who is holding this file open?" — Windows answers with the Restart Manager, which is why the
         // CONTRACT is portable and this implementation is not (D19/D20, and D31's two-mechanisms split).
         //
-        // ⚠ IT WAS NEVER REGISTERED until 2026-08-07. RestartManagerLockInspector shipped, was documented,
-        // was tested — and no container ever built one, so FileUpdateQueueOptions.LockInspector was always
-        // null and a locked file reported "cannot tell" instead of naming the process. Nothing failed:
+        // ⚠ REGISTERING IT IS THE WHOLE POINT. An inspector that ships, is documented and is tested but
+        // that no container ever builds leaves FileUpdateQueueOptions.LockInspector null, so a locked file
+        // reports "cannot tell" instead of naming the process. Nothing fails:
         // `WhoHolds` empty legitimately MEANS "cannot tell", so the degraded answer was indistinguishable
         // from the honest one. Same failure mode as D59 — a capability that is ABSENT rather than broken
         // produces no error, no log line and no failing test.
@@ -151,8 +150,7 @@ public static class WindowsHostExtensions
         // Singleton because it caches — the codec set cannot change while the process runs (an installed
         // extension needs a restart), and each query walks the platform's MFT list.
         builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(sp =>
-            new WindowsMediaCapability(message =>
-                sp.GetService<ILogger<WindowsMediaCapability>>()?.LogDebug("{Message}", message)));
+            new WindowsMediaCapability(sp.GetService<ILogger<WindowsMediaCapability>>()));
 
         // The HOST-OWNED PLAYER (D54) — Media Foundation through Windows.Media.Playback.
         //
@@ -172,8 +170,7 @@ public static class WindowsHostExtensions
         // Lazy, like every registration here: constructing one builds an audio graph, and on plain
         // net10.0-windows it refuses by name — so an app that never asks never pays and never throws.
         builder.Services.TryAddSingleton(sp =>
-            new WindowsMediaPlayer(message =>
-                sp.GetService<ILogger<WindowsMediaPlayer>>()?.LogDebug("{Message}", message)));
+            new WindowsMediaPlayer(sp.GetService<ILogger<WindowsMediaPlayer>>()));
 
         // D20: expose the PORTABLE face of each split service beside the Windows one, resolving to
         // the SAME singleton — so an app's own logic can inject Shenora contracts, compile
@@ -209,7 +206,10 @@ internal sealed class WinFormsRunner : IShenoraRunner
             var wait = app.Args.Contains(single.RestartArgument, StringComparer.Ordinal)
                 ? single.RestartWaitTimeout
                 : TimeSpan.Zero;
-            if (!guard.TryAcquire(wait))
+            // Only AlreadyRunning stops the launch. Unverified means the OS would not answer and the
+            // guard failed open — the host starts (the historical behaviour) and the app can act on the
+            // distinction if its reason for being single-instance is a single-writer store.
+            if (guard.TryAcquire(wait) is SingleInstanceResult.AlreadyRunning)
             {
                 if (single.OnSecondInstance is { } onSecond) onSecond(app, guard);
                 else guard.BroadcastActivate();
@@ -252,9 +252,9 @@ internal sealed class WinFormsRunner : IShenoraRunner
                 // main window to the front when it arrives. A message filter (not a WndProc hook)
                 // so ANY Form works — no base-class requirement on the app.
                 ActivateMessageFilter? filter = null;
-                if (guard is { ActivateMessageId: not 0 })
+                if (guard?.ActivateMessageId is { } activateMessageId)
                 {
-                    filter = new ActivateMessageFilter(form, guard.ActivateMessageId);
+                    filter = new ActivateMessageFilter(form, activateMessageId);
                     Application.AddMessageFilter(filter);
                 }
                 else if (guard is not null)

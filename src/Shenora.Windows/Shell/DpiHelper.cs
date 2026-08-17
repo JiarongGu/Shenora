@@ -37,10 +37,15 @@ public static class DpiHelper
     private static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
 
     /// <summary>
-    /// The PRIMARY monitor's DPI scale (1.0 at 100%, 1.5 at 150%, 2.0 at 200%), resolved fresh —
-    /// usable before any form exists (screen DC), which is why window-state restore uses it.
-    /// In a PerMonitorV2 process this returns the primary monitor's real DPI (verified live in
-    /// the source app, 2026-07-12).
+    /// The PRIMARY monitor's DPI scale (1.0 at 100%, 1.5 at 150%, 2.0 at 200%), resolved fresh — usable
+    /// before any form exists, because it reads a screen DC rather than a window.
+    /// In a PerMonitorV2 process this returns the primary monitor's real DPI.
+    /// <para>
+    /// ⚠ <b>PRIMARY, so it is the wrong answer for a window on a secondary monitor with a different
+    /// scale.</b> Anything that has a form should use <see cref="ScaleFromDeviceDpi"/> over that form's
+    /// own <c>DeviceDpi</c> — which is what window-state save and restore do. Reach for this only when
+    /// there is genuinely no window yet.
+    /// </para>
     /// </summary>
     public static double SystemScale()
     {

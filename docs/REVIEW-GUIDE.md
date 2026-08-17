@@ -141,7 +141,8 @@ namespaces are the layer names:
 | media | `src/Shenora/Modules/Media/` | `Shenora.Modules.Media` |
 | file updates + locking | `src/Shenora/Engine/Files/` | `Shenora.Engine.Files` |
 | missions | `src/Shenora/Engine/Missions/` | `Shenora.Engine.Missions` |
-| compression | `src/Shenora/Modules/Update/Compression/` | `Shenora.Modules.Update.Compression` |
+| app updates | `src/Shenora/Engine/Update/` | `Shenora.Engine.Update` |
+| compression | `src/Shenora/Engine/Compression/` | `Shenora.Engine.Compression` |
 | the IPC wire + dispatcher | `src/Shenora/Core/Ipc/` | `Shenora.Core.Ipc` |
 Detail per package is in `docs/ARCHITECTURE.md` — this guide does not duplicate it.
 
@@ -305,9 +306,10 @@ sample lease timeout; the pack/README packaging gap; controller taps accumulate.
   and are validated by hand. Judge their code by inspection against the source + the invariants,
   not by expecting a test.
 
-Totals as of 2026-08-05: **1043 dotnet + 115 vitest** green; `verify` PASSED; `doctor` consistent.
-⚠ **Dated, because a bare "current totals" goes stale silently and this one sat at 442 + 63 for four
-months of growth.** Run `dev.mjs verify` rather than trusting the number. The dotnet
+Totals as of 2026-08-15: **1538 dotnet + 202 vitest** (158 react + 44 cli) green; `verify` PASSED.
+⚠ **Dated, and treat the date as the load-bearing half** — a bare "current totals" goes stale silently:
+this line sat at 442 + 63 for four months, then at 1043 + 115 for ten days across ~500 new tests. It is
+here to give a sense of MAGNITUDE, never to be trusted as current. Run `dev.mjs verify`. The dotnet
 suite runs SERIALLY (`tests/Shenora.Tests/xunit.runner.json`, P5.5 H7) — it creates real STA message
 pumps, real OS mutexes and real window threads, and collection parallelism was both a flake vector and
 an active mask: it hid a test that entered the OS modal size loop for ~17 s.

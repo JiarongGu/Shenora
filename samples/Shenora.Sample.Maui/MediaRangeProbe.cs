@@ -1,6 +1,6 @@
 using Shenora;
 using Shenora.Mobile;
-using Shenora.Modules.Update;
+using Shenora.Engine.Update;
 using Shenora.Core.WebView;
 
 namespace Shenora.Sample.Maui;
@@ -158,7 +158,7 @@ internal sealed class MediaRangeProbe : IDisposable
 		// and an unapplied pipeline is indistinguishable from one whose routes nothing requested (D63).
 		// Corrected 2026-08-09. Isolation is still available and still correct for a probe that genuinely
 		// owns its webview: pass `new WebViewPipeline()`.
-		_interceptor = new MobileWebViewInterceptor(webView, pipeline, _log);
+		_interceptor = new MobileWebViewInterceptor(webView, pipeline, AppCallback.Logger(_log));
 
 		// THE WHOLE WIRING. No BodyMode, no content-type table, no range arithmetic, no containment check —
 		// UseFiles reads the platform's delivery rule off the interceptor so it cannot be passed in wrong.

@@ -30,9 +30,9 @@ public class MediaPlayerTests
             Policy = new MediaPlaybackPolicy
             {
                 Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4" },
-                Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+                Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
                 {
-                    [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac" },
+                    [MediaStreamKind.Audio] = new HashSet<MediaStreamCodec>() { "aac" },
                 },
             },
             ResolveUri = (source, plan) => { seen = plan; return $"app://convert?src={source}"; },
@@ -197,7 +197,7 @@ public class MediaPlayerTests
         using var player = new MediaPlayer(bus, new MediaPlayerOptions { ResolveUri = (s, _) => s });
         await OpenAndSettle(player, bus, "a.m4a");
 
-        player.Rate = 1.5;
+        await player.SetRateAsync(1.5);
         player.Report(new MediaPlayerStatus { State = MediaPlayerState.Playing });   // Rate defaults to 1.0
 
         Assert.Equal(1.5, player.Status.Rate);
@@ -319,8 +319,8 @@ public class MediaPlayerTests
     {
         using var player = new MediaPlayer(new RecordingBus(), new MediaPlayerOptions { ResolveUri = (s, _) => s });
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => player.Rate = 0);
-        Assert.Throws<ArgumentOutOfRangeException>(() => player.Rate = -1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(0); });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(-1); });
     }
 
     /// <summary>

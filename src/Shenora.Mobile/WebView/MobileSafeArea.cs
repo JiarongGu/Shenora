@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Controls;
 using Shenora;
 using Shenora.Modules.Platform;
@@ -5,72 +6,57 @@ using Shenora.Modules.Platform;
 namespace Shenora.Mobile;
 
 /// <summary>
-/// Publishes the platform's window insets to the page, because the web platform's own answer does not
-/// on Android — see <see cref="SafeAreaOptions"/> for the two measured reasons.
-///
-/// <para>
-/// The DECISIONS are all in <see cref="SafeAreaScript"/>, which is portable and unit-tested. This type is
-/// deliberately thin: read the platform's numbers, hand them to that builder, evaluate the result. That
-/// split is what keeps the untestable half — a real webview on a real device — down to "the numbers are
-/// right and the script ran".
-/// </para>
+/// Publishes the platform's window insets to the page, because the web platform's own answer does not on
+/// Android — see <see cref="SafeAreaOptions"/> for the two measured reasons. Thin by design: read the
+/// numbers, hand them to <see cref="SafeAreaScript"/>, evaluate the result.
 /// </summary>
 public sealed class MobileSafeArea : IDisposable
 {
     private readonly HybridWebView _webView;
     private readonly SafeAreaOptions _options;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private SafeAreaInsets? _last;
     private bool _disposed;
 
     /// <param name="webView">The webview whose page receives the insets.</param>
     /// <param name="options">What the app asked for. Everything in it is individually declinable.</param>
     /// <param name="log">Optional diagnostics. Guarded — a throwing sink must not break the page.</param>
-    public MobileSafeArea(HybridWebView webView, SafeAreaOptions options, Action<string>? log = null)
+    public MobileSafeArea(HybridWebView webView, SafeAreaOptions options, ILogger? log = null)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = log;
 
-        // The DEFAULT (and the splash, if asked for) goes out immediately, with no measurement — that is
-        // the entire point of having one. Waiting for the platform here would reproduce the bug.
+        // The DEFAULT (and the splash, if asked for) goes out immediately, with no measurement — waiting
+        // for the platform here is the bug it exists to cover.
         Publish(null);
 
-        // 🔴 ROTATION MOVES AN INSET TO A DIFFERENT EDGE — it does not merely change its size. A cutout
-        // that is `top` in portrait becomes `left` or `right` in landscape, and the home indicator's
-        // `bottom` shrinks. So "read the insets once and publish them" is not a smaller version of the
-        // right behaviour, it is the wrong SHAPE forever: the page goes on reserving a strip along the top
-        // while the notch is down the side. Reported against the iOS shell, which read exactly once.
-        //
-        // `SizeChanged` is MAUI's own signal and fires on both platforms, so the fix is not per-platform
-        // even though the bug only showed on one of them.
+        // 🔴 ROTATION MOVES AN INSET TO A DIFFERENT EDGE, it does not merely resize it: a cutout that is
+        // `top` in portrait is `left` or `right` in landscape. So reading once publishes the wrong SHAPE
+        // forever, and the page reserves a strip along the top while the notch is down the side.
+        // `SizeChanged` is MAUI's own signal and fires on both platforms.
         _webView.SizeChanged += OnSizeChanged;
         _webView.HandlerChanged += OnHandlerChanged;
         if (_webView.Handler is not null) Attach();
     }
 
     /// <summary>
-    /// Push a measurement to the page. Safe to call repeatedly; the script is idempotent and an
-    /// unchanged value is skipped so a rotation storm does not become a script storm.
+    /// Push a measurement to the page. Safe to call repeatedly, and every call publishes: the script is
+    /// idempotent and <see cref="Publish"/>'s generation counter collapses a rotation storm.
     /// </summary>
     public void Report(SafeAreaInsets insets)
     {
         if (_disposed) return;
 
-        // 🔴 NO "skip if unchanged" here, and that is the fix for the second delivery bug rather than an
-        // oversight. CSS custom properties live on the DOCUMENT, so every navigation throws them away —
-        // and the insets do not change across a navigation, so a value-equality guard meant the new
-        // document never received them. Measured: the shell reported "delivered", and the page then
-        // loaded and reported `color=transparent`, its own fallback.
+        // 🔴 NEVER skip an unchanged value here. CSS custom properties live on the DOCUMENT, so every
+        // navigation throws them away — and the insets do NOT change across one, so a value-equality
+        // guard leaves the new document with nothing while the shell still reports "delivered".
+        // Republishing is cheap: the script is idempotent and Publish's generation counter collapses a
+        // storm into one delivery.
         //
-        // Publishing on every layout is cheap (one idempotent script) and the generation counter in
-        // Publish collapses overlapping attempts, so a rotation storm still only lands once.
-        //
-        // Log the NUMBERS when they change — not every publish, which fires on every layout pass. Without
-        // this the capability is unobservable from the host side: "delivered" is logged once and the page's
-        // own diagnostic reports what the PAGE ended up with, which on a shell whose page also reads
-        // `env()` is not proof of what the shell published. Rotation is the case that needs the
-        // distinction, because it is the one where the two can disagree.
+        // The NUMBERS are logged only when they change; this runs on every layout pass. Without them the
+        // shell's own output is unobservable — the page's diagnostic reports what the PAGE ended up with,
+        // which on a shell whose page also reads `env()` is not proof of what the shell published.
         if (_last != insets)
             Log($"safe-area measured: top={insets.Top:0.#} right={insets.Right:0.#} "
               + $"bottom={insets.Bottom:0.#} left={insets.Left:0.#}");
@@ -80,21 +66,10 @@ public sealed class MobileSafeArea : IDisposable
 
     /// <summary>
     /// Evaluate the script, and KEEP TRYING until the page confirms it ran.
-    ///
     /// <para>
-    /// 🔴 This retry is the whole delivery mechanism, and it exists because of a measured failure:
-    /// publishing once from the constructor put the script into a webview that had no document yet.
-    /// <c>EvaluateJavaScriptAsync</c> did not throw — it silently did nothing — so the capability
-    /// reported success and the page never received a thing. The proof was <c>color=transparent</c> in
-    /// the page's own diagnostic: the page's fallback, not the shell's colour.
-    /// </para>
-    /// <para>
-    /// ⚠ The IDEAL mechanism is document-start injection (AndroidX's <c>DOCUMENT_START_SCRIPT</c>, iOS's
-    /// <c>WKUserScript</c> at <c>atDocumentStart</c>), which would land before the first paint instead of
-    /// shortly after it. It is not used because it costs a <c>Xamarin.AndroidX.WebKit</c>
-    /// <c>PackageReference</c> on EVERY Android consumer for one call — the same "everything references
-    /// this, so nothing may tax it" reasoning as D40/D48. Revisit if the shell ever needs that package
-    /// for a second reason. The page's own CSS fallback covers the first frame in the meantime.
+    /// 🔴 The retry IS the delivery mechanism: evaluating against a webview that has no document yet does
+    /// not throw, it silently does nothing — so a single publish reports success while the page receives
+    /// nothing.
     /// </para>
     /// </summary>
     private async void Publish(SafeAreaInsets? insets)
@@ -102,8 +77,7 @@ public sealed class MobileSafeArea : IDisposable
         var script = SafeAreaScript.Build(_options, insets);
         var generation = ++_generation;
 
-        // ~2s of attempts on a rising interval. A page that never arrives stops costing anything, and a
-        // newer Publish supersedes this one immediately via the generation check.
+        // ~2s of attempts on a rising interval; a newer Publish supersedes this one via the generation.
         foreach (var delay in Delays)
         {
             if (_disposed || generation != _generation) return;
@@ -112,8 +86,8 @@ public sealed class MobileSafeArea : IDisposable
                 var result = await _webView.EvaluateJavaScriptAsync(script).ConfigureAwait(true);
                 if (result is not null && result.Contains(SafeAreaScript.DeliveredMarker, StringComparison.Ordinal))
                 {
-                    // Logged ONCE, not per delivery: this fires on every layout pass by design, and a
-                    // line per pass would bury the device log the rest of the shell writes to.
+                    // Logged ONCE: this fires on every layout pass, and a line per pass buries the
+                    // device log the rest of the shell writes to.
                     if (!_delivered)
                     {
                         _delivered = true;
@@ -124,8 +98,8 @@ public sealed class MobileSafeArea : IDisposable
             }
             catch (Exception ex)
             {
-                // Evaluating before there is a document throws on some hosts and returns null on others.
-                // Both mean the same thing here — not yet — so neither is worth faulting over.
+                // Evaluating before there is a document throws on some hosts and returns null on others;
+                // both mean "not yet".
                 Log($"safe-area not delivered yet ({ex.GetType().Name}); retrying");
             }
 
@@ -150,33 +124,28 @@ public sealed class MobileSafeArea : IDisposable
     /// <summary>
     /// Subscribe to the platform's inset changes and take a first reading.
     /// <para>
-    /// ⚠ Per-platform by necessity and NOT behind a partial method, unlike <c>SaveAsync</c>: a shell that
-    /// cannot report insets is not broken, it simply has none to report, so the fallback here is silence
-    /// rather than a compile error. That is the opposite call from the save path and the difference is
-    /// whether "nothing" is a legitimate answer. Here it is — a tablet in a window has no cutout.
+    /// ⚠ Per-platform, and a platform with no arm falls through in SILENCE rather than failing to
+    /// compile — unlike <c>SaveAsync</c>, because "no insets to report" is a legitimate answer here.
     /// </para>
     /// </summary>
     private void Attach()
     {
 #if ANDROID
         if (_webView.Handler?.PlatformView is not global::Android.Views.View view) return;
-        // A handler change means a NEW platform view, so this subscribes per view rather than once —
-        // but guard against the same view arriving twice (the constructor and HandlerChanged can both
-        // reach here), which would double every read.
+        // The constructor and HandlerChanged can both reach here with the same view, which would double
+        // every read.
         if (ReferenceEquals(view, _attachedTo)) return;
 
-        // ⚠ DETACH THE PREVIOUS VIEW FIRST. A handler change means a new platform view, and until
-        // 2026-08-14 the old one kept its subscription — so Android held a strong reference to this
-        // object through the closure for as long as it held that view, and a dead view went on firing
-        // reads. The same-view guard above only stopped a DOUBLE subscribe on ONE view; it could not see
-        // this. Kept in a field for the same reason `RenderSession` keeps its handler lists: an anonymous
-        // lambda cannot be unsubscribed later.
+        // ⚠ DETACH THE PREVIOUS VIEW FIRST. A handler change means a NEW platform view, and a stale
+        // subscription leaves Android holding this object through the closure for as long as it holds
+        // the old view, with a dead view still firing reads. The same-view guard above cannot see it.
+        // The handler lives in a field because an anonymous lambda cannot be unsubscribed later.
         DetachPlatformView();
         _attachedTo = view;
 
         // Layout is when the window's insets become known and when they change (rotation, keyboard, a
-        // resized window). Cheap to repeat: Publish's generation counter collapses a storm of these into
-        // one delivery. (It is NOT deduplicated by value — see Report for why that had to be removed.)
+        // resized window). Cheap to repeat: Publish's generation counter collapses a storm into one
+        // delivery. NOT deduplicated by value — see Report.
         _layoutChanged = (_, _) => ReadPlatformInsets();
         view.LayoutChange += _layoutChanged;
 #endif
@@ -184,8 +153,7 @@ public sealed class MobileSafeArea : IDisposable
     }
 
 #if ANDROID
-    // Android-only: the double-subscribe guard above. Scoped by #if because an unused private field is a
-    // build ERROR here (warnings-as-errors), and the iOS half has no per-view subscription to guard.
+    // Scoped by #if because an unused private field is a build ERROR here (warnings-as-errors).
     private object? _attachedTo;
 
     /// <summary>The live <c>LayoutChange</c> handler, held so it can be removed from the view it is on.</summary>
@@ -196,8 +164,8 @@ public sealed class MobileSafeArea : IDisposable
     {
         if (_attachedTo is global::Android.Views.View previous && _layoutChanged is not null)
         {
-            // The view may already be torn down by the platform — detaching from a dead one is not an
-            // error worth propagating out of a dispose path.
+            // The view may already be torn down: detaching from a dead one must not throw out of a
+            // dispose path.
             try { previous.LayoutChange -= _layoutChanged; }
             catch (Exception) { /* already gone */ }
         }
@@ -212,12 +180,10 @@ public sealed class MobileSafeArea : IDisposable
     /// Re-read the platform's insets now, and again while the rotation settles.
     /// </summary>
     /// <remarks>
-    /// ⚠ The follow-up reads are not belt-and-braces. A rotation is ANIMATED, and the size change is
-    /// reported at the START of it: on iOS <c>SafeAreaInsets</c> is still the OLD orientation's at that
-    /// moment, so a single read on <c>SizeChanged</c> publishes the very values the rotation invalidated.
-    /// Reading again across the animation is what makes the final published value the new orientation's.
-    /// Cheap to repeat — <see cref="Publish"/> is idempotent and its generation counter collapses the
-    /// overlapping attempts into one delivery.
+    /// ⚠ The follow-up reads are load-bearing. A rotation is ANIMATED and the size change is reported at
+    /// its START, when iOS still reports the OLD orientation's <c>SafeAreaInsets</c> — so a single read
+    /// on <c>SizeChanged</c> publishes the very values the rotation invalidated. Cheap to repeat:
+    /// <see cref="Publish"/> is idempotent and collapses the overlapping attempts into one delivery.
     /// </remarks>
     private async void ReadWhileSettling()
     {
@@ -233,14 +199,13 @@ public sealed class MobileSafeArea : IDisposable
         }
         catch (Exception ex)
         {
-            // `async void`: nothing is awaiting this, so an escape here is an unhandled exception on the
-            // UI thread rather than a failed read. A missed inset update must never take the app down.
+            // `async void`: nothing awaits this, so an escape here is an unhandled exception on the UI
+            // thread rather than a failed read.
             Log($"safe-area re-read after a size change failed ({ex.GetType().Name})");
         }
     }
 
-    // Across a rotation animation (~300 ms) and a little past it, so the last word belongs to the new
-    // orientation even on a slow device.
+    // Across a rotation animation (~300 ms) and past it, so the last word is the new orientation's.
     private static readonly int[] RotationSettleDelays = [50, 150, 300, 500];
 
     /// <summary>Ask the platform what its insets are right now, and publish them.</summary>
@@ -249,48 +214,37 @@ public sealed class MobileSafeArea : IDisposable
 #if ANDROID
         if (_webView.Handler?.PlatformView is not global::Android.Views.View view) return;
 
-        // 🔴 READ the insets; do NOT install an OnApplyWindowInsetsListener on the webview.
-        //
-        // Measured, after shipping the listener version and watching it break the very thing it exists
-        // to fix: setting a listener REPLACES the view's own inset handling rather than observing it, so
-        // the WebView stopped applying insets internally and `env(safe-area-inset-top)` in the page went
-        // from 49 to 0. Delegating via ViewCompat.OnApplyWindowInsets did not rescue it. An A/B settled
-        // it — with this capability removed from the sample, env() reported 49 again on the next load.
-        //
-        // GetRootWindowInsets is purely observational: it asks what the window currently has and cannot
-        // consume, reorder or suppress anything. A capability must not be able to damage the platform
-        // behaviour it supplements — that failure is invisible unless someone thinks to check env().
+        // 🔴 READ the insets; do NOT install an OnApplyWindowInsetsListener on the webview. Setting one
+        // REPLACES the view's own inset handling rather than observing it, so the WebView stops applying
+        // insets internally and `env(safe-area-inset-top)` in the page drops to 0 — invisible unless
+        // someone thinks to check env(). Delegating via ViewCompat.OnApplyWindowInsets does not rescue
+        // it. GetRootWindowInsets is purely observational and cannot consume or suppress anything.
         var insets = AndroidX.Core.View.ViewCompat.GetRootWindowInsets(view);
         if (insets is null) return;
 
-        // systemBars() | displayCutout() — the UNION is the point. CSS gets the cutout only, which is
-        // why bottom came back 0 on a device whose navigation bar is genuinely 24 CSS px tall.
+        // systemBars() | displayCutout(): the UNION. CSS gets the cutout only, which is why bottom
+        // reads 0 on a device whose navigation bar is genuinely 24 CSS px tall.
         var i = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars()
                                | AndroidX.Core.View.WindowInsetsCompat.Type.DisplayCutout());
         if (i is null) return;
 
-        // Android reports DEVICE pixels; CSS wants CSS pixels. Dividing by the display density is the
-        // whole conversion, and getting it wrong is invisible on a 1x screen and wrong everywhere else.
+        // Android reports DEVICE pixels; CSS wants CSS pixels. Getting the density wrong is invisible on
+        // a 1x screen and wrong everywhere else.
         var density = view.Context?.Resources?.DisplayMetrics?.Density ?? 1f;
         if (density <= 0) density = 1f;
         Report(new SafeAreaInsets(i.Top / density, i.Right / density, i.Bottom / density, i.Left / density));
 #elif IOS || MACCATALYST
         if (_webView.Handler?.PlatformView is not UIKit.UIView view) return;
-        // The scene's safeAreaInsets are already in points, which are CSS pixels, and iOS reports both the
-        // bars and the cutout — so unlike Android there is no union to take and no conversion to do.
-        // ⚠ What this must NOT go back to is being read ONCE: see the constructor. In landscape the same
-        // device reports the cutout on `left` or `right` and a much smaller `bottom`.
+        // Already in points, which are CSS pixels, and iOS reports both the bars and the cutout — no
+        // union to take and no conversion to do. ⚠ Must never be read ONCE: see the constructor.
         var insets = view.SafeAreaInsets;
         Report(new SafeAreaInsets(insets.Top, insets.Right, insets.Bottom, insets.Left));
 #endif
     }
 
 
-    private void Log(string message)
-    {
-        try { _log?.Invoke($"[Shenora.Mobile] {message}"); }
-        catch { /* a throwing diagnostic sink must never break the page */ }
-    }
+    private void Log(string message) =>
+        Shenora.AppCallback.Log(_log, () => $"[Shenora.Mobile] {message}");
 
     /// <inheritdoc />
     public void Dispose()
@@ -300,8 +254,8 @@ public sealed class MobileSafeArea : IDisposable
         _webView.HandlerChanged -= OnHandlerChanged;
         _webView.SizeChanged -= OnSizeChanged;
 #if ANDROID
-        // The platform view outlives this object, so its subscription has to go too — otherwise disposing
-        // the helper leaves Android holding it through the closure.
+        // The platform view outlives this object, so disposing without this leaves Android holding it
+        // through the closure.
         DetachPlatformView();
 #endif
     }

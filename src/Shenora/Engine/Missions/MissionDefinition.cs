@@ -1,5 +1,3 @@
-using Shenora;
-
 namespace Shenora.Engine.Missions;
 
 /// <summary>
@@ -11,28 +9,6 @@ public readonly record struct MissionKey(string Value)
 {
     /// <inheritdoc/>
     public override string ToString() => Value;
-}
-
-/// <summary>
-/// How a failed attempt is retried. Defaults match the value the family's planners independently
-/// settled on for transient filesystem locks held by an external process.
-/// </summary>
-public sealed class RetryPolicy
-{
-    /// <summary>Total attempts including the first. 1 = no retry. Default 3.</summary>
-    public int Attempts { get; init; } = 3;
-
-    /// <summary>Base delay, multiplied by the attempt number (500ms, 1s, 1.5s…). Default 500ms.</summary>
-    public TimeSpan Delay { get; init; } = TimeSpan.FromMilliseconds(500);
-
-    /// <summary>
-    /// Whether a failure is worth retrying. Default: retry <see cref="IOException"/> only —
-    /// retrying a <see cref="NullReferenceException"/> three times just delays the report.
-    /// </summary>
-    public Func<Exception, bool> IsTransient { get; init; } = static ex => ex is IOException;
-
-    /// <summary>A policy that never retries.</summary>
-    public static RetryPolicy None { get; } = new() { Attempts = 1 };
 }
 
 /// <summary>

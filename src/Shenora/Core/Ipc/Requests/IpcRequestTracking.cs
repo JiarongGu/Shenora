@@ -51,19 +51,12 @@ public sealed record IpcLabel(
 /// <summary>
 /// One in-flight (or recently finished) request, as the page sees it.
 /// <para>
-/// 🔴 <b>This is the whole of D66 in one type.</b> There used to be an <c>OperationInfo</c> beside it with
-/// its own <c>Guid</c>, its own <c>Kind</c>, its own <c>Scope</c> and its own <c>StartedAt</c> — a second
-/// identity for one thing, which the page then had to correlate with the request that caused it. Every one
-/// of those fields was already on <see cref="IpcRequest"/>:
-/// </para>
-/// <list type="bullet">
-///   <item><see cref="Id"/> IS <see cref="IpcRequest.Id"/> — no minted GUID, nothing to correlate.</item>
-///   <item><see cref="Type"/> IS <see cref="IpcRequest.Type"/> — the action already says what kind of work it is.</item>
-///   <item><see cref="Scope"/> and <see cref="StartedAt"/> come from the request's own <c>Scope</c> and <c>Timestamp</c>.</item>
-/// </list>
-/// <para>
-/// What is left here is the only genuinely new thing: the LIVE STATE of a request that outlived its own
-/// send. That is why the type exists and why nothing else does.
+/// 🔴 <b>One identity, end to end (D66).</b> Every field here except the state comes from the request
+/// itself — <see cref="Id"/> IS <see cref="IpcRequest.Id"/>, <see cref="Type"/> IS
+/// <see cref="IpcRequest.Type"/>, and <see cref="Scope"/>/<see cref="StartedAt"/> are the request's own
+/// <c>Scope</c> and <c>Timestamp</c> — so a page has nothing to correlate. What is genuinely new is the
+/// LIVE STATE of a request that outlived its own send, which is why the type exists and why it carries
+/// nothing else.
 /// </para>
 /// </summary>
 public sealed record IpcRequestStatus

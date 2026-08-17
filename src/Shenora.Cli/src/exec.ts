@@ -10,6 +10,40 @@ export interface RunResult {
 export const q = (s: string): string => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /**
+ * Turn `spawnSync`'s `error` into a line a user can act on, or '' when the process really ran.
+ *
+ * 🔴 **Without this the two ways a command can fail to RUN are invisible**, and both are reported as
+ * "the command failed" with no output at all — `spawnSync` leaves `stdout`/`stderr` empty and `status`
+ * null when it never started the process, so the caller's own guess is all the user sees. A missing
+ * `dotnet` gets reported as whatever the caller assumed a non-zero exit meant.
+ *
+ * ⚠ **The TIMEOUT case is the sharper one.** `run`'s timeout exists because `adb` genuinely hangs on an
+ * offline or unauthorized device — its own comment says "the user cannot tell it apart from a slow
+ * build" — and then the firing of that timeout was itself silent, so the CLI stopped after 30 minutes
+ * and said nothing about why. A timeout that cannot be distinguished from a failure has given back most
+ * of what it was added for.
+ */
+export function describeSpawnFailure(
+  file: string,
+  error: (Error & { code?: string }) | undefined,
+  timeoutMs: number,
+): string {
+  if (!error) return '';
+  if (error.code === 'ENOENT') {
+    return `shenora: '${file}' was not found on PATH — install it, or add it to PATH for this shell.`;
+  }
+  // ⚠ `ETIMEDOUT` on the ERROR is the whole test — measured, because the obvious second guess is wrong.
+  // On a timeout Node sets `signal: 'SIGTERM'` on the RESULT and leaves the error's own keys as
+  // errno/code/syscall/path/spawnargs, so an `error.signal` check reads undefined every time. This first
+  // shipped with exactly that clause beside a comment claiming it covered "older/edge cases" — an
+  // invented fallback that could never fire.
+  if (error.code === 'ETIMEDOUT') {
+    return `shenora: '${file}' did not finish within ${Math.round(timeoutMs / 1000)}s and was stopped.`;
+  }
+  return `shenora: '${file}' could not be run — ${error.message}`;
+}
+
+/**
  * 🔴 `set -o pipefail` is prepended to anything containing a pipe, and it is NOT decoration. Without it
  * a pipeline reports the LAST command's status — `| tail` is always 0 — so a REJECTED install sails
  * through, the launch runs against an app that was never installed, and the tool finishes by cheerfully
@@ -35,7 +69,10 @@ export function sh(
     timeout: timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
   });
-  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  // Appended, never substituted: whatever the shell managed to say before dying is still the best
+  // evidence, and this only ever fires when the process did not run normally.
+  const why = describeSpawnFailure('/bin/sh', r.error, timeoutMs);
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}${why ? `${why}\n` : ''}`;
   if (!quiet && out.trim()) console.log(out.trimEnd());
   return { status: r.status ?? 1, out };
 }
@@ -76,7 +113,8 @@ export function run(
     timeout: timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
   });
-  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  const why = describeSpawnFailure(file, r.error, timeoutMs);
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}${why ? `${why}\n` : ''}`;
   if (!quiet && out.trim()) console.log(out.trimEnd());
   return { status: r.status ?? 1, out };
 }
@@ -116,4 +154,38 @@ export function argValue(args: readonly string[], flag: string): string | undefi
   if (i < 0 || i + 1 >= args.length) return undefined;
   const next = args[i + 1]!;
   return next.startsWith('-') ? undefined : next;
+}
+
+/**
+ * Anything after a bare `--` is passed straight to `dotnet build`.
+ *
+ * 🔴 IT IS A COMMAND-LINE FLAG AND NOT A CONFIG FIELD, deliberately. The case that forced it is an Xcode
+ * whose version the installed .NET-for-iOS workload refuses ("requires Xcode 26.0, the current version is
+ * 26.3"), cleared with `-p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly`. **Which Xcode a machine
+ * happens to have is a fact about THAT MACHINE**, so writing the override into a committed file would
+ * silence the mismatch for everyone who clones the repo, permanently — including whoever hits it when it
+ * is the real problem. On the command line it stays visible and per-machine.
+ */
+export function splitArgs(args: readonly string[]): { own: string[]; passthrough: string[] } {
+  const i = args.indexOf('--');
+  if (i < 0) return { own: [...args], passthrough: [] };
+  // ⚠ `own` MUST stop at the separator. `argValue` scans for a flag and takes the next token, so with a
+  // single flat array `deploy --simulator -- -p:Foo=1` reads the simulator's NAME as `-p:Foo=1` and then
+  // tries to boot a device by that name. Splitting once, here, is why the flag readers can stay naive.
+  //
+  // 🔴 AN ARRAY, not a joined string. Joining threw the user's own argument boundaries away: a value
+  // containing a space (`-p:Foo=a b`, or any path with one) arrived as ONE argv entry, was flattened
+  // into the command line, and the shell re-split it into two. The Android half needs the array anyway
+  // — it spawns without a shell — so the array is the honest carrier and each consumer decides how to
+  // present it.
+  return { own: args.slice(0, i), passthrough: [...args.slice(i + 1)] };
+}
+
+/**
+ * The passthrough as a fragment for a `sh` command line — each argument quoted SEPARATELY so its
+ * boundaries survive the shell. Only the iOS half needs this; the Android half passes the array to
+ * `run` and never builds a command line at all.
+ */
+export function shellPassthrough(passthrough: readonly string[]): string {
+  return passthrough.length ? ` ${passthrough.map(q).join(' ')}` : '';
 }

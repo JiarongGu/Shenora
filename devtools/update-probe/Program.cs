@@ -1,14 +1,14 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-// ⚠ `Shenora.Modules.Update`, not `Shenora.IO` — D65 relayered the namespaces and this probe has not
+// ⚠ `Shenora.Engine.Update`, not `Shenora.IO` — D65 relayered the namespaces and this probe has not
 // compiled since, because `verify` does not build it and `dev.mjs update-probe` is run by hand. Found
 // 2026-08-09 by the doc gate, of all things: the RETIRED-NAME scan flagged the prose beside this line.
-using Shenora.Modules.Update;
+using Shenora.Engine.Update;
 
 namespace Shenora.UpdateProbe;
 
 /// <summary>
-/// Runs `Shenora.Modules.Update`'s staged updater over a REAL directory tree and reports what it found.
+/// Runs `Shenora.Engine.Update`'s staged updater over a REAL directory tree and reports what it found.
 ///
 /// <para>
 /// The unit suite covers this engine well and every one of its trees is a FIXTURE the test author

@@ -15,12 +15,12 @@ public partial class App : Application
 		// cover. MAUI owns the loop, so ShenoraApplication.Run (contractually "blocks until
 		// shutdown") has no honest implementation here; Start/Stop do.
 		//
-		// MEASURED, not assumed: Window.Created fires ONCE per process here. MAUI's Window is
-		// process-scoped and MainActivity declares ConfigurationChanges for orientation/UI-mode, so a
-		// theme switch recreates nothing, and a home-and-return did not re-enter this either (the
-		// activity was instrumented to check — MainActivity.OnCreate logged #1 only). Start's
-		// idempotency is therefore insurance for hosts that wire it somewhere activity-scoped, not a
-		// fix for this wiring.
+		// Window.Created fires once per process for the config changes the MANIFEST declares
+		// (orientation, theme) — but a change outside that list (font scale, locale) recreates the
+		// window mid-session, measured on a device 2026-08-17. That is why Stop asks IsRecreating:
+		// treating a recreation as shutdown cancelled every in-flight request, and a save whose
+		// picker was open came back OPERATION_CANCELLED with the chosen file created and left empty.
+		// Start's idempotency is what makes the recreated window's Created event free.
 		window.Created += (_, _) =>
 		{
 			MauiProgram.Log("window created -> ShenoraApplication.Start()");
@@ -28,6 +28,11 @@ public partial class App : Application
 		};
 		window.Destroying += (_, _) =>
 		{
+			if (Shenora.Mobile.MobileWindowLifecycle.IsRecreating)
+			{
+				MauiProgram.Log("window destroying (recreation) -> keeping Shenora alive");
+				return;
+			}
 			MauiProgram.Log("window destroying -> ShenoraApplication.Stop()");
 			MauiProgram.Shenora?.Stop();
 		};

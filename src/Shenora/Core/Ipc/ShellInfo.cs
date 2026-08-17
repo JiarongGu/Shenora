@@ -1,4 +1,3 @@
-using Shenora;
 using Shenora.Core.Shell;
 
 namespace Shenora.Core.Ipc;

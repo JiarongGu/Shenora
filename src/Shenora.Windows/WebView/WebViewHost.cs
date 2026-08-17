@@ -1,9 +1,9 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Shenora.Core.WebView;
 using Shenora.Core.Shell;
 using Shenora.Core.Ipc;
-// Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
-// the control type needs an alias.
+// `WebView2` alone resolves to the NAMESPACE in here, hence the alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 using Shenora;
 
@@ -27,7 +27,7 @@ public sealed class WebViewHost
 {
     private readonly WebView2Control _webView;
     private readonly WebViewHostOptions _options;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;
     // The one open-a-URL implementation, reachable since D19 — see the NewWindowRequested policy.
     private readonly Shenora.Core.Shell.IUrlLauncher _urls = new Shenora.Windows.ShellLauncher();
@@ -80,7 +80,7 @@ public sealed class WebViewHost
         }
         // The one marshalling owner (D19/D20, P5.5 H4.2).
         _ui = new Shenora.Windows.WinFormsUiDispatcher(webView,
-            ex => Log(() => $"[Shenora.Windows] Posted UI work failed: {ex.Message}"));
+            ex => Log(() => "[Shenora.Windows] Posted UI work failed", ex));
     }
 
     /// <summary>
@@ -90,17 +90,23 @@ public sealed class WebViewHost
     /// WebView2/COM properties (a download's URI, a process-failed reason) that throw once the
     /// underlying object is gone, which is why BUILDING the message must be inside the guard too.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => Shenora.AppCallback.Log(_log, message, exception: failure);
 
     /// <summary>
-    /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event: true only
-    /// when it ran to completion. A hook that throws returns false, so the caller applies the kit's own
-    /// default rather than leaving a WebView2 event unanswered (P5.5 H2).
+    /// Invoke one of the app's event-policy hooks and report whether it HANDLED the event — what the
+    /// hook ANSWERED, not merely that it ran. A hook that throws counts as "not handled" and is logged,
+    /// so the caller applies the kit's own default rather than leaving a WebView2 event unanswered
+    /// (P5.5 H2).
+    /// <para>
+    /// ⚠ It used to infer "handled" from "did not throw", which gave an app no way to observe an event
+    /// and still get the built-in policy — the only spelling for that was to THROW. Worst on
+    /// <c>OnProcessFailed</c>, where merely attaching crash telemetry silently disabled the diagnostic
+    /// log and every auto-reload option.
+    /// </para>
     /// </summary>
-    private bool AppCallbackRan<T>(Action<T> callback, T args, string hookName) =>
-        Shenora.AppCallback.Run(() => callback(args),
-            ex => Log(() => $"[Shenora.Windows] {hookName} threw ({ex.GetType().Name}: {ex.Message}); " +
-                            "applying the built-in policy instead."));
+    private bool AppHandled<T>(Func<T, bool> callback, T args, string hookName) =>
+        Shenora.AppCallback.RunOrDefault(() => callback(args), false,
+            ex => Log(() => $"[Shenora.Windows] {hookName} threw; applying the built-in policy instead.", ex));
 
     /// <summary>Dev/prod, from the single source (<see cref="WebViewEnvironmentOptions.IsDevelopment"/>).</summary>
     public bool IsDevelopment => _options.Environment.IsDevelopment;
@@ -139,11 +145,25 @@ public sealed class WebViewHost
     /// The timeout message itself advises "start again", so a Retry button is the expected recovery —
     /// and a second call used to re-run <c>WireEventPolicies</c>, double-subscribing every policy
     /// handler: from then on each external link opened TWICE, each download decision ran twice, and the
-    /// renderer auto-reload raced itself. Nothing in the sequence was safe to repeat. A FAILED
-    /// initialization clears the cached task, so a retry is still a real retry. UI thread only, like the
-    /// rest of this type — hence no locking around the cache.
+    /// renderer auto-reload raced itself. Nothing in the sequence was safe to repeat. A FAILED attempt is
+    /// never handed back, so a retry is a real retry rather than a re-await of the same failure. UI thread
+    /// only, like the rest of this type — hence no locking around the cache.
     /// </remarks>
-    public Task InitializeAsync() => _initialization ??= InitializeCoreAsync();
+    public Task InitializeAsync()
+    {
+        // 🔴 A FAULTED task is a FINISHED attempt, not one in flight, so it is never handed back — that is
+        // what makes the "start again" the timeout message advises a real retry rather than a re-await of
+        // the same corpse. A transient zombie-lock at startup used to kill the window for the life of the
+        // process while the error on screen invited the user to try again.
+        //
+        // ⚠ Asked HERE rather than cleared from inside the sequence, and the difference is not style. A
+        // failure that happens before the first real suspension — an unusable user-data folder, say —
+        // completes the task BEFORE `??=` has assigned it, so a `_initialization = null` in the catch
+        // nulls a field nothing has written yet and the faulted task is then cached on the way out. The
+        // first attempt at this fix did exactly that and the regression test caught it.
+        if (_initialization is { IsFaulted: false, IsCanceled: false } inFlight) return inFlight;
+        return _initialization = InitializeCoreAsync();
+    }
 
     private async Task InitializeCoreAsync()
     {
@@ -175,13 +195,6 @@ public sealed class WebViewHost
                 $"The usual cause is a leftover browser process holding the user-data folder lock " +
                 $"('{_options.Environment.UserDataFolder}') — end stray WebView2/msedgewebview2 " +
                 "processes for this app, or delete the folder, and start again.");
-        }
-        catch
-        {
-            // A failed init must be retryable — otherwise the "start again" the message advises would
-            // hand back the same faulted task forever.
-            _initialization = null;
-            throw;
         }
 
         Log(() => $"[Shenora.Windows] Host initialized (mode: {(IsDevelopment ? "Development" : "Production")})");
@@ -337,7 +350,7 @@ public sealed class WebViewHost
                 {
                     // Exactly the pre-D45 behaviour, one call: serve it or 404.
                     WebViewBundleServing.Serve(args, _webView.CoreWebView2.Environment,
-                        _options.ResourceProvider!, uri, virtualHostPrefix, Log);
+                        _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message));
                     return;
                 }
 
@@ -346,7 +359,7 @@ public sealed class WebViewHost
                 // has to fall through to the pipeline instead of 404ing. A path it DOES contain is still served
                 // synchronously and inline — the main document never reaches the deferred path.
                 if (WebViewBundleServing.TryServe(args, _webView.CoreWebView2.Environment,
-                        _options.ResourceProvider!, uri, virtualHostPrefix, Log))
+                        _options.ResourceProvider!, uri, virtualHostPrefix, message => Log(message)))
                     return;
 
                 // The pipeline may decline too, and then WebView2 handles it — which is a 404 from a virtual
@@ -468,7 +481,7 @@ public sealed class WebViewHost
                 // No exception text in the body (P5.5 H3) — an app handler's message is the most likely of all
                 // of these to carry a real path or a remote URL, and page script can read this body. The
                 // handler's failure goes to the host log instead.
-                Log(() => $"[Shenora.Windows] {what} failed for '{uri}': {ex}");
+                Log(() => $"[Shenora.Windows] {what} failed for '{uri}'", ex);
                 // A THROW is a 404 even on a shared origin: falling through would hand a broken route back to
                 // WebView2, and the page would see a network error instead of the fixed refusal every other
                 // failure path here produces.
@@ -601,7 +614,7 @@ public sealed class WebViewHost
                 {
                     // Rejected scheme, or no default browser — a page must not be able to crash the
                     // host by asking to open something odd.
-                    Log(() => $"[Shenora.Windows] Ignoring new-window request for {e.Uri}: {ex.GetType().Name}");
+                    Log(() => $"[Shenora.Windows] Ignoring new-window request for {e.Uri}", ex);
                 }
             };
         }
@@ -616,7 +629,7 @@ public sealed class WebViewHost
         core.DownloadStarting += (_, e) =>
         {
             if (_options.OnDownloadStarting is { } onDownload
-                && AppCallbackRan(onDownload, e, nameof(WebViewHostOptions.OnDownloadStarting)))
+                && AppHandled(onDownload, e, nameof(WebViewHostOptions.OnDownloadStarting)))
                 return;
 
             e.Cancel = true;
@@ -626,7 +639,7 @@ public sealed class WebViewHost
         core.PermissionRequested += (_, e) =>
         {
             if (_options.OnPermissionRequested is { } onPermission
-                && AppCallbackRan(onPermission, e, nameof(WebViewHostOptions.OnPermissionRequested)))
+                && AppHandled(onPermission, e, nameof(WebViewHostOptions.OnPermissionRequested)))
                 return;
 
             e.State = _options.PermittedPermissions.Contains(e.PermissionKind)
@@ -637,7 +650,7 @@ public sealed class WebViewHost
         core.ProcessFailed += (_, e) =>
         {
             if (_options.OnProcessFailed is { } onFailed
-                && AppCallbackRan(onFailed, e, nameof(WebViewHostOptions.OnProcessFailed)))
+                && AppHandled(onFailed, e, nameof(WebViewHostOptions.OnProcessFailed)))
                 return;
 
             // 🔴 EVERYTHING WebView2 KNOWS, not just the kind. "RenderProcessExited (reason: Crashed)"

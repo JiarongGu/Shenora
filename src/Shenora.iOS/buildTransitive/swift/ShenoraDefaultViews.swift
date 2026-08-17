@@ -172,6 +172,6 @@ struct ShenoraDefaultActivity: Widget {
     }
 }
 
-// ⚠ `ShenoraProgress` and `ShenoraActivityState.percentText` live in ShenoraLayout.swift, not here. They
-// were private to this file until 2026-08-09 and the interpreter needs them too — and the static library
-// linked into the APP compiles the layout file without this one, so anything shared has to sit there.
+// ⚠ `ShenoraProgress` and `ShenoraActivityState.percentText` live in ShenoraLayout.swift, not here,
+// because the interpreter needs them too — and the static library linked into the APP compiles the layout
+// file WITHOUT this one, so anything shared has to sit there.

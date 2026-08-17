@@ -10,8 +10,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { run, captureRun, fail, argValue } from './exec.js';
-import { requireFields, type DeployConfig } from './config.js';
+import { run, captureRun, fail, argValue, splitArgs } from './exec.js';
+import { projectDir, requireFields, type DeployConfig } from './config.js';
 
 /**
  * Where `adb` is.
@@ -148,7 +148,10 @@ export function cmdDevices(): void {
  */
 export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
   if (!requireFields(cfg, ['project', 'bundleId'])) return;
-  const device = resolveDevice(argValue(args, '--device'));
+  // Same globally-documented `--` the build command honours; `own` also keeps `argValue` from reading a
+  // passthrough token as a device serial, which is the iOS half's measured trap.
+  const { own, passthrough } = splitArgs(args);
+  const device = resolveDevice(argValue(own, '--device'));
   if (!device) return;
 
   const jdk = resolveJdk();
@@ -166,6 +169,7 @@ export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
     '-t:Install',
     `-p:AdbTarget=-s ${device.serial}`,
     '-v', 'minimal',
+    ...passthrough,
   ], { cwd: cfg.root, env: { JAVA_HOME: jdk } });
   if (build.status !== 0) {
     fail('the build/install failed — see the output above.',
@@ -256,26 +260,48 @@ function appPid(serial: string, packageId: string): string | null {
  */
 export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   if (!requireFields(cfg, ['project'])) return;
-  const configuration = argValue(args, '--configuration') ?? 'Release';
-  const aab = args.includes('--aab');
+  // 🔴 `--` IS DOCUMENTED GLOBALLY — the help text says "anything after `--` goes straight to
+  // `dotnet build`" directly beneath these Android commands — and this half silently dropped it. Half
+  // live, too: `--aab` was still read from the flat array, so the flag someone typed BEFORE `--` worked
+  // while everything after it vanished, which is the hardest version to notice.
+  //
+  // ⚠ An ARRAY, spread into `run`'s argv. No shell, so nothing re-splits an argument containing a space
+  // — the iOS half has to quote for `sh`, this one simply does not have the problem.
+  const { own, passthrough } = splitArgs(args);
+  const configuration = argValue(own, '--configuration') ?? 'Release';
+  const aab = own.includes('--aab');
+  if (passthrough.length) console.log(`shenora: extra build args: ${passthrough.join(' ')}`);
 
   console.log(`shenora: publishing ${cfg.project} (${cfg.androidTfm}, ${configuration}`
     + `${aab ? ', aab' : ''})…`);
+  // Stamped BEFORE the publish: anything in the output directory older than this belongs to a previous
+  // run, and the SDK does not clean between them.
+  const startedAt = Date.now();
   const r = run('dotnet', [
     'publish', path.join(cfg.root, cfg.project),
     '-c', configuration,
     '-f', cfg.androidTfm,
     ...(aab ? ['-p:AndroidPackageFormat=aab'] : []),
+    ...passthrough,
   ], { cwd: cfg.root });
   if (r.status !== 0) {
     fail('the publish failed — see the output above.');
     return;
   }
 
-  const dir = path.join(cfg.root, path.dirname(cfg.project), 'bin', configuration, cfg.androidTfm, 'publish');
-  const artifact = findPackage(dir) ?? findPackage(path.dirname(dir));
+  // `projectDir`, not `path.dirname` — a `project` naming a DIRECTORY resolved one level too high and
+  // this reported "no .apk appeared" about a folder that never could hold one (see its doc).
+  const dir = path.join(projectDir(cfg), 'bin', configuration, cfg.androidTfm, 'publish');
+  const format = aab ? 'aab' : 'apk';
+  const artifact = findPackage(dir, format, startedAt) ?? findPackage(path.dirname(dir), format, startedAt);
   if (!artifact) {
-    fail(`the publish reported success but no .apk or .aab appeared under ${dir}.`);
+    // Name what was looked for AND why an existing file might have been rejected — "no .apk appeared"
+    // beside a directory visibly containing one is the most confusing message this tool could print.
+    const stale = findPackage(dir, format) ?? findPackage(path.dirname(dir), format);
+    fail(stale
+      ? `the publish reported success but the only .${format} under ${dir} predates this build `
+        + `(${stale}) — it is left over from an earlier run, so nothing was produced this time.`
+      : `the publish reported success but no .${format} appeared under ${dir}.`);
     return;
   }
   console.log(`\nshenora: ${artifact}`);
@@ -285,16 +311,42 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
 }
 
 /**
- * The publish output. **`-Signed.apk` first**, because the SDK leaves both and the unsigned one installs
- * nowhere — handing back the wrong file is a failure the adopter meets minutes later, on a device.
+ * The publish output, for the format that was actually ASKED FOR.
+ *
+ * Within a format, **`-Signed.apk` first**: the SDK leaves both and the unsigned one installs nowhere,
+ * so handing back the wrong file is a failure the adopter meets minutes later, on a device.
+ *
+ * 🔴 **ACROSS formats it never substitutes, and that is the fix.** This used to try `-Signed.apk` before
+ * anything else unconditionally — so `android build --aab`, run in a directory still holding an APK from
+ * an earlier publish, reported that APK as the artifact, complete with its size. The user uploads it to
+ * Play believing it is the bundle they just built. An adjacent file is not an answer to a different
+ * question.
+ *
+ * @param dir Directory to look in.
+ * @param format What the caller built — `'aab'` accepts only a bundle, `'apk'` only an APK.
+ * @param builtAfter Epoch ms; an artifact older than this is STALE and is not returned. The publish
+ *   directory is not cleaned between runs, so without this a build that produced nothing hands back the
+ *   previous run's output and every downstream step believes it succeeded.
  */
-export function findPackage(dir: string): string | null {
+export function findPackage(dir: string, format: 'apk' | 'aab' = 'apk', builtAfter?: number): string | null {
   if (!fs.existsSync(dir)) return null;
   const entries = fs.readdirSync(dir);
-  const pick = entries.find((e) => e.endsWith('-Signed.apk'))
-    ?? entries.find((e) => e.endsWith('.aab'))
-    ?? entries.find((e) => e.endsWith('.apk'));
-  return pick ? path.join(dir, pick) : null;
+  const pick = format === 'aab'
+    ? entries.find((e) => e.endsWith('.aab'))
+    : entries.find((e) => e.endsWith('-Signed.apk')) ?? entries.find((e) => e.endsWith('.apk'));
+  if (!pick) return null;
+
+  const full = path.join(dir, pick);
+  if (builtAfter !== undefined) {
+    // A whole second of slack: mtime resolution varies by filesystem, and a build that legitimately
+    // finishes in the same tick as the start stamp must not be called stale.
+    try {
+      if (fs.statSync(full).mtimeMs < builtAfter - 1000) return null;
+    } catch {
+      return null; // vanished between readdir and stat — treat as absent rather than crash
+    }
+  }
+  return full;
 }
 
 /**

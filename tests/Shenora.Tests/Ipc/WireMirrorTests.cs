@@ -1,8 +1,12 @@
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Shenora;
 using Shenora.Windows;
+using Shenora.Modules.Clipboard;
 using Shenora.Modules.FileDialog;
+using Shenora.Modules.Media;
 using Shenora.Modules.Requests;
 using Shenora.Core.Shell;
 using Shenora.Core.Ipc;
@@ -76,13 +80,18 @@ public class WireMirrorTests
     /// </summary>
     private static HashSet<string> ParseInterfaceFieldNames(string source, string exportName)
     {
-        // The optional `extends` clause is what the file-dialog options needed (2026-08-05): without it
-        // the pattern demanded `{` straight after the name, so `export interface OpenFileOptions extends
-        // FileDialogOptions {` matched NOTHING and the test failed claiming the interface did not exist.
-        // Fixed in the PARSER, per this file's own rule — the alternative reading ("the mirror is fine,
-        // loosen the check") is how a tripwire stops checking anything.
+        // `[^{]*` between the name and the brace, because everything a declaration can carry there is
+        // optional and this pattern has now been too strict TWICE. First the `extends` clause, which the
+        // file-dialog options needed (2026-08-05): `export interface OpenFileOptions extends
+        // FileDialogOptions {` matched NOTHING. Then the TYPE PARAMETER — `export interface
+        // IpcRequest<TPayload = unknown> {`, hit while pinning the envelopes, and the four biggest
+        // shapes on this wire are all generic. Both times the failure said "could not find the
+        // interface" about an interface that was right there.
+        // 🔴 Fixed in the PARSER, per this file's own rule. The alternative reading ("the mirror is fine,
+        // loosen the check") is how a tripwire stops checking anything — and it is the tempting one,
+        // because the alarm is loud and the code under it is correct.
         var block = Regex.Match(source,
-            $@"export\s+interface\s+{Regex.Escape(exportName)}(?:\s+extends\s+[^{{]+)?\s*\{{(?<body>.*?)\}}",
+            $@"export\s+interface\s+{Regex.Escape(exportName)}\b[^{{]*\{{(?<body>.*?)\}}",
             RegexOptions.Singleline);
         Assert.True(block.Success, $"could not find `export interface {exportName} {{ … }}`");
 
@@ -333,7 +342,11 @@ public class WireMirrorTests
         Assert.True(module.Success, "could not find the FileDialogs `super('MODULE'` call");
         Assert.Equal(FileDialogModule.Module, module.Groups["module"].Value);
 
-        var routes = Regex.Matches(source, @"\.send<[^>]*>\('(?<route>[A-Z_]+)'")
+        // ⚠ The type argument is OPTIONAL and must stay so: a call site that names the response defeats
+        // the payload check (`moduleService.test.ts` pins that), so the shipped form has no `<…>`.
+        // This pattern demanded one and stopped matching the moment they were removed — caught by
+        // the Assert.NotEmpty self-check below, which is the reason it is there.
+        var routes = Regex.Matches(source, @"\.send(?:<[^>]*>)?\('(?<route>[A-Z_]+)'")
             .Select(m => m.Groups["route"].Value)
             .ToHashSet(StringComparer.Ordinal);
         Assert.NotEmpty(routes);    // parser self-check
@@ -346,6 +359,159 @@ public class WireMirrorTests
             FileDialogModule.SaveTextType,
         };
         Assert.Equal(hostRoutes, routes);
+    }
+
+    /// <summary>
+    /// The client's TYPE pin lists every type its barrel exports.
+    /// <para>
+    /// 🔴 <b>The pin is a hand-written tuple, so it drifts silently — and did, by fourteen types.</b> A
+    /// runtime export check cannot help: a type has no runtime binding, which is the whole reason the
+    /// tuple exists. But nothing checked the TUPLE itself, so every type added after it was written was
+    /// simply absent, and deleting any of them from <c>index.ts</c> would break consumers while both
+    /// runtime assertions stayed green — exactly the hole the pin was written for in the first place.
+    /// </para>
+    /// <para>
+    /// Comparing the two SETS is the fix, and it belongs here for the same reason the <c>send</c> check
+    /// does: the React package's tsconfig has no node types, so a test there cannot read its own sources.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_type_pin_lists_every_type_the_barrel_exports()
+    {
+        var barrel = ClientSource("index.ts");
+        var pinSource = ClientSource("index.test.ts");
+
+        // `export type { A, B } from '…'` — the whole-block form.
+        var exported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match block in Regex.Matches(barrel, @"export\s+type\s*\{([^}]*)\}"))
+            foreach (var name in block.Groups[1].Value.Split(','))
+                if (name.Trim().Length > 0) exported.Add(name.Trim());
+
+        // `export { thing, type X } from '…'` — a type riding along in a value export.
+        foreach (Match block in Regex.Matches(barrel, @"export\s*\{([^}]*)\}"))
+            foreach (var part in block.Groups[1].Value.Split(','))
+                if (part.Trim().StartsWith("type ", StringComparison.Ordinal))
+                    exported.Add(part.Trim()[5..].Trim());
+
+        var tuple = Regex.Match(pinSource, @"type ExportedTypeSurface = \[(?<body>.*?)\];",
+            RegexOptions.Singleline);
+        Assert.True(tuple.Success, "could not find `type ExportedTypeSurface = [ … ];` in index.test.ts");
+        var pinned = Regex.Matches(tuple.Groups["body"].Value, @"([A-Z][A-Za-z0-9_]*)")
+            .Select(m => m.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Parser self-checks — a regex that matched nothing must not pass for the wrong reason.
+        Assert.True(exported.Count > 0, "parsed NO type exports out of index.ts");
+        Assert.True(pinned.Count > 0,
+            $"parsed NO names out of ExportedTypeSurface (body length {tuple.Groups["body"].Value.Length})");
+
+        var unpinned = exported.Except(pinned).Order(StringComparer.Ordinal).ToArray();
+        Assert.True(unpinned.Length == 0,
+            "index.ts exports these types and ExportedTypeSurface does not list them, so deleting one "
+            + "would break consumers with every runtime assertion still green: "
+            + string.Join(", ", unpinned));
+    }
+
+    /// <summary>
+    /// No shipped client names the RESPONSE type argument on <c>send</c>, because naming it silently
+    /// turns the payload check off.
+    /// <para>
+    /// 🔴 <b>A source check, because the broken form COMPILES — that is the whole defect, so no
+    /// type-level pin can catch it.</b> TypeScript has no partial type-argument inference:
+    /// <c>send&lt;Response&gt;('ROUTE', …)</c> makes the route parameter fall back to its default (the
+    /// union of every key), so <c>payload</c> widens to the union of every route's payload. Verified
+    /// with <c>tsc</c>: an identical wrong payload is a TS2353 without the type argument and clean with
+    /// it. The response is inferred from the method's declared return type instead.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>Every shipped call site used the broken form</b> — four in <c>fileDialogs.ts</c>, three in
+    /// <c>clipboard.ts</c>, one in <c>windowCommands.ts</c> — so the feature checked nothing anywhere it
+    /// was actually used, while its own <c>@ts-expect-error</c> pin passed because that pin uses the
+    /// inferred form. It lives HERE rather than in vitest because the React package's tsconfig has no
+    /// node types, so a test there cannot read its own sources.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void No_client_names_the_response_type_argument_on_send()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "Shenora.slnx")))
+            dir = Path.GetDirectoryName(dir);
+        Assert.False(dir is null, "repo root (Shenora.slnx) not found above the test output dir");
+        var clientDir = Path.Combine(dir!, "src", "Shenora.React", "src");
+
+        var offenders = new List<string>();
+        var scanned = 0;
+        foreach (var file in Directory.EnumerateFiles(clientDir, "*.ts")
+                     .Where(f => !f.EndsWith(".test.ts", StringComparison.Ordinal)))
+        {
+            scanned++;
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                // `.send<` is a CALL naming the response. The declaration in moduleService.ts reads
+                // `send<TResponse = unknown, …>(` with no leading dot, so it is not matched.
+                if (lines[i].Contains(".send<", StringComparison.Ordinal))
+                    offenders.Add($"{Path.GetFileName(file)}:{i + 1} {lines[i].Trim()}");
+            }
+        }
+
+        Assert.True(scanned > 5, $"parser self-check: only {scanned} client source(s) scanned");
+        Assert.True(offenders.Count == 0,
+            "These call sites name the response type argument, which disables the payload check. Declare "
+            + "the method's return type instead:\n  " + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>
+    /// The clipboard MODULE and ROUTE strings, read from the client's actual <c>send()</c> calls — same
+    /// shape and same reasoning as the file-dialog pin above.
+    /// </summary>
+    [Fact]
+    public void Clipboard_module_and_routes_match_the_host()
+    {
+        var source = ClientSource("clipboard.ts");
+
+        var module = Regex.Match(source, @"super\('(?<module>[A-Z_.]+)'");
+        Assert.True(module.Success, "could not find the Clipboard `super('MODULE'` call");
+        Assert.Equal(ClipboardModule.Module, module.Groups["module"].Value);
+
+        // ⚠ The type argument is OPTIONAL and must stay so: a call site that names the response defeats
+        // the payload check (`moduleService.test.ts` pins that), so the shipped form has no `<…>`.
+        // This pattern demanded one and stopped matching the moment they were removed — caught by
+        // the Assert.NotEmpty self-check below, which is the reason it is there.
+        var routes = Regex.Matches(source, @"\.send(?:<[^>]*>)?\('(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(routes);    // parser self-check
+
+        var hostRoutes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ClipboardModule.ReadType,
+            ClipboardModule.WriteType,
+            ClipboardModule.ClearType,
+        };
+        Assert.Equal(hostRoutes, routes);
+    }
+
+    /// <summary>
+    /// The clipboard's own media-type constants. Both sides hand these to the OTHER as dictionary keys, so
+    /// a drifted pair does not fail — the host simply files the bytes under a name the page never asks for
+    /// and the paste is empty, which is the silent shape this whole file exists to catch.
+    /// </summary>
+    [Fact]
+    public void Clipboard_media_type_constants_match_the_host()
+    {
+        var source = ClientSource("clipboard.ts");
+
+        string Client(string name)
+        {
+            var match = Regex.Match(source, $@"export const {name} = '(?<value>[^']+)'");
+            Assert.True(match.Success, $"could not find the client's `{name}` constant");
+            return match.Groups["value"].Value;
+        }
+
+        Assert.Equal(ClipboardContent.PngImage, Client("PNG_IMAGE"));
+        Assert.Equal(ClipboardContent.Html, Client("HTML"));
     }
 
     /// <summary>
@@ -388,7 +554,8 @@ public class WireMirrorTests
         params string[] clientBaseInterfaces)
     {
         var host = hostType.GetProperties()
-            .Select(p => JsonNamingPolicy.CamelCase.ConvertName(p.Name))
+            .Where(OnTheWire)
+            .Select(WireName)
             .ToHashSet(StringComparer.Ordinal);
         var source = ClientSource(sourceFile);
         var client = ParseInterfaceFieldNames(source, clientInterface);
@@ -407,5 +574,168 @@ public class WireMirrorTests
         Assert.True(extraOnClient.Length == 0,
             $"The client's `{clientInterface}` names these fields but the host's {hostType.Name} never sends " +
             $"them: {string.Join(", ", extraOnClient)}. They will always be undefined at runtime.");
+    }
+
+    /// <summary>
+    /// Does this property actually go on the wire? <c>[JsonIgnore]</c> in its default (Always) condition
+    /// says no — <see cref="IpcNotification.CoalesceKey"/> is the case that forced this, a host-side
+    /// buffering hint whose own doc says it is "deliberately absent from the TS mirror". Without the
+    /// check the envelope pin below would demand the client name a field the host never sends.
+    /// <para>
+    /// ⚠ Only <see cref="JsonIgnoreCondition.Always"/> counts. <c>WhenWritingNull</c> still ships the
+    /// field whenever it has a value, so a client that cannot name it still has a hole.
+    /// </para>
+    /// </summary>
+    private static bool OnTheWire(System.Reflection.PropertyInfo property) =>
+        property.GetCustomAttribute<JsonIgnoreAttribute>() is not { Condition: JsonIgnoreCondition.Always };
+
+    /// <summary>
+    /// The name this property serializes under: <c>[JsonPropertyName]</c> wins, else the camelCase
+    /// policy <see cref="IpcJson"/> applies. Reading the attribute matters because it is the ONE thing
+    /// that can move a wire name without touching the C# name — the exact drift a mirror exists to catch,
+    /// and the check would otherwise compare the client against a name nothing sends.
+    /// </summary>
+    private static string WireName(System.Reflection.PropertyInfo property) =>
+        property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
+        ?? JsonNamingPolicy.CamelCase.ConvertName(property.Name);
+
+    /// <summary>
+    /// The four ENVELOPE shapes — the outermost thing on this wire and, until now, the only part of it
+    /// with no mirror at all. Every module's payload was pinned while the container carrying them was
+    /// not: renaming <c>IpcResponse.Success</c> on one side leaves every request pending forever, and
+    /// dropping <c>scope</c> from the notification silently delivers a scoped event to every subscriber.
+    /// <para>
+    /// <c>EventMessage</c> is deliberately NOT here. The host's carries id/timestamp that never cross the
+    /// wire (its unbundled client twin says so in its own doc), so it is not one shape in two languages
+    /// and a mirror would be asserting a false equivalence.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Envelope_fields_match_on_both_sides()
+    {
+        AssertMirroredFields(typeof(IpcRequest), "types.ts", "IpcRequest");
+        AssertMirroredFields(typeof(IpcResponse), "types.ts", "IpcResponse");
+        AssertMirroredFields(typeof(IpcNotification), "types.ts", "IpcNotification");
+        AssertMirroredFields(typeof(IpcNotificationBatch), "types.ts", "IpcNotificationBatch");
+        AssertMirroredFields(typeof(IpcError), "types.ts", "IpcError");
+    }
+
+    /// <summary>
+    /// Window chrome's MODULE and ROUTES. Same shape as the file-dialog pin, and the same reason it is
+    /// read from the client's <c>send()</c> calls: what the page actually puts on the wire.
+    /// <para>
+    /// ⚠ This one is worth having twice over, because its failure is INVISIBLE rather than loud: a
+    /// frameless window whose <c>START_DRAG</c> route drifted still renders perfectly and simply stops
+    /// being draggable. The module name has already moved once — D64's reserved prefix turned
+    /// <c>WINDOW</c> into <c>SHENORA.WINDOW</c> — and both client and host docs kept saying <c>WINDOW</c>
+    /// for releases afterwards, with nothing able to notice.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Window_command_module_and_routes_match_the_host()
+    {
+        var source = ClientSource("windowCommands.ts");
+
+        var module = Regex.Match(source, @"super\('(?<module>[A-Z_.]+)'");
+        Assert.True(module.Success, "could not find the WindowCommands `super('MODULE'` call");
+        Assert.Equal(WindowCommandModule.Module, module.Groups["module"].Value);
+
+        var routes = Regex.Matches(source, @"\.send(?:<[^>]*>)?\('(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(routes);    // parser self-check
+
+        var hostRoutes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            WindowCommandModule.MinimizeType,
+            WindowCommandModule.ToggleMaximizeType,
+            WindowCommandModule.CloseType,
+            WindowCommandModule.IsMaximizedType,
+            WindowCommandModule.StartDragType,
+            WindowCommandModule.StartResizeType,
+            WindowCommandModule.SetThemeType,
+            WindowCommandModule.SetCaptionButtonsType,
+        };
+        Assert.Equal(hostRoutes, routes);
+    }
+
+    /// <summary>
+    /// Drop zones, which are the one mechanism here whose whole VALUE is the wire: a page cannot learn a
+    /// dropped file's path any other way, so a drifted <c>FILE_DROP</c> name is the feature disappearing.
+    /// Both directions are pinned — the ROUTES the hook invokes and the EVENTS it subscribes to — because
+    /// they drift independently and the event half has no request/response to fail.
+    /// </summary>
+    [Fact]
+    public void Drop_zone_module_routes_and_events_match_the_host()
+    {
+        var source = ClientSource("useDropZone.ts");
+
+        Assert.Equal(DropZoneManager.Module, ParseExportedString(source, "DROP_ZONE_MODULE"));
+
+        // The hook has no BaseModuleService — it calls the bridge directly — so the routes are read from
+        // `invoke(MODULE, 'ROUTE'` and the events from `subscribe<…>(MODULE, 'TYPE'`. Keeping them apart
+        // is the point: a route pinned as an event would pass while the wrong half drifted.
+        var routes = Regex.Matches(source, @"\.invoke\(DROP_ZONE_MODULE,\s*'(?<route>[A-Z_]+)'")
+            .Select(m => m.Groups["route"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var events = Regex.Matches(source, @"\.subscribe(?:<[^>]*>)?\(DROP_ZONE_MODULE,\s*'(?<type>[A-Z_]+)'")
+            .Select(m => m.Groups["type"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(routes);    // parser self-checks
+        Assert.NotEmpty(events);
+
+        Assert.Equal(
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                DropZoneModule.RegisterType,
+                DropZoneModule.UpdateType,
+                DropZoneModule.UnregisterType,
+                DropZoneModule.ShowType,
+            },
+            routes);
+        Assert.Equal(
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                DropZoneManager.DragEnterEvent,
+                DropZoneManager.DragLeaveEvent,
+                DropZoneManager.FileDropEvent,
+            },
+            events);
+    }
+
+    /// <summary>
+    /// The media player's command vocabulary, which <c>mediaPlayer.ts</c> itself calls "a wire contract …
+    /// the two halves agree by string or not at all" — a sentence nothing enforced until this test.
+    /// <para>
+    /// ⚠ The COMMANDS are compared as equal SETS, in both directions: the host emitting a command the page
+    /// cannot name is a control that silently does nothing, and the page listening for one the host never
+    /// sends is dead code that reads as support. <c>PLAYER_STATUS</c> is host-answered only (the page asks,
+    /// it never listens), so it is not in the command set and is asserted separately.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Media_player_module_commands_and_report_match_the_host()
+    {
+        var source = ClientSource("mediaPlayer.ts");
+
+        // The two required members are irrelevant here and are given throwaway values: what is being
+        // pinned is the DEFAULT module name, which is what the client hard-codes (an app that overrides
+        // `Module` passes its own to the page too). Same shape as the requests-module check above.
+        var access = new MediaAccessOptions { Resolve = _ => null, CacheRoot = "." };
+        Assert.Equal(access.Module, ParseExportedString(source, "MEDIA_PLAYER_MODULE"));
+        Assert.Equal(MediaPlayerModule.ReportType, ParseExportedString(source, "MEDIA_PLAYER_REPORT"));
+
+        var client = ParseConstObject(source, "MediaPlayerCommands").Values.ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(client);    // parser self-check
+
+        var host = typeof(MediaPlayerEvents)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(host);
+
+        Assert.Equal(host, client);
     }
 }

@@ -1,9 +1,8 @@
 using System.Globalization;
-using Shenora;
 using Shenora.Core.WebView;
-using Shenora.Engine.Files;
+using Shenora.Engine.Update;
 
-namespace Shenora.Modules.Update.Compression;
+namespace Shenora.Engine.Compression;
 
 /// <summary>
 /// Where an app keeps its resource packs.
@@ -33,7 +32,7 @@ public sealed class ResourcePackOptions
 ///
 /// <para>
 /// <b>It is a composition, deliberately.</b> Containment and the extraction limits come from
-/// <c>Shenora.Modules.Update.Compression</c>, the contained-path rule from <see cref="WebViewFiles.ResolveContained"/>,
+/// <c>Shenora.Engine.Compression</c>, the contained-path rule from <see cref="WebViewFiles.ResolveContained"/>,
 /// and the marker-written-last discipline from <see cref="UpdateStage"/>. Nothing here re-implements any of
 /// them — a security check written twice drifts in one of them, and this kit has already paid for that once.
 /// </para>

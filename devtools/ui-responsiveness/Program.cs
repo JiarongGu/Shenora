@@ -27,7 +27,7 @@
 //      streamed shape genuinely working. Guarded by requiring INDEPENDENT evidence the operation
 //      itself started: the target window's TITLE (`GetWindowText`, --title-contains) is polled for
 //      a marker substring after the click, with its own timeout. This is why `--title-contains`'s
-//      default matches `SampleFacade.RunningTitleMarker` exactly — see that constant's doc for why
+//      default matches `SampleModule.RunningTitleMarker` exactly — see that constant's doc for why
 //      the title is set BEFORE the slow work begins in BOTH shapes (so it survives the very freeze
 //      `block` mode measures) and why a window's title specifically survives being read from another
 //      process even while the owning thread is hung (the same mechanism that lets Task Manager show
@@ -77,7 +77,7 @@ internal static class UiResponsiveness
     // Form never overrides WM_GETTEXT) Windows caches the caption in shared, cross-process-readable
     // state that this reads directly — it does not require the owning thread's message loop to be
     // pumping, which is exactly why it still works during a `block`-mode freeze (see the guard-4
-    // comment above and RunningTitleMarker's doc in SampleFacade.cs).
+    // comment above and RunningTitleMarker's doc in SampleModule.cs).
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int GetWindowTextW(IntPtr hWnd, StringBuilder text, int maxCount);
 

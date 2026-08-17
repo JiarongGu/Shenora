@@ -35,10 +35,10 @@ public class HeadlessRunnerTests
         var builder = Builder();
         builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook("a", log));
         builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook("b", log));
-        builder.UseHeadless(new HeadlessRunnerOptions
+        builder.UseHeadless(x =>
         {
-            StopToken = new CancellationToken(canceled: true),
-            StopOnProcessSignals = false,
+            x.StopToken = new CancellationToken(canceled: true);
+            x.StopOnProcessSignals = false;
         });
         using var app = builder.Build();
 
@@ -56,10 +56,10 @@ public class HeadlessRunnerTests
         var builder = Builder();
         builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook("first", log));
         builder.OnStopping(_ => throw new InvalidOperationException("shutdown glue exploded"));
-        builder.UseHeadless(new HeadlessRunnerOptions
+        builder.UseHeadless(x =>
         {
-            StopToken = new CancellationToken(canceled: true),
-            StopOnProcessSignals = false,
+            x.StopToken = new CancellationToken(canceled: true);
+            x.StopOnProcessSignals = false;
         });
         using var app = builder.Build();
 
@@ -77,10 +77,10 @@ public class HeadlessRunnerTests
         var builder = Builder();
         builder.Services.AddSingleton<IShenoraLifecycleHook>(new RecordingHook("early", log));
         builder.OnStarting(_ => throw new InvalidOperationException("startup glue exploded"));
-        builder.UseHeadless(new HeadlessRunnerOptions
+        builder.UseHeadless(x =>
         {
-            StopToken = new CancellationToken(canceled: true),
-            StopOnProcessSignals = false,
+            x.StopToken = new CancellationToken(canceled: true);
+            x.StopOnProcessSignals = false;
         });
         using var app = builder.Build();
 
@@ -100,7 +100,7 @@ public class HeadlessRunnerTests
         var started = new ManualResetEventSlim();
         var builder = Builder();
         builder.OnStarting(_ => started.Set());
-        builder.UseHeadless(new HeadlessRunnerOptions { StopToken = stop.Token, StopOnProcessSignals = false });
+        builder.UseHeadless(x => { x.StopToken = stop.Token; x.StopOnProcessSignals = false; });
         using var app = builder.Build();
 
         var run = Task.Run(app.Run);
@@ -124,7 +124,7 @@ public class HeadlessRunnerTests
         // disposes them before returning. Nothing here can deliver a signal, so what this pins is
         // that the registration itself is harmless and the run still completes.
         var builder = Builder();
-        builder.UseHeadless(new HeadlessRunnerOptions { StopToken = new CancellationToken(canceled: true) });
+        builder.UseHeadless(x => x.StopToken = new CancellationToken(canceled: true));
         using var app = builder.Build();
 
         app.Run();

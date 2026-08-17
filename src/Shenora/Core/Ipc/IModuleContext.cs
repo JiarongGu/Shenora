@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Shenora.Core.Events;
 
 namespace Shenora.Core.Ipc;
 

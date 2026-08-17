@@ -185,9 +185,9 @@ export class ShenoraBridge {
         // none of the diagnostics the real path gives (P5.5 H2). Only a thenable needs racing; a plain
         // value is already settled.
         if (!isThenable(result)) return Promise.resolve(result as TData);
-        // ⚠ The loser's timer is CLEARED, which it was not until 2026-08-14. Every other path in this
-        // file clears meticulously — the real invoke's timeout handler, its transport-throw catch, its
-        // response path and `dispose` — and this one left a live timer per call for the full timeout
+        // ⚠ The loser's timer must be CLEARED, as every other path in this file does — the real invoke's
+        // timeout handler, its transport-throw catch, its response path and `dispose`. Leaving it holds a
+        // live timer per call for the full timeout
         // (30 s by default), each holding its closure. Harmless to a caller, because `race` has already
         // settled and has a rejection handler attached either way, but it is the same "one site out of
         // N" shape the rest of this file is careful about, and it keeps timers pending in a test run.
@@ -251,7 +251,9 @@ export class ShenoraBridge {
    *
    * Failures are not silent. There is no promise to reject, so a failed response is reported through
    * `onPostError` (default `console.error`) rather than being dropped the way an unmatched response
-   * otherwise is. Nothing is queued and no timer is set, so there is nothing to leak and no deadline.
+   * otherwise is. ⚠ Reporting it means the id IS remembered — see {@link ShenoraBridgeOptions.maxTrackedPosts},
+   * which caps the set drop-oldest so a host that never answers cannot grow it without bound. No TIMER is
+   * set, though, so there is no deadline and nothing to fire later.
    *
    * No transport (a plain browser tab) is a silent no-op, matching the fire-and-forget contract —
    * unlike `invoke`, there is no caller waiting to be told. **A DISPOSED bridge is the same silent

@@ -1,18 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Shenora.Modules.Media;
-using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 
-// Extensions live with the type they EXTEND — see MediaPlayerExtensions for the rule. `AddIpcModule` is
-// on IServiceCollection and the rest compose the app, so `Shenora` is the one import that serves both.
 namespace Shenora;
 
 /// <summary>
-/// The standard IPC composition, formalizing the pattern the sample app proved: modules
-/// contribute facades through DI (<see cref="AddIpcModule{TFacade}"/> from their
-/// <c>IShenoraModule.ConfigureServices</c>), and the dispatcher is registered once with the
+/// The standard IPC composition, formalizing the pattern the sample app proved: a feature contributes
+/// its facade through DI (<see cref="AddIpcModule{TFacade}"/>, from wherever it registers its
+/// services), and the dispatcher is registered once with the
 /// family's §5 pipeline order encoded — error handler → app middleware → registered facades.
 /// This replaces the source app's static mutable service registry with plain DI enumeration.
 /// </summary>
@@ -87,12 +83,19 @@ public static class IpcServiceCollectionExtensions
     /// no log line. By the first dispatch the singleton is cached, so the same graph resolves fine.
     /// </para>
     /// </summary>
-    public static IMessageDispatcher MapRegisteredModulesLazily(this IMessageDispatcher dispatcher, IServiceProvider services)
+    internal static IMessageDispatcher MapRegisteredModulesLazily(this IMessageDispatcher dispatcher, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(services);
 
-        // Lazy<T> is thread-safe by default: concurrent first dispatches resolve the facade set once.
+        // PublicationOnly, never the default mode: the default CACHES a thrown exception for the life
+        // of the Lazy (the ScopedContainerRouter pitfall), and this factory throws for a composition
+        // mistake — a duplicate ModuleName, one facade's DI factory failing once. Cached, that single
+        // throw would answer EVERY later request to every DI-registered module with UNKNOWN_ERROR for
+        // the process life. PublicationOnly re-runs the factory on the next dispatch instead: a
+        // transient failure heals, a persistent one reports itself fresh each time. Racing first
+        // dispatches may each build the map — one wins, the extras are discarded, and the build has
+        // no side effects beyond resolving singletons DI already caches.
         var facades = new Lazy<IReadOnlyDictionary<string, IIpcModule>>(() =>
         {
             var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -103,7 +106,7 @@ public static class IpcServiceCollectionExtensions
                 map[facade.ModuleName] = facade;
             }
             return map;
-        });
+        }, LazyThreadSafetyMode.PublicationOnly);
 
         return dispatcher.Use(async (request, next, ct) =>
         {
@@ -160,19 +163,18 @@ public static class IpcServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // 🔴 THIS METHOD NAMES NO FEATURE, and that is the D65 rule it exists to demonstrate: **a CORE
-        // must not know the names of the features built on it.** The dispatcher composes whatever
-        // `IIpcModule`s are REGISTERED; which ones exist is each feature's own business, registered
-        // from the feature itself (`UseMediaPlayer`) or from the shell that can satisfy it
-        // (`AddShenoraFileDialogs`, called by the shells because only a platform knows whether it has
-        // native dialogs).
+        // 🔴 THIS METHOD NAMES NO FEATURE, which is the D65 rule it exists to demonstrate: a CORE must
+        // not know the names of the features built on it. The dispatcher composes whatever `IIpcModule`s
+        // are REGISTERED; which ones exist is each feature's own business, registered from the feature
+        // itself (`UseMediaPlayer`) or from the shell that can satisfy it (`AddShenoraFileDialogs`,
+        // called by the shells because only a platform knows whether it has native dialogs).
         //
-        // ⚠ It briefly did the opposite, and BOTH attempts are worth not repeating. Hardcoding
-        // `MediaPlayerModule` here worked only because its dependencies could be resolved optionally;
-        // adding `AddShenoraOperations()` beside it broke five composition tests with UNKNOWN_ERROR,
-        // because `OperationRegistry` needs `IEventBus` and composing IPC over a bare
-        // `ServiceCollection` is a legitimate shape with no builder behind it. The fix was never
-        // "resolve that optionally too" — it was to stop a core reaching downward at all.
+        // ⚠ Hardcoding a feature here fails in a way that does not look like a layering mistake:
+        // composing IPC over a bare `ServiceCollection` with no builder behind it is a legitimate shape,
+        // so a feature whose dependencies are not all optional turns every such composition into
+        // UNKNOWN_ERROR. The fix is never "resolve that one optionally too" — it is to stop the core
+        // reaching downward at all.
+        //
         // TryAdd, so this is IDEMPOTENT: `Build()` calls it for every app (D64 — IPC is a core, and a
         // framework that needs to be asked for its own wire is not on by default), and an app calling it
         // explicitly to pass `configure` must WIN rather than register a second dispatcher.

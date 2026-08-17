@@ -1,4 +1,5 @@
 using System.Drawing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Shenora;
 using Shenora.Core.WebView;
@@ -73,8 +74,15 @@ public sealed class WebViewHostOptions
     /// <summary>
     /// The app-level resource pipeline (<c>app.UseFiles(…)</c>, <c>app.UseMediaPlayer()</c>), applied to
     /// this host's interceptor at construction. Wire it from the built app —
-    /// <c>Pipeline = sp.GetRequiredService&lt;WebViewPipeline&gt;()</c> — and every window built from these
-    /// options serves the same routes, including secondary windows and session browsers.
+    /// <c>Pipeline = sp.GetRequiredService&lt;WebViewPipeline&gt;()</c> — and every <see cref="WebViewHost"/>
+    /// built from these options serves the same routes, a secondary window's included.
+    /// <para>
+    /// ⚠ <b>NOT a session browser.</b> <c>SessionBrowser</c> is not a <see cref="WebViewHost"/> — it
+    /// builds its own environment and interceptor and has no way to be handed this pipeline, so it
+    /// inherits none of the host's serving. A page that renders <c>mediaUrl(…)</c> happily in the main
+    /// window 404s inside a <c>RenderSession</c> or <c>StreamingSession</c>. <c>docs/ADOPTION.md</c> has
+    /// the recipe for serving your own frontend into an off-screen session.
+    /// </para>
     /// <para>
     /// ⚠ <b>Null means this host serves only what is registered on its own interceptor</b>, which is a
     /// legitimate choice for a deliberately isolated webview — and a silent mistake everywhere else, since
@@ -178,15 +186,25 @@ public sealed class WebViewHostOptions
     /// app shell is not a browser; a page-initiated download is almost always a bug or an attack
     /// surface. Apps that want downloads take full control here (e.g. set the result path and
     /// hide the default UI).
+    /// <para>
+    /// <b>Return <c>true</c> when you have handled it</b>; <c>false</c> falls through to the built-in
+    /// policy, and so does a throw (which is logged). An unanswered download event proceeds, so
+    /// "observe and let the kit decide" must be spelled <c>false</c>.
+    /// </para>
     /// </summary>
-    public Action<CoreWebView2DownloadStartingEventArgs>? OnDownloadStarting { get; init; }
+    public Func<CoreWebView2DownloadStartingEventArgs, bool>? OnDownloadStarting { get; init; }
 
     /// <summary>
     /// Replaces the default permission policy. Default: kinds in
     /// <see cref="PermittedPermissions"/> are allowed, everything else (camera, mic, location,
     /// notifications…) silently denied — no browser-style prompt ever interrupts the app.
+    /// <para>
+    /// <b>Return <c>true</c> when you have set <c>State</c></b>; <c>false</c> (or a throw, which is
+    /// logged) falls through to <see cref="PermittedPermissions"/>. An unanswered permission request
+    /// stalls whatever asked for it, so the fallback always runs.
+    /// </para>
     /// </summary>
-    public Action<CoreWebView2PermissionRequestedEventArgs>? OnPermissionRequested { get; init; }
+    public Func<CoreWebView2PermissionRequestedEventArgs, bool>? OnPermissionRequested { get; init; }
 
     /// <summary>Permission kinds the default policy allows. Clipboard read is the one web
     /// capability family apps legitimately use from the page.</summary>
@@ -217,10 +235,18 @@ public sealed class WebViewHostOptions
     /// </summary>
     public int MaxAutoReloads { get; init; } = 3;
 
-    /// <summary>Replaces the default process-failure handling (which logs + auto-reloads per
-    /// <see cref="ReloadOnRenderProcessFailure"/>).</summary>
-    public Action<CoreWebView2ProcessFailedEventArgs>? OnProcessFailed { get; init; }
+    /// <summary>
+    /// Replaces the default process-failure handling (which logs the failure in detail, then
+    /// auto-reloads per <see cref="ReloadOnRenderProcessFailure"/>).
+    /// <para>
+    /// 🔴 <b>Return <c>false</c> to OBSERVE without replacing.</b> Returning <c>true</c> means "handled",
+    /// which suppresses the diagnostic log AND the whole auto-reload path — so
+    /// <see cref="ReloadOnRenderProcessFailure"/>, <see cref="AutoReloadCooldown"/> and
+    /// <see cref="MaxAutoReloads"/> stay set and do nothing. Crash telemetry wants <c>false</c>.
+    /// </para>
+    /// </summary>
+    public Func<CoreWebView2ProcessFailedEventArgs, bool>? OnProcessFailed { get; init; }
 
     /// <summary>Diagnostics sink. Null = <see cref="WebViewEnvironmentOptions.Log"/>.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 }

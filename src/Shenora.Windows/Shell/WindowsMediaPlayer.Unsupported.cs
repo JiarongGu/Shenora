@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 using Shenora.Core.Shell;
 
@@ -27,7 +28,7 @@ namespace Shenora.Windows;
 public sealed class WindowsMediaPlayer : MediaPlayerBase
 {
     /// <param name="log">Accepted and unused here, so the two variants construct identically.</param>
-    public WindowsMediaPlayer(Action<string>? log = null)
+    public WindowsMediaPlayer(ILogger? log = null)
         : base(log)
         => throw ShellCapability.NotSupported(
             "The host-owned media player", "net10.0-windows",

@@ -2,6 +2,7 @@ using Shenora.Engine.Missions;
 using Shenora;
 using Shenora.Engine.Files;
 using Shenora.Core.Ipc;
+using Shenora.Engine;
 
 namespace Shenora.Tests.Io;
 

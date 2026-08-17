@@ -21,7 +21,7 @@ after the facade compiles. Walk it in this order and none of them surprises you.
      `FileDialogServiceCollectionExtensions.cs`
    - kit module that is CORE (configured, never added) → `src/Shenora/Modules/Requests/IpcRequestsModule.cs`
      + `IpcRequestExtensions.cs`'s `builder.UseRequests(…)`
-   - an app's own module → `samples/Shenora.Sample.Desktop/SampleFacade.cs`
+   - an app's own module → `samples/Shenora.Sample.Desktop/SampleModule.cs`
    - a few ad-hoc routes, no class → `MainForm.cs`'s `dispatcher.MapModule("RENDER", routes => …)`
 3. **The module class.** `sealed`, `: ModuleBase`, override `ModuleName`, switch inside
    `RouteMessageAsync(request, context, ct)`. Read payloads with `PayloadHelper.GetRequiredValue<T>`

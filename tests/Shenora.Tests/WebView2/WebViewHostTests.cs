@@ -181,4 +181,41 @@ public class WebViewHostTests
         Assert.Equal("public, max-age=31536000, immutable",
             WebViewContentTypes.CacheControlFromPath("assets/app-abc123.js"));
     }
+
+    [Fact]
+    public async Task A_FAILED_initialization_is_retryable_rather_than_cached_forever()
+    {
+        // 🔴 `InitializeAsync` is idempotent by caching its task, and a faulted task cached is a host that
+        // is dead for the rest of the process — while the error it hands back says "start again". The
+        // clearing used to live inside the sequence and the TIMEOUT path did not do it, which is the one
+        // path that message belongs to.
+        //
+        // A file where the user-data FOLDER should be makes environment creation fail fast, with no
+        // browser process anywhere near this test. The timeout path cannot be provoked without launching
+        // one — but it no longer has its own exit: both failures leave through the single `catch` in
+        // `RunInitializationAsync`, which is the point of hoisting it there.
+        var notAFolder = Path.Combine(Path.GetTempPath(), $"shenora-not-a-folder-{Guid.NewGuid():N}");
+        await File.WriteAllTextAsync(notAFolder, "x");
+
+        try
+        {
+            var host = new WebViewHost(new Microsoft.Web.WebView2.WinForms.WebView2(), new WebViewHostOptions
+            {
+                Environment = new WebViewEnvironmentOptions { UserDataFolder = notAFolder },
+                UseSharedEnvironment = false,   // a per-thread environment, so nothing is cached upstream
+            });
+
+            var first = host.InitializeAsync();
+            await Assert.ThrowsAnyAsync<Exception>(() => first);
+
+            // The ONE assertion that matters: a second call is a NEW attempt, not the same corpse.
+            var second = host.InitializeAsync();
+            Assert.NotSame(first, second);
+            await Assert.ThrowsAnyAsync<Exception>(() => second);
+        }
+        finally
+        {
+            File.Delete(notAFolder);
+        }
+    }
 }

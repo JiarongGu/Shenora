@@ -26,8 +26,12 @@ namespace Shenora.Windows;
 /// </summary>
 public interface IAppMaximizable
 {
-    /// <summary>The authoritative maximized state, however this window implements maximizing.</summary>
-    bool IsAppMaximized { get; }
+    /// <summary>
+    /// The authoritative placement, however this window implements it. ⚠ Was <c>bool IsAppMaximized</c>:
+    /// a window that manages its own sizing can be full-screen as well as maximized, and a bool could
+    /// only ever say one of them.
+    /// </summary>
+    WindowPlacement AppPlacement { get; }
 
     /// <summary>
     /// The bounds to restore to when un-maximizing — the window's real windowed geometry, which is

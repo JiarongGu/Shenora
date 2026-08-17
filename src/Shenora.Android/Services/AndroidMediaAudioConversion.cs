@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 
 using Android.Media;
@@ -15,7 +16,7 @@ namespace Shenora.Android;
 /// </para>
 ///
 /// <para>
-/// ⚠ <b>What it can do is per DEVICE.</b> AOSP has no AC-3 decoder at all — measured 2026-08-07 on an API
+/// ⚠ <b>What it can do is per DEVICE.</b> AOSP has no AC-3 decoder at all — measured on an API
 /// 36 emulator — while a handset may well have one, because Android codec support is vendor-declared.
 /// <see cref="CanConvert"/> therefore asks <c>MediaCodecList</c> rather than consulting a table, and a
 /// device that cannot answers false so the planner says <c>Unsupported</c> instead of starting work that
@@ -40,11 +41,11 @@ public static class AndroidMediaAudioConversion
     /// 🔴 <b>Without it this converter cannot explain itself, and its caller is guaranteed not to.</b>
     /// <c>Mp4Remuxer</c> catches everything and reports <c>SourceUnreadable "malformed source"</c> — correct
     /// for a shipped path, because a media path must never reach a page — so a codec failure here surfaces
-    /// as an accusation against the FILE. Measured 2026-08-09: a device whose <c>CanConvert</c> and
+    /// as an accusation against the FILE. Measured: a device whose <c>CanConvert</c> and
     /// <c>Begin</c> both said yes then converted nothing, and there was no way to ask why.
     /// </para>
     /// </param>
-    public static IDisposable Use(MediaConversionPipeline pipeline, Action<string>? log = null)
+    public static IDisposable Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         return pipeline.Use((source, codecPrivate) => Begin(source, codecPrivate, log), Claims);
@@ -59,7 +60,7 @@ public static class AndroidMediaAudioConversion
 
     /// <summary>The middleware body: answer with a run, or null to let the next converter try.</summary>
     private static IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate,
-                                                   Action<string>? log)
+                                                   ILogger? log)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Codec is null || MimeOf(source.Codec) is not { } mime) return null;
@@ -80,8 +81,8 @@ public static class AndroidMediaAudioConversion
         }
     }
 
-    // `Report` and `HasCodec` live in `AndroidMediaCodecs` — neither is converter-specific, and both
-    // were byte-identical here and in the picture converter until 2026-08-14.
+    // `Report` and `HasCodec` live in `AndroidMediaCodecs` — neither is converter-specific, and a copy
+    // here would be byte-identical to the picture converter's.
 
     /// <summary>The planner's lowercase names to Android's MIME types. Unknown names are refused, not guessed.</summary>
     private static readonly Dictionary<string, string> Mimes = new(StringComparer.OrdinalIgnoreCase)
@@ -142,10 +143,10 @@ public static class AndroidMediaAudioConversion
             Channels: OutputChannels > 0 ? OutputChannels : null,
             SampleRate: OutputSampleRate > 0 ? OutputSampleRate : null);
 
-        private readonly Action<string>? _log;
+        private readonly ILogger? _log;
         private readonly string mimeForDiagnostics;
 
-        public Run(string mime, MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate, Action<string>? log = null)
+        public Run(string mime, MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate, ILogger? log = null)
         {
             _log = log;
             mimeForDiagnostics = mime;
@@ -156,7 +157,7 @@ public static class AndroidMediaAudioConversion
 
             var input = MediaFormat.CreateAudioFormat(mime, OutputSampleRate, source.Channels is > 0 ? source.Channels.Value : 2);
             // 🔴 SIZE THE INPUT BUFFERS, or the decoder sizes them itself and gets it wrong.
-            // Measured 2026-08-09 on Android: without this, the very first MP3 frame — 314 bytes — threw
+            // Measured on Android: without this, the very first MP3 frame — 314 bytes — threw
             // `Java.Nio.BufferOverflowException` from `buffer.Put`, because MediaCodec had allocated input
             // buffers smaller than one compressed frame. `CanConvert` said yes, `Begin` configured and
             // started both codecs, and the failure landed one call later, where `Mp4Remuxer` turns anything
@@ -229,6 +230,13 @@ public static class AndroidMediaAudioConversion
                 // rebuilt from the output frame count by the caller, which is exact.
                 _presentationUs += 1_000_000L * OutputFramesPerPacket / Math.Max(OutputSampleRate, 1);
             }
+            else
+            {
+                // Same honesty as FeedEncoder's identical case: a frame never queued is LOST, the
+                // soundtrack is one frame shorter, and nothing else would say so.
+                Report(_log, $"[Shenora.Android] the decoder had no input buffer free; "
+                           + $"a {frame.Data.Length}-byte input frame was dropped.");
+            }
 
             Pump(produced, endOfStream: false);
             return produced;
@@ -251,10 +259,19 @@ public static class AndroidMediaAudioConversion
             var produced = new List<MediaFrame>();
             if (_disposed) return produced;
 
-            var index = _decoder.DequeueInputBuffer(TimeoutUs);
+            // The decoder must HEAR the end of stream or the PCM it is still holding never surfaces. An
+            // input buffer can be briefly scarce right after the last Push, so wait a few timeouts
+            // before giving up — and say so on failure, because the only symptom is a short soundtrack.
+            var index = -1;
+            for (var i = 0; i < 10 && index < 0; i++) index = _decoder.DequeueInputBuffer(TimeoutUs);
             if (index >= 0)
             {
                 _decoder.QueueInputBuffer(index, 0, 0, _presentationUs, MediaCodecBufferFlags.EndOfStream);
+            }
+            else
+            {
+                Report(_log, "[Shenora.Android] no input buffer freed to carry the decoder's "
+                           + "end-of-stream; audio still inside it is lost.");
             }
 
             Pump(produced, endOfStream: true);
@@ -311,7 +328,7 @@ public static class AndroidMediaAudioConversion
         /// broke every conversion on this platform.</b> This used to be a single `Put(pcm)`. MP3 decodes
         /// 1152 samples per frame and AC-3 decodes 1536, while the AAC encoder's buffers are sized for its
         /// own 1024-sample frame — so the very first frame threw `Java.Nio.BufferOverflowException`.
-        /// Measured 2026-08-09: a 314-byte MP3 frame, on a device where `CanConvert` and `Begin` had both
+        /// Measured: a 314-byte MP3 frame, on a device where `CanConvert` and `Begin` had both
         /// answered yes. The pairing that happens to fit is the exception, not the rule.
         /// </para>
         /// <para>

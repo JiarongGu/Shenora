@@ -36,21 +36,20 @@ public sealed class ScopedContainerRouterOptions
 }
 
 /// <summary>
-/// Routes scope-carrying requests to per-scope service containers — the generalization of the
-/// primary desktop sibling's per-profile service router (generic-library: an app-defined scope
-/// field + a scoped-container router, never a domain id). Each scope id lazily gets its own
-/// child <see cref="ServiceProvider"/> (built from <see cref="ScopedContainerRouterOptions.ConfigureScope"/>);
-/// requests for modules declared via <see cref="MapModule{TFacade}"/> resolve their facade from
-/// the request's scope container. Wire into the pipeline with
-/// <see cref="ScopedContainerRouterExtensions.UseScopedRouter"/> (after the error handler).
-///
-/// DEVIATIONS from the source, all deliberate: a scoped module called WITHOUT a scope answers a
-/// structured <see cref="IpcErrorCodes.ScopeRequired"/> error instead of falling through (the
-/// source's equivalent check was unreachable through its own wiring — which is why its client
-/// grew a hand-rolled guard); exceptions flow to the pipeline's error mapping instead of a local
-/// catch (the source leaked <c>ex.Message</c> here); and scope creation is single-flight (the
-/// source's bare <c>GetOrAdd</c> could build two providers under a first-request race and drop
-/// one undisposed).
+/// Routes scope-carrying requests to per-scope service containers: an app-defined scope field plus a
+/// scoped-container router, never a domain id. Each scope id lazily gets its own
+/// <see cref="ServiceProvider"/> (built from <see cref="ScopedContainerRouterOptions.ConfigureScope"/>),
+/// and requests for modules declared via <see cref="MapModule{TFacade}"/> resolve their facade from the
+/// request's scope container. Wire it in with
+/// <see cref="ScopedContainerRouterExtensions.UseScopedRouter"/>, after the error handler.
+/// <para>
+/// Three properties that are easy to lose and each cost a real defect where they were missing: a scoped
+/// module called WITHOUT a scope answers a structured <see cref="IpcErrorCodes.ScopeRequired"/> rather
+/// than falling through to a confusing NO_HANDLER; exceptions flow to the pipeline's error mapping
+/// instead of a local catch that would leak <c>ex.Message</c>; and scope creation is SINGLE-FLIGHT,
+/// because a bare <c>GetOrAdd</c> can build two providers under a first-request race and drop one
+/// undisposed.
+/// </para>
 /// </summary>
 public sealed class ScopedContainerRouter : IDisposable
 {
@@ -210,7 +209,7 @@ public sealed class ScopedContainerRouter : IDisposable
         if (_disposed) return;
         _disposed = true;
         // Drain until empty: a thread already past the disposed check can GetOrAdd a fresh
-        // Lazy behind a single sweep and build an orphan provider (found in review).
+        // Lazy behind a single sweep and build an orphan provider.
         while (!_scopes.IsEmpty)
         {
             foreach (var scopeId in _scopes.Keys.ToArray())
@@ -227,7 +226,7 @@ public sealed class ScopedContainerRouter : IDisposable
         {
             // Observe Value unconditionally: an IN-FLIGHT creation (IsValueCreated still false)
             // must be waited for and disposed, or the provider it finishes building leaks
-            // untracked — two live containers over single-writer resources (found in review).
+            // untracked — two live containers over single-writer resources.
             // A FAILED creation rethrows here and there is nothing to dispose.
             lazy.Value.Dispose();
         }

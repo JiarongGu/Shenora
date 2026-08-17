@@ -120,7 +120,7 @@ public class CapabilityOverrideTests
         var builder = Builder();
         builder.UseFileSystem((options, services) =>
         {
-            options.Log = _ => { };
+            options.Log = AppCallback.Logger(_ => { });
             services.AddSingleton(marker);
         });
 
@@ -188,7 +188,8 @@ public class CapabilityOverrideTests
     private sealed class FakePlayer : IMediaPlayer
     {
         public MediaPlayerStatus Status { get; } = new() { State = MediaPlayerState.Empty };
-        public double Rate { get; set; } = 1.0;
+        public Task SetRateAsync(double rate, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
         public event Action<MediaPlayerStatus>? StateChanged;
 
         public Task OpenAsync(MediaSource source, CancellationToken cancellationToken = default) => Task.CompletedTask;

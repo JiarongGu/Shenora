@@ -10,7 +10,7 @@ namespace Shenora.Tests.WinForms;
 /// the blocking pump, <c>SkipProcessInit</c> skips the process-global WinForms init). The real
 /// pump path is proven against the sample app (P2.6 e2e), same as WebView2 environment creation.
 /// </summary>
-public class WinFormsHostTests
+public class WinFormsRunnerTests
 {
     private static string UniqueRoot() => @"C:\ShenoraTests\" + Guid.NewGuid().ToString("n");
 
@@ -164,7 +164,7 @@ public class WinFormsHostTests
     public void Window_state_applies_before_the_loop_and_saves_on_close()
     {
         var root = UniqueRoot();
-        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, null, null, false) };
+        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, null, null, WindowPlacement.Normal) };
         var sizeInLoop = Size.Empty;
         var builder = Builder(root);
         builder.UseWindows(new WindowsHostOptions
@@ -198,6 +198,6 @@ public class WinFormsHostTests
         Assert.Equal(expected.Width, sizeInLoop.Width);
         Assert.Equal(expected.Height, sizeInLoop.Height);
         Assert.NotNull(store.Saved);
-        Assert.False(store.Saved!.Maximized);
+        Assert.Equal(WindowPlacement.Normal, store.Saved!.Placement);
     }
 }

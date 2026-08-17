@@ -20,4 +20,16 @@ public class MainActivity : MauiAppCompatActivity
 		MauiProgram.Log($"MainActivity.OnCreate #{++_creations} (savedState: {savedInstanceState is not null})");
 		base.OnCreate(savedInstanceState);
 	}
+
+	/// <summary>
+	/// The one line of app wiring the kit's file dialogs need on Android (docs/ADOPTION.md): the relay
+	/// owns its request codes and the FRAMEWORK routes results here — the only channel measured to
+	/// survive activity recreation, because a MAUI activity does not round-trip the AndroidX instance
+	/// state the registry mechanism depends on.
+	/// </summary>
+	protected override void OnActivityResult(int requestCode, Result resultCode, global::Android.Content.Intent? data)
+	{
+		Shenora.Android.ActivityResultRelay.Deliver(requestCode, (int)resultCode, data);
+		base.OnActivityResult(requestCode, resultCode, data);
+	}
 }

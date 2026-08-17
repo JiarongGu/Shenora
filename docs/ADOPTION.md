@@ -74,7 +74,7 @@ middle; D65 removed that level.)
 
 **There are no optional feature packages** (D55). Media, file operations and archive extraction ship
 inside `Shenora` as the namespaces `Shenora.Modules.Media`, `Shenora.Engine.Files` and
-`Shenora.Modules.Update.Compression` — so a
+`Shenora.Engine.Compression` — so a
 shell reference brings all of them and there is nothing extra to add. Stage 4's file-landing section
 below needs no new `PackageReference`.
 
@@ -131,7 +131,7 @@ that every app needs every row.
 | Caption buttons drawn by the page | `OptimizedFormOptions.NativeCaptionButtons` + `CaptionButtonColors` | Report the rects via `SetCaptionButtons`; the window clips them out of every covering child and paints them, which is what buys Windows 11 **Snap Layouts**. Requires `FramelessChrome` — the combination throws at construction rather than doing nothing. |
 | Tray icon + themed menu | `TrayIcon(+Options)`, `TrayMenuColors` | **`CloseReason.UserClosing` also means a programmatic `Close()`** — with close-to-tray on, a startup-abort path that calls `Close()` leaves a resident process. Close via `ExitApplication()`. |
 | Single-instance mutex + activate-existing | `SingleInstanceGuard` | Idempotent by design (an OS mutex is per-thread reentrant, which broke the naive version). |
-| File dialogs / clipboard / shell open / reveal | `IFileDialogs`, `IClipboardService`, `IUrlLauncher`(+`IShellLauncher`), `IUiInteraction`(+`IFormInteraction`) | Dialogs run on a dedicated STA thread with owner-handle z-order. The portable halves live in `Shenora` — see Stage 4. |
+| File dialogs / clipboard / shell open / reveal | `IFileDialogs`, `IClipboardService`, `IUrlLauncher`(+`IShellLauncher`), `IUiInteraction`(+`IFormInteraction`) | Dialogs run on a dedicated STA thread with owner-handle z-order. The portable halves live in `Shenora` — see Stage 4. **Clipboard: one `SetAsync(ClipboardContent)` carries every representation at once** — hand-rolled code that sets text and then an image is silently keeping only the image. Put your own format in `Formats["application/x-yourapp-…"]`; the kit carries it verbatim. ⚠ **On ANDROID a picture is refused, deliberately.** An image reaches another app as a `content://` URI served by a `ContentProvider` **your app** declares in its manifest — the kit cannot declare one on your behalf, and inventing a private scheme would produce a copy no other app can open, which is worse than the refusal. Text, HTML and your own formats work everywhere; gate an image control on the capability rather than assuming it. iOS and Windows carry pictures. |
 | Extra windows on their own threads | `SecondaryWindows` | `FormClosed` is **not** the end of a window; cleanup happens after `Application.Run` returns, or a WebView2 child leaves a locked profile folder. |
 | App root / data / resources paths, env overrides | `ShenoraPaths(+Options)` | Resolves and absolutizes; file dialogs move the process CWD, so a relative root must not be re-resolved later. |
 | Startup splash | `SplashPanel(+Options)` | Colours are yours. |
@@ -187,8 +187,12 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
   });
   app.Run();
   ```
-  Declared on the BUILT app, before the first window exists, so **every** webview the app hosts serves it —
-  secondary windows and session browsers included (D64). `host.Interceptor.UseFiles(…)` still exists for the
+  Declared on the BUILT app, before the first window exists, so **every `WebViewHost` the app builds** serves
+  it, a secondary window's included (D64). ⚠ **A SESSION BROWSER DOES NOT** — it is not a `WebViewHost`, it
+  builds its own environment and interceptor, and there is no way to hand it the pipeline. A page that
+  renders `mediaUrl(…)` in the main window 404s inside a `RenderSession`; see "Serving your own frontend
+  into an OFF-SCREEN session" below for the pair you hand it instead.
+  `host.Interceptor.UseFiles(…)` still exists for the
   one webview that must genuinely differ; it serves that interceptor only. ⚠ Declaring a step after a window
   already exists THROWS rather than half-applying, because a route that reached some windows and not others
   is invisible from the outside.

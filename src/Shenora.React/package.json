@@ -48,7 +48,9 @@
     "//typecheck": "The ONLY thing that type-checks the tests — `build` excludes them and vitest transpiles without checking, so `@ts-expect-error` assertions (which pin the typed-service generic) are inert without this. Run by dev.mjs verify.",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "//typecheck:floor": "The peerDependency FLOOR is a tested claim, not an assumption: type-checks the SHIPPED sources against React 18 types while everything else builds on 19, so an API that does not exist in 18 (useActionState, use, …) fails HERE instead of in a React 18 consumer's build. Run by dev.mjs verify.",
+    "typecheck:floor": "tsc -p tsconfig.react18.json"
   },
   "peerDependencies": {
     "react": ">=18"
@@ -56,6 +58,7 @@
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.17",
+    "@types/react18": "npm:@types/react@^18",
     "jsdom": "^29.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

@@ -85,7 +85,7 @@ designing any of this** — every ⚠ in it is a bug that was actually hit, not 
 > toolkit, and the kit ships NO ffmpeg bytes (D51). The build order below replaces what this entry
 > originally proposed.
 
-**Built so far:** `ResourcePack` (`Shenora.Modules.Update.Compression`) · `MatroskaProbe` (`Probe/`) ·
+**Built so far:** `ResourcePack` (`Shenora.Engine.Compression`) · `MatroskaProbe` (`Probe/`) ·
 `MediaPlaybackPlanner` (`Plan/`) · `UseMediaConversion` + `UseSegmentStream` (`Deliver/`) · `Mp4Remuxer` +
 the `ISegmentEngine` seam (`Engine/`). **Slices 1 and 2 are CLOSED** (2026-08-07 — the pipeline reshape and
 the remuxer). The pipeline is **probe → plan → deliver → transform**, and

@@ -3,11 +3,8 @@ using Shenora.Core.Shell;
 
 namespace Shenora.Modules.Media;
 
-/// <summary>
-/// What the player is doing. Deliberately the same vocabulary as <see cref="PlaybackState"/> —
-/// they describe the same thing at two levels (what the engine is doing vs what the OS should say), and
-/// two different spellings would guarantee they drift.
-/// </summary>
+/// <summary>What the player is doing. The same vocabulary as <see cref="PlaybackState"/>, which describes
+/// the same thing one level up — what the OS should say.</summary>
 public enum MediaPlayerState
 {
     /// <summary>No source. Nothing to play, no position.</summary>
@@ -33,14 +30,9 @@ public enum MediaPlayerState
 }
 
 /// <summary>
-/// A player's state at one instant.
-/// <para>
-/// <b>⚠ Position is a SNAPSHOT, not a subscription.</b> Reading it is cheap and asking the platform is
-/// how you get a true answer; a host that pushes it to the page every frame is paying IPC to tell React
-/// something it could have asked for. The kit therefore raises
-/// <see cref="IMediaPlayer.StateChanged"/> on real transitions and leaves polling to whoever is drawing
-/// a scrubber — at the rate that scrubber actually redraws.
-/// </para>
+/// A player's state at one instant. ⚠ <b>Position is a SNAPSHOT, not a subscription</b> —
+/// <see cref="IMediaPlayer.StateChanged"/> is raised on real transitions only, so whoever draws a scrubber
+/// polls at the rate that scrubber redraws.
 /// </summary>
 public sealed record MediaPlayerStatus
 {
@@ -50,118 +42,76 @@ public sealed record MediaPlayerStatus
     /// <summary>Where it has got to. <see cref="TimeSpan.Zero"/> when there is no source.</summary>
     public TimeSpan Position { get; init; }
 
-    /// <summary>
-    /// How long the source is, when the platform knows. Null for a live stream and — briefly — while
-    /// <see cref="MediaPlayerState.Opening"/>.
-    /// </summary>
+    /// <summary>How long the source is, when the platform knows. Null for a live stream and — briefly —
+    /// while <see cref="MediaPlayerState.Opening"/>.</summary>
     public TimeSpan? Duration { get; init; }
 
-    /// <summary>
-    /// Playback speed as a multiplier; 1.0 is normal. Reported as the RATE ASKED FOR, which is not always
-    /// what the hardware does — see <see cref="IMediaPlayer.Rate"/>.
-    /// </summary>
+    /// <summary>Playback speed as a multiplier; 1.0 is normal. The RATE ASKED FOR, which is not always what
+    /// the hardware does — see <see cref="IMediaPlayer.SetRateAsync"/>.</summary>
     public double Rate { get; init; } = 1.0;
 
-    /// <summary>
-    /// Why it failed, when <see cref="State"/> is <see cref="MediaPlayerState.Failed"/>; null otherwise.
-    /// <para>
-    /// ⚠ <b>A short, app-safe reason — never the platform's raw exception text.</b> Same rule the IPC
-    /// stack applies to every error path: this string can reach a page, and a native error message is a
-    /// disclosure surface and unactionable to a user in equal measure.
-    /// </para>
-    /// </summary>
+    /// <summary>Why it failed, when <see cref="State"/> is <see cref="MediaPlayerState.Failed"/>; null
+    /// otherwise. ⚠ <b>A short, app-safe reason — never the platform's raw exception text</b>, which can
+    /// reach a page.</summary>
     public string? Error { get; init; }
 }
 
 /// <summary>
-/// What to play. A file the host can open, or a URL the platform will stream.
-/// <para>
-/// <b>⚠ This is deliberately NOT a stream or a byte source</b>, which is the interesting constraint and
-/// the reason the type exists at all. A native player wants to own the read: it seeks, it reads ahead, it
-/// re-reads on a track switch, and on two of the three platforms it does that on its own threads inside a
-/// process-wide media service. Handing it a managed <c>Stream</c> means marshalling every read across that
-/// boundary, which is exactly the overhead the player exists to avoid.
-/// </para>
+/// What to play. A file the host can open, or a URL the platform will stream. ⚠ <b>Not a stream or a byte
+/// source</b> — a native player owns the read, on its own threads inside a process-wide media service, and
+/// a managed <c>Stream</c> would marshal every one of those reads across that boundary.
 /// </summary>
 public sealed record MediaSource
 {
-    /// <summary>
-    /// An absolute path or URL. A local file path, or an <c>http(s)</c> URL — including one served by the
-    /// app's own in-process host, which is how a source that needs the kit's remux reaches the player.
-    /// </summary>
+    /// <summary>An absolute local file path, or an <c>http(s)</c> URL — including one served by the app's
+    /// own in-process host, which is how a source needing the kit's remux reaches the player.</summary>
     public required string Uri { get; init; }
 
-    /// <summary>
-    /// Start here rather than at zero. Applied as part of opening, so a resumed item does not visibly
-    /// start at zero and jump — which is what a caller gets by opening and then seeking.
-    /// </summary>
+    /// <summary>Start here rather than at zero. Applied as part of opening, so a resumed item does not
+    /// visibly start at zero and jump the way open-then-seek does.</summary>
     public TimeSpan StartAt { get; init; }
 }
 
 /// <summary>
-/// A media player owned by the HOST, driven by the page — the capability D54 says this framework exists
-/// to provide, implemented once per shell (D19/D20's law, the same shape as
-/// <see cref="IPlaybackSession"/> and <see cref="IUiDispatcher"/>).
+/// A media player owned by the HOST, driven by the page (D54), implemented once per shell (D19/D20's law,
+/// the same shape as <see cref="IPlaybackSession"/> and <see cref="IUiDispatcher"/>). It plays what the
+/// PLATFORM decodes, which a <c>&lt;video&gt;</c> element does not: its ceiling is the webview's.
 /// <para>
-/// <b>Why this exists when <c>&lt;video&gt;</c> is right there.</b> Because the element's ceiling is the
-/// webview's, and that ceiling is lower than the platform's in ways an app cannot work around from
-/// JavaScript:
-/// </para>
-/// <list type="bullet">
-///   <item><b>Background playback.</b> iOS pauses a <c>&lt;video&gt;</c> the moment the app leaves the
-///   foreground — the video track cannot render, so the element stops. A native player is not subject to
-///   that, and this is the difference that is impossible rather than merely awkward.</item>
-///   <item><b>One source of truth for the system surfaces.</b> <see cref="IPlaybackSession"/>
-///   publishes Now Playing from whatever the app claims; when the host owns the player, what it publishes
-///   is what is actually happening. Today those two can disagree and nothing reconciles them.</item>
-///   <item><b>Formats.</b> The player takes what the PLATFORM decodes, which is a superset of what the
-///   webview's element accepts.</item>
-/// </list>
-/// <para>
-/// <b>What this does NOT do, on purpose.</b> No queue, no playlist, no gapless, no crossfade, no shuffle —
-/// only the app knows what "next" means, the same reasoning that keeps a queue model out of
-/// <see cref="IPlaybackSession"/>. And no video SURFACE: rendering into the page's layout is a
-/// composition problem per shell, and audio is where the provable gap is (see the remarks on
-/// <see cref="OpenAsync"/>).
+/// <b>What this does NOT do.</b> No queue, no playlist, no gapless, no crossfade, no shuffle — only the app
+/// knows what "next" means. And no video SURFACE: video decodes and its clock advances, but nothing
+/// composites it into the page's layout, so AUDIO is what this promises today.
 /// </para>
 /// <para>
-/// Registered as a SINGLETON by the shell and injected, like <see cref="IPlaybackSession"/>. There is
-/// no <c>IDisposable</c> here for the same reason: an app disposing an injected singleton would tear down
-/// the shell's player for everyone. Say <see cref="CloseAsync"/>.
+/// Registered as a SINGLETON by the shell and injected. There is no <c>IDisposable</c>: an app disposing an
+/// injected singleton would tear down the shell's player for everyone. Say <see cref="CloseAsync"/>.
 /// </para>
 /// </summary>
 public interface IMediaPlayer
 {
-    /// <summary>
-    /// The player's state right now — cheap, and the honest answer rather than a cached one.
-    /// </summary>
+    /// <summary>The player's state right now — cheap, and not a cached answer.</summary>
     MediaPlayerStatus Status { get; }
 
     /// <summary>
-    /// Playback speed as a multiplier; 1.0 is normal. Setting it while paused is remembered and applied on
-    /// the next <see cref="PlayAsync"/>.
+    /// Set playback speed as a multiplier; 1.0 is normal. Setting it while paused is remembered and
+    /// applied on the next <see cref="PlayAsync"/>. Read the current value from
+    /// <see cref="MediaPlayerStatus.Rate"/> via <see cref="Status"/>.
     /// <para>
-    /// ⚠ <b>A platform may not honour the exact value.</b> Each clamps to its own supported range and some
-    /// refuse rates a codec cannot resample; the kit does not pretend otherwise by silently substituting.
-    /// <see cref="MediaPlayerStatus.Rate"/> reports what was ASKED FOR, so a UI showing "1.5×" shows what
-    /// the user chose.
+    /// ⚠ <b>A platform may not honour the exact value</b> — each clamps to its own range and some refuse
+    /// rates a codec cannot resample, so <see cref="MediaPlayerStatus.Rate"/> reports what was ASKED FOR.
+    /// </para>
+    /// <para>
+    /// It is a METHOD, not a settable property: the platform call behind it can fail, can take time, and
+    /// can be cancelled, and a setter can express none of those. It was a property, and the IPC route had
+    /// to fabricate the await.
     /// </para>
     /// </summary>
-    double Rate { get; set; }
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rate"/> is not greater than zero.</exception>
+    Task SetRateAsync(double rate, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Open a source and get ready to play, without starting. Completes when the platform can report a
-    /// duration and accept a seek — which is the point a UI can draw a real scrubber.
-    /// <para>
-    /// ⚠ <b>Opening does not start playback</b>, deliberately: a caller that wants both says so, and one
-    /// that is restoring a session wants a paused player at a saved position, which is the more awkward
-    /// thing to express afterwards.
-    /// </para>
-    /// <para>
-    /// <b>AUDIO is what this promises today.</b> Video decodes and its clock advances, but nothing composites
-    /// a video surface into the page — see the type's remarks. An app playing video should keep using
-    /// <c>&lt;video&gt;</c> in the foreground; this is for the case that element cannot serve.
-    /// </para>
+    /// duration and accept a seek — the point a UI can draw a real scrubber. ⚠ <b>Opening does not start
+    /// playback</b>: a caller restoring a session gets a paused player at a saved position.
     /// </summary>
     /// <param name="source">What to play.</param>
     /// <param name="cancellationToken">Abandons the open. A cancelled open leaves the player
@@ -175,39 +125,29 @@ public interface IMediaPlayer
     /// <summary>Hold at the current position. A no-op if already paused.</summary>
     Task PauseAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Move to an absolute position, clamped to the source. Seeking a player that is playing keeps it
-    /// playing; seeking one that is paused leaves it paused.
-    /// </summary>
+    /// <summary>Move to an absolute position, clamped to the source. A player that is playing keeps
+    /// playing; one that is paused stays paused.</summary>
     Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Release the source and return to <see cref="MediaPlayerState.Empty"/>.
-    /// <para>
-    /// ⚠ <b>Say this when playback is over.</b> An open player holds a decoder, a file handle and — on the
-    /// mobile shells — a slice of a process-wide media service. It is the counterpart to
-    /// <see cref="IPlaybackSession.Clear"/>, and an app usually wants both.
-    /// </para>
-    /// </summary>
+    /// <summary>Release the source and return to <see cref="MediaPlayerState.Empty"/>. ⚠ <b>Say this when
+    /// playback is over</b> — an open player holds a decoder, a file handle and, on the mobile shells, a
+    /// slice of a process-wide media service. The counterpart to <see cref="IPlaybackSession.Clear"/>.</summary>
     Task CloseAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The player's state changed — a transition, not a tick. Raised on open, play, pause, seek, buffering,
     /// end and failure; NOT while a position merely advances.
     /// <para>
-    /// ⚠ <b>Raised on whatever thread the platform uses, which is not the UI thread.</b> Marshal with
-    /// <see cref="IUiDispatcher"/> before touching UI. A throwing handler is caught and logged rather
-    /// than escaping into a platform callback (<see cref="AppCallback"/>) — an exception inside an
-    /// AVFoundation or ExoPlayer callback is not catchable by anyone.
+    /// ⚠ <b>Raised on whatever thread the platform uses, which is not the UI thread</b> — marshal with
+    /// <see cref="IUiDispatcher"/> before touching UI. A throwing handler is caught and logged
+    /// (<see cref="AppCallback"/>) rather than escaping into a platform callback nobody can catch.
     /// </para>
     /// </summary>
     event Action<MediaPlayerStatus>? StateChanged;
 }
 
-/// <summary>
-/// A player operation failed. Carries an app-safe reason; the platform's own text is logged, never thrown
-/// — the same rule every error path in the IPC stack follows.
-/// </summary>
+/// <summary>A player operation failed. Carries an app-safe reason; the platform's own text is logged,
+/// never thrown.</summary>
 public sealed class MediaPlayerException : Exception
 {
     /// <summary>A player operation failed.</summary>

@@ -29,7 +29,7 @@ const check = process.argv.includes('--check');
  */
 const SECTIONS = [
   ['IpcCategories', 'Envelope categories', 'The `category` field on every message.'],
-  ['IpcHostBridge', 'Handshake', 'The host announces itself with this module + type when the page is ready.'],
+  ['IpcHostBridge', 'Handshake', 'The PAGE sends this module + type once it is ready; the host answers with its ShellInfo.'],
   ['IpcErrorCodes', 'Error codes', 'The `code` on an `IpcError`. Yours are your own; these are the kit\'s.'],
   ['IpcRequestEvents', 'Request-tracking events', 'Emitted as a long request starts, progresses and ends.'],
   ['MediaPlayerEvents', 'Media player', 'One vocabulary, two directions — an EVENT drives the page\'s element, a REQUEST of the same name drives the host\'s player.'],

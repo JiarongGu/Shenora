@@ -23,7 +23,7 @@ internal sealed class ThreadHeldGuard : IDisposable
         _thread = new Thread(() =>
         {
             var guard = new SingleInstanceGuard(applicationName, scope);
-            Acquired = guard.TryAcquire();
+            Acquired = guard.TryAcquire() is SingleInstanceResult.Acquired;
             acquired.Set();
             _release.Wait(TimeSpan.FromSeconds(30));
             if (!abandon) guard.Dispose(); // release on the OWNING thread; else exit holding
@@ -77,12 +77,12 @@ public class SingleInstanceGuardTests
             Assert.True(running.Acquired);
 
             using var second = new SingleInstanceGuard("Shenora.Tests", scope);
-            Assert.False(second.TryAcquire());
-            Assert.NotEqual(0u, second.ActivateMessageId); // the loser still resolves the channel, so it can broadcast
+            Assert.Equal(SingleInstanceResult.AlreadyRunning, second.TryAcquire());
+            Assert.NotNull(second.ActivateMessageId); // the loser still resolves the channel, so it can broadcast
         } // running instance shuts down cleanly here
 
         using var relaunch = new SingleInstanceGuard("Shenora.Tests", scope);
-        Assert.True(relaunch.TryAcquire()); // released → re-acquirable (the updater-restart path)
+        Assert.Equal(SingleInstanceResult.Acquired, relaunch.TryAcquire()); // released → re-acquirable (the updater-restart path)
     }
 
     [Fact]
@@ -91,8 +91,8 @@ public class SingleInstanceGuardTests
         var baseScope = UniqueScope();
         using var a = new SingleInstanceGuard("Shenora.Tests", baseScope + @"\a");
         using var b = new SingleInstanceGuard("Shenora.Tests", baseScope + @"\b");
-        Assert.True(a.TryAcquire());
-        Assert.True(b.TryAcquire());
+        Assert.Equal(SingleInstanceResult.Acquired, a.TryAcquire());
+        Assert.Equal(SingleInstanceResult.Acquired, b.TryAcquire());
     }
 
     [Fact]
@@ -106,8 +106,8 @@ public class SingleInstanceGuardTests
         var scope = UniqueScope();
         var guard = new SingleInstanceGuard("Shenora.Tests", scope);
 
-        Assert.True(guard.TryAcquire());
-        Assert.True(guard.TryAcquire()); // already ours = success, and no second handle taken
+        Assert.Equal(SingleInstanceResult.Acquired, guard.TryAcquire());
+        Assert.Equal(SingleInstanceResult.Acquired, guard.TryAcquire()); // already ours = success, and no second handle taken
 
         guard.Dispose();
 
@@ -125,7 +125,7 @@ public class SingleInstanceGuardTests
         Assert.True(predecessor.Acquired);
 
         using var relaunch = new SingleInstanceGuard("Shenora.Tests", scope);
-        Assert.False(relaunch.TryAcquire()); // zero-wait: still held
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, relaunch.TryAcquire()); // zero-wait: still held
 
         // Predecessor finishes its shutdown while the relaunch waits — the --restarted handoff.
         _ = Task.Run(() =>
@@ -133,7 +133,7 @@ public class SingleInstanceGuardTests
             Thread.Sleep(100);
             predecessor.Dispose();
         });
-        Assert.True(relaunch.TryAcquire(TimeSpan.FromSeconds(10)));
+        Assert.Equal(SingleInstanceResult.Acquired, relaunch.TryAcquire(TimeSpan.FromSeconds(10)));
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public class SingleInstanceGuardTests
         Assert.True(running.Acquired);
 
         using var second = new SingleInstanceGuard("Shenora.Tests", scope);
-        Assert.False(second.TryAcquire(TimeSpan.FromMilliseconds(150)));
+        Assert.Equal(SingleInstanceResult.AlreadyRunning, second.TryAcquire(TimeSpan.FromMilliseconds(150)));
     }
 
     [Fact]
@@ -165,6 +165,6 @@ public class SingleInstanceGuardTests
         // to a blocking WaitOne that observes the abandonment as soon as the kernel flips the bit,
         // which is what real production usage does anyway (the --restarted handoff uses 25 s for
         // exactly this class of timing).
-        Assert.True(relaunch.TryAcquire(TimeSpan.FromSeconds(2))); // AbandonedMutexException → ours now
+        Assert.Equal(SingleInstanceResult.Acquired, relaunch.TryAcquire(TimeSpan.FromSeconds(2))); // AbandonedMutexException → ours now
     }
 }

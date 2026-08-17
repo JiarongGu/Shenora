@@ -8,19 +8,16 @@ namespace Shenora.Windows;
 public sealed class SecondaryWindowOptions
 {
     /// <summary>
-    /// Creates the window — runs ON the window's own STA thread (every control it creates gets
-    /// that thread's message pump). Create it, don't show it: the pump shows it, after geometry
-    /// is applied. A WebView2-hosting window initializes its host from its own <c>Load</c> with
-    /// <c>UseSharedEnvironment = false</c> (the thread-affinity contract).
+    /// Creates the window — runs ON the window's own STA thread, so every control it creates gets that
+    /// thread's message pump. Create it, don't show it: the pump shows it after geometry is applied. A
+    /// WebView2-hosting window initializes its host from its own <c>Load</c> with
+    /// <c>UseSharedEnvironment = false</c>.
     /// </summary>
     public required Func<Form> CreateForm { get; init; }
 
-    /// <summary>
-    /// Geometry persistence for this named window — the same window-state stack the main window
-    /// uses (logical-px store, physical restore, off-screen recovery): one store per name (e.g.
-    /// a <c>JsonFileWindowStateStore("windows/{name}.json")</c>). Null = no persistence. This is
-    /// the seam that replaces the source app's profile-config coupling.
-    /// </summary>
+    /// <summary>Geometry persistence for this named window — the same window-state stack the main window
+    /// uses. One store per name (e.g. <c>JsonFileWindowStateStore("windows/{name}.json")</c>); null =
+    /// none.</summary>
     public IWindowStateStore? StateStore { get; init; }
 
     /// <summary>Sizing defaults/minimums for <see cref="StateStore"/>. Null = defaults.</summary>
@@ -28,18 +25,13 @@ public sealed class SecondaryWindowOptions
 }
 
 /// <summary>
-/// Named secondary windows, each on its OWN STA thread with its own message pump — ported from
-/// the primary desktop sibling's secondary-window service, decomposed to its generic core (the
-/// source interleaved profile config, session wiring, and theme loading; those belong to the
-/// app's <see cref="SecondaryWindowOptions.CreateForm"/> factory). One window per name;
-/// <see cref="Open"/> on an existing name ACTIVATES it instead of the source's close-and-recreate
-/// (its login-window sibling proved the focus-existing shape; recreate churned visibly).
+/// Named secondary windows, each on its OWN STA thread with its own message pump. One window per name;
+/// <see cref="Open"/> on an existing name ACTIVATES it rather than recreating it.
 ///
-/// Threading: everything here marshals to the window's thread with non-blocking
-/// <c>BeginInvoke</c> — the source's blocking <c>Invoke</c> from the IPC thread deadlocked the
-/// UI during scope switches (measured). Window threads are background: an app exit never hangs
-/// on a forgotten window; dispose (or <see cref="CloseAll"/>) closes them gracefully first so
-/// geometry saves run.
+/// Threading: everything here marshals to the window's thread with non-blocking <c>BeginInvoke</c> — a
+/// blocking <c>Invoke</c> from the IPC thread deadlocks the UI. Window threads are BACKGROUND, so an
+/// app exit never hangs on a forgotten window; dispose (or <see cref="CloseAll"/>) closes them
+/// gracefully first so geometry saves run.
 /// </summary>
 public sealed class SecondaryWindows : IDisposable
 {
@@ -48,11 +40,8 @@ public sealed class SecondaryWindows : IDisposable
         public volatile Form? Form;
         public volatile bool CloseRequested;
 
-        // Pre-handle intent, same mechanism as CloseRequested and for the same reason (P5.5 H2): the
-        // marshal is a deliberate no-op before the handle exists, so an Activate that arrives while the
-        // window thread is still starting up must be carried in a flag or it is silently lost — and
-        // that is precisely the documented "Open on an existing name ACTIVATES it" path, which a user
-        // hits by double-clicking a launcher.
+        // Pre-handle intent, same mechanism as CloseRequested: the marshal is a no-op before the handle
+        // exists, so an Activate arriving while the window thread starts up is silently lost otherwise.
         public volatile bool ActivateRequested;
     }
 
@@ -66,10 +55,8 @@ public sealed class SecondaryWindows : IDisposable
         _logger = logger ?? NullLogger<SecondaryWindows>.Instance;
     }
 
-    /// <summary>
-    /// Open the named window on its own STA thread. Returns false (and activates the existing
-    /// window) when the name is already open.
-    /// </summary>
+    /// <summary>Open the named window on its own STA thread. Returns false (and activates the existing
+    /// window) when the name is already open.</summary>
     public bool Open(string name, SecondaryWindowOptions options)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -95,10 +82,8 @@ public sealed class SecondaryWindows : IDisposable
         }
         catch (Exception ex)
         {
-            // A failed Start (thread exhaustion) used to leave the entry behind FOREVER, and nothing
-            // else can remove it: RunWindow — the only other place that cleans up — never ran. The name
-            // was then permanently "already open", so every later Open answered false and tried to
-            // activate a window that does not exist (P5.5 H2).
+            // Without this a failed Start leaves the entry behind FOREVER — RunWindow, the only other
+            // cleanup path, never ran — so the name stays permanently "already open".
             _windows.TryRemove(name, out _);
             _logger.LogError(ex, "Secondary window '{Name}' could not start its thread", name);
             throw;
@@ -115,17 +100,14 @@ public sealed class SecondaryWindows : IDisposable
 
             if (options.StateStore is { } store)
             {
-                // AttachTo owns the apply-before-show / save-on-closed ordering (P5.5 H4.5).
+                // AttachTo owns the apply-before-show / save-on-closed ordering.
                 new WindowStateManager(store, options.StateOptions).AttachTo(form);
             }
 
-            // NO FormClosed removal here (removed in P5.5 H2). It used to drop the entry the instant
-            // FormClosed fired — but Application.Run has NOT returned yet at that point: the form is
-            // still tearing itself and its child controls down. Dispose() waits on _windows becoming
-            // empty, so it saw "empty" mid-teardown, returned, and let the process exit while a
-            // WebView2 child was still shutting down — which leaves its user-data folder LOCKED and
-            // makes the next launch's init hang. The `finally` after Application.Run is the only
-            // correct removal point, and it already covers every path.
+            // NO FormClosed removal here. Application.Run has NOT returned when FormClosed fires, so
+            // Dispose() — which waits on _windows becoming empty — would see "empty" mid-teardown and let
+            // the process exit while a WebView2 child was still shutting down, leaving its user-data
+            // folder LOCKED. The `finally` after Application.Run is the only correct removal point.
         }
         catch (Exception ex)
         {
@@ -148,8 +130,7 @@ public sealed class SecondaryWindows : IDisposable
         {
             if (entry.CloseRequested) form.BeginInvoke(form.Close);
             // An Activate that arrived before the handle existed was dropped by the marshal; replay it
-            // now (P5.5 H2). Close wins if both are pending — there is no point focusing a window that
-            // is on its way out.
+            // now. Close wins if both are pending.
             else if (entry.ActivateRequested)
             {
                 entry.ActivateRequested = false;
@@ -176,22 +157,17 @@ public sealed class SecondaryWindows : IDisposable
     /// <summary>True while the named window is open (or opening).</summary>
     public bool HasWindow(string name) => _windows.ContainsKey(name);
 
-    /// <summary>
-    /// Bring the named window to the front (no-op when it isn't open). Survives being called while the
-    /// window is still opening: the request is recorded and replayed once the handle exists, because
-    /// the marshal cannot deliver anything before then and this IS the "<see cref="Open"/> on an
-    /// existing name activates it" path.
-    /// </summary>
+    /// <summary>Bring the named window to the front (no-op when it isn't open). Survives being called
+    /// while the window is still opening: recorded and replayed once the handle exists.</summary>
     public void Activate(string name)
     {
         if (!_windows.TryGetValue(name, out var entry)) return;
 
-        // Set the flag FIRST, unconditionally: the form may not exist yet (the window thread is still
-        // in CreateForm), and even when it does the Post below is a no-op until the handle is created.
-        // HandleCreated replays it. Cleared here on the success path so it can't fire twice.
+        // Set the flag FIRST, unconditionally: the form may not exist yet, and even when it does the Post
+        // below is a no-op until the handle is created. Cleared on the success path so it can't refire.
         entry.ActivateRequested = true;
         if (entry.Form is not { } form) return;
-        if (Post(form, () => WindowActivation.BringToFront(form)))   // one owner (P5.5 H4.5)
+        if (Post(form, () => WindowActivation.BringToFront(form)))   // one activation owner
             entry.ActivateRequested = false;
     }
 
@@ -209,12 +185,9 @@ public sealed class SecondaryWindows : IDisposable
         foreach (var name in _windows.Keys.ToArray()) Close(name);
     }
 
-    /// <summary>
-    /// Close every window and WAIT (bounded) for their pumps to finish — the window threads are
-    /// background, so an unwaited dispose at app exit would kill them before their
-    /// FormClosed-driven geometry saves ran (found in review). The wait is bounded so a wedged
-    /// window can never hang shutdown.
-    /// </summary>
+    /// <summary>Close every window and WAIT (bounded) for their pumps to finish — the window threads are
+    /// background, so an unwaited dispose at app exit kills them before their FormClosed-driven geometry
+    /// saves run. Bounded, so a wedged window can never hang shutdown.</summary>
     public void Dispose()
     {
         if (_disposed) return;
@@ -230,11 +203,8 @@ public sealed class SecondaryWindows : IDisposable
     internal Form? TryGetForm(string name) =>
         _windows.TryGetValue(name, out var entry) ? entry.Form : null;
 
-    // Non-blocking marshal to the window's own thread, through the ONE owner (P5.5 H4.2) — a
-    // blocking Invoke from the IPC thread deadlocked the source app during scope switches.
-    // Pre-handle this stays a deliberate NO-OP, which is exactly what the dispatcher's `false`
-    // return means here: the caller is never the window's own thread, so running inline would
-    // CREATE the handle on the wrong thread and kill the pump (found in review). Pre-handle intent
-    // is carried by flags instead (CloseRequested + the HandleCreated re-check) — see Open/Close.
+    // Non-blocking marshal to the window's own thread, through the ONE owner. Pre-handle this is a
+    // deliberate NO-OP (the dispatcher's `false`): the caller is never the window's own thread, so
+    // running inline would CREATE the handle on the wrong thread and kill the pump.
     private static bool Post(Form form, Action action) => new WinFormsUiDispatcher(form).Post(action);
 }

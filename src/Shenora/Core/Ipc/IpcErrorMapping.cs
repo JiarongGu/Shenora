@@ -7,26 +7,23 @@ namespace Shenora.Core.Ipc;
 /// The ONE implementation of the kit's most load-bearing invariant: <b>an exception becomes a
 /// structured wire error, and its text never crosses the bridge</b>.
 /// <para>
-/// This existed as four byte-identical <c>catch (ShenoraException) / catch (Exception)</c> pairs —
-/// two in <see cref="MessageDispatcher"/> (its transport entry point and
-/// <see cref="MessageDispatcherExtensions.UseErrorHandler"/>), one in <see cref="ModuleBase"/>, and a partial
-/// one in the WebView2 bridge. Four copies of the rule that must never be broken is how it
-/// eventually gets broken: a fifth error path gets written by copy-paste, and the one that forgets
-/// <c>ex.GetType().Name</c> and passes <c>ex.Message</c> instead leaks a filesystem path or a
-/// connection string to the page. Collapsed in P5.5 H4.5.
+/// Only two things ever reach the client: an <see cref="ShenoraException"/>'s own structured error (the
+/// app chose those words deliberately, and the code is the client's i18n key), or
+/// <see cref="IpcErrorCodes.UnknownError"/> plus the exception's TYPE NAME. The message, the stack and
+/// any inner exception stay host-side in the log.
 /// </para>
 /// <para>
-/// Only two things ever reach the client: an <see cref="ShenoraException"/>'s own structured error
-/// (the app chose those words deliberately, and the code is the client's i18n key), or
-/// <see cref="IpcErrorCodes.UnknownError"/> plus the exception's TYPE NAME. The message, the stack
-/// and any inner exception stay host-side in the log.
+/// 🔴 <b>ONE implementation, deliberately.</b> This was four byte-identical
+/// <c>catch (ShenoraException) / catch (Exception)</c> pairs, and that many copies of a rule that must
+/// never be broken is how it gets broken: the next error path is written by copy-paste, and the copy that
+/// passes <c>ex.Message</c> instead of <c>ex.GetType().Name</c> leaks a filesystem path or a connection
+/// string to the page.
 /// </para>
 /// <para>
-/// PUBLIC since P6.4, because the fifth copy turned out to be an ADOPTER's. A facade gets this for
-/// free through <see cref="ModuleBase"/>, but an app whose own IPC surface reports failures as EVENTS
-/// — the shape an adoption shim preserves — needs a wire error where there is no response to attach
-/// it to, and had nothing to call. Retyping the policy is exactly the fifth copy this type exists to
-/// prevent, so it is surface now rather than a rule people are told about.
+/// PUBLIC because the next copy turned out to be an ADOPTER's. A facade gets this free through
+/// <see cref="ModuleBase"/>, but an app whose own IPC surface reports failures as EVENTS — the shape an
+/// adoption shim preserves — needs a wire error where there is no response to attach one to. Retyping the
+/// policy is exactly the copy this type exists to prevent, so it is surface rather than a rule.
 /// </para>
 /// </summary>
 public static class IpcErrorMapping

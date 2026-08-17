@@ -21,30 +21,25 @@ change, and **every public change is SemVer surface** — note breaks in `CHANGE
 4. **Commit only on explicit user approval.** One commit per logical change; never fold a security
    fix into a structural refactor to honour "one commit".
 
-## Debugging: suspect the harness, and count trials
+## Debugging
 
-🔴 **A/B THE HARNESS ITSELF — and count TRIALS, because an intermittent failure makes every single-run
-elimination a coin flip.** A renderer crash survived ~12 single-run eliminations over two sessions
-(GPU, profile, page, scheme, IPC bridge, pool, .NET hosts); it fires ~50 % of the time, so half those
-verdicts were noise and each clean-looking answer moved the search on. Five alternated trials per arm
-settled it in minutes — **0/12 without a new process group, 6/12 with one**. The kit was never at fault.
-
-- **Measure WHEN before eliminating WHAT.** Timestamping was the cheapest experiment available and was
-  run LAST. Two earlier attempts produced no output (shell pipe buffering) and were abandoned —
-  **abandoning a broken instrument IS the error**, because every experiment after it answers a question
-  nobody asked.
-- **The tells that the harness, not the code, is the author:** the failure appears only under
-  instrumentation; it never reproduces when a human runs the app; no single cause survives elimination;
-  and the diagnostics contradict each other (no Windows Error Reporting event despite an access
-  violation, and an empty `FailureSourceModulePath` — no faulting module).
-- ⚠ **Do not stop at the first coherent story.** "The `timeout` KILL orphans the app and its teardown
-  writes the crash" fitted every fact and was WRONG — the crash lands ~8 s in, long before any kill.
-  Reading the log IN ORDER killed it. **A story that explains the facts is a hypothesis, not a finding.**
+**An unexplained or INTERMITTENT failure has its own method** — A/B the harness, count trials, instrument
+before theorising — and it is `.claude/knowledge/debugging-method.md`, read when you hit one. An ordinary
+reproducible bug needs none of it.
 
 ## Gates and tripwires
 
 **Tripwires are sabotage-verified in BOTH directions.** A green tripwire that cannot fail is worth
 nothing: break what it watches, confirm the message names it, restore, confirm green again.
+
+⚠ **WHEN THIS DOES NOT APPLY, because read as a universal law it taxes every change.** It is for a
+TRIPWIRE — a gate, a scanner, a test whose whole job is to notice something. **An ordinary test does not
+need it**: a test that asserts a return value fails visibly the moment the value is wrong, and sabotaging
+it proves only that `Assert` works. The question is *could this pass while the thing it watches is
+broken?* — yes for a gate over prose, a scanner with a regex, a check with a suppression window; no for
+`Assert.Equal(4, x)`. 🔴 **The three checks written during D77's cleanup all answered YES and all three
+were WRONG on first run** — one matched correct prose, one measured to end-of-file, one matched nothing at
+all. That is the population this rule is for.
 
 🔴 **NEVER RUN A SABOTAGE WHILE A GATE IS IN FLIGHT IN THE BACKGROUND.** `verify` reads the WORKING
 TREE, so a sabotage started beside it becomes its subject: it reported **`VERIFY FAILED` on commits
@@ -73,40 +68,20 @@ message carries the root cause. **(2) Can the code make it unrepresentable?** Cl
 the seam. **(3) Only if neither** — a rule, and prefer on-demand `.claude/knowledge/` over core, because
 core is paid on every session forever. `dev.mjs knowledge new <name> [--core]`.
 
-## Renames, removals and prose
+## Prose, and where a fix's reason goes
 
-🔴 **A RENAME ALSO DAMAGES THE ONE SENTENCE THAT NAMES IT.** A repo-wide sweep replaces the old name
-everywhere — including the prose whose SUBJECT was that name — leaving "`X` depends on `X`", "`X` → `X`".
-Grammatical, passes every gate, and nonsense exactly where a reader goes to learn what changed; five
-landed across the docs in two days, three of them after two prose audits ran clean. `doc-drift` and
-`cite-scan` are blind to it because both names exist and they are the same name.
-`node devtools/dev.mjs self-rename-scan` lists them; **skip `local/`, read the diff, and when you
-rename, re-read the entry that DEFINES the rename.**
+🔴 **CORRECT PROSE IN PLACE — never append a dated note narrating what it used to say.** Replace the wrong
+sentence with the right one; the WHY goes in the commit message. Appending is what let `DECISIONS.md` reach
+3,207 lines with 47 % of its entries still stating something untrue, and it *blinds* `doc-drift`, whose
+history suppression an amendment stack keeps permanently on. `dev.mjs doc-shape` enforces this. The test:
+**a fact about the SYSTEM stays, a fact about the DOCUMENTATION goes.** A superseded `DECISIONS.md` entry
+keeps its number as a one-line tombstone — those numbers ship in XML docs on nuget.org.
 
-⚠ **A SHIPPED XML DOC IS PROSE TOO — and it is the prose this repo never re-reads.** It renders in an
-adopter's IDE straight from the nupkg, so `self-rename-scan` reads `src/` and joins comment BLOCKS (an
-XML doc wraps, and a per-line matcher sees neither half).
+**A fix records its ROOT CAUSE in the commit message** (there is no fix log — git is the history; trace with
+`git log -S "<token>" -- <path>`).
 
-🔴 **A RENAME OR REMOVAL IS THREE STEPS, AND THE THIRD IS THE ONE THAT GETS SKIPPED.** (1) change the
-code, (2) add the old name to `devtools/retired-names.txt`, (3) **run `node devtools/dev.mjs stale-scan`
-IN THE SAME COMMIT and triage its worklist.** Step 3 exists because the gate fed by step 2 *cannot* find
-the prose you just invalidated: `doc-drift` suppresses any match within 6 lines of a history word, so a
-stale claim hides exactly where the suppression is active (proven by sabotage — a planted claim stayed
-green in `TASKS.md` AND `ARCHITECTURE.md`). D66 did steps 1 and 2, and `docs/ADOPTION.md` told adopters
-to call a deleted API for three commits with every gate green. `stale-scan` never fails a build: most
-hits are correct past tense and **only a human can tell those from a live lie**. That triage IS the
-deliverable.
-
-🔴 **CORRECT PROSE IN PLACE — never append a dated note narrating what it used to say.** Replace the
-wrong sentence with the right one; the WHY goes in the commit message. Appending is what let
-`DECISIONS.md` reach 3,207 lines with 47 % of its entries still stating something untrue, and it
-*blinds* `doc-drift`, whose history suppression an amendment stack keeps permanently on.
-`dev.mjs doc-shape` enforces this. The test: **a fact about the SYSTEM stays, a fact about the
-DOCUMENTATION goes.** A superseded `DECISIONS.md` entry keeps its number as a one-line tombstone —
-those numbers ship in XML docs on nuget.org and must always land somewhere.
-
-**A fix records its ROOT CAUSE in the commit message** (there is no fix log — git is the history; trace
-with `git log -S "<token>" -- <path>`).
+**Renaming or removing a public name** has three steps and its own hazards —
+`.claude/knowledge/renames-and-prose.md`.
 
 ## Seams
 

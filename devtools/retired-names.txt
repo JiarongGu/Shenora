@@ -235,7 +235,19 @@ WindowCommandFacade      # -> WindowCommandModule
 # re-reading on the same schedule as the claim it excuses.
 Shenora.Media            # id AND namespace retired -> the folder Modules/Media, namespace Shenora.Modules.Media
 Shenora.IO               # -> the folder Engine/Files, namespace Shenora.Engine.Files
-Shenora.IO.Compression   # -> Modules/Update/Compression, namespace Shenora.Modules.Update.Compression
+Shenora.IO.Compression   # -> SPLIT: Engine/Update (ZipUpdateSource) + Engine/Compression (the rest)
+# The Modules/ spellings below never SHIPPED — they existed only between v0.10.0 and the pre-1.0
+# surface pass, which moved them to Engine/ because neither carries a capability to the PAGE and
+# neither has a platform half, which is what Modules/ means (D65). Listed anyway so `stale-scan`
+# catches prose still describing the intermediate layout — a name does not need to have shipped to
+# be stated somewhere as if current.
+# Two PLACEMENT corrections from the same pre-1.0 pass. Both moved because the tree contradicted a
+# rule the repo states in writing, and both shipped at v0.10.0 under their old namespaces.
+Shenora.Engine.Files.IFileLockInspector  # -> Shenora.Core.Shell (a SHELL implements it, so the contract is Core — D48)
+Shenora.Engine.Files.FileLockHolder      # -> Shenora.Core.Shell (travels with the contract)
+Shenora.Engine.Missions.RetryPolicy      # -> Shenora.Engine (both engines use it; neither owns it — D30)
+Shenora.Modules.Update   # -> Shenora.Engine.Update (never released under this name)
+Shenora.Modules.Update.Compression  # -> Shenora.Engine.Compression (never released under this name)
 Shenora.Ipc              # -> folded into Shenora, namespace Shenora.Core.Ipc
 
 # --- 2026-08-07, D64: every kit module moved onto the reserved `SHENORA.` prefix -------------------
@@ -491,3 +503,16 @@ __shenoraThrowingBody     # the Android page slot; the desktop one used `__throw
 # forever. The qualified form finds nothing today by design — no prose ever used it — and exists to catch a
 # resurrection. Entries interpolate into a regex unescaped, so the `.` matches any char; harmless here.
 Mp4Remuxer.WriteThrough
+
+# --- 2026-08-17: two session types whose names claimed every session and served ONE ---------------
+# `SessionResult`/`SessionErrorCodes` lived in `InteractiveSession.cs` and were used by nothing else in
+# the tree — a streaming session ends with `SessionEnded`, a pooled one hands back a lease. The broad
+# names invited exactly the wrong reading, and the file's own namesake was the fourth type in it.
+# ⚠ The error-code VALUES are unchanged (`SESSION_BUSY` and friends): they cross the IPC error contract
+# through `ThrowIfFailed`, so a page matching on them is unaffected.
+SessionResult            # -> InteractiveSessionResult
+SessionErrorCodes        # -> InteractiveSessionErrorCodes
+SessionFrame             # -> StreamingSessionFrame       (all four below are streaming-only)
+SessionFrameFormat       # -> StreamingSessionFrameFormat
+SessionEnded             # -> StreamingSessionEnded
+SessionEndReason         # -> StreamingSessionEndReason

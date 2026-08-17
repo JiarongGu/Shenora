@@ -121,6 +121,59 @@ describe('createShenoraStore', () => {
     expect(useDeploy.getState().lines).toEqual(['already', 'happened']);
   });
 
+  it('re-snapshots when a component mounts after every subscriber left', async () => {
+    // Between subscriber epochs the store is OFF the bus, so anything the host emitted in the gap
+    // is gone — and an entry the host evicted in that window can never be corrected by a later
+    // event. The once-only flag dedupes same-tick double mounts (StrictMode); it must not make the
+    // first snapshot permanent across epochs.
+    const { useDeploy, transport } = fixture({ snapshot: true });
+    function Reader(): ReactNode {
+      const status = useDeploy((s) => s.status);
+      return createElement('div', { 'data-testid': 'reader' }, status);
+    }
+
+    const first = render(createElement(Reader));
+    await act(async () => {
+      transport.respondToLast({ status: 'running', lines: [] });
+    });
+    first.unmount(); // the last subscriber leaves; the bus subscription is gone
+
+    render(createElement(Reader));
+    // Asked AGAIN — counted, because lastRequest() would still show the first ask if no second went out.
+    expect(transport.routes().filter((type) => type === 'GET_STATE')).toHaveLength(2);
+    await act(async () => {
+      transport.respondToLast({ status: 'done', lines: [] });
+    });
+    expect(screen.getByTestId('reader').textContent).toBe('done');
+  });
+
+  it('drops a previous epoch’s late snapshot answer instead of clobbering the fresh one', async () => {
+    // R1 goes out, the subscriber leaves before it answers, a new mount fires R2. R2's answer lands
+    // first; R1's arrives late. Applying R1 would be a lost update wearing a success path — the
+    // stale body silently overwriting state a demonstrably fresher fetch already applied.
+    const { useDeploy, transport } = fixture({ snapshot: true });
+    function Reader(): ReactNode {
+      const status = useDeploy((s) => s.status);
+      return createElement('div', { 'data-testid': 'reader' }, status);
+    }
+
+    const first = render(createElement(Reader));
+    const r1 = transport.lastRequest();
+    first.unmount(); // R1 still unanswered
+
+    render(createElement(Reader));
+    const r2 = transport.lastRequest();
+    await act(async () => {
+      transport.respond(r2.id, { status: 'done', lines: [] });
+    });
+    expect(screen.getByTestId('reader').textContent).toBe('done');
+
+    await act(async () => {
+      transport.respond(r1.id, { status: 'running', lines: [] }); // the dead epoch answers late…
+    });
+    expect(screen.getByTestId('reader').textContent).toBe('done'); // …and is ignored
+  });
+
   it('snapshots ONCE even when several components mount together', async () => {
     const { useDeploy, transport } = fixture({ snapshot: true });
     function Reader(): ReactNode {
@@ -202,5 +255,30 @@ describe('createShenoraStore', () => {
     expect(screen.getByTestId('derived').textContent).toBe('1');
     // One mount + one update. Unbounded here is the failure mode, so the bound is the assertion.
     expect(renders).toBeLessThanOrEqual(4);
+  });
+
+  it('a selector whose CLOSURE changed returns the new value, not the previous one', () => {
+    // 🔴 THE OTHER HALF, and the one the state-keyed cache got wrong. The store is untouched between
+    // renders, so a cache keyed on STATE identity hit and handed back the PREVIOUS selector's answer —
+    // a virtualised list row reused for a different `id` rendered the previous row's data until some
+    // unrelated event happened to replace the state.
+    const { useDeploy, emit } = fixture();
+
+    function Reader({ index }: { index: number }): ReactNode {
+      // The closure changes with the prop; the STATE does not change at all between the two renders.
+      const line = useDeploy((s) => s.lines[index]);
+      return createElement('div', { 'data-testid': 'line' }, String(line));
+    }
+
+    const view = render(createElement(Reader, { index: 0 }));
+    // Fill the store while mounted — the store only subscribes once a component is reading it.
+    emit('PROGRESS', { line: 'alpha' });
+    emit('PROGRESS', { line: 'beta' });
+    expect(screen.getByTestId('line').textContent).toBe('alpha');
+
+    // ⚠ No emit between here and the assertion below: the STATE is identical across the two renders,
+    // which is precisely the condition a state-keyed cache answered stale.
+    view.rerender(createElement(Reader, { index: 1 }));
+    expect(screen.getByTestId('line').textContent).toBe('beta');
   });
 });

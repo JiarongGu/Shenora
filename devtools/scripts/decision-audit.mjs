@@ -89,11 +89,56 @@ lines.forEach((l, i) => {
   const m = l.match(/^-\s+\*\*(D\d+)\s*(?:—|-|–)?/);
   if (m) marks.push({ id: m[1], at: i });
 });
+// 🔴 THE LAST ENTRY ENDS AT ITS SECTION, NOT AT EOF — the same defect `doc-shape` carried, in a second
+// copy of the same idea. Running the final entry's body to `lines.length` swallowed everything after it
+// (the whole "## Anti-goals" section), so whichever entry happened to be last reported ~100 lines and a
+// handful of findings that were not in it at all. ⚠ Two tools splitting the same file two ways is how one
+// gets fixed and the other does not; both now stop at the next `## `.
+const sectionAfter = (at) => {
+  for (let i = at + 1; i < lines.length; i++) if (/^##\s/.test(lines[i])) return i;
+  return lines.length;
+};
+
 const entries = marks.map((m, j) => ({
   id: m.id,
   line: m.at + 1,
-  body: lines.slice(m.at, j + 1 < marks.length ? marks[j + 1].at : lines.length),
+  body: lines.slice(m.at, j + 1 < marks.length ? marks[j + 1].at : sectionAfter(m.at)),
 }));
+
+// 🔴 A PERMANENT FLOOR OF KNOWN-FALSE FINDINGS IS WORSE THAN NO CHECK, because it teaches its reader to
+// skim. Three survived every real fix and are all the same two classes, so they are named here and the
+// floor is zero — any finding from now on is worth reading.
+//
+// ⚠ A PLATFORM identifier is not this kit's to own. `SetWindowLong` (Win32, D24) and `CompressFormat`
+// (Android, D43) are named BECAUSE they are the platform's — an entry explaining a Win32 trap has to say
+// which call. Add to this list only an identifier that belongs to an OS or a third party; a kit type that
+// has gone missing is exactly what this check is for.
+const PLATFORM_IDENTIFIERS = new Set([
+  'SetWindowLong',    // Win32 — D24's rejected attach-after-the-fact chrome
+  'CompressFormat',   // Android Bitmap.CompressFormat — D43's WebP/API-30 trap
+  // ⚠ The rule base names far more of these than DECISIONS.md does, and necessarily: a rule explaining
+  // a platform trap has to say which platform call springs it. Every entry below is an OS, a BCL or a
+  // third-party name — none is a Shenora type, which is what this check exists to find.
+  'SetWindowSubclass',        // Win32
+  'Chrome_WidgetWin_1',       // Win32 — WebView2's own window class
+  'MediaMetadataRetriever',   // Android
+  'GetFrameAtTime',           // Android — MediaMetadataRetriever's
+  'GetPrimaryCpuAbi',         // Android — PackageManager's
+  'WebViewAssetLoader',       // AndroidX
+  'WKWebViewConfiguration',   // WebKit
+  'SetUrlSchemeHandler',      // WebKit
+  'IWKUrlSchemeHandler',      // WebKit
+  'AppleEvent',               // macOS
+  'CodesignEntitlements',     // MSBuild property, .NET for iOS
+  'AsyncTaskMethodBuilder',   // BCL
+  'TaskCanceledException',    // BCL
+  'MuMuManager',              // a third-party Android emulator's CLI
+]);
+
+// ⚠ A name under DISCUSSION is not a name being claimed. D61 lists four rename candidates and says every
+// one COLLIDED with an existing type — the entry's whole point is that they do not exist. Without these
+// words the audit reports the rejected candidates as missing packages, which is true and useless.
+const DISCUSSED = /\b(shadow(s|ed)?|collide[sd]?|candidate|rejected|proposed|would have been)\b/i;
 
 // ── the claim checks, borrowed from cite-scan where they already work ─────────────────────────────
 const looksLikeCode = (s) =>
@@ -110,11 +155,49 @@ const AMEND = /\b(corrected|amended|amendment|superseded|obsolete|went stale|use
 //   * a hit on a plain line  -> LIVE CLAIM, a real lie, fix it.
 //   * a hit on a history line -> not a lie, but it sizes the rewrite: an entry that is mostly history
 //     narration becomes a one-line tombstone.
-const HISTORY = /\b(used to|use to|formerly|former|previously|rename[sd]?|removed|no longer|until|was|were|had|superseded|retired|deleted|cut|dropped|replaced|merged|history|historical|obsolete|legacy|once|originally|no such|folded|became|ceased)\b/i;
+const HISTORY = /\b(used to|use to|formerly|former|previously|rename[sd]?|removed|no longer|until|was|were|had|superseded|retired|deleted|cut|dropped|replaced|merged|history|historical|obsolete|legacy|once|originally|no such|folded|became|ceased|gone|did not survive)\b/i;
 
 // `Shenora.IO.dll`, `Shenora.txt`, `Shenora.Android.csproj` are a FILE, not a package id — the dotted
 // matcher cannot tell them apart and reported four phantom missing packages on the first run.
 const FILE_EXT = /\.(dll|txt|md|json|nupkg|csproj|props|targets|xml|snupkg|yml|exe|pdb|js|mjs|ts|tsx|cs)$/i;
+
+// 🔴 A LIVE NAMESPACE IS ONLY MISLABELLED WHEN THE LINE CALLS IT A PACKAGE — and this check used to
+// fire on every correct mention of one, which is the same defect as a gate that cannot pass. Reported
+// six entries as "stating something untrue" for saying exactly the right thing: *the
+// `Shenora.Engine.Files` namespace*, *`Shell/` carries no `Shenora.Core.Ipc` dependency*, and the
+// namespace TABLE itself. A finding a reader must dismiss six times is one they stop reading.
+// So the label has to be ADJACENT, which is the shape of the actual error ("the `Shenora.Media`
+// package"), rather than merely somewhere on the line — "(D48 made it a package, D55 folded it back)"
+// sits on a line whose subject is correctly a namespace, and a word-anywhere test flags that too.
+// ⚠ Deliberately still history-INSENSITIVE: a live namespace called a package is wrong in any tense.
+const labelledPackage = (line, span) => {
+  const quoted = '`' + span + '`';
+  for (let at = line.indexOf(quoted); at >= 0; at = line.indexOf(quoted, at + 1)) {
+    const after = line.slice(at + quoted.length);
+    const before = line.slice(0, at);
+    if (/^\s*(nuget\s+)?packages?\b/i.test(after)) return true;
+    if (/\bpackages?\s+$/i.test(before)) return true;
+  }
+  return false;
+};
+
+// A NAME THE ENTRY IS REJECTING is not a name it claims exists — `Named `MediaPlayer`, NOT
+// `WebMediaPlayer`` is the sentence doing its job, and reporting the absence of the rejected half calls
+// the correct wording a lie.
+// 🔴 SPAN-LEVEL, never line-level, and that is the whole care here. Adding `not` to the line-wide
+// DISCUSSED test would suppress every finding on any line that happens to contain the word — a gate
+// that stops catching things, which is the failure this file's own comments keep naming. So the
+// negation has to sit immediately BEFORE this span, the way `labelledPackage` demands adjacency.
+const negatedName = (line, span) => {
+  const quoted = '`' + span + '`';
+  for (let at = line.indexOf(quoted); at >= 0; at = line.indexOf(quoted, at + 1)) {
+    // Trailing markup between the word and the name is ordinary here: `NOT **`X`**`, `not _`X`_`.
+    // An ARTICLE between the negation and the name is ordinary English — *not a `ProfileId`* — and
+    // omitting it cost a false finding on the one rule whose whole subject IS naming.
+    if (/\b(not|never|rather\s+than|instead\s+of)\b\s*(an?|the)?[\s*_~]*$/i.test(line.slice(0, at))) return true;
+  }
+  return false;
+};
 
 // ⚠ A RETIRED NAME NEEDS AN IDENTIFIER FENCE ON BOTH SIDES, or it fires on every longer name that
 // CONTAINS it: `MediaAccessOptions` — a live type — reported as the retired `MediaAccess`, and
@@ -137,14 +220,18 @@ const mentionsRetired = (line, name) => {
   }
 };
 
-const rows = [];
-for (const e of entries) {
+// ── one unit's claims, whatever the unit IS ───────────────────────────────────────────────────────
+// Extracted so the RULE BASE goes through the identical checks. The unit differs — a `D<n>` entry there,
+// a whole file here — but "does this prose name something the tree does not have?" is the same question,
+// and two copies of it is how one of them stops being fixed.
+const scan = (e) => {
   // live = the claim is stated as CURRENT. past = the same hit on a history line: not a lie.
   const live = { pkgs: new Set(), ns: new Set(), ids: new Set(), paths: new Set(), names: new Set() };
   const past = new Set();
 
   e.body.forEach((line) => {
-    const isHistory = HISTORY.test(line);
+    // A line DISCUSSING a name (a rejected candidate, a collision) is not a line claiming it exists.
+    const isHistory = HISTORY.test(line) || DISCUSSED.test(line);
     const note = (bucket, value) => (isHistory ? past.add(value) : live[bucket].add(value));
 
     for (const m of line.matchAll(/`([^`]+)`/g)) {
@@ -154,26 +241,41 @@ for (const e of entries) {
       if (/^Shenora(\.[A-Za-z0-9_]+)+$/.test(span) && !FILE_EXT.test(span)) {
         const isPkg = csprojs.has(span);
         const isNs = namespaces.has(span) || [...namespaces].some((n) => n.startsWith(span + '.'));
+        // ⚠ `Shenora.AppCallback` is a fully-qualified TYPE, not a claim about a namespace — the dotted
+        // matcher cannot tell them apart, exactly as it could not tell a FILE apart above. A tail that
+        // names a type the tree HAS is a correct reference; reporting it as a missing namespace is the
+        // same known-false floor `FILE_EXT` was added to stop.
+        const tail = span.slice(span.lastIndexOf('.') + 1);
+        const isQualifiedType = !isPkg && !isNs
+          && new RegExp(String.raw`\b(class|interface|record|struct|enum|delegate)\s+` + tail + String.raw`\b`).test(hay);
+        if (isQualifiedType) continue;
         if (!isPkg && !isNs) note('pkgs', span);
         // Calling a live namespace a PACKAGE is the specific error that switched a gate off in D65's
         // neighbourhood, so it is reported even on a history line — the sentence is wrong either way.
-        else if (!isPkg && isNs) live.ns.add(span);
+        // ⚠ But only when the line actually calls it one; see `labelledPackage`.
+        else if (!isPkg && isNs && labelledPackage(line, span)) live.ns.add(span);
       }
 
+      const rejected = negatedName(line, span);
       for (const part of span.split(/[^A-Za-z0-9_]+/)) {
-        if (looksLikeCode(part) && !hay.includes(part)) note('ids', part);
+        if (looksLikeCode(part) && !PLATFORM_IDENTIFIERS.has(part) && !hay.includes(part)) {
+          if (rejected) past.add(part); else note('ids', part);
+        }
       }
       for (const token of span.split(/[\s,;()<>"']+/)) {
         const clean = token.replace(/[.,:;]+$/, '');
         if (!REPO_PATH.test(clean)) continue;
         if (clean.includes('*') || clean.includes('|') || clean.includes('...')) continue;
+        // A PLACEHOLDER is not a path claim: `.claude/worktrees/agent-<id>` loses its `<id>` to the
+        // token split above and arrives as a trailing `-`, which no file will ever match.
+        if (clean.endsWith('-') || clean.endsWith('/') || clean.includes('<') || clean.includes('…')) continue;
         if (!fs.existsSync(path.join(repo, clean))) note('paths', clean);
       }
     }
     for (const name of retired) if (mentionsRetired(line, name)) note('names', name);
   });
 
-  rows.push({
+  return {
     id: e.id,
     line: e.line,
     size: e.body.length,
@@ -187,8 +289,34 @@ for (const e of entries) {
       return this.missIds.length + this.missPaths.length + this.missPkgs.length
         + this.missNs.length + this.deadNames.length;
     },
-  });
+  };
+};
+
+const rows = entries.map(scan);
+
+// ── the RULE BASE, through the identical checks ───────────────────────────────────────────────────
+// 🔴 A DEAD NAME IN A RULE IS WORSE THAN ONE IN A DOC, and `ipc-contracts.md` says so in its own text:
+// *"a rule is read as instructions — this line pointed at a folded package and a relayered file for
+// days."* A decision entry is consulted when someone asks why; a rule is handed to every session whose
+// task matches its area, and it is handed over as fact.
+//
+// The unit is the FILE, because that is what gets loaded and what gets rewritten. Everything else is
+// shared with the entries above, deliberately: the history/negation/adjacency care took several rounds
+// to get right and a second copy of these checks would not inherit any of it.
+const ruleDirs = ['.claude/rules', '.claude/knowledge'];
+const ruleUnits = [];
+for (const dir of ruleDirs) {
+  const full = path.join(repo, dir);
+  if (!fs.existsSync(full)) continue;
+  for (const name of fs.readdirSync(full).filter((n) => n.endsWith('.md')).sort()) {
+    ruleUnits.push({
+      id: `${dir}/${name}`,
+      line: 1,
+      body: fs.readFileSync(path.join(full, name), 'utf8').split(/\r?\n/),
+    });
+  }
 }
+const ruleRows = ruleUnits.map(scan);
 
 // ── report ────────────────────────────────────────────────────────────────────────────────────────
 const verbose = process.argv.includes('--verbose');
@@ -234,3 +362,25 @@ console.log(`${big.length} over the 15-line shape cap · ${mostlyHistory.length}
 console.log(`${orphan.length} cited nowhere in source — free to fold; the rest are permanent addresses.`);
 console.log('\n🔴 Ranked worst-first, and a CLEAN ROW IS NOT A VERIFIED DECISION: this checks whether the');
 console.log('   prose matches the tree, never whether the decision is still reasonable for what the kit is.');
+
+// ── the rule base's own table ─────────────────────────────────────────────────────────────────────
+const ruleShown = ruleRows.filter((r) => r.fails > 0).sort((a, b) => b.fails - a.fails);
+console.log(`\n\nRULE BASE — ${ruleRows.length} file(s) under ${ruleDirs.join(' + ')}, the same checks.`);
+console.log('⚠ A rule that teaches BY EXAMPLE names dead things on purpose — `generic-library.md` cites the');
+console.log('  scenario-named types it exists to warn against. Ask whether the sentence CLAIMS or TEACHES.');
+if (ruleShown.length === 0) {
+  console.log(`✓ every rule's claims match the tree (${ruleRows.length} clean).`);
+} else {
+  console.log('rule                                      lines  LIVE');
+  console.log('────────────────────────────────────────  ─────  ────');
+  for (const r of ruleShown) {
+    console.log(`${r.id.padEnd(40)}  ${String(r.size).padStart(5)}  ${String(r.fails).padStart(4)}`);
+    const detail = (label, list) => { for (const v of list) console.log(`         ${label} ${v}`); };
+    detail('✗ no such package OR namespace:', r.missPkgs);
+    detail('⚠ called a PACKAGE, is only a namespace:', r.missNs);
+    detail('✗ identifier not in source:', r.missIds);
+    detail('✗ path does not exist:', r.missPaths);
+    detail('✗ states a RETIRED name as current:', r.deadNames);
+  }
+  console.log(`\n${ruleShown.length} rule file(s) name something the tree does not have.`);
+}

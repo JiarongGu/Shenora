@@ -21,7 +21,7 @@ public sealed class WindowCommandOptions
 
     /// <summary>
     /// Authoritative maximize state. Default: <see cref="Form.WindowState"/> — a frameless app
-    /// wires its own (e.g. <c>OptimizedForm.IsAppMaximized</c>; its manual maximize never sets
+    /// wires its own (e.g. <c>OptimizedForm.AppPlacement</c>; its manual maximize never sets
     /// WindowState).
     /// </summary>
     public Func<bool>? IsMaximized { get; init; }
@@ -57,9 +57,11 @@ public sealed class WindowCommandOptions
 
 /// <summary>
 /// The frontend-triggered window commands, ported from the second desktop sibling's session
-/// routes: module <c>WINDOW</c>, types <c>MINIMIZE</c> / <c>TOGGLE_MAXIMIZE</c> / <c>CLOSE</c> /
-/// <c>IS_MAXIMIZED</c> / <c>START_DRAG</c> / <c>START_RESIZE</c> (+ optional <c>SET_THEME</c>).
-/// The client side is <c>WindowCommands</c> in @shenora/react.
+/// routes. ⚠ The module is <c>SHENORA.WINDOW</c> — the sibling's was <c>WINDOW</c>, and D64's reserved
+/// prefix renamed it; a page invoking the old name gets <c>NO_HANDLER</c>. The routes are the
+/// <c>…Type</c> constants below, which the switch itself uses — so the list cannot go stale the way the
+/// prose one here did (it never named <c>SET_CAPTION_BUTTONS</c>). The client side is
+/// <c>WindowCommands</c> in @shenora/react, mirrored by <c>WireMirrorTests</c>.
 ///
 /// REGISTRATION: this facade needs the LIVE form, which does not exist when the container is built — so
 /// map it late, from wherever you create the window:
@@ -79,7 +81,7 @@ public sealed class WindowCommandOptions
 /// not itself: the D37 rename replaced BOTH old package ids with the new one. `doc-drift` cannot catch
 /// that class at all — the retired name is gone, so nothing is left to match — which is why the rule is
 /// to READ THE DIFF after a rename sweep. `REVIEW-GUIDE.md` records the same defect in its own text,
-/// fixed 2026-08-05; this copy outlived that fix and was found by the D65 sweep three days later.
+/// since fixed; this copy outlived that fix and was found by the D65 sweep.
 ///
 /// Threading: routes touch the form via non-blocking <c>BeginInvoke</c> posts (the source
 /// shape) — correct from the transport's UI-thread dispatch AND from programmatic sends off it.
@@ -88,6 +90,34 @@ public sealed class WindowCommandModule : ModuleBase
 {
     /// <summary>The reserved module name (mirrored by the client's <c>WindowCommands</c>).</summary>
     public const string Module = "SHENORA.WINDOW";
+
+    /// <summary>Route: minimize the window. No payload.</summary>
+    public const string MinimizeType = "MINIMIZE";
+
+    /// <summary>Route: maximize if restored, restore if maximized. No payload.</summary>
+    public const string ToggleMaximizeType = "TOGGLE_MAXIMIZE";
+
+    /// <summary>Route: close the window (the app's <c>FormClosing</c> logic still runs). No payload.</summary>
+    public const string CloseType = "CLOSE";
+
+    /// <summary>Route: is it maximized? Answers <c>{ maximized }</c> — authoritative for the chrome's glyph,
+    /// since a manual work-area maximize never shows in <c>WindowState</c>.</summary>
+    public const string IsMaximizedType = "IS_MAXIMIZED";
+
+    /// <summary>Route: begin an OS window-move loop (the page's header on mousedown). No payload.</summary>
+    public const string StartDragType = "START_DRAG";
+
+    /// <summary>Route: begin an OS resize loop: <c>{ edge }</c> — <c>top</c>, <c>topLeft</c> or
+    /// <c>topRight</c>.</summary>
+    public const string StartResizeType = "START_RESIZE";
+
+    /// <summary>Route: <c>{ dark }</c>. Opt-in — unset <see cref="WindowCommandOptions.ApplyTheme"/>
+    /// answers <c>NO_HANDLER</c>.</summary>
+    public const string SetThemeType = "SET_THEME";
+
+    /// <summary>Route: <c>{ buttons }</c>, the caption-button hit rectangles. Opt-in — unset
+    /// <see cref="WindowCommandOptions.SetCaptionButtons"/> answers <c>NO_HANDLER</c>.</summary>
+    public const string SetCaptionButtonsType = "SET_CAPTION_BUTTONS";
 
     // Borderless-window drag/resize: hand off to the OS window-move/-size loop — the reliable
     // WebView2 technique (the page can't drive native drag itself).
@@ -117,34 +147,34 @@ public sealed class WindowCommandModule : ModuleBase
         var form = _options.Window;
         switch (request.Type.ToUpperInvariant())
         {
-            case "MINIMIZE":
+            case MinimizeType:
                 Post(() => form.WindowState = FormWindowState.Minimized);
                 return Done();
 
-            case "TOGGLE_MAXIMIZE":
+            case ToggleMaximizeType:
                 Post(_options.ToggleMaximize ?? (() =>
                     form.WindowState = form.WindowState == FormWindowState.Maximized
                         ? FormWindowState.Normal
                         : FormWindowState.Maximized));
                 return Done();
 
-            case "CLOSE":
+            case CloseType:
                 Post(form.Close);
                 return Done();
 
-            case "IS_MAXIMIZED":
+            case IsMaximizedType:
                 // Authoritative state for the chrome's max/restore glyph (a manual work-area
                 // maximize never shows in WindowState). Plain read — a bool snapshot is benign
                 // cross-thread.
                 var maximized = _options.IsMaximized?.Invoke() ?? (form.WindowState == FormWindowState.Maximized);
                 return Task.FromResult<object?>(new { Maximized = maximized });
 
-            case "START_DRAG":
+            case StartDragType:
                 // The page's header sends this on mousedown over its empty area. Hand off to the
                 // OS move loop (ReleaseCapture + WM_NCLBUTTONDOWN/HTCAPTION) so the window drags
                 // natively — snap and multi-monitor included. Refused while maximized: the
                 // manual work-area maximize keeps WindowState.Normal, so the OS would happily
-                // drag the maximized-size window with stale restore bounds (found in review) —
+                // drag the maximized-size window with stale restore bounds —
                 // the page's header should restore first (as native caption drags do).
                 if (_options.IsMaximized?.Invoke() ?? form.WindowState == FormWindowState.Maximized)
                     return Done();
@@ -155,7 +185,7 @@ public sealed class WindowCommandModule : ModuleBase
                 });
                 return Done();
 
-            case "START_RESIZE":
+            case StartResizeType:
                 // Frameless TOP-edge resize: the WebView2 covers the form's top, so its hit-test
                 // never sees it — a thin page-side strip sends this on mousedown. Only the top
                 // edges exist by design (the WM_NCCALCSIZE technique keeps the native side/bottom
@@ -171,12 +201,12 @@ public sealed class WindowCommandModule : ModuleBase
                 });
                 return Done();
 
-            case "SET_THEME" when _options.ApplyTheme is { } applyTheme:
+            case SetThemeType when _options.ApplyTheme is { } applyTheme:
                 var dark = PayloadHelper.GetOptionalValue<bool?>(request.Payload, "dark") ?? true;
                 Post(() => applyTheme(dark));
                 return Done();
 
-            case "SET_CAPTION_BUTTONS" when _options.SetCaptionButtons is { } setCaptionButtons:
+            case SetCaptionButtonsType when _options.SetCaptionButtons is { } setCaptionButtons:
                 // The page re-sends this on every layout change, so it must be cheap and total: a
                 // stale rectangle silently moves the hit-test away from the button the user sees,
                 // which presents as "the close button sometimes does nothing".

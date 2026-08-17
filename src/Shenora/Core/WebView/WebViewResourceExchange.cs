@@ -2,49 +2,23 @@ using System.Globalization;
 
 namespace Shenora.Core.WebView;
 
-// MOVED HERE FROM Shenora.Windows on 2026-08-03 (D2a). These three types describe a resource exchange
-// between a host and a page — "URI plus headers in, status plus content-type plus a stream out" — and
-// nothing about that is Windows-specific. They were only in the Windows package because that was the
-// one shell when they were written.
-//
-// What forced the move: MAUI's HybridWebView turns out to HAVE a request-interception seam in .NET 10
-// (`WebResourceRequested`, with readable request headers and a SetResponse that accepts 206), so the
-// mobile shells can serve dynamic, seekable content too — and `src/Shenora.Mobile/` cannot reference
-// Shenora.Windows. Portable contracts live in Core (D19/D20); this is that rule catching up with a
-// capability the platform gained after the split.
-//
-// It is a BREAKING namespace change on published types, documented under `### Breaking`. There is no
-// type-forward shim: forwarding preserves the full name INCLUDING the namespace, so it would leave a
-// `Shenora.Windows.*` type name living in the Core assembly — which contradicts the one-namespace-per-
-// package convention the whole kit reads by, to spare consumers a single `using`.
+// Portable contracts — "URI plus headers in, status plus content-type plus a stream out" — so they live
+// in Core and every shell's request-interception seam can use them (D19/D20).
 
 /// <summary>
-/// The request a deferred-scheme handler is answering.
-/// <para>
-/// Handlers used to receive only a <see cref="Uri"/>, which made a whole class of response
-/// impossible to write: anything that depends on a request HEADER. The one that matters in practice
-/// is <c>Range</c> — without it a page cannot SEEK a large file, because the handler has no way to
-/// know what byte offset was asked for and no way to answer <c>206</c>. One of the surveyed apps
-/// hit exactly that and had to bypass the kit's seam entirely and hook WebView2 itself (P6.6).
-/// </para>
+/// The request a deferred-scheme handler is answering. It carries the request HEADERS: without
+/// <c>Range</c> a handler cannot know what byte offset was asked for nor answer <c>206</c>, so a page
+/// cannot SEEK a large file.
 /// </summary>
 public sealed class WebViewResourceRequest
 {
     /// <summary>
-    /// The requested URI.
-    /// <para>
-    /// ⚠ <b>It can carry a <c>#fragment</c>, and reading it wrong is a real reported bug rather than a
-    /// theoretical one.</b> A top-level navigation to <c>https://host/#/library</c> reaches a handler as
-    /// <c>Uri = https://host/#/library</c> with <c>Fragment = "#/library"</c> and
-    /// <c>AbsolutePath = "/"</c> — so a resolver written against <see cref="System.Uri.AbsolutePath"/> is
-    /// fine, and one written against <c>ToString()</c> or <c>PathAndQuery</c> mis-resolves. The trap is
-    /// that the SAFE reading also hides the fragment: the first adopter logged <c>AbsolutePath</c>, saw
-    /// <c>/</c>, concluded the URL was fragment-free, and filed a defect against the wrong component
-    /// (2026-08-06). Log the whole <see cref="System.Uri"/> when a document request surprises you.
-    /// </para>
-    /// <para>
-    /// See <see cref="IsRootWithFragment"/> for what that shape means to a platform.
-    /// </para>
+    /// The requested URI. ⚠ <b>It can carry a <c>#fragment</c></b>: a top-level navigation to
+    /// <c>https://host/#/library</c> arrives with <c>Fragment = "#/library"</c> and
+    /// <c>AbsolutePath = "/"</c>, so a resolver reading <see cref="System.Uri.AbsolutePath"/> is fine and
+    /// one reading <c>ToString()</c> or <c>PathAndQuery</c> mis-resolves. That safe reading also HIDES the
+    /// fragment, so log the whole <see cref="System.Uri"/> when a document request surprises you — see
+    /// <see cref="IsRootWithFragment"/>.
     /// </summary>
     public required Uri Uri { get; init; }
 
@@ -63,12 +37,12 @@ public sealed class WebViewResourceRequest
 
     /// <summary>
     /// True when <paramref name="uri"/> asks for the site ROOT <b>and</b> carries a <c>#fragment</c> — the
-    /// shape a hash-routed page reloads at (<c>https://host/#/library</c>).
-    /// <para>
-    /// ⚠ <b>This shape is BROKEN on Android and it is the platform's doing, not this kit's.</b> Measured by
-    /// the first adopter on MAUI 10.0.20 / WebView 110, by A/B against a build with no interceptor
-    /// constructed at all — so it reproduces with the kit entirely absent:
-    /// </para>
+    /// shape a hash-routed page reloads at (<c>https://host/#/library</c>), which both mobile shells
+    /// repair with no app code. ⚠ <b>The break is the platform's, not this kit's</b>: MAUI's request→asset
+    /// mapping removes a query string and not a fragment, so <c>/#zzz</c> looks for an asset literally
+    /// named <c>#zzz</c>, and Chromium turns that bodyless, MIME-less 404 into
+    /// <c>ERR_INVALID_RESPONSE</c>. Measured on MAUI 10.0.20 / WebView 110, against a build with no
+    /// interceptor constructed at all:
     /// <code>
     /// reload at                     MAUI's own shouldInterceptRequest answered
     /// ─────────                     ─────────────────────────────────────────
@@ -79,67 +53,39 @@ public sealed class WebViewResourceRequest
     /// https://host/#/library        404
     /// </code>
     /// <para>
-    /// Its request→asset mapping removes a query string and not a fragment, so <c>/#zzz</c> looks for an
-    /// asset literally named <c>#zzz</c>; Chromium turns a 404 with no body and no MIME type into
-    /// <c>ERR_INVALID_RESPONSE</c>. The mobile shells repair it — an app writes nothing — and the
-    /// repair is why this predicate is public rather than private to the shell: a middleware that answers
-    /// the root itself needs to recognise the same shape.
-    /// </para>
-    /// <para>
-    /// A static over a bare <see cref="System.Uri"/> rather than an instance member, because the shells ask
-    /// it BEFORE building a request — with no middleware registered there is nothing to build one for, and
-    /// the repair still has to run.
-    /// </para>
-    /// <para>
-    /// 🔴 <b>iOS HAS THE SAME TRIGGER AND IS REPAIRED THE SAME WAY, since 2026-08-09.</b> This predicate is
-    /// pure URL shape — no platform test — and the repair that consults it is unguarded shared code, so both
-    /// shells get it.
-    /// <para>
-    /// ⚠ It said the opposite here until 2026-08-12, on an account that measuring disproved: that iOS
-    /// "simply never produces a second document", and that applying the repair there made it worse. Both
-    /// halves were wrong. iOS <b>does</b> issue the request (logged as <c>app://0.0.0.1/#/probe-route</c>),
-    /// and what broke iOS was the repair's first IMPLEMENTATION — a blocking bundle read inside the handler,
-    /// which deadlocks the main thread there — not the idea. Moving the read to construction fixed both.
-    /// <b>A hypothesis discarded because its first implementation failed was never tested</b>, and this one
-    /// blocked a real adopter bug for three days.
-    /// </para>
-    /// </para>
-    /// <para>
-    /// Scoped to the root path because that is what was measured and what a hash router reloads at.
-    /// <c>/index.html#x</c> was never tested and is deliberately not claimed.
+    /// ⚠ A repair must not read the bundle INSIDE the handler: that deadlocks iOS's main thread. Read at
+    /// construction. Scoped to the root path — <c>/index.html#x</c> was never tested and is not claimed.
     /// </para>
     /// </summary>
     /// <param name="uri">The request URI. A relative URI is never one of these, and answers false.</param>
     public static bool IsRootWithFragment(Uri uri)
     {
         ArgumentNullException.ThrowIfNull(uri);
-        // Fragment/AbsolutePath THROW on a relative Uri. Every shell hands over an absolute one; this is
-        // here so a hand-built Uri in an app's own test is a false rather than an exception.
+        // Fragment/AbsolutePath THROW on a relative Uri.
         if (!uri.IsAbsoluteUri) return false;
-        // Any '#' at all, including a bare one. Repairing a request the platform would have served anyway
-        // costs a correct document; failing to repair one costs the whole page — so this errs toward
-        // repairing, deliberately.
+        // Any '#' at all, including a bare one: over-repairing costs a correct document, under-repairing
+        // costs the whole page.
         if (uri.Fragment.Length == 0) return false;
         return uri.AbsolutePath is "/" or "";
     }
 }
 
 /// <summary>
-/// The response a deferred-scheme handler returns: a status, headers, and a CONTENT STREAM.
-/// <para>
-/// A stream rather than a <c>byte[]</c> on purpose. The old signature returned the complete bytes,
-/// so serving a 4 GB file meant materialising 4 GB in memory — the seam could not express streaming
-/// at all, only "here is the whole thing". Use the factories; they set the status line and the
-/// headers that go with it, which is where a hand-rolled version gets it subtly wrong.
-/// </para>
+/// The response a deferred-scheme handler returns: a status, headers, and a CONTENT STREAM — a stream
+/// rather than a <c>byte[]</c>, so serving a 4 GB file does not materialise 4 GB. Use the factories:
+/// they set the status line and the headers that belong with it.
 /// </summary>
 public sealed class WebViewResourceResponse
 {
     /// <summary>
-    /// The body. Ownership passes to WebView2, which READS it after the handler has returned — so do
+    /// The body. Ownership passes to THE PLATFORM, which READS it after the handler has returned — do
     /// NOT dispose it yourself or wrap it in a <c>using</c>; that truncates the response. The host
-    /// disposes it only if handing it over failed (a webview torn down mid-flight), which is the one
-    /// case where nothing else ever will.
+    /// disposes it only if handing it over failed (a webview torn down mid-flight).
+    /// <para>
+    /// ⚠ The per-shell arms differ in when they close it, and iOS never disposes a body at all — see
+    /// <c>docs/design/mobile-shells.md</c>. That is why the rule is stated as ownership rather than as a
+    /// disposal step you could mirror.
+    /// </para>
     /// </summary>
     public required Stream Content { get; init; }
 
@@ -149,10 +95,8 @@ public sealed class WebViewResourceResponse
     /// <summary>HTTP reason phrase, paired with <see cref="StatusCode"/>.</summary>
     public string ReasonPhrase { get; init; } = "OK";
 
-    /// <summary>
-    /// Response headers, case-insensitive. <c>Content-Type</c> belongs here like any other; the host
-    /// adds the scheme's <c>Cache-Control</c> unless this already carries one.
-    /// </summary>
+    /// <summary>Response headers, case-insensitive (<c>Content-Type</c> included). The host adds the
+    /// scheme's <c>Cache-Control</c> unless this already carries one.</summary>
     public IReadOnlyDictionary<string, string> Headers { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -164,8 +108,8 @@ public sealed class WebViewResourceResponse
         ArgumentException.ThrowIfNullOrEmpty(contentType);
         var all = Merge(headers);
         all["Content-Type"] = contentType;
-        // Advertised so the page knows it MAY seek. Without it a media element will not even try,
-        // which looks exactly like "seeking is broken" while the handler is perfectly capable.
+        // Without this a media element will not even ATTEMPT a seek — indistinguishable from seeking
+        // being broken.
         all.TryAdd("Accept-Ranges", "bytes");
         return new WebViewResourceResponse { Content = content, Headers = all };
     }
@@ -204,10 +148,8 @@ public sealed class WebViewResourceResponse
     }
 
     /// <summary>
-    /// A 404 carrying the kit's single fixed body. The text is a CONSTANT on purpose (P5.5 H3: one
-    /// body for every 404) — page script can read a response body, and an app scheme handler's own
-    /// failure detail is the most likely of all of them to carry a real path or a remote URL, so the
-    /// diagnosis goes to the host log and never here (design §5).
+    /// A 404 carrying the kit's single fixed body. Page script can read a response body and a scheme
+    /// handler's failure detail is the likeliest to carry a real path, so diagnosis goes to the host log.
     /// </summary>
     public static WebViewResourceResponse NotFound() => new()
     {
@@ -223,9 +165,8 @@ public sealed class WebViewResourceResponse
     private static readonly byte[] NotFoundBody = System.Text.Encoding.UTF8.GetBytes("Not Found");
 
     /// <summary>
-    /// A <c>416</c> for a range outside the resource. The <c>Content-Range</c> is required by the
-    /// spec so the client learns the real size and can retry — omitting it is the classic bug that
-    /// leaves a player retrying the same bad range forever.
+    /// A <c>416</c> for a range outside the resource. Its <c>Content-Range</c> tells the client the real
+    /// size; without it a player retries the same bad range forever.
     /// </summary>
     public static WebViewResourceResponse RangeNotSatisfiable(long totalLength) => new()
     {
@@ -247,9 +188,7 @@ public sealed class WebViewResourceResponse
     }
 }
 
-/// <summary>
-/// One resolved byte range, inclusive at both ends — the form <c>Content-Range</c> uses.
-/// </summary>
+/// <summary>One resolved byte range, inclusive at both ends — the form <c>Content-Range</c> uses.</summary>
 /// <param name="From">First byte offset, inclusive.</param>
 /// <param name="To">Last byte offset, inclusive.</param>
 public readonly record struct WebViewByteRange(long From, long To)
@@ -258,14 +197,9 @@ public readonly record struct WebViewByteRange(long From, long To)
     public long Length => To - From + 1;
 
     /// <summary>
-    /// Parse a single-range <c>Range</c> header against a known resource length.
-    /// <para>
-    /// This is protocol plumbing, not policy, and it ships because every one of the three forms is a
-    /// separate chance to be wrong: <c>bytes=0-499</c> (closed), <c>bytes=500-</c> (open-ended, what a
-    /// media element actually sends when it seeks), and <c>bytes=-500</c> (a SUFFIX — the last 500
-    /// bytes, not "from 500"), which is the one hand-rolled parsers reliably get backwards.
-    /// A range that starts past the end is unsatisfiable and must be answered <c>416</c>, not clamped.
-    /// </para>
+    /// Parse a single-range <c>Range</c> header against a known resource length. All three forms:
+    /// <c>bytes=0-499</c> (closed), <c>bytes=500-</c> (open-ended, what a media element sends when it
+    /// seeks) and <c>bytes=-500</c> (a SUFFIX — the LAST 500 bytes, not "from 500").
     /// </summary>
     /// <param name="headerValue">The raw header, or null.</param>
     /// <param name="totalLength">The resource's full length in bytes.</param>
@@ -285,8 +219,7 @@ public readonly record struct WebViewByteRange(long From, long To)
         if (!value.StartsWith(unit, StringComparison.OrdinalIgnoreCase)) return false;
 
         var spec = value[unit.Length..].Trim();
-        // Multi-range is legal HTTP and needs a multipart/byteranges body. Nothing in the family has
-        // ever needed it, so it is honestly declined (answer 200) rather than half-implemented.
+        // Multi-range needs a multipart/byteranges body: declined (answer 200), not half-implemented.
         if (spec.Contains(',', StringComparison.Ordinal)) return false;
 
         var dash = spec.IndexOf('-', StringComparison.Ordinal);
@@ -313,16 +246,15 @@ public readonly record struct WebViewByteRange(long From, long To)
         }
 
         if (from < 0) return false;
-        // An EXPLICITLY inverted range (bytes=20-10) is malformed — decline it. Note the guard is on
-        // `toText`, not on the computed value: for an open-ended range past the end, `to` was already
-        // resolved to the last byte and would look inverted while being perfectly well-formed. Those
-        // two cases got conflated on the first attempt and the test below caught it.
+        // An EXPLICITLY inverted range (bytes=20-10) is malformed. The guard is on `toText`, not on the
+        // computed value: for an open-ended range past the end, `to` is already the last byte and would
+        // look inverted while being well-formed.
         if (toText.Length > 0 && to < from) return false;
 
         if (from >= totalLength)
         {
-            // Well-formed, but outside the resource: the caller must answer 416. Deliberately NOT
-            // clamped — clamping the START would silently serve bytes nobody asked for, with no error.
+            // Well-formed but outside the resource: the caller must answer 416. NOT clamped — clamping
+            // the START would silently serve bytes nobody asked for, with no error.
             range = new WebViewByteRange(from, to);
             return true;
         }

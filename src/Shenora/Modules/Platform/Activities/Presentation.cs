@@ -8,40 +8,9 @@ namespace Shenora.Modules.Platform.Activities;
 /// UI in, on the side of the boundary where the app already lives.
 ///
 /// <para>
-/// 🔴 <b>THE SHORT NAMES ARE THE POINT, AND THE NAMESPACE IS WHAT PAYS FOR THEM.</b> These types were
-/// <c>LiveActivityText</c>, <c>LiveActivityIcon</c>, <c>LiveActivityTextRole</c>… and a tree of six nodes
-/// said "LiveActivity" eight times. A prefix that exists only to keep short names from colliding in a
-/// shared namespace is a namespace, badly spelled (owner, 2026-08-10: <i>"the name just don't feel that
-/// make sense and it's not easy to consume"</i>). An app that already has a <c>Text</c> omits the
-/// <c>using</c> or aliases it, which is the ordinary answer and costs that app one line instead of
-/// costing every app twelve characters on every line.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>THE WIRE DID NOT MOVE.</b> The JSON discriminators are still <c>text</c>/<c>icon</c>/
-/// <c>progress</c>/<c>layout</c>/<c>cutout</c>/<c>spacer</c> and every enum still crosses as the same
-/// member NAME, so the Swift interpreter is untouched by this rename. That is deliberate: a rename that
-/// also moves the wire cannot be verified one half at a time.
-/// </para>
-///
-/// <para>
-/// 🔴 <b>THE ELEMENT SET IS CLOSED AND SMALL ON PURPOSE, AND THAT IS WHAT KEEPS THIS FROM BEING A DESIGN
-/// SYSTEM.</b> D13 says the kit ships none, and a layout LANGUAGE would be worse than one — a design
-/// system plus a runtime to interpret it. What makes this defensible is that the SURFACE is tiny: a Live
-/// Activity is a lock-screen card and four regions measured in millimetres, so the vocabulary it can hold
-/// is text, a symbol, a bar, and a way to put them beside or under each other. <b>An app that needs more
-/// writes SwiftUI</b> (<c>ShenoraLiveActivityViews</c>), which stays a first-class path.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>The tell that this has gone wrong:</b> a request for nesting depth, absolute positioning, images,
-/// custom fonts, or anything named <c>Style</c>/<c>Theme</c>. Every one is the moment to say "write the
-/// view bodies" rather than to widen this.
-/// </para>
-///
-/// <para>
-/// Every surface is optional. A null one falls back to the kit's built-in look, so an app can restyle the
-/// Island's compact pill and leave the lock-screen card alone.
+/// Every surface is optional; a null one uses the kit's built-in look. The element set is closed (D13) —
+/// an app needing more writes SwiftUI views directly (<c>ShenoraLiveActivityViews</c>).
+/// ⚠ The type names are short and collide easily; an app with its own <c>Text</c> aliases the <c>using</c>.
 /// </para>
 ///
 /// <code>
@@ -97,8 +66,8 @@ public sealed record Presentation
 /// malformed layout must not take the activity down with it.
 /// </para>
 /// <para>
-/// 🔴 <b>CLOSED IS ENFORCED, NOT ASSERTED — the constructor is <c>private protected</c>.</b> This record was
-/// plainly derivable until 2026-08-10, so an adopter could write <c>record MyElement : Element</c>, have it
+/// 🔴 <b>CLOSED IS ENFORCED, NOT ASSERTED — the constructor is <c>private protected</c>.</b> Left plainly
+/// derivable, an adopter could write <c>record MyElement : Element</c>, have it
 /// COMPILE, and get a <see cref="NotSupportedException"/> out of
 /// <see cref="ILiveActivities.Start"/> at runtime — polymorphic serialization refuses a runtime type with no
 /// <c>[JsonDerivedType]</c>. And it could never have worked even if it serialized: the Swift interpreter
@@ -259,7 +228,7 @@ public readonly record struct Insets(double Top, double Right, double Bottom, do
 /// compares against the member NAME, so an enum written as a number decodes to nothing and the
 /// interpreter falls back to its default — silently, on both sides. Putting it on the TYPE rather than on
 /// one call site's options means the guarantee travels with the value wherever it is serialized.
-/// (Measured 2026-08-09: without it every role rendered as body text and every horizontal layout ran
+/// (Measured: without it every role rendered as body text and every horizontal layout ran
 /// vertically.) The generic converter, because iOS is AOT and the non-generic one resolves by reflection.
 /// </remarks>
 [JsonConverter(typeof(JsonStringEnumConverter<Axis>))]
@@ -318,9 +287,9 @@ public enum Align
     /// <summary>
     /// Stretched across the axis. What a progress bar in a column wants.
     /// <para>
-    /// ⚠ This was declared and INERT until 2026-08-10 — it shared the interpreter's default arm with
-    /// <see cref="Leading"/> and applied no frame, so an app could set it and nothing happened. Pinned
-    /// now by a test asserting at most one member of an enum falls to the default.
+    /// ⚠ A member that shares the interpreter's default arm with <see cref="Leading"/> applies no frame,
+    /// so an app can set it and nothing happens — declared and INERT. Pinned by a test asserting at most
+    /// one member of an enum falls to the default.
     /// </para>
     /// </summary>
     Fill,

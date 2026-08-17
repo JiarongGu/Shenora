@@ -81,6 +81,61 @@ internal static class Mp4FragmentReader
         }
     }
 
+    /// <summary>
+    /// The decode time this fragment declares for <paramref name="trackId"/> — its <c>tfdt</c>
+    /// <c>baseMediaDecodeTime</c>, in the track's own timescale. Null when the track is absent or the
+    /// fragment cannot be read.
+    ///
+    /// <para>
+    /// 🔴 <b>WHERE a fragment sits is not checkable from its byte count, and that is what let a whole
+    /// class of bug through.</b> A fragment written at the wrong time is the right size, carries the right
+    /// samples, appends without error, and only fails as a stream that will not play — so a suite asserting
+    /// only <see cref="SampleBytes(byte[], int)"/> passes over it. This exists so a test can say WHEN.
+    /// </para>
+    /// </summary>
+    public static long? BaseDecodeTime(byte[] fragment, int trackId)
+    {
+        ArgumentNullException.ThrowIfNull(fragment);
+
+        foreach (var moof in TopLevel(fragment, "moof"))
+        {
+            foreach (var traf in Children(fragment, moof.Body, moof.End, "traf"))
+            {
+                if (TrackOf(fragment, traf) != trackId) continue;
+                foreach (var tfdt in Children(fragment, traf.Body, traf.End, "tfdt"))
+                {
+                    // FullBox: version byte then three flag bytes, then a 32- or 64-bit time.
+                    if (tfdt.Body >= fragment.Length) continue;
+                    var version = fragment[tfdt.Body];
+                    var at = tfdt.Body + 4;
+                    if (version == 1)
+                    {
+                        if (at + 8 > tfdt.End) continue;
+                        return BinaryPrimitives.ReadInt64BigEndian(fragment.AsSpan(at, 8));
+                    }
+                    if (at + 4 > tfdt.End) continue;
+                    return BinaryPrimitives.ReadUInt32BigEndian(fragment.AsSpan(at, 4));
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <inheritdoc cref="BaseDecodeTime(byte[], int)"/>
+    /// <param name="path">A segment on disk.</param>
+    /// <param name="trackId">The track to ask about.</param>
+    public static long? BaseDecodeTime(string path, int trackId)
+    {
+        try
+        {
+            return BaseDecodeTime(File.ReadAllBytes(path), trackId);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>A box's payload span within the buffer.</summary>
     private readonly record struct Span(int Body, int End);
 

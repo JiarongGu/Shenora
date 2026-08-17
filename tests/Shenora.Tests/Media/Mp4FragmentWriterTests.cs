@@ -333,4 +333,30 @@ public class Mp4FragmentWriterTests
                 Samples = Payload(count: 1, length: 4).Samples,
                 Data = Payload(count: 1, length: 4).Data,
             })).Select(b => b.Type));
+
+    /// <summary>
+    /// The ES_Descriptor's declared length must cover every byte that follows it in the box. It budgeted
+    /// 3 bytes for the SLConfigDescriptor, whose expanded on-wire size is 6 — so every AAC esds declared
+    /// itself three bytes short. Sequential parsers shrug; a strict one flags the box malformed.
+    /// </summary>
+    [Fact]
+    public void The_esds_ES_descriptor_declares_exactly_the_bytes_that_follow_it()
+    {
+        var entry = Mp4Builder.AudioSampleEntry(2, 48_000, Mp4RemuxerTests.AacConfig);
+
+        var index = IndexOf(entry, "esds"u8);
+        Assert.True(index >= 0, "no esds box in the audio sample entry");
+        var boxEnd = index - 4 + (int)U32(entry, index - 4);
+
+        var p = index + 4 + 4;              // past the box type and the FullBox version+flags
+        Assert.Equal(0x03, entry[p]);       // ES_Descriptor tag
+        var declared = ((entry[p + 1] & 0x7F) << 21) | ((entry[p + 2] & 0x7F) << 14)
+                     | ((entry[p + 3] & 0x7F) << 7) | (entry[p + 4] & 0x7F);
+
+        Assert.Equal(boxEnd - (p + 5), declared);
+        Assert.Equal(0x02, entry[boxEnd - 1]);   // …ending on the SLConfig's single content byte
+    }
+
+    private static int IndexOf(byte[] haystack, ReadOnlySpan<byte> needle)
+        => haystack.AsSpan().IndexOf(needle);
 }

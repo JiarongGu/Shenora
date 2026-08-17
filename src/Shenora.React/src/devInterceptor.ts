@@ -49,18 +49,30 @@ export interface DevInterceptorOptions {
 }
 
 /**
- * Install the interceptor (idempotent across HMR / StrictMode double-invoke — keyed on the
- * window global).
+ * Install the interceptor. Idempotent across HMR and StrictMode's double-invoke.
+ *
+ * 🔴 **Idempotency is keyed on WHICH bridge and bus were wrapped, not on "something is installed".**
+ * The wrapping mutates a specific `ShenoraBridge` INSTANCE, but the guard used to ask only whether the
+ * window global existed — so `configureBridge()`, which disposes the default bridge and builds a new
+ * one, left the interceptor pointing at the dead instance and a second install returning early without
+ * wrapping the live one. The tool then looked installed and recorded NOTHING, while
+ * `window.__shenora.call` drove a disposed bridge. A dev tool that fails silently is worse than one that
+ * is absent, because its silence reads as "no traffic".
  */
 export function installDevInterceptor(options: DevInterceptorOptions = {}): void {
   if (typeof window === 'undefined') return;
   const globalName = options.globalName ?? '__shenora';
   const w = window as unknown as Record<string, unknown>;
-  if (w[globalName]) return;
 
   const ringSize = options.ringSize ?? 300;
+  // Resolved BEFORE the guard, because the guard's question is now about these two objects.
   const bridge = options.bridge ?? getBridge();
   const bus = options.bus ?? defaultEventBus;
+
+  // Same pair = the HMR/StrictMode case this exists for; wrapping twice would double every log line and
+  // stack a second recorder on the first.
+  const installed = w[globalName] as { bridge?: unknown; eventBus?: unknown } | undefined;
+  if (installed && installed.bridge === bridge && installed.eventBus === bus) return;
 
   const ipc: DevIpcEntry[] = [];
   const events: DevEventEntry[] = [];

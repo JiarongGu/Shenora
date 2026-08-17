@@ -1,6 +1,5 @@
 using Shenora.Engine.Missions;
 
-
 namespace Shenora.Engine.Files;
 
 /// <summary>
@@ -25,7 +24,7 @@ public static class PathClaims
     /// run while something writes a file inside it. Case-insensitive on Windows only.
     /// </summary>
     public static NestedClaimScope Scope { get; } =
-        new(ScopeName, Path.DirectorySeparatorChar, ignoreCase: OperatingSystem.IsWindows());
+        new(ScopeName, Path.DirectorySeparatorChar, ignoreCase: PathComparison.IgnoresCase);
 
     /// <summary>An exclusive claim on <paramref name="path"/> — for anything that MUTATES it.</summary>
     public static MissionClaim Exclusive(string path) => MissionClaim.Exclusive(ScopeName, Canonical(path));
@@ -74,9 +73,9 @@ public static class PathClaims
     {
         var normalizedRoot = TrimSeparator(Canonical(root));
         var normalizedCandidate = TrimSeparator(Canonical(candidate));
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
+        // Shared with the serving-side check so the two can never disagree about case — see PathComparison
+        // for why a test cannot hold this.
+        var comparison = PathComparison.ForPaths;
 
         if (string.Equals(normalizedRoot, normalizedCandidate, comparison)) return true;
         if (!normalizedCandidate.StartsWith(normalizedRoot, comparison)) return false;

@@ -115,6 +115,17 @@ export function useMediaPlayer(
       link.post(module, MEDIA_PLAYER_REPORT, { payload });
     };
 
+    // The PENDING start-at seek, if any. 🔴 It has to be cancellable: `{ once: true }` removes a listener
+    // only when it FIRES, and a second PLAYER_LOAD calls `element.load()`, which aborts the first load so
+    // its `loadedmetadata` never comes. The stale listener then survives and runs on the NEXT track's
+    // metadata — so loading A at 10:00 and then B at 0:00 starts B ten minutes in, because B sets no
+    // listener of its own and A's is still attached.
+    let pendingSeek: (() => void) | null = null;
+    const cancelPendingSeek = () => {
+      if (pendingSeek) element.removeEventListener('loadedmetadata', pendingSeek);
+      pendingSeek = null;
+    };
+
     // ── host → element ────────────────────────────────────────────────────────────────────────────
     const subscriptions = [
       eventBus.subscribe<{ uri: string; startAt: number }>(module, MediaPlayerCommands.load, (message) => {
@@ -123,10 +134,12 @@ export function useMediaPlayer(
         // load() rather than trusting the src assignment: a second load on the same element keeps the
         // previous buffer otherwise, and a seek then lands in the OLD media.
         element.load();
+        cancelPendingSeek();   // this load supersedes any earlier one — see pendingSeek
         if (startAt > 0) {
-          const seek = () => { element.currentTime = startAt; };
+          const seek = () => { pendingSeek = null; element.currentTime = startAt; };
           // `loadedmetadata` is the earliest point currentTime is settable — before it, the assignment is
           // silently dropped and the item starts at zero.
+          pendingSeek = seek;
           element.addEventListener('loadedmetadata', seek, { once: true });
         }
       }),
@@ -173,9 +186,29 @@ export function useMediaPlayer(
     ];
     for (const [event, handler] of listeners) element.addEventListener(event, handler);
 
+    // 🔴 REPORT WHEN THE PAGE IS ABOUT TO BE HIDDEN, or the host's position is whatever the last
+    // TRANSITION left — which for steady playback is the moment it started.
+    //
+    // Measured on an Android emulator 2026-08-15: with transition-only reporting the page sat at 19.79 s
+    // while the host believed 0.01 s, and `BackgroundPlaybackTransfer` handed the native player 0.01 s.
+    // The user backgrounds mid-film and resumes from the beginning. The platform's `pause` at background
+    // time does fire, but not in time to cross IPC before the process is frozen.
+    //
+    // ⚠ `visibilitychange` rather than `pagehide`: this fires while the document is still alive and the
+    // bridge can still post, and it is the signal both mobile shells raise on the way to the background.
+    // It costs ONE report per background — nothing like `timeupdate`'s ~4/second, which is why that one
+    // is still deliberately absent.
+    const onHidden = () => {
+      if (document.visibilityState !== 'hidden') return;
+      report(element.paused ? (element.ended ? 'Ended' : 'Paused') : 'Playing');
+    };
+    document.addEventListener('visibilitychange', onHidden);
+
     return () => {
       for (const subscription of subscriptions) subscription();
       for (const [event, handler] of listeners) element.removeEventListener(event, handler);
+      cancelPendingSeek();
+      document.removeEventListener('visibilitychange', onHidden);
     };
   }, [ref, module, bridge, eventBus]);
 }

@@ -68,15 +68,17 @@
   </ItemGroup>
 
   <!--
-    ⚠ TEMPORARY, and it exists to avoid a WORSE change. `DefaultSegmentEngine` (D71 piece 3) is internal
-    and unverified on hardware: the append path, whether the platform encoders reorder, and whether a real
-    ManagedMediaSource accepts the kit's fragments are all unmeasured. Making it PUBLIC to run that
-    measurement would commit SemVer surface to a shape the measurement might change — exactly backwards.
-    So the SAMPLE borrows it for the device run instead, and the public entry point gets designed once the
-    numbers are in.
-    🔴 REMOVE THIS with the same commit that makes the engine reachable properly. A temporary grant that
-    outlives its reason is indistinguishable from a deliberate one, and this file is not somewhere anyone
-    re-reads.
+    The MAUI sample is a DEVICE PROBE, not an adoption example, and it reads back what it produced to
+    prove the output is right: `Mp4FragmentReader` (does this fragment declare the track, and at what
+    decode time?) and `SegmentRunWriter` (what did the encoder emit vs what was read?). Both are
+    implementation detail no adopter should program against, so they stay internal and the probe borrows
+    them.
+    ⚠ NARROWED, not removed. It was written when `DefaultSegmentEngine` was also borrowed — the engine
+    is now reachable publicly through `SegmentEngine.Default(...)`, which was that instruction's whole
+    point. What is left is genuinely probe-only.
+    🔴 So the standing rule still applies to what remains: if the sample ever stops using those two
+    types, DELETE this. A temporary grant that outlives its reason is indistinguishable from a
+    deliberate one, and this file is not somewhere anyone re-reads.
   -->
   <ItemGroup>
     <InternalsVisibleTo Include="Shenora.Sample.Maui" />

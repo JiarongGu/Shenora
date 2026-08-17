@@ -1,3 +1,7 @@
+Shenora.Android.ActivityResultRelay
+  method Begin
+  method Complete
+  method Deliver
 Shenora.Android.AndroidFileDialogs
   method .ctor
   method SaveAsync
@@ -43,10 +47,11 @@ Shenora.Android.AndroidPlaybackSession
   property Supported
 Shenora.Mobile.MobileClipboardService
   method .ctor
+  method ClearAsync
+  method GetAsync
   method GetTextAsync
-  method SetImageFromFileAsync
+  method SetAsync
   method SetTextAsync
-  method TrySaveImageToFileAsync
 Shenora.Mobile.MobileFileDialogsBase
   method .ctor
   method DiscardTemp
@@ -95,3 +100,5 @@ Shenora.Mobile.MobileWebViewInterceptor
   method Dispose
   method Use
   property RangeDelivery
+Shenora.Mobile.MobileWindowLifecycle
+  property IsRecreating

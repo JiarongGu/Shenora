@@ -1,6 +1,9 @@
 # CLAUDE.md — Shenora
 
-Auto-loaded every session. Keep short — details live in `docs/` and `.claude/rules/`.
+Auto-loaded every session. **This is a STARTING PROMPT, not the rule base** — what the kit is, what must
+run before development, and where everything else lives. 🔴 **A rule does not belong here.** Anything in
+this file is applied to EVERY task whether or not it fits, which is the drift D77 names; a rule belongs in
+`.claude/rules/` (core, always loaded) or `.claude/knowledge/` (loaded only when its area matches).
 
 ## What this is
 
@@ -27,10 +30,14 @@ Platform · Requests · Update). ⚠ **`Shenora.Ipc` is retired as BOTH a packag
 Code is **extracted from proven sibling apps**, not
 invented — the framework's opinions are their measured lessons. Its sibling Lyntai is the AI
 brain; **Shenora must never depend on Lyntai**. Two consumption profiles: desktop-only
-(postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only). See
-`docs/DECISIONS.md` (numbered; its header carries the current package set) before relitigating anything.
-**There are no design docs and no archive** (D57, D9): why → `DECISIONS.md`, as-built →
-`ARCHITECTURE.md`, what's left → `TASKS.md`, what happened → `git log`.
+(postMessage IPC) and server-backed (in-process HTTP for desktop+mobile; shell only).
+
+**THREE HOMES (D77), and there is no archive** (D9): a WHY → `docs/DECISIONS.md`, a subsystem's DESIGN →
+`docs/design/`, an INVARIANT → `.claude/knowledge/`; as-built map → `ARCHITECTURE.md`, what's left →
+`TASKS.md`, what happened → `git log`.
+🔴 **READ `DECISIONS.md` BY NUMBER, NEVER WHOLE — taking the file at once IS the drift** (D77): a
+constraint earned in one context reads as universal and gets applied where it does not fit. Scan the
+generated index at its top, open the `D<n>` your task actually touches, and leave the other seventy shut.
 
 **Status: v0.10.0 published (2026-08-05)**; the tree is ahead of it and the release is deliberately on
 HOLD — the surface is not yet one an app should adopt, so correctness beats cosmetics and a half-finished
@@ -58,32 +65,12 @@ Core (auto-loaded): `skills-workflow` · `phase-workflow` · `windows-dev-gotcha
 `.claude/knowledge/` — don't trust any list here to stay current; scan
 `.claude/rules/RULES_INDEX.md`'s *Applies when* column.
 
-## Hard rules (family carry-overs)
-
-- **Library discipline:** generalize the consumer's request, never ship its shape
-  (`.claude/knowledge/generic-library.md`). No app/domain vocabulary in `src/`. **Headless
-  (D13):** no UI component library dependency anywhere — apps bring their own design system.
-- **Layering (D19/D20/D37):** ONE shell package per PLATFORM. Windows primitives and web hosting are
-  one layer — literally one package, `Shenora.Windows`, with the direction kept internally
-  (`Shell/` must never depend on `WebView/`). Portable contracts + the `IUiDispatcher` marshalling
-  seam live in `Shenora` so app logic compiles with no Windows reference — enforced, not asserted:
-  `samples/Shenora.Sample.Logic` is a `net10.0` project that turns RED if a Windows type creeps into
-  app logic. `docs/ARCHITECTURE.md` describes this as-built; **don't re-split the packages** — D37
-  has the reasoning and the measurements that killed the counter-arguments.
-- **Extraction-first:** prefer lifting proven sibling code — including its post-mortem comments —
-  over new abstractions (`.claude/knowledge/extraction-sources.md` + `local/EXTRACTION-MAP.md`).
-- **NEVER touch the version — the release workflow owns it.** One `<VersionPrefix>`
-  (src/Directory.Build.props) is the only version source; npm/README are synced by `dev.mjs
-  pack`/`doctor --fix`, never hand-edited. **`VersionPrefix` itself is not yours to bump either**, nor
-  is the CHANGELOG's `## Unreleased` heading (the workflow stamps it). An empty `version` input means
-  "bump from whatever VersionPrefix says", so a hand-bump moves that baseline and SKIPS a release —
-  it cost 0.2.0 outright on 2026-08-01. Between releases `VersionPrefix` == the newest `v*` tag;
-  `doctor` and a pre-commit guard both enforce it. Cut releases from the Actions tab (`docs/RELEASING.md`).
-- C# naming: no `Dto` suffix; contract names mirror the TS names exactly.
-- Working files: temp/probes under `devtools/` (`_*` gitignored), private under `local/` —
-  never the system temp, never sibling folders elsewhere.
-- Knowledge lives in the repo (docs/rules/skills), not assistant memory.
-- **Never commit without explicit user approval.** Public repo: run the sensitive guard.
+**Where the constraints that shape development live**, so the loader can scope them to the task: library
+discipline and C# naming → `generic-library.md` · extraction-first → `extraction-sources.md` · the version
+and the release path → `release-discipline.md` · working files and cross-turn state →
+`persist-working-state.md` · commit-only-on-approval → `phase-workflow.md`.
+**Layering (D19/D20/D37) is enforced rather than remembered:** `samples/Shenora.Sample.Logic` is a
+`net10.0` project that turns RED if a Windows type reaches app logic.
 
 ## Dev loop
 

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Platform.Activities;
 
@@ -44,10 +45,10 @@ public sealed class IosLiveActivities : ILiveActivities
     /// </summary>
     private const string ActivityName = "shenora";
 
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a native callback.</param>
-    public IosLiveActivities(Action<string>? log = null) => _log = log;
+    public IosLiveActivities(ILogger? log = null) => _log = log;
 
     [DllImport(Lib, EntryPoint = "shenora_activity_unavailable")]
     private static extern IntPtr NativeUnavailable();
@@ -107,7 +108,7 @@ public sealed class IosLiveActivities : ILiveActivities
                 // promised to report exactly that, which a LINK-time failure could never deliver. What can
                 // still fail is the call itself, and a reason is worth returning rather than throwing at an
                 // app that asked a simple question.
-                Log(() => $"[Shenora.iOS] Live activity probe failed ({ex.GetType().Name}: {ex.Message}).");
+                Log(() => "[Shenora.iOS] Live activity probe failed.", ex);
                 return $"The live-activity shim could not be reached ({ex.GetType().Name}).";
             }
         }
@@ -196,10 +197,10 @@ public sealed class IosLiveActivities : ILiveActivities
         try { return call(); }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.iOS] LiveActivities.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"[Shenora.iOS] LiveActivities.{what} failed.", ex);
             return null;
         }
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 }

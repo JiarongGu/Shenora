@@ -1,6 +1,5 @@
 using Shenora.Core.Ipc;
 
-
 namespace Shenora.Windows;
 
 /// <summary>
@@ -19,6 +18,19 @@ namespace Shenora.Windows;
 /// </summary>
 public sealed class DropZoneModule : ModuleBase
 {
+    /// <summary>Route: declare a zone at <c>{ zoneId, x, y, width, height }</c> (page coordinates).</summary>
+    public const string RegisterType = "REGISTER";
+
+    /// <summary>Route: same payload as <see cref="RegisterType"/> — updating IS registering with new
+    /// bounds, which is why they share a case.</summary>
+    public const string UpdateType = "UPDATE";
+
+    /// <summary>Route: forget a zone: <c>{ zoneId }</c>.</summary>
+    public const string UnregisterType = "UNREGISTER";
+
+    /// <summary>Route: raise the drop overlay over a zone: <c>{ zoneId }</c>.</summary>
+    public const string ShowType = "SHOW";
+
     private readonly DropZoneManager _manager;
 
     /// <summary>The IPC face of <paramref name="manager"/>. Map it late — it needs the live control.</summary>
@@ -36,8 +48,8 @@ public sealed class DropZoneModule : ModuleBase
     {
         switch (request.Type.ToUpperInvariant())
         {
-            case "REGISTER":
-            case "UPDATE": // updating is registering with new bounds
+            case RegisterType:
+            case UpdateType: // updating is registering with new bounds
                 _manager.RegisterZone(
                     PayloadHelper.GetRequiredValue<string>(request.Payload, "zoneId"),
                     PayloadHelper.GetRequiredValue<int>(request.Payload, "x"),
@@ -46,11 +58,11 @@ public sealed class DropZoneModule : ModuleBase
                     PayloadHelper.GetRequiredValue<int>(request.Payload, "height"));
                 return Done();
 
-            case "UNREGISTER":
+            case UnregisterType:
                 _manager.UnregisterZone(PayloadHelper.GetRequiredValue<string>(request.Payload, "zoneId"));
                 return Done();
 
-            case "SHOW":
+            case ShowType:
                 _manager.ShowOverlay(PayloadHelper.GetRequiredValue<string>(request.Payload, "zoneId"));
                 return Done();
 

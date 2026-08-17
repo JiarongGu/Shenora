@@ -80,6 +80,36 @@ export function loadConfig(startDir: string = process.cwd()): DeployConfig | nul
   }
 }
 
+/** Does this path exist AND name a directory? False for anything unreadable — a missing project is the
+ * caller's problem to report, not this helper's to guess about. */
+function isDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The app head's DIRECTORY, absolute — where its `bin/` and its bundle live.
+ *
+ * 🔴 **`project` MAY NAME A DIRECTORY**, because `dotnet build`/`publish`/`restore` all accept one and
+ * this CLI hands `cfg.project` straight to them. On a directory, `path.dirname` silently yields its
+ * PARENT — so `project: "src/MyApp"` resolves to `src/`, and every consumer then looks one level too
+ * high. `shenora copy` staged the bundle into the wrong folder and reported success; the three build
+ * commands looked for their artifact under `src/bin/…`, found nothing, and reported "the publish
+ * reported success but no .apk appeared" — a confident statement about your build, describing a
+ * directory that was never going to hold one.
+ *
+ * ⚠ One helper because it was fixed ONCE, in `copy.ts`, and three other call sites kept the bug. The
+ * shape of that miss is the CLI's recurring one: a signal meaning "I looked in the wrong place"
+ * presented as a fact about the world.
+ */
+export function projectDir(cfg: DeployConfig): string {
+  const full = path.resolve(cfg.root, cfg.project);
+  return isDirectory(full) ? full : path.dirname(full);
+}
+
 /** Fields a command needs, named ONE AT A TIME so the message is actionable rather than a schema dump. */
 export function requireFields(cfg: DeployConfig, fields: (keyof DeployConfig)[]): boolean {
   const missing = fields.filter((f) => !String(cfg[f] ?? '').trim());

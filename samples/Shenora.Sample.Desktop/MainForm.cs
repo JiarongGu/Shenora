@@ -133,7 +133,7 @@ public sealed class MainForm : OptimizedForm
             {
                 Window = this,
                 ToggleMaximize = ToggleMaximize,      // the frameless manual work-area path
-                IsMaximized = () => IsAppMaximized,   // WindowState never reflects it
+                IsMaximized = () => AppPlacement == WindowPlacement.Maximized,   // WindowState never reflects it
                 // P5.6: let the OS treat the page-drawn caption buttons as real ones, so Windows 11
                 // offers Snap Layouts on maximize. The page reports its rects in CSS px relative to
                 // the WebView2; the facade converts and this hands them to the window.
@@ -230,7 +230,14 @@ public sealed class MainForm : OptimizedForm
                         // START answer STREAM_ALREADY_RUNNING for the rest of the process.
                         OnEnded = ended =>
                         {
+                            // 🔴 DISPOSE, don't just forget. Clearing the handle alone leaked the whole
+                            // session on a renderer death: a real off-screen window and a browser process
+                            // holding the profile lock, for the rest of the app's life, with nothing left
+                            // pointing at either. Nobody calls STOP in that path — that is the point of
+                            // this hook — so this is the only place the teardown can happen.
+                            var dying = _stream;
                             _stream = null;
+                            if (dying is not null) _ = dying.DisposeAsync();
                             _ = eventBus.EmitAsync("STREAM", "ENDED",
                                 new { Reason = ended.Reason.ToString(), ended.Detail });
                         },
@@ -267,7 +274,11 @@ public sealed class MainForm : OptimizedForm
                             await foreach (var frame in session.Frames.ReadAllAsync())
                                 await eventBus.EmitAsync("STREAM", "FRAME", new
                                 {
-                                    Jpeg = Convert.ToBase64String(frame.Jpeg),
+                                    Bytes = Convert.ToBase64String(frame.Bytes),
+                                    // The viewer needs the MIME to build its data: URL — which is the
+                                    // reason the format travels WITH the frame rather than only in the
+                                    // options the page never sees.
+                                    Format = frame.Format.ToString().ToLowerInvariant(),
                                     frame.Width,
                                     frame.Height,
                                 });
@@ -306,7 +317,7 @@ public sealed class MainForm : OptimizedForm
         {
             Dispatcher = dispatcher,
             EventBus = eventBus,
-            Log = Console.WriteLine,
+            Log = AppCallback.Logger(Console.WriteLine),
             // The other end of the MAUI sample's declaration — SAME page contract, different answer.
             // Every name below is something THIS composition actually registered a few lines up
             // (WindowCommandModule, DropZoneModule, SecondaryWindows, TrayIcon, the STA dialogs), which
@@ -415,6 +426,11 @@ public sealed class MainForm : OptimizedForm
 
         try { Console.WriteLine(await InterceptorProbe.RunAsync(core).ConfigureAwait(true)); }
         catch (Exception ex) { Console.WriteLine($"INTERCEPTOR SEAM: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
+
+        // Whether an ABANDONED response body is disposed — a leak question the range probe cannot answer,
+        // because all four of its requests are drained. After it, so a 32 MiB body cannot skew its timings.
+        try { Console.WriteLine(await BodyDisposalProbe.RunAsync(core).ConfigureAwait(true)); }
+        catch (Exception ex) { Console.WriteLine($"BODY DISPOSAL: FAIL - probe threw {ex.GetType().Name}: {ex.Message}"); }
 
         // The system media transport surface. Unrelated to the webview, but it belongs on the same
         // startup self-check for the same reason: it is only provable against the real OS.

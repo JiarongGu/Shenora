@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 
 #if WINDOWS10_0_17763_0_OR_GREATER
@@ -46,8 +47,8 @@ public sealed class WindowsMediaPlayer : MediaPlayerBase
     private WinRtMediaSource? _source;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a WinRT callback.</param>
-    public WindowsMediaPlayer(Action<string>? log = null)
-        : base(log is null ? null : message => log($"[Shenora.Windows] {message}"))
+    public WindowsMediaPlayer(ILogger? log = null)
+        : base(log)
     {
         _player = new WinRtMediaPlayer { AutoPlay = false };
 
@@ -70,7 +71,7 @@ public sealed class WindowsMediaPlayer : MediaPlayerBase
         }
         catch (Exception ex)
         {
-            Log(() => $"MediaPlayer.AudioCategory failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => "MediaPlayer.AudioCategory failed.", ex);
         }
 
         _player.MediaOpened += OnMediaOpened;

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 
 using Android.Media;
@@ -46,8 +47,8 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
     private TaskCompletionSource? _seeking;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
-    public AndroidMediaPlayer(Action<string>? log = null)
-        : base(log is null ? null : message => log($"[Shenora.Android] {message}"))
+    public AndroidMediaPlayer(ILogger? log = null)
+        : base(log)
     {
     }
 
@@ -210,7 +211,7 @@ public sealed class AndroidMediaPlayer : MediaPlayerBase
 
     /// <summary>
     /// Set the playback speed where the platform can. Below API 23 there is no mechanism at all, so the
-    /// request is logged and dropped — which the contract already allows: <see cref="IMediaPlayer.Rate"/>
+    /// request is logged and dropped — which the contract already allows: <see cref="IMediaPlayer.SetRateAsync"/>
     /// reports what was ASKED FOR precisely because a platform may not honour it.
     /// </summary>
     private void ApplySpeed(PlatformPlayer player, double rate)

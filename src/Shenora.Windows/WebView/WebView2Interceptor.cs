@@ -21,7 +21,7 @@ namespace Shenora.Windows;
 /// reasoning that made <c>SessionBrowser.DecideRequest</c> one decision instead of two handlers.
 /// </para>
 /// </summary>
-public sealed class WebView2Interceptor : IWebViewInterceptor
+internal sealed class WebView2Interceptor : IWebViewInterceptor
 {
     private readonly WebViewResourcePipeline _pipeline = new();
 

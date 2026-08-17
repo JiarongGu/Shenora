@@ -1,5 +1,5 @@
 using Shenora.Engine.Missions;
-using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Engine.Files;
 
@@ -41,10 +41,12 @@ public abstract record FileChange
     /// <param name="TargetPath">Where it lands. Replaced if it exists, created if it does not.</param>
     public sealed record Replace(string TempPath, string TargetPath) : FileChange;
 
-    /// <summary>Move a file.</summary>
+    /// <summary>Move a file — or a directory, when the destination does not exist yet.</summary>
     /// <param name="From">Source path.</param>
     /// <param name="To">Destination path.</param>
-    /// <param name="Overwrite">Replace the destination if it exists. False fails instead.</param>
+    /// <param name="Overwrite">Replace an existing destination FILE. False fails instead. An existing
+    /// destination DIRECTORY always fails, whichever this says: replacing one would delete an entire
+    /// tree behind a flag named for files. Delete the destination first when that is really meant.</param>
     public sealed record Move(string From, string To, bool Overwrite = false) : FileChange;
 
     /// <summary>
@@ -183,4 +185,24 @@ public interface IFileUpdateQueue
     /// or failure — abandoning a half-applied set on a cancel is the one outcome nobody can use.
     /// </param>
     Task<FileUpdateResult> ApplyAsync(FileUpdate update, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finish what a previous run left half-done. Call it at startup, before submitting anything — an
+    /// interrupted update's paths are exactly the ones a new update is likely to touch.
+    /// <para>
+    /// Entries left <see cref="FileUpdateStage.Applying"/> are ROLLED BACK; entries left
+    /// <see cref="FileUpdateStage.Committing"/> are FINISHED, because rolling those back would undo an
+    /// update that had already succeeded. Safe to run twice: every undo step checks the world first.
+    /// </para>
+    /// <para>
+    /// ⚠ <b>On the INTERFACE because that is what the framework registers.</b> The journal is on by
+    /// default, and a journal nobody replays is a directory that fills up while interrupted updates stay
+    /// un-rolled-back. With this only on the concrete type, the documented call did not compile from
+    /// <c>GetRequiredService&lt;IFileUpdateQueue&gt;()</c> — and a downcast fails SILENTLY the moment an
+    /// app registers its own queue, which the registration explicitly invites.
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Abandons recovery; entries not yet handled stay in the journal.</param>
+    /// <returns>How many interrupted updates were resolved. Zero when there is no journal.</returns>
+    Task<int> RecoverAsync(CancellationToken cancellationToken = default);
 }

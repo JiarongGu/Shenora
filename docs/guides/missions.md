@@ -48,7 +48,9 @@ var scheduler = new MissionScheduler(new MissionSchedulerOptions
     // anything below 1 throws.
     GlobalLaneCapacity = null,
     Scopes = [PathClaims.Scope, new FlatClaimScope("entity"), new FlatClaimScope("category")],
-    Log = message => logger.LogDebug("{Message}", message),
+    // Your own logger, whole — a swallowed failure arrives as a Warning carrying the exception object,
+    // ordinary tracing as Debug. If your sink IS a delegate: `AppCallback.Logger(Console.WriteLine)`.
+    Log = logger,
 });
 scheduler.Lane("gpu").Capacity = 1;   // a scarce shared resource — see "Known gaps" #5 (the lane trap)
 ```

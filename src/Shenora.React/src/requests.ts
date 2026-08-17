@@ -165,7 +165,7 @@ function index(list: IpcRequestStatus[]): Record<string, IpcRequestStatus> {
 }
 
 /**
- * The one place `running`/`waiting`/`finished` are computed — wrap `byId` here, nowhere else.
+ * The one place `running`/`finished` are computed — wrap `byId` here, nowhere else.
  */
 function makeState(byId: Record<string, IpcRequestStatus>): RequestsState {
   return {
@@ -265,11 +265,11 @@ export function createRequestsStore(
  * `IIpcRequestTracker`): snapshots via `LIST` on first subscribe, then folds `REQUEST_UPDATED` by
  * id — one subscription however many components read it, and a late mounter renders CURRENT state
  * because the host is authoritative (the store primitive's own late-mounter case is now
- * host-backed end to end). `running`/`waiting`/`finished` are selectors an activity panel or status
- * bar reads directly: `useShenoraRequests((s) => s.waiting)` for the one "needs you" bucket
- * (every entry in it reached the band the same way, so there is no sub-case to filter for; read
- * `waitReason` for WHY it is waiting). Bound to the default module/no scope — use
- * {@link createRequestsStore} directly for a renamed module or a scope-filtered instance.
+ * host-backed end to end). `running`/`finished` are selectors an activity panel or status bar reads
+ * directly: `useShenoraRequests((s) => s.running)`. There is no `waiting` band and no `waitReason` —
+ * a request is IN FLIGHT or DONE, the same two states `XMLHttpRequest` has, since D66. Bound to the
+ * default module/no scope — use {@link createRequestsStore} directly for a renamed module or a
+ * scope-filtered instance.
  *
  * Headless, per D13: no component, no UI opinion, no `ProcessType`-style enum — what an operation
  * IS stays the app's `kind` string; this only carries the uniform lifecycle around it.

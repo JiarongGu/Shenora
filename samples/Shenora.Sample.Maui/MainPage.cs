@@ -91,7 +91,7 @@ public sealed class MainPage : ContentPage
 			// And the belt-and-braces answer: cover the page until the real numbers land. It dismisses
 			// itself after SplashTimeout whether or not they ever do.
 			Splash = true,
-		}, MauiProgram.Log);
+		}, AppCallback.Logger(MauiProgram.Log));
 
 		Loaded += OnLoaded;
 		Unloaded += OnUnloaded;
@@ -130,7 +130,7 @@ public sealed class MainPage : ContentPage
 				Capabilities = [ShellCapability.FilePicker, ShellCapability.LocalFiles],
 			},
 			OnClientReady = request => MauiProgram.Log($"client READY (handshake id={request.Id})"),
-			Log = MauiProgram.Log,
+			Log = AppCallback.Logger(MauiProgram.Log),
 		});
 		_bridge.Attach();
 		MauiProgram.Log("bridge attached — waiting for the page handshake");
@@ -167,7 +167,7 @@ public sealed class MainPage : ContentPage
 					// way in. Handing back the last file it served is that same mapping, read out.
 					// ⚠ A field read — it is asked at background time and must not block.
 					ResolveNativeSource = () => _media.LastServedFile,
-					Log = MauiProgram.Log,
+					Log = AppCallback.Logger(MauiProgram.Log),
 				});
 
 			// ⚠ KEPT IN FIELDS AND REMOVED ON UNLOAD, which is not tidiness. `OnLoaded` re-runs after an
@@ -319,7 +319,7 @@ public sealed class MainPage : ContentPage
 #if IOS
 							Shenora.iOS.IosMediaVideoConversion.Use(pipeline, MauiProgram.Log);
 #elif ANDROID
-							Shenora.Android.AndroidMediaVideoConversion.Use(pipeline, MauiProgram.Log);
+							Shenora.Android.AndroidMediaVideoConversion.Use(pipeline, AppCallback.Logger(MauiProgram.Log));
 #endif
 						}
 
@@ -337,6 +337,32 @@ public sealed class MainPage : ContentPage
 							MauiProgram.Log))
 						{
 							MauiProgram.Log(await SegmentRouteProbe.CheckAsync(_webView, sourceRoot, MauiProgram.Log));
+							// The SAME route over a 60 s source, for one question the short fixture cannot
+							// reach: `endstreaming`. Its 6 s left `ManagedMediaSource.streaming` true, which
+							// says the source was never given enough to want to stop — not that it will not.
+							MauiProgram.Log(await SegmentRouteProbe.CheckAsync(
+								_webView, sourceRoot, MauiProgram.Log, SegmentRouteProbe.LongFixture));
+
+							// The SAME stream through the shipped `bindSegmentStream`, so the module an
+							// adopter gets is the one a device actually runs (D63). The hand-written check
+							// above stays as the control.
+							MauiProgram.Log(await SegmentRouteProbe.CheckKitBinderAsync(
+								_webView, sourceRoot, MauiProgram.Log));
+
+							// A run that STARTS at segment 1 — the seek shape, asked of the engine directly
+							// because the page cannot force it without racing the cache.
+							MauiProgram.Log(SegmentRouteProbe.CheckSeekRun(
+								services.GetService<Shenora.Modules.Media.IMediaStreamConversion>(),
+								sourceRoot, Path.Combine(FileSystem.CacheDirectory, "segments"), MauiProgram.Log));
+
+							// Does this platform's video encoder REORDER? Only reachable where the shell
+							// converts a picture at all, which is the phone and not the simulator.
+							MauiProgram.Log(await SegmentRouteProbe.CheckReencodedPictureAsync(
+								services.GetService<Shenora.Modules.Media.IMediaStreamConversion>(),
+								sourceRoot, Path.Combine(FileSystem.CacheDirectory, "segments"), MauiProgram.Log));
+							// D71 piece 5, in the same window: the route must still be alive to answer, and
+							// the segments it produced are what gets merged.
+							MauiProgram.Log(await SegmentRouteProbe.MergeAsync(segments, sourceRoot, MauiProgram.Log));
 						}
 
 						using var route = ConversionRouteProbe.Register(
@@ -439,7 +465,7 @@ public sealed class MainPage : ContentPage
 				// blaming the FILE for a fault belonging to the codec. This is the app doing what an adopter
 				// debugging the same thing would have to do.
 				var diagnosticPipeline = new Shenora.Modules.Media.MediaConversionPipeline();
-				Shenora.Android.AndroidMediaAudioConversion.Use(diagnosticPipeline, MauiProgram.Log);
+				Shenora.Android.AndroidMediaAudioConversion.Use(diagnosticPipeline, AppCallback.Logger(MauiProgram.Log));
 				await TranscodeProbe.RunAsync(diagnosticPipeline,
 					services.GetService<Shenora.Android.AndroidMediaPlayer>(), MauiProgram.Log);
 #elif IOS || MACCATALYST
@@ -460,6 +486,15 @@ public sealed class MainPage : ContentPage
 				// before the transcode probe. That interaction is correct behaviour and it makes any
 				// background-audio measurement started before it meaningless.
 				MauiProgram.Log(await PageProbe.StartBackgroundAudioAsync(_webView, MauiProgram.Log));
+
+				// After that one for the same audio-session reason, and it drives a different element: the
+				// <video>, which is what `reportPlayer` is wired to and therefore what the host's believed
+				// position comes from. Leaves playback RUNNING on purpose — the measurement is what
+				// `HANDOFF` says when something backgrounds the app next.
+				MauiProgram.Log(await PlayheadProbe.ArmAsync(
+					_webView,
+					MauiProgram.Shenora?.Services?.GetService<Shenora.Modules.Media.IMediaPlayer>(),
+					MauiProgram.Log));
 			}
 			catch (Exception ex) { MauiProgram.Log($"PLAYER: probe threw — {ex}"); }
 		});

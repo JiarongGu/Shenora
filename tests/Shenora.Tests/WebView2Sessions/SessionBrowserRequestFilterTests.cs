@@ -111,6 +111,38 @@ public class SessionBrowserRequestFilterTests
     }
 
     [Fact]
+    public void A_throwing_filter_is_REPORTED_and_not_swallowed_in_silence()
+    {
+        // 🔴 Failing open is deliberate; failing open SILENTLY was the defect. An app told (by the pool
+        // options, which said so) to put its SSRF blocklist here had a policy that stopped blocking the
+        // first time one edge case threw — with nothing anywhere to notice. The request is still
+        // allowed; what changed is that somebody is told.
+        Exception? reported = null;
+
+        var blocked = SessionBrowser.ShouldBlockRequest(
+            "https://evil.example.net/x.js", "https://app.example.com/page",
+            (_, _) => throw new InvalidOperationException("app policy blew up"),
+            ex => reported = ex);
+
+        Assert.False(blocked);                       // still fails OPEN — that part is by design
+        Assert.IsType<InvalidOperationException>(reported);
+        Assert.Equal("app policy blew up", reported!.Message);
+    }
+
+    [Fact]
+    public void A_filter_that_does_NOT_throw_reports_nothing()
+    {
+        // The quiet direction: a working policy must not look like a broken one.
+        var reported = 0;
+
+        SessionBrowser.ShouldBlockRequest(
+            "https://app.example.com/main.js", "https://app.example.com/page", BlockCrossHost,
+            _ => reported++);
+
+        Assert.Equal(0, reported);
+    }
+
+    [Fact]
     public void Non_http_request_schemes_still_reach_the_filter()
     {
         // The request side is NOT scheme-filtered — only the page source is. An app that wants to

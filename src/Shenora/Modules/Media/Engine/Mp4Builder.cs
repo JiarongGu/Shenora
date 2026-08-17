@@ -558,7 +558,11 @@ internal static class Mp4Builder
         using (w.FullBox("esds", 0, 0))
         {
             w.U8(0x03);                                     // ES_Descriptor
-            DescriptorLength(w, 3 + 5 + 13 + 5 + config.Length + 3);
+            // ES id+flags (3) + DecoderConfig tag+len (5) + its content (13) + DecoderSpecificInfo
+            // tag+len (5) + config + SLConfig tag+len+content (6). The last term carried 3 for years —
+            // an SLConfigDescriptor is 6 on the wire in the expanded form — so every AAC esds declared
+            // itself three bytes shorter than what followed.
+            DescriptorLength(w, 3 + 5 + 13 + 5 + config.Length + 6);
             w.U16(0);                                       // ES id
             w.U8(0);                                        // no dependency, no URL, no OCR
 

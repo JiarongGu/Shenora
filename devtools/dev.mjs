@@ -1,6 +1,8 @@
 // Shenora devtools dispatcher (family pattern: one entry, allow-listed once).
 //   node devtools/dev.mjs build            - dotnet build the solution + npm build the react package
-//   node devtools/dev.mjs test [dotnet|npm] - dotnet test + vitest (or just one side)
+//   node devtools/dev.mjs test [dotnet|npm|clipboard] - dotnet test + vitest (or just one side).
+//                                             `clipboard` runs the REAL-clipboard suite the gate holds
+//                                             out — it drives the machine's one system clipboard.
 //   node devtools/dev.mjs verify           - build · test · check-sensitive --tree · knowledge check + footprint (the "am I done?" gate)
 //   node devtools/dev.mjs pack             - nupkgs + npm tarball -> publish/packages (lockstep version, sha256 printed)
 //   node devtools/dev.mjs doctor [--fix]   - version/readme drift check (npm package.json + README headline vs VersionPrefix)
@@ -17,6 +19,7 @@
 //   node devtools/dev.mjs knowledge <…>    - rule-base + skills doctor (check | footprint | new <name> [--core])
 //   node devtools/dev.mjs clean [--all]     - drop devtools/_* build output (--all: sources + publish/ too)
 //   node devtools/dev.mjs check-sensitive [--tree|--history] - leak scan (--history = one-off audit)
+//   node devtools/dev.mjs reserved-paths   - a path Windows cannot check out (a stray `nul`, `com1`, …)
 //   node devtools/dev.mjs install-hooks    - point core.hooksPath at devtools/hooks (once per clone)
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -734,9 +737,22 @@ switch (cmd) {
     const which = args[0] ?? 'all';
     // Fail loudly on a typo: this used to fall through both ifs and exit 0 having run NOTHING,
     // i.e. `dev.mjs test dotnett` reported success (P5.5 H5).
-    if (!['all', 'dotnet', 'npm'].includes(which)) {
-      console.error(`dev.mjs test: unknown target "${which}" — expected all | dotnet | npm`);
+    if (!['all', 'dotnet', 'npm', 'clipboard'].includes(which)) {
+      console.error(`dev.mjs test: unknown target "${which}" — expected all | dotnet | npm | clipboard`);
       process.exitCode = 1;
+      break;
+    }
+    // 🔴 THE ONLY SUITE HELD OUT OF THE GATE, and it is deliberate rather than a concession to
+    // flakiness. `Category=RealClipboard` drives the machine's ONE system clipboard, which any other
+    // process can take at any moment — measured 2026-08-16, PowerShell's own Set-Clipboard failed 13 of
+    // 15 on this box while nothing of ours was running. A gate that can go red because a background
+    // service is misbehaving is a gate people learn to ignore. Run it deliberately, on demand.
+    if (which === 'clipboard') {
+      const clipEnv = androidBuildEnv();
+      process.exitCode = clipEnv !== null
+        && step('dotnet test (real clipboard)', () => run('dotnet',
+          ['test', config.solution, '-v', 'minimal', '--nologo', '--filter', 'Category=RealClipboard'],
+          { env: clipEnv })) ? 0 : 1;
       break;
     }
     let ok = true;
@@ -747,8 +763,15 @@ switch (cmd) {
       // outer build stopped being a no-op, so `dev.mjs test` on a clean tree failed XA5300 while
       // `dev.mjs build` right before it had succeeded. Anything that builds the solution needs this.
       const testEnv = androidBuildEnv();
+      // 🔴 SAY WHAT WAS HELD OUT, every run. A gate that quietly covers less than it appears to is worse
+      // than one that covers less openly — "1,642 passed" reads as everything unless this line is there.
+      console.log('  (holding out Category=RealClipboard — run `dev.mjs test clipboard` for it)');
       ok = testEnv !== null
-        && step('dotnet test', () => run('dotnet', ['test', config.solution, '-v', 'minimal', '--nologo'], { env: testEnv }))
+        // The RealClipboard category is excluded here and run by `dev.mjs test clipboard` — see the
+        // block above for why a shared OS resource has no business gating a release.
+        && step('dotnet test', () => run('dotnet',
+          ['test', config.solution, '-v', 'minimal', '--nologo', '--filter', 'Category!=RealClipboard'],
+          { env: testEnv }))
         && ok;
     }
     if (which === 'all' || which === 'npm') {
@@ -788,6 +811,14 @@ switch (cmd) {
         // something type-checks them (P5.5 H6).
         return runNpm('run typecheck', { cwd: path.join(repo, ...config.npmDir.split('/')) });
       }],
+      ['react typecheck (peer FLOOR — React 18)', () => {
+        // 🔴 `peerDependencies: { react: ">=18" }` was a claim nothing had ever run. Everything here
+        // builds against React 19, so an API that only exists in 19 would compile clean and break every
+        // React 18 consumer at THEIR build. This type-checks the shipped sources against React 18's
+        // types (an aliased `@types/react18` devDependency), and is sabotage-verified: importing
+        // `useActionState` fails it and passes the ordinary typecheck.
+        return runNpm('run typecheck:floor', { cwd: path.join(repo, ...config.npmDir.split('/')) });
+      }],
       // The CLI's own strict pass, and it now DOES cover tests (added 2026-08-09) — `tsconfig.json`
       // includes them while `tsconfig.build.json` excludes them, so this is the only thing type-checking
       // the suite. Kept as its own step for exactly the reason it earned: the React package's equivalent
@@ -801,6 +832,13 @@ switch (cmd) {
         return ensureNpmDeps(webDir) && runNpm('run typecheck', { cwd: webDir });
       }],
       ['check-sensitive --tree', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'check-sensitive.mjs'), '--tree'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // A path Windows cannot check out. Separate from check-sensitive on purpose: that one hunts LEAKS
+      // and its failure text ("move the value to local/") makes no sense for a filename. This is created
+      // by accident, never by a decision — a `> nul` redirect written in Git Bash creates a real file,
+      // because that spelling is cmd's null device and not the shell's. It reaches `git status` as an
+      // ordinary untracked file and `git add -A` stages it; committed, it breaks `git checkout` for
+      // every future clone on Windows.
+      ['reserved-paths', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'reserved-paths.mjs')], { stdio: 'inherit', cwd: repo }).status === 0],
       ['knowledge check', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'knowledge.mjs'), 'check'], { stdio: 'inherit', cwd: repo }).status === 0],
       // The always-loaded budget — REPORTED here, not enforced. It existed from the start and
       // nothing ran it, so it drifted to its ceiling unnoticed; running it in the gate is what fixes
@@ -824,6 +862,10 @@ switch (cmd) {
       // that restates something the code owns, which D57 says goes stale — so it is only defensible
       // while this gate makes that impossible.
       ['wire-reference', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'wire-reference.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
+      // The decisions index is generated from the entries, so it can only be stale — never wrong in an
+      // interesting way. Checked here for the reason wire-reference is: a generated doc nobody
+      // regenerates is a second copy that drifts silently.
+      ['decisions-index', () => spawnSync('node', [path.join(repo, 'devtools', 'scripts', 'decisions-index.mjs'), '--check'], { stdio: 'inherit', cwd: repo }).status === 0],
       // doctor LAST and non-fixing: verify must FAIL on version/README drift rather than leave it to
       // `pack` (which runs doctor --fix, so verify was scanning pre-sync files) — P5.5 H5.
       ['doctor', () => doctor({ fix: false })],
@@ -1217,6 +1259,16 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'self-rename-scan.mjs'), ...args]);
     break;
 
+  // name-scope — a type whose name claims an AREA while serving one KIND, and a file named after a type
+  // that does not exist. Neither is findable by the prose scanners: every name involved EXISTS, so
+  // doc-drift/cite-scan/stale-scan all see a live identifier and say nothing. Earned when the owner
+  // asked why `InteractiveSession.cs` did not match its classes — it declared `SessionResult` and
+  // `SessionErrorCodes`, names promising all seven session kinds and serving one. Review tool, never a
+  // gate: a CLUSTER file named for its area (ShellContracts.cs) is correct and common here.
+  case 'name-scope':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'name-scope.mjs'), ...args]);
+    break;
+
   // cite-scan [doc…] — identifiers a doc cites that exist NOWHERE in the source. Starts from the DOCS
   // rather than from retired-names.txt, so it is the only one of the three that catches a rename whose
   // step 2 was skipped — which is every one it found on its first run. Review tool, never a gate.
@@ -1241,6 +1293,18 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'doc-shape.mjs'), ...args]);
     break;
 
+  // reserved-paths — a tracked or stageable path Windows cannot check out (a reserved DEVICE name, or
+  // a segment ending in a dot/space). Names only; `verify` runs it.
+  case 'reserved-paths':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'reserved-paths.mjs'), ...args]);
+    break;
+
+  // decisions-index [--check] — regenerate DECISIONS.md's opening list from its own entries, so the
+  // decisions can be read without scrolling the rationale. `verify` passes `--check`.
+  case 'decisions-index':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'decisions-index.mjs'), ...args]);
+    break;
+
   // retired-audit [tag] [rev=HEAD] — which public types left the SHIPPED surface without a retired-names
   // entry. The question BEFORE stale-scan's: not "is this name still described as current?" but "is this
   // removal recorded at all?" Release step, not part of verify — it needs tags.
@@ -1262,10 +1326,11 @@ switch (cmd) {
     // ⚠ THIS STRING IS THE ONLY DISCOVERY SURFACE FOR A VERB, so a verb missing from it is a tool nobody
     // finds. `stale-scan` and `cite-scan` were both absent for their whole lives until 2026-08-10 — each
     // shipped with a `case` and a rule telling you to run it, and neither appeared here.
-    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|install-hooks>');
+    console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
     console.log('  probes         : update-probe [dir] | android-jdk');
-    console.log('  prose review (never gates, triage by hand): stale-scan | cite-scan | self-rename-scan | decision-audit');
+    console.log('  prose review (never gates, triage by hand): stale-scan | cite-scan | self-rename-scan | decision-audit | name-scope');
     console.log('  doc shape      : doc-shape [--check]        (verify runs --check: self-narration FAILS, the D-entry line cap WARNS)');
+  console.log('  decisions      : decisions-index [--check]  (regenerate DECISIONS.md\'s opening list from its own entries)');
     process.exitCode = cmd ? 1 : 0;
 }

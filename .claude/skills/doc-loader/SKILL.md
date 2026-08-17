@@ -12,10 +12,13 @@ for a non-trivial task, load what the task touches — otherwise you'll miss a h
 
 1. **Docs.** Open `docs/README.md`'s "Read this when…" table — it is the SOURCE OF TRUTH and gains
    rows as docs are added, so trust it over this list. Read the 1–2 that match:
-   `docs/ARCHITECTURE.md` (**as-built**), `docs/DECISIONS.md` (why it's done this way — and what the kit
-   IS, D53–D56), `TASKS.md` (status/next),
-   `docs/ADOPTION.md` (bringing an existing app onto the kit),
+   `docs/ARCHITECTURE.md` (**as-built map**), `docs/design/<subsystem>.md` (**how a subsystem works and
+   what was measured**), `docs/DECISIONS.md` (why it's done this way — and what the kit IS, D53–D56),
+   `TASKS.md` (status/next), `docs/ADOPTION.md` (bringing an existing app onto the kit),
    `docs/REVIEW-GUIDE.md` (reviewing anything). Don't read all of them.
+   🔴 **`DECISIONS.md` IS READ BY NUMBER, NEVER WHOLE.** Scan its generated index, open the `D<n>` the
+   task touches, and leave the rest shut — taking the file at once is the drift D77 names: a constraint
+   earned in one context reads as universal and a later session applies it where it does not fit.
 2. **Rules.** Open `.claude/rules/RULES_INDEX.md`. The **core** rules are already auto-loaded.
    Scan the **Knowledge** table's *Applies when* column against the task and `Read` every matched
    `.claude/knowledge/*.md`. Examples: extracting/porting code from a sibling app →

@@ -1,5 +1,3 @@
-using Shenora.Core.WebView;
-
 namespace Shenora.Core.Events;
 
 /// <summary>

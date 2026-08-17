@@ -15,12 +15,16 @@ export interface ShenoraStoreIo<TState = unknown> {
   /** Current state — for an action that needs to compute an OPTIMISTIC update from it. */
   getState: () => TState;
   /**
-   * Apply a local state change with NO host round trip and NO wire event — the seam for an
-   * optimistic update an action can fully decide by itself (e.g. dropping the rows a
-   * `CLEAR_FINISHED`-style action just told the host to drop). The host stays authoritative for
-   * everything a `snapshot`/`on` reducer already covers; this exists for the narrow case where the
-   * action already knows the answer and a host round trip would only be a delivery delay, not new
-   * information.
+   * Apply a local state change with NO host round trip and NO wire event — an optimistic update an
+   * action can fully decide by itself. The host stays authoritative for everything a `snapshot`/`on`
+   * reducer covers; this is for state the ACTION already knows and the host would only echo back.
+   *
+   * 🔴 **Reach for it only when the host has no event to tell you.** This used to be documented with
+   * the kit's own `clearFinished` doing an optimistic prune, and that example was WITHDRAWN: the
+   * moment `REQUEST_REMOVED` existed, the local prune became a second thing deciding which rows are
+   * gone, able to disagree with the host about it. If the host emits an event for the change, let the
+   * reducer own it — an optimistic path beside a wire event is a divergence waiting to happen, not a
+   * latency win.
    */
   setState: (reduce: (state: TState) => TState) => void;
 }
@@ -35,6 +39,29 @@ export interface ShenoraStoreSnapshot<TState> {
 }
 
 /** Inputs for {@link createShenoraStore}. */
+/**
+ * Is the fresh selector result the same VALUE as the previous one, for re-render purposes?
+ *
+ * `Object.is` plus ONE level of own-key comparison. The shallow step is what lets an inline selector
+ * that derives a new object work — `s => ({ count: s.lines.length })` builds a different object every
+ * call, and without this every call would look like a change and loop.
+ *
+ * ⚠ Deliberately one level. Deep equality would make an unchanged NESTED value hide a changed outer
+ * one only by cost, and a store whose selectors need deep comparison is selecting too much.
+ */
+function equivalent(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  // Arrays and plain objects only — anything exotic (Map, Date, a class) falls back to identity above.
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const aKeys = Object.keys(a as object);
+  const bKeys = Object.keys(b as object);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((k) =>
+    Object.prototype.hasOwnProperty.call(b, k)
+    && Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
 export interface ShenoraStoreOptions<TState, TActions> {
   /** State before anything has arrived. */
   initial: TState;
@@ -130,6 +157,10 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
 
   let state = initial;
   let snapshotLoaded = false;
+  // Bumped on detach. A snapshot response from an earlier subscriber epoch resolving late must be
+  // DROPPED: the current epoch has (or will have) its own, fresher request, and applying the old
+  // body after the new one is a lost update wearing a success path.
+  let snapshotEpoch = 0;
   const listeners = new Set<() => void>();
   let unsubscribes: (() => void)[] = [];
 
@@ -158,10 +189,12 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
     if (!snapshot || snapshotLoaded) return;
     snapshotLoaded = true; // set BEFORE awaiting: two components mounting in the same tick must not
     // both fire the request (React StrictMode double-invokes effects, which is precisely this case).
+    const epoch = snapshotEpoch;
     bridge()
       .invoke<unknown>(module, snapshot.type, { payload: snapshot.payload, scope })
       .then(
         (data) => {
+          if (epoch !== snapshotEpoch) return; // a previous epoch's answer — the live one owns state
           try {
             setState(snapshot.apply(state, data));
           } catch (error) {
@@ -169,6 +202,7 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
           }
         },
         (error: unknown) => {
+          if (epoch !== snapshotEpoch) return;
           // Allow a later retry: a snapshot that failed because the host was not ready yet should not
           // leave the store permanently empty for the rest of the session.
           snapshotLoaded = false;
@@ -187,6 +221,13 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
   const detach = (): void => {
     for (const off of unsubscribes) off();
     unsubscribes = [];
+    // The next mount must RE-LOAD: with no bus subscription live, everything the host emits from
+    // here on is missed, so the snapshot the flag was guarding is stale the moment this returns.
+    // The flag exists to dedupe same-tick double-mounts (StrictMode), not to span subscriber epochs —
+    // and the epoch bump orphans any request still in flight, so its late answer cannot clobber the
+    // next epoch's fresher one.
+    snapshotLoaded = false;
+    snapshotEpoch++;
   };
 
   const subscribe = (listener: () => void): (() => void) => {
@@ -209,23 +250,42 @@ export function createShenoraStore<TState, TActions = Record<string, never>>(
     setState: (reduce) => setState(reduce(getState())),
   };
 
+  /**
+   * Subscribe to the store, optionally through a selector.
+   *
+   * 🔴 **The selector is RE-RUN every time and the previous RESULT is reused when equivalent.** It used
+   * to be memoized against STATE identity alone, which looked like the careful thing and was wrong: a
+   * selector whose closure changed while the state did not returned the PREVIOUS selector's value. A
+   * list row doing `useShenoraRequests(s => s.byId[id])` whose `id` prop changes — virtualised reuse, a
+   * route change — rendered the previous row's data until some unrelated event replaced the state.
+   *
+   * ⚠ <b>Two requirements pull against each other and both are met by comparing RESULTS rather than
+   * inputs.</b> `useSyncExternalStore` re-renders whenever `getSnapshot` returns something new by
+   * `Object.is`, so:
+   * <list type="bullet">
+   * <item>keying the cache on STATE alone gives stale values when the selector changes — the bug above;</item>
+   * <item>keying it on the SELECTOR too loops forever for an inline selector that derives a new object
+   * (`s => ({ count: s.lines.length })`) — a fresh identity each render, a fresh object each call.
+   * zustand v5 has exactly that behaviour and answers it with an opt-in `useShallow`.</item>
+   * </list>
+   * Comparing the RESULT shallowly gives both: a derived object that is field-for-field the same reuses
+   * the previous reference and does not re-render, while a genuinely different row does.
+   */
   function useStore<TSelected>(selector?: (value: TState) => TSelected): TState | TSelected {
-    // getSnapshot must return a STABLE value for an unchanged store, or React throws
-    // "The result of getSnapshot should be cached" and can loop. So the selector result is memoized
-    // against the state identity: recomputed only when state actually changed.
-    const cache = useRef<{ state: TState; selected: unknown } | null>(null);
-    const selectorRef = useRef(selector);
-    selectorRef.current = selector;
+    // The last result handed to React. Reused whenever the fresh one is equivalent, which is what keeps
+    // getSnapshot stable without pinning it to an input that can go stale.
+    const previous = useRef<{ value: unknown } | null>(null);
 
     const getSelected = useCallback(() => {
       const current = getState();
-      const select = selectorRef.current;
-      if (!select) return current;
-      if (cache.current === null || !Object.is(cache.current.state, current)) {
-        cache.current = { state: current, selected: select(current) };
+      if (!selector) return current;
+      const next = selector(current);
+      if (previous.current !== null && equivalent(previous.current.value, next)) {
+        return previous.current.value as TSelected;
       }
-      return cache.current.selected as TSelected;
-    }, []);
+      previous.current = { value: next };
+      return next;
+    }, [selector]);
 
     const value = useSyncExternalStore(subscribe, getSelected, getSelected);
     useDebugValue(value);

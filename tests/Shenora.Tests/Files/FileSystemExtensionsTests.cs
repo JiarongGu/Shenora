@@ -3,6 +3,7 @@ using Shenora;
 using Shenora.Modules.Media;
 using Shenora.Engine.Files;
 using Shenora.Tests.TestSupport;
+using Shenora.Core.Shell;
 
 namespace Shenora.Tests.Io;
 

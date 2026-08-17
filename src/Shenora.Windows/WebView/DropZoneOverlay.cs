@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
-// Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
-// the control type needs an alias.
+// `WebView2` alone resolves to the NAMESPACE in here, hence the alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.Windows;
@@ -34,7 +33,7 @@ internal sealed class DropZoneOverlay : Panel
     // The overlay can be disposed (zone unregistered / navigation / form close) while an async
     // occlusion check or a queued SHOW/form-event is still pending. Touching Visible/Handle/
     // Bounds after that throws ObjectDisposedException — every control-mutating path checks
-    // this first (found live in the source).
+    // this first.
     private bool Dead => _isDisposed || IsDisposed;
 
     public DropZoneOverlay(string zoneId, WebView2Control webView, ILogger logger,

@@ -128,7 +128,7 @@ public class StreamingSessionTests
         {
             Anchor = anchor,
             Browser = new SessionBrowserOptions { ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "unused"), KeepAliveInBackground = true },
-            JpegQuality = quality,
+            FrameQuality = quality,
             FrameBuffer = buffer,
             MaxFrameWidth = maxW,
         };
@@ -136,5 +136,43 @@ public class StreamingSessionTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(quality: 0)));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(buffer: 0)));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => StreamingSession.StartAsync(Options(maxW: 0)));
+    }
+
+    [Fact]
+    public async Task A_cancelled_start_completes_even_though_nothing_pumps_the_anchor()
+    {
+        // 🔴 THE HANG. Every cancellation check lives INSIDE the BeginInvoke body, so all of them are
+        // unreachable when nothing pumps — and `BeginInvoke` succeeds whenever the handle exists,
+        // including after `Application.Run` has returned. `StartAsync(options, ct)` then never returned
+        // even with `ct` already cancelled.
+        //
+        // 🔴 CANCELLED **AFTER** THE CALL, and that is the whole point of the ordering. Registering on an
+        // ALREADY-cancelled token fires the callback synchronously, so a pre-cancelled token cannot tell
+        // a live registration apart from one that is disposed the instant the method returns — which is
+        // what `using var` does on a NON-async method. The first version of this fix had exactly that
+        // shape, and a pre-cancelled test passed against it. Sabotage-verified both ways at this
+        // ordering: it fails with the registration removed AND with the method made non-async.
+        using var anchor = new Form { ShowInTaskbar = false };
+        _ = anchor.Handle;                     // BeginInvoke needs a created handle
+        using var cts = new CancellationTokenSource();
+
+        var start = StreamingSession.StartAsync(new StreamingSessionOptions
+        {
+            Anchor = anchor,
+            Browser = new SessionBrowserOptions
+            {
+                ProfileDirectory = Path.Combine(AppContext.BaseDirectory, "session-tests", "cancelled"),
+                KeepAliveInBackground = true,
+            },
+        }, cts.Token);
+
+        Assert.False(start.IsCompleted, "the post cannot have run — nothing is pumping this anchor");
+        await cts.CancelAsync();
+
+        // Nothing calls Application.DoEvents here ON PURPOSE — the posted body must never run. A short
+        // bound rather than an unbounded await, so a regression FAILS instead of wedging the suite.
+        var finished = await Task.WhenAny(start, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(start, finished);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => start);
     }
 }

@@ -1,6 +1,9 @@
 using System.Runtime.InteropServices;
 using Shenora;
-using Shenora.Engine.Files;
+// The CONTRACT is in Core, never in the engine — a shell must be able to implement a portable contract
+// without reaching into the layer that happens to consume it (D48). This using being `Core.Shell` rather
+// than `Engine.Files` IS that rule holding.
+using Shenora.Core.Shell;
 
 namespace Shenora.Windows;
 

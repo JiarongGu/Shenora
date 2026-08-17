@@ -6,24 +6,21 @@ using Shenora.Core.Ipc;
 
 namespace Shenora.Windows;
 
-/// <summary>One JSON API response intercepted from a session's page (see <see cref="RenderSession.OnNetwork"/>).</summary>
-public sealed record SessionApiCall(string Url, string Method, string ContentType, string BodySample);
-
 /// <summary>
 /// A leased, driveable off-screen browser session, ported from the server-backed sibling: the
-/// caller navigates it, runs its OWN JS on the live page, reads the HTML, calls CDP methods, and
-/// installs live interceptors for the page's JSON API responses + posted messages. The pool owns
-/// the WebView2 + the UI thread; the caller owns ALL interpretation (its settle poll, its DOM
-/// analysis). Every WebView2 touch marshals onto the pool's UI-thread anchor (a
-/// <c>BeginInvoke</c> + a <see cref="TaskCompletionSource{TResult}"/>); the event handlers fire
-/// on that same UI thread, so interceptor bookkeeping needs no cross-thread locking.
+/// caller navigates it, runs its OWN JS on the live page, reads the HTML and calls CDP methods. The
+/// pool owns the WebView2 + the UI thread; the caller owns ALL interpretation (its settle poll, its
+/// DOM analysis). Every WebView2 touch marshals onto the pool's UI-thread anchor (a
+/// <c>BeginInvoke</c> + a <see cref="TaskCompletionSource{TResult}"/>).
 /// <see cref="DisposeAsync"/> returns the instance to the pool — idempotent and guarded: after
 /// dispose (or if the message loop is gone) every op fails gracefully.
+///
+/// 🔴 It DRIVES; it does not report. What the page does — its API responses, its posted messages, its
+/// navigations — arrives on the app's <see cref="Shenora.Core.Events.IEventBus"/> as
+/// <see cref="SessionEvents"/>, scoped by <see cref="Id"/>.
 /// </summary>
 public sealed class RenderSession : IAsyncDisposable
 {
-    private const int MaxBodySample = 4096; // bounded JSON body sample per intercepted API call
-
     private readonly RenderSessionPool _pool;
     private readonly RenderSessionPool.PoolInstance _instance;
     private readonly Shenora.Core.Shell.IUiDispatcher _ui;   // the one marshal owner (D19/D20)
@@ -33,10 +30,6 @@ public sealed class RenderSession : IAsyncDisposable
     private readonly TimeSpan _navigationTimeout;
     private readonly Microsoft.Extensions.Logging.ILogger? _log;
 
-    // Live interceptors the caller installed (subscribe on the UI thread; the returned handle
-    // unsubscribes there too).
-    private readonly List<EventHandler<CoreWebView2WebResourceResponseReceivedEventArgs>> _netHandlers = [];
-    private readonly List<EventHandler<CoreWebView2WebMessageReceivedEventArgs>> _msgHandlers = [];
     private int _disposed; // 0 live, 1 disposed — dispose is idempotent + gates every op
 
     internal RenderSession(RenderSessionPool pool, RenderSessionPool.PoolInstance instance,
@@ -50,7 +43,20 @@ public sealed class RenderSession : IAsyncDisposable
         _opTimeout = options.OpTimeout;
         _navigationTimeout = options.NavigationTimeout;
         _log = options.Log;
+        Id = instance.Scope;
     }
+
+    /// <summary>
+    /// This lease's identity — the SCOPE its browser publishes every <see cref="SessionEvents"/> under.
+    /// Subscribe with it to hear only this session:
+    /// <c>bus.SubscribeToModule(SessionEvents.Module, session.Id, handler)</c>.
+    /// <para>
+    /// ⚠ <b>It belongs to the LEASE, not to the pooled browser.</b> The same browser gets a different id
+    /// next time it is leased, so a subscription outliving this session stops receiving anything rather
+    /// than silently picking up the next tenant's pages. Dispose it with the session.
+    /// </para>
+    /// </summary>
+    public string Id { get; }
 
     /// <summary>
     /// Navigate to an absolute http(s) URL and wait for the DOCUMENT to load only
@@ -70,10 +76,16 @@ public sealed class RenderSession : IAsyncDisposable
             throw new InvalidOperationException($"Navigation refused by the navigation guard: {uri.Host}");
 
         // Record what the guard actually vetted. The pool's NavigationStarting policy cancels an
-        // unvetted CROSS-HOST hop from here on, so a 302 to a host the guard never saw (the classic
+        // unvetted CROSS-ORIGIN hop from here on, so a 302 to somewhere the guard never saw (the classic
         // "redirect me to 127.0.0.1" SSRF step) can't be followed. See
         // RenderSessionPool.WireNavigationPolicy for why the event can enforce only a sync rule.
-        _instance.ApprovedHost = uri.Host;
+        //
+        // 🔴 AUTHORITY, NOT HOST — the PORT is half the identity here. `Uri.Host` drops it, so approving
+        // `127.0.0.1:3000` (an app's own dev origin, and `IsLoopback` approves all of loopback) also
+        // approved a redirect to `127.0.0.1:8080/admin`: the exact hop the policy's own doc gives as the
+        // thing it closes. `Uri.Authority` keeps the port and still omits it when it is the scheme's
+        // default, so the documented http -> https allowance is unaffected.
+        _instance.ApprovedOrigin = uri.Authority;
 
         var navDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnNav(object? s, CoreWebView2NavigationCompletedEventArgs e) => navDone.TrySetResult(e.IsSuccess);
@@ -128,99 +140,19 @@ public sealed class RenderSession : IAsyncDisposable
         }, cancellationToken);
 
     /// <summary>
-    /// Install a live interceptor for the page's JSON API responses: for each response whose
-    /// content-type contains "json", a bounded body sample is read (best-effort) and
-    /// <paramref name="handler"/> is invoked with a <see cref="SessionApiCall"/>. The event
-    /// fires on the UI thread, so the handler must be quick / non-blocking. The returned handle
-    /// unsubscribes.
-    /// </summary>
-    public IDisposable OnNetwork(Action<SessionApiCall> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        ThrowIfDisposed();
-        void OnResp(object? s, CoreWebView2WebResourceResponseReceivedEventArgs e)
-        {
-            try
-            {
-                var headers = e.Response.Headers;
-                var contentType = headers.Contains("content-type") ? headers.GetHeader("content-type") : "";
-                if (contentType is null || !contentType.Contains("json", StringComparison.OrdinalIgnoreCase)) return;
-                // Fire-and-forget the bounded body read; a failed read still delivers the
-                // endpoint with an empty sample so the caller at least sees the URL + shape.
-                _ = DeliverAsync(e.Response, e.Request.Uri, e.Request.Method ?? "GET", contentType, handler);
-            }
-            catch
-            {
-                // skip this response — interception is best-effort, never breaks the page
-            }
-        }
-
-        OnUiFireAndForget(() =>
-        {
-            if (Volatile.Read(ref _disposed) != 0) return; // disposed between the check and the post
-            _web.CoreWebView2.WebResourceResponseReceived += OnResp;
-            _netHandlers.Add(OnResp);
-        });
-        return new Unsubscriber(() => OnUiFireAndForget(() =>
-        {
-            try { _web.CoreWebView2.WebResourceResponseReceived -= OnResp; } catch { }
-            _netHandlers.Remove(OnResp);
-        }));
-    }
-
-    /// <summary>
-    /// Install a listener for messages the page posts via <c>chrome.webview.postMessage(...)</c>
-    /// — so JS the caller injects (a MutationObserver, an event hook) can stream DOM events
-    /// back. Prefers the string form, falls back to raw JSON. The returned handle unsubscribes.
-    /// </summary>
-    public IDisposable OnMessage(Action<string> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        ThrowIfDisposed();
-        void OnMsg(object? s, CoreWebView2WebMessageReceivedEventArgs e)
-        {
-            string payload;
-            try { payload = e.TryGetWebMessageAsString(); }
-            catch
-            {
-                try { payload = e.WebMessageAsJson; } catch { return; } // neither form → drop it
-            }
-            try { handler(payload); }
-            catch
-            {
-                // isolate the caller's handler — one throw can't break the listener
-            }
-        }
-
-        OnUiFireAndForget(() =>
-        {
-            if (Volatile.Read(ref _disposed) != 0) return; // disposed between the check and the post
-            _web.CoreWebView2.WebMessageReceived += OnMsg;
-            _msgHandlers.Add(OnMsg);
-        });
-        return new Unsubscriber(() => OnUiFireAndForget(() =>
-        {
-            try { _web.CoreWebView2.WebMessageReceived -= OnMsg; } catch { }
-            _msgHandlers.Remove(OnMsg);
-        }));
-    }
-
-    /// <summary>
-    /// Return the leased instance to the pool. Idempotent (only the first call does anything):
-    /// unsubscribes every still-installed interceptor on the UI thread, then hands the instance
-    /// back (the pool resets it to about:blank + releases the capacity slot). Never throws — an
-    /// <c>await using</c> must be safe.
+    /// Return the leased instance to the pool. Idempotent (only the first call does anything): hands the
+    /// instance back, and the pool resets it to about:blank + releases the capacity slot. Never throws —
+    /// an <c>await using</c> must be safe.
+    /// <para>
+    /// It used to also unsubscribe this lease's interceptors, and no longer needs to: observation moved
+    /// to <see cref="SessionEvents"/>, where the SCOPE does that job. The next lease of this browser gets
+    /// a new <see cref="Id"/>, so a subscription left behind simply stops receiving — rather than, as the
+    /// taps risked, streaming the next tenant's traffic to the previous caller.
+    /// </para>
     /// </summary>
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
-        OnUiFireAndForget(() =>
-        {
-            foreach (var h in _netHandlers) { try { _web.CoreWebView2.WebResourceResponseReceived -= h; } catch { } }
-            foreach (var h in _msgHandlers) { try { _web.CoreWebView2.WebMessageReceived -= h; } catch { } }
-            _netHandlers.Clear();
-            _msgHandlers.Clear();
-        });
         _pool.Return(_instance); // resets + re-pools + releases the slot (best-effort, on the UI thread)
         return ValueTask.CompletedTask;
     }
@@ -307,62 +239,4 @@ public sealed class RenderSession : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Marshal an interceptor (un)subscribe onto the UI thread WITHOUT awaiting — the returned
-    /// IDisposable must be non-blocking. Best-effort: if the loop is gone it's a no-op, which is
-    /// exactly what the dispatcher's <c>false</c> return means here.
-    /// </summary>
-    private void OnUiFireAndForget(Action work) => _ui.Post(work);
-
-    /// <summary>
-    /// Gate the interceptor subscribes on the lease still being held (P5.5 H2).
-    /// <para>
-    /// <see cref="OnNetwork"/> and <see cref="OnMessage"/> were the only public members that did NOT
-    /// check disposal, and they are the two that install a persistent tap. After
-    /// <see cref="DisposeAsync"/> the instance goes back to the pool and is handed to the NEXT lease,
-    /// so a late subscribe — from a caller holding a stale reference, or a fire-and-forget continuation
-    /// that outlived its <c>await using</c> — attached a live listener to another lease's page and
-    /// streamed its API responses and posted messages to the previous caller's handler. In a package
-    /// whose whole story is profile isolation, that is cross-lease disclosure, so it fails loudly
-    /// rather than silently no-op'ing: the same <see cref="ObjectDisposedException"/> every other
-    /// member already throws through <see cref="OnUiAsync"/>.
-    /// </para>
-    /// </summary>
-    private void ThrowIfDisposed() =>
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-
-    /// <summary>Bounded body-sample read, then deliver — best-effort throughout (UI thread).</summary>
-    private static async Task DeliverAsync(CoreWebView2WebResourceResponseView response, string url, string method,
-        string contentType, Action<SessionApiCall> handler)
-    {
-        var sample = "";
-        try
-        {
-            await using var stream = await response.GetContentAsync().ConfigureAwait(true);
-            if (stream is not null)
-            {
-                using var reader = new StreamReader(stream);
-                var buffer = new char[MaxBodySample];
-                var read = await reader.ReadBlockAsync(buffer, 0, MaxBodySample).ConfigureAwait(true);
-                sample = new string(buffer, 0, read);
-            }
-        }
-        catch
-        {
-            // content unavailable (already consumed / streamed) — deliver the endpoint, drop the sample
-        }
-        try { handler(new SessionApiCall(url, method, contentType, sample)); }
-        catch
-        {
-            // the caller's handler threw — isolate it; one bad call can't break interception
-        }
-    }
-
-    /// <summary>A one-shot IDisposable that runs an unsubscribe action once.</summary>
-    private sealed class Unsubscriber(Action off) : IDisposable
-    {
-        private Action? _off = off;
-
-        public void Dispose() => Interlocked.Exchange(ref _off, null)?.Invoke();
-    }
 }

@@ -38,7 +38,9 @@ public class ShellLauncherTests
     [Fact]
     public void Launch_requires_an_existing_executable()
     {
-        Assert.ThrowsAny<ArgumentException>(() => _launcher.LaunchProcess(""));
-        Assert.Throws<FileNotFoundException>(() => _launcher.LaunchProcess(@"C:\definitely\missing\tool.exe"));
+        Assert.ThrowsAny<ArgumentException>(
+            () => _launcher.LaunchProcess(new ProcessLaunchOptions { ExecutablePath = "" }));
+        Assert.Throws<FileNotFoundException>(
+            () => _launcher.LaunchProcess(new ProcessLaunchOptions { ExecutablePath = @"C:\definitely\missing\tool.exe" }));
     }
 }

@@ -155,6 +155,27 @@ public class WebViewResourcePipelineTests
     }
 
     [Fact]
+    public async Task One_delegate_OBJECT_registered_twice_loses_one_slot_per_dispose()
+    {
+        var pipeline = new WebViewResourcePipeline();
+        var hits = 0;
+        WebViewResourceMiddleware count = (request, next, token) => { hits++; return next(request, token); };
+
+        var a = pipeline.Use(count);
+        var b = pipeline.Use(count);
+
+        a.Dispose();
+        await pipeline.Build()!(Request(), CancellationToken.None);
+        // ONE slot left. Both slots hold the same reference here, so a filter on reference equality
+        // stripped BOTH on the first dispose — making the second handle's Dispose a silent no-op and
+        // `Use`'s "remove just this one" untrue.
+        Assert.Equal(1, hits);
+
+        b.Dispose();
+        Assert.True(pipeline.IsEmpty);
+    }
+
+    [Fact]
     public void Disposing_a_registration_twice_removes_one_route()
     {
         var pipeline = new WebViewResourcePipeline();

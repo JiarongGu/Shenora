@@ -1,3 +1,4 @@
+using Microsoft.Web.WebView2.Core;
 using Shenora.Windows;
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 using Shenora.Core.Ipc;
@@ -336,20 +337,10 @@ public class RenderSessionPoolTests
         Assert.Equal(1, pool.FreeCount); // re-pooled, not discarded
     }
 
-    [Fact]
-    public async Task Interceptors_cannot_be_installed_after_the_lease_is_returned()
-    {
-        using var fixture = new Fixture();
-        using var pool = fixture.CreatePool();
-        var session = await pool.LeaseAsync();
-        await session.DisposeAsync();
-        fixture.Pump();
-
-        // The instance now belongs to the NEXT lease, so a late tap would stream that lease's API
-        // responses and posted messages to the previous caller — cross-lease disclosure.
-        Assert.Throws<ObjectDisposedException>(() => session.OnNetwork(_ => { }));
-        Assert.Throws<ObjectDisposedException>(() => session.OnMessage(_ => { }));
-    }
+    // The cross-lease disclosure invariant that used to live here — "a late tap would stream the NEXT
+    // lease's API responses to the previous caller" — moved with its mechanism. There are no taps to
+    // install late any more, and what prevents the disclosure is now the per-lease scope, so the test
+    // is `SessionEventTests.A_subscriber_from_the_PREVIOUS_lease_hears_nothing_from_the_next`.
 
     [Fact]
     public async Task Dispose_cancels_an_in_flight_instance_creation()
@@ -575,4 +566,66 @@ public class RenderSessionPoolTests
             fixture.Pump();
         }
     }
+
+    // ── The redirect policy: cross-ORIGIN, not cross-host ─────────────────────────────────────────
+    // 🔴 Extracted from the NavigationStarting event so it can be tested at all. The defect it carries
+    // sat behind a doc comment naming `302 -> http://127.0.0.1:8080/admin` as the thing it closes,
+    // while comparing `Uri.Host` — which excludes the PORT, so that exact hop was allowed whenever the
+    // approved origin was also loopback. The sample's own guard approves all of loopback.
+
+    [Theory]
+    // Vetted 127.0.0.1:3000, redirected somewhere else on the same host. THE SSRF STEP.
+    [InlineData("http://127.0.0.1:8080/admin", "127.0.0.1:3000", true)]
+    [InlineData("http://localhost:9200/_search", "localhost:5173", true)]
+    // A different host entirely — always was cancelled, and still is.
+    [InlineData("http://169.254.169.254/latest/meta-data/", "app.local", true)]
+    public void An_unvetted_hop_is_cancelled(string candidate, string approved, bool cancelled) =>
+        Assert.Equal(cancelled, RenderSessionPool.IsUnvettedHop(candidate, approved));
+
+    [Theory]
+    // The same origin, and the hops the policy documents as deliberately ALLOWED.
+    [InlineData("http://127.0.0.1:3000/render", "127.0.0.1:3000")]
+    [InlineData("http://127.0.0.1:3000/other/page", "127.0.0.1:3000")]
+    [InlineData("https://app.local/index.html", "app.local")]
+    [InlineData("http://app.local/index.html", "app.local")]   // http -> https on one host
+    [InlineData("https://app.local:443/x", "app.local")]        // a default port is not a difference
+    [InlineData("HTTP://APP.LOCAL/x", "app.local")]             // authority compares case-insensitively
+    public void A_same_origin_hop_is_allowed(string candidate, string approved) =>
+        Assert.False(RenderSessionPool.IsUnvettedHop(candidate, approved));
+
+    [Theory]
+    [InlineData("about:blank")]          // the pool's own reset between leases
+    [InlineData("data:text/html,<p>")]
+    [InlineData("not a uri")]
+    public void A_non_http_navigation_is_left_alone(string candidate) =>
+        Assert.False(RenderSessionPool.IsUnvettedHop(candidate, "app.local"));
+
+    [Fact]
+    public void Nothing_is_cancelled_before_the_guard_has_vetted_anything()
+    {
+        // The first navigation IS the one the async guard checks; this policy only holds the line
+        // afterwards. Cancelling here would refuse every lease its opening page.
+        Assert.False(RenderSessionPool.IsUnvettedHop("http://anywhere.example/x", null));
+    }
+
+    // ── Which process failures actually END a session ─────────────────────────────────────────────
+    // 🔴 `ProcessFailed` fires for the whole Chromium process tree and most of it is routine. Treating
+    // every kind as "the renderer died" discarded the entire warm pool on a GPU-driver TDR — an event
+    // Chromium recovers from by itself — and permanently killed a co-browse pane over a live page.
+    // `WebViewHost` in the same package already filtered on the kind; the session stack did not.
+
+    [Theory]
+    [InlineData(CoreWebView2ProcessFailedKind.RenderProcessExited)]    // this page's renderer: dead
+    [InlineData(CoreWebView2ProcessFailedKind.BrowserProcessExited)]   // the whole browser: dead
+    public void A_terminal_failure_ends_the_session(CoreWebView2ProcessFailedKind kind) =>
+        Assert.True(SessionBrowser.IsTerminal(kind));
+
+    [Theory]
+    [InlineData(CoreWebView2ProcessFailedKind.GpuProcessExited)]              // a driver TDR; self-heals
+    [InlineData(CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)]     // busy, not dead
+    [InlineData(CoreWebView2ProcessFailedKind.FrameRenderProcessExited)]      // one iframe, not the page
+    [InlineData(CoreWebView2ProcessFailedKind.UtilityProcessExited)]
+    [InlineData(CoreWebView2ProcessFailedKind.SandboxHelperProcessExited)]
+    public void A_RECOVERABLE_failure_does_not(CoreWebView2ProcessFailedKind kind) =>
+        Assert.False(SessionBrowser.IsTerminal(kind));
 }

@@ -2,12 +2,36 @@ using System.Runtime.InteropServices;
 
 namespace Shenora.Windows;
 
+/// <summary>What <see cref="SingleInstanceGuard.TryAcquire()"/> found. Three outcomes, because two of
+/// them lead to the SAME action and the third does not.</summary>
+public enum SingleInstanceResult
+{
+    /// <summary>This process owns the scope — carry on starting.</summary>
+    Acquired,
+
+    /// <summary>Another live instance owns it. Broadcast and exit; do not start.</summary>
+    AlreadyRunning,
+
+    /// <summary>
+    /// The OS refused to answer and the guard FAILED OPEN — start, but single-instance is not
+    /// enforced for this run.
+    /// <para>
+    /// ⚠ <b>Distinct from <see cref="Acquired"/> on purpose.</b> Both mean "keep starting", so an app
+    /// with nothing at stake can treat them alike — but an app whose reason for being single-instance
+    /// is a single-writer database or a profile lock may want to refuse, warn, or fall back to
+    /// read-only, and it could not express that while this was folded into a <c>bool</c>.
+    /// </para>
+    /// </summary>
+    Unverified,
+}
+
 /// <summary>
 /// Enforces ONE running instance per scope (normally the install directory). Desktop apps in
 /// this family are not multi-instance-safe: single-writer databases, in-process file-operation
 /// planners, and the WebView2 user-data folder's OS lock all corrupt under a second instance.
 ///
-/// A second launch calls <see cref="TryAcquire()"/> (false), then <see cref="BroadcastActivate"/>
+/// A second launch calls <see cref="TryAcquire()"/> (<see cref="SingleInstanceResult.AlreadyRunning"/>),
+/// then <see cref="BroadcastActivate"/>
 /// and exits; the running instance's main form catches the registered window message (compare
 /// <c>m.Msg</c> to <see cref="ActivateMessageId"/> in <c>WndProc</c>) and brings itself to the
 /// foreground. Keyed by the scope so DISTINCT installs run side-by-side.
@@ -59,7 +83,7 @@ public sealed class SingleInstanceGuard : IDisposable
     /// only thing that noticed was a TEST asserting this is non-zero.
     /// </para>
     /// </summary>
-    public uint ActivateMessageId { get; private set; }
+    public uint? ActivateMessageId { get; private set; }
 
     /// <summary>
     /// Stable key for a scope value. Normalized case-insensitive + trailing-separator-insensitive
@@ -92,7 +116,7 @@ public sealed class SingleInstanceGuard : IDisposable
     /// the kernel processes it.
     /// </para>
     /// </summary>
-    public bool TryAcquire() => TryAcquire(TimeSpan.Zero);
+    public SingleInstanceResult TryAcquire() => TryAcquire(TimeSpan.Zero);
 
     /// <summary>
     /// Like <see cref="TryAcquire()"/>, but when the scope is still owned, waits up to
@@ -110,9 +134,11 @@ public sealed class SingleInstanceGuard : IDisposable
     /// acquired on the SAME thread would falsely succeed. Don't do that; in-process tests must
     /// hold from a dedicated thread, as a second process would.
     /// </summary>
-    public bool TryAcquire(TimeSpan waitForPredecessor)
+    public SingleInstanceResult TryAcquire(TimeSpan waitForPredecessor)
     {
-        ActivateMessageId = RegisterWindowMessage(ActivateMessageName);
+        // 0 is RegisterWindowMessage's failure answer; null says so rather than overloading it.
+        var id = RegisterWindowMessage(ActivateMessageName);
+        ActivateMessageId = id == 0 ? null : id;
 
         // IDEMPOTENT (P5.5 H2). A second call used to overwrite _mutex with a fresh handle, leaking the
         // first one — and because an OS mutex is per-thread REENTRANT, the second WaitOne(0) succeeds on
@@ -120,7 +146,7 @@ public sealed class SingleInstanceGuard : IDisposable
         // Release/Dispose could then only ever let go of one of the two handles: the mutex stayed held
         // after shutdown, and the fast `--restarted` handoff (which waits for the predecessor to let go)
         // timed out against a corpse. Already holding it IS success.
-        if (_mutex is not null) return true;
+        if (_mutex is not null) return SingleInstanceResult.Acquired;
 
         try
         {
@@ -139,22 +165,25 @@ public sealed class SingleInstanceGuard : IDisposable
             {
                 _mutex.Dispose();
                 _mutex = null;
-                return false;
+                return SingleInstanceResult.AlreadyRunning;
             }
-            return true;
+            return SingleInstanceResult.Acquired;
         }
         catch
         {
-            return true; // fail open
+            // FAIL OPEN, and SAY SO. Refusing to start because the OS would not answer is the worse
+            // trade for most apps — but "I own the scope" and "nobody could tell me" are different
+            // facts, and folding them into one `true` left an app no way to act on the difference.
+            return SingleInstanceResult.Unverified;
         }
     }
 
     /// <summary>Second instance → tell the running instance to come to the foreground.</summary>
     public void BroadcastActivate()
     {
-        if (ActivateMessageId != 0)
+        if (ActivateMessageId is { } id)
         {
-            PostMessage(HWND_BROADCAST, ActivateMessageId, IntPtr.Zero, IntPtr.Zero);
+            PostMessage(HWND_BROADCAST, id, IntPtr.Zero, IntPtr.Zero);
         }
     }
 

@@ -213,13 +213,25 @@ public class OptimizedForm : Form, IAppMaximizable
     }
 
     /// <summary>
-    /// Optional raw WndProc hook. Return true to mark the message handled (swallow it). The
-    /// composition seam for message-level extensions without subclassing (the primary sibling
-    /// used it to catch its activation broadcast).
+    /// Optional raw WndProc hook — the composition seam for message-level extensions without
+    /// subclassing. Receives the whole <see cref="Message"/>.
+    /// <para>
+    /// <b>Return <c>null</c> to let the message fall through</b> to the frameless chrome and
+    /// <c>DefWindowProc</c>. Return a value to mark it HANDLED: that value becomes
+    /// <see cref="Message.Result"/>, so <c>IntPtr.Zero</c> is the ordinary "handled, nothing to
+    /// report". A hook that throws counts as not-handled and the window keeps working.
+    /// </para>
+    /// <para>
+    /// ⚠ It used to be <c>Func&lt;int, bool&gt;</c> — the message ID alone. That could not read
+    /// <see cref="Message.WParam"/>/<see cref="Message.LParam"/> or set a result, which every real
+    /// reason to hook a window procedure needs (<c>WM_COPYDATA</c>, <c>WM_POWERBROADCAST</c>,
+    /// <c>WM_DEVICECHANGE</c>, <c>WM_SETTINGCHANGE</c>, any <c>RegisterWindowMessage</c> channel with
+    /// a payload).
+    /// </para>
     /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Func<int, bool>? WndProcHook { get; set; }
+    public Func<Message, IntPtr?>? WndProcHook { get; set; }
 
     /// <summary>
     /// Called when the OS changes what it is doing to a caption button (hover in/out, press,
@@ -499,7 +511,7 @@ public class OptimizedForm : Form, IAppMaximizable
         base.OnPaint(e);
         if (!NativeCaptionButtonsEnabled) return;
         _captionRenderer.Paint(e.Graphics, _captionButtons, _captionUnion,
-            _hotCaptionButton, _pressedCaptionButton, IsAppMaximized, DeviceDpi, BackColor,
+            _hotCaptionButton, _pressedCaptionButton, AppPlacement == WindowPlacement.Maximized, DeviceDpi, BackColor,
             _captionButtonColors);
     }
 
@@ -507,7 +519,10 @@ public class OptimizedForm : Form, IAppMaximizable
     /// True when the window is maximized. Frameless chrome maximizes MANUALLY (fills the work
     /// area) so <see cref="Form.WindowState"/> is NOT the source of truth — this property is.
     /// </summary>
-    public bool IsAppMaximized => _options.FramelessChrome ? _maximized : WindowState == FormWindowState.Maximized;
+    public WindowPlacement AppPlacement =>
+        (_options.FramelessChrome ? _maximized : WindowState == FormWindowState.Maximized)
+            ? WindowPlacement.Maximized
+            : WindowPlacement.Normal;
 
     /// <summary>
     /// The windowed geometry to restore to — what <see cref="WindowStateManager"/> must PERSIST while
@@ -528,7 +543,7 @@ public class OptimizedForm : Form, IAppMaximizable
         if (ReferenceEquals(Tag, WindowStateManager.RestoreMaximizedTag))
         {
             Tag = null;
-            if (!IsAppMaximized) Maximize();
+            if (AppPlacement != WindowPlacement.Maximized) Maximize();
         }
 
         // A hole can only be cut once the child has a handle, and an app that reports its rectangles
@@ -565,7 +580,7 @@ public class OptimizedForm : Form, IAppMaximizable
     /// <summary>Toggle maximize/restore (the manual work-area path when frameless).</summary>
     public void ToggleMaximize()
     {
-        if (IsAppMaximized) RestoreFromMax();
+        if (AppPlacement == WindowPlacement.Maximized) RestoreFromMax();
         else Maximize();
     }
 
@@ -698,7 +713,7 @@ public class OptimizedForm : Form, IAppMaximizable
 
         if (!_maximized) return;
         // Un-minimize first (mirrors Maximize): restoring bounds on a still-minimized window
-        // mangles them under WS_MINIMIZE and leaves the window in the taskbar (found in review).
+        // mangles them under WS_MINIMIZE and leaves the window in the taskbar.
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         _maximized = false;
         ApplyCornerPreference(); // rounded corners again when windowed
@@ -807,11 +822,17 @@ public class OptimizedForm : Form, IAppMaximizable
         // A throwing hook is therefore treated as "did not handle the message": the window keeps
         // working and the message falls through to the real handling below, which is the only
         // behaviour that leaves the app usable.
-        // msg is copied out first: `m` is a `ref` parameter and cannot be captured by the guard's
-        // lambda (CS1628). The hook only ever received the message id anyway.
-        var msg = m.Msg;
-        if (WndProcHook is { } hook && Shenora.AppCallback.RunOrDefault(() => hook(msg), false))
+        // The message is COPIED OUT first because `m` is a `ref` parameter and cannot be captured by
+        // the guard's lambda (CS1628). Copying is why the hook ANSWERS with a result rather than
+        // assigning `m.Result` — a write to the copy would be discarded silently, which is the worst
+        // shape available. `Message` is a struct of four words, so the copy costs nothing.
+        var message = m;
+        if (WndProcHook is { } hook
+            && Shenora.AppCallback.RunOrDefault(() => hook(message), null) is { } result)
+        {
+            m.Result = result;
             return;
+        }
 
         if (!_options.FramelessChrome)
         {
@@ -838,7 +859,7 @@ public class OptimizedForm : Form, IAppMaximizable
             if (cmd == SC_MAXIMIZE) { Maximize(); return; }
             // Intercept SC_RESTORE only when NOT minimized: a minimized window's restore must
             // reach DefWindowProc to un-minimize (swallowing it left the window in the taskbar
-            // with the maximize state silently dropped — found in review); the manual work-area
+            // with the maximize state silently dropped); the manual work-area
             // bounds survive un-minimize, so the window comes back still maximized.
             if (cmd == SC_RESTORE && _maximized && WindowState != FormWindowState.Minimized)
             {
@@ -973,7 +994,7 @@ public class OptimizedForm : Form, IAppMaximizable
     /// Perform what a caption button does. Routed through the SAME public members the page's IPC
     /// commands use (<see cref="ToggleMaximize"/>, <see cref="Form.Close"/>), so a click on the
     /// button and a click delivered by the page cannot diverge — in particular the frameless manual
-    /// maximize keeps its <see cref="IsAppMaximized"/> bookkeeping either way (P5.5 H2).
+    /// maximize keeps its <see cref="AppPlacement"/> bookkeeping either way (P5.5 H2).
     /// </summary>
     private void InvokeCaptionButton(CaptionButtonKind kind)
     {

@@ -32,7 +32,8 @@
 
   <ItemGroup>
     <!-- Shenora, because the file-operation engine folded into it on 2026-08-07 (D55). The
-         namespace this probe drives became Shenora.Modules.Update when D65 relayered the package. -->
+         namespace this probe drives is Shenora.Engine.Update — formerly Shenora.IO (D65 relayered it),
+         then moved from Modules/ to Engine/ by the pre-1.0 surface pass. -->
     <ProjectReference Include="..\..\src\Shenora\Shenora.csproj" />
   </ItemGroup>
 </Project>

@@ -31,3 +31,9 @@ subsystem as broken, and each cost a day.
 - ⚠ A probe asserting an absence proves nothing until it has been seen to FAIL. See D63 in
   `docs/DECISIONS.md`: absent is indistinguishable from working, so a probe must supply a fake and assert
   it was USED.
+- 🔴 **A QUERY THAT COULD NOT BE PERFORMED MUST NEVER BE INDISTINGUISHABLE FROM A NEGATIVE RESULT**, and a
+  diagnostic that conflates them sends every reader to the wrong half of the system. The two need opposite
+  responses: "this device genuinely cannot" is the file's problem, "nothing was ever asked" is the
+  composition's. So say WHICH — the media pipeline names whether a dropped stream had a codec seam supplied
+  at all (D70), and `WhoHolds` returning empty means "cannot tell" rather than "nobody" (D32). ⚠ The tell
+  that you have this bug: a report that is correct, actionable-looking, and points at code that is fine.

@@ -57,12 +57,21 @@ public class SegmentStreamTests : IDisposable
         /// </summary>
         public bool WritesInit { get; init; } = true;
 
+        /// <summary>
+        /// Segment starts this engine will not negotiate — what a COPYING run answers, because its cuts land
+        /// on the source's own keyframes. Null models the ordinary re-encoding engine, which hits the grid.
+        /// </summary>
+        public IReadOnlyList<double>? Cuts { get; init; }
+
         public List<SegmentRunRequest> Starts { get; } = [];
 
         public bool IsAvailable => true;
         public string Describe() => "fake";
         public TimeSpan? DurationOf(string source) => Duration;
         public bool HasPicture(string source) => SourceHasPicture;
+
+        public SegmentPlan? PlanSegments(string source, double segmentSeconds, CancellationToken cancellationToken = default)
+            => Cuts is null ? null : SegmentPlan.Cuts(Cuts, Duration);
 
         /// <summary>A segment "has a rendered picture" when the run that wrote it said so in its name.</summary>
         public bool HasRenderedPicture(string segment) =>
@@ -165,6 +174,58 @@ public class SegmentStreamTests : IDisposable
         // Before the first segment, or a reader meets media it has no configuration for.
         Assert.True(manifest.IndexOf("#EXT-X-MAP", StringComparison.Ordinal)
                     < manifest.IndexOf("seg0.m4s", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>When the engine cannot hit the grid, the manifest states ITS boundaries — and the run is handed
+    /// the SAME plan.</b> This is the invariant the copy path rests on (D76): a copied track lands on the
+    /// source's own keyframes, so the playlist and the producer must be built from one object. Two derivations
+    /// of "where the cuts are" fail silently — every segment is valid, and a seek arrives somewhere else.
+    /// </summary>
+    [Fact]
+    public async Task A_derived_plan_drives_the_manifest_AND_the_run_that_produces_it()
+    {
+        NewSource("clip.mkv");
+        var interceptor = new FakeInterceptor();
+        // Keyframes at 0, 7.5 and 13.2 s of a 20 s source: nothing a 6 s grid would ever produce.
+        var engine = new FakeEngine { Duration = TimeSpan.FromSeconds(20), Cuts = [0, 7.5, 13.2] };
+        using var _ = interceptor.UseSegmentStream(engine, Options());
+
+        var manifest = await BodyOf((await interceptor.AskAsync("https://x/shenora-hls/clip.mkv/index.m3u8"))!);
+
+        // Three segments, each stating its REAL length: 7.5 + 5.7 + 6.8 = the 20 s source.
+        Assert.Contains("#EXTINF:7.500,", manifest, StringComparison.Ordinal);
+        Assert.Contains("#EXTINF:5.700,", manifest, StringComparison.Ordinal);
+        Assert.Contains("#EXTINF:6.800,", manifest, StringComparison.Ordinal);
+        Assert.Contains("seg2.m4s", manifest, StringComparison.Ordinal);
+        Assert.DoesNotContain("seg3.m4s", manifest, StringComparison.Ordinal);
+        // ⚠ The longest EXTINF, never the length that was asked for: a TARGETDURATION below any EXTINF is a
+        // MUST the playlist spec states, so a strict reader may refuse a stream whose bytes are perfectly good.
+        Assert.Contains("#EXT-X-TARGETDURATION:8", manifest, StringComparison.Ordinal);
+
+        // And the producer is asked for exactly that plan — not a grid it would then cut somewhere else.
+        var response = await interceptor.AskAsync("https://x/shenora-hls/clip.mkv/seg1.m4s");
+        Assert.Equal(200, response!.StatusCode);
+        var plan = Assert.Single(engine.Starts).Plan;
+        Assert.Null(plan.GridSeconds);
+        Assert.Equal(3, plan.Count);
+        Assert.Equal(7.5, plan.StartOf(1), 6);
+    }
+
+    /// <summary>A grid engine — one that answers no plan — is still handed one, built from the option it declared.</summary>
+    [Fact]
+    public async Task An_engine_with_no_plan_of_its_own_is_handed_the_GRID_it_will_hit()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        var engine = new FakeEngine { Duration = TimeSpan.FromSeconds(20) };
+        using var _ = interceptor.UseSegmentStream(engine, Options());
+
+        await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+
+        var plan = Assert.Single(engine.Starts).Plan;
+        Assert.Equal(6.0, plan.GridSeconds);
+        Assert.Equal(4, plan.Count);
     }
 
     /// <summary>
@@ -317,7 +378,115 @@ public class SegmentStreamTests : IDisposable
         public TimeSpan? DurationOf(string source) => null;
         public bool HasPicture(string source) => false;
         public bool HasRenderedPicture(string segment) => false;
+        public SegmentPlan? PlanSegments(string source, double seconds, CancellationToken cancellationToken = default) => null;
         public ISegmentRun? Start(SegmentRunRequest request) => null;
+    }
+
+    // ── piece 5: the collapse from a stream to a finished artifact (D71) ──────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>"We have every segment" and "we have the finished file" are ONE state.</b> The initialisation
+    /// segment followed by every fragment in plan order IS a valid fMP4, so merging is a byte copy
+    /// rather than a second production — which is the whole reason streaming is the PRIMARY path and the
+    /// whole file is what it leaves behind.
+    /// </summary>
+    [Fact]
+    public async Task A_finished_stream_becomes_ONE_file_of_its_parts_in_order()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        using var route = interceptor.UseSegmentStream(new FakeEngine { Duration = TimeSpan.FromSeconds(20) }, Options());
+
+        // Asking for a segment is what opens the source and drives production of the whole remainder.
+        await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+        var source = Path.Combine(_sources, "track.flac");
+        Assert.True(route.IsComplete(source), "the fake writes every segment, so the stream is complete");
+
+        var artifact = Path.Combine(_root, "offline", "track.mp4");
+        var result = await route.MergeAsync(source, artifact);
+
+        Assert.True(result.Ok, result.Detail);
+        // init, then seg0..seg3 — the plan's order, which is the only order that decodes.
+        Assert.Equal("init" + string.Concat(Enumerable.Repeat("audio+picture", 4)), File.ReadAllText(artifact));
+    }
+
+    /// <summary>
+    /// 🔴 <b>THE CACHE AND THE ARTIFACT HAVE OPPOSITE POLICIES, so this is refused rather than documented.</b>
+    /// The cache is swept oldest-used-first under a byte cap; a persisted artifact must be evicted by
+    /// nothing. Writing one into the other means ordinary playback silently deletes a file somebody waited
+    /// for, and it surfaces much later as a download that used to work.
+    /// </summary>
+    [Fact]
+    public async Task An_artifact_may_NOT_be_written_inside_the_evictable_segment_cache()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        using var route = interceptor.UseSegmentStream(new FakeEngine { Duration = TimeSpan.FromSeconds(20) }, Options());
+        await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+        var source = Path.Combine(_sources, "track.flac");
+
+        var refused = await route.MergeAsync(source, Path.Combine(_cache, "keep", "track.mp4"));
+
+        Assert.Equal(SegmentMergeOutcome.DestinationRefused, refused.Outcome);
+        Assert.Contains("evict", refused.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(Path.Combine(_cache, "keep")), "nothing may be created at a refused destination");
+    }
+
+    /// <summary>
+    /// An incomplete stream is not an artifact, and a source nobody has streamed is not one either — both
+    /// answer without writing anything. ⚠ "Complete" is a predicate over PRODUCED OUTPUT, so a source this
+    /// route has never served can only honestly answer no.
+    /// </summary>
+    [Fact]
+    public async Task An_unstreamed_or_unfinished_source_is_reported_rather_than_written()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        // WritesInit false leaves the init segment missing, so the parts are not all there.
+        var engine = new FakeEngine { Duration = TimeSpan.FromSeconds(20), WritesInit = false };
+        using var route = interceptor.UseSegmentStream(engine, Options());
+        var source = Path.Combine(_sources, "track.flac");
+        var artifact = Path.Combine(_root, "offline", "track.mp4");
+
+        Assert.False(route.IsComplete(source), "nothing has been asked for yet");
+        var unknown = await route.MergeAsync(source, artifact);
+        Assert.Equal(SegmentMergeOutcome.UnknownSource, unknown.Outcome);
+
+        await interceptor.AskAsync("https://x/shenora-hls/track.flac/seg0.m4s");
+
+        Assert.False(route.IsComplete(source), "the init segment was never written");
+        var incomplete = await route.MergeAsync(source, artifact);
+        Assert.Equal(SegmentMergeOutcome.Incomplete, incomplete.Outcome);
+        Assert.False(File.Exists(artifact));
+    }
+
+    /// <summary>
+    /// A shell with no engine registers no route, and must still ANSWER the question rather than throw —
+    /// an app should not need a platform branch to ask whether something was produced.
+    /// </summary>
+    [Fact]
+    public async Task A_shell_with_no_engine_answers_the_artifact_questions_without_throwing()
+    {
+        NewSource();
+        var interceptor = new FakeInterceptor();
+        using var route = interceptor.UseSegmentStream(new UnavailableEngine(), Options());
+
+        Assert.False(route.IsComplete(Path.Combine(_sources, "track.flac")));
+        var result = await route.MergeAsync(Path.Combine(_sources, "track.flac"),
+                                                  Path.Combine(_root, "offline", "x.mp4"));
+        Assert.Equal(SegmentMergeOutcome.UnknownSource, result.Outcome);
+    }
+
+    /// <summary>
+    /// ⚠ The cache check compares full paths with a trailing separator, or a sibling directory whose name
+    /// merely STARTS with the cache's would be refused — the prefix bug every containment check answers.
+    /// </summary>
+    [Fact]
+    public void A_sibling_directory_sharing_the_cache_s_prefix_is_not_inside_it()
+    {
+        Assert.True(SegmentMerge.IsInside(Path.Combine(_cache, "a", "f.mp4"), _cache));
+        Assert.False(SegmentMerge.IsInside(_cache + "-offline/f.mp4", _cache));
+        Assert.False(SegmentMerge.IsInside(Path.Combine(_root, "elsewhere", "f.mp4"), _cache));
     }
 
     [Theory]

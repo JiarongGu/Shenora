@@ -14,10 +14,10 @@ public class WindowStateManagerTests
     public void ToPhysical_is_identity_at_100_percent()
     {
         var (w, h, x, y, max) = WindowStateManager.ToPhysical(
-            new WindowState(1000, 700, 30, 40, false), 1.0, Options);
+            new WindowState(1000, 700, 30, 40, WindowPlacement.Normal), 1.0, Options);
         Assert.Equal((1000, 700), (w, h));
         Assert.Equal((30, 40), (x!.Value, y!.Value));
-        Assert.False(max);
+        Assert.Equal(WindowPlacement.Normal, max);
     }
 
     [Theory]
@@ -25,7 +25,7 @@ public class WindowStateManagerTests
     [InlineData(2.0, 2000, 1400, 60, 80)]
     public void ToPhysical_scales_size_and_position(double scale, int w, int h, int x, int y)
     {
-        var result = WindowStateManager.ToPhysical(new WindowState(1000, 700, 30, 40, false), scale, Options);
+        var result = WindowStateManager.ToPhysical(new WindowState(1000, 700, 30, 40, WindowPlacement.Normal), scale, Options);
         Assert.Equal((w, h, x, y), (result.Width, result.Height, result.X!.Value, result.Y!.Value));
     }
 
@@ -36,7 +36,7 @@ public class WindowStateManagerTests
         Assert.Equal((Options.DefaultWidth * 2, Options.DefaultHeight * 2), (defaults.Width, defaults.Height));
         Assert.Null(defaults.X);
 
-        var clamped = WindowStateManager.ToPhysical(new WindowState(100, 100, null, null, false), 1.5, Options);
+        var clamped = WindowStateManager.ToPhysical(new WindowState(100, 100, null, null, WindowPlacement.Normal), 1.5, Options);
         Assert.Equal(((int)(Options.MinWidth * 1.5), (int)(Options.MinHeight * 1.5)), (clamped.Width, clamped.Height));
     }
 
@@ -45,7 +45,7 @@ public class WindowStateManagerTests
     [InlineData(null, 40)]
     public void ToPhysical_position_is_both_or_neither(int? x, int? y)
     {
-        var result = WindowStateManager.ToPhysical(new WindowState(1000, 700, x, y, false), 1.0, Options);
+        var result = WindowStateManager.ToPhysical(new WindowState(1000, 700, x, y, WindowPlacement.Normal), 1.0, Options);
         Assert.Null(result.X);
         Assert.Null(result.Y);
     }
@@ -53,7 +53,7 @@ public class WindowStateManagerTests
     [Fact]
     public void ToPhysical_survives_a_non_positive_scale()
     {
-        var result = WindowStateManager.ToPhysical(new WindowState(1000, 700, 30, 40, false), 0, Options);
+        var result = WindowStateManager.ToPhysical(new WindowState(1000, 700, 30, 40, WindowPlacement.Normal), 0, Options);
         Assert.Equal(1000, result.Width); // identity fallback, never zero/negative geometry
     }
 
@@ -66,7 +66,7 @@ public class WindowStateManagerTests
     {
         // Saved 2400x1500 (a big external monitor) restoring onto a 1366x728 laptop panel.
         var result = WindowStateManager.ToPhysical(
-            new WindowState(2400, 1500, 100, 100, false), 1.0, Options, SmallWorkArea);
+            new WindowState(2400, 1500, 100, 100, WindowPlacement.Normal), 1.0, Options, SmallWorkArea);
         Assert.Equal((1366, 728), (result.Width, result.Height));
         // Position is not clamped — IsVisible + the caller's centre fallback own that concern.
         Assert.Equal((100, 100), (result.X!.Value, result.Y!.Value));
@@ -76,7 +76,7 @@ public class WindowStateManagerTests
     public void ToPhysical_with_workAreas_is_a_no_op_when_the_saved_size_already_fits()
     {
         var result = WindowStateManager.ToPhysical(
-            new WindowState(1200, 700, 30, 40, false), 1.0, Options, SmallWorkArea);
+            new WindowState(1200, 700, 30, 40, WindowPlacement.Normal), 1.0, Options, SmallWorkArea);
         Assert.Equal((1200, 700), (result.Width, result.Height));
     }
 
@@ -87,7 +87,7 @@ public class WindowStateManagerTests
         // — a window smaller than its own minimum is useless.
         Rectangle[] tiny = [new(0, 0, 100, 100)];
         var result = WindowStateManager.ToPhysical(
-            new WindowState(1600, 1000, 0, 0, false), 1.0, Options, tiny);
+            new WindowState(1600, 1000, 0, 0, WindowPlacement.Normal), 1.0, Options, tiny);
         Assert.Equal((Options.MinWidth, Options.MinHeight), (result.Width, result.Height));
     }
 
@@ -98,7 +98,7 @@ public class WindowStateManagerTests
         // use ITS work area, not the primary's — which is what "target monitor" means.
         Rectangle[] two = [new(0, 0, 3840, 2160), new(3840, 0, 1366, 728)];
         var result = WindowStateManager.ToPhysical(
-            new WindowState(2000, 1000, 3900, 100, false), 1.0, Options, two);
+            new WindowState(2000, 1000, 3900, 100, WindowPlacement.Normal), 1.0, Options, two);
         Assert.Equal((1366, 728), (result.Width, result.Height));
     }
 
@@ -107,7 +107,7 @@ public class WindowStateManagerTests
     {
         var offOptions = new WindowStateOptions { MaxToWorkArea = false };
         var result = WindowStateManager.ToPhysical(
-            new WindowState(2400, 1500, 100, 100, false), 1.0, offOptions, SmallWorkArea);
+            new WindowState(2400, 1500, 100, 100, WindowPlacement.Normal), 1.0, offOptions, SmallWorkArea);
         Assert.Equal((2400, 1500), (result.Width, result.Height));
     }
 
@@ -117,7 +117,7 @@ public class WindowStateManagerTests
         // No saved position → target defaults to the first (primary) work area, so a saved size
         // that overflows the primary still shrinks even before the window has a position.
         var result = WindowStateManager.ToPhysical(
-            new WindowState(2400, 1500, null, null, false), 1.0, Options, SmallWorkArea);
+            new WindowState(2400, 1500, null, null, WindowPlacement.Normal), 1.0, Options, SmallWorkArea);
         Assert.Equal((1366, 728), (result.Width, result.Height));
     }
 
@@ -126,8 +126,8 @@ public class WindowStateManagerTests
     [Fact]
     public void ToLogical_roundtrips_with_ToPhysical()
     {
-        var logical = WindowStateManager.ToLogical(new Rectangle(60, 80, 2000, 1400), false, 2.0);
-        Assert.Equal(new WindowState(1000, 700, 30, 40, false), logical);
+        var logical = WindowStateManager.ToLogical(new Rectangle(60, 80, 2000, 1400), WindowPlacement.Normal, 2.0);
+        Assert.Equal(new WindowState(1000, 700, 30, 40, WindowPlacement.Normal), logical);
 
         var physical = WindowStateManager.ToPhysical(logical, 2.0, Options);
         Assert.Equal((2000, 1400, 60, 80), (physical.Width, physical.Height, physical.X!.Value, physical.Y!.Value));
@@ -181,7 +181,7 @@ public class WindowStateManagerTests
         // Form-derived type as designer-serializable state (the same reason OptimizedForm marks its
         // WndProcHook). These are test inputs, not designer properties.
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public bool IsAppMaximized { get; set; }
+        public WindowPlacement AppPlacement { get; set; }
 
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public Rectangle AppRestoreBounds { get; set; }
@@ -196,7 +196,7 @@ public class WindowStateManagerTests
             StartPosition = FormStartPosition.Manual,
             // What a manually-maximized window looks like: filling the work area, WindowState.Normal.
             Bounds = new Rectangle(0, 0, 1920, 1040),
-            IsAppMaximized = true,
+            AppPlacement = WindowPlacement.Maximized,
             AppRestoreBounds = new Rectangle(120, 80, 900, 700),
         };
         Assert.Equal(FormWindowState.Normal, form.WindowState); // the property that used to be read
@@ -204,13 +204,40 @@ public class WindowStateManagerTests
         new WindowStateManager(store, new WindowStateOptions()).Save(form);
 
         Assert.NotNull(store.Saved);
-        Assert.True(store.Saved!.Maximized);            // …not false, as WindowState would have said
+        Assert.Equal(WindowPlacement.Maximized, store.Saved!.Placement);            // …not false, as WindowState would have said
         // …and the persisted size is the WINDOWED geometry, not the work area — this is what made
         // restore a no-op on the next launch.
         var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
         Assert.Equal(DpiHelper.Scale(900, 1 / scale), store.Saved.Width);
         Assert.Equal(DpiHelper.Scale(700, 1 / scale), store.Saved.Height);
     }
+
+    [Fact]
+    public void Save_keeps_the_app_restore_truth_when_closed_while_minimized() => Sta.Run(() =>
+    {
+        // The corruption path: a frameless maximize fills the work area with WindowState still Normal,
+        // so WinForms' own RestoreBounds tracks the FILL rect (an ordinary resize, as far as it saw).
+        // Minimizing then closing used to let the Minimized fallback overwrite AppRestoreBounds with
+        // that rect — persisting the work area as the windowed size, which the next launch's maximize
+        // re-derives its restore target from: restore-down became a permanent no-op.
+        var store = new FakeWindowStateStore();
+        using var form = new OptimizedForm(new OptimizedFormOptions { FramelessChrome = true });
+        form.StartPosition = FormStartPosition.Manual;
+        form.Bounds = new Rectangle(100, 100, 640, 480);
+        // SHOWN, not just realized: WinForms only tracks restoredWindowBounds (the property the
+        // Minimized fallback reads) for a visible window, and the corruption needs that tracking live.
+        form.Show();
+        form.Maximize();
+        form.WindowState = FormWindowState.Minimized;
+
+        new WindowStateManager(store, new WindowStateOptions()).Save(form);
+
+        Assert.NotNull(store.Saved);
+        Assert.Equal(WindowPlacement.Maximized, store.Saved!.Placement);
+        var scale = DpiHelper.ScaleFromDeviceDpi(form.DeviceDpi);
+        Assert.Equal(DpiHelper.Scale(640, 1 / scale), store.Saved.Width);
+        Assert.Equal(DpiHelper.Scale(480, 1 / scale), store.Saved.Height);
+    });
 
     [Fact]
     public void Save_falls_back_to_WindowState_for_an_ordinary_form()
@@ -221,7 +248,7 @@ public class WindowStateManagerTests
         new WindowStateManager(store, new WindowStateOptions()).Save(form);
 
         Assert.NotNull(store.Saved);
-        Assert.False(store.Saved!.Maximized);   // a framed window's WindowState IS the truth
+        Assert.Equal(WindowPlacement.Normal, store.Saved!.Placement);   // a framed window's WindowState IS the truth
     }
 
     [Fact]
@@ -264,7 +291,7 @@ public class WindowStateManagerTests
         // creates a handle it caps Form.Size to the current monitor's height on this machine
         // (measured: 1800×1400 requested → 1800×1220 stored). Both traps go away when both
         // dimensions sit well inside any monitor's work area.
-        var store = new FakeWindowStateStore { Stored = new WindowState(300, 200, null, null, false) };
+        var store = new FakeWindowStateStore { Stored = new WindowState(300, 200, null, null, WindowPlacement.Normal) };
         using var form = new Form();
         var options = new WindowStateOptions { MaxToWorkArea = false, MinWidth = 100, MinHeight = 100 };
 
@@ -285,7 +312,7 @@ public class WindowStateManagerTests
         // Explicit scale so position is DPI-independent; the maximized flag now lands as the
         // deferred marker (see Apply_defers_maximize_to_Shown_for_a_plain_form for the
         // Shown-time consumption).
-        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, Maximized: true) };
+        var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, WindowPlacement.Maximized) };
         using var form = new Form();
         new WindowStateManager(store).Apply(form, 1.0);
 
@@ -317,7 +344,7 @@ public class WindowStateManagerTests
         // on CI at 1200x800, 2026-08-01).
         Sta.Run(() =>
         {
-            var store = new FakeWindowStateStore { Stored = new WindowState(400, 300, null, null, false) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(400, 300, null, null, WindowPlacement.Normal) };
             using var form = new Form { MinimumSize = new Size(1, 1) };
             var before = form.Size;
             var options = new WindowStateOptions { MaxToWorkArea = false, MinWidth = 100, MinHeight = 100 };
@@ -341,7 +368,7 @@ public class WindowStateManagerTests
         // Apply_parameterless_defers_to_HandleCreated_when_the_handle_does_not_exist_yet.
         Sta.Run(() =>
         {
-            var store = new FakeWindowStateStore { Stored = new WindowState(400, 300, null, null, false) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(400, 300, null, null, WindowPlacement.Normal) };
             using var form = new Form { MinimumSize = new Size(1, 1) };
             _ = form.Handle;                   // handle exists before Apply
             var options = new WindowStateOptions { MaxToWorkArea = false, MinWidth = 100, MinHeight = 100 };
@@ -371,7 +398,7 @@ public class WindowStateManagerTests
         {
             // A saved position that is guaranteed to be on-screen on any test machine (0,0 is
             // inside the primary monitor's bounds on every configuration).
-            var store = new FakeWindowStateStore { Stored = new WindowState(600, 400, 10, 10, false) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(600, 400, 10, 10, WindowPlacement.Normal) };
             using var form = new Form { MinimumSize = new Size(1, 1) };
 
             new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
@@ -393,7 +420,7 @@ public class WindowStateManagerTests
         Sta.Run(() =>
         {
             // Off-screen: no test machine has a monitor covering (100000, 100000).
-            var store = new FakeWindowStateStore { Stored = new WindowState(600, 400, 100000, 100000, false) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(600, 400, 100000, 100000, WindowPlacement.Normal) };
             using var form = new Form { MinimumSize = new Size(1, 1) };
 
             new WindowStateManager(store, new WindowStateOptions { MaxToWorkArea = false }).Apply(form);
@@ -412,7 +439,7 @@ public class WindowStateManagerTests
         // that IAppMaximizable already got, via a one-shot Shown handler for plain forms.
         Sta.Run(() =>
         {
-            var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, Maximized: true) };
+            var store = new FakeWindowStateStore { Stored = new WindowState(500, 400, 10, 10, WindowPlacement.Maximized) };
             using var form = new Form();
             new WindowStateManager(store).Apply(form, 1.0);
 
@@ -446,8 +473,8 @@ public class WindowStateManagerTests
         var store = new JsonFileWindowStateStore(Path.Combine(dir, "window.json"));
         Assert.Null(store.Load());
 
-        store.Save(new WindowState(1000, 700, 30, 40, true));
-        Assert.Equal(new WindowState(1000, 700, 30, 40, true), store.Load());
+        store.Save(new WindowState(1000, 700, 30, 40, WindowPlacement.Maximized));
+        Assert.Equal(new WindowState(1000, 700, 30, 40, WindowPlacement.Maximized), store.Load());
 
         File.WriteAllText(Path.Combine(dir, "window.json"), "{not json");
         Assert.Null(store.Load()); // corrupt file → null, never a throw

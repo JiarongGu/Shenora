@@ -1,4 +1,5 @@
 using Android.Media;
+using Microsoft.Extensions.Logging;
 using Shenora;
 
 namespace Shenora.Android;
@@ -47,5 +48,5 @@ internal static class AndroidMediaCodecs
     /// A log sink is app-supplied, so a throwing one must not become this converter's failure. Delegates
     /// to <see cref="AppCallback.Log"/> — the ONE owner of that rule — rather than restating it.
     /// </summary>
-    internal static void Report(Action<string>? log, string message) => AppCallback.Log(log, () => message);
+    internal static void Report(ILogger? log, string message) => AppCallback.Log(log, () => message);
 }

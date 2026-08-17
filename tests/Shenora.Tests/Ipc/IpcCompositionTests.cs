@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shenora.Tests.TestSupport;
 using Shenora.Core.Ipc;
 
@@ -74,13 +75,30 @@ public class IpcCompositionTests
         // The failure mode the downcast created: wrapping the dispatcher — for metrics, tracing, an
         // app-side guard — made `is MessageDispatcher` false and every late-mapped module vanish.
         var decorated = new CountingDispatcher(new MessageDispatcher());
-        decorated.UseErrorHandler();
+        // A logger is now REQUIRED here, because a decorator's own logger is unreachable: see the
+        // refusal pinned below. Passing NullLogger is the deliberate-silence spelling.
+        decorated.UseErrorHandler(NullLogger.Instance);
         decorated.MapModule(new AlphaFacade());
 
         var response = await decorated.DispatchAsync(Request("ALPHA"));
 
         Assert.Equal("alpha", response.Data);
         Assert.Equal(1, decorated.Dispatched); // the decorator really is in the path
+    }
+
+    [Fact]
+    public void UseErrorHandler_REFUSES_a_decorator_it_cannot_log_through()
+    {
+        // Behind a decorator the dispatcher's own logger is unreachable, so this used to fall back to
+        // NullLogger SILENTLY: every unhandled exception then mapped to UNKNOWN_ERROR for the client and
+        // was logged nowhere — the one place the kit promises the detail stays host-side. It now refuses
+        // at COMPOSITION, the same call `Registry` makes one method over: never a permissive wrong answer.
+        var decorated = new CountingDispatcher(new MessageDispatcher());
+
+        var ex = Assert.Throws<InvalidOperationException>(() => decorated.UseErrorHandler());
+
+        Assert.Contains(nameof(CountingDispatcher), ex.Message);   // names the offending type
+        Assert.Contains("NullLogger", ex.Message);                 // and the deliberate-silence escape
     }
 
     [Fact]
@@ -212,6 +230,30 @@ public class IpcCompositionTests
         Assert.Equal(IpcErrorCodes.UnknownError, response.Error!.Code);
         // The composition detail names types and must not cross the wire.
         Assert.DoesNotContain(nameof(DupTwoFacade), IpcJson.Serialize(response));
+    }
+
+    [Fact]
+    public async Task One_facade_factory_failing_once_does_not_poison_dispatch_forever()
+    {
+        // The default Lazy mode caches a thrown exception for the life of the process, so ONE
+        // transient DI failure at first dispatch used to turn every later request to every
+        // DI-registered module into UNKNOWN_ERROR until restart. The map builds PublicationOnly now:
+        // the next dispatch retries and heals.
+        var attempts = 0;
+        using var provider = new ServiceCollection()
+            .AddSingleton<IIpcModule>(_ => ++attempts == 1
+                ? throw new InvalidOperationException("transient resolution failure")
+                : new DupOneFacade())
+            .UseMessageDispatcher()
+            .BuildServiceProvider();
+        var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
+
+        var poisoned = await dispatcher.DispatchAsync(Request("DUP", "PING"));
+        Assert.False(poisoned.Success);
+        Assert.Equal(IpcErrorCodes.UnknownError, poisoned.Error!.Code);
+
+        var healed = await dispatcher.DispatchAsync(Request("DUP", "PING"));
+        Assert.True(healed.Success);
     }
 
     /// <summary>A facade that injects the dispatcher — ordinary, and previously fatal.</summary>

@@ -1,5 +1,3 @@
-using Shenora.Core.Shell;
-
 namespace Shenora.Core.Ipc;
 
 /// <summary>
@@ -23,8 +21,7 @@ public static class IpcErrorCodes
     /// module was never registered; <see cref="NoRoute"/> means it WAS, and does not know that type.
     /// Those are opposite fixes — wire the module up, versus correct a route name — and until
     /// 2026-08-08 both answered <c>NO_HANDLER</c> with identical parameters, so an adopter debugging a
-    /// dead page could not tell which they had. It was found by a test that tried to USE the
-    /// distinction as its probe and could not.
+    /// dead page could not tell which they had.
     /// </para>
     /// </summary>
     public const string NoHandler = "NO_HANDLER";

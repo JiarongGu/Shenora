@@ -46,7 +46,10 @@ private:
 
 }  // namespace
 
-ApplyResult apply_pending_update(const ApplyOptions& options) {
+namespace {
+
+// The body, split out so the public entry below can hold ONE exception boundary around all of it.
+ApplyResult apply_update_body(const ApplyOptions& options) {
     ApplyResult result;
     Log log(options.log_file);
 
@@ -177,6 +180,27 @@ ApplyResult apply_pending_update(const ApplyOptions& options) {
     log("applied version " + result.version + ": " + std::to_string(result.written.size())
         + " written, " + std::to_string(result.removed.size()) + " removed");
     return result;
+}
+
+}  // namespace
+
+ApplyResult apply_pending_update(const ApplyOptions& options) {
+    try {
+        return apply_update_body(options);
+    } catch (const std::exception& e) {
+        // Nearly every operation in the body goes through an ec overload, but a range-for over a
+        // directory iterator ADVANCES with the throwing operator++ — the non-throwing increment(ec)
+        // is not reachable from range-for — so a tree changing mid-walk can still throw. Nothing
+        // above main() catches: an escape here is std::terminate before the app ever starts, the
+        // bricked-launch outcome this launcher exists to avoid, instead of the "update not applied"
+        // it promises.
+        ApplyResult result;
+        result.attempted = true;
+        result.failure = std::string("the update stopped on an exception: ") + e.what();
+        Log log(options.log_file);
+        log(result.failure);
+        return result;
+    }
 }
 
 }  // namespace shenora

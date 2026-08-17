@@ -1,5 +1,3 @@
-using Shenora;
-
 namespace Shenora.Engine.Missions;
 
 /// <summary>Where a queued mission had got to when its record was last written.</summary>
@@ -13,28 +11,38 @@ public enum MissionState
 }
 
 /// <summary>What <see cref="IMissionQueueStore"/> persists for one durable mission.</summary>
-/// <param name="MissionId">Scheduler-assigned id; stable across a restart.</param>
+/// <param name="MissionId">
+/// Scheduler-assigned id, and the key <see cref="IMissionQueueStore.RemoveAsync"/> is called with.
+/// ⚠ <b>PER-PROCESS.</b> Recovery resubmits under a NEW id and removes this record, so a store must not
+/// treat it as a durable identity for the work.
+/// </param>
 /// <param name="Kind">App-defined mission type, from <see cref="MissionDefinition.Kind"/>.</param>
 /// <param name="Payload">App-serialized state, from <see cref="MissionDefinition.Payload"/>. Never interpreted by the kit.</param>
 /// <param name="State">Queued or Running as of the last write.</param>
 /// <param name="CreatedUtc">Submission time.</param>
+/// <param name="Key">
+/// The caller-chosen identity from <see cref="MissionDefinition.Key"/>, or null when the submission
+/// named none.
+/// <para>
+/// 🔴 <b>The DURABLE half of the identity problem.</b> <see cref="MissionId"/> is per-process, so on the
+/// next boot a store has nothing an app recognises — and the kit ships no store (D28), which makes this
+/// record the wire format between the kit and EVERY adopter's storage. A rehydrate callback can now key
+/// on what the app itself chose rather than on an id it has never seen.
+/// </para>
+/// </param>
 public sealed record MissionRecord(
     string MissionId,
     string? Kind,
     string? Payload,
     MissionState State,
-    DateTimeOffset CreatedUtc);
+    DateTimeOffset CreatedUtc,
+    MissionKey? Key = null);
 
 /// <summary>
 /// What happens to a record found in the queue's store at startup.
-///
 /// <para>
-/// The distinction is not bureaucratic — it comes from a family incident. A mission found in
-/// <see cref="MissionState.Running"/> after a restart MAY BE WHAT KILLED THE PROCESS (a native GPU
-/// render, in that case). Re-running it on every boot turns one crash into an unrecoverable loop the
-/// user cannot escape from inside the app. So the default for Running records is
-/// <see cref="Fail"/> — surface it and let a human retry — while Queued records, which by definition
-/// never started, requeue safely.
+/// ⚠ A record found in <see cref="MissionState.Running"/> MAY BE WHAT KILLED THE PROCESS, so
+/// re-running it on every boot turns one crash into a loop the user cannot escape from inside the app.
 /// </para>
 /// </summary>
 public enum RecoveryPolicy
@@ -52,34 +60,15 @@ public enum RecoveryPolicy
 /// <summary>
 /// Where the pending queue LIVES when it must survive a restart. The queue itself is the scheduler's
 /// own, in memory; supply this and the durable half of it is written through to storage.
-///
 /// <para>
-/// <b>The kit ships no implementation</b> — not a SQLite one, not a JSON one — because storage is the
-/// app's decision and <c>Shenora</c> takes no storage dependency. Leave
-/// <see cref="MissionSchedulerOptions.QueueStore"/> null and every mission behaves as in-memory
-/// regardless of <see cref="MissionDefinition.Durable"/>.
+/// <b>The kit ships no implementation</b> — storage is the app's decision and <c>Shenora</c> takes no
+/// storage dependency (D28). Leave <see cref="MissionSchedulerOptions.QueueStore"/> null and every
+/// mission behaves as in-memory regardless of <see cref="MissionDefinition.Durable"/>; ordering stays
+/// the app's through <see cref="IMissionPolicy"/>.
 /// </para>
-///
 /// <para>
-/// <b>Why this is the queue's store and not a separate "durable missions" service</b> (renamed from
-/// <c>IMissionStore</c>): durability is not a second concept sitting beside the queue — it is where
-/// the queue's entries are kept. Describing it as its own thing is what made recovery read oddly, as
-/// though records arrived from somewhere other than the queue they were enqueued into.
-/// </para>
-///
-/// <para>
-/// A pluggable QUEUE — one that also owned ordering and could be read asynchronously — was designed
-/// and rejected: it puts an <c>await</c> in the dispatch path, which cannot run under the scheduler's
-/// lock, forcing admission to re-validate against a collection that may have changed underneath. That
-/// is a race in the one place where a race corrupts rather than delays, bought for a capability no
-/// consumer has asked for. Ordering is already the app's through <see cref="IMissionPolicy"/>.
-/// </para>
-///
-/// <para>
-/// Implementations must tolerate being called concurrently, and should treat
-/// <see cref="AppendAsync"/> as an upsert keyed on <see cref="MissionRecord.MissionId"/> — it is
-/// called again when a mission moves from <see cref="MissionState.Queued"/> to
-/// <see cref="MissionState.Running"/>.
+/// Implementations must tolerate concurrent calls. <see cref="AppendAsync"/> is called AGAIN when a
+/// mission moves from <see cref="MissionState.Queued"/> to <see cref="MissionState.Running"/>.
 /// </para>
 /// </summary>
 public interface IMissionQueueStore
@@ -90,9 +79,6 @@ public interface IMissionQueueStore
     /// <summary>Remove a record. Must not throw when the id is already gone.</summary>
     Task RemoveAsync(string missionId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Everything still stored, for <see cref="IMissionScheduler.RecoverAsync"/> — i.e. what the
-    /// queue held when the process last stopped.
-    /// </summary>
+    /// <summary>Everything still stored, for <see cref="IMissionScheduler.RecoverAsync"/>.</summary>
     Task<IReadOnlyList<MissionRecord>> LoadAsync(CancellationToken cancellationToken);
 }

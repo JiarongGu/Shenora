@@ -1,7 +1,60 @@
 using Shenora;
 using Shenora.Core.WebView;
+using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Core;
+
+/// <summary>
+/// 🔴 The kit states path containment in two cross-platform places — <see cref="WebViewFiles.ResolveContained"/>
+/// (serving) and <see cref="PathClaims.IsContained"/> (scheduling) — and they are NOT interchangeable.
+/// These pin the differences, so a later pass that "collapses the duplication" fails here instead of
+/// quietly loosening the serving check.
+/// <para>
+/// ⚠ Their one SHARED property, the case rule, is deliberately NOT tested: on Windows the correct answer
+/// and the wrong one are the same value, so any such test passes with the defect present — verified by
+/// sabotage. It is held by a shared member (<c>PathComparison.ForPaths</c>) instead, which makes the
+/// divergence unrepresentable rather than merely detectable.
+/// </para>
+/// </summary>
+public class PathContainmentDifferenceTests
+{
+    private static string Root => Path.Combine(Path.GetTempPath(), "shenora-containment-root");
+
+    /// <summary>
+    /// Serving refuses a <c>..</c> SEGMENT outright, even one that resolves back inside the root; the
+    /// scheduler resolves it and answers on the destination. The strictness is the point: allowing a
+    /// traversal that lands inside means the URL shape is no longer what is being authorised.
+    /// </summary>
+    [Fact]
+    public void A_traversal_that_resolves_back_INSIDE_the_root_is_refused_by_serving_and_allowed_by_scheduling()
+    {
+        var loops = Path.Combine(Root, "a", "..", "clip.mp4");
+
+        Assert.Null(WebViewFiles.ResolveContained(loops, [Root]));
+        Assert.True(PathClaims.IsContained(Root, loops));
+    }
+
+    /// <summary>
+    /// The root itself is a directory, so serving must not resolve it; a claim on the root is ordinary and
+    /// hierarchical, so scheduling must.
+    /// </summary>
+    [Fact]
+    public void The_root_itself_is_not_servable_but_is_claimable()
+    {
+        Assert.Null(WebViewFiles.ResolveContained(Root, [Root]));
+        Assert.True(PathClaims.IsContained(Root, Root));
+    }
+
+    /// <summary>Both still accept an ordinary path underneath the root — or the two above prove nothing.</summary>
+    [Fact]
+    public void Both_accept_an_ordinary_contained_path()
+    {
+        var inside = Path.Combine(Root, "clip.mp4");
+
+        Assert.NotNull(WebViewFiles.ResolveContained(inside, [Root]));
+        Assert.True(PathClaims.IsContained(Root, inside));
+    }
+}
 
 /// <summary>
 /// Path containment — what stands between a page and the disk. MOVED HERE with the code in D45's re-layering

@@ -67,7 +67,12 @@ describe('BaseModuleService', () => {
       // @ts-expect-error ADD's payload is { title: string }, not { name: string }
       wrongPayload() { return this.send('ADD', { payload: { name: 'x' } }); }
 
-      correct() { return this.send<{ id: string }>('ADD', { payload: { title: 'x' } }); }
+      // 🔴 THE RESPONSE COMES FROM THE DECLARED RETURN TYPE, not from a type argument. Writing
+      // `send<{ id: string }>(…)` here — which this line used to do, and which every shipped call site
+      // used to do — defeats the two assertions above: with the response named, TType falls back to its
+      // default and `payload` widens to the union of every route's. The wrongPayload case above then
+      // COMPILES, and the `@ts-expect-error` on it becomes the failure.
+      correct(): Promise<{ id: string }> { return this.send('ADD', { payload: { title: 'x' } }); }
     }
 
     // The positive case must still work — a constraint that rejects everything is not a fix.

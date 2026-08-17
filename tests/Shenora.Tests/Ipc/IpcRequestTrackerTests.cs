@@ -150,6 +150,32 @@ public class IpcRequestTrackerTests
     }
 
     /// <summary>
+    /// 🔴 Cancel's permission check and its transition run under two SEPARATE lock acquisitions — the token
+    /// must be signalled outside the lock, because its callbacks re-enter the tracker. So the answer has to
+    /// come from the transition, never from re-reading the table afterwards: an un-announced finish REMOVES
+    /// the entry, so "no entry" would read as "I cancelled it" for a request something else finished.
+    /// <para>
+    /// Driven deterministically rather than with racing threads: <c>Cancel</c> signals the token
+    /// synchronously, so a callback registered on it runs inside that window by construction.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Cancel_refuses_when_something_else_finished_the_request_first()
+    {
+        var (tracker, _, _) = Build();
+        var scope = tracker.Begin(Request(id: "req-race"));
+
+        // Lands in the gap between Cancel's check and its Finish, and finishes the request some OTHER way.
+        scope.CancellationToken.Register(() => scope.Fail(new IpcError { Code = "DISK_FULL" }));
+
+        Assert.False(tracker.Cancel("req-race"));
+
+        // Still inside the grace period, so the failed request left no trace — which is exactly why the
+        // missing entry cannot be read as proof that the cancel landed.
+        Assert.Empty(tracker.GetAll());
+    }
+
+    /// <summary>
     /// A body that unwound on cancellation must not be recorded as COMPLETED just because its scope
     /// disposed — that would report success for work that stopped.
     /// </summary>

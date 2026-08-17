@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Dispatching;
 using Shenora;
@@ -40,7 +41,7 @@ public sealed class MobileIpcBridgeOptions
     public Action<IpcRequest>? OnClientReady { get; init; }
 
     /// <summary>Diagnostics sink.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 }
 
 /// <summary>
@@ -69,7 +70,7 @@ public sealed class MobileIpcBridge : IDisposable
 {
     private readonly HybridWebView _webView;
     private readonly MobileIpcBridgeOptions _options;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly NotificationPump _pump;
     private readonly IpcHostBridge _host;
     private readonly IUiDispatcher _ui;
@@ -99,7 +100,7 @@ public sealed class MobileIpcBridge : IDisposable
 
         _log = options.Log;
         _ui = new MobileUiDispatcher(webView.Dispatcher,
-            ex => Log(() => $"[Shenora.Mobile] Posted UI work failed: {ex.Message}"));
+            ex => Log(() => "[Shenora.Mobile] Posted UI work failed", ex));
 
         _pump = new NotificationPump(new NotificationPumpOptions
         {
@@ -117,6 +118,12 @@ public sealed class MobileIpcBridge : IDisposable
             Shell = options.Shell,
             OnClientReady = options.OnClientReady,
             Log = options.Log,
+            // This bridge's lifetime is the PAGE's, and on mobile the page dies on every activity
+            // recreation. Cancelling in-flight dispatches then aborts work whose effects are
+            // host-side — a save mid-picker died OPERATION_CANCELLED with the user's chosen file
+            // left empty (measured; the option's doc carries it). The work completes; the response
+            // is dropped with the page, which is the right half to lose.
+            CancelInFlightOnDispose = false,
         });
     }
 
@@ -172,7 +179,7 @@ public sealed class MobileIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Mobile] Unhandled error in the IPC message handler: {ex}");
+            Log(() => "[Shenora.Mobile] Unhandled error in the IPC message handler", ex);
         }
     }
 
@@ -187,7 +194,7 @@ public sealed class MobileIpcBridge : IDisposable
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Mobile] Notification flush failed: {ex.Message}");
+            Log(() => "[Shenora.Mobile] Notification flush failed", ex);
         }
     }
 
@@ -198,11 +205,11 @@ public sealed class MobileIpcBridge : IDisposable
         _ui.Post(() =>
         {
             try { _webView.SendRawMessage(json); }
-            catch (Exception ex) { Log(() => $"[Shenora.Mobile] SendRawMessage failed: {ex.Message}"); }
+            catch (Exception ex) { Log(() => "[Shenora.Mobile] SendRawMessage failed", ex); }
         });
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <summary>
     /// Stop the timer, detach the handler, cancel the dispatch lifetime and unsubscribe from the bus.
@@ -225,7 +232,7 @@ public sealed class MobileIpcBridge : IDisposable
         if (_attached)
         {
             try { _webView.RawMessageReceived -= OnRawMessageReceived; }
-            catch (Exception ex) { Log(() => $"[Shenora.Mobile] Bridge dispose: could not detach the message handler ({ex.Message})"); }
+            catch (Exception ex) { Log(() => "[Shenora.Mobile] Bridge dispose: could not detach the message handler", ex); }
         }
     }
 }

@@ -1,45 +1,38 @@
+using Microsoft.Extensions.Logging;
+
 namespace Shenora.Modules.Media;
 
 /// <summary>
 /// The kit's own <see cref="ISegmentEngine"/> — the platform's codecs behind
-/// <see cref="IMediaStreamConversion"/>, plus <see cref="Mp4FragmentWriter"/>, and nothing else.
-///
+/// <see cref="IMediaStreamConversion"/>, plus <see cref="Mp4FragmentWriter"/>, and nothing else. It ships no
+/// engine bytes and inherits no licence (D42/D51); an app past the platform's reach supplies its own engine
+/// through the same seam. Segments are the TRANSCODE path, and which route a source takes is the APP's
+/// decision (D71/D72).
 /// <para>
-/// 🔴 <b>It ships no engine bytes and inherits no licence, which is what makes a DEFAULT defensible at
-/// all</b> (D42's objection was megabytes every consumer pays for; D51's was a licence every consumer
-/// inherits). Everything here is composition: the demuxer this kit already had for remuxing, the codecs the
-/// shell already registers for conversion, and the fragment writer. An app past the platform's reach still
-/// supplies its own engine through the same seam — this is the escape hatch's default, not its replacement.
+/// 🔴 <b>IT COPIES EVERY STREAM MP4 CAN CARRY AND RE-ENCODES ONLY WHAT IT CANNOT</b> (D76). The platform
+/// video encoders offer h263/mpeg4/mpeg2video, none of which a webview decodes, so re-encoding everything
+/// leaves an EMPTY intersection with what the page can play and returns sound-only segments for essentially
+/// every real film.
 /// </para>
-///
 /// <para>
-/// <b>What it is for.</b> Segments are the TRANSCODE path. A source whose streams the container can already
-/// carry is better served by the computed-remux route — one file, one plain <c>&lt;video src&gt;</c>, no
-/// MediaSource and no re-encode (D71/D72). Which route a source takes is the APP's decision, expressed by
-/// which route it registers for that URL; this engine does not second-guess it, because a route that
-/// declined work it was explicitly given would be undebuggable.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>Mobile only, honestly rather than silently.</b> <see cref="IMediaStreamConversion"/> is implemented
-/// on Android and iOS; <c>Shenora.Windows</c> has no codec, so on the desktop <see cref="IsAvailable"/> is
-/// false and the app's answer is the computed-remux route — which is the right answer there anyway, since
-/// WebView2 serves byte ranges properly.
+/// 🔴 <b>It runs wherever an <see cref="IMediaStreamConversion"/> is REGISTERED — a registration test, not a
+/// platform one.</b> <see cref="IsAvailable"/> is false on the desktop only because <c>Shenora.Windows</c>
+/// ships no converter. ⚠ A copy-only run needs no codec at all, so requiring one is what keeps this route
+/// from competing with the computed remux.
 /// </para>
 /// </summary>
 internal sealed class DefaultSegmentEngine : ISegmentEngine
 {
-    // Explicit fields rather than primary-constructor captures: the nested run class reads both, and a
-    // captured parameter is not a member a nested type can reach.
+    // Explicit fields, not primary-constructor captures: a captured parameter is not a member the nested run
+    // class can reach.
     private readonly IMediaStreamConversion? _conversion;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
 
     /// <param name="conversion">
-    /// The shell's codecs. Null — or a shell that registered none — means <see cref="IsAvailable"/> is false
-    /// and nothing else here is ever called.
+    /// The shell's codecs. Null means <see cref="IsAvailable"/> is false and nothing else here is ever called.
     /// </param>
     /// <param name="log">Optional diagnostics. Guarded: a throwing sink must not kill a production run.</param>
-    public DefaultSegmentEngine(IMediaStreamConversion? conversion, Action<string>? log = null)
+    public DefaultSegmentEngine(IMediaStreamConversion? conversion, ILogger? log = null)
     {
         _conversion = conversion;
         _log = log;
@@ -47,11 +40,17 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
 
     /// <summary>
     /// The track numbers this engine writes. Fixed rather than derived because
-    /// <see cref="HasRenderedPicture"/> is handed a PATH and nothing else — it has to know which track to
-    /// measure, and the only way it can is by having chosen the number itself.
+    /// <see cref="HasRenderedPicture"/> is handed a PATH and must know which track to measure.
     /// </summary>
     internal const int VideoTrackId = 1;
     internal const int AudioTrackId = 2;
+
+    /// <summary>
+    /// The longest segment this engine will COPY a track into, in seconds; past it the track is re-encoded.
+    /// ⚠ <b>A memory bound, not a media one</b>: a fragment's bytes are held in one buffer, so a source whose
+    /// keyframes are a minute apart would put hundreds of megabytes into one fragment on a phone.
+    /// </summary>
+    internal const double MaxCopiedSegmentSeconds = 30.0;
 
     /// <inheritdoc />
     public bool IsAvailable => _conversion is not null;
@@ -67,16 +66,12 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     /// <inheritdoc />
     /// <remarks>
     /// ⚠ A video STREAM is not a picture: an attached cover image is carried as one, and building a video
-    /// encoder for a soundtrack with album art wastes a hardware codec and produces a segment whose "picture"
-    /// is one frame repeated. Dimensions are what separate them.
-    /// <para>
-    /// 🔴 <b>And the dimensions are on the RESULT, not on the stream</b> — <c>MatroskaProbe</c> fills
-    /// <see cref="MediaProbeResult.Width"/>/<see cref="MediaProbeResult.Height"/> and leaves
-    /// <see cref="MediaStreamInfo.Width"/> null on every stream it reports. This method asked the stream
-    /// first and therefore answered FALSE for every source alive — so the engine would have built no video
-    /// encoder at all and produced sound-only segments that played perfectly. Caught by a test, not by
-    /// reading; the wrong version compiles and looks right.
-    /// </para>
+    /// encoder for album art wastes a hardware codec on a segment whose "picture" is one frame repeated.
+    /// 🔴 <b>The dimensions that separate them are on the RESULT, not on the stream</b> —
+    /// <c>MatroskaProbe</c> fills <see cref="MediaProbeResult.Width"/>/<see cref="MediaProbeResult.Height"/>
+    /// and leaves <see cref="MediaStreamInfo.Width"/> null on every stream it reports, so asking the stream
+    /// answers FALSE for every source alive and the engine builds no video encoder, producing sound-only
+    /// segments that play perfectly. A test pins it: the wrong version compiles and looks right.
     /// </remarks>
     public bool HasPicture(string source)
     {
@@ -87,30 +82,85 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// The question the whole feature turns on, answered by SUBTRACTION rather than by structure — see
-    /// <see cref="Mp4FragmentReader"/> for the measured bug it exists to catch.
-    /// </remarks>
+    /// <remarks>Answered by SUBTRACTION, not by structure — <see cref="Mp4FragmentReader"/> says why.</remarks>
     public bool HasRenderedPicture(string segment) => Mp4FragmentReader.SampleBytes(segment, VideoTrackId) > 0;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Answers null — "I will hit your grid" — for every source whose PICTURE this run would re-encode, and a
+    /// derived plan only for one it will COPY: the kit's encoders emit a keyframe every second so a
+    /// whole-second grid is hittable, while copied frames keep the original encoder's keyframes (D76).
+    /// </remarks>
+    public SegmentPlan? PlanSegments(string source, double segmentSeconds, CancellationToken cancellationToken = default)
+    {
+        if (_conversion is null || segmentSeconds <= 0) return null;
+        if (Probe(source)?.Duration is not { } duration || duration <= TimeSpan.Zero) return null;
+
+        try
+        {
+            using var file = File.OpenRead(source);
+            var reader = new MatroskaSampleReader(file);
+            if (!reader.ReadHeader()) return null;
+
+            // Only the LEAD track decides the boundaries, and only when it is copied. A converted picture is
+            // cut on the grid; a soundtrack has a keyframe on every frame, so any boundary suits it.
+            if (Pick(reader, MediaStreamKind.Video) is not { Copy: true } lead) return null;
+
+            // ⚠ The long walk, inside a web request — which is why the token reaches it.
+            if (!reader.ReadSamples(new HashSet<ulong> { lead.Track.Number }, cancellationToken)) return null;
+
+            var timeline = SourceTimeline.For(reader.TimestampScaleNs);
+            var starts = SegmentGrid.KeyFrameStarts(lead.Track.Samples, timeline, segmentSeconds);
+            if (SegmentPlan.Cuts(starts, duration) is not { } plan)
+            {
+                Report("segments: the source's keyframes do not describe a playlist — falling back to the grid");
+                return null;
+            }
+
+            // 🔴 A source whose keyframes are minutes apart cannot be COPIED into fragments — a fragment is
+            // held whole in memory. Declining sends the run back to the grid and a re-encode.
+            if (plan.LongestSeconds > MaxCopiedSegmentSeconds)
+            {
+                Report($"segments: the source's keyframes are up to {plan.LongestSeconds:0.#}s apart, past the "
+                     + $"{MaxCopiedSegmentSeconds:0}s a copied fragment may be — re-encoding instead");
+                return null;
+            }
+
+            Report($"segments: {plan}");
+            return plan;
+        }
+        catch (OperationCanceledException)
+        {
+            // The request went away. Not a fault, and not this engine's to report.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // A source that cannot be planned is one the grid still serves; the contract's answer is null.
+            Report($"segments: could not plan '{Path.GetFileName(source)}' ({ex.GetType().Name})");
+            return null;
+        }
+    }
 
     /// <inheritdoc />
     public ISegmentRun? Start(SegmentRunRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Plan);
         if (_conversion is null) return null;
 
         // ONE candidate. The `Attempt` ladder exists for an engine that can offer a software encoder after a
-        // hardware one failed; this engine has whatever the platform gave it and no second answer, so a
-        // retry would re-run the identical work and fail identically. Null tells the caller to stop asking.
+        // hardware one failed; this one has no second answer, so null tells the caller to stop asking.
         if (request.Attempt > 0)
         {
             Report($"segments: no second candidate — this engine has one encoder path (attempt {request.Attempt})");
             return null;
         }
 
-        // Refused at composition time rather than discovered by a seek. See SegmentGrid: a fractional grid
-        // produces segments that PLAY and only misbehave when somebody seeks into them.
-        if (!SegmentGrid.IsUsable(request.SegmentSeconds, out var reason))
+        // Refused at composition time rather than discovered by a seek: a fractional grid produces segments
+        // that PLAY and only misbehave when somebody seeks into them (SegmentGrid). ⚠ Only a GRID can be
+        // unhittable — boundaries taken from the source's own keyframes are real by construction.
+        if (request.Plan.GridSeconds is { } grid && !SegmentGrid.IsUsable(grid, out var reason))
         {
             Report($"segments: {reason}");
             return null;
@@ -121,6 +171,43 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         return run;
     }
 
+    /// <summary>
+    /// The first track of a kind this run can produce, and HOW it will travel — copy first, convert only what
+    /// cannot be copied (D76).
+    /// <para>
+    /// ⚠ <b>The conversion fallback is asked of the CONVERSION and not of the container</b>: a track whose
+    /// codec the encoder declines is one the run would feed for nothing, producing a segment missing that
+    /// stream — which reads as a broken engine rather than as an unsupported codec.
+    /// </para>
+    /// </summary>
+    /// <param name="reader">Past its header, so the tracks are known.</param>
+    /// <param name="kind">Picture or sound.</param>
+    /// <param name="allowCopy">
+    /// 🔴 <b>False when the run must hit a GRID, because a copied track can only be cut where the SOURCE has
+    /// a keyframe.</b> A copy that cannot land on the plan's cuts produces one enormous segment while the
+    /// manifest goes on naming the rest — a stream that plays for a few seconds and then 503s for ever.
+    /// </param>
+    private SegmentTrack? Pick(MatroskaSampleReader reader, MediaStreamKind kind, bool allowCopy = true)
+    {
+        foreach (var track in reader.Tracks)
+        {
+            if (!allowCopy) break;
+            if (track.Kind != kind) continue;
+            if (Mp4Carriage.EntryFor(track) is not null) return new SegmentTrack(track, Copy: true);
+        }
+
+        foreach (var track in reader.Tracks)
+        {
+            if (track.Kind != kind) continue;
+            var codec = MatroskaProbe.CodecNameOf(track.CodecId, track.CodecPrivate ?? ReadOnlyMemory<byte>.Empty);
+            if (codec is null) continue;
+            if (_conversion!.CanConvert(kind, codec)) return new SegmentTrack(track, Copy: false);
+            Report($"segments: no {kind} converter for '{codec}' on this device, and MP4 cannot carry it as it is");
+        }
+
+        return null;
+    }
+
     private MediaProbeResult? Probe(string source)
     {
         try
@@ -129,8 +216,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
         }
         catch (Exception ex)
         {
-            // A source that cannot be probed is one this engine cannot serve, and the contract's answer for
-            // both DurationOf and HasPicture is the absent one rather than a throw.
+            // The contract's answer for both DurationOf and HasPicture is the absent one, never a throw.
             Report($"segments: could not probe '{Path.GetFileName(source)}' ({ex.GetType().Name})");
             return null;
         }
@@ -140,13 +226,8 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
 
     /// <summary>
     /// One production run: a background pump that writes numbered fragments until it reaches the end of the
-    /// source or is disposed.
-    /// <para>
-    /// 🔴 <b>Disposing must KILL it, and that is not a tidiness point.</b> A rolling window whose producer
-    /// outlives its consumer holds a hardware codec — of which a device has a handful — plus a file handle
-    /// and a CPU, invisibly, on a phone. The contract says so; this honours it with a token the pump checks
-    /// between frames and a wait on the way out.
-    /// </para>
+    /// source or is disposed. 🔴 <b>Disposing must KILL it</b> — a producer that outlives its consumer holds
+    /// a hardware codec, of which a device has a handful, plus a file handle and a CPU, invisibly.
     /// </summary>
     private sealed class Run(DefaultSegmentEngine owner, SegmentRunRequest request) : ISegmentRun
     {
@@ -170,10 +251,9 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             }
             catch (Exception ex)
             {
-                // 🔴 A run dies with NO caller on the stack — it was started with Task.Run and nobody awaits
-                // it — so an escaping exception is an unobserved fault and the only symptom is segments that
-                // stop appearing. The consumer's own wait budget then reports "seg{k} did not arrive", which
-                // names the effect and not the cause. This line is the cause.
+                // 🔴 A run dies with NO caller on the stack — started with Task.Run and never awaited — so an
+                // escaping exception is an unobserved fault whose only symptom is segments that stop
+                // appearing. The consumer then reports "seg{k} did not arrive", the effect. This is the cause.
                 owner.Report($"segments: the production run failed ({ex.GetType().Name}: {ex.Message})");
             }
         }
@@ -188,56 +268,54 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
                 return;
             }
 
-            var video = request.HasPicture ? Pick(reader, MediaStreamKind.Video) : null;
-            var audio = Pick(reader, MediaStreamKind.Audio);
+            // 🔴 A copied PICTURE is cut where the SOURCE has keyframes; a UNIFORM plan instead relies on the
+            // kit's own encoders emitting one every second, which only an encoder can promise — so on a grid
+            // the picture is re-encoded even where it could have been copied. Without this the two halves
+            // disagree whenever PlanSegments declined, the run copies, and every cut SLIPS to the first
+            // source keyframe past the boundary: nothing reports it, an index the drift skips is never
+            // written, and the page waits out its budget and restarts on every segment.
+            // ⚠ Sound is exempt: every audio frame is a sync sample, so any boundary suits it.
+            var onAGrid = request.Plan.GridSeconds is not null;
+            var video = request.HasPicture
+                ? owner.Pick(reader, MediaStreamKind.Video, allowCopy: !onAGrid)
+                : null;
+            var audio = owner.Pick(reader, MediaStreamKind.Audio);
             if (video is null && audio is null)
             {
-                owner.Report("segments: the source carries nothing this engine can convert");
+                owner.Report("segments: the source carries nothing this engine can copy or convert");
                 return;
             }
 
             var wanted = new HashSet<ulong>();
-            if (video is not null) wanted.Add(video.Number);
-            if (audio is not null) wanted.Add(audio.Number);
+            if (video is not null) wanted.Add(video.Track.Number);
+            if (audio is not null) wanted.Add(audio.Track.Number);
             if (!reader.ReadSamples(wanted, cancellationToken))
             {
                 owner.Report("segments: the source's sample index could not be read");
                 return;
             }
 
-            // The clock the grid is measured on. Both tracks are cut against the SAME timeline, because the
-            // manifest declares one grid for the whole presentation.
-            var ticksPerSecond = reader.TimestampScaleNs > 0 ? 1_000_000_000L / reader.TimestampScaleNs : 1_000L;
-            var startTicks = SegmentGrid.StartTicks(request.FirstSegment, ticksPerSecond, request.SegmentSeconds);
+            // The source's clock, stated exactly — a copied track is written on it. Both tracks are cut
+            // against the SAME plan; the manifest declares one for the whole presentation.
+            var timeline = SourceTimeline.For(reader.TimestampScaleNs);
+            var startSeconds = request.Plan.StartOf(request.FirstSegment);
 
-            using var writer = new SegmentRunWriter(owner, request, ticksPerSecond);
-            var lead = video ?? audio!;
-            var from = SegmentGrid.SeekIndex(lead.Samples, startTicks);
+            using var writer = new SegmentRunWriter(owner, request, timeline);
+            var lead = (video ?? audio)!;
+            var from = SegmentGrid.SeekIndex(lead.Track.Samples, timeline.TicksAt(startSeconds));
 
+            var how = string.Join(" + ", new[] { How(video, "picture"), How(audio, "sound") }
+                                         .Where(part => part.Length > 0));
             owner.Report($"segments: producing from seg{request.FirstSegment} "
-                       + $"(sample {from} of {lead.Samples.Count}, {(video is null ? "sound only" : "picture + sound")})");
+                       + $"(sample {from} of {lead.Track.Samples.Count}, {how})");
 
-            writer.Run(reader, source, video, audio, from, startTicks, conversionOf: owner._conversion!, cancellationToken);
+            writer.Run(source, video, audio, from, startSeconds, conversionOf: owner._conversion, cancellationToken);
         }
 
-        /// <summary>
-        /// The first track of a kind that this device can actually convert. ⚠ <b>Asked of the CONVERSION and
-        /// not of the container</b>: a track whose codec the encoder declines is one the run would feed for
-        /// nothing, producing a segment missing that stream — which reads as a broken engine rather than as
-        /// an unsupported codec.
-        /// </summary>
-        private MatroskaTrack? Pick(MatroskaSampleReader reader, MediaStreamKind kind)
-        {
-            foreach (var track in reader.Tracks)
-            {
-                if (track.Kind != kind) continue;
-                var codec = MatroskaProbe.CodecNameOf(track.CodecId, track.CodecPrivate ?? ReadOnlyMemory<byte>.Empty);
-                if (codec is null) continue;
-                if (owner._conversion!.CanConvert(kind, codec)) return track;
-                owner.Report($"segments: no {kind} converter for '{codec}' on this device");
-            }
-            return null;
-        }
+        /// <summary>How one track travels, for the log — the line that says whether a codec is being spent.</summary>
+        private static string How(SegmentTrack? track, string name) => track is null
+            ? string.Empty
+            : $"{name} ({(track.Copy ? "copied" : "converted")})";
 
         /// <inheritdoc />
         public void Dispose()
@@ -246,7 +324,7 @@ internal sealed class DefaultSegmentEngine : ISegmentEngine
             try
             {
                 // Bounded: a pump blocked inside a platform codec must not hold up the caller's teardown, and
-                // the token has already told it to stop. Everything it owns is disposed by its own finally.
+                // it has already been told to stop. Everything it owns is disposed by its own finally.
                 _pump?.Wait(TimeSpan.FromSeconds(5));
             }
             catch (Exception)

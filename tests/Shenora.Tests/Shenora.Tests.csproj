@@ -38,6 +38,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The REAL media fixture, LINKED from the sample rather than copied: one clip, one source of
+         truth, and a test that would silently start proving nothing if the sample's copy changed.
+         Copied to the output rather than embedded because RealSourceSegmentTests hands its PATH to a
+         demuxer that opens files, and because the decode probe reads the same bytes afterwards. -->
+    <Content Include="..\..\samples\Shenora.Sample.Maui\Resources\Raw\wwwroot\media\clip-h264-aac.mkv"
+             Link="TestAssets\media\clip-h264-aac.mkv"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

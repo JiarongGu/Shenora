@@ -93,7 +93,7 @@ public static class MauiProgram
 		{
 			options.GlobalLaneCapacity = 4;
 			options.Scopes = [PathClaims.Scope];
-			options.Log = Log;
+			options.Log = AppCallback.Logger(Log);
 		});
 		// ⚠ The observer needs a SERVICE, so it attaches once a provider exists rather than in the
 		// options above. Shenora must never learn what an operation is (D19/D20), so this mapping stays

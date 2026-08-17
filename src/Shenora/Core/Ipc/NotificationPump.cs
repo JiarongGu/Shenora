@@ -1,16 +1,13 @@
 using System.Collections.Concurrent;
-using Shenora;
-using Shenora.Core.Events;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.Core.Ipc;
 
 /// <summary>
-/// The transport-neutral half of a host's outbound notification channel: the bounded
-/// drop-oldest queue, the ready gate, batch building, and the guarded per-notification
-/// serialize. Moved out of <c>Shenora.Windows.WebViewIpcBridge</c>
-/// (<c>docs/DECISIONS.md</c> D23) so a second, non-WinForms
-/// base inherits these already-fixed bugs instead of re-earning them — every one of the
-/// invariants below was a real incident (P5.5 H2/H3) before it was a comment.
+/// The transport-neutral half of a host's outbound notification channel: the bounded drop-oldest queue,
+/// the ready gate, batch building, and the guarded per-notification serialize (D23). It is separate from
+/// any transport so that a second, non-WinForms base inherits these invariants rather than re-earning
+/// them one incident at a time.
 /// <para>
 /// Owns NO TIMER and NO TRANSPORT. Which thread may touch a base's client is a base-specific
 /// fact — on WinForms the flush must run on the UI thread (a <c>System.Windows.Forms.Timer</c>,
@@ -40,17 +37,9 @@ public sealed class NotificationPump : IDisposable
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
-        // Validate at CONSTRUCTION (P5.5 H3), the kit's convention. Both of these otherwise fail
-        // far from their cause:
-        //
-        // MaxQueued = 0 makes Enqueue dequeue the item it just enqueued, so EVERY notification
-        // for the life of the process vanishes with no error and no log line — the worst
-        // possible shape for a misconfiguration.
-        //
-        // FlushInterval below 1 ms is nonsensical for ANY periodic drain, WinForms Forms.Timer or
-        // otherwise — the original (WebViewIpcBridge) version of this check let it truncate to 0
-        // and throw an opaque ArgumentOutOfRangeException out of the WinForms Timer's own setter,
-        // at a call site that has nothing to do with the option that caused it.
+        // ⚠ MaxQueued = 0 makes Enqueue dequeue what it just enqueued, so every notification for the
+        // life of the process vanishes with no error and no log line. Both are checked at CONSTRUCTION
+        // so a bad value names itself here rather than far from its cause.
         if (options.MaxQueued < 1)
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(NotificationPumpOptions.MaxQueued)} must be at least 1 — 0 would silently discard every notification.");
@@ -58,9 +47,8 @@ public sealed class NotificationPump : IDisposable
             throw new ArgumentOutOfRangeException(nameof(options),
                 $"{nameof(NotificationPumpOptions.FlushInterval)} must be at least 1 ms.");
 
-        // Subscribe NOW, not at Open(): the bus hands us events from any thread and the queue
-        // buffers them until the gate opens — so nothing emitted during host init or page load is
-        // lost (the buffered-startup lesson from the server-backed sibling).
+        // Subscribe NOW, not at Open(): the queue buffers until the gate opens, so nothing emitted
+        // during host init or page load is lost.
         if (_options.EventBus is { } bus)
         {
             _busSubscription = bus.SubscribeToAll(message =>
@@ -103,15 +91,9 @@ public sealed class NotificationPump : IDisposable
     {
         ArgumentNullException.ThrowIfNull(notification);
 
-        // The filter is applied HERE so it governs every notification uniformly — a direct
-        // Enqueue call and one forwarded from the bus subscription above are the same call site.
-        // Guarded (AppCallback.RunOrDefault), like every other app-supplied callback this kit
-        // hands to a UI-thread event path: a throwing predicate must resolve to a policy decision,
-        // not propagate. FAILING CLOSED (drop) is the right default HERE specifically — the filter
-        // exists so a channel receives only its own slice of the app's traffic (a per-window
-        // bridge, an auxiliary/remote session); failing OPEN on an exception would deliver a
-        // notification the app explicitly meant to keep off this channel, which is the more
-        // dangerous direction to get wrong.
+        // Applied HERE so a direct Enqueue and a forwarded bus event are the same call site.
+        // ⚠ A throwing filter FAILS CLOSED: the filter exists to keep traffic off a channel, so
+        // delivering anyway is the more dangerous direction.
         if (_options.Filter is { } filter && !AppCallback.RunOrDefault(() => filter(notification), fallback: false))
             return;
 
@@ -128,13 +110,15 @@ public sealed class NotificationPump : IDisposable
     public void Open() => _open = true;
 
     /// <summary>
-    /// Close the gate — buffer again instead of draining into a client/page/renderer that can no
-    /// longer receive. Call from the base; WHICH event triggers this is the base's own decision,
-    /// but see the class doc for the trap that decision must avoid: a "navigation started" style
-    /// event that does not guarantee the document/session actually changes closes the gate
-    /// FOREVER, because the surviving client has already spent its one handshake and nothing else
-    /// will ever call <see cref="Open"/> again (P5.5 H3 — <c>WebViewIpcBridge</c> learned this the
-    /// hard way with <c>NavigationStarting</c> vs <c>ContentLoading</c>).
+    /// Close the gate — buffer again instead of draining into a client that can no longer receive. Call
+    /// from the base; WHICH event triggers it is the base's own decision.
+    /// <para>
+    /// 🔴 <b>The trap that decision must avoid:</b> a "navigation started" style event that does not
+    /// guarantee the document actually changes closes the gate FOREVER — the surviving client has already
+    /// spent its one handshake, so nothing will ever call <see cref="Open"/> again. Trigger on the event
+    /// that means a new document is committing (<c>ContentLoading</c>), never on the one that means a
+    /// navigation was merely attempted.
+    /// </para>
     /// </summary>
     public void Close() => _open = false;
 
@@ -168,18 +152,10 @@ public sealed class NotificationPump : IDisposable
 
             batch = Coalesce(batch);
 
-            // Payloads are APP-supplied objects, so serialization can throw on data the framework
-            // never sees until here: a cyclic object graph (parent/child entities), a
-            // Type/delegate member, a throwing getter. The queue is already drained at this
-            // point, so an unguarded throw would lose the WHOLE batch as well as escaping to the
-            // caller. Only the OFFENDER may be dropped, never its batch.
-            //
-            // ⚠ Try the whole batch FIRST, and isolate only if that fails. Until 2026-08-14 this
-            // serialized every notification individually as a validity probe — discarding the result
-            // with `_ =` — and then serialized the batch again, so the cost was 2N serializations of
-            // app payloads on the IPC hot path for the case where nothing is wrong, which is every
-            // case. It is now 1, and the per-notification pass runs only when there is genuinely an
-            // offender to find. The isolation property is unchanged; what changed is who pays for it.
+            // 🔴 Payloads are APP-supplied, so serialization can throw on a cyclic graph, a delegate
+            // member or a throwing getter — and the queue is already drained, so only the OFFENDER may
+            // be dropped, never its batch. ⚠ Try the whole batch FIRST and isolate only on failure: the
+            // ordinary case is every case, and it should pay one serialization rather than 2N.
             try
             {
                 json = IpcJson.Serialize(new IpcNotificationBatch { Payload = batch });
@@ -202,7 +178,7 @@ public sealed class NotificationPump : IDisposable
                 {
                     // Module/type only — a payload that fails to serialize must not have its
                     // contents logged either (it may carry app data).
-                    Log(() => $"[Shenora.Core.Ipc] Dropped unserializable notification " +
+                    Log(() => "[Shenora.Core.Ipc] Dropped unserializable notification " +
                               $"{notification.Module}/{notification.Type}: {ex.GetType().Name}");
                 }
             }
@@ -215,7 +191,7 @@ public sealed class NotificationPump : IDisposable
         {
             // Through the guarded Log: this catch-all IS the tick's last line of defence, so a
             // throwing app sink here would defeat the very thing it is reporting from.
-            Log(() => $"[Shenora.Core.Ipc] Notification batch drain failed: {ex.Message}");
+            Log(() => "[Shenora.Core.Ipc] Notification batch drain failed", ex);
             return false;
         }
     }
@@ -226,17 +202,10 @@ public sealed class NotificationPump : IDisposable
     /// the survivor keeps the LATEST position, because a superseding snapshot describes "now", not the
     /// moment the first of its run was queued.
     /// <para>
-    /// 🔴 <b>The batch already existed; this is what makes it a BATCH rather than a bag.</b> The pump has
-    /// always coalesced ROUND TRIPS — one message instead of a hundred — while still carrying a hundred
-    /// payloads inside it. A request reporting progress in a tight loop therefore cost the page a hundred
-    /// fold operations to render one number, which the flush interval hid rather than solved. It is an
-    /// efficiency fix, not a correctness one: folding all hundred and folding only the last reach the
-    /// same state, which is precisely the property that makes dropping them legal.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Opt-in, and it must stay that way.</b> Un-keyed notifications are never touched, because the
-    /// pump cannot know whether a payload is a snapshot or a delta — and coalescing deltas silently loses
-    /// data. Only the emitter knows, so only the emitter may say (<see cref="Shenora.Core.Events.EventMessage.CoalesceKey"/>).
+    /// 🔴 <b>Opt-in, and it must stay that way.</b> Un-keyed notifications are never touched: the pump
+    /// cannot tell a snapshot from a delta, and coalescing deltas silently loses data. Only the emitter
+    /// knows, so only the emitter may say (<see cref="Shenora.Core.Events.EventMessage.CoalesceKey"/>).
+    /// Legal because folding all of a run and folding only its last reach the same state.
     /// </para>
     /// </summary>
     private static List<IpcNotification> Coalesce(List<IpcNotification> batch)
@@ -271,7 +240,7 @@ public sealed class NotificationPump : IDisposable
     /// invoked from the per-notification guard above and the base's tick, i.e. places with no caller
     /// left to catch anything.
     /// </summary>
-    private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_options.Log, message, exception: failure);
 
     /// <summary>Unsubscribe from the bus. The base owns its own timer/transport teardown.</summary>
     public void Dispose()

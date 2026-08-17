@@ -119,16 +119,34 @@ export class ShenoraEventBus {
   }
 
   /**
-   * Subscription count (diagnostics). With no arguments: every subscription of any breadth. With a
-   * `(module, type)`: every subscription that WOULD receive that pair — exact, whole-module and
-   * catch-all — because "how many listeners does this event have?" is the question a diagnostic is
-   * actually asking. Scope is not applied; a count is not a delivery.
+   * Subscription count (diagnostics). Every form answers "how many subscriptions WOULD receive this?",
+   * which is the question a diagnostic is actually asking — so each includes the broader breadths that
+   * would also fire. Scope is not applied; a count is not a delivery.
+   *
+   * - no arguments — every subscription of any breadth.
+   * - `(module)` — everything that would receive ANY event of that module: its exact-type
+   *   subscriptions, its whole-module ones, and the catch-alls.
+   * - `(module, type)` — everything that would receive that one pair.
+   *
+   * 🔴 **The one-argument form used to silently answer the GLOBAL total.** The guard read
+   * `if (module && type)`, so passing a module alone fell through to the count-everything branch — a
+   * plausible number, for a different question, with nothing to indicate the substitution. The fix is
+   * at RUNTIME rather than in an overload signature because this package ships JavaScript: a
+   * type-level restriction would leave a JS consumer receiving exactly the same wrong number.
    */
   getSubscriptionCount(module?: string, type?: string): number {
-    if (module && type) {
+    if (module !== undefined && type !== undefined) {
       return (this.exact.get(eventKey(module, type))?.size ?? 0)
         + (this.byModule.get(module)?.size ?? 0)
         + this.all.size;
+    }
+    if (module !== undefined) {
+      let total = this.all.size + (this.byModule.get(module)?.size ?? 0);
+      // The exact map is keyed `module\0type`, so a module's own entries are its prefix — compared
+      // against the separator so that a module named `APP` cannot pick up `APPLE`'s subscriptions.
+      const prefix = `${module}\0`;
+      for (const [key, set] of this.exact) if (key.startsWith(prefix)) total += set.size;
+      return total;
     }
     let total = this.all.size;
     for (const set of this.exact.values()) total += set.size;
@@ -175,10 +193,9 @@ function addTo(
  * the colliding form, so the two halves of one contract disagreed. `'\0'` cannot appear in a JS string
  * literal a developer types by accident, which is what makes it safe as a separator.
  *
- * The broad subscriptions deliberately do NOT reuse this with a `"*"` sentinel the way the host's
- * pattern matcher does: a module or type legitimately named `*` would then silently become a
- * catch-all. Separate collections cannot collide with an app string at all — same lesson as above,
- * applied before it could be earned a second time.
+ * The broad subscriptions use separate collections rather than a wildcard key. That is an
+ * implementation choice here, not a correction of the host: the host's pattern matcher takes `"*"` and
+ * that is fine, because a module or type named `*` is not a name any app has or wants.
  */
 function eventKey(module: string, type: string): string {
   return `${module}\0${type}`;

@@ -88,6 +88,23 @@
                LogicalName="wwwroot/shenora/media.js"
                Condition="Exists('..\..\src\Shenora.React\dist\media.js')" />
     <!--
+      The SHIPPED segment binder and the pure half it imports (D71 piece 4b). BOTH are needed and the
+      pair is not optional: `segmentBinder.js` does `import … from './segmentStream.js'`, so the two
+      must land in the SAME directory for the browser to resolve it — a lone binder throws on load.
+
+      🔴 Here for D63's reason rather than for convenience. The page drove a MediaSource with its own
+      inline copy of this logic through every device run so far, so the shipped module had never been
+      executed on a device at all — and a seam nothing consults is indistinguishable from a broken one.
+      The hand-written probe STAYS as the control: it is what proved the bytes independently of the
+      kit's module, so if the two ever disagree, the disagreement is the finding.
+    -->
+    <MauiAsset Include="..\..\src\Shenora.React\dist\segmentStream.js"
+               LogicalName="wwwroot/shenora/segmentStream.js"
+               Condition="Exists('..\..\src\Shenora.React\dist\segmentStream.js')" />
+    <MauiAsset Include="..\..\src\Shenora.React\dist\segmentBinder.js"
+               LogicalName="wwwroot/shenora/segmentBinder.js"
+               Condition="Exists('..\..\src\Shenora.React\dist\segmentBinder.js')" />
+    <!--
       The DM1 media probe's two clips. Excluded from the glob above and named EXPLICITLY, with forward
       slashes, because two different consumers open them by that exact string: `MediaRangeProbe` via
       `OpenAppPackageFileAsync`, and the page directly, as `media/<clip>` relative to its own origin —

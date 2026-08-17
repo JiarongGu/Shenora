@@ -1,5 +1,4 @@
-using Shenora;
-using Shenora.Core.Ipc;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.Engine.Missions;
 
@@ -15,9 +14,10 @@ namespace Shenora.Engine.Missions;
 /// </para>
 ///
 /// <para>
-/// DISPATCH IS EVENT-DRIVEN — evaluated on submit and on each completion. There is no polling
-/// worker and no dedicated thread. The family's two prior planners both used a worker loop and both
-/// paid for it, one in idle latency and one in a thread parked for the process lifetime.
+/// DISPATCH IS EVENT-DRIVEN — evaluated on submit, on each completion, on a lane change, and when a
+/// pending item's own token cancels. There is no polling worker and no dedicated thread. The family's
+/// two prior planners both used a worker loop and both paid for it, one in idle latency and one in a
+/// thread parked for the process lifetime.
 /// </para>
 ///
 /// <para>
@@ -41,6 +41,17 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     private readonly IMissionPolicy _policy;
     private readonly IReadOnlyList<IMissionObserver> _observers;
     private readonly CancellationTokenSource _shutdown = new();
+
+    /// <summary>
+    /// The shutdown token, captured ONCE at construction. <see cref="RunEntryAsync"/> runs on a pool
+    /// thread that <see cref="StartAll"/> only QUEUES, so reading <c>_shutdown.Token</c> there races
+    /// disposal: a body that had not yet reached its first line when <see cref="Dispose"/> ran would take
+    /// an <see cref="ObjectDisposedException"/> before its try block, stranding the submitter's task
+    /// forever and leaving the fault unobserved. A <see cref="CancellationToken"/> is a struct that stays
+    /// readable after its source is disposed, and still reports the cancellation.
+    /// </summary>
+    private readonly CancellationToken _shutdownToken;
+
     private long _nextId;
     private bool _disposed;
 
@@ -60,6 +71,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     public MissionScheduler(MissionSchedulerOptions? options = null)
     {
         _options = options ?? new MissionSchedulerOptions();
+        _shutdownToken = _shutdown.Token;
         _policy = _options.Policy ?? PriorityMissionPolicy.Instance;
         _observers = _options.Observers;
         _scopes = new Dictionary<string, IClaimScope>(StringComparer.Ordinal);
@@ -160,8 +172,20 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             toStart = DispatchLocked();
         }
 
-        // Persist, notify and start OUTSIDE the lock.
-        if (entry.Durable) _ = PersistAsync(entry, MissionState.Queued);
+        // Persist, notify and start OUTSIDE the lock. The Queued append is TRACKED on the entry rather
+        // than awaited — this method must stay synchronous (RecoverAsync relies on it throwing here) —
+        // and every later store write chains behind it, so the store can never see Running or Remove
+        // before Queued: an overtaken Queued append resurrects a finished mission at the next recovery.
+        // ⚠ SUPPLIED, not assigned: the entry became dispatchable INSIDE the lock above, so another
+        // path (a pre-cancelled token taking DispatchLocked's cancel branch, a concurrent completion's
+        // dispatch) can need the ordering before this line runs — they await the entry's own gate,
+        // which resolves here for durable and non-durable alike.
+        entry.SupplyQueuedPersist(entry.Durable ? PersistAsync(entry, MissionState.Queued) : Task.CompletedTask);
+        // A pending item's cancellation must WAKE dispatch: the check in DispatchLocked otherwise runs
+        // only on submit, completion or a lane change, and none of those may ever come. Registering an
+        // already-cancelled token runs the wake HERE, which is what makes the late registration safe.
+        if (cancellationToken.CanBeCanceled)
+            entry.CancellationWake = cancellationToken.Register(OnLaneChanged);
         Notify(observer => observer.OnQueued(entry.Execution()));
         StartAll(toStart);
         return entry.Completion.Task;
@@ -197,7 +221,27 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
                 await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
                 continue;
             }
-            _ = SubmitAsync(request, cancellationToken);
+
+            // SubmitAsync is NOT async, so an unusable definition (no Run, an unknown scope or lane)
+            // throws HERE rather than on the returned task. Skipped, not thrown: abandoning the pass
+            // over one bad row leaves every later record unrecovered AND unremoved, so the next boot
+            // repeats the whole thing.
+            try { _ = SubmitAsync(request, cancellationToken); }
+            catch (Exception ex)
+            {
+                Log(() => $"mission {record.MissionId} ({record.Kind}) could not be resubmitted " +
+                          $"({ex.GetType().Name}) — dropping the record");
+                await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            // 🔴 THE RESUBMIT MINTS A NEW ID, so the recovered record's own id is now orphaned: its
+            // ForgetAsync will remove the NEW id and never this one. Left in place it is reloaded and
+            // re-executed on EVERY subsequent boot, forever — the unbounded version of the loop
+            // RecoveryPolicy exists to prevent, reached through Queued instead of Running.
+            // Removed AFTER the resubmit, never before: durability is a best-effort overlay on
+            // execution, and a crash in this window costs a duplicate rather than a lost mission.
+            await store.RemoveAsync(record.MissionId, cancellationToken).ConfigureAwait(false);
             requeued++;
         }
         Log(() => $"recovered {requeued} of {records.Count} durable mission record(s)");
@@ -218,6 +262,9 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             _disposed = true;
             pending = [.. _pending];
             running = [.. _running];
+            // Pending keys leave with their entries; running keys leave when their bodies finish.
+            foreach (var entry in pending)
+                if (entry.Definition.Key is { } key) _byKey.Remove(key);
             _pending.Clear();
         }
 
@@ -239,9 +286,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     /// <para>
     /// 🔴 <b>This exists because the framework registers a scheduler in EVERY app (D64), and a singleton
     /// that is <see cref="IAsyncDisposable"/>-only makes Microsoft DI's synchronous
-    /// <c>ServiceProvider.Dispose()</c> THROW.</b> That is not theoretical and not new: the kit already
-    /// paid for it once (P5.5 H2, <c>RenderSession</c>/<c>StreamingSession</c>), where it crashed the
-    /// documented <c>using var app = builder.Build(); app.Run();</c> shutdown — a crash dialog on every
+    /// <c>ServiceProvider.Dispose()</c> THROW.</b> That is not theoretical: it crashes the documented
+    /// <c>using var app = builder.Build(); app.Run();</c> shutdown — a crash dialog on every
     /// clean quit, with nothing a consumer could do about it. Defaulting the scheduler would have handed
     /// that same crash to every adopter, so the kit must not ship an async-only singleton it registers
     /// itself.
@@ -263,6 +309,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             if (_disposed) return;
             _disposed = true;
             pending = [.. _pending];
+            foreach (var entry in pending)
+                if (entry.Definition.Key is { } key) _byKey.Remove(key);
             _pending.Clear();
         }
 
@@ -304,6 +352,8 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
                     RemovePendingLocked(node);
                     if (entry.Definition.Key is { } cancelledKey) _byKey.Remove(cancelledKey);
                     entry.TryComplete(MissionOutcome.Cancelled, 0, null);
+                    // The caller cancelled it; its Queued record must not resurrect it at recovery.
+                    if (entry.Durable) _ = ForgetCancelledAsync(entry);
                     node = next;
                     continue;
                 }
@@ -351,7 +401,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         catch (Exception ex)
         {
             var id = view.MissionId;
-            Log(() => $"mission policy ShouldStart threw ({ex.GetType().Name}); deferring {id}");
+            Log(() => $"mission policy ShouldStart threw; deferring {id}", ex);
             return false;
         }
     }
@@ -362,7 +412,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         catch (Exception ex)
         {
             var (seqA, seqB) = (a.Sequence, b.Sequence);
-            Log(() => $"mission policy Compare threw ({ex.GetType().Name}); falling back to submission order");
+            Log(() => "mission policy Compare threw; falling back to submission order", ex);
             return seqA.CompareTo(seqB);
         }
     }
@@ -431,7 +481,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             var observer = _observers[i];
             AppCallback.Run(
                 () => notification(observer),
-                ex => Log(() => $"mission observer {observer.GetType().Name} threw: {ex.GetType().Name}"));
+                ex => Log(() => $"mission observer {observer.GetType().Name} threw", ex));
         }
     }
 
@@ -441,8 +491,16 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         Exception? error = null;
         var attempts = 0;
 
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation, _shutdown.Token);
-        if (entry.Durable) await PersistAsync(entry, MissionState.Running).ConfigureAwait(false);
+        // ⚠ `_shutdownToken`, never `_shutdown.Token` — see the field. This method runs on a pool thread
+        // that StartAll only QUEUED, so a read off the source here races disposal, and anything that
+        // throws before the try strands the entry in _running with its submitter awaiting forever.
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation, _shutdownToken);
+        if (entry.Durable)
+        {
+            // Behind the Queued append, never beside it — the store must see Queued → Running → Remove.
+            await entry.QueuedPersist.ConfigureAwait(false);
+            await PersistAsync(entry, MissionState.Running).ConfigureAwait(false);
+        }
 
         try
         {
@@ -465,12 +523,16 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
         {
             outcome = MissionOutcome.Cancelled;
+            attempts = entry.Attempt;
         }
         catch (Exception ex)
         {
             outcome = MissionOutcome.Failed;
             error = ex;
-            Log(() => $"mission {entry.MissionId} failed after {attempts} attempt(s): {ex.GetType().Name}");
+            // RunWithRetryAsync returns a count only on SUCCESS; on the throw path the entry carries
+            // the attempts actually made, and the pre-call value here would claim the body never ran.
+            attempts = entry.Attempt;
+            Log(() => $"mission {entry.MissionId} failed after {attempts} attempt(s)", ex);
         }
 
         List<Entry> toStart;
@@ -485,6 +547,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         if (entry.Durable) await ForgetAsync(entry).ConfigureAwait(false);
         var result = new MissionResult(outcome, entry.MissionId, attempts, error);
         Notify(observer => observer.OnFinished(entry.Execution(), result));
+        entry.CancellationWake.Unregister();
         entry.Completion.TrySetResult(result);
         StartAll(toStart);
     }
@@ -517,18 +580,26 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
     private async Task PersistAsync(Entry entry, MissionState state)
     {
         if (_options.QueueStore is not { } store) return;
-        var record = new MissionRecord(entry.MissionId, entry.Definition.Kind, entry.Definition.Payload, state, entry.CreatedUtc);
+        var record = new MissionRecord(entry.MissionId, entry.Definition.Kind, entry.Definition.Payload, state,
+            entry.CreatedUtc, entry.Definition.Key);
         // A store failure must never take down the work it was describing — durability is a
         // best-effort overlay on execution, not a precondition for it.
         try { await store.AppendAsync(record, CancellationToken.None).ConfigureAwait(false); }
-        catch (Exception ex) { Log(() => $"mission store save failed for {entry.MissionId}: {ex.GetType().Name}"); }
+        catch (Exception ex) { Log(() => $"mission store save failed for {entry.MissionId}", ex); }
     }
 
     private async Task ForgetAsync(Entry entry)
     {
         if (_options.QueueStore is not { } store) return;
         try { await store.RemoveAsync(entry.MissionId, CancellationToken.None).ConfigureAwait(false); }
-        catch (Exception ex) { Log(() => $"mission store remove failed for {entry.MissionId}: {ex.GetType().Name}"); }
+        catch (Exception ex) { Log(() => $"mission store remove failed for {entry.MissionId}", ex); }
+    }
+
+    /// <summary>Remove a cancelled-while-pending durable record — after its Queued append lands.</summary>
+    private async Task ForgetCancelledAsync(Entry entry)
+    {
+        await entry.QueuedPersist.ConfigureAwait(false);
+        await ForgetAsync(entry).ConfigureAwait(false);
     }
 
     // ── Plumbing ──────────────────────────────────────────────────────────────────────────────────
@@ -570,7 +641,7 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         return new Entry($"m{sequence}", sequence, definition, claims, lanes, cancellationToken);
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_options.Log, message, exception: failure);
 
     /// <summary>Re-run admission after a lane's capacity or hold state changed.</summary>
     internal void OnLaneChanged()
@@ -599,7 +670,9 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
             Cancellation = cancellation;
             Node = new LinkedListNode<Entry>(this);
             CreatedUtc = DateTimeOffset.UtcNow;
-            Queued = new MissionExecution(missionId, definition.Kind, definition.Priority, CreatedUtc, sequence);
+            QueuedPersist = _queuedPersist.Task.Unwrap();
+            Queued = new MissionExecution(missionId, definition.Kind, definition.Priority, CreatedUtc, sequence,
+                Key: definition.Key);
         }
 
         public string MissionId { get; }
@@ -623,6 +696,27 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         public Task? RunTask { get; set; }
         public bool Durable => Definition.Durable;
 
+        /// <summary>
+        /// The Queued append, so every later store write can chain behind it — never overtake it.
+        /// A GATE rather than a settable task: the entry is dispatchable the moment it enters
+        /// <c>_pending</c> (inside SubmitAsync's lock), while the append starts after the lock — so a
+        /// waiter arriving in that window must wait for the assignment itself, not read a default.
+        /// </summary>
+        public Task QueuedPersist { get; }
+
+        private readonly TaskCompletionSource<Task> _queuedPersist =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Resolve <see cref="QueuedPersist"/> — called exactly once, durable or not.</summary>
+        public void SupplyQueuedPersist(Task persist) => _queuedPersist.TrySetResult(persist);
+
+        /// <summary>
+        /// Wakes dispatch when a pending item's token cancels. <b>Unregister, never Dispose</b>: Dispose
+        /// blocks until an in-flight callback finishes, and that callback takes the scheduler lock —
+        /// disposing from under the lock would deadlock against it.
+        /// </summary>
+        public CancellationTokenRegistration CancellationWake { get; set; }
+
         public TaskCompletionSource<MissionResult> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -630,8 +724,11 @@ public sealed class MissionScheduler : IMissionScheduler, IDisposable
         /// Idempotent: a cancelled-while-pending entry can also be reached by dispose, and completing
         /// a TCS twice throws.
         /// </summary>
-        public void TryComplete(MissionOutcome outcome, int attempts, Exception? error) =>
+        public void TryComplete(MissionOutcome outcome, int attempts, Exception? error)
+        {
+            CancellationWake.Unregister();
             Completion.TrySetResult(new MissionResult(outcome, MissionId, attempts, error));
+        }
     }
 
     /// <summary>

@@ -153,7 +153,7 @@ a rule is read as instructions — this line pointed at a folded package and a r
 - **`ConfigureAwait(false)` does NOT belong in the dispatch path — and "the dispatch path" is a
   BOUNDARY, not the whole handler.** The pipeline preserves the synchronization context BY DESIGN,
   because a facade routing a window command touches WinForms and must resume on the UI thread. One
-  stray `ConfigureAwait(false)` in `BaseFacade` contradicted that for two phases and survived only
+  stray `ConfigureAwait(false)` in the retired `BaseFacade` contradicted that for two phases and survived only
   because every in-repo facade marshals internally anyway.
   **The other half, which the rule used to omit and which reads as a blanket ban without it:** work a
   route deliberately hands OFF — a long operation whose results stream back as notifications — is no
@@ -184,7 +184,7 @@ a rule is read as instructions — this line pointed at a folded package and a r
   member, or a throwing getter is an unhandled UI-thread exception AND the whole drained batch is
   lost. Guard per-notification (one bad event must not kill its batch) plus a catch-all in `Flush`.
 - **A DI singleton factory must never enumerate the provider it is building.** `UseMessageDispatcher`
-  resolved `IModuleFacade`s inside the `IMessageDispatcher` singleton factory, so any facade whose
+  once resolved `IModuleFacade`s inside the `IMessageDispatcher` singleton factory, so any facade whose
   graph injects `IMessageDispatcher` — the documented cross-module `SendAsync` seam — re-enters the
   same factory. MS DI's cycle detection is call-site-based and cannot see a factory delegate
   re-entering the provider, and the cache entry isn't published yet: unbounded recursion, process
@@ -232,20 +232,15 @@ a rule is read as instructions — this line pointed at a folded package and a r
   after an async fall-through. The transport side interleaves async on the UI thread; never
   `Task.Run`-per-message (the measured pool-starvation freeze).
 
-### 0.2.0 — the communication core (D23)
+### The request lifecycle — tracking, progress, cancellation
 
-> 🔴 **READ THIS BEFORE THE OPERATIONS MATERIAL BELOW: the MECHANISM is gone, the LESSONS are not.**
-> D66 merged operations into `IpcRequest`, and with them went `OperationStatus.Waiting`,
-> `IOperationRegistry.Dismiss`, `RequestResume`, `CancelTokenThenFinish` and the tests named against
-> them (`ModuleOperationTests`, `OperationDismissTests`, `Concurrent_Cancel_and_Complete_…`). **Nothing
-> in the repo carries those names today**, so do not go looking — the live lifecycle is
-> `IpcRequestState` + `IpcRequestTracker`, pinned by `IpcRequestStateInvariantTests`.
->
-> The passages are kept because what they teach outlived what they were about: *check-then-act across
-> two lock acquisitions is a race*, *a method that gates a mutation must report whether it actually
-> transitioned rather than let the caller assume*, and *a race test needs real threads, not
-> thread-pool tasks*. Read them as earned rules with dead examples attached, which is exactly the
-> split the 2026-08-09 audit was for.
+The live types are `IpcRequestState` + `IpcRequestTracker`, pinned by `IpcRequestStateInvariantTests`.
+⚠ **A predecessor "operations" mechanism was merged into `IpcRequest` by D66** — `OperationStatus.Waiting`,
+`IOperationRegistry.Dismiss`, `RequestResume` and `CancelTokenThenFinish` are gone, along with the tests
+named for them, so do not go looking. Three of its lessons outlived it and are why several rules below read as they
+do: **check-then-act across two lock acquisitions is a race**; **a method that gates a mutation must report
+whether it actually transitioned rather than let the caller assume**; and **a race test needs real threads,
+not thread-pool tasks**.
 
 - **`Publish` goes through `IModuleContext`, never a hand-typed module literal, so an emit cannot
   drift from the module's own `ModuleName`.** `ModuleContext.Publish` calls `events.Emit(Module, …)`
@@ -257,10 +252,9 @@ a rule is read as instructions — this line pointed at a folded package and a r
   there is no separate operation with a separate token: `IpcRequestTracker.Begin` links the caller's
   lifetime into a scope token, `MessageDispatcher.DispatchAsync` hands THAT down the pipeline, and
   `Cancel(requestId)` signals it.
-  ⚠ The predecessor deliberately did the opposite — a fresh token per operation — because a request's
-  own token died with its response, so capturing it would have killed a ten-minute deploy the moment the
-  page navigated. The merge removed that gap instead of working around it: the request now outlives its
-  own send, so its token is the right one to observe.
+  ⚠ **A fresh token PER OPERATION is the wrong answer and was the predecessor's**, taken because a
+  request's token used to die with its response. A request now outlives its own send, so its token is the
+  one to observe — do not reintroduce a second lifetime to work around a gap that is closed.
 - 🔴 **TRACKING BELONGS TO THE DISPATCH BOUNDARY, and putting it in `ModuleBase` made the whole feature
   silently absent for a release** (2026-08-08). `ModuleBase` took an optional `IIpcRequestTracker` that
   each facade had to inject and forward through `base(logger, events, requests)` — and not one module in
@@ -335,74 +329,21 @@ a rule is read as instructions — this line pointed at a folded package and a r
   deltas a scoped store folds afterward: it would never SEE an unscoped request in a scoped `LIST`
   snapshot but WOULD receive its `REQUEST_UPDATED` deltas, so a scoped store's contents would silently
   depend on whether it mounted before or after the work started.
-- <!-- doc-drift:history --> **Every non-terminal state must have a sanctioned exit to a terminal one —
-  the REUSABLE half, and it is enforced by a test rather than by reviewer attention.**
-  🔴 **READ THE NAMES BELOW AS HISTORY.** Everything from here to the end of this bullet describes the
-  OPERATIONS REGISTRY, which D66 deleted: `IOperationRegistry`, `OperationStatus`, `Waiting`,
-  `Dismiss`, `RegisterWaiting`, `ResumePayload`. Today there is one non-terminal state (`Running`) and
-  three terminals, so the invariant is satisfied by construction and the sweep is trivial. **What still
-  applies is the TEST SHAPE** — enumerate the LIVE enum by reflection, require a registered exit per
-  non-terminal value, and assert `ContainsKey` by name so a new status with no exit fails LOUDLY
-  instead of silently checking nothing. Any future state machine here (a session lifecycle, a
-  connection state) should get that shape. The incident stack that earned it follows (§5A.1, the D23 amendment
-  before 0.2.0 merged). The bug that named the rule: a crash-checkpoint offer (its own status,
-  `Interrupted`, at the time — since collapsed into `OperationStatus.Waiting`, see the amendment
-  below) could only be removed by *resuming* it — `Validate` hard-coded `Status == Running` for every
-  caller so `Cancel`/`Complete`/`Fail` all refused it, `ClearFinished` only ever walked
-  `_finishedOrder` (which the checkpoint-registration path deliberately never wrote to, since an offer
-  is not finished history), and `PruneHistory` skipped offers on purpose. **Three guards, each
-  individually correct and each with a comment explaining why — and together they left a state with no
-  exit at all.** That is what makes this class of bug dangerous: it is invisible in any single guard's
-  diff, because each guard is reviewed (and passes review) in isolation from the others it composes
-  with. The same app that reviewed this branch had already shipped the identical bug and stranded a
-  real production deployment on it hours earlier (paused waiting on DNS records it could not complete
-  — permanently offering Resume, permanently undeletable, because a waiting run *is* the live state) —
-  the kit's own review had flagged the gap as a Minor and deferred it; the adopter's production
-  incident was the sharper evidence.
-  The fix (`OperationStatus.Waiting`, `IOperationRegistry.Dismiss`) is the specific instance; the
-  REUSABLE half is the test shape — today `IpcRequestStateInvariantTests` (the original
-  `OperationLifecycleInvariantTests` died with D66 and went unreplaced for two versions, which is its own
-  lesson: **a test shape called reusable is only reusable if something re-uses it after a rename**). It
-  enumerates the LIVE status enum
-  via reflection (`Enum.GetValues<IpcRequestState>()`), never a hardcoded list, so a future status is
-  swept in automatically — and for each non-terminal value it looks up a registered `(reach, exit)`
-  pair, asserting `ContainsKey` explicitly (by name) rather than only iterating the dictionary's own
-  keys, which is what makes it fail LOUDLY when a new status has no exit registered, instead of
-  silently checking nothing. Verified by sabotage (the standing rule for every tripwire here): making
-  `Dismiss` temporarily refuse the crash-checkpoint status failed the test citing it by name before the
-  fix was restored — re-verified the same way after the later status collapse (see below), citing
-  `OperationStatus.Waiting`. Any future state machine in this codebase (a session lifecycle, a
-  connection state) should get the same shape: enumerate the enum, require a registered exit per
-  non-terminal value, prove the exit actually lands on a terminal one through the real object — not a
-  static claim about what "should" transition where.
-  **AMENDED (owner direction, before publish — "structured like XHR"): `Paused` and `Interrupted`
-  collapsed into the single `OperationStatus.Waiting` shown above.** Both were already one band
-  everywhere that mattered (`Dismiss`/`RequestResume` accepted either, neither was pruned, the
-  client's `waiting` getter already unioned them); the one place they diverged — `RequestResume`
-  dropping the checkpoint case, keeping the live-`Wait()` case — moved to keying on `ResumePayload`
-  instead of a second status. With one fewer non-terminal status, that sweep was simpler, not weaker — it
-  still enumerated the live enum rather than a hardcoded list. Full
-  rename table and rationale: `docs/DECISIONS.md` D23's amendment.
-  **CLOSED BY REMOVAL (2026-08-01, the 0.2.0 design pass, before publish) — and the WAY it closed is
-  the reusable lesson, so read this bullet's whole amendment stack as one symptom.** The same question
-  ("does this entry still have a live body?") was answered three times: a second status
-  (`Interrupted`, which turned out to have no terminal exit at all), then `ResumePayload` (APP-
-  controlled, so an app that attached one at `Start()` and then called `Wait()` had a genuinely live
-  operation dropped out of the registry, orphaning later `Report`/`Complete`/`Fail` calls), then an
-  internal `Entry.Reconstructed` provenance flag. Each fix was correct about the previous bug and none
-  addressed why the question existed: the registry accepted entries it had never started
-  (`RegisterWaiting` + `ResumePayload`), which the design doc's own §4.2 note had already flagged as
-  single-app provenance against a two-app bar. **The cut removes the question rather than answering it
-  a fourth time** — `RegisterWaiting`, `OperationOptions.ResumePayload` and `OperationInfo.ResumePayload`
-  are gone, `RequestResume` is an exact mirror of `RequestWait` (validate, emit, mutate nothing), and
-  crash recovery returns to the app that owned the checkpoint all along.
-  **Generalize it:** when one decision needs its third rewrite, the bug is usually the decision's
-  EXISTENCE, not its current answer — check whether some earlier acceptance created the case you keep
-  re-deciding. And note what survived, because the cut had to be narrower than the phrase "the
-  crash-resume half": `OperationStatus.Waiting`, `IOperation.Wait`/`Resume`, `Dismiss` and the
-  `RequestWait`/`RequestResume` ask-act PAIR all stay — cutting `RequestResume` too would have left a
-  client able to pause but never resume, which is the download-manager shape the kit itself names as a
-  consumer.
+- 🔴 **Every non-terminal state needs a sanctioned exit to a terminal one, and a TEST must enforce it —
+  not reviewer attention.** `IpcRequestState` is `Running` plus three terminals, so this holds by
+  construction today; it is written down for the next state machine here (a session lifecycle, a
+  connection state), where it will not.
+  **Why a reviewer cannot catch it:** the way this fails is several guards that are each individually
+  correct — one requiring `Running`, one walking only the finished list, one skipping a case on purpose —
+  which together leave a state nothing can leave. **It is invisible in any single guard's diff**, because
+  each is reviewed in isolation from the others it composes with.
+  **The test shape** (`IpcRequestStateInvariantTests`): enumerate the LIVE enum by reflection
+  (`Enum.GetValues<IpcRequestState>()`), never a hardcoded list, so a new state is swept in
+  automatically; classify every value and assert the unclassified set is EMPTY, naming the offender —
+  so a state with no exit fails loudly instead of silently checking nothing; and prove the exit lands on
+  a terminal state through the real object, never a static claim about what should transition where.
+  ⚠ **A test shape is only reusable if something re-uses it after a rename** — this one died with its
+  subsystem and went unreplaced for two versions.
 
 ## Gotchas / traps
 
@@ -415,105 +356,55 @@ a rule is read as instructions — this line pointed at a folded package and a r
   `undefined`) — `PayloadHelper` treats an explicit null as missing on purpose.
 - The client bridge fails fast after `dispose()` (`NO_TRANSPORT`) — stale instances captured
   before `configureBridge` replaced the default otherwise burn the full 30 s timeout per call.
-- ⚠ **HISTORY — `AddShenoraOperations` and `OperationRegistryOptions` were DELETED by D66**, and the
-  live equivalent is `builder.UseRequests(x => …)`. The LESSON below is why this bullet stays: it is the
-  kit's options-shape convention, and it applies to every `*Options` record the kit still has.
-  ⚠ **A history marker only reaches to the next `##`** — mark each section that needs it, or a reader
-  landing here by search takes the whole bullet as current.
-  **It took the `OperationRegistryOptions` RECORD, not a configure callback** —
-  every property on it is `{ get; init; }` (the kit's one immutability convention), so an
-  `Action<OperationRegistryOptions>` callback shape made `o => o.ModuleName = "X"` a compile error
-  (CS8852): the callback could only ever read a freshly-defaulted instance, never configure one. Pass
-  a built `new OperationRegistryOptions { ModuleName = "X" }` instead, same as
-  `WebViewIpcBridgeOptions`/`NotificationPumpOptions`.
-- **A host-side removal now publishes `OperationEvents.Removed` (`OPERATION_REMOVED`,
-  `{ operationIds: string[] }`) — generic-library audit finding 4, closing a gap that used to require
-  client-side guessing.** `OPERATION_UPDATED` only ever adds/updates an id, so a client mirroring
-  bounded host history (`MaxHistory`) or a `ClearFinished`/`RequestResume` removal had NO wire event to
-  fold — the ONLY reason `@shenora/react`'s `clearFinished`/`resume` actions used to carry a
-  hand-written optimistic local prune apiece. `Removed` is emitted wherever an entry actually leaves
-  the registry (`MaxHistory` eviction inside `Finish`, `ClearFinished`, the no-live-handle drop inside
-  `RequestResume`) and is scope-`null` (global) on purpose — a batch can span several scopes at once,
-  and deleting an id a subscriber never had is a harmless no-op, so every store hears it regardless of
-  its own scope filter. The client folds it by deleting exactly the named ids, unconditionally — no
-  status check, because the HOST already decided what left. `clearFinished`/`resume` are now plain
-  fire-and-forget posts with no local mutation of their own.
-  **`Dismiss` was never in this category, and still isn't** — it does not remove anything, it
-  transitions the entry to `Cancelled` through the same `Finish` path as `Complete`/`Fail`/`Cancel`, so
-  it publishes an ordinary `OPERATION_UPDATED` snapshot the wire already carries. Don't wire `Removed`
-  handling onto it out of habit; there is no delta to compensate for.
-- **The retired lesson, worth keeping even though the fix is now structural: a CLIENT-side optimistic
-  prune must mirror the HOST's own asymmetry exactly, never a uniform rule applied to both branches of
-  one wire action** (found in review, lifecycle-completion batch, before `Removed` existed):
-  `resume`'s local prune used to delete the id unconditionally, written back when `RequestResume`
-  always removed the entry host-side. §5A.4 then made that conditional — the no-live-handle case is
-  still removed, an entry reached via a live `Wait()` is deliberately LEFT IN PLACE for the app's own
-  `Resume()` handle to flip (this asymmetry originally keyed on a second status, `Interrupted` vs.
-  `Paused`; after the status collapse it briefly keyed on `ResumePayload`, and now keys on the host's
-  own internal provenance record — the client-side lesson below holds regardless of which host-side
-  signal decides it, since the client only ever folds the named-id `OPERATION_REMOVED` event, never
-  the field itself) — and the client's prune did not get re-derived alongside it. The
-  consequence rebuilt §5A.1's original bug ONE LAYER UP: a user clicking Resume on a still-waiting
-  entry made the row vanish locally (nothing published host-side, since nothing changed), so the
-  still-parked operation became unreachable — no visible row
-  to click Dismiss on — until every subscriber unmounted and a fresh `LIST` ran. This was the release's
-  only Critical, and it is exactly the class of bug an authoritative removal event structurally
-  prevents: a client-side guess about "what the host must have removed" can diverge from the host's own
-  asymmetric rule the moment that rule changes, while folding a named-id event never can. Generalizes:
-  whenever a host-side transition is asymmetric across
-  two input states, an optimistic client mirror of it must encode that same asymmetry — a single
-  branch that reads "prune on click" is a category of client/host desync waiting on the NEXT design
-  amendment to the host's asymmetry, not just this one.
-- **`Run`'s implicit terminal transition must check the CURRENT status, not assume it** — `Run`'s tail
-  used to call `operation.Complete()` unconditionally once the awaited body returned, and `Complete`
-  itself legitimately accepts `Running` OR `Waiting` (a waiting operation can still complete once
-  unblocked — see the `Cancel`/`Complete`/`Fail` band table above). So a body doing the exact shape the
-  design itself advertises — `op.Wait(reason); return;` — got silently stamped `Completed` by the very
-  primitive whose job is not to lie about a waiting-but-not-crashed run. Reproduced this way: `Task.Run`
-  dispatches to a thread-pool thread, but once that thread starts, an already-completed awaited `Task`
-  does not yield — the whole `Wait()` → `Complete()` sequence runs in one synchronous burst, so a
-  test polling for "first non-`Running` observation" can transiently see `Waiting` and pass BY ACCIDENT
-  depending on scheduling luck (found live: the first version of that test passed, then failed
-  reliably once it waited for the settled state instead of the first observation — **the lesson needs
-  no surviving test to stand**). The
-  fix — peek the entry's live status and only call `Complete()` when it is still `Running` — is the
-  general rule for any "finish implicitly unless something else already happened" tail: check, don't
-  assume, especially when the thing that might have happened is itself a legitimate, newly-added
-  transition on the SAME status the unconditional call also accepts.
-- **A permission check and the transition it authorizes must not straddle two separate lock
-  acquisitions without the SECOND one's outcome being the one reported** — `Dismiss`/`Cancel(id)` each
-  validate + read a token under one `lock`, release it, then call `Finish` (which re-validates under
-  its OWN freshly re-acquired `lock`) — a deliberate gap, because `CancellationTokenSource.Cancel()`
-  must run outside any lock (its callbacks can re-enter the registry). Both callers used to return
-  `true` unconditionally once THEIR OWN check passed, trusting that gap could never change the
-  outcome — but a concurrent transition landing exactly in that gap (e.g. `Resume()` flipping a
-  `Waiting` entry back to `Running` between `Dismiss`'s check and `Finish`'s re-check) makes `Finish`
-  correctly refuse while the caller still reports success to whoever asked. `Finish` (and its shared
-  tail, `CancelTokenThenFinish`) now returns whether it actually transitioned, and both callers
-  propagate that instead of assuming — verified by a many-real-threads race test in
-  `OperationDismissTests` (thread-pool tasks alone do not reliably hit a window this narrow, same
-  finding as the pre-existing `Concurrent_Cancel_and_Complete_…` test). The general rule: when a
-  method's own permission check and the mutation it gates are split across two lock acquisitions for a
-  documented reason, the SECOND acquisition's outcome is the only one that is actually true by the
-  time the caller returns — report that one, never the first.
-- **A client-side derived-getter set covering a host state machine's bands must be checked against
-  the FULL status enum, not eyeballed against the getters that already exist** (`operations.ts`,
-  second adopter review). `makeState` shipped `running`/`paused`/`finished` when `Paused` was added,
-  which reads complete against three statuses — but the host already had FIVE (`Interrupted` predates
-  `Paused`), so `interrupted` fell into no getter at all: not `running`, not `paused` (matched only the
-  literal string), not `finished` (`TERMINAL_STATUSES` deliberately excludes it). It was reachable only
-  by hand-filtering `byId`, exactly the workaround the store's own docs warn against. The fix at the
-  time (`interrupted`, `waiting` = `paused` ∪ `interrupted`, both derived from one `WAITING_STATUSES`
-  set — the same one-definition discipline `TERMINAL_STATUSES` already used) is the specific instance;
-  the REUSABLE half is the same shape as the host's own `IpcRequestStateInvariantTests`: a test that
-  enumerates the LIVE status object (`Object.values(OperationStatuses)`, never a hardcoded list) and
-  asserts every value lands in exactly one getter-backed band, so a status added later with no band
-  fails that test instead of silently belonging nowhere. A hand-maintained parallel status set (a
-  second `paused`/`interrupted` list living inside a different getter) is precisely how this class of
-  gap re-earns itself — define the set once, derive every getter that needs it from that one set.
-  **AMENDED (owner direction, before publish — the status collapse): `Paused` and `Interrupted`
-  folded into the single `OperationStatus.Waiting`, so `paused`/`interrupted` and `WAITING_STATUSES`
-  were DELETED rather than kept as aliases — `waiting` is now a single-status filter, exactly like
-  `running`, with no second internal set to derive it from.** The reusable half of this bullet is
-  unaffected — the same "enumerate the live status object" test still pins that every status lands in
-  exactly one band, now with one fewer non-terminal value to sweep.
+- 🔴 **An options type's property accessors must match HOW it is handed over, and the mismatch is a
+  compile error that reads as a mystery.** The kit has both shapes on purpose:
+  | handed over as | accessors | example |
+  |---|---|---|
+  | a **configure callback**, `Use…(Action<TOptions>)` | `{ get; set; }` | `IpcRequestTrackerOptions` — `builder.UseRequests(x => x.GracePeriod = …)` |
+  | a **built object** passed in | `{ get; init; }` | `WebViewIpcBridgeOptions` |
+  ⚠ **Give an `init`-only type a configure-callback shape and `o => o.X = v` is CS8852** — the callback
+  can then only READ a freshly-defaulted instance, never configure one. Decide which shape a new
+  `*Options` is before choosing its accessors.
+- 🔴 **A removal needs its OWN authoritative wire event; a client must never GUESS what the host
+  dropped.** `REQUEST_UPDATED` only ever adds or updates an id, so anything that makes an entry LEAVE
+  (history eviction, `CLEAR_FINISHED`) has no snapshot to fold — which is what tempts a client into an
+  optimistic local prune. `IpcRequestEvents.Removed` closes it; its contract (batch payload, global
+  scope, fold by deleting the named ids) lives on the constant's own XML doc, not here.
+  **The failure it prevents:** a client-side prune encodes a *guess* about the host's rule, and diverges
+  the moment that rule changes — including in ways no test covers, because both sides still pass their
+  own. A row vanishes locally while the host still holds the entry, and it is then unreachable until
+  every subscriber unmounts and a fresh list runs. **Folding a named-id event cannot drift that way.**
+  ⚠ Generalizes past IPC: whenever a host-side transition is ASYMMETRIC across two input states, an
+  optimistic client mirror must encode the same asymmetry — a single branch that reads "prune on click"
+  is a desync waiting on the next change to the host's rule.
+- 🔴 **An implicit terminal transition must check the CURRENT state, not assume it.** For any
+  "finish implicitly unless something else already happened" tail: peek the live state and only
+  transition if it is still the one you assumed. The trap is that the thing which may already have
+  happened is often a legitimate transition on the SAME state the unconditional call also accepts — so
+  it does not throw, it silently stamps the wrong terminal state on a run that was fine.
+  ⚠ **Its TEST has a scheduling trap** (`debugging-method.md`): once an awaited `Task` is already
+  complete it does not yield, so the whole sequence runs in one synchronous burst. A test polling for
+  the FIRST non-initial observation can catch an intermediate state and pass by scheduling luck. **Poll
+  for the SETTLED state**, never the first change.
+- 🔴 **A permission check and the transition it authorizes must not straddle two lock acquisitions
+  without the SECOND one's outcome being the one reported.** `IpcRequestTracker.Cancel` validates and
+  reads the token under one `lock`, releases it, then calls `Finish`, which re-validates under its own
+  freshly acquired `lock`. The gap is deliberate: `CancellationTokenSource.Cancel()` must run outside
+  any lock, because its callbacks can re-enter the tracker.
+  **So report `Finish`'s answer, never the first check's.** A caller that returns `true` once its OWN
+  check passed is trusting that the gap cannot change the outcome — but a concurrent transition landing
+  inside it makes `Finish` correctly refuse while the caller still reports success to whoever asked.
+  ⚠ **A race test for a window this narrow needs REAL THREADS** — thread-pool tasks do not reliably hit
+  it, so the test passes without ever entering the gap.
+  **The general rule:** when a permission check and the mutation it gates are split across two lock
+  acquisitions for a documented reason, the SECOND acquisition's outcome is the only one still true by
+  the time the caller returns.
+- **A client-side derived-getter set covering a host state machine must be checked against the FULL
+  status enum, not eyeballed against the getters that already exist.** A getter set that reads complete
+  against the statuses its author had in mind leaves any other status in NO band — not running, not
+  finished, reachable only by hand-filtering the raw map, which is the workaround such a store's own
+  docs warn against. It fails silently, because "belongs to no band" looks identical to "none right now".
+  **Same test shape as the host side above, applied to the client**: enumerate the LIVE status object,
+  never a hardcoded list, and assert every value lands in exactly one getter-backed band.
+  ⚠ **Define the band set ONCE and derive every getter from it** — a hand-maintained parallel list
+  inside a second getter is how this re-earns itself.

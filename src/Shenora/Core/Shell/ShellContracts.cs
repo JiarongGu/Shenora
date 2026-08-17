@@ -1,3 +1,6 @@
+using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
+
 namespace Shenora.Core.Shell;
 
 // Portable slices of the native-service contracts (D20). The rule for what lands here is NOT
@@ -37,18 +40,84 @@ public interface IUiInteraction
 /// </summary>
 public interface IClipboardService
 {
-    /// <summary>Put text on the clipboard.</summary>
+    /// <summary>
+    /// Put <paramref name="text"/> on the clipboard, replacing whatever was there. Shorthand for
+    /// <see cref="SetAsync"/> with only <see cref="ClipboardContent.Text"/> set — the overwhelmingly
+    /// common case, and it is the same operation, not a second mechanism.
+    /// </summary>
     Task SetTextAsync(string text);
 
-    /// <summary>The clipboard's text, or null when it holds none.</summary>
+    /// <summary>The clipboard's text, or null when it holds none. Shorthand for <see cref="GetAsync"/>.</summary>
     Task<string?> GetTextAsync();
 
-    /// <summary>Put an image FILE's content on the clipboard (the family's copy-preview use).</summary>
-    Task SetImageFromFileAsync(string imagePath);
+    /// <summary>
+    /// Everything the clipboard is currently offering, in one read. Formats this shell cannot express
+    /// are simply absent — reading never throws for a format that is not there.
+    /// </summary>
+    Task<ClipboardContent> GetAsync();
 
     /// <summary>
-    /// Save the clipboard's image to <paramref name="targetPath"/> as PNG (the family's
-    /// paste-preview use). False when the clipboard holds no image.
+    /// Put <paramref name="content"/> on the clipboard, replacing whatever was there — <b>every format
+    /// in ONE operation</b>.
+    /// <para>
+    /// 🔴 <b>That atomicity is the reason this exists and it is not a convenience.</b> A clipboard holds
+    /// one item offering several representations, so each platform's <c>Set</c> REPLACES the lot: calling
+    /// a text setter and then an image setter leaves the image and silently discards the text. There was
+    /// no way to express "copy this as text AND as a picture", which is what an ordinary application's
+    /// Copy does, and the attempt failed without an error.
+    /// </para>
+    /// <para>
+    /// ⚠ Throws <see cref="NotSupportedException"/> (via <see cref="ShellCapability.NotSupported"/>) when
+    /// the content asks for something this shell genuinely has no expression for — putting FILES on a
+    /// phone's clipboard, for instance. Nothing is written when it throws.
+    /// </para>
     /// </summary>
-    Task<bool> TrySaveImageToFileAsync(string targetPath);
+    Task SetAsync(ClipboardContent content);
+
+    /// <summary>Leave the clipboard holding nothing.</summary>
+    Task ClearAsync();
+}
+
+/// <summary>
+/// One clipboard item and every representation it offers — the shape a native Copy actually has.
+/// <para>
+/// <b>Open by design.</b> <see cref="Text"/> and <see cref="Files"/> are named because every platform
+/// has a first-class API for them and they behave differently from bytes; everything else lives in
+/// <see cref="Formats"/> keyed by media type, so an app can carry its OWN representation — its document
+/// model, a private structure a paste can round-trip losslessly — without the kit becoming the registrar
+/// of every format anyone might want. Same reasoning as <see cref="ShellCapability"/>'s capability
+/// strings, and the same shape the web's own <c>ClipboardItem</c> uses.
+/// </para>
+/// </summary>
+public sealed record ClipboardContent
+{
+    /// <summary>The plain-text representation, or null for none. Empty string means an EMPTY text item,
+    /// which is not the same as no text item at all.</summary>
+    public string? Text { get; init; }
+
+    /// <summary>
+    /// Absolute paths, for the copy a file manager can paste. ⚠ A DESKTOP idea: a phone's clipboard has
+    /// no expression for it, so a mobile shell throws rather than dropping them silently.
+    /// </summary>
+    public IReadOnlyList<string> Files { get; init; } = [];
+
+    /// <summary>
+    /// Every other representation, keyed by media type — <see cref="PngImage"/>, <see cref="Html"/>, or
+    /// an app's own <c>application/…</c> type. A shell translates the well-known ones into what other
+    /// applications actually read and carries the rest verbatim.
+    /// </summary>
+    public IReadOnlyDictionary<string, ReadOnlyMemory<byte>> Formats { get; init; } =
+        ReadOnlyDictionary<string, ReadOnlyMemory<byte>>.Empty;
+
+    /// <summary>PNG bytes — the interchange image format every platform and browser reads.</summary>
+    public const string PngImage = "image/png";
+
+    /// <summary>UTF-8 HTML, for a paste that keeps its formatting.</summary>
+    public const string Html = "text/html";
+
+    /// <summary>True when this carries no representation at all — the same thing <c>ClearAsync</c> leaves.</summary>
+    /// <remarks>⚠ Not serialized: this record crosses the IPC wire, where a derived flag would be a
+    /// second source of truth a client could contradict.</remarks>
+    [JsonIgnore]
+    public bool IsEmpty => Text is null && Files.Count == 0 && Formats.Count == 0;
 }

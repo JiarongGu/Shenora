@@ -14,21 +14,21 @@ namespace Shenora.Tests.Media;
 public class MediaCapabilityTests
 {
     private sealed record Device(
-        IReadOnlySet<string> DecodableAudio,
-        IReadOnlySet<string> EncodableAudio,
-        IReadOnlySet<string> DecodableVideo,
-        IReadOnlySet<string> EncodableVideo) : IMediaCapability
+        IReadOnlySet<MediaStreamCodec> DecodableAudio,
+        IReadOnlySet<MediaStreamCodec> EncodableAudio,
+        IReadOnlySet<MediaStreamCodec> DecodableVideo,
+        IReadOnlySet<MediaStreamCodec> EncodableVideo) : IMediaCapability
     {
-        private static readonly IReadOnlySet<string> None = new HashSet<string>();
+        private static readonly IReadOnlySet<MediaStreamCodec> None = new HashSet<MediaStreamCodec>();
 
-        public IReadOnlySet<string> Decodable(MediaStreamKind kind) => kind switch
+        public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => kind switch
         {
             MediaStreamKind.Audio => DecodableAudio,
             MediaStreamKind.Video => DecodableVideo,
             _ => None,
         };
 
-        public IReadOnlySet<string> Encodable(MediaStreamKind kind) => kind switch
+        public IReadOnlySet<MediaStreamCodec> Encodable(MediaStreamKind kind) => kind switch
         {
             MediaStreamKind.Audio => EncodableAudio,
             MediaStreamKind.Video => EncodableVideo,
@@ -36,31 +36,36 @@ public class MediaCapabilityTests
         };
     }
 
+    /// <summary>A codec set. Case-insensitivity and the profile rule live in MediaStreamCodec itself.</summary>
+    private static IReadOnlySet<MediaStreamCodec> Codecs(params string[] names) =>
+        new HashSet<MediaStreamCodec>(names.Select(n => (MediaStreamCodec)n));
+
+    /// <summary>Container EXTENSIONS — strings, not codecs.</summary>
     private static IReadOnlySet<string> Set(params string[] names) =>
         new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>What the iPhone 17 Pro answered: AC-3 and E-AC-3 decode, AAC both ways.</summary>
     private static Device Iphone => new(
-        DecodableAudio: Set("aac", "ac3", "eac3", "mp3", "alac"),
-        EncodableAudio: Set("aac"),
-        DecodableVideo: Set("h264", "hevc"),
-        EncodableVideo: Set("h264"));
+        DecodableAudio: Codecs("aac", "ac3", "eac3", "mp3", "alac"),
+        EncodableAudio: Codecs("aac"),
+        DecodableVideo: Codecs("h264", "hevc"),
+        EncodableVideo: Codecs("h264"));
 
     /// <summary>What the AOSP emulator answered: no AC-3 at all, AAC both ways.</summary>
     private static Device Aosp => new(
-        DecodableAudio: Set("aac", "flac", "mp3", "opus", "vorbis"),
-        EncodableAudio: Set("aac", "flac", "opus"),
-        DecodableVideo: Set("h264", "hevc", "vp8", "vp9", "av1"),
-        EncodableVideo: Set("h264", "vp8"));
+        DecodableAudio: Codecs("aac", "flac", "mp3", "opus", "vorbis"),
+        EncodableAudio: Codecs("aac", "flac", "opus"),
+        DecodableVideo: Codecs("h264", "hevc", "vp8", "vp9", "av1"),
+        EncodableVideo: Codecs("h264", "vp8"));
 
     /// <summary>A policy describing what the WEBVIEW plays — deliberately narrower than either device.</summary>
     private static MediaPlaybackPolicy WebviewPolicy => new()
     {
         Containers = Set(".mp4", ".m4a", ".webm"),
-        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
         {
-            [MediaStreamKind.Video] = Set("h264", "vp9"),
-            [MediaStreamKind.Audio] = Set("aac", "opus"),
+            [MediaStreamKind.Video] = Codecs("h264", "vp9"),
+            [MediaStreamKind.Audio] = Codecs("aac", "opus"),
         },
     };
 
@@ -113,7 +118,7 @@ public class MediaCapabilityTests
     [Fact]
     public void Claiming_a_kind_the_device_cannot_encode_still_answers_no()
     {
-        var mute = Iphone with { EncodableVideo = Set() };
+        var mute = Iphone with { EncodableVideo = Codecs() };
 
         var policy = WebviewPolicy.WithDeviceEncoders(
             mute, new HashSet<MediaStreamKind> { MediaStreamKind.Audio, MediaStreamKind.Video });
@@ -124,7 +129,7 @@ public class MediaCapabilityTests
     [Fact]
     public void A_device_that_encodes_nothing_turns_both_flags_off()
     {
-        var mute = Iphone with { EncodableAudio = Set(), EncodableVideo = Set() };
+        var mute = Iphone with { EncodableAudio = Codecs(), EncodableVideo = Codecs() };
 
         var policy = WebviewPolicy.WithDeviceEncoders(mute);
 
@@ -184,7 +189,7 @@ public class MediaCapabilityTests
         Assert.True(Iphone.CanRepairAudio("ac3"));          // decodes ac3, encodes aac
         Assert.False(Aosp.CanRepairAudio("ac3"));           // no ac3 decoder at all
 
-        var noEncoder = Iphone with { EncodableAudio = Set() };
+        var noEncoder = Iphone with { EncodableAudio = Codecs() };
         Assert.False(noEncoder.CanRepairAudio("ac3"));      // decodes it, nowhere to put the result
 
         Assert.False(Iphone.CanRepairAudio("dts"));         // neither device decodes DTS
@@ -270,5 +275,42 @@ public class MediaCapabilityTests
         var pipeline = new MediaConversionPipeline();
         Assert.False(pipeline.CanConvert(MediaStreamKind.Audio, "ac3"));
         Assert.Null(pipeline.Begin(new MediaStreamInfo(MediaStreamKind.Audio, "ac3"), default));
+    }
+
+    /// <summary>
+    /// 🔴 The matching rule, which is the whole design. A capability with NO profile covers ANY profile —
+    /// that is what keeps every device that reports bare names working exactly as before. A capability
+    /// WITH one covers only that profile — which is what makes the Main-10-on-a-Main-decoder case
+    /// expressible at all. Getting this backwards would silently un-play files that work today.
+    /// </summary>
+    [Theory]
+    [InlineData("hevc", null, "hevc", null, true)]        // bare vs bare
+    [InlineData("hevc", null, "hevc", "Main 10", true)]   // bare capability covers a profiled stream
+    [InlineData("hevc", "Main 10", "hevc", "Main 10", true)]
+    [InlineData("hevc", "Main", "hevc", "Main 10", false)] // THE BUG: Main decoder, Main 10 stream
+    [InlineData("hevc", "Main 10", "hevc", null, false)]  // a profiled capability does NOT cover unknown
+    [InlineData("HEVC", null, "hevc", null, true)]        // case-insensitive on the name
+    [InlineData("hevc", "MAIN 10", "hevc", "main 10", true)] // …and on the profile
+    [InlineData("h264", null, "hevc", null, false)]
+    public void The_profile_matching_rule_is_asymmetric(
+        string capName, string? capProfile, string streamName, string? streamProfile, bool expected)
+    {
+        var capability = new MediaStreamCodec(capName, capProfile);
+        var stream = new MediaStreamCodec(streamName, streamProfile);
+
+        Assert.Equal(expected, capability.Matches(stream));
+        Assert.Equal(expected, new HashSet<MediaStreamCodec> { capability }.Covers(stream));
+    }
+
+    /// <summary>A bare string still works everywhere a codec is expected — the implicit conversion.</summary>
+    [Fact]
+    public void A_bare_string_is_still_a_codec()
+    {
+        MediaStreamCodec codec = "aac";
+
+        Assert.Equal("aac", codec.Name);
+        Assert.Null(codec.Profile);
+        Assert.Equal("aac", codec.ToString());
+        Assert.Equal("hevc/Main 10", new MediaStreamCodec("hevc", "Main 10").ToString());
     }
 }

@@ -1,5 +1,6 @@
 using Shenora.Modules.Media;
 
+using Shenora;
 namespace Shenora.Tests.Media;
 
 /// <summary>
@@ -22,7 +23,7 @@ namespace Shenora.Tests.Media;
 public class MediaPlayerBaseTests
 {
     /// <summary>A platform that records what it was told and does exactly nothing else.</summary>
-    private sealed class FakePlayer(Action<string>? log = null) : MediaPlayerBase(log)
+    private sealed class FakePlayer(Action<string>? log = null) : MediaPlayerBase(log is null ? null : AppCallback.Logger(log))
     {
         public readonly List<string> Calls = [];
         public TimeSpan Position;
@@ -108,10 +109,10 @@ public class MediaPlayerBaseTests
         var player = await OpenedPlayerAsync();
         player.Calls.Clear();
 
-        player.Rate = 1.5;
+        await player.SetRateAsync(1.5);
 
         // Remembered, and NOT pushed — pushing it is what would start playback.
-        Assert.Equal(1.5, player.Rate);
+        Assert.Equal(1.5, player.Status.Rate);
         Assert.DoesNotContain(player.Calls, c => c.StartsWith("rate:", StringComparison.Ordinal));
         Assert.Equal(MediaPlayerState.Paused, player.Status.State);
 
@@ -129,7 +130,7 @@ public class MediaPlayerBaseTests
         await player.PlayAsync();
         player.Calls.Clear();
 
-        player.Rate = 2.0;
+        await player.SetRateAsync(2.0);
 
         Assert.Contains("rate:2", player.Calls);
     }
@@ -304,8 +305,10 @@ public class MediaPlayerBaseTests
     public void A_non_positive_rate_is_refused()
     {
         var player = new FakePlayer();
-        Assert.Throws<ArgumentOutOfRangeException>(() => player.Rate = 0);
-        Assert.Throws<ArgumentOutOfRangeException>(() => player.Rate = -1);
+        // Throws SYNCHRONOUSLY rather than returning a faulted task: an out-of-range argument is a
+        // caller bug, not a platform outcome, so it should surface without an await.
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(0); });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = player.SetRateAsync(-1); });
     }
 
     /// <summary>A throwing StateChanged handler is caught — it runs inside a platform callback.</summary>

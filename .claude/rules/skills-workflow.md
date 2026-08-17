@@ -14,9 +14,16 @@ change), run the discovery skills FIRST — in parallel — then act:
 Then implement in the loaded patterns, and close the phase with **`/phase-review`** before
 committing.
 
-**Skip the gate only for genuinely trivial edits** (a typo, a one-line fix, a doc tweak) — forcing
-it there is noise. The point stands: never hand-roll what a skill covers, and never miss an
-invariant that an on-demand knowledge rule holds. When you finish something reusable, evolve the
+🔴 **THE GATE IS THREE SKILLS, NOT A RITUAL — run the ones whose ANSWER you do not already have.**
+`/doc-loader` when you cannot name the docs and knowledge rules the task touches; `/pattern-finder` when
+you are writing a unit shaped like an existing one and do not know which; `/skill-loader` when you are
+unsure a skill covers the shape. **Already know the answer? You have run it.** Running all three on a task
+whose area you just spent an hour in buys nothing and costs the budget the actual work needs.
+
+**Skip it entirely for genuinely trivial edits** (a typo, a one-line fix, a doc tweak) — forcing it
+there is noise. ⚠ **And skip it for a CONTINUATION**: a follow-up in the same area, in the same session,
+is already inside the context the gate exists to load. The point stands: never hand-roll what a skill
+covers, and never miss an invariant that an on-demand knowledge rule holds. When you finish something reusable, evolve the
 system — but **reach for a GATE or a TEST first, and a rule only when neither can exist**
 (`phase-workflow.md` has the ordering and the score that earned it). Prose competes for attention with
 every other rule; a mechanism runs every time and names the file.

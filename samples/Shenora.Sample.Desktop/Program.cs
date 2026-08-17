@@ -36,12 +36,17 @@ internal static class Program
             {
                 UserDataFolder = paths.DataArea("webview2"),
                 IsDevelopment = environment.IsDevelopment,
-                Log = Console.WriteLine, // sample runs from a console-visible dev loop
+                Log = AppCallback.Logger(Console.WriteLine), // sample runs from a console-visible dev loop
                 CustomSchemes =
                 [
                     new WebViewCustomScheme
                     {
                         Name = RangeSchemeProbe.Scheme,
+                        AllowedOrigins = ["https://sample.local", "http://localhost:3900"],
+                    },
+                    new WebViewCustomScheme
+                    {
+                        Name = BodyDisposalProbe.Scheme,
                         AllowedOrigins = ["https://sample.local", "http://localhost:3900"],
                     },
                 ],
@@ -58,7 +63,7 @@ internal static class Program
                 ResourcePrefix = "Shenora.Sample.Desktop.wwwroot",
                 FileFallbackDirectory = Path.Combine(paths.RootDir, "wwwroot"),
                 PreferFiles = environment.IsDevelopment,
-                Log = Console.WriteLine,
+                Log = AppCallback.Logger(Console.WriteLine),
             });
         });
 
@@ -72,7 +77,7 @@ internal static class Program
             DevUrl = "http://localhost:3900",
             VirtualHost = "sample.local",
             ResourceProvider = sp.GetRequiredService<IWebViewResourceProvider>(),
-            DeferredSchemes = [RangeSchemeProbe.CreateScheme()],
+            DeferredSchemes = [RangeSchemeProbe.CreateScheme(), BodyDisposalProbe.CreateScheme()],
             BackgroundColor = MainForm.Background, // the no-white-flash contract: form = webview = splash
             InjectedGlobals = new Dictionary<string, object?>
             {
@@ -103,7 +108,7 @@ internal static class Program
             // every machine — the same reason the concurrency tests pass one.
             options.GlobalLaneCapacity = 4;
             options.Scopes = [PathClaims.Scope];
-            options.Log = Console.WriteLine;
+            options.Log = AppCallback.Logger(Console.WriteLine);
         });
         // ⚠ The observer is attached in a STARTING hook rather than in the options above, because it
         // needs `IIpcRequestTracker` — a service, not a value — and the options object is built before
@@ -132,7 +137,7 @@ internal static class Program
         // user-data OS lock), overlapping form creation.
         builder.PrewarmWebView2(app => app.Services.GetRequiredService<WebViewEnvironmentOptions>());
         builder.OnStarting(app =>
-            (app.Services.GetRequiredService<IWebViewResourceProvider>() as EmbeddedResourceProvider)?.BeginWarmup());
+            app.Services.GetRequiredService<IWebViewResourceProvider>().BeginWarmup());
 
         builder.UseWindows(new WindowsHostOptions
         {

@@ -95,7 +95,9 @@ internal sealed class MatroskaSampleReader(Stream source)
         source.Position = 0;
 
         if (!TryReadElement(out var id, out var size) || id != IdEbmlHeader) return false;
-        if (!SkipTo(source.Position + size)) return false;
+        // size < 0 is the malformed/unknown-size sentinel every sibling site guards; unguarded it
+        // seeks BACKWARD one byte here (Position - 1 passes SkipTo's range check) and misparses.
+        if (size < 0 || !SkipTo(source.Position + size)) return false;
 
         if (!TryReadElement(out id, out size) || id != IdSegment) return false;
         // An unknown-size Segment means "to the end of the file", which is what a live-muxed file writes.
@@ -138,11 +140,9 @@ internal sealed class MatroskaSampleReader(Stream source)
     /// <param name="cancellationToken">
     /// 🔴 <b>Checked once per CLUSTER, and that is the only place in this class a caller can be let go.</b>
     /// This is the long walk: seek-heavy metadata over the WHOLE file, however many gigabytes that is, and
-    /// until 2026-08-12 there was no token here at all — so a caller that had been cancelled ran to
-    /// completion anyway. It matters because the walk is now reached from a WEB REQUEST (a range route plans
-    /// a source before serving it), where an abandoned request must stop costing a phone its disk and its
-    /// thread. A cluster is the right granularity: it is bounded, it is where the seeks are, and a real one
-    /// is a second or two of media.
+    /// it is reached from a WEB REQUEST — a range route plans a source before serving it — where an
+    /// abandoned request must stop costing a phone its disk and its thread. A cluster is the right
+    /// granularity: bounded, where the seeks are, and a second or two of media in a real file.
     /// </param>
     /// <returns>False when the file is malformed past repair or exceeds <see cref="MaxSamples"/>.</returns>
     /// <exception cref="OperationCanceledException">
@@ -362,11 +362,11 @@ internal sealed class MatroskaSampleReader(Stream source)
 
         // ⚠ `count` is frames MINUS ONE, and EBML lacing codes exactly `count` sizes — the last frame's is
         // always implied by what is left. So a block declaring ONE frame codes NONE, and reading a size
-        // here would consume the frame's own first bytes as a length. Until 2026-08-14 the first vint was
-        // read unconditionally, which made a single-frame EBML-laced block either refuse the whole file
-        // (the usual outcome, since the bogus length overshoots) or plan the wrong bytes. Xiph and fixed
-        // lacing never had the bug because their loops are `0..count` and degrade correctly at zero;
-        // this one is the odd shape, which is also why it is the one with the "easy to get wrong" note.
+        // here would consume the frame's own first bytes as a length. 🔴 Reading the first vint
+        // UNCONDITIONALLY makes a single-frame EBML-laced block either refuse the whole file — the usual
+        // outcome, since the bogus length overshoots — or plan the wrong bytes. ⚠ Xiph and fixed lacing
+        // are immune, their loops being `0..count` and degrading correctly at zero; this one is the odd
+        // shape, which is why it carries the note.
         // Pinned by `An_EBML_laced_block_with_a_SINGLE_frame_codes_no_sizes`.
         if (count > 0)
         {

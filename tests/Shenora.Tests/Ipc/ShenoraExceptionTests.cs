@@ -3,7 +3,7 @@ using Shenora.Core.Ipc;
 
 namespace Shenora.Tests.Ipc;
 
-public class OperationExceptionTests
+public class ShenoraExceptionTests
 {
     [Fact]
     public void Message_falls_back_to_code()

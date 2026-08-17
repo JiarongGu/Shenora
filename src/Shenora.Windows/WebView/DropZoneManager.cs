@@ -4,8 +4,7 @@ using Shenora;
 using Shenora.Core.Events;
 using Shenora.Core.Shell;
 using Shenora.Engine.Files;
-// Inside namespace Shenora.Windows the bare identifier "WebView2" resolves to the namespace, so
-// the control type needs an alias.
+// `WebView2` alone resolves to the NAMESPACE in here, hence the alias.
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
 
 namespace Shenora.Windows;
@@ -52,6 +51,16 @@ public sealed class DropZoneManager : IDisposable
 {
     /// <summary>The reserved module name (mirrored by the client's <c>useDropZone</c>).</summary>
     public const string Module = "SHENORA.DROPZONE";
+
+    /// <summary>Event: the pointer entered a zone while dragging: <c>{ zoneId }</c>.</summary>
+    public const string DragEnterEvent = "DRAG_ENTER";
+
+    /// <summary>Event: the pointer left a zone, or the drag ended elsewhere: <c>{ zoneId }</c>.</summary>
+    public const string DragLeaveEvent = "DRAG_LEAVE";
+
+    /// <summary>Event: files were dropped: <c>{ zoneId, files, position }</c>. The payload the whole
+    /// mechanism exists to deliver — a page cannot learn a dropped file's PATH any other way.</summary>
+    public const string FileDropEvent = "FILE_DROP";
 
     private readonly DropZoneManagerOptions _options;
     private readonly ILogger<DropZoneManager> _logger;
@@ -284,13 +293,13 @@ public sealed class DropZoneManager : IDisposable
     // IPC was dispatched off the UI thread). BeginInvoke never blocks the caller, so the manager
     // is safe to call from any thread. IsHandleCreated FIRST — pre-handle, InvokeRequired lies,
     // AND there is nothing to marshal to yet: return false so the caller proceeds inline
-    // (re-invoking the caller here recursed without end — found in review).
+    // (re-invoking the caller here recursed without end).
     private bool MarshalToUi(Action action)
     {
         // TRUE  = handled here (posted, or deliberately dropped).
         // FALSE = the caller should proceed INLINE — and now that means only one thing: we are
         //         already on the UI thread. Re-invoking the caller from here recursed without end
-        //         (found in review), which is why this returns a bool at all rather than calling back.
+        //         which is why this returns a bool at all rather than calling back.
         if (_ui.IsOnUiThread) return false;
 
         if (_ui.Post(action)) return true;
@@ -313,13 +322,13 @@ public sealed class DropZoneManager : IDisposable
     // says a caller should not have to read the implementation to learn that. This was the kit's only
     // in-repo emitter and it still wrote the discard the new member exists to replace.
     internal void NotifyDragEnter(string zoneId) =>
-        _options.EventBus.Emit(Module, "DRAG_ENTER", new { ZoneId = zoneId });
+        _options.EventBus.Emit(Module, DragEnterEvent, new { ZoneId = zoneId });
 
     internal void NotifyDragLeave(string zoneId) =>
-        _options.EventBus.Emit(Module, "DRAG_LEAVE", new { ZoneId = zoneId });
+        _options.EventBus.Emit(Module, DragLeaveEvent, new { ZoneId = zoneId });
 
     internal void NotifyFileDrop(string zoneId, string[] files, Point position) =>
-        _options.EventBus.Emit(Module, "FILE_DROP",
+        _options.EventBus.Emit(Module, FileDropEvent,
             new { ZoneId = zoneId, Files = files, Position = new { position.X, position.Y } });
 
     /// <summary>Internal seams for tests.</summary>

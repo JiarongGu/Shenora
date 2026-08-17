@@ -64,6 +64,32 @@ describe('useMediaPlayer', () => {
     expect(element.load).toHaveBeenCalled();
   });
 
+  it('a superseded load does not seek the NEXT track to the old position', async () => {
+    // 🔴 `{ once: true }` removes a listener only when it FIRES. `element.load()` aborts the previous
+    // load, so its `loadedmetadata` never comes and the seek listener survives — then runs on the next
+    // track's metadata. Loading A at 10:00 and then B at 0:00 started B ten minutes in, because B sets
+    // no listener of its own and A's was still attached.
+    const { bus, element } = createFixture();
+
+    await send(bus, MediaPlayerCommands.load, { uri: 'app://files/a.m4a', startAt: 600 });
+    await send(bus, MediaPlayerCommands.load, { uri: 'app://files/b.m4a', startAt: 0 });
+
+    // B's metadata arrives; A's abandoned listener must not be here to see it.
+    element.dispatchEvent(new Event('loadedmetadata'));
+
+    expect(element.currentTime).toBe(0);
+  });
+
+  it('still honours startAt for a load that is NOT superseded', async () => {
+    // The positive case — a cancellation that cancels everything is not a fix.
+    const { bus, element } = createFixture();
+
+    await send(bus, MediaPlayerCommands.load, { uri: 'app://files/a.m4a', startAt: 42 });
+    element.dispatchEvent(new Event('loadedmetadata'));
+
+    expect(element.currentTime).toBe(42);
+  });
+
   it('drives play, pause, seek and rate', async () => {
     const { bus, element } = createFixture();
 

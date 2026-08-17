@@ -7,7 +7,15 @@ namespace Shenora.Windows;
 /// <summary>One captured browser cookie (see <see cref="SessionController.GetCookiesAsync"/>).</summary>
 public sealed record SessionCookie(string Name, string Value, string Domain, string Path);
 
-/// <summary>A page-initiated download the browser reported (and cancelled) — the app fetches it itself.</summary>
+/// <summary>
+/// A page-initiated download, reported as <see cref="SessionEvents.DownloadStarting"/>.
+/// <para>
+/// ⚠ Whether the browser's own download is CANCELLED is the session type's policy, not this record's:
+/// a session with a <see cref="SessionController"/> cancels it so the app can fetch the URL with its own
+/// progress and resume, while a pooled render session leaves it alone. The summary here used to say
+/// "(and cancelled)" unconditionally, which stopped being true once every session type could report one.
+/// </para>
+/// </summary>
 public sealed record DownloadHit(string Url, string? FileName);
 
 /// <summary>
@@ -15,6 +23,11 @@ public sealed record DownloadHit(string Url, string? FileName);
 /// sibling (its co-browse reuses the SAME controller over an off-screen form — it doesn't care).
 /// Every browser call marshals to the form's UI thread, so the driver can call them from any
 /// continuation with plain await.
+///
+/// 🔴 It DRIVES; it does not report. What the browser does arrives on the app's
+/// <see cref="Shenora.Core.Events.IEventBus"/> as <see cref="SessionEvents"/>, scoped by
+/// <see cref="Id"/> — one subscription idiom for the whole kit, and a catalogue far wider than the
+/// four taps this class used to own.
 ///
 /// A FOREGROUND controller (a real interactive window) adds two window behaviours the off-screen
 /// co-browse host must NOT have: the user's close is HELD (cancelled) so the driver gets a final
@@ -31,29 +44,34 @@ public sealed class SessionController
     private readonly Func<Uri, CancellationToken, Task<bool>>? _navigationGuard;
     private readonly Action<bool>? _onLoading;
     private readonly bool _foreground; // a real interactive window (true) vs an off-screen co-browse host (false)
-    // The DRIVER's taps — they accumulate so composed drivers don't silently drop each other's, and
-    // the host just reports what the browser does (the driver decides which URL is "the download").
-    //
-    // COPY-ON-WRITE, not List<T> (P5.5 H2). These are registered from the driver's thread — a driver
-    // continuation resumes wherever the thread pool puts it — while the WebView2 event handlers read
-    // them ON THE UI THREAD. A plain List<T> being appended during a read is a genuine data race, not
-    // a theoretical one: ToArray() reads _size and then Array.Copy's the backing store, so an Add that
-    // grows the array in between throws or copies a torn view; two concurrent Adds corrupt the list
-    // outright. Publishing a fresh array under a lock makes every reader see one immutable snapshot
-    // with no lock on the hot path. Fields are volatile so a reader can't observe a stale array
-    // reference after the swap.
-    private readonly object _tapLock = new();
-    private volatile Action<string>[] _messageHandlers = [];
-    private volatile Action<DownloadHit>[] _downloadHandlers = [];
-    private volatile Action<string>[] _newWindowHandlers = [];
-    private volatile Action<string>[] _navigationHandlers = [];
     private readonly CancellationTokenSource _closed = new();
     private bool _finishing;
+    private bool _held;      // the one grace veto has been spent
     private bool _revealed;
 
+    /// <summary>
+    /// The soft cap on one navigation, matching <c>RenderSessionPoolOptions.NavigationTimeout</c>'s
+    /// default.
+    /// <para>
+    /// 🔴 <b>Without it a navigate could wait forever.</b> `NavigationCompleted` never fires if the
+    /// renderer dies mid-load, so a `StreamingSession` whose page crashed reported the death through
+    /// `OnEnded` and `Frames` correctly while the in-flight `NavigateAsync` simply never returned —
+    /// `DisposeAsync` does not complete it either. Its sibling `RenderSession.NavigateAsync` has been
+    /// capped all along; this one was not.
+    /// </para>
+    /// <para>
+    /// ⚠ SOFT, exactly as the sibling's is: the cap completes the wait rather than throwing, because
+    /// "the load is taking a while" is not an error and the caller can look at the page. A caller who
+    /// wants to give up passes a token, which still surfaces as cancellation.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan NavigationCap = TimeSpan.FromSeconds(30);
+
     internal SessionController(Form form, WebView2Control web,
-        Func<Uri, CancellationToken, Task<bool>>? navigationGuard, Action<bool>? onLoading, bool foreground)
+        Func<Uri, CancellationToken, Task<bool>>? navigationGuard, Action<bool>? onLoading, bool foreground,
+        string id)
     {
+        Id = id;
         _form = form;
         _ui = new Shenora.Windows.WinFormsUiDispatcher(form);
         _web = web;
@@ -65,46 +83,43 @@ public sealed class SessionController
         // coordinate (-32000), so moving the park position would have silently broken reveal detection.
         _revealed = foreground && !OffscreenWindow.IsParked(form);
 
-        _web.CoreWebView2.WebMessageReceived += (_, e) =>
-        {
-            string? message = null;
-            try { message = e.TryGetWebMessageAsString(); } catch { /* not a string message */ }
-            if (message is null) return;
-            Fan(_messageHandlers, message);
-        };
         if (_foreground)
         {
             // A real interactive window: HOLD the user's close so the driver can do its final read.
             // A background co-browse host must NEVER do this — it would veto Application.Exit.
             _form.FormClosing += (_, e) =>
             {
-                if (_finishing) return; // the host's own close (flow finished) — allow it
+                if (!ShouldHoldClose(_finishing, e.CloseReason, _held)) return;
+                _held = true;
                 e.Cancel = true;        // hold the WebView2 alive so the flow can capture cookies…
                 if (!_closed.IsCancellationRequested) _closed.Cancel(); // …then wrap up via WindowClosed
             };
         }
-        // The host REPORTS the browser's raw events; the driver decides what they mean.
-        // DownloadStarting = an in-place download (the browser's own is cancelled — the app
-        // fetches it with its own progress/resume). NewWindowRequested = a new-tab link
-        // (popup suppressed, URL handed over — a download button often does this).
+        // 🔴 POLICY ONLY. Observing what the browser does is SessionEvents' job now, and this class no
+        // longer reports anything: the four taps it used to carry (message, download, new-window,
+        // navigation) were a second subscription idiom next to the kit's own bus, and one of them was
+        // actively harmful — see the NewWindowRequested note below.
+        //
+        // The browser's own download is CANCELLED: an interactive session hands the URL to the app,
+        // which fetches it with its own progress and resume. The event still reaches subscribers as
+        // DOWNLOAD_STARTING, published by the handler SessionBrowser wired first.
         _web.CoreWebView2.DownloadStarting += (_, e) =>
         {
-            try
-            {
-                var uri = e.DownloadOperation.Uri;
-                var name = System.IO.Path.GetFileName(e.ResultFilePath ?? "");
-                e.Cancel = true;
-                Fan(_downloadHandlers, new DownloadHit(uri, string.IsNullOrEmpty(name) ? null : name));
-            }
-            catch { /* reporting is best-effort */ }
+            try { e.Cancel = true; }
+            catch { /* the operation may already be gone */ }
         };
-        _web.CoreWebView2.NewWindowRequested += (_, e) =>
-        {
-            e.Handled = true; // never open a popup — the driver decides if this URL matters
-            Fan(_newWindowHandlers, e.Uri);
-        };
-        _web.CoreWebView2.NavigationStarting += (_, e) => Fan(_navigationHandlers, e.Uri);
+        // ⚠ NewWindowRequested is deliberately NOT wired here. This class used to set
+        // `e.Handled = true` unconditionally, on top of SessionBrowser's own popup policy — so an app
+        // that set `OnWindowRequest` to allow a popup was silently overruled on exactly the session
+        // type a human is looking at. One owner for that decision, and it is the hook.
     }
+
+    /// <summary>
+    /// This session's identity — the SCOPE its browser publishes every <see cref="SessionEvents"/>
+    /// under. Subscribe with it to hear only this session:
+    /// <c>bus.SubscribeToModule(SessionEvents.Module, controller.Id, handler)</c>.
+    /// </summary>
+    public string Id { get; }
 
     /// <summary>Fires when the user closed the window (the close itself is held — see the class doc).
     /// A background co-browse host never holds a close, so this only fires for a foreground window.</summary>
@@ -113,33 +128,33 @@ public sealed class SessionController
     /// <summary>Called by the host once the flow returns, so the real close is allowed.</summary>
     internal void Finish() => _finishing = true;
 
-    /// <summary>Listen for messages the page posts via <c>chrome.webview.postMessage</c>.</summary>
-    public void OnMessage(Action<string> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        lock (_tapLock) _messageHandlers = [.. _messageHandlers, handler];
-    }
-
-    /// <summary>Report page-initiated downloads (already cancelled browser-side).</summary>
-    public void OnDownload(Action<DownloadHit> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        lock (_tapLock) _downloadHandlers = [.. _downloadHandlers, handler];
-    }
-
-    /// <summary>Report suppressed new-window requests (the URL a download button often opens).</summary>
-    public void OnNewWindow(Action<string> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        lock (_tapLock) _newWindowHandlers = [.. _newWindowHandlers, handler];
-    }
-
-    /// <summary>Report top-level navigations.</summary>
-    public void OnNavigation(Action<string> handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        lock (_tapLock) _navigationHandlers = [.. _navigationHandlers, handler];
-    }
+    /// <summary>
+    /// Should this close be HELD, so the driver gets its final cookie read?
+    /// <para>
+    /// 🔴 <b>ONCE, and only for a close the USER asked for.</b> The rule used to be "veto whenever the
+    /// flow has not finished", which is two bugs in one line. It vetoed
+    /// <see cref="CloseReason.ApplicationExitCall"/> and <see cref="CloseReason.WindowsShutDown"/> as
+    /// readily as a click on the X — so a session window could refuse <c>Application.Exit</c> and keep the
+    /// whole app alive — and it vetoed EVERY attempt, so a driver awaiting something that never completes
+    /// left a modal window the user could not close by any means.
+    /// </para>
+    /// <para>
+    /// The grace is therefore spent after one use: the first close asks the driver to wrap up, and a
+    /// second means the user has said it twice and is entitled to be obeyed.
+    /// </para>
+    /// <para>
+    /// ⚠ <see cref="CloseReason.UserClosing"/> ALSO covers a programmatic <c>form.Close()</c>
+    /// (<c>winforms-shell.md</c>) — which is correct here rather than a hazard: the host's own close is
+    /// already excluded by <paramref name="finishing"/>, so anything else closing this window is a caller
+    /// the driver should still get one chance to answer.
+    /// </para>
+    /// <para>Internal + static so the rule is testable without a live browser.</para>
+    /// </summary>
+    /// <param name="finishing">The flow returned and the host is closing the window itself.</param>
+    /// <param name="reason">Why the form is closing.</param>
+    /// <param name="alreadyHeld">A close has already been held once.</param>
+    internal static bool ShouldHoldClose(bool finishing, CloseReason reason, bool alreadyHeld) =>
+        !finishing && !alreadyHeld && reason is CloseReason.UserClosing;
 
     /// <summary>
     /// Navigate the window — http(s) only, and through the options' navigation guard when set:
@@ -161,11 +176,16 @@ public sealed class SessionController
             done.TrySetResult();
         }
         _web.CoreWebView2.NavigationCompleted += OnNav;
-        using var registration = cancellationToken.Register(() => done.TrySetCanceled(cancellationToken));
         try
         {
+            using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            overall.CancelAfter(NavigationCap);   // a dead renderer never raises NavigationCompleted
             _web.CoreWebView2.Navigate(uri.ToString());
-            await done.Task.ConfigureAwait(true);
+            // WhenAny never throws, and the two ways it completes MEAN different things — the cap is a
+            // soft "carry on and look at the page", the caller's own token is "I gave up" and must
+            // surface so it cannot be mistaken for a finished load. Same shape as RenderSession's.
+            await Task.WhenAny(done.Task, Task.Delay(Timeout.Infinite, overall.Token)).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
         }
         finally
         {
@@ -208,7 +228,9 @@ public sealed class SessionController
         {
             if (_revealed || _form.IsDisposed) return;
             _revealed = true;
-            _form.ShowInTaskbar = true;
+            // NOT `_form.ShowInTaskbar = true` — that setter RECREATES the window handle, under a live
+            // WebView2, at the one moment this window matters. See WindowActivation.ShowTaskbarButton.
+            WindowActivation.ShowTaskbarButton(_form);
             var area = Screen.FromControl(_form).WorkingArea;
             _form.Location = new Point(area.X + (area.Width - _form.Width) / 2, area.Y + (area.Height - _form.Height) / 2);
             _form.Activate();
@@ -251,17 +273,6 @@ public sealed class SessionController
 
     /// <summary>Toggle the app's loading overlay (routes to <see cref="InteractiveSessionOptions.OnLoading"/>).</summary>
     public void SetLoading(bool loading) => PostUi(() => _onLoading?.Invoke(loading));
-
-    /// <summary>
-    /// Deliver to every tap, isolating each one: these run inside WebView2 event handlers, so one
-    /// driver's throw must neither reach the browser nor stop the OTHER taps from being told. No
-    /// snapshot copy is needed — the array is already immutable once published (see the field docs).
-    /// </summary>
-    private static void Fan<T>(Action<T>[] handlers, T value)
-    {
-        foreach (var handler in handlers)
-            Shenora.AppCallback.Run(() => handler(value));
-    }
 
     /// <summary>
     /// Marshal a WebView2 call to the form's UI thread (a driver continuation may resume off it),

@@ -23,10 +23,6 @@ namespace Shenora.Android;
 /// </summary>
 public sealed class AndroidFileDialogs : MobileFileDialogsBase
 {
-    // A registry key must be unique per in-flight request: two concurrent saves sharing one would have
-    // the second overwrite the first's callback and the first caller would wait forever.
-    private static int _saveRequests;
-
     /// <inheritdoc />
     // No `= default` here: the default belongs to the base declaration, and repeating it on an
     // override is CS1066.
@@ -75,13 +71,16 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
     /// <summary>
     /// Show the create-document picker and return the chosen URI, or null when the user cancelled.
     /// <para>
-    /// Registered through <see cref="ActivityResultRegistry"/> rather than
-    /// <c>RegisterForActivityResult</c>, and that is the load-bearing choice: the latter must be called
-    /// before the activity reaches STARTED, which a service resolved lazily from DI cannot do. The
-    /// registry's no-LifecycleOwner <c>Register</c> has no such restriction. It also means this needs NO
-    /// app-side wiring — no <c>OnActivityResult</c> override for an adopter to remember, which matters
-    /// because <c>Microsoft.Maui.ApplicationModel.Platform.OnActivityResult</c> does not exist in
-    /// .NET 10 (verified by compiling; the whole chain here was).
+    /// Launched through <see cref="ActivityResultRelay"/> — the framework's own
+    /// <c>StartActivityForResult</c> with a relay-owned request code, NOT AndroidX's registry. The
+    /// relay's doc carries the measurement that forced the choice: a MAUI activity does not
+    /// round-trip AndroidX instance state, so a registry registration cannot survive the host being
+    /// recreated while the picker is open, while the framework's routing provably can. The price is
+    /// the one-line <c>OnActivityResult</c> forward in the adopter's MainActivity (docs/ADOPTION.md).
+    /// </para>
+    /// <para>
+    /// ⚠ PROCESS death is the boundary: the awaiting task dies with the process, so the caller's
+    /// <paramref name="cancellationToken"/> is the only escape the API can honestly offer past it.
     /// </para>
     /// </summary>
     private static async Task<AndroidUri?> PickDestinationAsync(SaveFileOptions? options,
@@ -95,11 +94,8 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
         }
 
         var completion = new TaskCompletionSource<AndroidUri?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var key = $"shenora-save-{Interlocked.Increment(ref _saveRequests)}";
+        var requestCode = -1;
 
-        // The launcher, the callback and the cancellation registration all have to be torn down on every
-        // exit path, so they are captured here and released in the finally below.
-        ActivityResultLauncher? launcher = null;
         try
         {
             await MainThread.InvokeOnMainThreadAsync(() =>
@@ -108,12 +104,11 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
                 // extension→MIME table: the kit's filters carry EXTENSIONS, and guessing a MIME type
                 // would be wrong for exactly the app-specific formats that matter. The EXTENSION still
                 // reaches the picker, through the suggested file name.
-                var contract = new ActivityResultContracts.CreateDocument("application/octet-stream");
-                launcher = activity.ActivityResultRegistry.Register(
-                    key, contract, new UriCallback(completion));
                 // A null result means the user backed out — the callback turns that into null, not a
                 // throw, because cancelling a dialog is not an error.
-                launcher.Launch(SuggestedName(options));
+                requestCode = ActivityResultRelay.Begin(activity,
+                    new ActivityResultContracts.CreateDocument("application/octet-stream"),
+                    SuggestedName(options), new UriCallback(completion));
             }).ConfigureAwait(false);
 
             await using (cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken))
@@ -124,12 +119,9 @@ public sealed class AndroidFileDialogs : MobileFileDialogsBase
         }
         finally
         {
-            // Unregister or the registry entry outlives the request. It is keyed per call, so leaking
-            // one is not a collision — it is an unbounded leak across a long session.
-            if (launcher is not null)
-            {
-                try { launcher.Unregister(); } catch { /* activity already gone */ }
-            }
+            // Release on every exit path or the relay entry outlives the request. It is keyed per
+            // call, so leaking one is not a collision — it is an unbounded leak across a long session.
+            if (requestCode >= 0) ActivityResultRelay.Complete(requestCode);
         }
     }
 

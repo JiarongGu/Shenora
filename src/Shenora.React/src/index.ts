@@ -59,6 +59,10 @@ export {
   // not the generic store — so the app writing that handler needs both symbols, and until now had
   // neither: it had to hard-code the literals the wire-mirror tests exist to keep it from doing.
   IpcRequestEventTypes,
+  // The ROUTE half of that same wire, and it was the one left behind: an app cancelling a request
+  // without `useShenoraRequests` had the module name and the event names but had to hard-code
+  // 'CANCEL'. Pinned by `WireMirrorTests.Request_route_names_match_the_hosts_module`.
+  IpcRequestRoutes,
   IpcRequestsModuleName,
   createRequestsStore,
   useShenoraRequests,
@@ -107,6 +111,16 @@ export {
   type FileDialogResult,
   type FileDialogsHandle,
 } from './fileDialogs.js';
+// The native clipboard, for the two things navigator.clipboard cannot do: FILES, and access with no
+// user gesture. The client half of the host's SHENORA.CLIPBOARD module.
+export {
+  ClipboardAccess,
+  useClipboard,
+  PNG_IMAGE,
+  HTML,
+  type ClipboardContent,
+  type ClipboardHandle,
+} from './clipboard.js';
 export {
   installDevInterceptor,
   type DevInterceptorOptions,
@@ -121,7 +135,10 @@ export {
   pickMediaSource,
   nextSegment,
   segmentMimeType,
+  codecsFromInitSegment,
 } from './segmentStream.js';
+export { bindSegmentStream, SegmentBinderError } from './segmentBinder.js';
+export type { SegmentBinderOptions, SegmentBinding } from './segmentBinder.js';
 export type {
   SegmentEntry,
   SegmentManifest,

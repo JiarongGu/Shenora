@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.Windows;
 
@@ -17,6 +18,20 @@ public interface IWebViewResourceProvider
 
     /// <summary>True when <paramref name="virtualPath"/> resolves to a resource.</summary>
     bool Exists(string virtualPath);
+
+    /// <summary>
+    /// Optional: start filling any cache in the BACKGROUND so the first navigation does not pay for it.
+    /// Called once at startup. Fire-and-forget and idempotent; a provider with nothing to warm does
+    /// nothing, which is why this has a default body.
+    /// <para>
+    /// ⚠ <b>On the INTERFACE because the kit's own composition needs it.</b> It was a member of
+    /// <see cref="EmbeddedResourceProvider"/> alone, so the startup call had to be a DOWNCAST with no
+    /// <c>else</c> — meaning an app that registered its own provider (the reason this interface is
+    /// public at all) silently got no warmup and no diagnostic. A default interface member costs an
+    /// existing implementer nothing and cannot be added after 1.0.
+    /// </para>
+    /// </summary>
+    void BeginWarmup() { }
 }
 
 /// <summary>Inputs for <see cref="EmbeddedResourceProvider"/>.</summary>
@@ -48,7 +63,7 @@ public sealed class EmbeddedResourceProviderOptions
     public bool PreferFiles { get; init; }
 
     /// <summary>Diagnostics sink. Null = silent.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 }
 
 /// <summary>
@@ -120,7 +135,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
     /// matters for the constructor's "serves nothing" hint, which enumerates the assembly's manifest
     /// to compose itself.
     /// </summary>
-    private void Log(Func<string> message) => Shenora.AppCallback.Log(_options.Log, message);
+    private void Log(Func<string> message, Exception? failure = null) => Shenora.AppCallback.Log(_options.Log, message, exception: failure);
 
     /// <summary>True = serving embedded resources; false = serving <see cref="EmbeddedResourceProviderOptions.FileFallbackDirectory"/>.</summary>
     public bool IsEmbedded { get; }
@@ -158,7 +173,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
                     // fire-and-forget Task.Run with nothing above it — an app logger throwing here
                     // escapes the very catch it is reporting from and becomes an unobserved task
                     // exception. An ILogger/Log action IS an app callback (webview2-hosting.md).
-                    Log(() => $"[Shenora.Windows] Warmup failed for {name}: {ex.Message}");
+                    Log(() => $"[Shenora.Windows] Warmup failed for {name}", ex);
                 }
             }
             Log(() => $"[Shenora.Windows] Resource warmup complete ({_cache.Count} cached)");
@@ -188,7 +203,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
             }
             catch (Exception ex)
             {
-                Log(() => $"[Shenora.Windows] File read failed for {virtualPath}: {ex.Message}");
+                Log(() => $"[Shenora.Windows] File read failed for {virtualPath}", ex);
                 return null;
             }
         }
@@ -202,7 +217,7 @@ public sealed class EmbeddedResourceProvider : IWebViewResourceProvider
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Windows] Resource load failed for {virtualPath}: {ex.Message}");
+            Log(() => $"[Shenora.Windows] Resource load failed for {virtualPath}", ex);
             return null;
         }
     }

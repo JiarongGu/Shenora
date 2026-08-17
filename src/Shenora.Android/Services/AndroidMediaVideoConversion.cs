@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 
 using Android.Media;
@@ -44,7 +45,7 @@ public static class AndroidMediaVideoConversion
     /// one pipeline carries both kinds and nothing can be registered into the wrong one.
     /// </para>
     /// </summary>
-    public static IDisposable Use(MediaConversionPipeline pipeline, Action<string>? log = null)
+    public static IDisposable Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         return pipeline.Use((source, codecPrivate) => Begin(source, codecPrivate, log), Claims);
@@ -71,7 +72,7 @@ public static class AndroidMediaVideoConversion
 
     /// <summary>The middleware body: answer with a run, or null to let the next converter try.</summary>
     private static IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate,
-                                                   Action<string>? log)
+                                                   ILogger? log)
     {
         ArgumentNullException.ThrowIfNull(source);
         // Kind first: this converter answers for pictures and nothing else, and saying so here is what lets
@@ -132,7 +133,7 @@ public static class AndroidMediaVideoConversion
         private readonly MediaCodec _encoder;
         private readonly Surface _bridge;
         private readonly MediaCodec.BufferInfo _info = new();
-        private readonly Action<string>? _log;
+        private readonly ILogger? _log;
         private readonly int _width;
         private readonly int _height;
         private bool _disposed;
@@ -144,7 +145,7 @@ public static class AndroidMediaVideoConversion
 
         public MediaStreamInfo OutputFormat => new(MediaStreamKind.Video, "h264", Width: _width, Height: _height);
 
-        public Run(string mime, MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate, Action<string>? log)
+        public Run(string mime, MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate, ILogger? log)
         {
             _log = log;
             _width = source.Width!.Value;
@@ -170,7 +171,7 @@ public static class AndroidMediaVideoConversion
             // ── the decoder, and the MINIMAL format is a measured trap rather than tidiness ───────────────
             // 🔴 `MediaCodecList.FindDecoderForFormat` REFUSES the format MediaExtractor hands you: it
             // carries `profile`, `level`, `max-bitrate`, `frame-count` and `sar-*`, and nothing matches all
-            // of them — so a working decoder looks ABSENT. Measured 2026-08-10: the extractor's own format
+            // of them — so a working decoder looks ABSENT. Measured: the extractor's own format
             // found nothing, while mime + dimensions found `c2.android.mpeg4.decoder` on the same device.
             // Configuring is the same story, so the format built here carries only what a decoder needs.
             var input = MediaFormat.CreateVideoFormat(mime, _width, _height)!;
@@ -206,6 +207,13 @@ public static class AndroidMediaVideoConversion
                 buffer.Put(frame.Data.ToArray());
                 _decoder.QueueInputBuffer(index, 0, frame.Data.Length, frame.PresentationTimeUs, MediaCodecBufferFlags.None);
             }
+            else
+            {
+                // The buffer-too-large case above is reported; this one was silent. A picture never
+                // queued is a visible glitch in the output with nothing anywhere saying why.
+                Report(_log, $"[Shenora.Android] the decoder had no input buffer free; "
+                           + $"a {frame.Data.Length}-byte picture frame was dropped.");
+            }
 
             var produced = new List<MediaFrame>();
             PumpDecoder(produced, endOfStream: false);
@@ -219,8 +227,14 @@ public static class AndroidMediaVideoConversion
             ObjectDisposedException.ThrowIf(_disposed, this);
             var produced = new List<MediaFrame>();
 
-            var index = _decoder.DequeueInputBuffer(TimeoutUs);
+            // The decoder must HEAR the end of stream or pictures it is still reordering never flush —
+            // the same hazard the encoder comment below names, one stage earlier. A buffer can be
+            // briefly scarce right after the last Push, so wait a few timeouts before giving up.
+            var index = -1;
+            for (var i = 0; i < 10 && index < 0; i++) index = _decoder.DequeueInputBuffer(TimeoutUs);
             if (index >= 0) _decoder.QueueInputBuffer(index, 0, 0, 0, MediaCodecBufferFlags.EndOfStream);
+            else Report(_log, "[Shenora.Android] no input buffer freed to carry the decoder's "
+                            + "end-of-stream; pictures still inside it are lost.");
 
             PumpDecoder(produced, endOfStream: true);
 

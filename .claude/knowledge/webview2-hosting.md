@@ -6,6 +6,17 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 
 ## The rules
 
+- 🔴 **A RESPONSE BODY MUST CLOSE ITSELF AT ITS BOUND — WebView2 never disposes one, not even on the
+  success path.** Measured 2026-08-15 (`BodyDisposalProbe`, desktop sample): a body read to its very end
+  is still not disposed by the browser, so a handler returning a raw `FileStream` through
+  `WebViewResourceResponse.Ok`/`PartialContent` leaks a handle per request — which on Windows also blocks
+  moving or deleting the file being served. `BoundedBodyStream` exists for this and is applied in
+  `WebViewFiles.Serve` and `ComputedRemuxRoute`; **anything else serving a stream has to do the same.**
+  - ⚠ **Do not reach for an "abandoned mid-body" case on this platform: there isn't one.** WebView2
+    buffers the WHOLE body before the page reads a byte — 32 MiB arrived in a SINGLE `read()` chunk — so
+    every body is drained and the at-bound self-close is sufficient. Android differs (it disposes, and it
+    does not pre-buffer), which is why this is a per-shell fact rather than a webview one.
+
 - **A custom scheme takes THREE things, and missing any one fails identically: `TypeError: Failed to
   fetch`.** All three were missing or wrong at some point in P7.1, each producing the same
   indistinguishable page-side error, which is why this is a list and not a sentence.
@@ -223,8 +234,32 @@ serving, or session code (incl. the P5 sessions package) so a refactor doesn't u
 - **Dev CDP args must be re-appended manually** — setting `AdditionalBrowserArguments` makes
   WebView2 ignore `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (also in `windows-dev-gotchas`; the
   fix lives in `BrowserArguments.Build`).
+- 🔴 **KEEP INTERCEPTION PATHS OFF BUNDLE PATHS**, on every shell. Bundle-versus-pipeline order is
+  OPPOSITE between them — the desktop asks the bundle FIRST (deferring the main document stalls the
+  initial navigation) and falls through on a miss, while on mobile the platform serves the bundle and the
+  pipeline sees only what it declined. **A route that collides with a bundle path is relying on a
+  difference between shells**, so it works on one and 404s on the other. ⚠ In DEV the page lives on the
+  Vite server, so that origin must be filtered too, or a route works packaged and 404s all through
+  development. (D45.)
 
 ## Gotchas / traps
+
+- 🔴 **NEVER launch a WebView2 app under `timeout` — it manufactures a renderer CRASH.** GNU `timeout`
+  puts the child in its OWN process group, and Chromium's renderer sandbox breaks inside one: the
+  renderer dies with `0xC0000005` about 8 s in — **before any kill** — then the Storage Service, Network
+  Service and GPU process follow, and the host's auto-reload makes the probes run twice. ⚠ **It fires
+  ~50 % of the time** (6/12 under plain `timeout`, 0/9 launching directly, 0/3 with `--foreground`),
+  which is why single-run elimination cannot find it — `phase-workflow.md` has that method lesson. It is
+  also the likeliest source of a reported `0x800700AA`. **To bound a sample run, spawn it from a
+  `devtools/_*.mjs` script and `p.kill()` on a timer**, or pass `--foreground`. The redirect is innocent.
+- **WebView2 + CDP:** setting `CoreWebView2EnvironmentOptions.AdditionalBrowserArguments` makes
+  WebView2 IGNORE the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` env var — a dev-mode host must
+  re-append the env var's value itself or the devtools CDP loop silently gets no port. (Proven in
+  two sibling apps; keep the fix in the browser-arguments builder.)
+- Desktop verification without CDP: `dev.mjs input list` / `click|rclick|move|drag <fx> <fy>…` post
+  background mouse messages to the WebView2 render surface (no focus steal, works occluded);
+  `shot`/`wgc` capture the window (WGC works even when hidden). Target process comes from
+  `devtools/project.config.mjs` (`processName` → `DEVTOOL_PROC`).
 
 - **Custom schemes do NOT need `CoreWebView2CustomSchemeRegistration` for the deferred-serving
   path.** The primary source app registers none, yet serves `app://`/`proxy://` subresource

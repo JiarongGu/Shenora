@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  codecsFromInitSegment,
   nextSegment,
   parseManifest,
   pickMediaSource,
@@ -191,5 +192,72 @@ describe('segmentMimeType', () => {
   it('always carries a codecs parameter', () => {
     expect(segmentMimeType()).toBe('video/mp4; codecs="avc1.640028,mp4a.40.2"');
     expect(segmentMimeType('avc1.42E01E')).toBe('video/mp4; codecs="avc1.42E01E"');
+  });
+});
+
+/**
+ * 🔴 **These are REAL init segments, produced by the host's own segment engine from a real H.264/AAC
+ * file** — not hand-built boxes, which is the whole reason they are worth having. They are the exact
+ * bytes measured against Chromium 151: the two-track one plays through the shipped default, and the
+ * video-only one FAILS its first append against that same default and plays through what this function
+ * returns.
+ */
+describe('codecsFromInitSegment', () => {
+  const bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+  /** H.264 High 2.1 picture beside AAC-LC — what essentially every real film copies as (D76). */
+  const twoTrack = bytes(
+    'AAAAKGZ0eXBpc281AAACAGlzb21pc281aXNvNmF2YzFtcDQxZGFzaAAABEhtb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPo' +
+    'AAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAADAAAB4XRyYWsAAABcdGtoZAAAAAcAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA' +
+    'AAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAB4AAAAQ4AAAAAAX1tZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAAPo' +
+    'AAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAFZpZGVvSGFuZGxlcgAAAAEobWluZgAAABR2bWhkAAAA' +
+    'AQAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAAA6HN0YmwAAACcc3RzZAAAAAAAAAABAAAA' +
+    'jGF2YzEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAB4AEOAEgAAABIAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAY//8AAAA2YXZjQwFkABX/4QAaZ2QAFazZQeCP6wEQAAADABAAAAMBQPFi2WABAAVo74IcsP34+AAAAAAQc3R0' +
+    'cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAat0cmFrAAAA' +
+    'XHRraGQAAAAHAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAA' +
+    'AAAAAABAAAAAAAAAAAAAAAAAAAFHbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAD6AAAAABVxAAAAAAALWhkbHIAAAAAAAAA' +
+    'AHNvdW4AAAAAAAAAAAAAAABTb3VuZEhhbmRsZXIAAAAA8m1pbmYAAAAQc21oZAAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAA' +
+    'AAAAAAABAAAADHVybCAAAAABAAAAtnN0YmwAAABqc3RzZAAAAAAAAAABAAAAWm1wNGEAAAAAAAAAAQAAAAAAAAAAAAEAEAAA' +
+    'AACsRAAAAAAANmVzZHMAAAAAA4CAgCIAAAAEgICAF0AVAAAAAAAAAAAAAAAFgICABRIIVuUABoCAgAECAAAAEHN0dHMAAAAA' +
+    'AAAAAAAAABBzdHNjAAAAAAAAAAAAAAAUc3RzegAAAAAAAAAAAAAAAAAAABBzdGNvAAAAAAAAAAAAAABIbXZleAAAACB0cmV4' +
+    'AAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAIHRyZXgAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAA=',
+  );
+
+  /** The same source with its soundtrack dropped — ordinary, and fatal to a fixed two-track default. */
+  const videoOnly = bytes(
+    'AAAAKGZ0eXBpc281AAACAGlzb21pc281aXNvNmF2YzFtcDQxZGFzaAAAAn1tb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPo' +
+    'AAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAACAAAB4XRyYWsAAABcdGtoZAAAAAcAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA' +
+    'AAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAB4AAAAQ4AAAAAAX1tZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAAPo' +
+    'AAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAFZpZGVvSGFuZGxlcgAAAAEobWluZgAAABR2bWhkAAAA' +
+    'AQAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAAA6HN0YmwAAACcc3RzZAAAAAAAAAABAAAA' +
+    'jGF2YzEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAB4AEOAEgAAABIAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAY//8AAAA2YXZjQwFkABX/4QAaZ2QAFazZQeCP6wEQAAADABAAAAMBQPFi2WABAAVo74IcsP34+AAAAAAQc3R0' +
+    'cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAChtdmV4AAAA' +
+    'IHRyZXgAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAA=',
+  );
+
+  it('reads both tracks, exactly, from a real two-track init segment', () => {
+    // 640015 is High (0x64) profile, no constraints, level 2.1 (0x15) — read from the copied `avcC`,
+    // NOT the shipped default's level 4.0 guess.
+    expect(codecsFromInitSegment(twoTrack)).toBe('avc1.640015,mp4a.40.2');
+  });
+
+  it('names ONE track for a video-only source — the case the fixed default kills', () => {
+    expect(codecsFromInitSegment(videoOnly)).toBe('avc1.640015');
+  });
+
+  it('answers null rather than a default when there is no track to read', () => {
+    expect(codecsFromInitSegment(new Uint8Array(0))).toBeNull();
+    expect(codecsFromInitSegment(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toBeNull();
+    // A truncated box must not walk off the end.
+    expect(codecsFromInitSegment(twoTrack.slice(0, 40))).toBeNull();
+  });
+
+  it('composes with segmentMimeType', () => {
+    expect(segmentMimeType(codecsFromInitSegment(twoTrack)!))
+      .toBe('video/mp4; codecs="avc1.640015,mp4a.40.2"');
   });
 });

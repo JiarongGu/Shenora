@@ -35,17 +35,30 @@ export interface UseDropZoneOptions {
   onDrop: (files: string[], drop: DropZoneFileDrop) => void;
   /** False = zone torn down (same as unmount). Default true. */
   enabled?: boolean;
-  /** Stable zone id; default: generated per mount. */
+  /** Stable zone id; default: generated per mount. ⚠ Read on the FIRST render only — changing it later
+   * does not re-register the zone, which is what "stable" means here. */
   zoneId?: string;
   /**
    * Class toggled on the element while a file drag hovers the zone. UNSTYLED — headless (D13):
    * the library ships no CSS; style it in the app. Default `"shenora-drop-hover"`.
+   * ⚠ Read on the FIRST render only, like {@link UseDropZoneOptions.zoneId}: the hover effect
+   * captures it for its cleanup while the drop path reads it live, so a mid-hover change would add one
+   * class and remove another, leaving the first stuck on the element. Switch it by remounting.
    */
   dropClassName?: string;
   /** The bridge to speak over. Default: the shared default bridge. */
   bridge?: ShenoraBridge;
   /** The event bus host notifications arrive on. Default: the shared bus. */
   bus?: ShenoraEventBus;
+  /**
+   * Where a failed REGISTER / UPDATE / SHOW / UNREGISTER is reported. Default: `console.error`.
+   *
+   * ⚠ Worth routing somewhere real, because a failure here is INVISIBLE in the UI: the page renders
+   * exactly as it should and files simply do not drop. This hook was the last error path in the package
+   * that could only ever reach the console — `bridge.ts`'s `onPostError`, `store.ts`'s `onError` and
+   * `segmentBinder.ts`'s `onDiagnostic` all take an app sink.
+   */
+  onError?: (error: unknown, route: string) => void;
 }
 
 const newZoneId = (): string => randomId('drop-zone-');
@@ -75,13 +88,36 @@ const newZoneId = (): string => randomId('drop-zone-');
  */
 export function useDropZone(options: UseDropZoneOptions): void {
   const { targetRef, enabled = true } = options;
-  const zoneIdRef = useRef(options.zoneId ?? newZoneId());
+  // ⚠ LAZY, because `useRef(newZoneId())` evaluates its argument on EVERY render and keeps only the
+  // first — so the generator ran a `crypto.randomUUID()` per render of every drop zone, for a value
+  // used once. The empty string is a safe sentinel: a generated id is never empty, and a caller who
+  // passes `zoneId: ''` short-circuits the `??` and so still never reaches the generator.
+  const zoneIdRef = useRef('');
+  if (zoneIdRef.current === '') zoneIdRef.current = options.zoneId ?? newZoneId();
+
+  // ⚠ Read ONCE, like the id, and unlike `onDrop`/`bridge` below which track the latest value. That is
+  // deliberate rather than an oversight: the hover effect captures this class for its cleanup, while
+  // the FILE_DROP effect reads it live, so a value that could change mid-hover would let one path add
+  // class A and another remove class B — leaving A stuck on the element with no drag in progress. The
+  // default is a constant, so unlike the id there is nothing here worth making lazy.
   const dropClassRef = useRef(options.dropClassName ?? 'shenora-drop-hover');
   const onDropRef = useRef(options.onDrop);
   onDropRef.current = options.onDrop;
   const bridgeRef = useRef(options.bridge);
   bridgeRef.current = options.bridge;
   const bus = options.bus ?? defaultEventBus;
+
+  // Tracks the latest handler (like `onDrop`), so a cleanup that runs long after mount still reports
+  // through the sink the app has NOW. Only when the app supplied none does this log — a caller that
+  // took `onError` owns its reporting and must not be double-logged, the rule the package's other
+  // three sinks follow.
+  const onErrorRef = useRef(options.onError);
+  onErrorRef.current = options.onError;
+  const reportRef = useRef<(error: unknown, route: string) => void>(() => {});
+  reportRef.current = (error: unknown, route: string) =>
+    onErrorRef.current
+      ? onErrorRef.current(error, route)
+      : console.error(`[shenora] drop-zone ${route} failed:`, error);
 
   // Make the ref's CONTENT reactive (P5.5 H2). `targetRef` is a stable object, so effects keyed on it
   // run exactly once — and if `targetRef.current` was null on that run (a conditionally-rendered
@@ -140,7 +176,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
           () => {
             if (epochRef.current === epoch) isRegisteredRef.current = true;
           },
-          (error: unknown) => console.error('[shenora] drop-zone REGISTER failed:', error),
+          (error: unknown) => reportRef.current(error, 'REGISTER'),
         )
         .finally(() => {
           if (epochRef.current === epoch) registeringRef.current = false;
@@ -149,7 +185,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
       lastBoundsRef.current = bounds;
       bridge
         .invoke(DROP_ZONE_MODULE, 'UPDATE', { payload: { zoneId: zoneIdRef.current, ...bounds } })
-        .catch((error: unknown) => console.error('[shenora] drop-zone UPDATE failed:', error));
+        .catch((error: unknown) => reportRef.current(error, 'UPDATE'));
     }
   };
 
@@ -166,7 +202,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
     const sendShow = debounce(() => {
       (bridgeRef.current ?? getBridge())
         .invoke(DROP_ZONE_MODULE, 'SHOW', { payload: { zoneId: zoneIdRef.current } })
-        .catch((error: unknown) => console.error('[shenora] drop-zone SHOW failed:', error));
+        .catch((error: unknown) => reportRef.current(error, 'SHOW'));
     }, 100);
 
     // The element's mouseleave (and the window losing focus) re-arm the overlay — native
@@ -207,7 +243,7 @@ export function useDropZone(options: UseDropZoneOptions): void {
       if (attemptedRef.current) {
         (bridgeRef.current ?? getBridge())
           .invoke(DROP_ZONE_MODULE, 'UNREGISTER', { payload: { zoneId: zoneIdRef.current } })
-          .catch((error: unknown) => console.error('[shenora] drop-zone UNREGISTER failed:', error));
+          .catch((error: unknown) => reportRef.current(error, 'UNREGISTER'));
         epochRef.current++; // invalidate any in-flight REGISTER's ack (see epochRef)
         isRegisteredRef.current = false;
         registeringRef.current = false; // a remount must re-send immediately

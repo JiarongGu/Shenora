@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
@@ -32,17 +33,17 @@ namespace Shenora.Windows;
 /// </summary>
 public sealed class WindowsMediaCapability : IMediaCapability
 {
-    private static readonly HashSet<string> None = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<MediaStreamCodec> None = new();
 
     /// <param name="log">Accepted and unused here, so the two variants construct identically.</param>
-    public WindowsMediaCapability(Action<string>? log = null) => _ = log;
+    public WindowsMediaCapability(ILogger? log = null) => _ = log;
 
     /// <inheritdoc />
     /// <remarks>Always empty on this TFM — <c>CodecQuery</c> is WinRT. See the type remarks.</remarks>
-    public IReadOnlySet<string> Decodable(MediaStreamKind kind) => None;
+    public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => None;
 
     /// <inheritdoc />
     /// <remarks>Always empty on this TFM — <c>CodecQuery</c> is WinRT. See the type remarks.</remarks>
-    public IReadOnlySet<string> Encodable(MediaStreamKind kind) => None;
+    public IReadOnlySet<MediaStreamCodec> Encodable(MediaStreamKind kind) => None;
 }
 #endif

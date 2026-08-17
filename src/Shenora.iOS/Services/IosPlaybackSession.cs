@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
@@ -27,7 +28,7 @@ namespace Shenora.iOS;
 /// </summary>
 public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
 {
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly object _gate = new();
     private readonly List<(MPRemoteCommand Command, NSObject Target)> _targets = [];
     private PlaybackCommands _supported;
@@ -36,7 +37,7 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
-    public IosPlaybackSession(Action<string>? log = null)
+    public IosPlaybackSession(ILogger? log = null)
     {
         _log = log;
         // Every command is wired ONCE here and enabled/disabled by `Supported` afterwards. Adding and
@@ -241,7 +242,7 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
         if (handler is null) return;
         var request = new PlaybackCommandRequest { Command = command, Position = position, Interval = interval };
         AppCallback.Run(() => handler(request),
-            ex => Log(() => $"[Shenora.iOS] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
+            ex => Log(() => $"[Shenora.iOS] A {command} handler threw.", ex));
     }
 
     private void Try(Action action, string what)
@@ -249,23 +250,26 @@ public sealed class IosPlaybackSession : IPlaybackSession, IDisposable
         try { action(); }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.iOS] NowPlaying.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"[Shenora.iOS] NowPlaying.{what} failed.", ex);
         }
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <inheritdoc />
     public void Dispose()
     {
         if (_disposed) return;
+        // BEFORE the flag flips: Clear() no-ops on a disposed session, so flipping first made this
+        // call — the one that takes the stale entry off the lock screen — a guaranteed no-op.
+        Clear();
         _disposed = true;
         // The command center is a SINGLETON, so these targets survive this object unless removed — and a
         // stale target fires into a disposed handler for the rest of the process.
         foreach (var (command, target) in _targets)
         {
             try { command.RemoveTarget(target); }
-            catch (Exception ex) { Log(() => $"[Shenora.iOS] RemoveTarget: {ex.Message}"); }
+            catch (Exception ex) { Log(() => "[Shenora.iOS] RemoveTarget", ex); }
         }
         _targets.Clear();
         Clear();

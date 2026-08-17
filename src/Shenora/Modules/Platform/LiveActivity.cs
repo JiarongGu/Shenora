@@ -145,7 +145,7 @@ public interface ILiveActivities
     /// <para>
     /// 🔴 <b>This exists because of a limit that is easy to mistake for a bug.</b> <see cref="Update"/> runs
     /// IN THE APP'S PROCESS, so an activity swiped away with the app freezes at its last value — the card
-    /// outlives the app, the update loop does not. Measured on an iPhone 2026-08-09, where the Island held
+    /// outlives the app, the update loop does not. Measured on an iPhone, where the Island held
     /// 66 % because the process carrying the loop was gone. Advancing a surface without a running app is
     /// what a push token is for, and it is the one part of that story an app cannot reach from C#.
     /// </para>

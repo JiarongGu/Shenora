@@ -40,12 +40,12 @@ Version in lockstep; reference the **leaf** you need and the rest arrive transit
 
 | Package | Registry | Target framework | In one line |
 |---|---|---|---|
-| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Modules.Update.Compression`). |
-| `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Modules.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
+| `Shenora` | NuGet | `net10.0` | The application host and the platform-neutral contracts your logic compiles against — plus the capabilities that are shell work rather than optional extras: media (`Shenora.Modules.Media` — probe, plan, serve, remux), file operations (`Shenora.Engine.Files` — journalled update queue, path locks, staged self-updater) and safe archive extraction (`Shenora.Engine.Compression`). |
+| `Shenora.Launcher` | NuGet | native (`win-x64`, `linux-x64`) | The prebuilt launcher that runs **before** your app and applies a staged update — for framework-dependent apps, where the runtime may be absent and files may be held open. Carries per-RID binaries plus the C++17 library sources and `main.cpp` template, so you can use the stock launcher or build your own. **A self-contained app needs none of it** — `Shenora.Engine.Update`'s `UpdateStage.ApplyAsync` already applies updates in portable .NET. |
 | `Shenora.Windows` | NuGet | `net10.0-windows` **or** `net10.0-windows10.0.17763.0` | The Windows shell, whole: bootstrap, windows, tray, dialogs, single-instance, WebView2 hosting + the postMessage bridge, and auxiliary browser sessions. Both TFMs carry all of it; the versioned one additionally implements `IPlaybackSession` (see below). |
 | `Shenora.Android` | NuGet | `net10.0-android` | The Android shell: the same IPC envelope over MAUI's `HybridWebView`. |
 | `Shenora.iOS` | NuGet | `net10.0-ios` | The iOS shell. It SHARES the MAUI-shaped half with `Shenora.Android` (`src/Shenora.Mobile/`: transport, dispatcher, safe area, interception) and owns what is genuinely per-platform — AVPlayer, `MPNowPlayingInfoCenter`, ActivityKit — in its own `Services/`. |
-| `@shenora/react` | npm | ES2022 / ESM | The client half — bridge, event bus, store, hooks. |
+| `@shenora/react` | npm | ES2022 / ESM · **React ≥ 18** | The client half — bridge, event bus, store, hooks. Built and tested against the LATEST React (19); 18 is supported and the floor is enforced rather than assumed — `verify` type-checks the shipped sources against React 18's types, so an API that does not exist there fails here instead of in your build. 18 is the floor because `useSyncExternalStore` is, and the store is built on it. |
 | `@shenora/cli` | npm | Node 20+ | **Build-time only, a `devDependency`** (D67). The `shenora` binary: take a built app onto a simulator, a real iPhone or an Android device, with no Xcode project of your own. The Android half runs on Windows. Ships inside nothing you deploy. |
 
 The TFM column is here so an adopter can tell whether a package fits without downloading the nupkg to
@@ -76,7 +76,7 @@ of the kit's, so referencing two shells is impossible by construction rather tha
 
 **There are no optional feature packages — the framework ships as one whole** (D55). `Shenora`
 carries media, file operations and archive extraction as namespaces (`Shenora.Modules.Media`,
-`Shenora.Engine.Files`, `Shenora.Modules.Update.Compression`) rather than as separate NuGet ids. ⚠ Those
+`Shenora.Engine.Files`, `Shenora.Engine.Compression`) rather than as separate NuGet ids. ⚠ Those
 are the names D65 relayered to — a retired PACKAGE id written where a namespace belongs is a `using` an
 adopter cannot compile. The
 reason they stopped being packages is not size: **a package set is a public statement about what a product IS**, and

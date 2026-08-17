@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Shenora.Core.Ipc;
 
 /// <summary>Options for <see cref="IpcRequestTracker"/>. Validated at construction, not on first use.</summary>
@@ -54,5 +56,5 @@ public sealed class IpcRequestTrackerOptions
     public TimeProvider TimeProvider { get; set; } = TimeProvider.System;
 
     /// <summary>Diagnostics sink. Guarded — a throwing sink cannot fault a dispatch.</summary>
-    public Action<string>? Log { get; set; }
+    public ILogger? Log { get; set; }
 }

@@ -1,5 +1,4 @@
-using Shenora;
-using Shenora.Core.Shell;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.Core.Ipc;
 
@@ -38,20 +37,29 @@ public sealed class IpcHostBridgeOptions
     public ShellInfo? Shell { get; init; }
 
     /// <summary>Diagnostics sink.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
+
+    /// <summary>
+    /// Whether disposing the bridge CANCELS dispatches still in flight. True — the desktop shape —
+    /// means the bridge's death is the app's death, and a handler still awaiting should learn it.
+    /// False is for a bridge whose lifetime is a PAGE's, not the app's: on mobile the WebView (and
+    /// this bridge with it) is rebuilt on every activity recreation, and cancelling then aborts work
+    /// whose effects are host-side — measured on a device, a save whose picker was open died
+    /// <c>OPERATION_CANCELLED</c> with the user's chosen file created and left empty. With false the
+    /// in-flight work runs to completion; its RESPONSE still has nowhere to go, which is the correct
+    /// asymmetry — the page is gone, the user's file is not.
+    /// </summary>
+    public bool CancelInFlightOnDispose { get; init; } = true;
 }
 
 /// <summary>
-/// The transport-neutral half of a host's INBOUND channel: parse → handshake-or-dispatch →
-/// response JSON, with the dispatch lifetime and the error boundary that go with it. The mirror of
-/// the client's <c>ShenoraBridge</c>, which has owned correlation, category demux and batch
-/// unbundling since P3 while the host side had no equivalent — so <c>WebViewIpcBridge</c> was the
-/// only thing that knew this shape and it was welded to WinForms.
+/// The transport-neutral half of a host's INBOUND channel: parse → handshake-or-dispatch → response
+/// JSON, with the dispatch lifetime and the error boundary that go with it. The mirror of the client's
+/// <c>ShenoraBridge</c>, which owns correlation, category demux and batch unbundling on its side.
 /// <para>
-/// Evidence, not anticipation: standing up a second base for the D3 transport-neutrality spike
-/// needed no change to <c>Shenora.Ipc</c> at all, but did mean hand-writing this by hand — every
-/// non-WinForms host writes the same read → deserialize → dispatch → serialize → write loop. This
-/// is that loop's middle, which is the part that is identical everywhere.
+/// Every non-WinForms host writes the same read → deserialize → dispatch → serialize → write loop, and
+/// this is that loop's MIDDLE — the part identical everywhere. Owning it here is what stops a second
+/// base re-deriving it.
 /// </para>
 /// <para>
 /// Owns NO TRANSPORT and NO TIMER, for the same reason <see cref="NotificationPump"/> does not:
@@ -73,7 +81,7 @@ public sealed class IpcHostBridge : IDisposable
     public const string HandshakeType = "READY";
 
     private readonly IpcHostBridgeOptions _options;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private bool _disposed;
 
     /// <summary>
@@ -130,7 +138,7 @@ public sealed class IpcHostBridge : IDisposable
         }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Core.Ipc] Invalid IPC message dropped: {ex.Message}");
+            Log(() => "[Shenora.Core.Ipc] Invalid IPC message dropped", ex);
             return null;
         }
         if (request is null) return null;
@@ -152,7 +160,7 @@ public sealed class IpcHostBridge : IDisposable
             // implementation carries no such guarantee) — and Serialize itself can throw on an
             // unserializable handler result (cycles, Type/delegate members). The client must still
             // get a response, and per design §5 it learns nothing but the code.
-            Log(() => $"[Shenora.Core.Ipc] Error handling {request.Module}/{request.Type}: {ex}");
+            Log(() => $"[Shenora.Core.Ipc] Error handling {request.Module}/{request.Type}", ex);
             return IpcJson.Serialize(IpcResponse.CreateError(request.Id, IpcErrorCodes.UnknownError,
                 parameters: new Dictionary<string, string> { ["exceptionType"] = ex.GetType().Name }));
         }
@@ -167,7 +175,7 @@ public sealed class IpcHostBridge : IDisposable
         if (_options.OnClientReady is { } onReady)
         {
             AppCallback.Run(() => onReady(request),
-                ex => Log(() => $"[Shenora.Core.Ipc] OnClientReady callback failed: {ex.Message}"));
+                ex => Log(() => "[Shenora.Core.Ipc] OnClientReady callback failed", ex));
         }
         // The shell descriptor rides the ack. Null keeps the pre-existing "success, no data" shape.
         return IpcResponse.CreateSuccess(request.Id, _options.Shell);
@@ -178,23 +186,29 @@ public sealed class IpcHostBridge : IDisposable
     /// a <c>catch</c> that exists to stop a failure escaping, so a throwing sink would defeat the
     /// very catch it reports from.
     /// </summary>
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <summary>
-    /// Cancel the dispatch lifetime. Call FIRST in the base's own teardown, before the transport and
-    /// any subscriptions are pulled out from under an in-flight handler — it should learn the client
-    /// is gone while its await can still act on it. Does NOT dispose the pump: the base owns that,
-    /// because the base owns the tick that drains it.
+    /// Cancel the dispatch lifetime (unless <see cref="IpcHostBridgeOptions.CancelInFlightOnDispose"/>
+    /// opted out). Call FIRST in the base's own teardown, before the transport and any subscriptions
+    /// are pulled out from under an in-flight handler — it should learn the client is gone while its
+    /// await can still act on it. Does NOT dispose the pump: the base owns that, because the base
+    /// owns the tick that drains it.
     /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
-        // Guarded because Cancel runs app continuations synchronously — one of them throwing must
-        // not stop the rest of a base's teardown.
-        try { _lifetime.Cancel(); }
-        catch (Exception ex) { Log(() => $"[Shenora.Core.Ipc] Host bridge dispose: cancellation callback threw ({ex.Message})"); }
+        if (_options.CancelInFlightOnDispose)
+        {
+            // Guarded because Cancel runs app continuations synchronously — one of them throwing must
+            // not stop the rest of a base's teardown.
+            try { _lifetime.Cancel(); }
+            catch (Exception ex) { Log(() => "[Shenora.Core.Ipc] Host bridge dispose: cancellation callback threw", ex); }
+        }
+        // Disposing WITHOUT cancelling leaves the already-captured token readable and permanently
+        // un-fired — in-flight work keeps its token and simply never hears a cancellation from it.
         _lifetime.Dispose();
     }
 }

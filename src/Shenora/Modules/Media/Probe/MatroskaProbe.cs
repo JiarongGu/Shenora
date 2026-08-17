@@ -4,34 +4,19 @@ namespace Shenora.Modules.Media;
 
 /// <summary>
 /// Reads what is INSIDE a Matroska file — its tracks, their codecs and its duration — without decoding a
-/// frame and without any external tool.
-///
+/// frame and without any external tool, so a <see cref="MediaProbeResult"/> costs no media toolchain (D51).
 /// <para>
-/// <b>Why this is the first piece of the translation layer.</b> The planner already decides what must happen
-/// to a file (<see cref="MediaPlaybackPlanner"/>), but it can only decide from a
-/// <see cref="MediaProbeResult"/> — and until now the only thing that could produce one was an external
-/// probe. That made "can this play?" depend on shipping a media toolchain, for a question that is answered
-/// by reading a few hundred bytes of header. This answers it in managed code, under the kit's own licence
-/// (D51).
-/// </para>
-///
-/// <para>
-/// ⚠ <b>It reads the HEADER, never the content.</b> No frames, no decoding, no seeking through clusters —
-/// so it is cheap enough for a scan and it can never be the thing that makes a file play or not. What it
-/// produces is an OPINION for the planner, exactly like an external probe's, and the planner still checks
-/// container and streams together because both can lie.
-/// </para>
-///
-/// <para>
-/// Scoped to Matroska because that is the container that actually stops ordinary video playing in a webview
-/// — the H.264 inside a <c>.mkv</c> is usually perfectly playable, it is the box that is not. WebM is the
-/// same format and parses identically; it is already playable, so probing one is harmless rather than useful.
+/// ⚠ <b>It reads the HEADER, never the content.</b> No frames, no decoding, no walking clusters: cheap
+/// enough for a scan, and never the thing that makes a file play or not. What it produces is an OPINION
+/// for the planner, which still checks container and streams together because both can lie. Scoped to
+/// Matroska because that is the container that stops ordinary video playing in a webview — the H.264
+/// inside a <c>.mkv</c> is usually perfectly playable, the box is not. WebM parses identically.
 /// </para>
 /// </summary>
 public static class MatroskaProbe
 {
-    // EBML element ids, as they appear on the wire INCLUDING their length-descriptor bits. Reading them as
-    // whole numbers is what makes the comparisons below plain equality rather than bit-twiddling.
+    // EBML element ids as they appear on the wire, INCLUDING their length-descriptor bits — which is what
+    // makes the comparisons below plain equality rather than bit-twiddling.
     private const ulong IdEbmlHeader = 0x1A45DFA3;
     private const ulong IdSegment = 0x18538067;
     private const ulong IdInfo = 0x1549A966;
@@ -54,21 +39,16 @@ public static class MatroskaProbe
     private const ulong TrackTypeSubtitle = 17;
 
     /// <summary>
-    /// How far into the file the header may be before this gives up.
-    /// <para>
-    /// ⚠ A bound rather than "read until Tracks is found", because this parses a file the PAGE can point at.
-    /// A malformed or hostile file must cost a bounded read, not a walk to EOF — the same fail-closed
-    /// instinct the extraction limits and the path containment follow.
-    /// </para>
+    /// How far into the file the header may be before this gives up. ⚠ A bound rather than "read until
+    /// Tracks is found": this parses a file the PAGE can point at, so a malformed or hostile file must
+    /// cost a bounded read, not a walk to EOF.
     /// </summary>
     private const long HeaderBudgetBytes = 8 * 1024 * 1024;
 
     /// <summary>
-    /// Probe <paramref name="path"/>, or null when it is not Matroska or cannot be read.
-    /// <para>
-    /// Null rather than an exception or a partial result: "I could not tell" is an ordinary answer here, and
-    /// the planner already treats an absent probe as "assume nothing and check the extension".
-    /// </para>
+    /// Probe <paramref name="path"/>, or null when it is not Matroska or cannot be read. Null rather than
+    /// an exception or a partial result: "I could not tell" is an ordinary answer, and the planner already
+    /// treats an absent probe as "assume nothing and check the extension".
     /// </summary>
     public static MediaProbeResult? Read(string path)
     {
@@ -80,20 +60,18 @@ public static class MatroskaProbe
         }
         catch (Exception)
         {
-            // Unreadable, gone, or locked. No exception text travels from here — a media path is exactly
-            // the kind of detail that must not reach a page.
+            // Unreadable, gone, or locked. No exception text travels from here — a media path must never
+            // reach a page.
             return null;
         }
     }
 
-    /// <summary>
-    /// Probe an open stream. The stream is read from its current position and is NOT disposed.
-    /// </summary>
+    /// <summary>Probe an open stream. The stream is read from its current position and is NOT disposed.</summary>
     /// <param name="stream">A readable stream positioned at the start of the file.</param>
     /// <param name="container">
     /// The container to report, as a lowercase extension with the dot. Defaults to <c>.mkv</c>; pass
-    /// <c>.webm</c> when that is what the file is called, because the planner decides on the extension the
-    /// PAGE will see rather than on the format underneath.
+    /// <c>.webm</c> when that is what the file is called — the planner decides on the extension the PAGE
+    /// sees, not on the format underneath.
     /// </param>
     public static MediaProbeResult? Read(Stream stream, string container = ".mkv")
     {
@@ -115,8 +93,8 @@ public static class MatroskaProbe
             int? width = null;
             int? height = null;
 
-            // Walk the Segment's direct children only. Info and Tracks are what matter; Clusters are the
-            // content and are deliberately never entered.
+            // The Segment's direct children only — Info and Tracks matter; Clusters are the content and
+            // are never entered.
             while (reader.TryReadElement(out var childId, out var childSize))
             {
                 switch (childId)
@@ -236,17 +214,11 @@ public static class MatroskaProbe
     /// <summary>
     /// The audio track's shape.
     /// <para>
-    /// 🔴 <b><c>SamplingFrequency</c> is read here, and it was MISSING until 2026-08-09 — the probe filled
-    /// <see cref="MediaStreamInfo.Channels"/> and left <see cref="MediaStreamInfo.SampleRate"/> null for
-    /// every file ever probed.</b> That field's own documentation says it is needed to CONFIGURE a decoder
-    /// and that guessing 48 kHz for a 44.1 kHz track "produces audio that plays at the wrong speed rather
-    /// than failing" — so the one value whose absence is silent was the one nothing populated. Found by
-    /// giving the transcode tier a real 44.1 kHz fixture and noticing the probe reported no rate for it.
-    /// </para>
-    /// <para>
-    /// ⚠ It is an EBML float (4 or 8 bytes), like <c>Duration</c> — not an integer. Rounded on the way into
-    /// an <c>int?</c>: Matroska stores 44100 as a float, and truncating 44099.999… would misconfigure the
-    /// very decoder this exists to configure.
+    /// 🔴 <b><c>SamplingFrequency</c> must be read here, not left null.</b> It configures a decoder, and
+    /// guessing 48 kHz for a 44.1 kHz track produces audio that plays at the WRONG SPEED rather than
+    /// failing — so a fixture at 48 kHz cannot catch its absence. ⚠ It is an EBML float (4 or 8 bytes),
+    /// not an integer, and is ROUNDED into the <c>int?</c>: truncating 44099.999… misconfigures the very
+    /// decoder this exists to configure.
     /// </para>
     /// </summary>
     private static void ReadAudio(EbmlReader audio, ref int? channels, ref int? sampleRate)
@@ -257,8 +229,8 @@ public static class MatroskaProbe
             else if (id == IdSamplingFrequency && size is 4 or 8)
             {
                 var hz = audio.ReadFloat(size);
-                // A non-positive or absurd rate is not a rate. Leaving it null says "unknown", which is
-                // what every consumer already handles; inventing one would be the wrong-speed failure.
+                // A non-positive or absurd rate is not a rate. Null says "unknown", which every consumer
+                // handles; inventing one would be the wrong-speed failure.
                 if (hz > 0 && hz < int.MaxValue) sampleRate = (int)Math.Round(hz);
             }
             else audio.Skip(size);
@@ -270,25 +242,15 @@ public static class MatroskaProbe
     /// private data that names what is actually inside it.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// 🔴 <b>WITHOUT THIS, A WHOLE FAMILY OF REAL FILES REPORTS ITS CODEC AS "vfw".</b> Matroska has native
-    /// ids for h264, HEVC, MPEG-2, MPEG-4 Part 2, VP8/9 and AV1 — and for <b>everything else</b> it uses the
-    /// Video-for-Windows wrapper, with the true codec as a FourCC inside a <c>BITMAPINFOHEADER</c>. So an
-    /// h263 track, which has no native id at all, arrived as the codec name <c>vfw</c>: the converter
-    /// declined a codec it offers, and the page was told <c>dropped:["vfw"]</c> — the name of a CONTAINER
-    /// CONVENTION, which no app can act on.
-    /// </para>
-    /// <para>
-    /// ⚠ <b>Found by building a fixture, not by reading code</b> (2026-08-13): an h263 clip was made to prove
-    /// iOS's picture conversion end to end — h263 being the one picture codec that phone decodes — and
-    /// ffmpeg wrote it as <c>V_MS/VFW/FOURCC</c>, because that is the only legal way. The fixture failed for
-    /// a reason that had nothing to do with the converter under test.
-    /// </para>
+    /// ids for h264, HEVC, MPEG-2, MPEG-4 Part 2, VP8/9 and AV1; <b>everything else</b> uses the
+    /// Video-for-Windows wrapper, with the true codec as a FourCC inside a <c>BITMAPINFOHEADER</c>. An h263
+    /// track has no native id at all, so it arrives named <c>vfw</c>: the converter declines a codec it
+    /// offers, and the page is told <c>dropped:["vfw"]</c> — a CONTAINER CONVENTION no app can act on.
     /// <para>
     /// ⚠ The FourCC sits at offset 16 of the header (after <c>biSize</c>, width, height, planes and bit
-    /// count) and its case is not dependable — <c>H263</c>, <c>h263</c> and <c>U263</c> all occur — so it is
-    /// upper-cased before lookup. A header too short to hold one falls back to the wrapper's own name rather
-    /// than guessing.
+    /// count) and its case is not dependable — <c>H263</c>, <c>h263</c> and <c>U263</c> all occur — so it
+    /// is upper-cased before lookup. A header too short to hold one falls back to the wrapper's own name.
     /// </para>
     /// </remarks>
     internal static string? CodecNameOf(string? codecId, ReadOnlyMemory<byte> codecPrivate)
@@ -313,9 +275,8 @@ public static class MatroskaProbe
         return fourCc switch
         {
             "H263" or "U263" or "S263" or "M263" => "h263",
-            // ⚠ The MPEG-4 Part 2 family, which ALSO arrives this way from many encoders even though
-            // Matroska has a native id for it — so a file muxed by one tool reports `mpeg4` and the same
-            // content from another reports a FourCC. Both must answer `mpeg4` or the planner sees two codecs.
+            // ⚠ The MPEG-4 Part 2 family ALSO arrives this way from many encoders even though Matroska has
+            // a native id for it, so both spellings must answer `mpeg4` or the planner sees two codecs.
             "DIVX" or "DX50" or "XVID" or "MP4V" or "FMP4" or "DIV3" => "mpeg4",
             "H264" or "AVC1" or "X264" => "h264",
             "HEVC" or "HVC1" or "H265" => "hevc",
@@ -327,15 +288,11 @@ public static class MatroskaProbe
     }
 
     /// <summary>
-    /// Matroska's <c>CodecID</c> to the lowercase names the planner and every policy speak
-    /// (<c>h264</c>, <c>aac</c>, <c>ac3</c>…).
-    /// <para>
-    /// ⚠ Translated rather than passed through, because Matroska's names are its own
-    /// (<c>V_MPEG4/ISO/AVC</c>, not <c>h264</c>) and a policy written against probe output would otherwise
-    /// have to know two vocabularies for the same codec. Unknown ids come back as a lowercased tail rather
-    /// than null — a name the policy does not recognise is correctly treated as unplayable, which is the
-    /// safe direction.
-    /// </para>
+    /// Matroska's <c>CodecID</c> to the lowercase names the planner and every policy speak (<c>h264</c>,
+    /// <c>aac</c>, <c>ac3</c>…). ⚠ Translated rather than passed through — Matroska's names are its own
+    /// (<c>V_MPEG4/ISO/AVC</c>, not <c>h264</c>), and a policy written against probe output would
+    /// otherwise need two vocabularies for the same codec. An unknown id comes back as a lowercased tail
+    /// rather than null, so a name the policy does not recognise is treated as unplayable: the safe way.
     /// </summary>
     internal static string? CodecNameOf(string? codecId)
     {
@@ -351,9 +308,8 @@ public static class MatroskaProbe
             "V_AV1" => "av1",
             "V_MPEG4/ISO/ASP" or "V_MPEG4/ISO/SP" or "V_MPEG4/ISO/AP" => "mpeg4",
             "V_MPEG2" => "mpeg2video",
-            // ⚠ Handled by the overload that can see CodecPrivate — see `FourCcCodec`. Reaching HERE means
-            // the caller had no private data, and "vfw" is then the honest answer: it is all the container
-            // said.
+            // ⚠ Handled by the overload that can see CodecPrivate (`FourCcCodec`). Reaching HERE means the
+            // caller had no private data, and "vfw" is then all the container said.
             "V_MS/VFW/FOURCC" => "vfw",
             "A_AAC" => "aac",
             "A_AC3" => "ac3",
@@ -375,9 +331,8 @@ public static class MatroskaProbe
     }
 
     /// <summary>
-    /// The EBML primitives Matroska is built from: variable-length ids, variable-length sizes, and
-    /// big-endian integers. Bounded by construction — every read is against a remaining budget, so a
-    /// malformed length cannot walk off the end of the file or spin.
+    /// The EBML primitives Matroska is built from: variable-length ids and sizes, big-endian integers.
+    /// Every read is against a remaining budget, so a malformed length cannot walk off the end or spin.
     /// </summary>
     private sealed class EbmlReader(Stream stream, long budget = HeaderBudgetBytes)
     {
@@ -386,17 +341,12 @@ public static class MatroskaProbe
         /// <summary>
         /// A reader over the next <paramref name="size"/> bytes — one element's children.
         /// <para>
-        /// 🔴 <b>The payload is COPIED, and that is a fix rather than a convenience.</b> The first version
-        /// handed the child the same stream with its own budget, which left the parent's position advanced
-        /// by the child's reads and its BUDGET untouched — so a parent went on reading past the element it
-        /// had delegated and consumed whatever followed. The visible symptom: a video track carrying a
-        /// nested <c>Video</c> element swallowed the AUDIO track after it, and a file reported one stream
-        /// instead of two. Copying makes both the position and the budget advance by exactly
-        /// <paramref name="size"/>, whatever the child does or does not read.
-        /// </para>
-        /// <para>
-        /// Bounded, because this is parsing a file a page can point at: header elements are tiny, and a
-        /// declared size that is not gets skipped rather than allocated.
+        /// 🔴 <b>The payload is COPIED.</b> Handing the child the same stream leaves the parent's position
+        /// advanced by the child's reads and its BUDGET untouched, so the parent reads past the element it
+        /// delegated: a video track carrying a nested <c>Video</c> element swallows the AUDIO track after
+        /// it, and the file reports one stream instead of two. Copying advances both position and budget
+        /// by exactly <paramref name="size"/>, whatever the child reads. Bounded too — this parses a file
+        /// a page can point at, so an over-large declared size is skipped rather than allocated.
         /// </para>
         /// </summary>
         public EbmlReader Nested(long size)
@@ -425,8 +375,8 @@ public static class MatroskaProbe
             if (!TryReadVariableInt(keepMarker: false, out var rawSize)) return false;
 
             id = rawId;
-            // An "unknown size" element (all value bits set) means "to the end of the parent", which for a
-            // header walk is the same as "everything left".
+            // An "unknown size" element (all value bits set) means "to the end of the parent" — for a
+            // header walk, everything left.
             size = rawSize >= long.MaxValue ? _remaining : Math.Min((long)rawSize, _remaining);
             return true;
         }
@@ -486,8 +436,8 @@ public static class MatroskaProbe
 
         /// <summary>
         /// EBML's variable-length integer: the first set bit of the first byte says how many bytes it
-        /// spans. An ID keeps that marker (it is part of the id); a SIZE drops it (it is not part of the
-        /// value) — conflating the two is the classic way an EBML parser reads every element wrong.
+        /// spans. An ID keeps that marker; a SIZE drops it — conflating the two is the classic way an
+        /// EBML parser reads every element wrong.
         /// </summary>
         private bool TryReadVariableInt(bool keepMarker, out ulong value)
         {
@@ -520,8 +470,8 @@ public static class MatroskaProbe
                 allBitsSet &= next == 0xFF;
             }
 
-            // "Unknown size" is every value bit set; report it as a sentinel the caller turns into
-            // "the rest of the parent".
+            // "Unknown size" is every value bit set; a sentinel the caller turns into "the rest of the
+            // parent".
             if (!keepMarker && allBitsSet) value = ulong.MaxValue;
             return true;
         }

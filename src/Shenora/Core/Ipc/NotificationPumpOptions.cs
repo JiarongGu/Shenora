@@ -1,4 +1,4 @@
-using Shenora;
+using Microsoft.Extensions.Logging;
 using Shenora.Core.Events;
 
 namespace Shenora.Core.Ipc;
@@ -41,5 +41,5 @@ public sealed record NotificationPumpOptions
     public Func<IpcNotification, bool>? Filter { get; init; }
 
     /// <summary>Diagnostics sink.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 }

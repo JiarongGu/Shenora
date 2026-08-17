@@ -108,7 +108,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
 
   /** Pick an existing file. Available on every shell. */
   openFile(options?: OpenFileOptions): Promise<FileDialogResult> {
-    return this.send<FileDialogResult>('OPEN_FILE', { payload: { options } });
+    return this.send('OPEN_FILE', { payload: { options } });
   }
 
   /**
@@ -118,7 +118,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * word with a different guarantee, which is why there is no portable version of it.
    */
   openFolder(options?: OpenFolderOptions): Promise<FileDialogResult> {
-    return this.send<FileDialogResult>('OPEN_FOLDER', { payload: { options } });
+    return this.send('OPEN_FOLDER', { payload: { options } });
   }
 
   /**
@@ -127,7 +127,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * expression; use {@link saveText} in portable code, which also works on the desktop.
    */
   saveFile(options?: SaveFileOptions): Promise<FileDialogResult> {
-    return this.send<FileDialogResult>('SAVE_FILE', { payload: { options } });
+    return this.send('SAVE_FILE', { payload: { options } });
   }
 
   /**
@@ -139,7 +139,7 @@ export class FileDialogs extends BaseModuleService<FileDialogRequests> {
    * host's own `IFileDialogs.SaveAsync`, where it never enters a message.
    */
   saveText(text: string, options?: SaveFileOptions): Promise<FileDialogResult> {
-    return this.send<FileDialogResult>('SAVE_TEXT', { payload: { text, options } });
+    return this.send('SAVE_TEXT', { payload: { text, options } });
   }
 }
 

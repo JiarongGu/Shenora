@@ -1,54 +1,34 @@
-using Shenora.Core.Ipc;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// The <see cref="IMediaPlayer"/> STATE MACHINE, with the platform left abstract — so a shell writes only
-/// the part that is genuinely its own.
-/// <para>
-/// <b>Extracted from two shipping implementations, not designed ahead of them</b> (owner, 2026-08-08).
-/// <c>IosMediaPlayer</c> (AVPlayer) and <c>WindowsMediaPlayer</c> (Media Foundation) were written
-/// independently and converged on the same ~150 lines of bookkeeping: a lock around five fields, a status
-/// snapshot, a deferred rate, an open that completes on a platform callback, and guarded event raising.
-/// What differs between them is about forty lines each. This holds the common half, and it paid for itself
-/// immediately: <c>AndroidMediaPlayer</c> landed the same day and inherited all of it rather than
-/// rediscovering it.
-/// </para>
-/// <para>
-/// 🔴 <b>Four invariants live here because BOTH implementations had to learn them separately, and each is
-/// invisible when wrong.</b> They are the reason this class is worth its keep:
-/// </para>
+/// The <see cref="IMediaPlayer"/> STATE MACHINE, with the platform left abstract.
+/// <para>🔴 <b>Four invariants live here, and each is invisible when broken:</b></para>
 /// <list type="number">
-///   <item><b>A terminal state is never overwritten by a platform transition.</b> Every platform drives its
-///   session to "paused" immediately after it ends or fails, so a mapping that trusts the platform erases
-///   <see cref="MediaPlayerState.Ended"/> and <see cref="MediaPlayerState.Failed"/> microseconds after
-///   raising them — a UI sees "finished" flicker to "paused at the end", and a failed open reports as a
-///   healthy paused player carrying an error string nothing displays.</item>
+///   <item><b>A terminal state is never overwritten by a platform transition.</b> Every platform drives
+///   its session to "paused" once it ends or fails, erasing <see cref="MediaPlayerState.Ended"/> and
+///   <see cref="MediaPlayerState.Failed"/> microseconds after they are raised — a failed open then reports
+///   as a healthy paused player carrying an error string nothing displays.</item>
 ///   <item><b>A rate set while paused is remembered, not applied.</b> On AVFoundation rate and transport
-///   are the SAME control, so pushing a remembered 1.5× would silently start a paused player. Deferring on
-///   every platform makes all shells observably identical, which is what the contract promises.</item>
+///   are the SAME control, so pushing a remembered 1.5× would silently start a paused player.</item>
 ///   <item><b>A cancelled open leaves the player <see cref="MediaPlayerState.Empty"/>, not half-loaded</b>,
-///   so a caller that retries does not inherit the previous attempt's source.</item>
-///   <item><b>An abandoned open completes EXCEPTIONALLY rather than hanging.</b> Re-opening or closing
-///   while an open is in flight used to leave its caller awaiting forever — no exception, no log line. That
-///   is the exact shape of the defect that made <c>MediaPlayer.OpenAsync</c> wait for a
-///   <c>PLAYER_REPORT</c> nothing sent.</item>
+///   so a retry does not inherit the previous attempt's source.</item>
+///   <item><b>An abandoned open completes EXCEPTIONALLY.</b> Re-opening or closing while an open is in
+///   flight otherwise leaves its caller awaiting forever — no exception, no log.</item>
 /// </list>
 /// <para>
-/// <b>What a shell supplies:</b> the platform handle, four transport verbs, position/duration, and the
-/// callbacks that tell this class what the platform decided —
+/// <b>A shell supplies</b> the platform handle, four transport verbs, position/duration, and the callbacks
 /// <see cref="OnOpened"/> / <see cref="OnEnded"/> / <see cref="OnFailed"/> / <see cref="OnPlatformState"/>.
-/// Everything else is inherited.
 /// </para>
 /// <para>
-/// ⚠ <b>This is not the page-backed <see cref="MediaPlayer"/>'s base.</b> That one's "platform" is a
-/// webview element reporting over IPC, and its lifecycle is driven from the far side of a wire rather than
-/// by a handle this process owns — a different shape, deliberately left alone.
+/// ⚠ Not the page-backed <see cref="MediaPlayer"/>'s base — that one's "platform" is a webview element
+/// reporting over IPC.
 /// </para>
 /// </summary>
 public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
 {
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly object _gate = new();
 
     private TaskCompletionSource? _opening;
@@ -60,7 +40,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
-    protected MediaPlayerBase(Action<string>? log = null) => _log = log;
+    protected MediaPlayerBase(ILogger? log = null) => _log = log;
 
     /// <inheritdoc />
     public event Action<MediaPlayerStatus>? StateChanged;
@@ -75,8 +55,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
                 return new MediaPlayerStatus
                 {
                     State = _state,
-                    // Not asked of the platform when there is no source: a released handle answers with
-                    // whatever it last held, which reads as a position that survived CloseAsync.
+                    // A released handle answers with whatever it last held — a position outliving CloseAsync.
                     Position = _hasSource ? Try(() => PositionCore, TimeSpan.Zero, nameof(PositionCore)) : TimeSpan.Zero,
                     Duration = _hasSource ? Try(() => DurationCore, null, nameof(DurationCore)) : null,
                     Rate = _rate,
@@ -87,33 +66,28 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     }
 
     /// <summary>
-    /// What this player currently believes it is doing — without asking the platform for a position or a
-    /// duration, which <see cref="Status"/> does.
-    /// <para>
-    /// For a platform callback that is only meaningful in one state: AVFoundation reports "the buffer ran
-    /// dry" whether or not anything was playing, so a handler that forwarded it unconditionally would put a
-    /// PAUSED player into <see cref="MediaPlayerState.Buffering"/> and leave it there.
-    /// </para>
+    /// What this player believes it is doing, without asking the platform for a position or duration. For a
+    /// callback meaningful in only one state: AVFoundation reports "the buffer ran dry" whether or not
+    /// anything was playing, so forwarding it blindly leaves a PAUSED player
+    /// <see cref="MediaPlayerState.Buffering"/> for good.
     /// </summary>
     protected MediaPlayerState State { get { lock (_gate) return _state; } }
 
     /// <inheritdoc />
-    public double Rate
+    public Task SetRateAsync(double rate, CancellationToken cancellationToken = default)
     {
-        get { lock (_gate) return _rate; }
-        set
+        if (rate <= 0) throw new ArgumentOutOfRangeException(nameof(rate), "Rate must be greater than zero.");
+        cancellationToken.ThrowIfCancellationRequested();
+        bool playing;
+        lock (_gate)
         {
-            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Rate must be greater than zero.");
-            bool playing;
-            lock (_gate)
-            {
-                _rate = value;
-                playing = _state == MediaPlayerState.Playing;
-            }
-
-            // Invariant 2 — see the type's remarks. Only pushed while PLAYING.
-            if (playing) Try(() => ApplyRateCore(value), nameof(Rate));
+            _rate = rate;
+            playing = _state == MediaPlayerState.Playing;
         }
+
+        // Invariant 2: only pushed while PLAYING.
+        if (playing) Try(() => ApplyRateCore(rate), nameof(SetRateAsync));
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -185,8 +159,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
             _state = MediaPlayerState.Playing;
         }
 
-        // The remembered rate is handed to the platform WITH the start, so a player configured at 1.5× while
-        // paused starts at 1.5× rather than starting at 1.0 and visibly stepping up.
+        // The remembered rate goes WITH the start, so a player set to 1.5× while paused starts there.
         Try(() => PlayCore(rate), nameof(PlayAsync));
         Raise();
         return Task.CompletedTask;
@@ -220,8 +193,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         lock (_gate)
         {
             if (!_hasSource) throw new MediaPlayerException("No media source is open.");
-            // Seeking out of Ended makes it resumable again; leaving it Ended makes a UI that seeks
-            // backwards from the end still show "finished".
+            // Left Ended, a UI that seeks back from the end still shows "finished".
             if (_state == MediaPlayerState.Ended) _state = MediaPlayerState.Paused;
         }
 
@@ -237,9 +209,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         }
         catch (Exception ex)
         {
-            // A failed seek is not a failed PLAYER: the source is still open at its old position, and a
-            // caller can seek again. Logged rather than thrown, like every other transport verb here.
-            Log(() => $"MediaPlayer.SeekAsync failed ({ex.GetType().Name}: {ex.Message}).");
+            // A failed seek is not a failed PLAYER — the source is still open at its old position.
+            Log(() => "MediaPlayer.SeekAsync failed.", ex);
         }
     }
 
@@ -273,8 +244,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
             _state = MediaPlayerState.Paused;
         }
 
-        // Positioned as part of OPENING rather than by a seek afterwards — the difference a caller sees is
-        // whether a resumed item visibly starts at zero and jumps.
+        // Part of OPENING, not a seek afterwards: a resumed item otherwise starts at zero and jumps.
         if (startAt > TimeSpan.Zero) Try(() => ApplyStartAt(startAt), nameof(ApplyStartAt));
 
         Raise();
@@ -303,14 +273,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
 
     /// <summary>
     /// The platform changed transport state on its own — buffering, resuming, stalling.
-    /// <para>
-    /// 🔴 Invariant 1: a TERMINAL state wins. See the type's remarks for why this guard is the difference
-    /// between a correct player and one that erases its own outcome.
-    /// </para>
-    /// <para>
-    /// A transition that matches what we already believe raises NOTHING: the contract says
-    /// <see cref="StateChanged"/> is a transition and not a tick.
-    /// </para>
+    /// <para>🔴 Invariant 1: a TERMINAL state wins.</para>
+    /// <para>A transition matching what we already believe raises NOTHING: it is not a tick.</para>
     /// </summary>
     /// <param name="state">What the platform now reports, already mapped to the kit's vocabulary.</param>
     protected void OnPlatformState(MediaPlayerState state)
@@ -330,13 +294,13 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     protected abstract TimeSpan PositionCore { get; }
 
     /// <summary>
-    /// How long the source is, or null when the platform does not know — a live stream, or a source still
-    /// resolving. Only asked while a source is open.
+    /// How long the source is, or null when the platform does not know (a live stream, a source still
+    /// resolving). Only asked while a source is open.
     /// </summary>
     protected abstract TimeSpan? DurationCore { get; }
 
     /// <summary>
-    /// Begin opening. Returns as soon as the platform has accepted the source; readiness is signalled later
+    /// Begin opening. Returns once the platform has accepted the source; readiness is signalled later
     /// through <see cref="OnOpened"/> or <see cref="OnFailed"/>.
     /// </summary>
     /// <param name="source">The caller's source, for anything beyond the URI.</param>
@@ -379,9 +343,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     // ---- Shared plumbing.
 
     /// <summary>
-    /// A file path or an absolute URL, and nothing else. A relative string is REJECTED rather than resolved
-    /// against the process's working directory, which is not where an app's media lives — on a phone that
-    /// directory is not even writable.
+    /// A file path or an absolute URL, and nothing else. A relative string is REJECTED, never resolved
+    /// against the process's working directory — that is not where an app's media lives.
     /// </summary>
     private static Uri? ParseUri(string uri)
     {
@@ -413,11 +376,8 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     }
 
     /// <summary>
-    /// Raise <see cref="StateChanged"/> with a fresh snapshot.
-    /// <para>
-    /// ⚠ Guarded: a throwing handler is caught and logged rather than escaping into a platform callback,
-    /// where an exception is not catchable by anyone.
-    /// </para>
+    /// Raise <see cref="StateChanged"/> with a fresh snapshot. ⚠ A throwing handler is caught and logged
+    /// rather than escaping into a platform callback, where nobody can catch it.
     /// </summary>
     private void Raise()
     {
@@ -425,23 +385,16 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         if (handler is null) return;
         var status = Status;
         AppCallback.Run(() => handler(status),
-            ex => Log(() => $"A MediaPlayer state handler threw ({ex.GetType().Name}: {ex.Message})."));
+            ex => Log(() => "A MediaPlayer state handler threw.", ex));
     }
 
-    /// <summary>
-    /// Run a platform call, logging rather than throwing — the rule every transport verb follows.
-    /// <para>
-    /// PRIVATE deliberately: this class already wraps every <c>*Core</c> call, so a shell never needs it,
-    /// and a protected helper named <c>Try</c> would be permanent public surface with a name that says
-    /// nothing (the vocabulary rule in <c>generic-library</c>).
-    /// </para>
-    /// </summary>
+    /// <summary>Run a platform call, logging rather than throwing — the rule every transport verb follows.</summary>
     private void Try(Action action, string what)
     {
         try { action(); }
         catch (Exception ex)
         {
-            Log(() => $"MediaPlayer.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"MediaPlayer.{what} failed.", ex);
         }
     }
 
@@ -451,13 +404,13 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         try { return read(); }
         catch (Exception ex)
         {
-            Log(() => $"MediaPlayer.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"MediaPlayer.{what} failed.", ex);
             return fallback;
         }
     }
 
     /// <summary>Diagnostics, guarded, and only evaluated when a sink is attached.</summary>
-    protected void Log(Func<string> message) => AppCallback.Log(_log, message);
+    protected void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <inheritdoc />
     public void Dispose()
@@ -465,7 +418,7 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        // Handlers off FIRST, then the source, then the handle — each step assumes the previous one ran.
+        // Order matters: handlers off, then the source, then the handle.
         Try(DetachCore, nameof(DetachCore));
         Teardown();
         Try(DisposeCore, nameof(DisposeCore));

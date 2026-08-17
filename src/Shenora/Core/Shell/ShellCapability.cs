@@ -1,5 +1,4 @@
 using Shenora.Core.WebView;
-using Shenora.Core.Ipc;
 
 namespace Shenora.Core.Shell;
 
@@ -60,6 +59,21 @@ public static class ShellCapability
 
     /// <summary>A tray icon.</summary>
     public const string Tray = "tray";
+
+    /// <summary>
+    /// The host can put a FILE LIST on the clipboard, for the user to paste into a file manager.
+    /// <para>
+    /// A page needs this because no web API expresses it — and it is the one clipboard capability that
+    /// genuinely differs by shell, since a phone's pasteboard has no file list at all. Branch on it to
+    /// decide whether to render a Copy, rather than calling and catching the refusal.
+    /// </para>
+    /// <para>
+    /// ⚠ It says nothing about the rest of the clipboard: reading and writing text or bytes works on
+    /// every shell, and a page can already do the gesture-driven part itself through
+    /// <c>navigator.clipboard</c>.
+    /// </para>
+    /// </summary>
+    public const string ClipboardFiles = "clipboardFiles";
 
     /// <summary>
     /// The host can serve LOCAL FILES to the page through an <see cref="IWebViewInterceptor"/> — media,

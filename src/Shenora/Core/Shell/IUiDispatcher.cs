@@ -19,11 +19,10 @@ public enum UiTargetState
 }
 
 /// <summary>
-/// The ONE UI-thread marshalling seam. Specified in the design contract's package table from the
-/// start and never built until P5.5, which is why the pattern ended up hand-rolled 14 times across
-/// three packages with five mutually incompatible pre-handle policies — and why two of those copies
-/// carried real defects (see <c>docs/DECISIONS.md</c> D19/D20, and
-/// <c>.claude/knowledge/webview2-hosting.md</c> for the four invariants this owner keeps).
+/// The ONE UI-thread marshalling seam — the alternative being the pattern hand-rolled per call site with
+/// mutually incompatible pre-handle policies, which is how two such copies came to carry real defects.
+/// See <c>docs/DECISIONS.md</c> D19/D20, and <c>.claude/knowledge/webview2-hosting.md</c> for the four
+/// invariants this owner keeps.
 /// <para>
 /// Portable on purpose: an app service that needs "run this on the UI thread" depends on this
 /// interface, not on WinForms, so the same logic runs on another shell. The Windows implementation is
@@ -60,7 +59,7 @@ public interface IUiDispatcher
     /// <summary>
     /// <see cref="Post(Action)"/> for an async body. This overload exists so no caller ever
     /// hand-rolls a fire-and-forget async post: that is an <c>async void</c> continuation on the UI
-    /// thread whose exceptions are unobservable, which this codebase has already paid for once.
+    /// thread whose exceptions are unobservable.
     /// </summary>
     bool Post(Func<Task> work);
 

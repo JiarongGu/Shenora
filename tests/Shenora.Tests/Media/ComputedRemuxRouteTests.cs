@@ -9,6 +9,7 @@ using Shenora.Tests.TestSupport;
 // halves have to be the same file; a second builder could make them two files that merely look alike.
 using static Shenora.Tests.Media.Mp4RemuxerTests;
 
+using Shenora;
 namespace Shenora.Tests.Media;
 
 /// <summary>
@@ -138,7 +139,7 @@ public class ComputedRemuxRouteTests : IDisposable
         // Nothing is written by this path — a computed remux has no artifact — but the object is shared with
         // the routes that DO write, so it still carries one.
         CacheRoot = Path.Combine(_root, "cache"),
-        Log = line => { lock (_log) _log.Add(line); },
+        Log = AppCallback.Logger(line => { lock (_log) _log.Add(line); }),
     };
 
     private string[] Log()
@@ -532,7 +533,7 @@ public class ComputedRemuxRouteTests : IDisposable
             Resolve = _ => "https://cdn.example/clip.mkv",
             AllowedRoots = [_sources],
             CacheRoot = Path.Combine(_root, "cache"),
-            Log = line => { lock (_log) _log.Add(line); },
+            Log = AppCallback.Logger(line => { lock (_log) _log.Add(line); }),
         });
         var nextRan = false;
         UseTail(interceptor, () => nextRan = true);

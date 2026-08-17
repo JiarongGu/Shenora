@@ -36,10 +36,18 @@
 Shenora
 
 # ── Platform / tech nouns (the "using the tech we have" half) ─────────────────────────────────────
-Api
 App
 Application
+# `SessionAuthRequest` — an HTTP 401 challenge, which is the PLATFORM's word: WebView2 raises
+# `BasicAuthenticationRequested` and the header is `WWW-Authenticate`. A session must be able to answer
+# one or the page stops, so the mechanism is unavoidable; naming it anything else would be the kit
+# inventing vocabulary for something the web already named.
+Auth
 Browser
+# `SessionCertificateRequest` — a client TLS certificate. Same reasoning as Auth: the platform's own
+# `ClientCertificateRequested`, unavoidable on a mutual-TLS intranet, and there is no more generic word
+# for a certificate than "certificate".
+Certificate
 Clipboard
 Cookie
 Dpi
@@ -73,6 +81,17 @@ Android
 Ios
 Path
 Paths
+# `SessionNavigationResult` — the browser's own word (`NavigationStarting`, `NavigationCompleted`,
+# `CoreWebView2NavigationCompletedEventArgs`), for a top-level document load. The concept has been
+# first-class in this surface all along — `NavigationGuard`, `NavigationTimeout`, `NavigateAsync` — and
+# only now needs a TYPE, so the word is admitted rather than paraphrased: "load" and "page change" are
+# both vaguer and neither is what the platform calls it.
+Navigation
+# `SessionPermissionRequest` — the platform's own word (`PermissionRequested`,
+# `CoreWebView2PermissionKind`), for the capability gate a page passes through to reach a camera,
+# microphone, geolocation or the clipboard. Same reasoning as Auth and Certificate above: the mechanism
+# is the browser's, and every synonym ("access", "grant") is vaguer for no benefit.
+Permission
 Shell
 Ui
 Url
@@ -91,6 +110,11 @@ Icon
 Menu
 Optimized
 Panel
+# `Placement` (2026-08-16) — in `WindowPlacement`, how a window is sized against its monitor. Win32's
+# own word for it (`WINDOWPLACEMENT`, `GetWindowPlacement`), which the frameless chrome already calls,
+# so this is platform vocabulary rather than a new coinage. It replaced a persisted `bool Maximized`
+# that could not grow to say FULL SCREEN.
+Placement
 Splash
 Tray
 Viewport
@@ -103,7 +127,6 @@ Instance
 Batch
 Bridge
 Bus
-Call
 Categories
 Command
 Dispatcher
@@ -149,6 +172,7 @@ Module
 Pool
 Provider
 Registry
+Relay
 Root
 Runner
 Scoped
@@ -175,6 +199,11 @@ Report
 Result
 Source
 State
+# `Verdict` (2026-08-16) — in `MediaStreamVerdict`, what the planner CONCLUDED about one stream. A
+# judgement noun with no domain content, sitting beside `Result`/`State`/`Status` already here. It is
+# distinct from them on purpose: a Result is what an operation produced, a State is what something IS
+# now, a Verdict is what an analysis DECIDED — including that it was a guess.
+Verdict
 Status
 Target
 Unhandled
@@ -185,13 +214,32 @@ Custom
 Deferred
 Drop
 Embedded
+# `Format` (2026-08-16) — in `SessionFrameFormat`, which encoding a captured frame is in. An encoding
+# is transport vocabulary in the same sense `Zip` (admitted above as "the CONTAINER FORMAT") is: it
+# names how bytes are laid out, never what they depict. It replaced a member literally called `Jpeg`,
+# which froze one platform choice into the surface — the screencast offers both.
+# `Codec` (2026-08-16) — in `MediaStreamCodec`, a codec name optionally narrowed to a PROFILE. Format
+# vocabulary of the same kind as `Format` above: it names how bytes are encoded, never what they depict.
+# ⚠ The type is `MediaStreamCodec` and not `MediaCodec` for a hard reason, recorded so nobody "tidies"
+# it back: `Android.Media.MediaCodec` is the platform SDK's own type, and the shorter name collided
+# with it on the one platform that most needs this to work.
+Codec
+Format
 Frame
 Input
 Interaction
 Interactive
 Key
+# `Launch` + `Process` (2026-08-16) — in `ProcessLaunchOptions`, which replaced
+# `LaunchProcess(string, string?, string?)` -> void. Both are OS vocabulary of the plainest kind: a
+# process is a kernel object and launching one is what a shell does. `Launcher` was already admitted
+# below on exactly that basis; the lexicon splits whole PascalCase segments, so the verb needed its own
+# entry. Note what this does NOT admit: no Install, Update, Elevate or Service noun — the record carries
+# what to run and where, and an app's REASON for running it stays the app's.
+Launch
 Launcher
 Pointer
+Process
 Region
 Render
 Resource
@@ -264,6 +312,13 @@ Lease
 Lock
 Locker
 Manager
+# `Merge` (D71 piece 5) — joining produced pieces into one file. Generic file-operation vocabulary, the
+# same shelf as Move and Replace: it names what happens to BYTES, not what the bytes are for. It arrived
+# over `Artifact`, which this gate rejected and was right to — "artifact" says a thing is an output
+# without saying what was done to it, so `SegmentArtifactResult` could not tell an adopter whether it had
+# been re-encoded, copied or renamed. ⚠ Watch it the way `Pack` is watched: `Merge` must keep meaning the
+# byte join. A `MergePolicy` or `MergeScheduler` would be the kit growing a strategy nobody asked for.
+Merge
 Move
 Replace
 # `Replacement` (2026-08-03) is the noun form of Replace, already here as the queue's FileChange.
@@ -347,7 +402,6 @@ Plan
 Planner
 Policy
 Action
-Cache
 Key
 Probe
 Result
@@ -426,8 +480,6 @@ Remuxer
 #     really is two indices), and `Extent` or `Placement` name nothing the reader already has.
 # ⚠ The watch here is the same one `Mp4` carries: these describe a COPY. The moment a type here describes
 # a sample being decoded, resampled or re-encoded, the kit has grown the engine D42 puts out of scope.
-Sample
-Span
 # `Writer` (2026-08-07) — in `IMediaContainerWriter`, the MUXER seam. Admitted because it names a MECHANISM
 # and nothing else: something that writes a container. The reasoning for wanting the seam at all is worth
 # recording because it is not the obvious one — `MediaConversionOptions.Convert` already accepts a delegate,
@@ -446,7 +498,6 @@ Writer
 # ⚠ Watch it the same way: the moment this type starts INTERPRETING a frame's content rather than its
 # position, or deciding what belongs in a range rather than being told one, it has grown the engine D42 puts
 # out of scope.
-Reader
 # `Computed` + `Remux` (2026-08-12) — in `ComputedRemuxExtensions`, the route that serves an MP4 over HTTP
 # ranges WITHOUT ever writing one (D71). Both words describe the mechanism, and between them they are the
 # only honest way to say what this route is: the OTHER delivery routes produce a file and then serve it.
@@ -670,7 +721,6 @@ Axis
 # from a source file) rather than the feature that caches it — the family shares this helper.
 Content
 Types
-Derived
 Files
 Options
 Extensions

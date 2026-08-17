@@ -325,6 +325,21 @@ back. Three consequences an adopter should design around:
   and only then hand it over, so an interrupted save leaves the user's previous document untouched — the
   same guarantee the desktop gets from `Files.BeginReplace`. That is the whole reason the shape is a
   callback rather than a path.
+- 🔴 **Android needs ONE line in your `MainActivity`, and without it a recreated activity loses the
+  picker's answer.** Forward activity results to the kit's relay before calling base:
+
+  ```csharp
+  protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+  {
+      Shenora.Android.ActivityResultRelay.Deliver(requestCode, (int)resultCode, data);
+      base.OnActivityResult(requestCode, resultCode, data);
+  }
+  ```
+
+  The kit cannot do this for you, and the reason is measured rather than stylistic: a MAUI activity
+  does not round-trip AndroidX instance state, so the registry mechanism that would need no wiring
+  cannot survive the host being recreated while the picker is open (a locale or font-scale change, or
+  an aggressive manifest). The framework's own routing can — but only your activity sees it.
 
 ### ⚠ AUTOPLAY DIFFERS BETWEEN THE SHELLS, and the kit does not level it
 

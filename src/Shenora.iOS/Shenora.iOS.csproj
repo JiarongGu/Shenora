@@ -9,14 +9,12 @@
     ⚠ It BUILDS ON WINDOWS and `dev.mjs verify` COMPILES IT. A `net10.0-ios` LIBRARY needs only the
     maui-ios workload and the Microsoft.iOS reference assemblies; a Mac is required to produce and run an
     .app BUNDLE, which is why `_ValidateXcodeVersion` is conditioned on `_CanOutputAppBundle`. Its API
-    baseline is gated here too, on Windows, beside Android's — see MetadataSurfaceTests. (Owner's call,
-    2026-08-03; `Shenora.slnx` carries the same reasoning at length.)
+    baseline is gated here too, on Windows, beside Android's — see MetadataSurfaceTests. (`Shenora.slnx`
+    carries the same reasoning at length.)
 
-    🔴 This paragraph said the OPPOSITE on BOTH counts until 2026-08-13, and cited MetadataSurfaceTests —
-    the test that disproves it. That matters more than an ordinary stale comment because this file is where
-    someone checks whether an iOS change is safe to make from Windows: it denied a gate that had just
-    worked. `verify` is what caught a doc reference to `Java.IO.IOException` that only the iOS TFM rejects
-    (CS1574), during the Android body-throw fix.
+    ⚠ THIS IS WHERE SOMEONE CHECKS WHETHER AN IOS CHANGE IS SAFE TO MAKE FROM WINDOWS, so getting it wrong
+    costs more than an ordinary stale comment: it would deny a gate that works. `verify` compiles the iOS
+    TFM, which is what catches a doc reference only that TFM rejects (CS1574).
   -->
   <Import Project="..\Shenora.Mobile\Shenora.Mobile.props" />
 

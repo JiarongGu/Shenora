@@ -3,6 +3,7 @@ using Shenora.Core.WebView;
 using Shenora.Engine.Missions;
 using Shenora.Modules.Media;
 
+using Shenora;
 namespace Shenora.Sample.Maui;
 
 /// <summary>
@@ -137,7 +138,7 @@ internal static class ConversionRouteProbe
                 // whose `reason` is deliberately a TYPE NAME (`InvalidOperationException`) because exception
                 // text must not travel to a page. So the one route whose failures are hardest to diagnose
                 // was the one running blind.
-                Log = log,
+                Log = AppCallback.Logger(log),
 
                 // The app's own URL shape, exactly as an adopter would write it.
                 Resolve = uri =>

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using Shenora;
 using Shenora.Tests.TestSupport;
-using Shenora.Modules.Update;
+using Shenora.Engine.Update;
 using Shenora.Engine.Files;
 using Shenora.Core.Ipc;
 
@@ -148,19 +148,38 @@ public class UpdateStageTests
     }
 
     [Fact]
-    public async Task An_EMPTY_manifest_is_refused_rather_than_staged()
+    public async Task An_empty_RELEASE_manifest_is_refused_rather_than_staged()
     {
-        // ManifestDiff's deferred guard arriving. An empty manifest tells an applier to remove every
-        // tracked path, so a manifest that "loaded" to nothing would destroy the install as the
-        // SUCCESSFUL outcome of an update. Refused where a manifest first meets the disk.
+        // An empty manifest tells an applier to remove every tracked path, so one that "loaded" to
+        // nothing would destroy the install as the SUCCESSFUL outcome of an update.
+        //
+        // 🔴 THE OBJECT MATTERS. This guard belongs to `staged/manifest.json` — the full RELEASE manifest
+        // ApplyAsync computes removals from — and it used to be enforced against the CHANGESET instead,
+        // which is a different thing entirely. That defended the wrong object and made a removals-only
+        // release impossible to stage; see the round trip below.
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        stage.Begin();
+        PublishReleaseManifest(stage);   // present, readable, and listing nothing
+
+        var status = await stage.CommitAsync(new UpdateManifest { Version = "2.0", Files = [] });
+
+        Assert.False(status.Pending);
+        Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task An_empty_changeset_with_NO_release_manifest_still_publishes_no_marker()
+    {
+        // The other half: dropping the changeset guard must not let a caller stage nothing at all. The
+        // release manifest is what an applier needs, and its absence is still refusal.
         using var dir = TempDir.Create();
         var stage = StageIn(dir);
         stage.Begin();
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(
-            () => stage.CommitAsync(new UpdateManifest { Version = "2.0", Files = [] }));
+        var status = await stage.CommitAsync(new UpdateManifest { Version = "2.0", Files = [] });
 
-        Assert.Contains("lists no files", error.Message, StringComparison.Ordinal);
+        Assert.False(status.Pending);
         Assert.False(StageIn(dir).GetStatus().Pending);
     }
 
@@ -273,10 +292,52 @@ public class UpdateStageTests
 
         var status = await stage.FetchAsync(new FakeSource(same, new() { ["app.exe"] = "v1" }), same);
 
-        // Not "an empty stage" — no stage at all. Manufacturing one would trip CommitAsync's own
-        // empty-manifest guard and report a failure that is really a no-op.
+        // Not "an empty stage" — no stage at all. ⚠ This is the case that LOOKED like coverage for the
+        // one below and is not: same manifest both sides means nothing to download AND nothing to
+        // remove, so not-pending is correct here and wrong there.
         Assert.False(status.Pending);
         Assert.False(StageIn(dir).GetStatus().Pending);
+    }
+
+    [Fact]
+    public async Task A_release_whose_only_change_is_a_DELETION_still_stages_and_applies()
+    {
+        // 🔴 THE DEFECT THIS EXISTS FOR: FetchAsync returned not-pending whenever there was nothing to
+        // DOWNLOAD, so a release that only drops files never staged and never applied. The stale files
+        // stayed on disk forever with no error anywhere — and a dropped-but-still-present assembly is
+        // still loadable, which is the whole reason a release drops one.
+        using var dir = TempDir.Create();
+        var stage = StageIn(dir);
+        var installed = Manifest(("app.exe", "v1"), ("libs/gone.dll", "obsolete"));
+        var release = Manifest(("app.exe", "v1"));
+
+        var status = await stage.FetchAsync(new FakeSource(release, new() { ["app.exe"] = "v1" }), installed);
+
+        Assert.True(status.Pending);
+
+        // Nothing was downloaded — the payload is genuinely empty — and the apply pass is driven by the
+        // release manifest that rode along instead.
+        Assert.False(File.Exists(Path.Combine(stage.StagedDirectory, "app.exe")));
+
+        // End to end: the dropped file is gone from a real install root and the kept one survives.
+        var install = dir.Combine("install");
+        Directory.CreateDirectory(Path.Combine(install, "libs"));
+        File.WriteAllText(Path.Combine(install, "app.exe"), "v1");
+        File.WriteAllText(Path.Combine(install, "libs", "gone.dll"), "obsolete");
+        // The BASELINE the applier diffs against — removals are "installed minus release", so without it
+        // an apply legitimately removes nothing (a first install must not delete anything).
+        File.WriteAllText(Path.Combine(install, "manifest.json"), installed.ToJson());
+
+        var outcome = await stage.ApplyAsync(install);
+
+        Assert.True(outcome.Applied, outcome.Failure);
+        Assert.Equal(["libs/gone.dll"], outcome.Removed);
+        // Only the new baseline — no payload was written, because there was none to write. That pair is
+        // the whole shape of a removals-only release.
+        Assert.Equal(["manifest.json"], outcome.Written);
+        Assert.True(File.Exists(Path.Combine(install, "app.exe")));
+        Assert.False(File.Exists(Path.Combine(install, "libs", "gone.dll")));
+        Assert.False(StageIn(dir).GetStatus().Pending);   // the stage is cleared after applying
     }
 
     [Fact]

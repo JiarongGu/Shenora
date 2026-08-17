@@ -183,10 +183,15 @@ public sealed record SessionKeyInput(string Key) : SessionInput
 }
 
 /// <summary>
-/// The client's content box, mirrored 1:1 into the page through device metrics ALONE — never a
+/// The client's content box, mirrored into the page through device metrics ALONE — never a
 /// physical resize (that mechanic is a kept primitive, see <see cref="StreamingSession"/>). Send this
 /// whenever the viewer is resized; the session caches the result so pointer fractions need no
 /// round-trip to the page.
+/// <para>
+/// ⚠ <b>1:1 WITHIN THE SUPPORTED RANGE, not unconditionally</b> — this used to say "mirrored 1:1" flat,
+/// and a viewer outside <see cref="SessionViewport"/>'s bounds is fitted to the nearest edge instead.
+/// That type documents the numbers; they are not repeated here so the two cannot drift apart.
+/// </para>
 /// </summary>
 /// <param name="Width">Client content-box width in CSS px.</param>
 /// <param name="Height">Client content-box height in CSS px.</param>

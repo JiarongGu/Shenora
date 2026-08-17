@@ -1,78 +1,22 @@
+using Microsoft.Extensions.Logging;
+
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// The engine that PRODUCES a stream's segments — the half this kit does not ship, in the shape a
-/// <see cref="SegmentStream"/> needs it.
-///
+/// The engine that PRODUCES a stream's segments, in the shape a <see cref="SegmentStream"/> needs it. Not a
+/// converter: it STARTS at an arbitrary point and keeps writing numbered pieces until killed, where a
+/// converter answers only once the whole source has been read.
 /// <para>
-/// <b>Deliberately not a converter, and the difference is the whole point of the feature.</b> A converter is
-/// asked for one finished file and answers when the entire source has been read; a segment engine is asked
-/// to START at an arbitrary point and keep writing numbered pieces until it is killed. An hour-long source is
-/// an hour-long wait through the first shape and a few seconds through this one.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>Why a seam instead of the route just launching a tool:</b> the route, the manifest, the cache and the
-/// rolling-window policy are portable; the process launch is not. iOS forbids <c>fork</c>/<c>exec</c>
-/// outright, so an engine there cannot be a process at any price — it has to be an in-process shim behind
-/// this same interface. Keeping the split here means the policy is written once and only the launch is
-/// per-platform, which is the same split <c>MediaConversionOptions.Convert</c> already makes (D42).
-/// </para>
-///
-/// <para>
-/// <b>The kit ships a DEFAULT that works, and this seam is the escape hatch — not the only door</b> (D52).
-/// The default is built from things that cost nothing: a managed remux (no decoding at all) and the
-/// PLATFORM's own codecs, which encode as well as decode. So an app gets working playback without
-/// supplying anything, and implements this only when it needs reach the default does not have.
-/// </para>
-/// <para>
-/// ⚠ What the kit still never does is VENDOR a third-party engine — that is D42's actual objection
-/// (megabytes every consumer pays for) and D51's (a licence every consumer inherits). A default costing
-/// zero bytes and zero obligations contradicts neither.
+/// A seam because only the process launch is per-platform: iOS forbids <c>fork</c>/<c>exec</c>, so an engine
+/// there must be an in-process shim behind this same interface (D42).
 /// </para>
 /// </summary>
 /// <remarks>
-/// 🔴 <b>WHERE THIS SITS relative to the other seams, because "the app plugs in an encoder" describes three
-/// things in this package and they are NOT interchangeable.</b> One primitive, two compositions:
-/// <list type="table">
-/// <item>
-///   <term><see cref="IMediaStreamConversion"/></term>
-///   <description>THE PRIMITIVE. One stream in, one stream out, frame by frame. Knows nothing about
-///   containers, files or routes.</description>
-/// </item>
-/// <item>
-///   <term><c>MediaConversionOptions.Convert</c></term>
-///   <description>ONE FINISHED FILE. A delegate, so an app that wants a native muxer
-///   (<c>AVAssetWriter</c>, <c>MediaMuxer</c>) simply supplies its own.
-///   <c>new Mp4Remuxer().ToConverter()</c> is the kit's DEFAULT for it, built on the primitive above.</description>
-/// </item>
-/// <item>
-///   <term><see cref="ISegmentEngine"/> (this)</term>
-///   <description>A ROLLING WINDOW of numbered pieces, started at an arbitrary index and killed on
-///   dispose. Not a converter: a converter answers when the whole source has been read, and an hour-long
-///   file is an hour-long wait through that shape and a few seconds through this one.</description>
-/// </item>
-/// </list>
-/// <para>
-/// ⚠ <b>So the kit has ONE encoder seam, not two.</b> This interface and the conversion delegate look alike
-/// and are not — they differ in WHEN output is usable, which is the whole reason both exist. A default
-/// segment engine would be a composition of the primitive plus a transport-stream writer.
-/// </para>
-/// <para>
-/// 🔴 <b>REVERSED 2026-08-12 BY D71: the kit WILL ship a default segment engine, because something asked.</b>
-/// This remark used to say the absence was "a DECISION rather than a backlog item (D54)" — a native player
-/// opens the source file directly and never needs a rolling window, so segmentation was only for PROGRESSIVE
-/// STREAMING to a page that wants it. It made itself falsifiable in the next breath: <i>"something must ASK
-/// before one is written (D63)"</i>. The owner asked, and the requirement is that an adopting frontend never
-/// feels the layer at all — which an app-supplied-only engine cannot deliver.
-/// <para>
-/// The default is the composition this remark already predicted: the platform codecs behind
-/// <see cref="IMediaStreamConversion"/> plus a fragment writer. <b>D51 is untouched</b> — no engine bytes
-/// ship, and an app past the platform's reach still supplies its own. ⚠ <b>Nothing implements this
-/// interface YET</b>, so it remains a capability nothing consults until that lands (D63); the difference is
-/// that it is now scheduled work rather than a settled no.
-/// </para>
-/// </para>
+/// ⚠ <b>Three different things here are called "the app plugs in an encoder" and are NOT interchangeable</b> —
+/// this one, <see cref="IMediaStreamConversion"/> and <c>MediaConversionOptions.Convert</c>; they differ in
+/// WHEN output becomes usable (<c>docs/design/media.md</c>, "The four seams"). The kit SHIPS a default engine
+/// (D71) that copies every stream MP4 can carry and re-encodes only what it cannot (D76), so implement this
+/// only for reach the default does not have (D52).
 /// </remarks>
 public interface ISegmentEngine
 {
@@ -83,46 +27,53 @@ public interface ISegmentEngine
     string Describe();
 
     /// <summary>
-    /// How long the source plays, or null when it cannot be read.
-    /// <para>
-    /// ⚠ The manifest is computed from this ALONE — no segment has to exist for the whole playlist to be
-    /// declared, which is what makes the scrub bar the right length and a seek anywhere expressible.
-    /// </para>
+    /// How long the source plays, or null when it cannot be read. ⚠ The manifest is computed from this ALONE:
+    /// no segment has to exist for the whole playlist to be declared.
     /// </summary>
     TimeSpan? DurationOf(string source);
 
     /// <summary>
     /// Does the source carry a PICTURE worth keeping (never an attached cover image)? Decides whether a run
-    /// needs a video encoder at all.
+    /// needs a video encoder.
     /// </summary>
     bool HasPicture(string source);
 
     /// <summary>
-    /// Does a produced SEGMENT actually contain a picture — frames, not merely a declared stream?
-    ///
+    /// WHERE this engine will cut, when it will not cut on the caller's grid — said HERE, once.
     /// <para>
-    /// 🔴 <b>A DIFFERENT QUESTION from <see cref="HasPicture"/>, and asking the wrong one ships a silent bug.
-    /// This is the single most valuable thing in this whole feature.</b> An encoder can accept every frame,
-    /// write nothing, and exit 0 — measured, not theorised: a hardware H.264 encoder advertised by both the
-    /// tool's own encoder list and the platform's codec list opened cleanly, mapped the stream, took every
-    /// frame, wrote <c>video:0KiB</c>, and exited 0. Every capability check an app can make said the encoder
-    /// was there.
+    /// 🔴 <b>The manifest and the producer must agree about every boundary, and only the engine knows them.</b>
+    /// A playlist states each segment's length before any exists; if the run cuts elsewhere, a seek lands at
+    /// the wrong moment and NOTHING reports it — the bytes are valid and the player believes the playlist.
     /// </para>
     /// <para>
-    /// ⚠ And <b>"has a video stream" is the wrong test</b>, because MPEG-TS names its streams in the PMT — so
-    /// a picture-less segment still declares <c>Video: h264 …</c>. What is missing is the SIZE. One bug, two
-    /// distinct predicates, which is why this is a separate member instead of a parameter.
+    /// <b>Return null for "I will hit your grid"</b>, as a re-encoding engine always can; the caller then plans
+    /// <see cref="SegmentPlan.Grid"/> itself. A COPYING run cannot: copied frames keep the original encoder's
+    /// keyframes (D76). ⚠ May be expensive — the kit's engine walks the source's frame index — and it runs on
+    /// the request asking for the manifest, so honour the token.
+    /// </para>
+    /// </summary>
+    /// <param name="source">The file the stream is for.</param>
+    /// <param name="segmentSeconds">The length the caller asked for. A derived plan aims at it rather than hitting it.</param>
+    /// <param name="cancellationToken">The request's own token.</param>
+    SegmentPlan? PlanSegments(string source, double segmentSeconds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Does a produced SEGMENT actually contain a picture — frames, not merely a declared stream?
+    /// <para>
+    /// 🔴 <b>A DIFFERENT QUESTION from <see cref="HasPicture"/>, and asking the wrong one ships a SILENT bug.</b>
+    /// A hardware encoder can open cleanly, accept every frame, write <c>video:0KiB</c> and exit 0, with every
+    /// capability check an app can make still saying the encoder is there. ⚠ <b>"Has a video stream" is the
+    /// wrong test</b>: a container declares its streams up front, so a picture-less segment still names
+    /// <c>Video: h264 …</c>. What is missing is the SIZE.
     /// </para>
     /// </summary>
     bool HasRenderedPicture(string segment);
 
     /// <summary>
     /// Begin producing segments, or null when this <see cref="SegmentRunRequest.Attempt"/> has no candidate
-    /// left to try — the caller then stops asking for this request.
-    /// <para>
-    /// The run keeps writing until it reaches the end of the source or is disposed. <b>Disposing must KILL
-    /// it</b>: a rolling window that leaks a process leaks a CPU and a file handle, on a phone, invisibly.
-    /// </para>
+    /// left to try — the caller then stops asking for this request. The run keeps writing until it reaches the
+    /// end of the source or is disposed. <b>Disposing must KILL it</b>: a rolling window that leaks a process
+    /// leaks a CPU and a file handle, on a phone, invisibly.
     /// </summary>
     ISegmentRun? Start(SegmentRunRequest request);
 }
@@ -130,65 +81,53 @@ public interface ISegmentEngine
 /// <summary>What one production run is asked to do.</summary>
 /// <param name="SourcePath">The original file. Already authorised against the allowed roots by the caller.</param>
 /// <param name="Directory">
-/// Where to write the output. Created by the caller, and re-created per restart.
-/// <para>
-/// 🔴 <b>TWO kinds of file, and both names are part of this contract</b> — see
-/// <see cref="SegmentRunRequest.InitSegmentName"/> and <see cref="SegmentRunRequest.SegmentExtension"/>. A
-/// run writes <c>seg{k}.m4s</c> for each segment AND one <c>init.mp4</c> carrying the tracks and their
-/// decoder configuration, because a fragment deliberately repeats neither.
-/// </para>
-/// <para>
-/// ⚠ <b>The init segment is written BESIDE THE FIRST FRAGMENT, not ahead of the run</b>, and a consumer must
-/// be prepared to wait for it exactly as it waits for a segment. The configuration it carries is knowable
-/// only once an encoder has produced output — writing it early yields a movie that opens and plays nothing.
-/// </para>
+/// Where to write the output. Created by the caller, and re-created per restart. A run writes
+/// <c>seg{k}.m4s</c> per segment (<see cref="SegmentRunRequest.SegmentExtension"/>) AND one <c>init.mp4</c>
+/// (<see cref="SegmentRunRequest.InitSegmentName"/>); both names are part of this contract.
+/// ⚠ <b>The init segment is written BESIDE THE FIRST FRAGMENT, not ahead of the run</b>, so a consumer must
+/// wait for it as it waits for a segment: its decoder configuration is knowable only once an encoder has
+/// produced output, and writing it early yields a movie that opens and plays nothing.
 /// </param>
 /// <param name="HasPicture">
 /// From <see cref="ISegmentEngine.HasPicture"/> — asked once and passed in, so a restart does not re-probe.
 /// </param>
 /// <param name="FirstSegment">
-/// The segment index to start at. The run seeks to <c>FirstSegment * SegmentSeconds</c> and numbers its
-/// output from there, so a seek anywhere in the source costs one restart and nothing else.
+/// The segment index to start at. The run seeks to <see cref="SegmentPlan.StartOf"/> and numbers its output
+/// from there, so a seek anywhere costs one restart and nothing else.
 /// </param>
-/// <param name="SegmentSeconds">
-/// The grid the manifest already declared. <b>Not negotiable by the engine</b> — the manifest, the muxer's
-/// segment time and any forced-keyframe expression must agree or the cuts are not where the playlist says.
-/// ⚠ A copy-without-re-encode mode cannot hit a fixed grid at all: it lands on the SOURCE's keyframes, whose
-/// durations are unknowable in advance, which makes a synthetic manifest illegal. Force keyframes, or do not
-/// claim the grid.
+/// <param name="Plan">
+/// The boundaries the manifest already declared — the engine's OWN answer coming back (whatever
+/// <see cref="ISegmentEngine.PlanSegments"/> returned, or the caller's grid when that was null).
+/// <b>Not negotiable, and never re-derived by the engine</b>: a run that cuts elsewhere produces segments
+/// whose numbers agree with the playlist and whose content does not, and nothing reports it.
 /// </param>
 /// <param name="Attempt">
 /// 0 for the first try. Bumped by the caller when a run produced nothing usable, so an engine with more than
-/// one encoder candidate can offer the next — a hardware-then-software ladder spread across restarts rather
-/// than walked inside one call.
+/// one encoder candidate can offer the next.
 /// </param>
 public sealed record SegmentRunRequest(
     string SourcePath,
     string Directory,
     bool HasPicture,
     int FirstSegment,
-    double SegmentSeconds,
+    SegmentPlan Plan,
     int Attempt)
 {
     /// <summary>
-    /// The initialisation segment's file name, written once per run into <see cref="Directory"/>.
-    /// <para>
-    /// It declares the tracks and carries their decoder configuration, which the numbered segments
-    /// deliberately do not repeat — so a consumer fetches this once and every segment afterwards is only
-    /// media. ⚠ A run that never writes it produces segments nothing can decode.
-    /// </para>
+    /// The initialisation segment's file name, written once per run into <see cref="Directory"/>. It declares
+    /// the tracks and their decoder configuration, which the numbered segments do not repeat. ⚠ A run that
+    /// never writes it produces segments nothing can decode.
     /// </summary>
     public const string InitSegmentName = "init.mp4";
 
     /// <summary>
     /// What a numbered segment is called: <c>seg{k}</c> plus this.
     /// <para>
-    /// 🔴 <b>fMP4 (<c>.m4s</c>) and NOT MPEG-TS, which this contract assumed until 2026-08-14.</b>
-    /// <c>isTypeSupported('video/mp2t')</c> answered <c>true</c> on both mobile shells and that claim is not
-    /// trusted — <c>canPlayType</c> produced exactly such a <c>true</c> for HLS the same day, and a
-    /// MediaSource append failure is SILENT. fMP4 is what every <c>MediaSource</c>/<c>ManagedMediaSource</c>
-    /// actually consumes, and it makes <see cref="ISegmentEngine.HasRenderedPicture"/> answerable: the
-    /// sample sizes are in the file, where MPEG-TS only ever declared the stream in its PMT.
+    /// 🔴 <b>fMP4 (<c>.m4s</c>), never MPEG-TS.</b> fMP4 is what every
+    /// <c>MediaSource</c>/<c>ManagedMediaSource</c> consumes, and it makes
+    /// <see cref="ISegmentEngine.HasRenderedPicture"/> answerable — the sample sizes are in the file, where
+    /// MPEG-TS only declares the stream in its PMT. ⚠ Do not trust <c>isTypeSupported('video/mp2t')</c>: it
+    /// answers <c>true</c> on both mobile shells, and a MediaSource append failure is SILENT.
     /// </para>
     /// </summary>
     public const string SegmentExtension = ".m4s";
@@ -199,4 +138,30 @@ public interface ISegmentRun : IDisposable
 {
     /// <summary>True once the run has finished or died — nothing more will ever appear on disk from it.</summary>
     bool HasExited { get; }
+}
+
+/// <summary>How to get the engine the kit ships (D71), for <see cref="SegmentStreamExtensions.UseSegmentStream"/>.</summary>
+public static class SegmentEngine
+{
+    /// <summary>
+    /// The kit's own engine: it copies every stream MP4 can carry and re-encodes only what it cannot,
+    /// using the codecs <paramref name="conversion"/> supplies (D76).
+    /// </summary>
+    /// <param name="conversion">
+    /// The shell's codecs — normally resolved from DI as <see cref="IMediaStreamConversion"/>.
+    /// ⚠ <b>Null is accepted and means the engine reports <see cref="ISegmentEngine.IsAvailable"/> =
+    /// false</b>, so <c>UseSegmentStream</c> mounts a route that answers "not complete" rather than
+    /// throwing. That is the honest answer on a platform with no codecs, and it means an app needs no
+    /// platform branch to ask the question.
+    /// </param>
+    /// <param name="log">Optional diagnostics. Guarded — a throwing sink cannot kill a production run.</param>
+    /// <returns>An engine to hand to <see cref="SegmentStreamExtensions.UseSegmentStream"/>.</returns>
+    /// <remarks>
+    /// A factory rather than a public class, so the engine's shape stays out of the SemVer surface while
+    /// the capability is reachable: an app needs an <see cref="ISegmentEngine"/> to mount the route, not
+    /// the concrete type. Implement <see cref="ISegmentEngine"/> yourself only for reach this does not
+    /// have (D52).
+    /// </remarks>
+    public static ISegmentEngine Default(IMediaStreamConversion? conversion, ILogger? log = null) =>
+        new DefaultSegmentEngine(conversion, log);
 }

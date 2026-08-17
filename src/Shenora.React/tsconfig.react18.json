@@ -1,0 +1,34 @@
+{
+  // 🔴 THE peerDependency FLOOR, TYPE-CHECKED — so `"react": ">=18"` is a claim something verifies
+  // rather than one nobody has run since it was written.
+  //
+  // WHAT THIS ACTUALLY CATCHES: an API that does not EXIST in React 18 — `useActionState`, `use`, and
+  // the rest of 19's additions. Sabotage-verified with exactly that, and the error is the useful one:
+  // "Module 'react' has no exported member 'useActionState'".
+  //
+  // ⚠ It is NOT about the ref typing, and the first version of this comment had that backwards. React
+  // 19 made `RefObject<T>` non-nullable and `useRef` argument-required, which makes 19 the STRICTER
+  // side — so `RefObject<HTMLMediaElement>` fails on 19 and passes on 18, not the reverse. The default
+  // typecheck already guards that direction. Stated because "19 changed the ref types" invites exactly
+  // the wrong conclusion about which check protects which consumer.
+  //
+  // ⚠ Sources only. The tests are excluded via tsconfig.build.json because they use
+  // @testing-library/react, whose own types track the installed React; type-checking them against a
+  // different React would measure the test harness rather than the shipped surface.
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    // The alias devDependency `@types/react18` is `npm:@types/react@^18`, so both type sets can sit in
+    // node_modules at once and this is a pure redirect — no install juggling, and the default build is
+    // untouched.
+    // ⚠ The FILE, not the folder. Under `moduleResolution: NodeNext` in ESM mode a directory is only
+    // loadable through a package.json `exports` map, and `@types/react` (a classic declaration-only
+    // package) has none — so a folder substitution is ATTEMPTED, silently fails, and falls through to
+    // the ordinary node_modules lookup, which finds React 19 again. That produced a check that could
+    // never fail; `--traceResolution` is what showed it.
+    "paths": {
+      "react": ["./node_modules/@types/react18/index.d.ts"]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 
 using Android.Media;
@@ -39,7 +40,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
     private const string SessionTag = "ShenoraPlayback";
 
     private readonly MediaSession _session;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly object _gate = new();
     private PlaybackCommands _supported;
     private long _lastPositionMs;
@@ -47,7 +48,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a platform callback.</param>
-    public AndroidPlaybackSession(Action<string>? log = null)
+    public AndroidPlaybackSession(ILogger? log = null)
     {
         _log = log;
         _session = new MediaSession(global::Android.App.Application.Context, SessionTag);
@@ -258,7 +259,7 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         // The ONE guard. These run on the session's handler thread, where an escaping exception has no
         // caller and takes the process with it.
         AppCallback.Run(() => handler(request),
-            ex => Log(() => $"[Shenora.Android] A {command} handler threw ({ex.GetType().Name}: {ex.Message})."));
+            ex => Log(() => $"[Shenora.Android] A {command} handler threw.", ex));
     }
 
     private void Try(Action action, string what)
@@ -266,11 +267,11 @@ public sealed class AndroidPlaybackSession : IPlaybackSession, IDisposable
         try { action(); }
         catch (Exception ex)
         {
-            Log(() => $"[Shenora.Android] MediaSession.{what} failed ({ex.GetType().Name}: {ex.Message}).");
+            Log(() => $"[Shenora.Android] MediaSession.{what} failed.", ex);
         }
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <inheritdoc />
     public void Dispose()

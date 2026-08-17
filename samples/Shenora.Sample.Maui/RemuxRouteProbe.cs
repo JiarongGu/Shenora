@@ -2,6 +2,7 @@ using Shenora.Core.WebView;
 using Shenora.Engine.Missions;
 using Shenora.Modules.Media;
 
+using Shenora;
 namespace Shenora.Sample.Maui;
 
 /// <summary>
@@ -214,7 +215,7 @@ internal static class RemuxRouteProbe
 			},
 			AllowedRoots = [sourceRoot],
 			CacheRoot = cache,
-			Log = log,
+			Log = AppCallback.Logger(log),
 		});
 	}
 

@@ -1,5 +1,6 @@
 using Shenora.Core.WebView;
 
+using Shenora;
 namespace Shenora.Tests.Core;
 
 /// <summary>
@@ -137,7 +138,7 @@ public class BoundedBodyStreamTests
     public void A_read_that_THROWS_reports_how_short_the_body_is()
     {
         var lines = new List<string>();
-        using var body = new BoundedBodyStream(new FailsAfter(4), 10, lines.Add);
+        using var body = new BoundedBodyStream(new FailsAfter(4), 10, AppCallback.Logger(lines.Add));
 
         Assert.Equal(4, body.Read(new byte[4], 0, 4));
         Assert.Throws<IOException>(() => body.Read(new byte[4], 0, 4));
@@ -174,7 +175,7 @@ public class BoundedBodyStreamTests
     public void A_body_that_completes_reports_NOTHING()
     {
         var lines = new List<string>();
-        using var body = new BoundedBodyStream(new Tracked([1, 2, 3, 4]), 4, lines.Add);
+        using var body = new BoundedBodyStream(new Tracked([1, 2, 3, 4]), 4, AppCallback.Logger(lines.Add));
 
         Assert.Equal(4, body.Read(new byte[4], 0, 4));
 

@@ -1,41 +1,21 @@
-using Shenora.Core.Ipc;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora;
 
 /// <summary>
-/// Invoke APP-SUPPLIED code from a place where an escaping exception is not merely an error but a
-/// fatal, uncatchable one — a UI-thread event handler, a timer tick, a posted delegate, a dispose
-/// path. In all of those there is no caller left on the stack to catch anything.
+/// Invoke APP-SUPPLIED code from a place where an escaping exception is fatal and uncatchable — a
+/// UI-thread event handler, a timer tick, a posted delegate, a dispose path. In all of those there is
+/// no caller left on the stack to catch anything.
 /// <para>
-/// This exists because the kit's own rule — <i>no app callback runs unguarded inside a
-/// WebView2/WinForms event handler</i> — has been broken repeatedly and expensively, in ways that
-/// share nothing but this shape:
-/// </para>
-/// <list type="bullet">
-/// <item>A throwing <c>OnLoading</c> escaped an <c>async void</c> handler, so the login window's
-/// <c>Finish()</c> never ran and the foreground controller then cancelled EVERY close including
-/// <c>Application.Exit</c> — one app callback bricked the app.</item>
-/// <item>A throwing <c>ILogger</c> escaped before a <c>TrySetException</c>, so a pool lease's task
-/// never completed: a hung caller still holding its capacity permit, caused by a log statement.</item>
-/// <item>A throwing renderer-crash handler ran at the exact moment things were already going wrong,
-/// taking down the recovery that was supposed to follow it.</item>
-/// </list>
-/// <para>
-/// SWALLOWING IS THE POLICY, deliberately. At these sites the alternative to losing the callback's
-/// exception is losing the operation, the window, or the process. Callers that can report get an
-/// <c>onError</c> hook — itself guarded, because a failure reporter that throws must not become the
-/// crash it was reporting. ⚠ That lesson was learned in <c>WinFormsUiDispatcher.Report</c> and this
-/// sentence cited it by name until 2026-08-14, when the citation stopped being true in the best way:
-/// both UI dispatchers now call THIS type instead of carrying their own copy, so the private
-/// <c>Report</c> that taught it is gone.
+/// <b>The rule this type owns:</b> <i>no app callback runs unguarded inside a WebView2/WinForms event
+/// handler</i>. SWALLOWING IS THE POLICY — the alternative to losing the callback's exception is losing
+/// the operation, the window, or the process. Callers that can report get an <c>onError</c> hook,
+/// itself guarded: a failure reporter that throws must not become the crash it was reporting.
 /// </para>
 /// <para>
-/// Public rather than internal because its consumers are in OTHER packages
-/// (<c>Shenora.Windows</c>, and <c>Shenora.Android</c>/<c>Shenora.iOS</c> via the shared
-/// <c>Shenora.Mobile</c> source) and a <c>ProjectReference</c> does not
-/// grant <c>internal</c> access — the D19/D20 placement law: the policy is portable, so it belongs in
-/// <c>Shenora</c> with ONE owner, not copied per package. Apps may use it for the same reason
-/// against their own extension points.
+/// Public because its consumers are in OTHER packages (<c>Shenora.Windows</c>, and
+/// <c>Shenora.Android</c>/<c>Shenora.iOS</c> via <c>Shenora.Mobile</c>) and a <c>ProjectReference</c>
+/// does not grant <c>internal</c> access (D19/D20).
 /// </para>
 /// </summary>
 public static class AppCallback
@@ -46,8 +26,8 @@ public static class AppCallback
     /// </summary>
     /// <param name="work">The app-supplied work to invoke.</param>
     /// <param name="onError">
-    /// Optional report sink for whatever <paramref name="work"/> threw. Guarded: if this throws too,
-    /// it is swallowed. Null = report nowhere.
+    /// Report sink for whatever <paramref name="work"/> threw. Guarded — a throw here is swallowed too.
+    /// Null = report nowhere.
     /// </param>
     public static bool Run(Action work, Action<Exception>? onError = null)
     {
@@ -66,22 +46,13 @@ public static class AppCallback
 
     /// <summary>
     /// <see cref="Run"/> for an ASYNC body: await it, swallow whatever it throws (after offering it to
-    /// <paramref name="onError"/>), and return whether it completed.
-    /// <para>
-    /// 🔴 <b>The shape a fire-and-forget UI post needs</b>, and the reason it belongs here rather than
-    /// per-shell: an <c>async void</c> continuation on a UI thread has no caller left to catch anything,
-    /// which is the exact failure this type's summary lists first. Both
-    /// <c>IUiDispatcher</c> implementations hand-rolled it — <c>WinFormsUiDispatcher</c> and
-    /// <c>MobileUiDispatcher</c> each carried a private <c>RunGuardedAsync</c> plus a private
-    /// <c>Report</c> byte-identical to this type's — so the rule that must never be broken existed in
-    /// three copies, which is the same shape the <see cref="Log"/> collapse below records.
-    /// </para>
+    /// <paramref name="onError"/>), and return whether it completed — the shape a fire-and-forget UI
+    /// post needs.
     /// <para>
     /// ⚠ <b><c>ConfigureAwait(true)</c> is LOAD-BEARING here and must not be "corrected".</b> Every
-    /// caller of this overload is already ON the UI thread, and the continuation has to stay there — a
+    /// caller of this overload is already ON the UI thread and the continuation has to stay there: a
     /// body that touches a control after resuming on a thread-pool thread is the cross-thread failure
-    /// the dispatcher exists to prevent. That is the opposite polarity from the kit's library code, which
-    /// is why it is stated rather than left to a reader's default assumption.
+    /// the dispatcher exists to prevent. Opposite polarity from the rest of the kit's library code.
     /// </para>
     /// </summary>
     /// <param name="work">The app-supplied async work to invoke.</param>
@@ -102,15 +73,13 @@ public static class AppCallback
     }
 
     /// <summary>
-    /// Run <paramref name="work"/> and return its result, or <paramref name="fallback"/> if it threw.
-    /// For a callback whose ANSWER the kit needs (a predicate, a policy decision) — a throwing app
-    /// filter must resolve to an explicit default rather than propagating.
+    /// Run <paramref name="work"/> and return its result, or <paramref name="fallback"/> if it threw —
+    /// for a callback whose ANSWER the kit needs (a predicate, a policy decision).
     /// </summary>
     /// <param name="work">The app-supplied work to invoke.</param>
     /// <param name="fallback">
-    /// The value to use when <paramref name="work"/> throws. Choose it as a POLICY, not a
-    /// convenience: for a block/deny predicate, decide at the call site whether failing open or
-    /// closed is correct there, and say why.
+    /// The value to use when <paramref name="work"/> throws. A POLICY choice: for a block/deny
+    /// predicate, decide at the call site whether failing open or closed is correct there.
     /// </param>
     /// <param name="onError">Optional report sink; guarded, as in <see cref="Run"/>.</param>
     public static T RunOrDefault<T>(Func<T> work, T fallback, Action<Exception>? onError = null)
@@ -128,40 +97,102 @@ public static class AppCallback
     }
 
     /// <summary>
-    /// Write a diagnostic to an app-supplied sink — GUARDED and LAZY. The one shape every diagnostic
-    /// in this kit uses, and the reason it is here rather than copied per type.
+    /// Write a diagnostic to an app-supplied sink — GUARDED and LAZY.
     /// <para>
-    /// <b>An <c>ILogger</c> or an <c>Action&lt;string&gt;</c> IS an app callback</b>, so it obeys the
-    /// rule above: these sinks are invoked from places with no caller left to catch anything — a
-    /// WebView2 event handler, a timer tick, a fire-and-forget body — and several sit INSIDE a
-    /// <c>catch</c> that exists to stop a failure escaping, so a throwing sink defeats the very guard
-    /// it is reporting from. That has been paid for: a throwing sink once landed before a
-    /// <c>TrySetException</c> (a pool lease hung forever holding its permit) and before a
-    /// <c>Release()</c> (a permit leaked for the process lifetime).
+    /// <b>An <see cref="ILogger"/> IS an app callback</b>, so it obeys the rule above. Several of these
+    /// sinks sit INSIDE a <c>catch</c> that exists to stop a failure escaping, so a throwing sink would
+    /// defeat the very guard it is reporting from.
     /// </para>
     /// <para>
-    /// <paramref name="message"/> is a <see cref="Func{TResult}"/> because the guard has to cover
-    /// BUILDING the message as well as writing it — several call sites interpolate WebView2/COM
-    /// properties that throw once the underlying object is gone, and interpolation at the call site
-    /// would happen outside the guard. It also makes the message free when no sink is configured,
-    /// which matters on the IPC hot path.
+    /// <paramref name="message"/> is a <see cref="Func{TResult}"/> so the guard covers BUILDING the
+    /// message as well as writing it: several call sites interpolate WebView2/COM properties that throw
+    /// once the underlying object is gone. Laziness also honours <see cref="ILogger.IsEnabled"/>, so a
+    /// disabled level costs nothing at all.
     /// </para>
     /// <para>
-    /// Collapsed here in the 0.2.0 cleanup from FIVE byte-identical private copies
-    /// (<c>WebViewHost</c>, <c>WebViewIpcBridge</c>, <c>EmbeddedResourceProvider</c>,
-    /// <c>NotificationPump</c>, <c>OperationRegistry</c>) — the same "N copies of the rule that must
-    /// never be broken" shape this package's own neighbours already learned from
-    /// <c>IpcErrorMapping</c>, where a fifth copy of the error boundary was one paste away from
-    /// leaking a filesystem path to the page.
+    /// ⚠ <b>ONE shape, and it takes <see cref="ILogger"/>.</b> This used to take
+    /// <c>Action&lt;string&gt;</c>, which cannot carry a level, an event id, structured fields or the
+    /// EXCEPTION OBJECT — so every diagnostic reporting a caught failure had to interpolate it into a
+    /// string, losing its type, its stack and its inner chain, which is the identity a diagnostic exists
+    /// to preserve.
     /// </para>
     /// </summary>
-    /// <param name="sink">The app's diagnostic sink. Null = do nothing, and do not build the message.</param>
+    /// <param name="sink">The app's logger. Null = do nothing, and do not build the message.</param>
     /// <param name="message">Builds the line to write. Invoked inside the guard.</param>
-    public static void Log(Action<string>? sink, Func<string> message)
+    /// <param name="level">
+    /// Severity. Null (the default) picks it from <paramref name="exception"/>: <see cref="LogLevel.Debug"/>
+    /// for a plain trace, <see cref="LogLevel.Warning"/> when a failure is being reported.
+    /// <para>
+    /// ⚠ <b>That default is a POLICY and it lives here, once.</b> Warning is what "something unexpected
+    /// happened and we carried on" means, which is every swallowed failure in this kit — and it is the
+    /// level that survives an app's default <c>Information</c> filter, so a caught failure stays visible
+    /// while ordinary tracing does not. Every type's own <c>Log</c> helper would otherwise spell the rule
+    /// out again and they would drift apart.
+    /// </para>
+    /// </param>
+    /// <param name="exception">The failure being reported, when there is one.</param>
+    public static void Log(ILogger? sink, Func<string> message,
+                           LogLevel? level = null, Exception? exception = null)
     {
         if (sink is null) return;
         ArgumentNullException.ThrowIfNull(message);
-        Run(() => sink(message()));
+        var severity = level ?? (exception is null ? LogLevel.Debug : LogLevel.Warning);
+        // IsEnabled is itself app code behind an interface, so it goes inside the guard too.
+        Run(() =>
+        {
+            if (!sink.IsEnabled(severity)) return;
+#pragma warning disable CA2254 // the kit's diagnostics are composed strings, not templates
+            sink.Log(severity, exception, message());
+#pragma warning restore CA2254
+        });
+    }
+
+    /// <summary>
+    /// An <see cref="ILogger"/> that writes each formatted line to <paramref name="write"/> — for an app
+    /// whose sink IS a delegate (a console, a text box, a probe's transcript) and that has no logging
+    /// infrastructure to hand.
+    /// <para>
+    /// ⚠ <b>Not a substitute for a real provider.</b> It reports every level as enabled and keeps no
+    /// scopes, so an app already building an <see cref="ILoggerFactory"/> should pass its own logger and
+    /// get filtering, categories and structured fields — all of which this necessarily flattens to text.
+    /// </para>
+    /// <para>
+    /// The EXCEPTION is appended to the line rather than dropped: a delegate sink cannot carry one
+    /// alongside the message, and losing it would give back exactly the identity — type, stack, inner
+    /// chain — that taking <see cref="ILogger"/> here exists to preserve.
+    /// </para>
+    /// </summary>
+    /// <param name="write">Where a formatted line goes. Called on whatever thread logged.</param>
+    /// <remarks>
+    /// A factory rather than a public class, so the adapter's shape stays off the SemVer surface while the
+    /// capability is reachable — the same reason <c>SegmentEngine.Default</c> is one.
+    /// </remarks>
+    public static ILogger Logger(Action<string> write)
+    {
+        ArgumentNullException.ThrowIfNull(write);
+        return new DelegateLogger(write);
+    }
+
+    private sealed class DelegateLogger(Action<string> write) : ILogger
+    {
+        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+        // Nothing to scope to in a flat text sink, and null is not allowed by the contract.
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                                Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            var line = formatter(state, exception);
+            write(exception is null ? line : $"{line}{System.Environment.NewLine}{exception}");
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 
     private static void Report(Action<Exception>? onError, Exception error)
@@ -173,8 +204,7 @@ public static class AppCallback
         }
         catch (Exception)
         {
-            // A failure reporter that throws must not become the crash it reports. There is nowhere
-            // left to escalate to — the escalation path is what just failed.
+            // A failure reporter that throws must not become the crash it reports.
         }
     }
 }

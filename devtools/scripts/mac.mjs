@@ -109,7 +109,19 @@ Then: node devtools/dev.mjs mac doctor`);
   }
   const cfg = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(CONFIG, 'utf8')) };
   if (!cfg.user || !cfg.host) { console.error(`${CONFIG}: "user" and "host" are required.`); process.exit(1); }
+
+  // `--simulator "iPhone 17 Pro"` on ANY verb, for a one-off run against a different device. Persisting
+  // it is `mac sim <name>`; this override deliberately writes nothing, so a single measurement on another
+  // device cannot silently become the machine's default.
+  const override = flag(process.argv.slice(3), '--simulator');
+  if (override) cfg.simulator = override;
   return cfg;
+}
+
+/** Persist one key into local/mac.json, leaving everything else (and the file's own extras) alone. */
+function saveConfig(patch) {
+  const current = fs.existsSync(CONFIG) ? JSON.parse(fs.readFileSync(CONFIG, 'utf8')) : {};
+  fs.writeFileSync(CONFIG, `${JSON.stringify({ ...current, ...patch }, null, 2)}\n`);
 }
 
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;   // single-quote for the remote shell
@@ -580,10 +592,80 @@ function run(cfg) {
     if [ -z "$APP" ]; then echo "no .app under bin/Debug/${cfg.tfm}/${rid}" >&2; exit 1; fi
     echo "app: $APP"
     xcrun simctl boot ${q(cfg.simulator)} 2>/dev/null || true
-    open -a Simulator || true
     xcrun simctl install booted "$APP"
     xcrun simctl launch booted ${q(cfg.bundleId)}`, { inherit: true, check: true });
+
+  // 🔴 THE WINDOW IS A GUI-SESSION ACT, AND A BARE `open -a Simulator` OVER SSH IS NOT ONE. It was
+  // inlined above and silently showed nothing: `simctl` is session-agnostic, so boot, install and launch
+  // all reported success and the only symptom was a Mac with no simulator on screen — which reads as
+  // "the harness stopped working" rather than "the window was opened in a session with no display".
+  // `launchctl asuser <uid> open` is what crosses into the logged-in Aqua session.
+  // ⚠ It is best-effort by design: a headless Mac, or one with nobody logged in, has nowhere to put a
+  // window, and that must not fail a run whose measurements come from the log rather than the glass.
+  showSimulator(cfg);
+
   console.log('\nmac: running. Screenshot it with:  node devtools/dev.mjs mac shot');
+  console.log(`mac: simulator is ${cfg.simulator} — change it with \`mac sim "<name>"\`.`);
+}
+
+// ---------------------------------------------------------------- sim
+/**
+ * Bring the Simulator's window onto the Mac's screen, and report whether one is actually there.
+ *
+ * ⚠ Reports rather than assumes: a booted device with no window is a REAL state (`simctl boot` does not
+ * open one), and it is the state that makes `mac shot` look broken while every other verb works.
+ */
+function showSimulator(cfg) {
+  ssh(cfg, 'launchctl asuser "$(id -u)" open -a Simulator >/dev/null 2>&1 || true');
+
+  // 🔴 "COULD NOT ASK" IS NOT "NO WINDOW", and conflating them makes this check LIE. Talking to System
+  // Events needs macOS Automation permission, which is granted per calling program — an ssh session
+  // routinely lacks it, and the failure is an exit code rather than a count. Printed as `unknown` so a
+  // permissions problem never reads as a missing window.
+  const asked = ssh(cfg, 'osascript -e \'tell application "System Events" to tell process "Simulator" '
+    + 'to count windows\' 2>/dev/null || echo unknown');
+  const raw = (asked.stdout ?? '').trim();
+  const windows = /^\d+$/.test(raw) ? Number(raw) : null;
+
+  if (windows === null || windows > 0) return;
+  console.log('\nmac: the Simulator has NO window on screen (the device is still booted and usable).\n'
+    + '  A device window closed by hand is not reopened by `open` — that only activates a running app.\n'
+    + '  On the Mac: Simulator ▸ Window ▸ the device, or quit and relaunch Simulator.\n'
+    + '  ⚠ `mac shot` works regardless: it captures through `simctl io`, not off the glass.');
+}
+
+/**
+ * Show or CHOOSE the simulator every other verb targets, so picking one is a command rather than an
+ * edit of a gitignored file nobody remembers exists.
+ *
+ * ⚠ The name is VALIDATED against what is installed before it is saved. An unknown one is not an
+ * unhelpful destination error later; it is a build that fails minutes in, on a machine you are not
+ * looking at.
+ */
+function sim(cfg, name) {
+  const sims = ssh(cfg, 'xcrun simctl list devices available | grep -E "^-- |iPhone|iPad"');
+  const lines = (sims.stdout ?? '').trim().split('\n').map((l) => l.trim());
+  const names = lines.filter((l) => !l.startsWith('-- ')).map((l) => l.replace(/ \([0-9A-F-]{36}\).*$/i, ''));
+
+  if (!name) {
+    console.log('\n  installed:');
+    for (const l of lines) {
+      const bare = l.replace(/ \([0-9A-F-]{36}\).*$/i, '');
+      const mark = bare === cfg.simulator ? ' <- configured' : '';
+      console.log(`    ${l}${mark}`);
+    }
+    console.log(`\n  configured: ${cfg.simulator}`);
+    console.log('  change it:  node devtools/dev.mjs mac sim "iPhone 17 Pro"');
+    console.log('  once only:  …any verb… --simulator "iPhone 17 Pro"');
+    return;
+  }
+
+  if (!names.includes(name)) {
+    console.error(`mac: no simulator named ${JSON.stringify(name)} is installed. Run \`mac sim\` for the list.`);
+    process.exit(1);
+  }
+  saveConfig({ simulator: name });
+  console.log(`mac: simulator -> ${name}  (saved to local/mac.json)`);
 }
 
 // ---------------------------------------------------------------- shot
@@ -1719,6 +1801,7 @@ switch (cmd) {
   case 'push': push(cfg); break;
   case 'build': build(cfg); break;
   case 'run': run(cfg); break;
+  case 'sim': sim(cfg, rest.filter((a) => !a.startsWith('--'))[0]); break;
   case 'shot': shot(cfg, rest[0]); break;
   // The interactive ones open the persistent worker first and close it after: each runs several remote
   // commands (geometry, cliclick probe, activate, click) and a fresh ssh costs ~1.8 s apiece.
@@ -1823,9 +1906,12 @@ switch (cmd) {
   case 'island-watch': await islandWatch(cfg, rest); break;
   case 'ssh': ssh(cfg, rest.join(' '), { inherit: true, check: true }); break;
   default:
-    console.log('usage: node devtools/dev.mjs mac <doctor|setup|push|build|run|shot|tap|type|swipe|'
+    console.log('usage: node devtools/dev.mjs mac <doctor|setup|push|build|run|sim|shot|tap|type|swipe|'
       + 'safari-eval|mirror|log|activity|devices|device|device-log|provision|profiles|awake|put|layout-check|'
       + 'island-watch|ssh|gui>');
+    console.log('  sim                       — list installed simulators and show which is configured');
+    console.log('  sim "iPhone 17 Pro"       — target that one from now on (saved to local/mac.json)');
+    console.log('  <any verb> --simulator X  — target X for THIS run only, saving nothing');
     console.log('  island-watch [--count N] [--interval S] [--label X] [--replay <dir>] — sample the');
     console.log('  Dynamic Island and count DISTINCT frames: >1 = it repaints, 1 = frozen. No eye needed.');
     console.log('  ssh <cmd> runs over ssh; gui <cmd> runs in the GUI LOGIN SESSION — the only place');

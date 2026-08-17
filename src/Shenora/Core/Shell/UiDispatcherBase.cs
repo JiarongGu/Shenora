@@ -5,14 +5,9 @@ namespace Shenora.Core.Shell;
 /// CONTRACT rather than the platform, implemented once.
 ///
 /// <para>
-/// 🔴 <b>Why this exists.</b> The two shipped implementations were written as deliberate member-for-member
-/// mirrors — <c>MobileUiDispatcher</c>'s own doc said so, on the reasoning that <i>"the invariants are the
-/// CONTRACT, not the platform, so they are kept identically here"</i>. That reasoning is exactly the
-/// argument for stating them ONCE: a mirror is a rule that must be applied twice, and this repo has paid
-/// for that shape repeatedly (see <see cref="AppCallback"/>, which collapsed five copies of one guarded
-/// log). The tell was concrete rather than theoretical: the load-bearing <c>(Action)</c> cast in
-/// <see cref="Post(Func{Task})"/> carried a six-line comment in BOTH files, each explaining that without
-/// it the method calls itself into an uncatchable <c>StackOverflowException</c>.
+/// 🔴 <b>A mirror is a rule that must be applied twice.</b> These invariants belong to the contract, so
+/// stating them once here is what stops two shells drifting apart on ordering, guarding, cancellation or
+/// failure shape — the same collapse <see cref="AppCallback"/> is.
 /// </para>
 ///
 /// <para>
@@ -93,11 +88,10 @@ public abstract class UiDispatcherBase : IUiDispatcher
         // `BeginInvoke(async …)` / `Dispatch(async …)` — that shape drops the returned task and makes any
         // fault an unobservable UI-thread crash.
         //
-        // 🔴 The cast to Action is LOAD-BEARING, not decoration. Written as
-        // `Post(() => _ = RunGuardedAsync(work))` the lambda body is an EXPRESSION of type Task, so the
-        // compiler infers Func<Task> and this method calls ITSELF — unbounded recursion, and a
-        // StackOverflowException is uncatchable, so the whole host aborts with nothing to point at.
-        // (Caught by the WinForms dispatcher's async-post test, which is why it exists.)
+        // 🔴 The cast to Action is LOAD-BEARING. Written as `Post(() => _ = RunGuardedAsync(work))` the
+        // lambda body is an EXPRESSION of type Task, so the compiler infers Func<Task> and this method
+        // calls ITSELF — unbounded recursion, and a StackOverflowException is uncatchable, so the host
+        // aborts with nothing to point at.
         return Post((Action)(() => { _ = RunGuardedAsync(work); }));
     }
 

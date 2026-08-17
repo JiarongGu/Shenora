@@ -1,10 +1,11 @@
 using WebView2Control = Microsoft.Web.WebView2.WinForms.WebView2;
+using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 
 namespace Shenora.Windows;
 
 /// <summary>Outcome of a <see cref="InteractiveSession.RunAsync"/> flow.</summary>
-public sealed class SessionResult
+public sealed class InteractiveSessionResult
 {
     /// <summary>True when the driver captured a session.</summary>
     public required bool Success { get; init; }
@@ -12,16 +13,16 @@ public sealed class SessionResult
     /// <summary>The driver's captured session blob (its own format — commonly serialized cookies).</summary>
     public string? Blob { get; init; }
 
-    /// <summary>A <see cref="SessionErrorCodes"/> value when <see cref="Success"/> is false.</summary>
+    /// <summary>A <see cref="InteractiveSessionErrorCodes"/> value when <see cref="Success"/> is false.</summary>
     public string? ErrorCode { get; init; }
 
-    internal static SessionResult Ok(string blob) => new() { Success = true, Blob = blob };
+    internal static InteractiveSessionResult Ok(string blob) => new() { Success = true, Blob = blob };
 
-    internal static SessionResult Fail(string errorCode) => new() { Success = false, ErrorCode = errorCode };
+    internal static InteractiveSessionResult Fail(string errorCode) => new() { Success = false, ErrorCode = errorCode };
 
     /// <summary>
     /// Throw this outcome's failure as an <see cref="ShenoraException"/> — the bridge from
-    /// <see cref="SessionErrorCodes"/> into the IPC error contract (P5.5 H9.4). No-op on success.
+    /// <see cref="InteractiveSessionErrorCodes"/> into the IPC error contract (P5.5 H9.4). No-op on success.
     /// <para>
     /// The two vocabularies were never really separate: these codes are already SCREAMING_SNAKE i18n
     /// keys in the shape <c>IpcErrorCodes</c> uses, so the only thing missing was a typed path between
@@ -48,7 +49,7 @@ public sealed class SessionResult
 }
 
 /// <summary>Error codes <see cref="InteractiveSession"/> reports (wire-friendly i18n keys, the family shape).</summary>
-public static class SessionErrorCodes
+public static class InteractiveSessionErrorCodes
 {
     /// <summary>Another session is already open — interactive sessions serialize.</summary>
     public const string Busy = "SESSION_BUSY";
@@ -73,15 +74,26 @@ public sealed class InteractiveSessionOptions
     public required Control Anchor { get; init; }
 
     /// <summary>
-    /// The session's persistent profile directory — one per provider, AND per sub-account where a
-    /// provider serves multiple accounts. The sub scoping is a SECURITY boundary, not tidiness
-    /// (measured in the source): definitions under one provider id shared a cookie jar, so one
-    /// hostile or sloppy definition could name another's cookie domain and lift the session the
-    /// user established there. Compose the path per (provider, sub) and each account's cookies
-    /// live in a store the others cannot open. Wipe it to discard the captured session for real
-    /// (<see cref="InteractiveSession.ClearProfile"/>).
+    /// The browser this session runs, configured exactly like a pooled or streaming one — the profile
+    /// directory, the five hooks, the request filter, bundle serving, the logger and the event bus all
+    /// live there and all reach this session.
+    /// <para>
+    /// 🔴 <b><see cref="SessionBrowserOptions.ProfileDirectory"/> is where the session's isolation is
+    /// decided</b> — one per provider, AND per sub-account where a provider serves multiple accounts.
+    /// The sub scoping is a SECURITY boundary, not tidiness (measured in the source): definitions under
+    /// one provider id shared a cookie jar, so one hostile or sloppy definition could name another's
+    /// cookie domain and lift the session the user established there. Wipe the directory to discard the
+    /// captured session for real (<see cref="InteractiveSession.ClearProfile"/>).
+    /// </para>
+    /// <para>
+    /// ⚠ <b><see cref="SessionBrowserOptions.KeepAliveInBackground"/> is the one field this session
+    /// overrides</b>, from <see cref="RevealImmediately"/>: a window held off-screen must keep its JS
+    /// running, and that is the session's business rather than the app's. Everything else is passed
+    /// through untouched, which is why this is a whole options object and not a hand-copied subset —
+    /// copying fields would silently miss the next one added to <see cref="SessionBrowserOptions"/>.
+    /// </para>
     /// </summary>
-    public required string ProfileDirectory { get; init; }
+    public required SessionBrowserOptions Browser { get; init; }
 
     /// <summary>Window title.</summary>
     public string Title { get; init; } = "Session";
@@ -162,6 +174,13 @@ public sealed class InteractiveSession
     private readonly InteractiveSessionOptions _options;
     private int _busy; // 0 idle, 1 a session window is open (they serialize)
 
+    /// <summary>
+    /// TEST SEAM: stands in for the modal window, so the gate ownership around it can be exercised
+    /// without a real WebView2 and a nested message loop. Null in production. Mirrors
+    /// <c>RenderSessionPool.InstanceFactoryOverride</c>.
+    /// </summary>
+    internal Func<CancellationToken, InteractiveSessionResult>? RunOnUiOverride;
+
     /// <summary>A session gated by <paramref name="options"/>. One window at a time — see the type summary.</summary>
     public InteractiveSession(InteractiveSessionOptions options)
     {
@@ -176,67 +195,100 @@ public sealed class InteractiveSession
     /// the captured blob (null = incomplete). The whole session is awaited — desktop callers
     /// long-poll it by design.
     /// </summary>
-    public async Task<SessionResult> RunAsync(
+    public async Task<InteractiveSessionResult> RunAsync(
         Func<SessionController, CancellationToken, Task<string?>> driver,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(driver);
         var anchor = _options.Anchor;
-        if (anchor.IsDisposed) return SessionResult.Fail(SessionErrorCodes.Unavailable);
+        if (anchor.IsDisposed) return InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Unavailable);
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
-            return SessionResult.Fail(SessionErrorCodes.Busy);
+            return InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Busy);
 
-        var tcs = new TaskCompletionSource<SessionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        // Release the busy gate + complete EXACTLY ONCE, whoever finishes first: the UI
-        // delegate, or the token if that delegate is never pumped (host teardown between the
-        // post and the message loop) — otherwise a dropped post would wedge the gate at busy
-        // for the whole process (every future session answers SESSION_BUSY) and hang the caller
-        // (the source's measured incident).
-        void Finish(SessionResult result)
+        var tcs = new TaskCompletionSource<InteractiveSessionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 🔴 COMPLETING THE CALLER AND RELEASING THE GATE ARE TWO DIFFERENT EVENTS, and merging them was
+        // the bug. The caller must be answered the moment it cancels — that part was right, and it is
+        // what stopped a never-pumped post from hanging it forever. But the gate ALSO opened then, while
+        // the modal window was still on screen: the caller took "cancelled" as "finished", called
+        // ClearProfile against a profile the live browser still holds (which throws into a swallow), and
+        // a second RunAsync sailed past the gate to open a SECOND window on the same profile.
+        //
+        // So the gate belongs to whoever owns a WINDOW. `owner` says who that is, and only one of the
+        // two paths can claim it:
+        //   0 = nobody yet · 1 = the UI delegate is running the window · 2 = cancelled before it started
+        var owner = 0;
+        void Complete(InteractiveSessionResult result) => tcs.TrySetResult(result);
+        void ReleaseGate() => Interlocked.Exchange(ref _busy, 0);
+
+        using var registration = cancellationToken.Register(() =>
         {
-            if (tcs.TrySetResult(result)) Interlocked.Exchange(ref _busy, 0);
-        }
-
-        using var registration = cancellationToken.Register(() => Finish(SessionResult.Fail(SessionErrorCodes.Cancelled)));
+            Complete(InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Cancelled));
+            // Release ONLY if no window ever came up. If the UI delegate got there first it owns the
+            // gate, and it opens it when ShowDialog returns — i.e. when the window is really gone.
+            if (Interlocked.CompareExchange(ref owner, 2, 0) == 0) ReleaseGate();
+        });
         try
         {
             anchor.BeginInvoke(new Action(() =>
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    Finish(SessionResult.Fail(SessionErrorCodes.Cancelled));
-                    return;
-                }
-                SessionResult result;
+                // Lost to cancellation: it already answered the caller AND opened the gate, so there is
+                // nothing left to own and no window to create.
+                if (Interlocked.CompareExchange(ref owner, 1, 0) != 0) return;
+
+                InteractiveSessionResult result;
                 try
                 {
-                    result = RunOnUi(driver, cancellationToken);
+                    // The window seam, mirroring RenderSessionPool's factory/reset overrides: what
+                    // happens between "a window is up" and "the window is gone" needs a real WebView2
+                    // and a modal loop, so the GATE OWNERSHIP around it would otherwise be untestable.
+                    result = RunOnUiOverride is { } fake
+                        ? fake(cancellationToken)
+                        : RunOnUi(driver, cancellationToken);
                 }
                 catch
                 {
                     // Details stay host-side; the wire learns only the code (the error contract).
-                    result = SessionResult.Fail(SessionErrorCodes.Error);
+                    result = InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Error);
                 }
-                Finish(result);
+                Complete(result);
+                ReleaseGate();   // ShowDialog has returned — the window is gone and the profile is free
             }));
         }
         catch
         {
-            Finish(SessionResult.Fail(SessionErrorCodes.Unavailable));
+            Complete(InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Unavailable));
+            // The post never landed, so no window exists and no delegate will ever run.
+            if (Interlocked.CompareExchange(ref owner, 2, 0) == 0) ReleaseGate();
         }
         return await tcs.Task.ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// The browser this session actually runs: the app's own options, with the ONE field the session
+    /// owns overridden. A window held off-screen must keep its JS running, which is the session's
+    /// business rather than the app's.
+    /// <para>
+    /// 🔴 <b>Extracted so the pass-through is TESTABLE without a WebView2</b>, mirroring
+    /// <c>SessionController.ShouldHoldClose</c>. Everything past here needs a real browser and a modal
+    /// loop, so the alternative was a rule saying "remember to forward the new field" — and the defect
+    /// this replaced was exactly that rule being followed twice and then forgotten.
+    /// </para>
+    /// </summary>
+    internal static SessionBrowserOptions ComposeBrowserOptions(
+        SessionBrowserOptions browser, bool revealImmediately) =>
+        browser with { KeepAliveInBackground = !revealImmediately };
 
     /// <summary>
     /// Runs on the UI thread. Shows the window MODALLY (ShowDialog → its own nested message
     /// loop) and drives the session inside it: on <c>Shown</c> the WebView2 comes up, the driver
     /// runs over the controller, and when it returns the window closes (ending ShowDialog).
     /// </summary>
-    private SessionResult RunOnUi(
+    private InteractiveSessionResult RunOnUi(
         Func<SessionController, CancellationToken, Task<string?>> driver,
         CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(_options.ProfileDirectory);
+        Directory.CreateDirectory(_options.Browser.ProfileDirectory);
 
         using var form = new Form
         {
@@ -287,33 +339,48 @@ public sealed class InteractiveSession
             }
         }
 
-        var outcome = SessionResult.Fail(SessionErrorCodes.Cancelled);
+        var outcome = InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Cancelled);
         form.Shown += async (_, _) =>
         {
-            if (cancellationToken.IsCancellationRequested) { form.Close(); return; }
             SessionController? controller = null;
             try
             {
-                await SessionBrowser.InitializeAsync(web, new SessionBrowserOptions
-                {
-                    ProfileDirectory = _options.ProfileDirectory,
-                    KeepAliveInBackground = !_options.RevealImmediately, // a hidden window must keep its JS running
-                });
+                // 🔴 INSIDE the try, and that is the whole fix. This check used to sit above it and
+                // `form.Close(); return;` — skipping the finally, which holds the ONE unconditional
+                // `OnLoading(false)`. `onLoading(true)` has already run by now, so a session cancelled
+                // between the post and `Shown` left the app's splash up; with
+                // `LoadingFallbackTimeout = Zero` — documented as supported — there was no timer to
+                // rescue it either, so the overlay stayed for the process lifetime. `outcome` is already
+                // Cancelled, and the finally closes the window, so nothing else is lost by falling
+                // through.
+                //
+                // ⚠ NO TEST COVERS THIS, and that is measured rather than assumed: reinstating the early
+                // return leaves all 215 session tests green. Everything below needs a live WebView2 and a
+                // modal loop, so it is sample/e2e territory.
+                if (cancellationToken.IsCancellationRequested) return;
 
-                controller = new SessionController(form, web, _options.NavigationGuard, _options.OnLoading, foreground: true);
+                var sessionId = SessionBrowser.NewSessionId();
+                await SessionBrowser.InitializeAsync(
+                    web,
+                    ComposeBrowserOptions(_options.Browser, _options.RevealImmediately),
+                // One browser, one session: unlike the pool's, this identity never changes.
+                sessionScope: () => sessionId);
+
+                controller = new SessionController(form, web, _options.NavigationGuard, _options.OnLoading,
+                    foreground: true, id: sessionId);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, controller.WindowClosed);
                 var blob = await driver(controller, linked.Token);
                 outcome = !string.IsNullOrEmpty(blob)
-                    ? SessionResult.Ok(blob)
-                    : SessionResult.Fail(SessionErrorCodes.Incomplete);
+                    ? InteractiveSessionResult.Ok(blob)
+                    : InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Incomplete);
             }
             catch (OperationCanceledException)
             {
-                outcome = SessionResult.Fail(SessionErrorCodes.Cancelled);
+                outcome = InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Cancelled);
             }
             catch
             {
-                outcome = SessionResult.Fail(SessionErrorCodes.Error);
+                outcome = InteractiveSessionResult.Fail(InteractiveSessionErrorCodes.Error);
             }
             finally
             {
@@ -363,9 +430,21 @@ public sealed class InteractiveSession
     /// cookies (both siblings' measured lesson: the user "signed out" and came back already signed
     /// in). Wipe the provider's whole tree, sub-accounts included, when the whole provider is being
     /// discarded — a sub's cookies left behind re-establish too.
-    /// Best-effort: a locked folder (a window still open) just isn't cleared.
+    /// <para>
+    /// 🔴 <b>CHECK THE RESULT when you are telling a user they signed out.</b> The commonest failure is
+    /// a profile still LOCKED by a session window that has not finished closing, and a silent false
+    /// there recreates the very incident this method exists to prevent: the app says "signed out", the
+    /// cookies survive, and the next session walks straight back in. Returning false means the cookies
+    /// are still on disk — close the window and call again.
+    /// </para>
     /// </summary>
-    public static void ClearProfile(string profileDirectory)
+    /// <param name="profileDirectory">
+    /// The profile to wipe. Build it with <see cref="ComposeProfileDirectory"/>; a path containing
+    /// <c>..</c>, or one that IS a volume root, is refused.
+    /// </param>
+    /// <returns>True when the tree is gone (including when it was never there).</returns>
+    /// <exception cref="ArgumentException">The path contains a <c>..</c> segment or is a volume root.</exception>
+    public static bool ClearProfile(string profileDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileDirectory);
         // This is a RECURSIVE DELETE on a caller-composed path, and the path is normally built from
@@ -374,13 +453,26 @@ public sealed class InteractiveSession
         // ComposeProfileDirectory to build the path and this can't arise.
         if (HasTraversalSegment(profileDirectory))
             throw new ArgumentException("profileDirectory must not contain '..' segments", nameof(profileDirectory));
+
+        // ⚠ AND REFUSE A VOLUME ROOT. The traversal check above stops a path CLIMBING out of the
+        // sessions tree; it says nothing about one that never pointed inside it. `C:\` and
+        // `\\server\share\` are what an empty or collapsed composition produces — `Path.Combine(root,
+        // "")` is the obvious way — and this method would have recursively deleted the volume,
+        // swallowing every error on the way. A profile always has at least one directory above it.
+        var full = Path.GetFullPath(profileDirectory);
+        if (string.Equals(full, Path.GetPathRoot(full), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("profileDirectory must not be a volume root", nameof(profileDirectory));
+
         try
         {
-            if (Directory.Exists(profileDirectory)) Directory.Delete(profileDirectory, recursive: true);
+            if (Directory.Exists(full)) Directory.Delete(full, recursive: true);
+            return !Directory.Exists(full);
         }
         catch
         {
-            // locked / already gone — the caller's stored session is cleared regardless
+            // Locked (a session window still closing), or gone from under us. Never throws — a logout
+            // path must not become an exception — but it no longer CLAIMS to have cleared anything.
+            return !Directory.Exists(full);
         }
     }
 
@@ -391,7 +483,18 @@ public sealed class InteractiveSession
     /// are rejected. Per-provider/per-account scoping is the session stack's isolation boundary — two
     /// accounts sharing a directory share a cookie jar — and the library previously documented that
     /// boundary while shipping no safe way to build the path.
+    /// <para>
+    /// ⚠ <b>Two identifiers differing only in CASE are the same directory here</b>, because the Windows
+    /// filesystem says so and this method cannot overrule it. If account ids are case-sensitive in your
+    /// system, fold or encode them before passing them in — otherwise <c>bob</c> and <c>Bob</c> share a
+    /// cookie jar, which is the one thing this is for.
+    /// </para>
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A segment is empty, contains a separator or drive qualifier, is <c>.</c>/<c>..</c>, contains an
+    /// invalid file-name character, names a Windows reserved device, or does not survive Windows' path
+    /// normalisation unchanged (a trailing dot or space, a run of dots).
+    /// </exception>
     public static string ComposeProfileDirectory(string root, params string[] segments)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
@@ -413,6 +516,29 @@ public sealed class InteractiveSession
             var stem = Path.GetFileNameWithoutExtension(segment);
             if (reserved.Contains(stem, StringComparer.OrdinalIgnoreCase))
                 throw new ArgumentException($"profile segment '{segment}' is a Windows reserved device name", nameof(segments));
+
+            // 🔴 THE SEGMENT MUST SURVIVE WINDOWS' OWN NORMALISATION UNCHANGED, and this is asked of the
+            // OS rather than enumerated, because every check above is a blocklist and this is the hole a
+            // blocklist leaves. Trailing dots and spaces are STRIPPED, and a run of dots collapses to
+            // nothing — measured with `Path.GetFullPath` against a root of `C:\root`:
+            //
+            //     "..."  ".. ."  " . "   ->  C:\root\      the ROOT itself
+            //     "acct."  "acct "       ->  C:\root\acct  the same jar as "acct"
+            //
+            // Every one of them passes `IsNullOrWhiteSpace`, the separator test, the `.`/`..` test,
+            // `GetInvalidFileNameChars` (a dot and a space are both legal) and the reserved-name test —
+            // and the containment check below passes too, because the root does start with the root. So
+            // an account id of `"..."` returned the whole sessions tree, which `ClearProfile` would then
+            // delete for every account; and `"acct "` silently shared `"acct"`'s cookie jar, which is
+            // precisely the isolation this method exists to provide.
+            var probe = Path.Combine(Path.GetFullPath(root), segment);
+            if (Path.GetFullPath(probe) != probe)
+            {
+                throw new ArgumentException(
+                    $"profile segment '{segment}' is not a stable directory name — Windows normalises it "
+                    + "away (a trailing dot or space is stripped, a run of dots collapses). Trim it, or "
+                    + "encode the identifier.", nameof(segments));
+            }
         }
 
         var fullRoot = Path.GetFullPath(root);

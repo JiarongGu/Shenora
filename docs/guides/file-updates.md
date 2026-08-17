@@ -24,13 +24,16 @@ over it. The rest of this section is what the queue does and how to drive it.
 This lives inside `Shenora` — no extra package to reference. Still no shell/IPC/Windows dependency, and
 **independent of the scheduler**: usable with it, without it, or before you adopt it.
 
-🔴 **It is TWO namespaces, not one.** The former `Shenora.IO` was removed by D65's relayering, so
-`using Shenora.IO;` no longer compiles. The split is meaningful rather than bookkeeping: landing files
-safely is an ENGINE concern, and updating the app is a MODULE built on it.
+🔴 **It is THREE namespaces, not one.** The former `Shenora.IO` was removed by D65's relayering, so
+`using Shenora.IO;` no longer compiles. All three are ENGINE concerns — none of them carries a .NET
+capability to the page, which is what `Shenora.Modules.*` means:
 
 ```csharp
-using Shenora.Engine.Files;    // FileUpdate*, FileChange, IPathLocker
-using Shenora.Modules.Update;  // UpdateManifest, UpdateStage
+using Shenora.Engine;              // RetryPolicy — shared by the queue AND the scheduler
+using Shenora.Engine.Files;        // FileUpdate*, FileChange, IPathLocker
+using Shenora.Engine.Update;       // UpdateManifest, UpdateStage, IUpdateSource, ZipUpdateSource
+using Shenora.Engine.Compression;  // ZipExtraction, ResourcePack
+using Shenora.Core.Shell;          // IFileLockInspector — a CONTRACT a shell implements, so it is Core
 ```
 
 
@@ -64,16 +67,19 @@ Commit = (mission, ct) => updates.ApplyAsync(new FileUpdate
 | "Apply these five files together or not at all", hand-rolled with a backup folder | `FileAtomicity.AllOrNothing` | Undoes applied changes in reverse. A delete becomes STAGED — moved aside, really removed only once everything lands — because a delete cannot be undone from nothing. |
 | Reporting which file broke a batch | `FileUpdateResult.FailedIndex` + `Applied` | The result reports rather than throws, like `MissionResult`; `ThrowIfFailed()` if you prefer exceptions. |
 
-**Surviving a power cut is opt-in, and it is one line.** Without a journal, `AllOrNothing` rollback is
-in-process: it covers a change that fails, not a process that dies. With one, the undo plan is on disk
-before each change and recovery finishes the job at startup:
+**The journal is already on, so surviving a power cut costs you one CALL.** `Build()` registers the queue
+with a journal under `Paths.DataArea("journal")` — but a journal nobody replays is a directory that fills
+up while interrupted updates stay un-rolled-back. Replay it at startup, before submitting anything:
 
 ```csharp
-var queue = new FileUpdateQueue(new FileUpdateQueueOptions
-{
-    Journal = new FileUpdateJournal(new FileUpdateJournalOptions { Directory = paths.DataArea("journal") }),
-});
-await queue.RecoverAsync();   // at startup, BEFORE submitting anything
+using var app = builder.Build();
+await app.Services.GetRequiredService<IFileUpdateQueue>().RecoverAsync();   // BEFORE the first update
+```
+
+Configure it — or turn it off — through the same `Use…` call as everything else:
+
+```csharp
+builder.UseFileSystem(x => x.Journal = null);   // in-process rollback only: a failed change, not a dead process
 ```
 
 An update interrupted while applying is rolled back; one interrupted after every change landed (only

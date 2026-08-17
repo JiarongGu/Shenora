@@ -24,7 +24,7 @@ public readonly record struct SafeAreaInsets(double Top, double Right, double Bo
 /// How a shell hands its window insets to the page, and what it does about the gap before it can.
 ///
 /// <para>
-/// <b>Why this exists at all, measured rather than assumed (2026-08-05, Android 16 / API 36).</b> The web
+/// <b>Why this exists at all, measured rather than assumed (Android 16 / API 36).</b> The web
 /// platform's own answer — <c>env(safe-area-inset-*)</c> with <c>viewport-fit=cover</c> — is not
 /// sufficient on Android, in two ways a page cannot work around:
 /// </para>

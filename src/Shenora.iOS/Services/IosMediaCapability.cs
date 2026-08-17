@@ -23,13 +23,12 @@ namespace Shenora.iOS;
 /// all. The two platforms genuinely differ, so neither answer may be baked in.
 /// </para>
 /// <para>
-/// 🔴 <b>VIDEO IS PROBED NOW (2026-08-13).</b> It used to answer EMPTY "rather than guessed" — honest about
-/// the gap, and the gap cost a day: with no device answer for pictures, the only way to ask "is this
-/// convertible" was to build the converter's own decoder and encoder on EVERY query, which fused what the
-/// KIT claims with what the DEVICE can do. That fusion produced an over-claim (a promise from the encoder
-/// alone) and an under-claim (a refusal for a codec that only lacked its ESDS) in the same evening. Asked
-/// once and cached, a session is still what answers — see <c>ReadVideo</c> for why nothing cheaper is
-/// honest.
+/// 🔴 <b>VIDEO IS PROBED, not left empty.</b> An empty set is honest about the gap and still wrong in
+/// effect: with no device answer for pictures, the only way to ask "is this convertible" is to build the
+/// converter's own decoder and encoder on EVERY query, which fuses what the KIT claims with what the
+/// DEVICE can do — producing an over-claim (a promise from the encoder alone) and an under-claim (a
+/// refusal for a codec that only lacked its ESDS). Asked once and cached, a session is what answers —
+/// see <c>ReadVideo</c> for why nothing cheaper is honest.
 /// <para>
 /// ⚠ <b>That honesty used to be this platform's alone, and it was an ACCIDENT of the empty set rather than
 /// a rule.</b> Android reported real video encoders from <c>MediaCodecList</c> and so promised a transcode
@@ -63,7 +62,7 @@ public sealed class IosMediaCapability : IMediaCapability
         ("alac", FormatAlac), ("mp3", FormatMp3), ("flac", FormatFlac), ("opus", FormatOpus),
     ];
 
-    private readonly Lazy<(HashSet<string> Decode, HashSet<string> Encode)> _audio =
+    private readonly Lazy<(HashSet<MediaStreamCodec> Decode, HashSet<MediaStreamCodec> Encode)> _audio =
         new(ReadAudio, isThreadSafe: true);
 
     /// <summary>
@@ -81,21 +80,21 @@ public sealed class IosMediaCapability : IMediaCapability
         ("h263", CMVideoCodecType.H263),
     ];
 
-    private readonly Lazy<(HashSet<string> Decode, HashSet<string> Encode)> _video =
+    private readonly Lazy<(HashSet<MediaStreamCodec> Decode, HashSet<MediaStreamCodec> Encode)> _video =
         new(ReadVideo, isThreadSafe: true);
 
-    private static readonly HashSet<string> None = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<MediaStreamCodec> None = new();
 
     /// <inheritdoc />
     /// <remarks>
-    /// 🔴 <b>VIDEO IS PROBED NOW (2026-08-13), and the empty set it used to return was load-bearing in the
-    /// wrong direction.</b> This answered EMPTY "rather than guessed", which was honest about the gap and
-    /// still cost a day: with no device answer for pictures, the only way to learn whether a codec was
-    /// convertible was to CONSTRUCT the converter's own sessions on every ask — which fused "the kit claims
-    /// it" with "the device can do it" and produced both an over-claim and an under-claim in one evening.
+    /// 🔴 <b>VIDEO IS PROBED, and an empty set here is load-bearing in the wrong direction.</b> Answering
+    /// EMPTY "rather than guessing" is honest about the gap and still wrong in effect: with no device
+    /// answer for pictures, the only way to learn whether a codec is convertible is to CONSTRUCT the
+    /// converter's own sessions on every ask, fusing "the kit claims it" with "the device can do it" and
+    /// producing both an over-claim and an under-claim.
     /// See <see cref="ReadVideo"/> for why a session is still what answers, and why once is enough.
     /// </remarks>
-    public IReadOnlySet<string> Decodable(MediaStreamKind kind) => kind switch
+    public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => kind switch
     {
         MediaStreamKind.Audio => _audio.Value.Decode,
         MediaStreamKind.Video => _video.Value.Decode,
@@ -103,7 +102,7 @@ public sealed class IosMediaCapability : IMediaCapability
     };
 
     /// <inheritdoc />
-    public IReadOnlySet<string> Encodable(MediaStreamKind kind) => kind switch
+    public IReadOnlySet<MediaStreamCodec> Encodable(MediaStreamKind kind) => kind switch
     {
         MediaStreamKind.Audio => _audio.Value.Encode,
         MediaStreamKind.Video => _video.Value.Encode,
@@ -138,10 +137,10 @@ public sealed class IosMediaCapability : IMediaCapability
     /// configure at 0x0.
     /// </para>
     /// </remarks>
-    private static (HashSet<string> Decode, HashSet<string> Encode) ReadVideo()
+    private static (HashSet<MediaStreamCodec> Decode, HashSet<MediaStreamCodec> Encode) ReadVideo()
     {
-        var decode = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var encode = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var decode = new HashSet<MediaStreamCodec>();
+        var encode = new HashSet<MediaStreamCodec>();
 
         foreach (var (name, type) in VideoCandidates)
         {
@@ -172,10 +171,10 @@ public sealed class IosMediaCapability : IMediaCapability
         return (decode, encode);
     }
 
-    private static (HashSet<string> Decode, HashSet<string> Encode) ReadAudio()
+    private static (HashSet<MediaStreamCodec> Decode, HashSet<MediaStreamCodec> Encode) ReadAudio()
     {
-        var decode = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var encode = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var decode = new HashSet<MediaStreamCodec>();
+        var encode = new HashSet<MediaStreamCodec>();
 
         foreach (var (name, format) in Candidates)
         {

@@ -4,7 +4,6 @@ using Shenora.Core.Events;
 using Shenora.Core.Ipc;
 using Shenora.Modules.Requests;
 
-// Extensions live with the type they EXTEND — see MediaPlayerExtensions for the rule.
 namespace Shenora;
 
 /// <summary>

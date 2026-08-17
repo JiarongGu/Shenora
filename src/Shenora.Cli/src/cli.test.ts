@@ -1,17 +1,28 @@
 // The CLI's testable core: the decisions that FAIL SILENTLY when wrong.
 //
-// This suite deliberately does not test process spawning. Everything here is a claim whose failure mode
-// is a WRONG ANSWER rather than a crash — a rejected install reported as success, a simulator booted by
-// the wrong name, a config read as empty. Those are the ones a human never notices.
+// Everything here is a claim whose failure mode is a WRONG ANSWER rather than a crash — a rejected
+// install reported as success, a simulator booted by the wrong name, a config read as empty. Those are
+// the ones a human never notices.
+//
+// ⚠ This header used to say the suite "deliberately does not test process spawning". That is no longer
+// true and the exception earns itself: `describeSpawnFailure`'s two spawning tests use a binary that
+// does not exist and a `node -e` that sleeps, so they are fast, need no mock, and run anywhere. They are
+// also the only ones that fail when the diagnostic is left UNWIRED — measured, the four pure-function
+// tests beside them all passed while `run` ignored it completely.
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { withPipefail, argValue } from './exec.js';
-import { splitArgs, simulatorLogPredicate, describeConnection, findArtifact } from './ios.js';
+import { withPipefail, argValue, describeSpawnFailure, run, splitArgs, shellPassthrough } from './exec.js';
+import {
+  simulatorLogPredicate, describeConnection, findArtifact, describeLogOutcome, parseDeviceList,
+  isAlreadyBooted,
+} from './ios.js';
 import { parseDevices, findPackage, adbCandidates, resolveJdk } from './android.js';
-import { loadConfig, requireFields, CONFIG_FILE, SAMPLE_CONFIG } from './config.js';
+import { loadConfig, projectDir, requireFields, CONFIG_FILE, SAMPLE_CONFIG } from './config.js';
+import { cmdCopy, lastLines } from './copy.js';
+import { main } from './cli.js';
 
 const temps: string[] = [];
 const tempDir = (): string => {
@@ -43,32 +54,107 @@ describe('withPipefail — the README\'s headline guarantee', () => {
   });
 });
 
+describe('describeSpawnFailure — the two ways a command never runs at all', () => {
+  // 🔴 spawnSync reports BOTH of these through `error`, leaving stdout/stderr empty and status null.
+  // Neither was read, so both arrived as a bare non-zero exit with no output — and the caller's own
+  // guess about what a non-zero exit meant became the only thing the user saw.
+
+  it('names a missing tool instead of letting the caller guess', () => {
+    const why = describeSpawnFailure('dotnet', Object.assign(new Error('spawnSync ENOENT'), { code: 'ENOENT' }), 1000);
+
+    expect(why).toContain('dotnet');
+    expect(why).toContain('PATH');
+  });
+
+  it('says a TIMEOUT was a timeout — the case the timeout was added for', () => {
+    // `run` gained a timeout because adb hangs on an offline/unauthorized device, its comment noting
+    // the user "cannot tell it apart from a slow build". The firing of that timeout was itself silent,
+    // so the CLI stopped after 30 minutes saying nothing — most of the value handed straight back.
+    const why = describeSpawnFailure('adb', Object.assign(new Error('spawnSync ETIMEDOUT'), { code: 'ETIMEDOUT' }), 90_000);
+
+    expect(why).toContain('adb');
+    expect(why).toContain('90s');
+  });
+
+  it('does NOT rely on a signal that is never there', () => {
+    // Measured: on a timeout Node puts `signal: 'SIGTERM'` on the spawnSync RESULT and the error carries
+    // only errno/code/syscall/path/spawnargs. A first version of this helper also tested
+    // `error.signal === 'SIGTERM'` as a supposed fallback — dead on arrival, and worse, it read as a
+    // covered case. Pinned so nobody adds it back on the same intuition.
+    const withSignalButNoCode = Object.assign(new Error('killed'), { signal: 'SIGTERM' });
+    expect(describeSpawnFailure('adb', withSignalButNoCode, 1000)).not.toContain('did not finish');
+  });
+
+  it('reports an unrecognised failure verbatim rather than swallowing it', () => {
+    const why = describeSpawnFailure('adb', Object.assign(new Error('EACCES permission denied'), { code: 'EACCES' }), 1000);
+
+    expect(why).toContain('EACCES permission denied');
+  });
+
+  it('stays SILENT when the process actually ran', () => {
+    // The quiet direction, and the one that matters most: a command that ran and exited non-zero has
+    // real output, and inventing a line here would bury it under a wrong diagnosis.
+    expect(describeSpawnFailure('adb', undefined, 1000)).toBe('');
+  });
+
+  // 🔴 THE WIRING, not just the rule. The four tests above passed with `run` ignoring the helper
+  // entirely — measured by sabotage — because they only exercise the pure function. These two spawn for
+  // real, which is cheap and needs no mock, and they are the ones that fail if the call site is removed.
+
+  it('run() actually REPORTS a missing binary', () => {
+    const r = run('shenora-no-such-binary-xyz', ['--version'], { quiet: true });
+
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('was not found on PATH');
+  });
+
+  it('run() actually REPORTS a timeout as a timeout', () => {
+    // node is guaranteed present — we are running in it.
+    const r = run(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { quiet: true, timeoutMs: 400 });
+
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('did not finish within');
+  });
+});
+
 describe('splitArgs — the `--` passthrough', () => {
   it('routes everything after `--` to the build, and nothing before it', () => {
-    const { own, extra } = splitArgs(['--simulator', 'iPhone 16 Pro', '--', '-p:Foo=1', '-p:Bar=2']);
+    const { own, passthrough } = splitArgs(['--simulator', 'iPhone 16 Pro', '--', '-p:Foo=1', '-p:Bar=2']);
     expect(own).toEqual(['--simulator', 'iPhone 16 Pro']);
-    expect(extra).toBe(' -p:Foo=1 -p:Bar=2');
+    expect(passthrough).toEqual(['-p:Foo=1', '-p:Bar=2']);
   });
 
   it('🔴 does not let a build property be read as a simulator NAME', () => {
     // The trap this function exists for. `argValue` takes the token after a flag, so on a single flat
     // array `deploy --simulator -- -p:Foo=1` boots a simulator called "-p:Foo=1" and then reports that
     // no such device exists — a confusing failure a long way from its cause.
-    const { own, extra } = splitArgs(['--simulator', '--', '-p:ValidateXcodeVersion=false']);
+    const { own, passthrough } = splitArgs(['--simulator', '--', '-p:ValidateXcodeVersion=false']);
     expect(argValue(own, '--simulator')).toBeUndefined();
-    expect(extra).toBe(' -p:ValidateXcodeVersion=false');
+    expect(passthrough).toEqual(['-p:ValidateXcodeVersion=false']);
   });
 
   it('is a no-op without a separator', () => {
-    const { own, extra } = splitArgs(['--device', 'my-phone']);
+    const { own, passthrough } = splitArgs(['--device', 'my-phone']);
     expect(own).toEqual(['--device', 'my-phone']);
-    expect(extra).toBe('');
+    expect(passthrough).toEqual([]);
   });
 
   it('treats a trailing `--` with nothing after it as no extra args', () => {
-    // Otherwise the build command gains a stray trailing space and, worse, `extra` reads as truthy —
-    // which would print an "extra build args:" line naming nothing.
-    expect(splitArgs(['--simulator', '--']).extra).toBe('');
+    // Otherwise the build command gains a stray trailing space and, worse, the fragment reads as truthy
+    // — which would print an "extra build args:" line naming nothing.
+    expect(splitArgs(['--simulator', '--']).passthrough).toEqual([]);
+    expect(shellPassthrough(splitArgs(['--simulator', '--']).passthrough)).toBe('');
+  });
+
+  it('🔴 keeps an argument containing a SPACE in one piece', () => {
+    // Joining the passthrough into one string threw the user's own argument boundaries away: the shell
+    // re-split `-p:Foo=a b` into two arguments, and any path with a space in it — the normal case on
+    // Windows and macOS both — arrived at dotnet mangled. Quoting each one separately is what survives.
+    const { passthrough } = splitArgs(['--', '-p:Title=Hello World', '-p:N=1']);
+
+    expect(passthrough).toEqual(['-p:Title=Hello World', '-p:N=1']);
+    // One shell word per argument: the space is inside the quotes, not a separator.
+    expect(shellPassthrough(passthrough)).toBe(` '-p:Title=Hello World' '-p:N=1'`);
   });
 });
 
@@ -87,6 +173,153 @@ describe('simulatorLogPredicate — the reader that was silent', () => {
   it('falls back to the whole id when there is nothing to split', () => {
     // A single-segment id is unusual but not invalid, and `split('.').pop()` on it must not yield ''.
     expect(simulatorLogPredicate('myapp')).toBe('processImagePath CONTAINS[c] "myapp"');
+  });
+});
+
+describe('isAlreadyBooted — the reason `|| true` was there, without what it swallowed', () => {
+  // 🔴 `simctl boot` exits non-zero for an ALREADY-booted simulator, so the old code wrote
+  // `boot … || true`. That kept the idempotent case working and swallowed a MISTYPED NAME with it: the
+  // run carried on to `install booted` and landed on whatever else was running. You then debug the wrong
+  // build on a device you did not choose — the exact thing `resolveTarget` and the Android
+  // `resolveDevice` both refuse to do, in this same CLI.
+
+  it('recognises the already-booted state as the success it is', () => {
+    expect(isAlreadyBooted('Unable to boot device in current state: Booted')).toBe(true);
+  });
+
+  it('🔴 does NOT recognise a bad device name — that has to fail loudly', () => {
+    expect(isAlreadyBooted('Invalid device: iPhone 16 Pr')).toBe(false);
+    expect(isAlreadyBooted('Unable to lookup device: no such device')).toBe(false);
+  });
+
+  it('treats an UNRECOGNISED message as a real failure', () => {
+    // The safe direction if Apple rewords this: an unknown message costs a redundant error on a booted
+    // device, where the alternative costs a silent install onto the wrong one.
+    expect(isAlreadyBooted('')).toBe(false);
+    expect(isAlreadyBooted('some future wording nobody predicted')).toBe(false);
+  });
+});
+
+describe('lastLines — the trimming that replaced a shell pipe', () => {
+  // 🔴 `shenora sync` was UNUSABLE ON WINDOWS: it shelled out to `/bin/sh` solely to reach `| tail -20`,
+  // so it failed before `dotnet` was ever reached — and then said "see the output above", above nothing.
+  // Windows is not an edge case here; the Android half of this CLI exists because most .NET Android work
+  // happens there.
+
+  it('keeps the LAST n lines — where a failed restore puts its error', () => {
+    const text = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n');
+    expect(lastLines(text, 3)).toBe('line 48\nline 49\nline 50');
+  });
+
+  it('returns everything when there is less than n', () => {
+    expect(lastLines('only\ntwo', 20)).toBe('only\ntwo');
+  });
+
+  it('handles CRLF, because this now runs on Windows by design', () => {
+    expect(lastLines('a\r\nb\r\nc', 2)).toBe('b\nc');
+  });
+
+  it('does not turn empty output into a blank line', () => {
+    // The caller prints only when this is non-empty; returning "\n" would add a stray blank line to
+    // every successful restore.
+    expect(lastLines('', 20)).toBe('');
+    expect(lastLines('\n\n', 20)).toBe('');
+  });
+});
+
+describe('parseDeviceList — "no phone attached" vs "could not ask"', () => {
+  // 🔴 Every failure used to collapse to an empty array, so the callers said "no iPhone is connected.
+  // Plug it in, unlock it, tap Trust." — a confident claim about the user's HARDWARE made when the
+  // truth is that the tool failed. ios.ts's own doc already calls that "the single worst answer this
+  // tool can give"; it had fixed ONE cause (the stdout pipe) and left the rest.
+
+  const listing = (...names: string[]) => JSON.stringify({
+    result: {
+      devices: names.map((name, i) => ({
+        identifier: `id-${i}`,
+        deviceProperties: { name, osVersionNumber: '18.0' },
+        connectionProperties: { pairingState: 'paired', transportType: 'localNetwork' },
+      })),
+    },
+  });
+
+  it('reads the devices when devicectl answered', () => {
+    const lookup = parseDeviceList(listing('Test iPhone'));
+
+    expect(lookup.ok).toBe(true);
+    if (lookup.ok) {
+      expect(lookup.devices).toHaveLength(1);
+      expect(lookup.devices[0]).toMatchObject({ name: 'Test iPhone', state: 'paired via localNetwork' });
+    }
+  });
+
+  it('🔴 an EMPTY device list is a real answer — no phone attached', () => {
+    // The direction that must not be over-corrected into a failure: devicectl with nothing plugged in
+    // still writes a valid document with an empty array, and that genuinely means "no devices".
+    const lookup = parseDeviceList(listing());
+
+    expect(lookup.ok).toBe(true);
+    if (lookup.ok) expect(lookup.devices).toEqual([]);
+  });
+
+  it('🔴 NOTHING PARSEABLE is a failure, not an empty list', () => {
+    // devicectl missing, refusing, or writing nothing at all. Answering "[]" here is what turned a
+    // broken reader into a statement about the phone.
+    expect(parseDeviceList('').ok).toBe(false);
+    expect(parseDeviceList('xcrun: error: unable to find utility').ok).toBe(false);
+    expect(parseDeviceList('{ this is not json').ok).toBe(false);
+  });
+
+  it('a well-formed document with no result.devices is a failure too', () => {
+    // A shape change in devicectl would land here, and silently reporting "no devices" for it is the
+    // same bug wearing a different hat.
+    const lookup = parseDeviceList(JSON.stringify({ result: {} }));
+
+    expect(lookup.ok).toBe(false);
+    if (!lookup.ok) expect(lookup.detail).toContain('result.devices');
+  });
+
+  it('tolerates the leading noise devicectl prints before its JSON', () => {
+    const lookup = parseDeviceList(`some progress chatter\n${listing('Phone')}`);
+
+    expect(lookup.ok).toBe(true);
+    if (lookup.ok) expect(lookup.devices[0]?.name).toBe('Phone');
+  });
+});
+
+describe('describeLogOutcome — "logged nothing" vs "could not read the log"', () => {
+  // 🔴 The status was DISCARDED, one line below a device branch that carefully separates SIGPIPE from a
+  // real failure. A run with no booted simulator printed the header and then nothing, exit 0 — which
+  // reads as "my app logged nothing", the exact confusion simulatorLogPredicate's own doc says this
+  // command exists to avoid.
+  //
+  // ⚠ THE DECISION IS COVERED HERE; THE WIRING IN `cmdLog` IS NOT, and that is measured rather than
+  // assumed — reinstating the discarded-status version leaves all three of these green. It cannot be
+  // closed the way `describeSpawnFailure`'s was: `cmdLog` opens with `assertMac()`, so the whole path is
+  // unreachable anywhere this suite runs. macOS/e2e territory, said out loud.
+
+  it('a failed read says the reader failed, and says how to fix it', () => {
+    const outcome = describeLogOutcome(1, '');
+
+    expect(outcome.kind).toBe('failed');
+    if (outcome.kind === 'failed') expect(outcome.hint).toContain('--simulator');
+  });
+
+  it('🔴 EMPTY output is not a failure — it is a quiet app', () => {
+    // The direction that matters most for not over-correcting: a booted simulator whose app has not run
+    // in the window legitimately matches nothing, and calling that "could not read the log" would send
+    // someone hunting a broken tool instead of launching their app.
+    const outcome = describeLogOutcome(0, '   \n  \n');
+
+    expect(outcome.kind).toBe('empty');
+    if (outcome.kind === 'empty') expect(outcome.message).toContain('10m');
+  });
+
+  it('real lines come back verbatim, minus trailing blank space', () => {
+    const outcome = describeLogOutcome(0, 'line one\nline two\n\n');
+
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind === 'ok') expect(outcome.text).toBe('line one\nline two');
   });
 });
 
@@ -118,6 +351,31 @@ describe('findArtifact — what `shenora ios build` produced', () => {
 
   it('answers null when the publish left neither', () => {
     expect(findArtifact(make('intermediate'))).toBeNull();
+  });
+
+  it('🔴 rejects an artifact that PREDATES the build it is supposed to be the output of', () => {
+    // The identical incident class findPackage guards on the Android side, and this file's own comment
+    // records it happening here: `dotnet publish` exits 0 having produced nothing (a skipped target),
+    // and without this the previous run's .ipa is reported — size and all — as this build's output.
+    const dir = make('MyApp.ipa');
+    const artifact = path.join(dir, 'MyApp.ipa');
+    const old = Date.now() - 60 * 60_000;
+    fs.utimesSync(artifact, new Date(old), new Date(old));
+
+    expect(findArtifact(dir, Date.now() - 5_000)).toBeNull();
+    expect(findArtifact(dir, old - 5_000)).toBe(artifact);
+  });
+
+  it('a stale .ipa beside a fresh .app yields the .app — this run’s real output', () => {
+    // Signing broke THIS run but an old archive lies around: the fresh .app is what lets cmdBuild say
+    // "produced, but not distributable" instead of reporting yesterday's .ipa as today's build.
+    const dir = make('MyApp.app', 'MyApp.ipa');
+    const old = Date.now() - 60 * 60_000;
+    fs.utimesSync(path.join(dir, 'MyApp.ipa'), new Date(old), new Date(old));
+    // The .app clock is its Info.plist when present — a directory's own mtime can survive a rebuild.
+    fs.writeFileSync(path.join(dir, 'MyApp.app', 'Info.plist'), '<plist/>');
+
+    expect(findArtifact(dir, Date.now() - 5_000)).toBe(path.join(dir, 'MyApp.app'));
   });
 });
 
@@ -316,11 +574,43 @@ describe('findPackage — the Android artifact', () => {
 
   it('takes the .aab when that is what was asked for', () => {
     const dir = make('com.x.aab');
-    expect(findPackage(dir)).toBe(path.join(dir, 'com.x.aab'));
+    expect(findPackage(dir, 'aab')).toBe(path.join(dir, 'com.x.aab'));
   });
 
   it('answers null rather than throwing for a missing directory', () => {
     expect(findPackage(path.join(os.tmpdir(), 'shenora-none-' + Date.now()))).toBeNull();
+  });
+
+  it('🔴 an --aab build is NEVER handed an APK left over beside it', () => {
+    // The defect: `-Signed.apk` was preferred unconditionally, so `android build --aab` run in a
+    // directory still holding an earlier APK reported that APK as the artifact, size and all. The user
+    // uploads it to Play believing it is the bundle they just built. An adjacent file is not an answer
+    // to a different question.
+    const dir = make('com.x.apk', 'com.x-Signed.apk');
+
+    expect(findPackage(dir, 'aab')).toBeNull();
+    expect(findPackage(dir, 'apk')).toBe(path.join(dir, 'com.x-Signed.apk'));
+  });
+
+  it('an APK build is not handed a bundle either', () => {
+    // The same rule in the other direction, which the old fallback chain also got wrong.
+    const dir = make('com.x.aab');
+    expect(findPackage(dir, 'apk')).toBeNull();
+  });
+
+  it('🔴 rejects an artifact that PREDATES the build it is supposed to be the output of', () => {
+    // The publish directory is not cleaned between runs, so a build that produced nothing hands back
+    // the previous run's file and every downstream step — the size line, an upload, a device install —
+    // believes it succeeded. Reported as stale rather than as absent, because a "no .apk appeared"
+    // message beside a directory visibly containing one is the most confusing thing this could print.
+    const dir = make('com.x-Signed.apk');
+    const artifact = path.join(dir, 'com.x-Signed.apk');
+    const old = Date.now() - 60 * 60_000;
+    fs.utimesSync(artifact, new Date(old), new Date(old));
+
+    expect(findPackage(dir, 'apk', Date.now() - 5_000)).toBeNull();
+    // …and the same file IS accepted when the build really did produce it.
+    expect(findPackage(dir, 'apk', old - 5_000)).toBe(artifact);
   });
 });
 
@@ -351,5 +641,222 @@ describe('requireFields', () => {
     } finally {
       process.exitCode = before;
     }
+  });
+});
+
+// ── `shenora copy` — the only command in this package that DELETES ────────────────────────────────
+// 🔴 It had no coverage at all, and it owns the one destructive operation. Measured against the code
+// before these guards, with a config root of `D:/adopter`:
+//   webTarget ""              -> deletes the app-head project directory, .csproj included
+//   webTarget "Resources/Raw" -> deletes every MAUI raw asset the adopter has
+//   webTarget "../../.."      -> rmSync("D:\")
+//   project   "../x/A.csproj" -> escapes the config root entirely
+// None of them is an attack; each is an adopter answering "where does the app head serve its bundle
+// from?" slightly wrong. Every case below runs against a REAL temp tree, so a regression deletes a
+// fixture rather than passing.
+// 🔴 The fix that was made ONCE and needed making FOUR times. `copy.ts` learned that `project` may
+// name a directory; the three BUILD commands each kept `path.dirname(cfg.project)` and so looked for
+// their artifact one level too high — reporting "the publish reported success but no .apk appeared"
+// about a folder that could never hold one. That message is the CLI's recurring failure shape: a
+// signal meaning "I looked in the wrong place" presented as a fact about your build.
+describe('projectDir — one answer to "where is the app head?", shared by all four call sites', () => {
+  const stageProject = () => {
+    const root = path.join(tempDir(), 'app');
+    fs.mkdirSync(path.join(root, 'src', 'MyApp'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src', 'MyApp', 'MyApp.csproj'), '<Project/>');
+    return root;
+  };
+  const cfgFor = (root: string, project: string) =>
+    ({ root, file: path.join(root, CONFIG_FILE), project } as Parameters<typeof projectDir>[0]);
+
+  it('a project naming a DIRECTORY resolves to that directory, not its parent', () => {
+    const root = stageProject();
+    expect(projectDir(cfgFor(root, 'src/MyApp'))).toBe(path.join(root, 'src', 'MyApp'));
+  });
+
+  it('a project naming the .csproj resolves to the folder holding it', () => {
+    const root = stageProject();
+    expect(projectDir(cfgFor(root, 'src/MyApp/MyApp.csproj'))).toBe(path.join(root, 'src', 'MyApp'));
+  });
+
+  it('a project that does not exist is treated as a FILE, so the message names the folder', () => {
+    // Not a directory on disk, so `dirname` is the only honest reading — and the caller then reports a
+    // missing artifact under a path the user recognises, rather than crashing on a stat.
+    const root = stageProject();
+    expect(projectDir(cfgFor(root, 'src/Gone/Gone.csproj'))).toBe(path.join(root, 'src', 'Gone'));
+  });
+});
+
+describe('cmdCopy — refuses to delete what it did not create', () => {
+  const stage = (webTarget: string, project = 'src/MyApp/MyApp.csproj') => {
+    // The config root is a CHILD of the temp dir, so a `..` escape lands somewhere afterEach cleans.
+    // ⚠ Learned by leaving one behind: an unguarded run wrote to the system temp root, and the next
+    // run of the same test then found it and failed — correctly, but for the previous run's reason.
+    const root = path.join(tempDir(), 'app');
+    fs.mkdirSync(root, { recursive: true });
+    fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'dist', 'index.html'), '<html></html>');
+    fs.mkdirSync(path.join(root, 'src', 'MyApp'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src', 'MyApp', 'MyApp.csproj'), '<Project/>');
+    return {
+      root,
+      cfg: {
+        root, file: path.join(root, CONFIG_FILE), project, webDir: 'dist', webTarget,
+        bundleId: 'com.x', configuration: 'Debug',
+      } as Parameters<typeof cmdCopy>[0],
+    };
+  };
+  const quietly = (body: () => void) => {
+    const before = process.exitCode;
+    try { body(); } finally { process.exitCode = before; }
+  };
+
+  it('copies into the app head on the happy path, and leaves its marker', () => {
+    const { root, cfg } = stage('Resources/Raw/wwwroot');
+    quietly(() => cmdCopy(cfg));
+
+    const bundle = path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot');
+    expect(fs.existsSync(path.join(bundle, 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(bundle, '.shenora-bundle'))).toBe(true);
+  });
+
+  it('🔴 a `project` naming a DIRECTORY stages into that directory, not its parent', () => {
+    // `dotnet restore`/`publish` both accept a directory, and this repo hands `cfg.project` straight to
+    // them — so a directory is legitimate config. But `path.dirname` on a directory silently yields its
+    // PARENT, so the bundle went to `src/` instead of `src/MyApp/`: one level too high, every
+    // containment check still passing, and a cheerful success line. The app then ships with no web
+    // assets at all, and the wrong directory has been DELETED to make room for them.
+    const { root, cfg } = stage('Resources/Raw/wwwroot', 'src/MyApp');
+    quietly(() => cmdCopy(cfg));
+
+    const rightPlace = path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot', 'index.html');
+    const oneLevelTooHigh = path.join(root, 'src', 'Resources', 'Raw', 'wwwroot', 'index.html');
+    expect(fs.existsSync(rightPlace)).toBe(true);
+    expect(fs.existsSync(oneLevelTooHigh)).toBe(false);
+  });
+
+  it('a `project` naming the .csproj still resolves to the folder holding it', () => {
+    // The other form, unchanged — the fix must not swap one wrong answer for another.
+    const { root, cfg } = stage('Resources/Raw/wwwroot', 'src/MyApp/MyApp.csproj');
+    quietly(() => cmdCopy(cfg));
+
+    expect(fs.existsSync(path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot', 'index.html')))
+      .toBe(true);
+  });
+
+  it('REPLACES its own bundle, so a deleted file does not survive', () => {
+    const { root, cfg } = stage('Resources/Raw/wwwroot');
+    quietly(() => cmdCopy(cfg));
+    const bundle = path.join(root, 'src', 'MyApp', 'Resources', 'Raw', 'wwwroot');
+    fs.writeFileSync(path.join(bundle, 'stale.js'), 'old');
+
+    quietly(() => cmdCopy(cfg));
+
+    // The whole reason it deletes rather than merges: a stale asset is still served and still embedded.
+    expect(fs.existsSync(path.join(bundle, 'stale.js'))).toBe(false);
+    expect(fs.existsSync(path.join(bundle, 'index.html'))).toBe(true);
+  });
+
+  it('refuses an existing directory it did not create, rather than emptying it', () => {
+    // The `Resources/Raw` case: a well-formed path, one level too high. No path check can see that,
+    // which is why the marker exists.
+    const { root, cfg } = stage('Resources/Raw');
+    const assets = path.join(root, 'src', 'MyApp', 'Resources', 'Raw');
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(path.join(assets, 'OpenSans.ttf'), 'font bytes');
+
+    quietly(() => cmdCopy(cfg));
+
+    expect(fs.existsSync(path.join(assets, 'OpenSans.ttf'))).toBe(true);
+    expect(fs.existsSync(path.join(assets, 'index.html'))).toBe(false);
+  });
+
+  it.each([
+    ['an empty webTarget, which resolves to the project directory itself', ''],
+    ['a webTarget that walks out of the app head', '../../..'],
+    ['a webTarget that is absolute', path.resolve(path.sep, 'somewhere-else')],
+  ])('refuses %s', (_why, webTarget) => {
+    const { root, cfg } = stage(webTarget);
+    quietly(() => cmdCopy(cfg));
+
+    // The app head must still be intact — the .csproj is the canary the old code deleted.
+    expect(fs.existsSync(path.join(root, 'src', 'MyApp', 'MyApp.csproj'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'src', 'MyApp', 'index.html'))).toBe(false);
+  });
+
+  it('refuses a project that escapes the config root', () => {
+    const { root, cfg } = stage('Resources/Raw/wwwroot', '../sibling/A.csproj');
+    quietly(() => cmdCopy(cfg));
+
+    expect(fs.existsSync(path.resolve(root, '..', 'sibling'))).toBe(false);
+  });
+});
+
+// 🔴 THE ROUTING HAD NO TEST AT ALL — every command in this CLI goes through it, and it could not be
+// exercised because `cli.ts` called `main` at module scope: importing it to test it would have run
+// whatever argv the test runner happened to carry. It runs conditionally now, which is what makes the
+// cases below possible.
+describe('main — the group/verb routing, and what it BLAMES when it cannot proceed', () => {
+  const capture = (argv: string[]) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const log = console.log;
+    const error = console.error;
+    const exit = process.exitCode;
+    console.log = (...a: unknown[]) => { out.push(a.join(' ')); };
+    console.error = (...a: unknown[]) => { err.push(a.join(' ')); };
+    // From the temp dir, so a shenora.deploy.json in this repo cannot be found by the parent walk and
+    // quietly turn a "no config" case into a configured one.
+    const cwd = process.cwd();
+    const scratch = tempDir();
+    try {
+      process.chdir(scratch);
+      main(argv);
+      return { out: out.join('\n'), err: err.join('\n'), code: process.exitCode };
+    } finally {
+      process.chdir(cwd);
+      console.log = log;
+      console.error = error;
+      process.exitCode = exit;
+    }
+  };
+
+  it('`shenora ios` with no verb asks for a command — it does NOT blame the config', () => {
+    // The defect: `needConfig()` ran first, so typing a group name to see its verbs answered "no
+    // shenora.deploy.json here or in any parent directory" — true, and about something else entirely.
+    const { err, code } = capture(['ios']);
+
+    expect(err).toContain('needs a command');
+    expect(err).not.toContain(CONFIG_FILE);
+    expect(code).toBe(1);
+  });
+
+  it('a MISTYPED verb names the typo rather than the missing config', () => {
+    const { err } = capture(['ios', 'delpoy']);
+
+    expect(err).toContain('unknown ios command');
+    expect(err).toContain('delpoy');
+    expect(err).not.toContain(CONFIG_FILE);
+  });
+
+  it('the android half behaves identically — the two used to diverge', () => {
+    expect(capture(['android']).err).toContain('needs a command');
+    expect(capture(['android', 'buidl']).err).toContain('unknown android command');
+  });
+
+  it('an unknown GROUP says which word it did not understand', () => {
+    const { err, out, code } = capture(['ois']);
+
+    expect(err).toContain('unknown command');
+    expect(err).toContain('ois');
+    expect(out).toContain('shenora — take a built app');   // usage still printed
+    expect(code).toBe(1);
+  });
+
+  it('bare `shenora` is help, not an error', () => {
+    const { out, code } = capture([]);
+
+    expect(out).toContain('shenora — take a built app');
+    expect(code).toBeUndefined();
   });
 });

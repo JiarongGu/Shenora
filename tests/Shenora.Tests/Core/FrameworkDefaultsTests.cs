@@ -42,6 +42,28 @@ public class FrameworkDefaultsTests
     }
 
     /// <summary>
+    /// 🔴 Crash recovery must be reachable from what the framework REGISTERS, which is the interface.
+    /// The journal is on by default, and a journal nobody replays is a directory that fills up while
+    /// interrupted updates stay un-rolled-back — so the documented startup call has to compile from a
+    /// resolved <see cref="IFileUpdateQueue"/>. It did not: `RecoverAsync` lived only on the concrete
+    /// type, which is why the guide's own example hand-constructed a queue and side-stepped DI. A
+    /// downcast is not a fix either — it fails SILENTLY the moment an app registers its own queue,
+    /// which `UseFileSystem` explicitly invites.
+    /// </summary>
+    [Fact]
+    public async Task Crash_recovery_is_callable_through_the_REGISTERED_interface()
+    {
+        using var root = TempDir.Create();
+        using var app = BuildBare(root);
+
+        var queue = app.Services.GetRequiredService<IFileUpdateQueue>();
+
+        // Nothing was interrupted, so the honest answer is zero — the point is that it COMPILES and runs
+        // against the interface, with no cast to FileUpdateQueue anywhere.
+        Assert.Equal(0, await queue.RecoverAsync());
+    }
+
+    /// <summary>
     /// 🔴 The PRECONDITION that makes defaulting safe, and the one worth guarding hardest: registration
     /// must touch no disk. `Paths.DataArea` CREATES the directory it names, so an engine that provisioned
     /// storage merely by being registered would give every app a `journal/` and a `locks/` folder it never

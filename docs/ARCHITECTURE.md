@@ -60,9 +60,17 @@ Shenora.slnx
 │   │                                            Engine/ the transform stage — Mp4Remuxer (Matroska → MP4,
 │   │                                                    every frame copied untouched, no codec at all;
 │   │                                                    Plan() states the output's length and every
-│   │                                                    byte's provenance BEFORE writing it) plus the
-│   │                                                    ISegmentEngine seam for what the kit does not
-│   │                                                    do itself.
+│   │                                                    byte's provenance BEFORE writing it) and
+│   │                                                    DefaultSegmentEngine (fMP4 fragments, mobile
+│   │                                                    only), behind the ISegmentEngine seam an app
+│   │                                                    replaces to go past the platform's reach.
+│   │                                                    BOTH copy what MP4 can carry and re-encode only
+│   │                                                    what it cannot — one predicate, Mp4Carriage,
+│   │                                                    because a second spelling of it is how a plan
+│   │                                                    and a write disagree about one file (D76). A
+│   │                                                    copied track lands on the SOURCE's keyframes, so
+│   │                                                    the cuts are a SegmentPlan the manifest and the
+│   │                                                    run share rather than a fixed grid.
 │   │                                            Play/   IMediaPlayer — the HOST plays, the page drives
 │   │                                                    (D54). MediaPlayerBase holds the state machine the
 │   │                                                    NATIVE players share — terminal states survive a
@@ -127,17 +135,24 @@ Shenora.slnx
 │   │                                                    roll back Applying and FINISH Committing
 │   │                                            PathLocks — cross-process advisory leases, taken after
 │   │                                                    the in-process gate, in sorted path order
-│   │                                    Modules/Update/ namespace Shenora.Modules.Update — ⚠ a SEPARATE
-│   │                                            layer from Files/ above (D65 split them; compression
-│   │                                            turned out to belong to UPDATE, not beside Files):
+│   │                                    Engine/Update/ namespace Shenora.Engine.Update — the release
+│   │                                            PROTOCOL, beside Files/ rather than under Modules/:
+│   │                                            it carries no capability to the PAGE, which is what
+│   │                                            Modules/ means (D65), and needs no platform half —
+│   │                                            ApplyAsync is portable by design:
 │   │                                            UpdateManifest/UpdateStage — the staged self-updater
 │   │                                                    with per-file verification
-│   │                                            Compression/ namespace Shenora.Modules.Update.Compression
-│   │                                                    — containment-checked ZIP extraction (any entry
+│   │                                            ZipUpdateSource — the one IUpdateSource the kit ships
+│   │                                    Engine/Compression/ namespace Shenora.Engine.Compression —
+│   │                                            getting bytes out of an archive onto disk, SAFELY;
+│   │                                            not update-specific, which is why it is its own area:
+│   │                                            ZipExtraction — containment-checked (any entry
 │   │                                                    escaping its destination is refused) with
-│   │                                                    size/count limits, plus ZipUpdateSource.
-│   │                                                    No native engine: zip works on the framework
-│   │                                                    alone, and any other format is a SEAM (D42).
+│   │                                                    size/count limits. No native engine: zip works
+│   │                                                    on the framework alone, any other format is a
+│   │                                                    SEAM (D42)
+│   │                                            ResourcePack — a named, VERSIONED set of files on disk,
+│   │                                                    marker-written-last like UpdateStage
 │   │                                          ⚠ D48 made these two packages and D55 folded them back in.
 │   │                                          The layering D48 established is INTACT and still visible
 │   │                                          here — the edge runs Files/ → Core because every type logs
@@ -214,7 +229,10 @@ Shenora.slnx
 │   │                                          STA dialogs/clipboard, the UI-thread dispatcher),
 │   │                                          WebView/ (hosting, serving, IPC bridge, drop zones,
 │   │                                          window commands), Sessions/ (render pool, interactive,
-│   │                                          streaming). The old split protected a WinForms-without-
+│   │                                          streaming — and a PRODUCER on Core's IEventBus: a session
+│   │                                          publishes what its browser does, scoped by a per-session
+│   │                                          id, rather than owning bespoke subscription taps).
+│   │                                          The old split protected a WinForms-without-
 │   │                                          WebView2 consumer that cannot exist in a React-in-a-
 │   │                                          webview kit; D19's package edge is now internal.
 │   ├── Shenora.Mobile/     (SOURCE, no csproj) — the mobile shell's shared code; NOT a package, and
@@ -392,10 +410,10 @@ and the dependency rules a reviewer checks.
   2026-08-14). A shell supplies three hooks — `State`, `IsOnUiThread`, `TryPost(work, out failure)` —
   and inherits everything a caller can observe: the guarded inline and posted paths, the load-bearing
   `(Action)` cast that stops `Post(Func<Task>)` recursing into an uncatchable `StackOverflowException`,
-  the state-shaped failures, and the cancellation-observing awaits. `WinFormsUiDispatcher` and
-  `MobileUiDispatcher` were deliberate member-for-member mirrors before this — ~36 significant lines
-  shared out of 80 and 132 — and the mirror's own justification (*"the invariants are the CONTRACT, not
-  the platform"*) is the argument for stating them once. ⚠ `TryPost` hands the platform's own exception
+  the state-shaped failures, and the cancellation-observing awaits. The two shell dispatchers were
+  member-for-member mirrors before this — ~36 significant lines shared out of 80 and 132 — and those
+  invariants belong to the CONTRACT rather than to either platform, which is the argument for stating
+  them once. ⚠ `TryPost` hands the platform's own exception
   back rather than swallowing it, which is what let this preserve both shells' failure behaviour exactly:
   WinForms still faults an awaited call with what `BeginInvoke` threw, MAUI still reports
   `ObjectDisposedException` when `Dispatch` answers false.

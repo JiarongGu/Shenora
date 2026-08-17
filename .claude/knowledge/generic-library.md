@@ -110,7 +110,7 @@ keeps the library reusable (adopted from the family's other library, where it's 
   `Shenora.Media`, `Shenora.IO` and `Shenora.IO.Compression` were all folded in.
   The fold costs an adopter a deleted `PackageReference` **and a moved `using`**, because D65 made the
   LAYER the namespace (`Shenora.Modules.Media`, `Shenora.Engine.Files`,
-  `Shenora.Modules.Update.Compression`).
+  `Shenora.Engine.Update`, `Shenora.Engine.Compression`).
   ⚠ **A migration-cost claim is the first thing a later restructure invalidates and the one an adopter
   ACTS on** — that sentence had to be corrected in four places at once (D53, D55, ARCHITECTURE, here).
   **Re-derive it from the tree before repeating it anywhere.**
@@ -164,15 +164,33 @@ keeps the library reusable (adopted from the family's other library, where it's 
   `RenderSessionPool` (pool + session shipped, the app's render/analyze flows deliberately not) and
   `InteractiveSession` (window + protocol + driver SEAM, and the kit ships NO driver — the reference
   one moved to the sample in P7, see the placement rule above).
+- **C# naming: no `Dto` suffix, and a contract name mirrors the TS name EXACTLY.** The wire is one
+  contract with two spellings, so a C#-side rename that the TS side does not make is a silent divergence
+  the compiler cannot see on either side.
 - **Every public type earns its keep.** Default to `internal`; a type goes public when a consumer
   scenario needs it, not "for flexibility". Public surface is SemVer surface (API-surface
   baseline tests gate it from 1.0). **Cross-package consumption INSIDE the kit is a consumer
   scenario:** a `ProjectReference` does not grant `internal` access, so a helper two packages need
   is public (or it needs `InternalsVisibleTo` per package — the worse trade). This is why
   `WinFormsUiDispatcher` is public (D19/D20); don't "helpfully" demote it.
+- 🔴 **An interface whose only implementations are the REAL one and a TEST DOUBLE is not a seam — it is
+  the cost of one.** A test fake is not a second consumer; it is what the abstraction charges you. Ask what
+  the second REAL implementation is, and if the answer is hypothetical, use the concrete type. (`MediaPlayer`
+  shipped an `IMediaRenderTarget` on exactly this basis and it was deleted — D58. The sibling failure is
+  D63: a seam nothing CONSULTS is indistinguishable from a broken one, so the two questions are "who else
+  implements it?" and "who actually calls it?")
 - **Deviations from a consumer's code are documented at the port site** — when Shenora's version
   differs from the source (a fixed gap, a generalized seam), say so in the code comment so the
   adopting app's migration is predictable.
+- 🔴 **NEVER REGISTER A SINGLETON IT WOULD BE UNSAFE TO DISPOSE THE DOCUMENTED WAY.** Microsoft DI's
+  synchronous `ServiceProvider.Dispose()` THROWS when it holds an `IAsyncDisposable`-only singleton, so a
+  type registered by default hands that crash to every adopter on the documented
+  `using var app = builder.Build();` shutdown. A kit default is not just a convenience — **it is a
+  promise that the composition it produces can be torn down.** (The decision it was earned in is D64.)
+- **A type that spans two MECHANISMS gets two types, not one word.** "Thumbnail" means *extract a frame*
+  (needs a decoder) in one place and *resize an image* (needs an image codec) in another; one type over
+  both is D35's same-word-different-guarantee mistake, and the APP is what unifies them because only the
+  app knows whether its item is a video or a picture (D43).
 
 ## Gotchas / traps
 

@@ -57,6 +57,24 @@ false claim while removing an old one:
   `required` deltas for exactly this; **read its `NO LONGER required` list as a list of paragraphs to
   re-read.**
 
+## A shipped XML doc is adopter-facing API documentation, not a record of how a bug was found
+
+🔴 **`///` is extracted into the nupkg and renders in an adopter's IDE.** The bar it has to clear is
+*would a reader who never saw the incident act differently for having read this?* — and when 45 % of
+`src/` was comment, most of what failed that bar was session log: dated measurements, "found in review",
+"the tell was", "it cost us a day". `doc-shape` sweeps for those and keeps the count at zero.
+
+- **Keep a post-mortem comment when it states what must not be done again.** *"Both platform encoders are
+  configured not to reorder, so this is a fail-closed guard on an assumption"* is actionable. *"Found by
+  review 2026-08-10"* is not.
+- 🔴 **The TENSE is the tell, and moving it is usually the whole fix.** *"Produced an over-claim"*
+  describes an incident that happened to us; *"produces an over-claim"* describes the design. An adopter
+  needs the second, and the first is what the commit message is for.
+- ⚠ **A measurement usually survives — its DATE usually does not.** *"An iPhone decodes AC-3 via
+  AudioToolbox"* is a fact a reader can use; the day it was measured belongs with the measurement, in
+  `docs/design/`. ⚠ Except where the date IS the subject (*"printed the raw integer until `<date>`"*),
+  which is why this cannot be scripted — a blind date-strip over the tree was tried and reverted.
+
 ## Gotchas / traps
 
 - **"Throws" claims are the expensive ones.** A wrong "this throws" costs an adopter silently — the

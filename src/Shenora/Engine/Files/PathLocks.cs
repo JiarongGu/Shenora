@@ -1,13 +1,11 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Engine.Missions;
-
-
-using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Engine.Files;
 
 /// <summary>
-/// A held cross-process lock on one path. Dispose to release; the OS releases it anyway if the
-/// process dies, which is what keeps a crash from leaving a permanent lock behind.
+/// A held cross-process lock on one path. Dispose to release; the OS releases it if the process dies.
 /// </summary>
 public interface IPathLease : IAsyncDisposable
 {
@@ -16,21 +14,12 @@ public interface IPathLease : IAsyncDisposable
 }
 
 /// <summary>
-/// Cross-process exclusion for a path — the thing <see cref="MissionClaim"/> cannot do.
-///
+/// Cross-process exclusion for a path — the thing <see cref="MissionClaim"/> cannot do. A claim excludes
+/// missions inside ONE scheduler in ONE process; this excludes any process that also takes a lease.
 /// <para>
-/// A claim excludes missions inside ONE scheduler in ONE process. This excludes any process that also
-/// takes a lease: a second instance of the app, or a child process the app spawns and waits on. The
-/// parent takes the lease for the duration of the child's work, which is what makes an external
-/// command-line tool participate without knowing anything about this.
-/// </para>
-///
-/// <para>
-/// <b>Advisory, and the limit is the whole point.</b> It excludes PARTICIPANTS. A process that never
-/// takes a lease — a game holding its own assets open, antivirus, Explorer's thumbnailer, another
-/// application editing a folder this app does not own — is completely unaffected, and no lock design
-/// can change that. For those, the answer is <see cref="RetryPolicy"/> plus
-/// <see cref="IFileLockInspector"/> to name who is holding the handle.
+/// <b>Advisory — it excludes PARTICIPANTS.</b> A process that never takes a lease (a game holding its
+/// own assets open, antivirus, Explorer's thumbnailer) is completely unaffected, and no lock design can
+/// change that; for those, <see cref="RetryPolicy"/> + <see cref="IFileLockInspector"/> names the holder.
 /// </para>
 /// </summary>
 public interface IPathLocker
@@ -50,22 +39,9 @@ public sealed class FilePathLockerOptions
 {
     /// <summary>
     /// Directory the lock files live in. Required, and it should be the APP's own storage — never the
-    /// tree being locked.
-    ///
-    /// <para>
-    /// Sidecar locks next to the target are the obvious design and the wrong one here: an app that
-    /// manages a folder it does not OWN would be scattering files into a tree that other applications
-    /// and the user are also editing, where they look like content, get synced, get committed, and
-    /// outlive the process that made them.
-    /// </para>
-    ///
-    /// <para>
-    /// <b>Choose it by WHO is contending.</b> Several processes on one machine — the app and the
-    /// tools it spawns, or a second instance — want the app's own local storage. Two MACHINES sharing
-    /// a tree over a network share want a directory ON THE SHARE, because a lock file in one
-    /// machine's local storage is invisible to the other. That is the setting an app gets wrong
-    /// silently: everything works until two machines write the same file.
-    /// </para>
+    /// tree being locked. ⚠ Two MACHINES sharing a tree over a network share need a directory ON THE
+    /// SHARE: a lock file in one machine's local storage is invisible to the other, so everything works
+    /// until both machines write the same file.
     /// </summary>
     public required string LockDirectory { get; init; }
 
@@ -73,40 +49,23 @@ public sealed class FilePathLockerOptions
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(50);
 
     /// <summary>Diagnostics sink, guarded through <see cref="AppCallback.Log"/>.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 }
 
 /// <summary>
-/// Cross-process leases as lock FILES in a directory of the app's own, one per canonical path.
-///
+/// Cross-process leases as lock FILES in a directory of the app's own, one per canonical path. Each
+/// file holds the holder's process id and path, readable by <see cref="IFileLockInspector"/>.
 /// <para>
-/// The lock file is opened <c>FileShare.Read</c> + <c>DeleteOnClose</c>. Two consequences, both
-/// deliberate: a second holder cannot open it for writing, so the exclusion is the OS's rather than a
-/// convention; and the file vanishes when the holding process exits — including when it CRASHES —
-/// so a stale lock is not a state anyone has to clean up. A lock protocol whose failure mode is "now
-/// nothing can ever run again until someone deletes a file" is worse than no lock protocol.
+/// Opened <c>FileShare.Read</c> + <c>DeleteOnClose</c>: a second holder cannot open it for writing, so
+/// the exclusion is the OS's rather than a convention; and the file vanishes when the holding process
+/// exits — including when it CRASHES — so a stale lock is never a state anyone has to clean up.
 /// </para>
-///
 /// <para>
-/// It writes the holder's process id and path into the file, readable by
-/// <see cref="IFileLockInspector"/> or by a human, because "who has it?" is the first question when
-/// something waits.
-/// </para>
-///
-/// <para>
-/// <b>Windows is the tested target.</b> The pattern works on POSIX, where file locking is advisory in
-/// a different way and <c>DeleteOnClose</c> has no direct equivalent — claiming support that is not
-/// tested would be worse than naming the limit.
-/// </para>
-///
-/// <para>
-/// <b>Over a network share it still works, with one caveat worth knowing.</b> SMB2+ carries the
-/// delete-on-close flag, so the exclusion holds between machines — provided
-/// <see cref="FilePathLockerOptions.LockDirectory"/> is ON the share, since a lock file in one
-/// machine's local storage is invisible to the other. The caveat is release after a HARD failure: if
-/// the holding machine crashes or the link drops, the server frees the handle when the session times
-/// out rather than instantly, so a stale lease self-heals in tens of seconds rather than never. Set a
-/// lease timeout that tolerates that.
+/// <b>Windows is the tested target</b>; on POSIX <c>DeleteOnClose</c> has no direct equivalent. Over an
+/// SMB2+ share the exclusion holds between machines with
+/// <see cref="FilePathLockerOptions.LockDirectory"/> ON the share, but ⚠ after a HARD failure (the
+/// holder crashes, the link drops) the server frees the handle only when the SESSION TIMES OUT — a
+/// stale lease self-heals in tens of seconds, so size the lease timeout for that.
 /// </para>
 /// </summary>
 public sealed class FilePathLocker : IPathLocker
@@ -153,7 +112,7 @@ public sealed class FilePathLocker : IPathLocker
             }
             catch (IOException)
             {
-                // Held by someone else. Not an error — wait, or tell the caller to defer.
+                // Held by someone else — not an error.
                 if (DateTimeOffset.UtcNow >= deadline)
                 {
                     Log(() => $"lease NOT acquired within {timeout}: {canonical}");
@@ -165,9 +124,8 @@ public sealed class FilePathLocker : IPathLocker
     }
 
     /// <summary>
-    /// The lock file for a path: a hash, in the app's own directory. A hash rather than a mangled
-    /// path because a path is longer than a filename may be, and because the mangling would leak the
-    /// managed tree's layout into the app's data folder.
+    /// The lock file for a path: a hash of it, in the app's own directory — a path is longer than a
+    /// filename may be, and mangling one would leak the managed tree's layout into the app's data folder.
     /// </summary>
     private string LockFileFor(string canonicalPath)
     {
@@ -183,7 +141,7 @@ public sealed class FilePathLocker : IPathLocker
         await stream.FlushAsync(ct).ConfigureAwait(false);
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_options.Log, message, exception: failure);
 
     private sealed class FileLease(string path, FileStream stream, FilePathLockerOptions options) : IPathLease
     {

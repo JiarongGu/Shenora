@@ -67,7 +67,7 @@ public class MediaPlayerDriveTests
 
         var response = await DispatchAsync(player, MediaPlayerEvents.Rate, new { rate = 1.5 });
 
-        Assert.Equal(1.5, player.Rate);
+        Assert.Equal(1.5, player.Status.Rate);
         Assert.Equal(1.5, Field(response, "rate").GetDouble());
     }
 
@@ -159,10 +159,11 @@ public class MediaPlayerDriveTests
         /// contract says <c>Status.Rate</c> reports what was ASKED FOR. A fake that stored the value
         /// somewhere the status could not see would make the round trip look broken when it is not.
         /// </remarks>
-        public double Rate
+        public Task SetRateAsync(double rate, CancellationToken cancellationToken = default)
         {
-            get => _rate;
-            set { _rate = value; Status = Status with { Rate = value }; }
+            _rate = rate;
+            Status = Status with { Rate = rate };
+            return Task.CompletedTask;
         }
 
         public event Action<MediaPlayerStatus>? StateChanged;

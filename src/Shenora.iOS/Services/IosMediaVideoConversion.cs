@@ -2,6 +2,7 @@ using CoreFoundation;
 using CoreMedia;
 using CoreVideo;
 using Foundation;
+using Microsoft.Extensions.Logging;
 using Shenora;
 using Shenora.Modules.Media;
 using VideoToolbox;
@@ -45,7 +46,7 @@ public static class IosMediaVideoConversion
     /// which predates the chain being removable. The shell registers both; an app that wants its own picture
     /// path registers after and wins, because the chain is asked last-first.
     /// </remarks>
-    public static IDisposable Use(MediaConversionPipeline pipeline, Action<string>? log = null)
+    public static IDisposable Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         return pipeline.Use((source, codecPrivate) => Begin(source, codecPrivate, log), Claims);
@@ -79,7 +80,7 @@ public static class IosMediaVideoConversion
     public static bool CanConvert(string codec) => CodecTypeOf(codec) is not null;
 
     private static IMediaStreamConversionRun? Begin(MediaStreamInfo source, ReadOnlyMemory<byte> codecPrivate,
-                                                    Action<string>? log)
+                                                    ILogger? log)
     {
         // ⚠ Declining a KIND is silent on purpose — the audio converter shares this chain and every
         // soundtrack would otherwise log a line about a picture converter that correctly ignored it.
@@ -125,7 +126,7 @@ public static class IosMediaVideoConversion
         }
     }
 
-    private static void Report(Action<string>? log, string message) => AppCallback.Log(log, () => message);
+    private static void Report(ILogger? log, string message) => AppCallback.Log(log, () => message);
 
     /// <summary>
     /// The codecs worth OFFERING, as VideoToolbox's own four-character codes.
@@ -154,7 +155,7 @@ public static class IosMediaVideoConversion
     {
         private readonly VTCompressionSession _encoder;
         private readonly CMVideoFormatDescription _sourceFormat;
-        private readonly Action<string>? _log;
+        private readonly ILogger? _log;
         private readonly CMVideoCodecType _codecType;
         private readonly int _width;
         private readonly int _height;
@@ -184,7 +185,7 @@ public static class IosMediaVideoConversion
 
         private Run(VTDecompressionSession decoder, VTCompressionSession encoder,
                     CMVideoFormatDescription sourceFormat, CMVideoCodecType codecType, int width, int height,
-                    ReadOnlyMemory<byte> codecPrivate, Action<string>? log)
+                    ReadOnlyMemory<byte> codecPrivate, ILogger? log)
         {
             _decoder = decoder;
             _encoder = encoder;
@@ -200,7 +201,7 @@ public static class IosMediaVideoConversion
         /// One place builds the decompression session, so the eager path and the deferred one cannot drift.
         /// </summary>
         private static VTDecompressionSession? CreateDecoder(CMVideoFormatDescription sourceFormat,
-            Func<Run?> owner, Action<string>? log, CMVideoCodecType codecType, int width, int height,
+            Func<Run?> owner, ILogger? log, CMVideoCodecType codecType, int width, int height,
             ReadOnlyMemory<byte> codecPrivate)
         {
             var session = VTDecompressionSession.Create(
@@ -219,7 +220,7 @@ public static class IosMediaVideoConversion
         }
 
         public static Run? TryStart(CMVideoCodecType codecType, int width, int height,
-                                    ReadOnlyMemory<byte> codecPrivate, Action<string>? log)
+                                    ReadOnlyMemory<byte> codecPrivate, ILogger? log)
         {
             var sourceFormat = SourceFormat(codecType, width, height, codecPrivate);
             if (sourceFormat is null)
@@ -253,7 +254,7 @@ public static class IosMediaVideoConversion
 
                 // 🔴 THE DECODER IS REQUIRED HERE, AND A DEFERRED ONE WAS A MISTAKE THIS FILE ALREADY MADE.
                 // Creating it is the ONLY honest answer to "can this device convert that codec" — the
-                // encoder proves nothing about the source. Measured on an iPhone 17 Pro, 2026-08-13:
+                // encoder proves nothing about the source. Measured on an iPhone 17 Pro:
                 //
                 //   picture conversion: no DECODER for Mpeg4Video at 480x270 (codecPrivate 47B)
                 //

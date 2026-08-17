@@ -1,5 +1,3 @@
-using Shenora.Core.Shell;
-
 namespace Shenora.Core.WebView;
 
 /// <summary>
@@ -83,8 +81,24 @@ public sealed class WebViewResourcePipeline
     private void Remove(WebViewResourceMiddleware middleware)
     {
         // ReferenceEquals, not Equals: two registrations of the SAME method group are equal delegates, and
-        // disposing one of them must not silently remove the other.
-        lock (_gate) _middleware = [.. _middleware.Where(m => !ReferenceEquals(m, middleware))];
+        // disposing one of them must not silently remove the other. And ONE slot, not a filter: one
+        // delegate OBJECT registered twice fills two slots that are both reference-equal, so a filter
+        // stripped both on the first dispose and made the second a silent no-op — the very promise
+        // (`remove just this one`) the comparison above exists to keep.
+        lock (_gate)
+        {
+            var snapshot = _middleware;
+            var index = -1;
+            for (var i = 0; i < snapshot.Length; i++)
+            {
+                if (ReferenceEquals(snapshot[i], middleware)) { index = i; break; }
+            }
+            if (index < 0) return;
+            var next = new WebViewResourceMiddleware[snapshot.Length - 1];
+            Array.Copy(snapshot, 0, next, 0, index);
+            Array.Copy(snapshot, index + 1, next, index, snapshot.Length - index - 1);
+            _middleware = next;
+        }
     }
 
     /// <summary>The handle returned by <see cref="Use"/>. Idempotent: disposing twice removes one route.</summary>

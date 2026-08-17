@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 
 using AVFoundation;
@@ -34,8 +35,8 @@ public sealed class IosMediaPlayer : MediaPlayerBase
     private IDisposable? _likelyToKeepUpObserver;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into an AVFoundation callback.</param>
-    public IosMediaPlayer(Action<string>? log = null)
-        : base(log is null ? null : message => log($"[Shenora.iOS] {message}"))
+    public IosMediaPlayer(ILogger? log = null)
+        : base(log)
     {
     }
 

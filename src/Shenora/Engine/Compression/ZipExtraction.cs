@@ -1,9 +1,7 @@
 using System.IO.Compression;
-using Shenora;
-using Shenora.Core.WebView;
 using Shenora.Engine.Files;
 
-namespace Shenora.Modules.Update.Compression;
+namespace Shenora.Engine.Compression;
 
 /// <summary>What an extraction produced, and what it refused.</summary>
 /// <param name="Files">Absolute paths written, in archive order.</param>
@@ -185,15 +183,10 @@ public static class ZipExtraction
 
         var fence = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
 
-        // Platform-correct for the same reason `WebViewFiles.ResolveContained` and
-        // `PathClaims.IsContained` are: a case-insensitive fence is WIDER than a case-sensitive
+        // Platform-correct (PathComparison): a case-insensitive fence is WIDER than a case-sensitive
         // filesystem, so on Android an entry named `Foo/x` would pass a fence of `…/foo`. A zip entry
-        // name is attacker-influenced — it arrives inside an update package — so the fence must not be
+        // name is attacker-influenced — it arrives inside an update package — so the fence must never be
         // looser than the OS it is protecting.
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        return full.StartsWith(fence, comparison) ? full : null;
+        return full.StartsWith(fence, PathComparison.ForPaths) ? full : null;
     }
 }

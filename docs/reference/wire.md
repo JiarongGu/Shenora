@@ -18,7 +18,7 @@ The `category` field on every message.
 
 ## Handshake
 
-The host announces itself with this module + type when the page is ready.
+The PAGE sends this module + type once it is ready; the host answers with its ShellInfo.
 
 | Constant | Value | |
 |---|---|---|
@@ -102,4 +102,5 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.SavePicker` | `savePicker` | Choosing a save destination. |
 | `ShellCapability.SecondaryWindows` | `secondaryWindows` | Additional windows the app can open. |
 | `ShellCapability.Tray` | `tray` | A tray icon. |
+| `ShellCapability.ClipboardFiles` | `clipboardFiles` | A page needs this because no web API expresses it — and it is the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list at all. |
 | `ShellCapability.LocalFiles` | `localFiles` | local content asks for this and falls back — to an external handler, or to hiding the control — rather than showing a player that can never load. |

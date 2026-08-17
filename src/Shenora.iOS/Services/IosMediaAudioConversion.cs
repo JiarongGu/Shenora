@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Media;
 
 using System.Runtime.InteropServices;
@@ -68,7 +69,7 @@ public static class IosMediaAudioConversion
     /// <c>pipeline.Use(...)</c> and this stays as the fallback — the composability D59 rests on.
     /// </para>
     /// </summary>
-    public static void Use(MediaConversionPipeline pipeline, Action<string>? log = null)
+    public static void Use(MediaConversionPipeline pipeline, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         pipeline.Use((source, _) =>
@@ -90,7 +91,7 @@ public static class IosMediaAudioConversion
     /// A converter registered without claims means "ask me about anything", so ONE of them made every other
     /// converter's claim moot and left the DEVICE as the only gate — which reported <c>h264</c> as
     /// convertible on a phone, because every phone decodes it and nothing here offers to convert it.
-    /// Measured 2026-08-13. ⚠ Computed on access, never a static initialiser: that runs in declaration order
+    /// Measured. ⚠ Computed on access, never a static initialiser: that runs in declaration order
     /// and would read the table before it exists, claiming nothing at all.
     /// </para>
     /// </summary>
@@ -100,18 +101,30 @@ public static class IosMediaAudioConversion
     /// <summary>One in-flight conversion: an AC-3 (or E-AC-3) stream in, AAC packets out.</summary>
     private sealed class AudioConverterRun : IMediaStreamConversionRun
     {
-        private readonly Action<string>? _log;
+        private readonly ILogger? _log;
         private readonly IntPtr _decoder;
         private readonly IntPtr _encoder;
         private readonly List<byte> _pcm = [];
         private bool _disposed;
+
+        // ── the tally, because the SEGMENT writer times this track by COUNTING packets ───────────────
+        // 🔴 A soundtrack that emits too few packets is silently SHORT rather than broken: every fragment
+        // is well-formed, every append succeeds, and the stream stalls because `buffered` is the
+        // intersection of the tracks. These four numbers separate the three candidates — the decoder
+        // returning nothing, the encoder returning nothing, and the arithmetic that turns packets into
+        // time — none of which the pipeline could otherwise tell apart.
+        private int _pushes;
+        private int _packets;
+        private long _inputBytes;
+        private long _decodedBytes;
+        private bool _summarised;
 
         // How many calls of each leg still report in full — see Trace. Decode gets more because it is the
         // leg under investigation and its first frame is where the answer is.
         private int _decodeTraces = 4;
         private int _encodeTraces = 2;
 
-        private AudioConverterRun(IntPtr decoder, IntPtr encoder, int rate, int channels, Action<string>? log)
+        private AudioConverterRun(IntPtr decoder, IntPtr encoder, int rate, int channels, ILogger? log)
         {
             _decoder = decoder;
             _encoder = encoder;
@@ -172,7 +185,7 @@ public static class IosMediaAudioConversion
         /// Build both converters, or answer null. ⚠ Null means "this device cannot", which the pipeline
         /// treats as a DECLINE and passes to the next middleware — never as a failure.
         /// </summary>
-        public static AudioConverterRun? TryStart(uint inputFormat, int rate, int channels, Action<string>? log)
+        public static AudioConverterRun? TryStart(uint inputFormat, int rate, int channels, ILogger? log)
         {
             var declared = Compressed(inputFormat, rate, channels);
             var compressedIn = Complete(declared);
@@ -220,13 +233,19 @@ public static class IosMediaAudioConversion
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (frame.Data.IsEmpty) return [];
 
+            _pushes++;
+            _inputBytes += frame.Data.Length;
+
             var decoded = Convert(_decoder, frame.Data, compressedInput: true);
             if (decoded.Length == 0) return [];
+            _decodedBytes += decoded.Length;
 
             _pcm.AddRange(decoded);
             // Every AAC frame is a sync sample; the muxer derives audio timing from the packet count, so the
             // presentation time is a formality here and stated rather than invented.
-            return [.. Encode(drain: false).Select(b => new MediaFrame(b, 0))];
+            var out_ = Encode(drain: false).Select(b => new MediaFrame(b, 0)).ToArray();
+            _packets += out_.Length;
+            return out_;
         }
 
         /// <inheritdoc />
@@ -240,11 +259,29 @@ public static class IosMediaAudioConversion
             // PCM buffer would end every soundtrack a fraction early, well-formed and unreported — the
             // exact failure this method exists to prevent.
             var tail = Convert(_decoder, ReadOnlyMemory<byte>.Empty, compressedInput: true, final: true);
-            if (tail.Length > 0) _pcm.AddRange(tail);
+            if (tail.Length > 0) { _pcm.AddRange(tail); _decodedBytes += tail.Length; }
 
             // ⚠ Everything still buffered, or the soundtrack ends early and NOTHING reports it — the file is
             // well-formed and simply stops. That is the failure this method exists to prevent.
-            return [.. Encode(drain: true).Select(b => new MediaFrame(b, 0))];
+            var out_ = Encode(drain: true).Select(b => new MediaFrame(b, 0)).ToArray();
+            _packets += out_.Length;
+            Summarise("drain");
+            return out_;
+        }
+
+        /// <summary>
+        /// One line saying where the soundtrack went — emitted at drain AND at dispose, because a run that
+        /// is killed mid-segment never drains and that is exactly when the answer matters.
+        /// </summary>
+        private void Summarise(string at)
+        {
+            if (_summarised) return;
+            _summarised = true;
+            var seconds = OutputSampleRate > 0 ? _packets * (double)OutputFramesPerPacket / OutputSampleRate : 0;
+            Shenora.AppCallback.Log(_log, () =>
+                $"[AUDIO] {at}: pushes={_pushes} in={_inputBytes}B decodedPcm={_decodedBytes}B "
+              + $"packets={_packets} rate={OutputSampleRate} ch={OutputChannels} "
+              + $"bytesPerPacket={OutputChannels * 2 * OutputFramesPerPacket} -> {seconds:0.###}s of sound");
         }
 
         /// <summary>
@@ -289,7 +326,7 @@ public static class IosMediaAudioConversion
         /// <para>
         /// ⚠ <b><c>AudioConverterFillComplexBuffer</c>, because the simple form cannot do this.</b>
         /// <c>AudioConverterConvertBuffer</c> refuses any conversion needing a complex converter, and
-        /// compressed→PCM always is. Measured 2026-08-09: the simulator answered <c>'op??'</c> and an
+        /// compressed→PCM always is. Measured: the simulator answered <c>'op??'</c> and an
         /// iPhone 17 Pro answered status 0 with ZERO BYTES — the same wrong API failing two different ways.
         /// </para>
         /// </summary>
@@ -422,16 +459,16 @@ public static class IosMediaAudioConversion
         private static string Hex(byte[] data, int count)
             => System.Convert.ToHexString(data, 0, Math.Min(count, data.Length));
 
-        private void Log(Func<string> message) => AppCallback.Log(_log, message);
+        private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
         /// <summary>
         /// An <c>OSStatus</c> as CoreAudio actually means it: a FOURCC, plus the name where the kit knows one.
         /// <para>
-        /// 🔴 <b>This printed the raw integer until 2026-08-09, which is a diagnostic that reads as evidence
-        /// and carries none.</b> A real failure logged `AudioConverter returned 1869627199` eight times —
-        /// that is <c>0x6F703F3F</c>, <c>'op??'</c>, <c>kAudioConverterErr_OperationNotSupported</c>, and
-        /// nobody reads it off a decimal. The repo already has this rule for bare exception messages
-        /// (`probe-diagnostics.md`); a naked error CODE is the same failure wearing a number.
+        /// 🔴 <b>Never print the raw integer — that is a diagnostic which reads as evidence and carries
+        /// none.</b> `AudioConverter returned 1869627199` is <c>0x6F703F3F</c>, <c>'op??'</c>,
+        /// <c>kAudioConverterErr_OperationNotSupported</c>, and nobody reads that off a decimal. The repo
+        /// has the same rule for bare exception messages (`probe-diagnostics.md`); a naked error CODE is
+        /// the same failure wearing a number.
         /// </para>
         /// </summary>
         private static string StatusName(int status)
@@ -461,6 +498,9 @@ public static class IosMediaAudioConversion
         {
             if (_disposed) return;
             _disposed = true;
+            // Before the handles go: a run killed mid-segment never drains, and that is precisely the case
+            // where "where did the sound go" needs an answer. Summarise() is idempotent.
+            Summarise("dispose");
             // BOTH, and neither throw: a leaked converter holds a hardware codec slot, and a device has few.
             if (_decoder != IntPtr.Zero) AudioConverterDispose(_decoder);
             if (_encoder != IntPtr.Zero) AudioConverterDispose(_encoder);
@@ -607,7 +647,7 @@ public static class IosMediaAudioConversion
             if (description is not null) *description = null;
             // 🔴 THE WHOLE BUG WAS RETURNING 0 HERE. Zero packets with noErr does not mean "nothing more
             // in this call" — it means THE STREAM HAS ENDED, and the converter latches that permanently.
-            // Measured on the iOS simulator 2026-08-09: the first frame decoded (1248 PCM frames out of one
+            // Measured on the iOS simulator: the first frame decoded (1248 PCM frames out of one
             // 834-byte AC-3 packet, after priming), and every frame after it returned 0 with `pump calls=0`
             // — the converter never asked again, because it had been told the stream was over. A non-zero
             // status is how a starved pump says "not yet"; the converter stays alive and the caller sees

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Core.Shell;
 
@@ -32,7 +33,7 @@ namespace Shenora.Windows;
 public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
 {
     /// <param name="log">Accepted and unused here, so the two variants construct identically.</param>
-    public WindowsPlaybackSession(Action<string>? log = null)
+    public WindowsPlaybackSession(ILogger? log = null)
     {
         _ = log;
         throw ShellCapability.NotSupported(

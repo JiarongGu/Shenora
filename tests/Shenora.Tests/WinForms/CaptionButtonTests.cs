@@ -143,14 +143,14 @@ public class CaptionButtonTests
     public void A_press_then_release_on_the_same_button_activates_it() => Sta.Run(() =>
     {
         using var form = CreateForm();
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
 
         SendNc(form, WM_NCLBUTTONDOWN, HTMAXBUTTON);
         SendNc(form, WM_NCLBUTTONUP, HTMAXBUTTON);
 
         // Routed through ToggleMaximize, the SAME member the page's IPC command uses — so the
         // frameless manual-maximize bookkeeping cannot diverge between the two paths (P5.5 H2).
-        Assert.True(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
     });
 
     [Fact]
@@ -163,7 +163,7 @@ public class CaptionButtonTests
 
         // Every other button on the system behaves this way; a maximize that fires anyway would be
         // the kind of thing a user cannot cancel.
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         Assert.Equal(FormWindowState.Normal, form.WindowState);
     });
 

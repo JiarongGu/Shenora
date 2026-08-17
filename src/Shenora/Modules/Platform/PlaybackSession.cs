@@ -210,9 +210,9 @@ public sealed record PlaybackProgress
     /// <b>You do not have to zero it when pausing.</b> A rate is only meaningful while
     /// <see cref="State"/> is <see cref="PlaybackState.Playing"/>, so every shell derives the published
     /// speed from the state and ignores this value otherwise — set it to the app's real playback speed and
-    /// let the state say whether anything is moving. (Android forwarded it verbatim until 2026-08-05, which
-    /// made a paused session advertise <c>speed=1.0</c> and its scrubber drift; the fix went in the shell
-    /// rather than in a note telling apps to compensate.)
+    /// let the state say whether anything is moving. ⚠ A shell that forwards this verbatim makes a paused
+    /// session advertise <c>speed=1.0</c> and its scrubber drift — that belongs in the shell, not in a
+    /// note telling apps to compensate.
     /// </para>
     /// <para>
     /// ⚠ <b>Not every shell can carry a rate.</b> Windows' <c>SystemMediaTransportControls</c> has no speed

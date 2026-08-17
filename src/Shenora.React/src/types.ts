@@ -30,8 +30,8 @@ export const IpcErrorCodes = {
    *
    * ⚠ Distinct from {@link noRoute}, and the split is what makes it actionable: this means the module
    * was never registered host-side, while `noRoute` means it WAS and does not know that type. Opposite
-   * fixes — wire the module up, versus correct a route name — and until 2026-08-08 both arrived as
-   * `NO_HANDLER` with identical parameters, so a dead page could not be diagnosed from the wire.
+   * fixes — wire the module up, versus correct a route name — so collapsing both into `NO_HANDLER` with
+   * identical parameters leaves a dead page undiagnosable from the wire.
    */
   noHandler: 'NO_HANDLER',
   /**
@@ -145,6 +145,15 @@ export const ShellCapabilities = {
   savePicker: 'savePicker',
   secondaryWindows: 'secondaryWindows',
   tray: 'tray',
+  /**
+   * The host can put a FILE LIST on the clipboard, so the user can paste into Explorer, Finder or a
+   * file manager. No web API expresses this, and a phone's pasteboard has none — so it is the one part
+   * of the clipboard worth branching on.
+   *
+   * ⚠ It says nothing about the rest: text and bytes work everywhere, and the gesture-driven half is
+   * `navigator.clipboard`'s job, not the host's.
+   */
+  clipboardFiles: 'clipboardFiles',
   /**
    * The host can serve LOCAL FILES to this page — media, images, documents, exports — through its resource
    * interceptor. Pair it with {@link mediaUrl}.

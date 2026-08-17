@@ -1,6 +1,7 @@
 using Shenora.Modules.Media;
 using Shenora.Windows;
 
+using Shenora;
 namespace Shenora.Sample.Desktop;
 
 /// <summary>
@@ -40,7 +41,7 @@ internal static class MediaPlayerProbe
         try
         {
             await File.WriteAllBytesAsync(clip, BuildSilentWav(Duration)).ConfigureAwait(false);
-            player = new WindowsMediaPlayer(m => Console.WriteLine(m));
+            player = new WindowsMediaPlayer(AppCallback.Logger(Console.WriteLine));
         }
         catch (Exception ex)
         {

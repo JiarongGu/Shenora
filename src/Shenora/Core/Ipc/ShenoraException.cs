@@ -23,7 +23,12 @@ public class ShenoraException : Exception
 
     /// <param name="code">Error code / i18n key.</param>
     /// <param name="parameters">Optional interpolation values.</param>
-    /// <param name="message">Optional untranslated message for host logs; defaults to the code.</param>
+    /// <param name="message">
+    /// Optional untranslated message; defaults to the code. 🔴 <b>IT CROSSES THE WIRE</b> — this
+    /// exception's message travels verbatim to the client, which surfaces it as the JavaScript
+    /// <c>Error.message</c>. Never put a filesystem path, a connection string or raw exception text
+    /// here. (An exception the kit did NOT recognise is different: only its TYPE NAME crosses.)
+    /// </param>
     /// <param name="innerException">Optional cause, preserved for host logs.</param>
     public ShenoraException(
         string code,

@@ -32,6 +32,352 @@ at the first list and missed five more breaking changes.
 
 ### Breaking
 
+🔴 **A bare `Session…` name now means SHARED by every session kind; one that belongs to a single kind
+carries that kind.** Six types were named for the area and served exactly one session type, which is the
+opposite of what the name promised — `SessionResult` was returned only by an interactive session, and
+`SessionFrame` only by a streaming one.
+
+| was | now |
+|---|---|
+| `SessionResult` | `InteractiveSessionResult` |
+| `SessionErrorCodes` | `InteractiveSessionErrorCodes` |
+| `SessionFrame` | `StreamingSessionFrame` |
+| `SessionFrameFormat` | `StreamingSessionFrameFormat` |
+| `SessionEnded` | `StreamingSessionEnded` |
+| `SessionEndReason` | `StreamingSessionEndReason` |
+
+The names that stayed bare are the ones that earn it: `SessionBrowserOptions` and its five hook payloads,
+`SessionController`, `SessionCookie`, `SessionViewport`, `SessionPointerAction`, `SessionEvents` — each
+used by more than one session kind. ⚠ The error-code **values** are unchanged (`SESSION_BUSY` and
+friends): they cross the IPC error contract through `ThrowIfFailed`, so a page matching on them is
+unaffected.
+
+Three files were renamed for the same reason and break nothing: `WinFormsHost.cs` named a type deleted
+before 0.10.0 (→ `WindowsHostExtensions.cs`), and the two samples still carried the `Facade` vocabulary
+D65 retired (→ `SampleModule.cs`, `PortableSampleModule.cs`).
+
+🔴 **An interactive session takes a whole `SessionBrowserOptions` now, exactly like every other
+session.** `InteractiveSessionOptions.{ProfileDirectory, Events, ObserveResponse}` are GONE; set
+`Browser` instead.
+
+```csharp
+// before
+new InteractiveSessionOptions { Anchor = form, ProfileDirectory = path, Events = bus }
+// after
+new InteractiveSessionOptions { Anchor = form,
+    Browser = new SessionBrowserOptions { ProfileDirectory = path, Events = bus } }
+```
+
+It built its browser options INTERNALLY and forwarded two fields by hand, so an interactive session
+could not serve the app's own bundle, could not take a request filter, could not take any of the five
+hooks, and was SILENT — no logger reached it. `RenderSessionPool` and `StreamingSession` both took the
+whole object already; this is the odd one out being brought into line, and `SessionBrowserOptions` is a
+`record` so the session `with`-overrides the ONE field it owns (`KeepAliveInBackground`, from
+`RevealImmediately`) and inherits everything else by construction. ⚠ Copying field-by-field was the
+obvious fix and the wrong one: it works the day it is written and silently drops the next option added.
+A reflection test now walks every property and fails if one stops passing through.
+
+**Nine public names removed, none of which a consumer could use.** Every one was checked against
+`src/`, `samples/` and `tests/` first; `Shenora.Tests` and `Shenora.Sample.Maui` see internals, so
+"the tests need it" is not a reason to be public here.
+
+- **`IShenoraModule` + `ShenoraApplicationBuilder.AddModule` are DELETED.** Zero implementations
+  anywhere — in the kit, both samples, all three shells — and no mention in any doc; the only one that
+  ever existed was a test double. It was also the **third** meaning of "module" on the front door,
+  beside `IIpcModule`/`ModuleBase`/`MapModule` and the `Shenora.Modules.*` layer. If you had one:
+  `builder.AddModule(new FooModule())` → `FooModule.Configure(builder.Services)`, which is how the kit
+  and both samples already slice.
+- **`SessionBrowser` → internal.** It was `public static` with **every member internal** — its baseline
+  row had no members at all, so nothing on it was callable.
+- **`WebView2Interceptor` → internal.** Public with an internal constructor and no members beyond
+  `IWebViewInterceptor`, which every consumer already goes through.
+- **`Mp4Layout`, `Mp4SampleSpan`, `Mp4LayoutReader`, `Mp4Remuxer.Plan` → internal** (~24 rows). The
+  sibling `Mp4LayoutRangeStream` was already internal and the plan seam is documented as test-only, so
+  the boundary was already drawn one type over. For a byte↔time map of your own, `IComputedRemuxRoute`
+  is public and stays.
+- **`DerivedCacheKey` → internal**, and moved out of the SemVer surface entirely: every consumer is in
+  the same assembly, and a SHA-256 over caller-supplied values is `crypto.subtle.digest` — the one
+  member in that layer that cleared no part of the native-capability test.
+- **`EventBus.GetHandlerCount()` and `MapRegisteredModulesLazily` → internal.** Neither had a consumer
+  outside its own file or tests; `WebViewPipeline` already refuses the identical count member in
+  writing.
+
+⚠ Removing those types left five words in `surface-lexicon.txt` with nothing to justify them, and the
+vocabulary gate said so: *"an allow-list that only grows reviews nothing."* `Cache`, `Derived`,
+`Reader`, `Sample` and `Span` are gone from it.
+
+🔴 **`IFileUpdateQueue` gains `RecoverAsync`** — crash recovery is now callable from what the framework
+actually registers. Implementing your own queue? Add the method; it may `return Task.FromResult(0)` if
+you keep no journal.
+
+**Why it had to move.** `Build()` registers the queue **with a journal on by default**, and only the
+interface — while `RecoverAsync` lived on the concrete type. So
+`app.Services.GetRequiredService<IFileUpdateQueue>().RecoverAsync()` did not compile, which is why the
+guide's own example hand-constructed a `new FileUpdateQueue(...)` and side-stepped DI. A downcast is not
+a fix either: it fails **silently** the moment an app registers its own queue, which `UseFileSystem`
+explicitly invites. Meanwhile a journal nobody replays is a directory that fills up while interrupted
+updates stay un-rolled-back.
+
+`docs/guides/file-updates.md` now shows the DI call, and a test resolves the interface from a built app
+and calls it — the suite previously could not fail on this.
+
+🔴 **The two `Mp4Remuxer.Remux` overloads that omitted the conversion are GONE.** `Remux(string, string,
+CancellationToken)` and `Remux(Stream, Stream, CancellationToken)` are removed; pass the conversion
+explicitly — `conversion: null` if you really want none.
+
+**Why they could not stay.** D59 is about exactly this: *"the overload every adoption example wired
+passed `conversion: null`, so a registered conversion was never called and the remux simply dropped the
+soundtrack — a film that played SILENTLY."* The shortest, most discoverable call on the type still did
+that, and it returns `Succeeded` while the loss is reported only in `MediaRemuxerResult.Dropped`. Making
+the parameter unavoidable is what stops the defect recurring; `null` is now a decision you type.
+
+🔴 **`UseErrorHandler()` / `UseLogging()` now REFUSE a dispatcher they cannot log through**, instead of
+silently logging nowhere. If you wrap the dispatcher — for metrics, tracing, an app-side guard — its own
+logger is unreachable (that lookup only works on the kit's concrete `MessageDispatcher`), so the call
+now throws at **composition** with a message naming your type. Pass a logger:
+`decorated.UseErrorHandler(logger)`, or `NullLogger.Instance` for deliberate silence.
+
+**What it was doing before.** Falling back to `NullLogger`. So behind a decorator every unhandled
+exception was mapped to `UNKNOWN_ERROR` for the client **and logged nowhere at all** — the one place the
+kit promises the detail stays host-side. Nothing indicated it; the pipeline worked, the client got its
+error code, and the diagnostic simply did not exist. Decorators are positively encouraged by
+`IModuleRegistry`'s own documentation, so this was a supported shape.
+
+Unaffected: the kit's own composition (`UseMessageDispatcher` wires the handler on the concrete
+dispatcher before any decoration) and every call on a concrete `MessageDispatcher`, which is all of them
+in this repo bar one test.
+
+🔴 **Codec identity is a `MediaStreamCodec`, not a bare `string`** — across `IMediaCapability`,
+`MediaPlaybackPolicy`, `IMediaStreamConversion.CanConvert`, `IMediaContainerWriter.CanCarry`,
+`MediaStreamClaim` and `CanRepair`. A bare string still works everywhere (`MediaStreamCodec codec =
+"aac";`), so most call sites are unchanged; **collection types are not** — `IReadOnlySet<string>` becomes
+`IReadOnlySet<MediaStreamCodec>`.
+
+**Why a name was never enough, and the kit already said so.** `MediaStreamInfo.Profile` exists because
+*"HEVC `Main 10` is a different capability from the `hevc` a device advertises, so a codec name alone can
+say 'supported' about a stream that will not decode"* — and the planner then matched on the name alone.
+A Main-10 file on a Main-only decoder was planned `Direct` and rendered nothing, with no error anywhere.
+
+**THE MATCHING RULE, which is the whole design.** A capability with **no** profile matches **any**
+profile; one **with** a profile matches only that. So every device that reports bare names behaves
+exactly as before — and a device that can name `hevc/Main 10` can finally say so. ⚠ It is asymmetric on
+purpose: the capability side may be broad, the stream side is the concrete thing being asked about.
+
+**Android now reports profiles.** `MediaCodecList` hands back `ProfileLevels` and the shell discarded
+them; it now adds the bare name **and** every profile it can name. Unrecognised profile constants add
+nothing rather than inventing vocabulary.
+
+⚠ The type is `MediaStreamCodec`, not `MediaCodec`, because **`Android.Media.MediaCodec` is the platform
+SDK's own type** — the shorter name collided on the one platform that most needs this to work.
+
+🔴 **`MissionExecution` and `MissionRecord` now carry the caller's own `Key`** (defaulted, appended —
+source-compatible, but a positional-record change so **recompile**).
+
+**Why nothing an app received could be recognised.** `MissionKey` is documented as the caller-chosen
+identity and `IsActive(MissionKey)` treats it as *the* handle, but it was dropped at construction — so a
+mission body, an `IMissionObserver` callback, an `IMissionPolicy` and every `Snapshot()` row carried only
+`MissionId`, which is the scheduler's and is per-process. An app could not build a `missionId → my item`
+map at all. The one real consumer proves it: the sample publisher emits `missionId` + `kind`, and the
+guide tells the page to fold by an opaque `m7` the app never saw.
+
+The only workaround was encoding instance identity into `Kind`, which is documented as a *type*.
+
+**`MissionRecord` matters more**, because the kit ships no store (D28) — that record is the wire format
+between the kit and every adopter's storage, and `MissionId` does not survive a restart. A `rehydrate`
+callback can now key on what the app itself chose.
+
+**Two placement corrections — namespace only, every type keeps its name.**
+
+| was | is | why |
+|---|---|---|
+| `Shenora.Engine.Files.IFileLockInspector` | `Shenora.Core.Shell` | a SHELL implements it |
+| `Shenora.Engine.Files.FileLockHolder` | `Shenora.Core.Shell` | travels with the contract |
+| `Shenora.Engine.Missions.RetryPolicy` | `Shenora.Engine` | both engines use it; neither owns it |
+
+**`IFileLockInspector`** is implemented by `Shenora.Windows`, and the rule is stated three times — in
+`generic-library.md` (*"If a SHELL implements it, the contract lives in Core — full stop"*), in D48
+(*"SPLIT BACK OUT because a shell must be able to implement a Core contract without reaching outward for
+it"*), and in the file's own header. The tree disagreed: the shell opened with
+`using Shenora.Engine.Files;`, exactly the edge D48 says was designed out. It now opens with
+`using Shenora.Core.Shell;`.
+
+**`RetryPolicy`** made `Engine.Files` depend on `Engine.Missions` for a type that names no mission
+vocabulary and that both engines apply with the same loop — against a design whose stated point (D30) is
+that the two compose and *"neither knows about the other"*. An app using only the file queue had to write
+`using Shenora.Engine.Missions;` to name its retry policy.
+
+⚠ Inside the kit, nothing else needed a `using` change: `Engine.Files` and `Engine.Missions` are children
+of `Engine`, so `RetryPolicy` resolves for both without one.
+
+🔴 **`MediaStreamPlan`'s two booleans become one `MediaStreamVerdict`.**
+`MediaStreamPlan(stream, DecodesNatively, NeedsReEncode)` →
+`MediaStreamPlan(stream, MediaStreamVerdict)`, with `Plays` as a convenience for "does not force a
+transcode".
+
+**Why two bools were lossy.** The planner set `DecodesNatively: true` for three *different* reasons — a
+codec the policy lists, a codec that is UNNAMED and was given the benefit of the doubt, and a subtitle
+recorded but never counted — and its own doc admitted the conflation. A consumer could not tell a
+certainty from a guess, which matters: `Assumed` means the planner does not know, and an app that must
+not guess can now refuse.
+
+`NeedsReEncode` was simply the negation, so the pair encoded three states in four bit patterns while the
+planner knew four.
+
+⚠ **No `Dropped` member**, though the audit suggested one: the planner never drops an individual stream
+today — an unencodable stream makes the whole FILE `Unsupported`. Adding an enum member later is
+additive; shipping one nothing can produce would be a value the kit ignores.
+
+🔴 **`WindowState.Maximized` (a `bool`) becomes `WindowState.Placement` (a `WindowPlacement` enum)**,
+and `IAppMaximizable.IsAppMaximized` becomes `AppPlacement`. `OptimizedForm.IsAppMaximized` goes with it.
+
+```csharp
+if (form.AppPlacement == WindowPlacement.Maximized) { … }
+```
+
+**Why a bool could not stay.** The third state is real — a media or streaming window wants FULL SCREEN
+(the whole monitor, no work-area inset), which is not the same thing as maximized. `OptimizedForm`
+already has most of the machinery, and today an app doing it by hand gets its state **persisted as
+"maximized" and restored wrong**. `WindowPlacement` ships with `Normal` and `Maximized` only, because
+adding an enum member later is ADDITIVE — widening a `bool` is not.
+
+⚠ **`WindowState` IS the on-disk format.** State saved by 0.10.0 carries a `maximized` boolean the new
+record does not read, so such a window opens **windowed once** and is correct from the next save on.
+Geometry is unaffected and nothing throws.
+
+**`WindowStateManager.ToPhysical` (both overloads) and `ToLogical` are now `internal`.** They returned a
+naked 5-tuple whose arity is part of every caller's destructuring, and they had no consumer outside the
+assembly — leaving them public would have made this change break callers twice. `IsVisible` stays public;
+"can the user reach this rect?" is a question an app legitimately asks.
+
+**`UseHeadless` takes a configure callback like every other `Use…`.**
+`UseHeadless(HeadlessRunnerOptions?)` → `UseHeadless(Action<HeadlessRunnerOptions>?)`, and
+`HeadlessRunnerOptions`' three properties become `{ get; set; }`.
+
+```csharp
+builder.UseHeadless(x => { x.StopToken = token; x.StopOnProcessSignals = false; });
+```
+
+**Why consistency is worth a break here.** `UseMissions`, `UseFileSystem`, `UseRequests` and
+`UseMediaPlayer` all take `Action<TOptions>` over mutable options; `UseHeadless` was the only one taking
+a built object. The composition surface is the first thing an adopter learns, so one member disagreeing
+with four costs more than it looks. And it could not be fixed later: `init` compiles to a `set_X` with an
+`IsExternalInit` modreq, so removing it is a **binary** break — free now, a deprecation cycle after 1.0.
+
+**`IWebViewResourceProvider` gains `BeginWarmup()`** as a **default interface member** — existing
+implementations need no change.
+
+**Why it had to be on the contract.** The kit's own startup call reached past the interface:
+`(GetRequiredService<IWebViewResourceProvider>() as EmbeddedResourceProvider)?.BeginWarmup()`, with no
+`else`. So an app that registered its own provider — the reason the interface is public at all — got **no
+warmup and no diagnostic**. That is the same shape as the `dispatcher is MessageDispatcher` defect this
+repo already recorded, which "silently dropped three whole modules". A default body means a provider with
+nothing to warm still writes nothing, and an added interface member is impossible after 1.0.
+
+**`SessionController`'s four taps return `IDisposable`.** `OnMessage`, `OnDownload`, `OnNewWindow` and
+`OnNavigation` were `void`, so a listener could be added and never removed. Source-compatible —
+`controller.OnMessage(h);` still compiles — but **binary**-breaking, so recompile.
+
+`StreamingSession.Controller` is public and lives for the whole session, so a viewer that observes
+navigations for a while had no supported way to stop and the handler list only grew. `RenderSession`'s
+equivalent taps already returned `IDisposable`; this makes the two halves of one package agree.
+
+⚠ **Not unit-tested, and worth saying rather than implying.** `SessionController`'s constructor
+subscribes to `CoreWebView2` events, so it cannot be built without a live browser — the change is
+compile-enforced and mirrors `RenderSession`'s existing pattern, whose unsubscribe is not directly
+covered either.
+
+🔴 **`IMediaPlayer.Rate` is now `SetRateAsync(rate, ct)`.** Read the current value from
+`Status.Rate`, which is where it always actually lived.
+
+**Why a setter could not stay.** Every other operation on the interface is `Task …Async(…, ct)`. The
+platform call behind a rate change can fail, can take time, and can be cancelled — a property setter
+expresses none of those, and the IPC route had to fabricate the await
+(`Drive(p => { p.Rate = rate; return Task.CompletedTask; })`). `MediaPlayerBase` pushed the same shape
+down to every shell. Turning it into a method later would break the interface, the abstract base, four
+shell players and every caller at once.
+
+⚠ An out-of-range rate still throws **synchronously** rather than returning a faulted task: it is a
+caller bug, not a platform outcome, so it should surface without an await.
+
+🔴 **`SessionFrame` no longer names one encoding.** `SessionFrame(byte[] Jpeg, int Width, int Height)`
+→ `SessionFrame(byte[] Bytes, SessionFrameFormat Format, int Width, int Height)`, and
+`StreamingSessionOptions.JpegQuality` → `FrameFormat` + `FrameQuality`.
+
+**Why it could not wait.** The screencast offers JPEG *and* PNG; the kit picked one and wrote it into a
+member name. Two of the four use cases that justified naming the type `StreamingSession` in the first
+place — visual capture and a preview pane — are exactly the ones that want lossless. And because
+`SessionFrame` is a positional record, adding `Format` later changes its arity and `Deconstruct`, so
+every consumer breaks then instead of now.
+
+**The format travels WITH the frame**, not only in the options, because a consumer pumping frames to a
+transport needs to label the payload. The desktop sample shows why: its viewer builds
+`data:image/${format};base64,…` — hardcoding `image/jpeg` there would silently render a PNG wrong.
+
+🔴 **`IShellLauncher.LaunchProcess` takes `ProcessLaunchOptions` and returns the process id.**
+`void LaunchProcess(string, string?, string?)` → `int? LaunchProcess(ProcessLaunchOptions)`.
+
+```csharp
+launcher.LaunchProcess(new ProcessLaunchOptions { ExecutablePath = exe, Arguments = args });
+```
+
+**Why now.** Every plausible next requirement was a signature change: an elevation verb — and this kit
+ships an **updater**, the classic elevation need — environment variables, an argument *list* instead of a
+hand-quoted string, a window style. On a record each of those is an added property, which is additive.
+And `void` foreclosed the **process id**, which a supervising app needs to wait on or kill what it
+launched; `void` → `int` is a binary break even though it is source-compatible.
+
+`null` is returned when the shell satisfied the request without starting a process (it handed the work to
+an already-running instance). ⚠ It is not a failure — a launch that did not happen still throws.
+
+🔴 **`SingleInstanceGuard.TryAcquire` returns `SingleInstanceResult`, not `bool`**, and
+`ActivateMessageId` is `uint?`.
+
+`if (guard.TryAcquire())` → `if (guard.TryAcquire() is not SingleInstanceResult.AlreadyRunning)`, which
+is the historical behaviour: only `AlreadyRunning` stops a launch.
+
+**Why the bool was lossy.** There are THREE outcomes and it could express two. The guard **fails open**
+— if the OS refuses to answer it returns "carry on" — so "I own this scope" and "nobody could tell me"
+were the same `true`. An app whose reason for being single-instance is a single-writer database or a
+profile lock may want to refuse, warn, or open read-only when the guard is `Unverified`, and it had no
+way to ask. Apps with nothing at stake treat `Acquired` and `Unverified` alike and are unaffected.
+
+`ActivateMessageId` had the same problem one member over: `0` meant BOTH "`TryAcquire` has not run yet"
+and "`RegisterWindowMessage` failed", which the property's own docs admitted while the compensating
+warning lived in an `internal` runner an adopter never sees. It is now `uint?` — `null` is "no channel".
+The failure is real, not theoretical: the session's global atom table can be exhausted, measured on this
+dev machine.
+
+🔴 **`OptimizedForm.WndProcHook` now receives the whole `Message` and answers with a result.**
+`Func<int, bool>` → `Func<Message, IntPtr?>`. Return `null` to let the message fall through; return a
+value to mark it handled, and that value becomes `Message.Result` (`IntPtr.Zero` = "handled, nothing to
+report").
+
+**Why the old shape could not do the job.** It received the message ID and nothing else — no `WParam`,
+no `LParam`, no way to set a result. That rules out every real reason to hook a window procedure:
+`WM_COPYDATA`, `WM_POWERBROADCAST`, `WM_DEVICECHANGE`, `WM_SETTINGCHANGE`, `WM_ENDSESSION`, any
+`RegisterWindowMessage` channel carrying a payload. It was an artefact of a closure, not a design: `m`
+is a `ref` parameter and cannot be captured by the guard's lambda (CS1628), so only the `int` was
+copied out. The hook now answers with a value instead of assigning `m.Result`, because it is handed a
+COPY — a write to that copy would be discarded silently, which is the worst shape available.
+
+🔴 **`WebViewHostOptions`' three event-policy hooks now RETURN whether they handled the event.**
+`OnDownloadStarting`, `OnPermissionRequested` and `OnProcessFailed` change from
+`Action<TArgs>` to `Func<TArgs, bool>` — return `true` for "handled, do not apply the built-in
+policy", `false` to fall through to it. A throw still counts as not-handled and is logged.
+
+Migration is one `return` per hook: `x => { … }` becomes `x => { …; return true; }`.
+
+**Why this could not stay as it was.** The kit inferred "handled" from "did not throw", so an app had
+no way to observe an event and still get the built-in policy — the only spelling for that was to
+**throw**. It was worst on `OnProcessFailed`, where the early return sits above both the diagnostic log
+and the whole auto-reload block: merely attaching crash telemetry **silently disabled
+`ReloadOnRenderProcessFailure`, `AutoReloadCooldown` and `MaxAutoReloads`**, three options that stayed
+set and did nothing. If that was you, the fix is `return false;`.
+
+⚠ **Not covered by a unit test, and said so rather than implied.** The hooks are wired inside
+`WireEventPolicies`, which needs a live `CoreWebView2`; the signature change itself is compile-enforced
+and the semantics are proven only by the sample e2e.
+
 **`WinFormsUiDispatcher` and `MobileUiDispatcher` now derive from `UiDispatcherBase`.** Source-compatible
 — every member is still there and still called the same way — but the inherited ones now live on the base,
 so code compiled against 0.10.0 must be **recompiled** rather than dropped in. Nothing to change in your
@@ -69,8 +415,20 @@ churn here is how a real break gets lost in the noise.
 | `Shenora.Ipc` | `Shenora.Core.Ipc` |
 | `Shenora.Media` | `Shenora.Modules.Media` |
 | `Shenora.IO` | `Shenora.Engine.Files` |
-| `Shenora.IO.Compression` | `Shenora.Modules.Update.Compression` |
+| `Shenora.IO.Compression` (the updater half) | `Shenora.Engine.Update` |
+| `Shenora.IO.Compression` (`ZipExtraction`, `ResourcePack`) | `Shenora.Engine.Compression` |
 | (missions, previously flat in `Shenora.Core`) | `Shenora.Engine.Missions` |
+
+⚠ **`Shenora.IO.Compression` splits in two, and `ZipUpdateSource` goes with the UPDATER**, not with the
+other zip types — it is an `IUpdateSource` first and a zip reader second. Everything else keeps its name;
+only the namespace on the `using` changes.
+
+**Why `Engine` and not `Modules`.** `Modules/` means a capability carried to the PAGE (D65) — every other
+member of it has an IPC surface and most have a platform half. The updater has neither: no
+`ModuleBase`, no route, nothing in any shell, and `UpdateStage` states outright that it is *"portable —
+no native code and nothing platform-specific"*. It sits beside `Engine/Files`, which solves the adjacent
+problem. Extraction moved out of the updater's folder for the same reason one level down: `ZipExtraction`
+and `ResourcePack` name no update, and a font set is not part of the self-updater.
 
 - **The package set is `Shenora` + ONE shell (`Shenora.Windows` / `.Android` / `.iOS`) + `@shenora/react`**,
   plus the native `Shenora.Launcher` and the build-time `@shenora/cli`. **There is no optional-feature tier
@@ -207,7 +565,268 @@ churn here is how a real break gets lost in the noise.
   particular `Access` never calls it — `MediaPlayerOptions` resolves its route through `MediaPlayerRoute`
   instead, so `static _ => null` is the correct value to give it.
 
+🔴 **`IClipboardService` carries a whole clipboard ITEM, not one format at a time.**
+`SetImageFromFileAsync(string)` and `TrySaveImageToFileAsync(string)` are GONE; `GetAsync`, `SetAsync`
+and `ClearAsync` take a new `ClipboardContent` — `Text`, `Files`, and a `Formats` map keyed by media
+type. `SetTextAsync`/`GetTextAsync` are unchanged and are now documented shorthands for the same
+operation.
+
+```csharp
+await clipboard.SetAsync(new ClipboardContent {
+    Text    = "1,2,3",
+    Formats = new Dictionary<string, ReadOnlyMemory<byte>> {
+        [ClipboardContent.Html]     = Encoding.UTF8.GetBytes("<table>…</table>"),
+        [ClipboardContent.PngImage] = chart,
+        ["application/x-myapp-cells"] = mine,   // your OWN representation, carried verbatim
+    },
+});
+```
+
+🔴 **Why one format at a time was WRONG, not merely limited.** A clipboard holds one item offering
+several representations, so every platform's set REPLACES the lot — calling the text setter and then
+the image setter left the image and silently discarded the text. "Copy this as text AND as a picture",
+which is what an ordinary application's Copy does, could not be expressed and the attempt failed with
+no error. A test now sets text + HTML + PNG in one call and reads all three back.
+
+**The `Formats` map is open on purpose.** `Text` and `Files` are named because every platform has a
+first-class API for them; everything else is keyed by media type so an app can carry its own
+representation — its document model, a structure a paste round-trips losslessly — without the kit
+becoming the registrar of every format anyone wants. Same reasoning as `ShellCapability`'s capability
+strings, and the same shape as the web's own `ClipboardItem`.
+
+⚠ **Two defects went with the old shape.** `TrySaveImageToFileAsync` hardcoded `ImageFormat.Png`, so
+`TrySaveImageToFileAsync("shot.jpg")` wrote **PNG bytes into a `.jpg`**; and both image members were
+file-shaped, so an app holding bytes had to round-trip a temp file to copy one, and write-then-read one
+to paste. Reading a picture now returns the bytes that were actually put there rather than a re-encode,
+which is what preserves an alpha channel — a transparent screenshot used to come back on a black
+background.
+
+**Windows translates; it does not just store.** A PNG filed under `"image/png"` is invisible to
+Explorer, Word and every browser, so the shell writes the `PNG` format *and* a `CF_BITMAP` for older
+readers, and wraps HTML in `CF_HTML` with its byte-offset header — get that header wrong and the paste
+silently truncates. An unrecognised media type is stored verbatim, because a private format is only
+ever read back by the app that wrote it.
+
+**Mobile now uses the PLATFORM pasteboard, not Essentials.** iOS carries text, HTML, PNG and arbitrary
+UTIs through `UIPasteboard`; Android carries text and HTML through `ClipData.NewHtmlText`. ⚠ Android
+refuses other byte formats — every one travels as a `content://` URI needing a `ContentProvider` the
+**app** declares — and **both refuse `Files`**, which is a desktop idea no pasteboard expresses. Each
+refusal names what was asked for and why (D33).
+⚠ **The mobile paths are NOT device-verified** — they compile for both TFMs and the contract is proven
+on the desktop shell; a device run is open in `TASKS.md`.
+
+🔴 **Every diagnostic sink is an `ILogger`, not an `Action<string>`** — all 16 `Log` properties across
+the kit and both mobile shells, plus `MediaPlayerBase`'s constructor, `SegmentEngine.Default`,
+`UseSegmentStream`, `BoundedBodyStream`, and the three Windows shell types
+(`WindowsMediaPlayer`, `WindowsMediaCapability`, `WindowsPlaybackSession`). `AppCallback.Log` takes one
+now too, and gains a `level` and an `exception`. ⚠ `MediaPlayerBase`'s `protected Log` gains an optional
+`Exception?` — source-compatible for a subclass, but recompile.
+
+**Migration is one call if your sink is a delegate:** `Log = Console.WriteLine` →
+`Log = AppCallback.Logger(Console.WriteLine)`. An app with real logging infrastructure passes its own
+logger instead and gets what the adapter cannot give it — filtering, categories, structured fields.
+
+**Why a delegate could not stay.** `Action<string>` carries a string and nothing else: no level, no
+event id, no structured fields, and **no exception object**. So a kit diagnostic reporting a caught
+failure could only interpolate `ex.GetType().Name` into a line, throwing away the type, the stack and the
+inner chain — the identity a diagnostic exists to preserve. It also split an app's diagnostics between
+two mechanisms: three types already took `ILogger`, `MessageDispatcher` resolved `ILogger<T>` from DI,
+and everything else did not — so `UseLogging()` configured a pipeline most of the kit could not write to.
+
+**All 58 of those sites now pass the exception itself** — the whole reason for the change, and it is
+what your sink receives instead of a type name flattened into a string.
+
+⚠ **`ILogger` is a new name on the public surface but NOT a new dependency** —
+`Microsoft.Extensions.Logging.Abstractions` was already referenced and already on the surface via
+`UseErrorHandler(ILogger)`.
+
+🔴 **YOUR MINIMUM LEVEL NOW APPLIES, AND ORDINARY TRACING IS `Debug`.** A delegate got every line
+unconditionally — there was no level to filter on. A real logger has one, and the default host builder
+filters at `Information`, so an app that swaps `Log = Console.WriteLine` for its own `ILogger` sees the
+kit's ordinary tracing only once it enables `Debug` for the `Shenora.*` categories. Nothing fails; those
+lines simply stop. `AppCallback.Logger(…)` reports every level enabled, so a delegate sink behaves as it
+did.
+
+⚠ **A swallowed FAILURE is `Warning`, so it survives that default filter** — that is the level the kit
+picks whenever a diagnostic carries an exception, which is what "something unexpected happened and we
+carried on" means. The rule lives in `AppCallback.Log` alone (pass an explicit `level` to override), so
+no per-type helper restates it.
+
+**And the kit's own tag moves where it belongs.** The three shell players used to wrap the delegate to
+prefix `[Shenora.Windows]`/`[Shenora.Android]`/`[Shenora.iOS]`; the shells now pass
+`ILogger<WindowsMediaPlayer>` straight through, so the CATEGORY carries the origin and a structured sink
+sees a real one instead of a string prefix.
+
+🔴 **EVERY session observation tap is GONE** — `SessionController.OnMessage`/`OnDownload`/`OnNewWindow`/
+`OnNavigation`, and `RenderSession.OnNetwork`/`OnMessage` with the `SessionApiCall` record. What the
+browser does is now published on the app's `IEventBus` as `SessionEvents`, scoped by the session's id:
+
+```csharp
+// before
+controller.OnNavigation(url => …);
+// after — and the catalogue is far wider than four
+bus.Subscribe(SessionEvents.Module, SessionEvents.NavigationStarting, session.Id, m => …);
+```
+
+**Why they could not stay.** They were a second subscription idiom sitting next to the kit's own bus,
+which already has scope matching, wildcards and guarded handlers — and the kit should have ONE answer to
+"how do I observe this", exactly as it has one answer to "how do I undo a registration".
+
+⚠ **`RenderSession.OnNetwork` lost nothing in the move**, which was worth checking rather than assuming:
+its body sample is carried by `SessionResponse.BodySample` (ask for one with
+`SessionBrowserOptions.ResponseBodySample`), and the read is still an asynchronous best-effort — an
+`EventMessage.Payload` is `object?`, so there was never anything a callback could carry that an event
+could not. `OnMessage`'s `WebMessageAsJson` fallback moved too: a page posting an object rather than a
+string is reported, not dropped.
+
+⚠ Removing `SessionApiCall` left `Api` and `Call` in `surface-lexicon.txt` with nothing to justify them,
+and the vocabulary gate said so in both directions; both are gone. `Navigation` was added for
+`SessionNavigationResult` — the browser's own word, already first-class in this surface as
+`NavigationGuard`/`NavigationTimeout`/`NavigateAsync` and only now needing a type.
+
+**On a POOLED session the scope also replaced a guard.** `OnNetwork`/`OnMessage` threw
+`ObjectDisposedException` after the lease returned, because a tap installed late would have streamed the
+next tenant's traffic to the previous caller. That cannot arise now — the recycled browser publishes
+under a new `Id`, so a subscription outliving its lease goes deaf instead of being re-pointed.
+
+🔴 **One of them was actively harmful.** `SessionController` set `e.Handled = true` on
+`NewWindowRequested` unconditionally, on top of `SessionBrowser`'s own popup policy — and being wired
+second, it ran second, so allowing a popup could not survive it. An app setting the new
+`OnWindowRequest` hook to ALLOW was therefore silently overruled on `InteractiveSession`, the one session
+type a human is looking at. The hook is now the single owner of that decision.
+
 ### Added
+
+- **`useDropZone` takes an `onError`, and `IpcRequestRoutes` is exported.** Drop-zone failures could
+  only ever reach the console — the last error path in `@shenora/react` with no app sink, beside
+  `bridge.ts`'s `onPostError`, `store.ts`'s `onError` and `segmentBinder.ts`'s `onDiagnostic` — and it is
+  the one whose failure is INVISIBLE: the page renders correctly and files simply do not drop.
+  `IpcRequestRoutes` was the route half of a wire whose module name and event names were already
+  exported, so cancelling a request without `useShenoraRequests` meant hard-coding `'CANCEL'`.
+
+- **The window-chrome and drop-zone wire vocabularies are CONSTANTS now, and the mirror test reads
+  them** — `WindowCommandModule.{Minimize,ToggleMaximize,Close,IsMaximized,StartDrag,StartResize,
+  SetTheme,SetCaptionButtons}Type`, `DropZoneModule.{Register,Update,Unregister,Show}Type` and
+  `DropZoneManager.{DragEnter,DragLeave,FileDrop}Event`. Both modules switched on bare string literals,
+  so the two halves of those wires were the only ones with nothing comparing them — and their failure
+  is the silent kind: a frameless window whose `START_DRAG` drifted still renders perfectly and simply
+  stops dragging. `WireMirrorTests` now pins window commands, drop-zone routes AND events, the media
+  player's command set, and the four IPC ENVELOPES themselves. A page that names routes directly can
+  use the constants instead of literals.
+
+- 🔴 **A session browser now REPORTS what it does — `SessionEvents`, published on the app's
+  `IEventBus`.** Ten event types where there were four taps: `RESPONSE_RECEIVED`,
+  `NAVIGATION_STARTING`, `NAVIGATION_COMPLETED`, `DOM_CONTENT_LOADED`, `SOURCE_CHANGED`,
+  `TITLE_CHANGED`, `WEB_MESSAGE`, `DOWNLOAD_STARTING`, `WINDOW_CLOSE_REQUESTED`, `PROCESS_FAILED`.
+  Set `SessionBrowserOptions.Events` to turn them on; with no bus nothing is wired and nothing is paid.
+
+  ```csharp
+  using var _ = bus.SubscribeToModule(SessionEvents.Module, session.Id, m => { … });
+  ```
+
+  **Each event answers a need the surface could not.** A redirect-driven load was invisible unless you
+  awaited your own `NavigateAsync`; an SPA route change fires no navigation at all; a driver waiting for
+  "the document exists" had to poll with a script; and a dead renderer was an options callback nobody
+  else could see.
+
+  🔴 **`RESPONSE_RECEIVED` is the honest primitive behind "tell me when a cookie changes."** Measured
+  against the SDK: `CoreWebView2CookieManager` raises NO events, so there is nothing to forward. A
+  response carries `Set-Cookie` as it happens along with the 302 that usually accompanies it — one
+  mechanism serving cookie capture, redirect tracing and API observation, none of them named for a
+  scenario. ⚠ It does **not** see a cookie set by JS (`document.cookie`); read the jar with
+  `GetCookiesAsync` for that. It is also the only event here that fires per SUBRESOURCE, so it is OFF
+  until `SessionBrowserOptions.ObserveResponse` selects which URIs are worth reporting.
+
+- **Every session type now has an identity — `RenderSession.Id`, `StreamingSession.Id`,
+  `SessionController.Id`.** It is the scope its events publish under. ⚠ On a pooled session the id
+  belongs to the **lease**, not to the recycled browser: the same instance is leased again under a new
+  one, so a subscription that outlives its session stops receiving anything rather than quietly picking
+  up the next tenant's pages.
+
+- 🔴 **The page can reach the native clipboard — `AddShenoraClipboard()`, `SHENORA.CLIPBOARD`, and
+  `useClipboard()` / `ClipboardAccess` in `@shenora/react`.** Opt-in, and deliberately NOT defaulted on
+  the way the file dialogs now are. ⚠ The client class is `ClipboardAccess`, not `Clipboard`: the DOM
+  already has a global by that name (the type of `navigator.clipboard`), and an import that shadows it
+  would make the web's own clipboard unnameable in that file — a collision worth avoiding while the name
+  has never shipped, since after 1.0 it would cost a break.
+
+  ```tsx
+  const { clipboard, canCopyFiles } = useClipboard();
+  <button onClick={() => navigator.clipboard.writeText(name)}>Copy name</button>
+  {canCopyFiles && <button onClick={() => clipboard.write({ text: name, files: [path] })}>Copy file</button>}
+  ```
+
+  🔴 **It is not a replacement for `navigator.clipboard`, and the routes are scoped so it cannot become
+  one.** The page runs in a real browser: gesture-driven copy of text or an image already works there and
+  should stay there. Two things the web cannot do are the whole justification — **files**, which no web
+  API can put on a clipboard, and **access with no user gesture, focus or permission**, which
+  `navigator.clipboard.read()` requires and a host does not.
+
+  ⚠ **And the choice is per-COPY, not per-format**, because a clipboard set is atomic: one item, last
+  writer wins. An item that includes files must be written entirely through the host — writing its text
+  half with `navigator.clipboard` and the files here leaves only the files, silently. That is why the
+  routes carry the whole item rather than the file list alone.
+
+  🔴 **Think before opting in.** `READ` lets the page read the user's clipboard at any moment with no
+  prompt — a capability the web withholds on purpose, since a clipboard routinely holds a password
+  copied from somewhere else. Do not mount it for a page that renders third-party content.
+
+  **`ShellCapability.ClipboardFiles` / `ShellCapabilities.clipboardFiles`** is the one part worth
+  branching on: a phone's pasteboard has no file list, so gate the control rather than catching the
+  refusal. Bytes cross as base64, so a large picture is a large message — hand the host a path instead.
+
+- 🔴 **`SegmentEngine.Default(conversion, log)` — the kit's segment engine is now REACHABLE.** D71's
+  primary path shipped with no public entry point: `UseSegmentStream` requires you to bring an
+  `ISegmentEngine`, and the only implementation was `internal`. So `docs/guides/media.md` told you that you
+  need "a segmenting engine" and the kit gave you no way to get one — the feature was complete and
+  unusable at the same time.
+  - A **factory**, not a public class, so the engine's shape stays out of the SemVer surface while the
+    capability is reachable: you need an `ISegmentEngine` to mount the route, not the concrete type.
+  - `conversion: null` is accepted and means the engine reports `IsAvailable = false`, so the route
+    answers "not complete" rather than throwing — the honest answer on a platform with no codecs, and it
+    means no platform branch to ask the question.
+  - The MAUI device probe now reaches it through this same factory rather than `InternalsVisibleTo`.
+    ⚠ That grant is **narrowed, not removed**: the probe still borrows `Mp4FragmentReader` and
+    `SegmentRunWriter` to read back what it produced, and both stay internal.
+
+- 🔴 **`bindSegmentStream(options)` (`@shenora/react`) — the segment route's page half, D71 piece 4b.**
+  Opens a `SourceBuffer` against the host's playlist, keeps it fed, and stops when the platform says
+  stop. Returns a `SegmentBinding` you `dispose()`.
+  ```ts
+  const binding = await bindSegmentStream({ manifest: '/shenora-hls/film.mkv/index.m3u8', element: video });
+  // …later
+  binding.dispose();
+  ```
+  Every rule in it was measured on three implementations rather than read off the spec, because they
+  disagree in ways the spec permits:
+  - **Attachment is not portable.** iOS takes `srcObject`; Chromium refuses a MediaSource there and
+    wants an object URL. Feature-detected — `binding.attachedBy` says which was accepted.
+  - **The codecs come from the init segment**, via `codecsFromInitSegment`. The track set is a fact
+    about the DEVICE, not the source: the same file yields two tracks on iOS and one on Android, which
+    cannot decode its AC-3.
+  - **The streaming gate is honoured.** `endstreaming` fires on iOS once enough is buffered and
+    fetching past it is the misuse `ManagedMediaSource` exists to detect; a plain `MediaSource` has no
+    such signal, and its absence means "always streaming".
+  - A `503` from the host is "still producing", not a failure — the round simply ends.
+
+  ⚠ `options.globals` and `options.fetch` are injectable, which is what makes the imperative half
+  testable at all: jsdom has no MediaSource, and a fake now drives every branch.
+
+- 🔴 **`codecsFromInitSegment(init)` (`@shenora/react`) — read the `SourceBuffer` codecs out of the
+  init segment instead of guessing them.** `segmentMimeType()`'s default names TWO tracks
+  (`avc1.640028,mp4a.40.2`), and **a source with no soundtrack cannot be played through it**: measured
+  against Chromium 151 on the kit's own segments, a video-only init segment appended to a buffer opened
+  with that default fails the FIRST append and plays nothing, while the same bytes opened as
+  `avc1.640015` play. The page already fetches the init segment (`#EXT-X-MAP`), so the codecs can come
+  from the thing they describe — no host change, no manifest change.
+  ```ts
+  const init = new Uint8Array(await (await fetch(manifest.initUri!)).arrayBuffer());
+  const codecs = codecsFromInitSegment(init);          // "avc1.640015,mp4a.40.2", or one track, or null
+  const buffer = source.addSourceBuffer(segmentMimeType(codecs!));
+  ```
+  Null means no track could be read — treat it as "do not open a SourceBuffer", not as "use the default".
+  ⚠ The TRACK SET is the part that has to be right; the same measurement showed profile and level are
+  barely checked (High 2.1 content played through a buffer opened as Baseline 3.0).
 
 - 🔴 **THE FRAMEWORK IS ON BY DEFAULT (D64).** `Build()` registers missions, the file system and the media
   player; `UseMissions`, `UseFileSystem` and `UseMediaPlayer` now only CONFIGURE them — the way
@@ -223,6 +842,19 @@ churn here is how a real break gets lost in the noise.
   - ⚠ **Nothing to migrate from 0.10.0** — none of these three entry points existed in that release. What a
     0.10.0 adopter actually renames is `AddShenoraOperations`, `UseWinForms` and `UseMobile`, each under
     `### Breaking` above.
+
+- **`UseSegmentStream` now returns `ISegmentStreamRoute`** (still an `IDisposable`, so `using var` call
+  sites are unchanged) — the handle for D71's piece 5: **a finished stream becomes ONE file.**
+  `IsComplete(source)` is a checkable predicate (every part present AND non-empty), and
+  `MergeAsync(source, destination)` writes `init.mp4` followed by every fragment in plan order, which is a
+  valid fragmented MP4 — **a byte copy, not a second production.** The app asks in .NET and the page
+  contract does not change; playback then points at the file and is `Direct`.
+  - 🔴 **The destination may NOT be inside the segment cache, and the route refuses it** rather than
+    documenting the hazard. The cache is swept oldest-used-first under a byte cap; a persisted artifact is
+    evicted by nothing. Writing one into the other means ordinary playback silently deletes a file someone
+    waited for.
+  - ⚠ **Proven by unit tests over the bytes and the order, not by a player.** Whether a real player opens
+    the merged file is the same device run the copied-picture path owes.
 
 - 🔴 **The kit now ships a DEFAULT segment engine, so `UseSegmentStream` works out of the box on mobile**
   (D71 piece 3). `ISegmentEngine` had shipped as a seam with no implementation; supplying one was the app's
@@ -241,17 +873,37 @@ churn here is how a real break gets lost in the noise.
     encoder has emitted output, so the engine writes it beside its first fragment and the route answers
     `503 Retry-After: 1` until then — the same not-ready reply the conversion and computed-remux routes give.
     A page following `#EXT-X-MAP` must tolerate that, exactly as it does for a segment.
-  - `SegmentRunRequest` gained `InitSegmentName` and `SegmentExtension`: the file names are part of the
+  - 🔴 **It COPIES every stream MP4 can carry and re-encodes only what it cannot** (D76) — which is the
+    difference between the engine working and not. The platform video encoders offer h263/mpeg4/mpeg2video,
+    none of which a webview decodes, so a re-encode-everything engine produced **sound-only segments for
+    essentially every real film**. An H.264 or HEVC track needs no encoder at all: Matroska already stores it
+    in the length-prefixed form MP4 uses, which is why `Mp4Remuxer` can copy it and a fragment can carry the
+    same bytes. The common case — H.264 picture, AC-3 soundtrack — now spends ONE codec, on the sound.
+  - **Where the cuts are is a `SegmentPlan`, not a fixed grid.** A copied track keeps the keyframes the
+    ORIGINAL encoder chose, so `ISegmentEngine.PlanSegments` reports the boundaries it will actually produce
+    and `SegmentRunRequest` carries that plan (in place of a `SegmentSeconds` number). The manifest states
+    each real length in `#EXTINF` and the longest in `#EXT-X-TARGETDURATION`. **Returning null means "I will
+    hit your grid"**, which is what a re-encoding engine answers, so an app-supplied engine implements one
+    line. A page needs no change: `nextSegment` already walked the playlist's own durations.
+  - **A whole-second grid is still required of a RE-ENCODED track** — the kit's encoders emit a keyframe every
+    second, so only whole multiples land on one, and a fractional grid is refused rather than producing
+    segments that play and misbehave only when seeked. Boundaries taken from a source's own keyframes are
+    exempt, being real by construction.
+  - ⚠ **A source whose keyframes are more than 30 s apart is re-encoded instead of copied.** A fragment is
+    held whole in memory, so copying such a stream would build one buffer of hundreds of megabytes.
+  - `SegmentRunRequest` carries `InitSegmentName` and `SegmentExtension`: the file names are part of the
     engine contract, so a third-party engine needs them rather than a comment describing them.
   - ⚠ **Desktop reports `IsAvailable = false`**, because `Shenora.Windows` implements no
     `IMediaStreamConversion`. That is the honest answer rather than a broken one: WebView2 serves byte
-    ranges properly, so the desktop's path is the computed-remux route.
-  - ⚠ **The grid must be a whole number of seconds.** The kit's encoders emit a keyframe every second, so
-    only whole multiples land on one; a fractional `SegmentSeconds` is refused at composition time rather
-    than producing segments that play and misbehave only when seeked.
-  - ⚠ **Proven against a fake codec, not on a device.** The pump, the cutting, the seeking and the fragment
-    bytes are unit-tested end to end; whether the PLATFORM's encoders behave as the fake does is not yet
-    measured on hardware.
+    ranges properly, so the desktop's path is the computed-remux route. (A copy-only run needs no codec, but
+    an all-carriable source belongs on that route anyway.)
+  - ⚠ **Proven against a fake codec, not on a device.** The pump, the copying, the cutting, the seeking and
+    the fragment bytes are unit-tested end to end; whether the PLATFORM's encoders behave as the fake does —
+    and whether a real `avcC` copied into a fragment satisfies a real `MediaSource` — is not yet measured on
+    hardware.
+  - ⚠ **`segmentMimeType()`'s default codec string is a default, not a guarantee.** A copied picture keeps the
+    source's profile and level, and an HEVC source arrives as `hvc1`; the family is what an implementation
+    checks, so any H.264 profile plays through the default and HEVC needs its own string.
 
 - 🔴 **`UiDispatcherBase` — the shell-independent half of `IUiDispatcher`, implemented once.** The two
   shipped dispatchers were deliberate member-for-member mirrors, on the reasoning that *"the invariants
@@ -624,6 +1276,448 @@ churn here is how a real break gets lost in the noise.
   `PathAndQuery` mis-resolve — and the trap is that the safe reading also HIDES the fragment.
 
 ### Fixed
+
+🔴 **The 2026-08-17 full-codebase review — every finding below was adversarially verified against
+source before it was fixed, and each fix carries a test that fails on the code it replaced** (where a
+unit test can reach it; the two mobile-shell items compile for both TFMs and await the already-tracked
+device run).
+
+- **`MissionResult.Attempts` was wrong for every FAILED mission** — the retry loop only returned a
+  count on success, so a mission that failed after three attempts reported 0 (or 1 on the commit path),
+  against the property's own "attempts actually made" contract. The entry's live attempt counter is the
+  answer on the throw paths now.
+- **Cancelling a PENDING mission could hang its `SubmitAsync` task forever.** The cancellation check
+  lived only inside dispatch, which runs on submit, completion and lane change — none of which need
+  ever come. The token now wakes dispatch itself; the class doc lists the new trigger.
+- **A durable mission's store writes could arrive out of order.** The Queued append was fire-and-forget
+  while Running/Remove were awaited, so a slow store could receive Queued last — a phantom record that
+  recovery re-executes. Every later write now chains behind the entry's own Queued gate (a gate, not a
+  settable field: the entry is dispatchable inside the submit lock, before the append starts — the
+  phase review caught a pre-cancelled token reaching the forget path first). A mission cancelled while
+  pending also removes its record now: the caller said no, so the next boot must not run it.
+- **One bad IPC module registration silently killed every DI-registered module until restart.** The
+  module map's `Lazy` cached its exception (a duplicate `ModuleName`, one facade factory throwing
+  once), so every later request answered `UNKNOWN_ERROR`. The map builds `PublicationOnly` now — a
+  transient failure heals on the next dispatch.
+- **Closing a frameless window while minimized corrupted its saved geometry.** The Minimized fallback
+  overwrote the window's own restore truth with `Form.RestoreBounds` — which holds the WORK-AREA rect
+  after a manual maximize — so the next launch re-derived the restore target from it and restore-down
+  became a permanent no-op. Sabotage-verified against a shown window (the first pinning test passed on
+  a handle-only form and was rewritten).
+- **The iOS pasteboard dropped every custom format on read-back.** The write side accepts any media
+  type verbatim; the read side probed only `public.png`/`public.html`, so an app's own
+  `application/…` payload vanished — against `ClipboardContent.Formats`' lossless round-trip. The
+  read now enumerates the pasteboard's own types, bounded to media-type shapes so a foreign app's
+  multi-megabyte copy is never materialized wholesale.
+- **`IosPlaybackSession.Dispose` never cleared the lock screen** — `_disposed` was set before
+  `Clear()`, whose first line returns on it. Deterministic on every dispose; the stale Now Playing
+  entry stayed pinned.
+- **The Android media converters lost frames silently.** A decoder with no free input buffer dropped
+  the frame (and, at drain, the end-of-stream marker — truncating held-back frames) with no report,
+  while the encoder side reported the identical situation. Drops are reported now and the drain
+  retries the EOS queue over a bounded window.
+- **`createShenoraStore` rendered permanently stale state after a remount.** The snapshot-once flag
+  never reset when the last subscriber left, so a later mount skipped the reload — and entries the
+  host evicted during the silent gap could never correct. Detach resets it now, and a superseded
+  epoch's late snapshot answer is dropped rather than clobbering the fresh one.
+- **`bindSegmentStream` leaked its object URL on two failure paths** — `addSourceBuffer` refusing the
+  codecs and the init append failing both rejected before the caller held a binding to dispose. All
+  three pre-return failure points revoke now. (An earlier fix claimed "every failure past the mint
+  revokes"; its own diff covered only the open wait.)
+- **Every AAC `esds` this kit wrote declared its length three bytes short** — the trailing term
+  budgeted 3 bytes for a 6-byte SLConfigDescriptor. Byte-accounted independently and pinned; strict
+  parsers no longer see a malformed descriptor.
+- **`shenora ios build`/`deploy` could ship yesterday's binary as today's.** No staleness guard, while
+  the Android half had just gained one for the same incident class — an incremental publish that
+  produced nothing reported the previous artifact, size and all, and deploy installed it. Both find
+  helpers take the build's start stamp now (a `.app` is clocked by its `Info.plist` — a directory's
+  mtime survives a rebuild), and the message says STALE when a leftover is what it found.
+- **Three iOS verbs read a tool failure as a fact about the machine** — `simulators` (a broken
+  `xcode-select` printed "no simulators installed"), `doctor`'s signing check (a locked keychain read
+  as "none — go to Xcode Settings"), and the extension pre-check (a `codesign` failure blocked a
+  device install claiming a missing entitlement). Each now names the failing tool instead.
+- **Disposing one pipeline registration could remove two.** `WebViewResourcePipeline` filtered by
+  reference equality, so the same delegate object registered twice lost BOTH slots on the first
+  dispose and the second handle's dispose was a silent no-op. Removal takes one slot now.
+- **The launcher could terminate instead of reporting "update not applied".** The staged-overlay walk
+  advances a directory iterator whose `error_code` overload guards construction only — a mid-walk
+  filesystem error threw through `main` with no catch anywhere. One exception boundary now turns any
+  escape into the `failure` result the design promises, and the app still launches.
+- **The Android save picker died with its Activity — measured on a device, and the obvious fix was
+  refuted there too.** A recreation while the picker was open (a locale or font-scale change, an
+  adopter manifest without MAUI's `ConfigurationChanges` defaults) orphaned the result callback and
+  `SaveAsync` hung forever. The AndroidX-registry answer cannot work on a MAUI host: the recreated
+  activity's bundle carries no AndroidX saved-state section at all, so the registry's restored
+  request-code map is empty and the arriving result falls through the legacy path unseen. What the
+  same run proved DOES survive recreation is the framework's own routing — so `ActivityResultRelay`
+  now owns its request codes over `StartActivityForResult`, and results reach it through a documented
+  one-line `OnActivityResult` forward in the adopter's MainActivity (`docs/guides/mobile.md`).
+  Two lifecycle repairs landed with it, both measured in the same scenario:
+  `MobileWindowLifecycle.IsRecreating` lets the `Window.Destroying` wiring tell a recreation from a
+  shutdown (treating it as shutdown cancelled every in-flight request), and the mobile IPC bridge
+  sets the new `IpcHostBridgeOptions.CancelInFlightOnDispose = false` — the bridge dies with its
+  PAGE on every recreation, and work the page started now runs to completion; the response is
+  dropped with the page, the user's file is not. End-to-end on an API 36 emulator: host destroyed
+  and recreated mid-picker, save completed, file intact. Process DEATH is the stated boundary — the
+  awaiting task dies with the process, so the caller's cancellation token is the only honest escape
+  past it.
+- **Small contract repairs**: `FileChange.Move.Overwrite` is scoped to FILE destinations and the
+  directory refusal names the rule instead of surfacing as a bare `IOException`; the default
+  `OpenReadAsync` returns the documented null when the file vanishes between its existence check and
+  the open; the request tracker disposes its linked cancellation source on the announced completion
+  path (it leaked one per tracked request, bounded by `MaxHistory`); a malformed Matroska EBML header
+  size is refused instead of seeking backwards; the mission scheduler's dispose paths release pending
+  missions' keys so `IsActive` stops answering true for work that no longer exists.
+
+- **`useShenora()` returned a fresh object on every render**, so the natural
+  `const shenora = useShenora(); useEffect(…, [shenora])` re-ran every render — a subscribe/unsubscribe
+  cycle per frame in the worst case. It is memoized now, and its identity changes only when the bridge
+  does or when `isAvailable` flips, which are the two moments a consumer means to react to.
+
+- **The three BUILD commands looked for their artifact one level too high** when `project` names a
+  directory rather than a `.csproj` — which `dotnet` accepts and this CLI passes straight through.
+  `shenora copy` had this fixed; `android build`, `ios build` and `ios deploy` each kept their own
+  `path.dirname(cfg.project)`, so a successful publish reported *"the publish reported success but no
+  .apk appeared under src/bin/…"* about a folder that could never hold one. One shared `projectDir`
+  now, pinned by tests at the helper and at `cmdCopy`.
+
+- **`shenora ios` blamed your config for your typo.** Typing a group name to see its verbs — or
+  mistyping one (`ios delpoy`) — ran the config lookup first and answered *"no shenora.deploy.json here
+  or in any parent directory"*: true, and about something you did not ask. The verb is checked first
+  now, an unknown GROUP names itself too, and the routing has tests at all — it could not be tested
+  before, because `cli.ts` invoked itself at module scope.
+
+🔴 **`@shenora/cli` — six commands answered a question nobody asked.** Every one took a signal meaning
+*"I could not do this"* and presented it as a fact about your project, your phone or your build. They are
+grouped because the shape is the point: each was silent, confident and wrong, and none of them failed.
+
+- **`shenora sync` could not run on Windows at all.** It shelled out to `/bin/sh` — only to reach
+  `| tail -20` — so it died before `dotnet` was invoked, then reported "restore failed — see the output
+  above" above nothing. Measured: `spawnSync('/bin/sh', …)` is ENOENT here; the direct spawn returns 33
+  lines. Windows is not an edge case for this CLI — the Android half exists because most .NET Android
+  work happens there.
+- **`shenora android build --aab` could hand back an APK.** `findPackage` preferred `-Signed.apk`
+  unconditionally, so a leftover APK in the publish directory was reported as the artifact, size and
+  all — and uploaded to Play as the bundle you thought you built. It never substitutes across formats
+  now, in either direction.
+- **Any Android build could hand back the PREVIOUS build's output.** The publish directory is not cleaned
+  between runs, so a build that produced nothing returned the last one's artifact while every downstream
+  step believed it had succeeded. An artifact older than the build that supposedly produced it is now
+  rejected and reported as stale, by name.
+- **A `devicectl` failure was reported as "no iPhone is connected".** Every failure path collapsed to an
+  empty list, so a broken reader became a confident statement about your hardware and sent you to check a
+  cable. It now says the tool failed and prints devicectl's own message — which the old `2>/dev/null` was
+  discarding. ⚠ An empty list from a working devicectl still means exactly what it says.
+- **`shenora ios log` could not tell "your app logged nothing" from "the log reader failed".** The exit
+  status was discarded, so no booted simulator printed a header, then silence, then exit 0. Three
+  outcomes now, not two: a failure names itself, and an empty window says which window it looked at.
+- **A mistyped `--simulator` installed to whatever else was running.** The boot failure was swallowed by
+  `|| true` — there for a real reason, since booting an already-booted simulator exits non-zero — and a
+  bad name went with it. `install` and `launch` also address the NAMED device now rather than `booted`,
+  which means "whichever simctl picks" when two are running.
+- **A missing tool or a fired timeout produced a bare exit code with no output.** `spawnSync` reports
+  both through `error`, which nothing read, so a missing `dotnet` surfaced as whatever the caller assumed
+  a non-zero exit meant. Both are named now. The timeout half mattered most: it exists because `adb`
+  hangs where "the user cannot tell it apart from a slow build", and its firing was itself silent.
+- **`copy`/`sync` staged the bundle one level too high when `project` named a DIRECTORY** — legitimate
+  config, since `dotnet` accepts one, but `path.dirname` on a directory yields its parent. Every
+  containment guard passed, the wrong directory was deleted to make room, and the app shipped with no web
+  assets.
+- **`--` passthrough: the Android half ignored it, and the iOS half mangled it.** The help text promises
+  "anything after `--` goes straight to `dotnet build`" directly beneath the Android commands, which
+  never read it — while `--aab`, typed *before* the separator, kept working, so the feature looked
+  half-alive. On iOS the arguments were joined into one string and re-split by the shell, so
+  `-p:Title=Hello World` (or any path with a space) arrived at `dotnet` in pieces. `splitArgs` now yields
+  an ARRAY: Android spreads it into argv with no shell involved, iOS quotes each argument separately.
+  Both halves also read their own flags from the pre-separator half now, so a passthrough token can no
+  longer be mistaken for a device serial.
+
+- **`useDropZone` minted a `crypto.randomUUID()` on every render and discarded it.** `useRef(newZoneId())`
+  evaluates its argument each render and keeps only the first. Invisible, because the value was always
+  correct. ⚠ `zoneId` and `dropClassName` are documented as first-render-only now — the latter
+  deliberately, because the hover effect captures the class for its cleanup while the drop path reads it
+  live, so a mid-hover change would leave a stale class stuck on the element.
+
+- **`ShenoraEventBus.getSubscriptionCount(module)` answered the GLOBAL total.** The guard read
+  `if (module && type)`, so passing a module on its own fell through to the count-everything branch — a
+  plausible number, for a different question, with nothing to indicate the substitution. It now counts
+  what would receive any event of that module: its exact-type subscriptions, its whole-module ones, and
+  the catch-alls. A module whose name prefixes another (`APP` vs `APPLE`) no longer borrows its
+  subscriptions either, because the exact map is keyed `module\0type` and the scan includes the
+  separator. Fixed at runtime rather than with an overload signature: this package ships JavaScript, and
+  a type-level restriction would leave a JS consumer getting exactly the same wrong number.
+
+- **The dev interceptor stopped recording after `configureBridge()`.** `installDevInterceptor` wraps a
+  specific bridge INSTANCE but keyed its idempotency on the window global merely existing, so once the
+  default bridge was replaced the tool watched the disposed one — looking installed, recording nothing,
+  and driving a dead bridge from `window.__shenora.call`. Idempotency now keys on which bridge and bus
+  were wrapped.
+
+- 🔴 **`InteractiveSession.ClearProfile` reported a successful logout it had not performed.** It
+  swallowed every failure and returned `void`, and the commonest failure is a profile still LOCKED by a
+  session window that has not finished closing — so the app said "signed out", the cookies survived, and
+  the next session walked straight back in. That is the exact incident the method's own docs cite as its
+  reason for existing. **It now returns `bool`** (true = the tree is gone, including "was never there").
+  A statement-style call still compiles; check the result wherever you tell a user they signed out.
+
+  It also **refuses a volume root**. The existing `..` guard stopped a path climbing OUT of the sessions
+  tree but said nothing about one that never pointed inside it, and `Path.Combine(root, "")` collapsing
+  to a drive is the realistic way to get there — into a recursive delete that swallowed its errors.
+
+- **The streaming sample leaked a whole session when a renderer died.** Its `OnEnded` cleared the handle
+  without disposing, so the off-screen window and the browser process holding the profile lock survived
+  for the life of the app, with nothing left pointing at either. `OnEnded`'s docs now say plainly that
+  disposing is the caller's job there — and why it deliberately does not hand you the session (it can
+  fire during `StartAsync`, before one exists).
+
+- 🔴 **An interactive session window could refuse `Application.Exit` — and could become unclosable.**
+  `SessionController` held the user's close so a driver gets its final cookie read, but the rule was
+  "veto whenever the flow has not finished", which vetoed *every* close for *every* reason. So a session
+  window kept the whole app alive on exit, and a driver awaiting something that never completed left a
+  modal window nothing could dismiss. The hold is now spent after ONE use — a second close means the user
+  has said it twice — and applies only to `CloseReason.UserClosing`, so `Application.Exit`, a Windows
+  shutdown and Task Manager pass straight through.
+
+- 🔴 **A cancelled session freed its busy gate while its window was still on screen.** Completing the
+  caller and releasing the gate were one action. The caller took "cancelled" as "finished", called
+  `ClearProfile` against a profile the live browser still held — throwing into a swallow — and a second
+  `RunAsync` walked past the gate to open a SECOND window on the same profile. The caller is still
+  answered the instant it cancels (that half was right: it is what stops a never-pumped UI post hanging
+  it forever), but the gate now belongs to whoever owns a window and opens when that window is gone.
+
+- **A session cancelled before its window appeared left the app's splash up.** The `Shown` handler's
+  cancellation check returned before the `try`, skipping the finally that holds the only unconditional
+  `OnLoading(false)` — after `OnLoading(true)` had already run. With `LoadingFallbackTimeout = Zero`,
+  which is documented as supported, no timer rescued it either. ⚠ Not covered by a test: everything past
+  that line needs a live WebView2 and a modal loop.
+
+- 🔴 **`@shenora/react`'s typed-payload checking was OFF at every shipped call site.**
+  `BaseModuleService.send` takes the response as a type argument, and TypeScript has no partial
+  type-argument inference — so naming it made the ROUTE parameter fall back to its default (the union of
+  every key) and `payload` widen to the union of every route's payload. Verified with `tsc`: an
+  identical wrong payload is a TS2353 without the type argument and compiles clean with it.
+
+  ```ts
+  openFile(): Promise<FileDialogResult> { return this.send('OPEN_FILE', { payload: { options } }); }  // checked
+  openFile() { return this.send<FileDialogResult>('OPEN_FILE', { payload: { options } }); }           // NOT
+  ```
+
+  All eight shipped call sites used the second form, so the feature checked nothing anywhere it was
+  actually used — while its own `@ts-expect-error` pin passed, because that pin uses the inferred form.
+  **The response now comes from the method's declared return type**, which every one of them already
+  had. No signature change; if you wrote your own service, drop the type argument and declare the return
+  type.
+  ⚠ Pinned by a SOURCE check (`WireMirrorTests`), because the broken form compiles — that is the defect,
+  so no type-level assertion can catch it.
+
+- **Fourteen exported TYPES were unpinned, so deleting any of them would have broken consumers
+  silently.** `@shenora/react`'s barrel is pinned twice — a runtime array and a type-only tuple — because
+  a type has no runtime binding and the runtime check is structurally blind to it. Nothing checked the
+  TUPLE, though, so every type added after it was written was simply absent from it: the
+  segment-binder's six, the media-player's three, the dev interceptor's three, and two more. All listed
+  now, and a new check compares the two sets so the fifteenth cannot repeat it.
+
+- **A session's popup and permission policy is now the APP's to set** — `OnWindowRequest` and
+  `OnPermissionRequest` on `SessionBrowserOptions`. Both **default to exactly today's behaviour**
+  (suppress every popup, deny every permission), so nothing changes for an existing app; what was
+  missing was any way to disagree. A session driving your OWN page may legitimately want clipboard read;
+  a co-browse flow may legitimately open a popup.
+  ⚠ Their safe direction is the opposite of the three hooks below: there a throwing hook must keep the
+  page MOVING, here it must keep REFUSING. A buggy policy must not become an open door.
+
+- 🔴 **Three browser prompts could WEDGE a session forever, and now can't.** `ScriptDialogOpening`,
+  `BasicAuthenticationRequested` and `ClientCertificateRequested` were all unhandled — which makes
+  WebView2 raise its OWN modal, against a window that is off-screen, so nothing can ever answer it and
+  the page stops for good. All three are handled now whether or not you supply a hook, and **the
+  DEFAULTS are the fix**: dismiss the dialog, cancel the challenge, cancel the certificate.
+
+  ```csharp
+  new SessionBrowserOptions {
+      OnScriptDialog      = d => { d.Accept = true; d.ResultText = "42"; },   // null = dismiss
+      OnAuthRequest       = c => { c.UserName = u; c.Password = p; },         // null = cancel
+      OnCertificateRequest = r => r.SelectedIndex = 0,                        // null = cancel
+  }
+  ```
+
+  **Hooks, not events** — one owner, and the handler acts ON the argument the way a web event does,
+  rather than returning a verdict. A throwing hook lands on the safe default instead of escaping into a
+  WebView2 event, where it would be an unhandled UI-thread crash.
+  ⚠ **Measured against the SDK: `ScriptDialogOpening` and `BasicAuthenticationRequested` have no
+  `Handled` property** — subscribing is itself the suppression, so those handlers must exist even when
+  they look like they do nothing.
+  ⚠ `SessionAuthRequest` overrides `ToString()` to redact — a record prints every property, and that one
+  holds a password.
+
+- 🔴 **`SessionBrowserOptions.RequestFilter` fails OPEN, and two docs called it the enforcement seam.**
+  A throw from the filter allows the request — deliberately, because it runs on every subresource of
+  every page and failing closed on one buggy predicate would blank the page. But `RenderSessionPoolOptions`
+  told adopters the opposite in two places ("the async guard is a pre-check; the request filter is the
+  enforcement seam"), so an app that put its whole SSRF blocklist there had a policy that **stopped
+  blocking the first time one edge case threw** — silently, because the catch logged nothing.
+  The docs now say what it is: a sieve for BREADTH, while the navigation guard and the kit's own
+  cross-origin cancellation are what hold, both failing closed.
+  ⚠ **And the throw is reported** — once per session, naming the consequence ("the request was ALLOWED…
+  if this filter is your blocking policy, it is not blocking"). Once, because it runs per subresource.
+
+- 🔴 **A store selector whose CLOSURE changed returned the previous selector's value.** The result was
+  memoized against STATE identity alone, so with the store untouched between renders the cache hit and
+  handed back the old answer: a list row doing `useShenoraRequests(s => s.byId[id])` whose `id` prop
+  changes — virtualised reuse, a route change — rendered the PREVIOUS row's data until some unrelated
+  event happened to replace the state. It compares the selector's RESULT now (identity, then one level
+  of own keys) and reuses the previous reference only when equivalent.
+  ⚠ **No dependency, and the derived-object ergonomic is kept.** An inline `s => ({ n: s.items.length })`
+  still does not loop — the shallow step is what allows it — which is more than zustand v5 gives without
+  an opt-in `useShallow`. A selector needing DEEP comparison is selecting too much.
+
+- 🔴 **A failed segment fetch reported NOTHING by default.** `bindSegmentStream`'s diagnostics all went
+  through the OPTIONAL `onDiagnostic`, so with none supplied — the default, and the shape of the public
+  API — a segment answering 500 or an `appendBuffer` `QuotaExceededError` produced no console output, no
+  rejection and no state change. Playback simply stalled with nothing anywhere to explain it, while every
+  other error path in the package (`onPostError`, the store's `onError`, the event bus) already defaults
+  to `console.error`. Failures now do too. ⚠ Only when no handler was supplied — a caller that took the
+  seam owns its reporting and is not double-logged.
+
+- 🔴 **`bindSegmentStream` could wait forever for a MediaSource that never opened.** Its only rejection
+  path listened for `error` — **which `MediaSource` does not fire**; the spec's events are `sourceopen`,
+  `sourceended` and `sourceclose`. An attachment that closed rather than opening (the element detached
+  before load, an attachment refused) left the caller's `await` pending with no error, no diagnostic, no
+  binding to dispose, and the object URL never revoked. It listens for `sourceclose` now, with a 10 s
+  deadline covering whatever is neither, and every failure past the mint revokes the URL.
+  ⚠ `revokeObjectURL` joins `createObjectURL` as an injectable option, so that revoke is assertable
+  rather than hoped for.
+  ⚠ **`SegmentBinderError` is not thrown for literally every failure**, and its doc said it was: a
+  `TypeError` from the manifest fetch and a `RangeError` from a truncated init segment both propagate as
+  themselves. Corrected.
+
+- 🔴 **`SessionController.NavigateAsync` had no time limit.** `NavigationCompleted` never fires if the
+  renderer dies mid-load, so a co-browse navigate could wait forever — `DisposeAsync` does not complete
+  it either, and the sample passes no token. It is capped at 30 s now, the same soft cap
+  `RenderSession.NavigateAsync` has always had: the cap completes the wait rather than throwing, because
+  a slow load is not an error, while a caller's own token still surfaces as cancellation.
+  ⚠ Not unit-tested — the path needs a live renderer death. It mirrors the sibling's proven shape.
+
+- 🔴 **A superseded `PLAYER_LOAD` no longer seeks the NEXT track to the old one's position.**
+  `useMediaPlayer` registers the `startAt` seek on `loadedmetadata` with `{ once: true }`, which removes
+  a listener only when it FIRES — and a second load calls `element.load()`, which ABORTS the first, so
+  its metadata event never comes and its listener survives. Load A at 10:00, then B at 0:00 before A's
+  metadata lands, and B starts ten minutes in: B sets no listener of its own, and A's is still attached.
+  A pending seek is now cancelled by the next load and by the effect's cleanup.
+
+- 🔴 **`bindSegmentStream` leaked one `error` listener per appended segment.** Same `{ once: true }`
+  cause from the other side: the success path fires `updateend`, so the `error` listener was never
+  removed and each retained a settled reject closure. A two-hour stream at six-second segments
+  accumulates ~1,200 of them on one `SourceBuffer`, `dispose()` shed none, and a later real error
+  invoked every one. Both listeners now come off on either outcome.
+
+- 🔴 **A routine GPU recovery no longer throws away the whole render pool or kills a live co-browse
+  pane.** `ProcessFailed` fires for the entire Chromium process tree and the session stack treated every
+  kind as "the renderer died" — so a GPU-driver TDR (routine on Windows; Chromium self-heals) discarded
+  every warm instance at seconds-per-instance to rebuild, and completed a `StreamingSession`'s frame
+  channel permanently over a page that was still running. `RenderProcessUnresponsive` fires while a
+  renderer is merely BUSY, and `FrameRenderProcessExited` is one out-of-process iframe, not the
+  document. Only `RenderProcessExited` and `BrowserProcessExited` now reach
+  `onProcessFailed`, which is what its own doc always promised. `WebViewHost` already filtered this way.
+  ⚠ **Every kind is still LOGGED, and the line now carries the diagnostic fields** — exit code, process
+  description, failing module. Sessions run unattended, so that line is the only signal an adopter gets,
+  and `{Kind} ({Reason})` alone names the event while withholding its cause.
+
+- 🔴 **`StreamingSession.StartAsync` and a render-pool lease could hang forever, cancellation included.**
+  Both marshal their work onto the UI thread and check the `CancellationToken` only INSIDE the posted
+  body — which is unreachable if nothing pumps. `BeginInvoke` succeeds whenever the handle exists,
+  including after `Application.Run` has returned, so `StartAsync(options, ct)` never returned **even
+  with `ct` already cancelled**. Worse for the pool: the lease holds a capacity permit while it waits,
+  so `Dispose()` could not free it and the slot was gone for the process lifetime.
+  The token now reaches the returned task, as `InteractiveSession.RunAsync` already did.
+  ⚠ **Cancelling after work has begun tears the instance down rather than leaking it** — handing
+  ownership over is what completing the task means, so a completion that loses the race is a teardown
+  obligation. Without that the fix would trade a hang for a leaked browser process holding the profile
+  lock, which is the worse of the two.
+
+- 🔴 **`InteractiveSession.ComposeProfileDirectory` accepted segments Windows normalises away.** The
+  per-account profile directory is the session stack's isolation boundary — two accounts sharing a
+  directory share a cookie jar — and every check it made was a blocklist. Measured with `GetFullPath`
+  against a root of `C:/root`:
+
+  | segment | resolved to |
+  |---|---|
+  | `"..."`, `"...."`, `".. ."`, `" . "` | **the root itself** |
+  | `"acct."`, `"acct "`, `"acct.."` | `C:/root/acct` — the same jar as `"acct"` |
+
+  Every one passed the empty, separator, `.`/`..`, invalid-character and reserved-name tests (a dot and
+  a space are both legal file-name characters), **and the containment check**, because the root does
+  start with the root. So an account id of `"..."` returned the whole sessions tree — and `ClearProfile`
+  on it would delete every other account's profile. A segment must now survive Windows' own
+  normalisation unchanged, which is asked of the OS rather than enumerated.
+  ⚠ **Two ids differing only in CASE are still one directory**, because the filesystem says so and this
+  cannot overrule it — now documented on the method. Fold or encode case-sensitive ids.
+
+- 🔴 **The render pool's redirect policy compared the HOST, which excludes the port.** Its own doc gave
+  `302 → http://127.0.0.1:8080/admin` as the hop it exists to close, and that hop was allowed whenever
+  the vetted origin was also loopback — which the shipped sample's guard (`uri.IsLoopback`) makes the
+  normal case. It compares `Uri.Authority` now: the port counts, and a default port is still omitted so
+  the documented `http` → `https` allowance is unchanged.
+  ⚠ **Main frame only, and now said so out loud** — a cross-origin IFRAME is a subresource, which is the
+  request filter's job (`SessionBrowserOptions.RequestFilter`), not this event's.
+  The rule is extracted as a testable unit; it had none, which is how a defect sat behind a comment
+  naming the very hop it failed to stop.
+
+- 🔴 **A release whose only change is DELETING files now stages and applies.** `FetchAsync` returned
+  not-pending whenever the diff had no additions and no updates, so such a release never staged and never
+  applied — the dropped files stayed on disk forever with no error anywhere, and a
+  dropped-but-still-present assembly is still loadable, which is usually the reason a release drops one.
+  ⚠ **`CommitAsync` no longer throws `ArgumentException` for an empty manifest** — SemVer surface, so it
+  is called out, though nothing could have depended on it except the defect. **The guard was checking the
+  wrong object**: an empty manifest is dangerous because an applier reads it as "everything was removed",
+  and the manifest an applier reads is `staged/manifest.json`, the full RELEASE. `CommitAsync`'s parameter
+  is the CHANGESET, which a removals-only release legitimately leaves empty. The real danger is still
+  refused, by the check that always owned it (`staged/manifest.json` must parse and list files).
+  ⚠ The adjacent `FetchAsync_stages_nothing_when_already_up_to_date` LOOKED like coverage and is not: same
+  manifest both sides means nothing to download *and* nothing to remove, so not-pending is right there.
+
+- 🔴 **One failed `WebViewHost.InitializeAsync` no longer kills the host for the life of the process.**
+  It caches its task to be idempotent, and a FAULTED task cached is a window that can never open again —
+  while the error it hands back says *"start again"*. A Retry button re-awaited the same failure.
+  **The timeout was the path that broke**, which is the one that message belongs to: its `catch` filter
+  ran instead of the general handler and never cleared the cache, so a transient zombie-lock on the
+  user-data folder — the exact failure the timeout exists for — was permanent. Now a faulted attempt is
+  simply never handed back.
+  ⚠ **The obvious fix does not work and a regression test caught it**: clearing the field from inside the
+  sequence is too late when the failure happens before the first suspension, because the task completes
+  before the assignment does — so the corpse is cached on the way out anyway. The cache is asked at CALL
+  time instead.
+
+- 🔴 **`useMediaPlayer` now reports when the page is HIDDEN, so backgrounding hands off the real
+  playhead.** It reports on transitions only — deliberately, since `timeupdate` fires ~4×/second — which
+  meant the host's believed position was whatever the last transition left. For steady playback that is
+  **the moment playback started**, so `BackgroundPlaybackTransfer` handed the native player a position
+  ~20 s stale and the user resumed from the beginning.
+  Measured on an Android emulator, same procedure before and after: page at 19.79 s →
+  `HANDOFF: TookOver at 0.01s`; with the fix, backgrounding at ~32 s → `HANDOFF: TookOver at 32.08s`.
+  ⚠ The platform's `pause` at background time DOES fire, but not in time to cross IPC before the process
+  is frozen — which is why `visibilitychange` is the signal and not `pause`. It costs ONE report per
+  background, so `timeupdate` stays absent.
+
+- 🔴 **A recovered mission no longer re-runs on every subsequent boot, forever.**
+  `MissionScheduler.RecoverAsync` resubmits a durable record through `SubmitAsync`, which mints a **new**
+  mission id — so the completed mission's cleanup removed the new id and never the recovered record's own.
+  The old record survived, `LoadAsync` returned it again next boot, and the work ran again, indefinitely.
+  Setting `Durable = true` on the rehydrated definition did not help: it added a second record under the
+  new id, and only that one was cleaned up.
+  - **The store grew without bound and the work repeated silently** — the unbounded version of exactly the
+    loop `RecoveryPolicy` exists to prevent, reached through `Queued` instead of `Running`.
+  - The record is now removed **after** a successful resubmit — never before, because durability is a
+    best-effort overlay on execution, so a crash in that window costs a duplicate rather than a lost mission.
+  - **Why it survived review:** the test covering this path asserted that the `Running` record was removed
+    and said nothing about the `Queued` one, which is removed on a different branch. Nothing outside the
+    test suite implements `IMissionQueueStore`, so the whole durability half had no real consumer.
+- **One unrecoverable record no longer abandons the rest of the recovery pass.** `SubmitAsync` is not
+  `async`, so an unusable rehydrated definition — a missing `Run`, an unregistered claim scope — threw
+  **synchronously** out of the loop. Every later record was left unrecovered *and* unremoved, so the next
+  boot repeated the whole thing. Such a record is now logged, dropped, and the pass continues.
+- **`MissionExecution.MissionId` and `MissionRecord.MissionId` are documented as PER-PROCESS.** Both
+  previously claimed the id was *"stable across a restart"*; recovery resubmits under a new one, so it
+  cannot key state that must survive a restart. Use `MissionDefinition.Key` for an identity you chose.
+  (No signature change — the docs now match the behaviour, which the fix above did not alter.)
 
 - 🔴 **`app.UseMediaPlayer()` no longer throws when you follow the documented setup.** The pair
   `docs/guides/media.md` tells you to write — `builder.UseMediaPlayer(x => x.Access = new MediaAccessOptions

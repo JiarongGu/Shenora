@@ -1,17 +1,11 @@
-using Shenora;
-
 namespace Shenora.Engine.Missions;
 
 /// <summary>
 /// Shared state flowing along ONE chain, plus where that chain has got to. Handed to every step of
 /// the same chain and to nothing else.
-///
 /// <para>
-/// <b>In memory only, deliberately.</b> It exists to pass a temp path from step 1 to step 2 inside one
-/// run. A DURABLE chain that resumes after a restart carries its state in
-/// <see cref="MissionDefinition.Payload"/> like any other durable mission, because an arbitrary object
-/// graph is exactly what the kit cannot serialize on an app's behalf. A resume that silently lost the
-/// context would be worse than one that never had it, so the limit is stated rather than papered over.
+/// ⚠ <b>IN MEMORY ONLY</b> — nothing put here survives a restart. A DURABLE chain that resumes carries
+/// its state in <see cref="MissionDefinition.Payload"/> instead.
 /// </para>
 /// </summary>
 public interface IMissionChainContext
@@ -39,9 +33,9 @@ public interface IMissionChainContext
 /// <param name="Run">The step body. Gets the chain's execution, its shared context, and the token.</param>
 /// <param name="Claims">
 /// Claims this step needs. They are folded into the CHAIN's claim set and held for the whole chain,
-/// not just this step — see <see cref="MissionChain.Sequence"/> for why, and what it costs.
+/// not just this step.
 /// </param>
-/// <param name="Retry">Retries THIS step. There is no chain-level retry; see the remarks on <see cref="MissionChain"/>.</param>
+/// <param name="Retry">Retries THIS step. There is no chain-level retry.</param>
 public sealed record MissionStep(
     string Name,
     Func<MissionExecution, IMissionChainContext, CancellationToken, Task> Run,
@@ -51,30 +45,18 @@ public sealed record MissionStep(
 /// <summary>
 /// Builds a multi-step mission: steps that run in order, where a later one depends on what an earlier
 /// one did.
-///
 /// <para>
 /// <b>A chain is ONE mission, not N.</b> <see cref="Sequence"/> returns an ordinary
-/// <see cref="MissionDefinition"/> that <see cref="IMissionScheduler.SubmitAsync"/> cannot tell apart
-/// from any other — so the scheduler gains no concept of dependencies, no "blocked on a predecessor"
-/// state, and no edges. That was the fork: N entries with dependency edges would let unrelated steps
-/// interleave, but it is a DAG engine by another name, and the kit declined one on the evidence that
-/// no sibling has ever needed it.
+/// <see cref="MissionDefinition"/>, so the scheduler has no concept of dependencies and no edges.
 /// </para>
-///
 /// <para>
-/// <b>What that costs, stated plainly:</b> the chain holds the UNION of its steps' claims for its
-/// whole life. A five-step chain touching five paths blocks all five from the start, even during the
-/// step that only touches the first. In exchange, claims are still acquired as one set up front, so
-/// the deadlock-freedom property is exactly the one the scheduler already guarantees. If a chain's
-/// claim union is too coarse for real throughput, that is the evidence for per-step claims — and it
-/// is a different design, not a tweak to this one.
+/// ⚠ <b>The chain holds the UNION of its steps' claims for its whole life</b>, so a five-step chain
+/// touching five paths blocks all five from the start. They are still acquired as one set up front,
+/// so deadlock-freedom is unchanged.
 /// </para>
-///
 /// <para>
 /// <b>Failure and cancellation:</b> a failing step fails the chain at that step, and later steps do
-/// not run. Cancelling cancels the chain — one mission, one token, one cancel. A step's own
-/// <see cref="RetryPolicy"/> retries THAT step; there is no chain-level retry, because re-running
-/// completed steps is a judgement only the app can make, and it can make it by submitting again.
+/// not run. Cancelling cancels the chain — one mission, one token, one cancel.
 /// </para>
 /// </summary>
 public static class MissionChain
@@ -101,7 +83,7 @@ public static class MissionChain
         {
             Kind = kind,
             Claims = UnionOf(steps),
-            // No chain-level retry: each step carries its own budget and RunStepsAsync applies it.
+            // No chain-level retry: each step carries its own budget, applied by RunStepAsync.
             Retry = RetryPolicy.None,
             Run = (execution, cancellationToken) => RunStepsAsync(execution, steps, cancellationToken),
         };
@@ -109,8 +91,7 @@ public static class MissionChain
 
     /// <summary>
     /// One claim per (scope, key), taking the STRONGER mode when steps disagree: a chain that reads a
-    /// path in one step and writes it in another must hold it exclusively, or the write would run
-    /// alongside another mission's write while this chain merely "had a shared claim".
+    /// path in one step and writes it in another must hold it exclusively.
     /// </summary>
     private static IReadOnlyList<MissionClaim> UnionOf(MissionStep[] steps)
     {
@@ -141,9 +122,8 @@ public static class MissionChain
     }
 
     /// <summary>
-    /// The step's own retry budget. Deliberately a copy of the scheduler's rule rather than a call
-    /// into it: the scheduler retries a MISSION, and a chain is one mission — if this delegated
-    /// upward, a failing step 4 would re-run steps 1 to 3.
+    /// Applies the step's own retry budget. Not the scheduler's, which retries a MISSION and would
+    /// therefore re-run the completed steps.
     /// </summary>
     private static async Task RunStepAsync(
         MissionExecution execution, ChainContext context, MissionStep step, CancellationToken cancellationToken)
@@ -180,8 +160,8 @@ public static class MissionChain
             StepName = steps[index].Name;
         }
 
-        // Steps run one after another on the chain's single body, so there is no concurrent access to
-        // guard against — the lock that would look prudent here would only be cargo.
+        // Unsynchronized: steps run one after another on the chain's single body, so there is no
+        // concurrent access to guard against.
         public T? Get<T>(string key)
         {
             ArgumentNullException.ThrowIfNull(key);

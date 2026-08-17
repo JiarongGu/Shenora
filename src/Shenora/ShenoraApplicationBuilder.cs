@@ -4,8 +4,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 // allowed to reach every layer — that is what a composition root IS. Nothing else crosses upward: a core
 // never names a module, which is why `UseMessageDispatcher` lists no facade.
 using Shenora.Core.Events;            // core — the event pipeline
-using Shenora.Core.Ipc;               // core — the message contract
-using Shenora.Engine.Files;           // engine — the file queue
 using Shenora.Engine.Missions;        // engine — the scheduler
 using Shenora.Modules.Media;          // module — the player
 using Shenora.Modules.Requests;     // module — the operation registry's registration
@@ -22,7 +20,6 @@ namespace Shenora;
 /// </summary>
 public sealed class ShenoraApplicationBuilder
 {
-    private readonly List<IShenoraModule> _modules = [];
     private bool _built;
 
     internal ShenoraApplicationBuilder(string applicationName, IReadOnlyList<string> args,
@@ -64,14 +61,6 @@ public sealed class ShenoraApplicationBuilder
     /// <see cref="Build"/>.</summary>
     public IServiceCollection Services { get; } = new ServiceCollection();
 
-    /// <summary>Add a module (applied at <see cref="Build"/>, in registration order).</summary>
-    public ShenoraApplicationBuilder AddModule(IShenoraModule module)
-    {
-        ArgumentNullException.ThrowIfNull(module);
-        _modules.Add(module);
-        return this;
-    }
-
     /// <summary>Register a startup callback (see <see cref="IShenoraLifecycleHook"/> for when it runs).</summary>
     public ShenoraApplicationBuilder OnStarting(Action<ShenoraApplication> callback)
     {
@@ -96,8 +85,6 @@ public sealed class ShenoraApplicationBuilder
     {
         if (_built) throw new InvalidOperationException("Build() can only be called once per builder.");
         _built = true;
-
-        foreach (var module in _modules) module.ConfigureServices(Services);
 
         // Framework plumbing every app gets — the in-process pub/sub bus that modules, services,
         // and the transport bridges share (design §4). TryAdd LAST so an app or module

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 
 namespace Shenora.Windows;
@@ -28,7 +29,7 @@ public sealed class WebViewEnvironmentOptions
     public string? BrowserExecutableFolder { get; init; }
 
     /// <summary>Diagnostics sink (timings, prewarm progress). Null = silent.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 
     /// <summary>
     /// Custom URI schemes this environment serves, e.g. <c>app</c> for <c>app://…</c>.
@@ -163,7 +164,7 @@ public static class WebViewEnvironment
 
     private static async Task<CoreWebView2Environment> CreateAsync(WebViewEnvironmentOptions options)
     {
-        options.Log?.Invoke("[WebView2] Creating environment (browser-process spawn)…");
+        AppCallback.Log(options.Log, () => "[WebView2] Creating environment (browser-process spawn)…");
         Directory.CreateDirectory(options.UserDataFolder);
 
         var devExtra = options.DevExtraArguments
@@ -184,7 +185,7 @@ public static class WebViewEnvironment
         var environment = await CoreWebView2Environment.CreateAsync(
             options.BrowserExecutableFolder, options.UserDataFolder, envOptions);
         sw.Stop();
-        options.Log?.Invoke($"[WebView2] Environment ready (CreateAsync took {sw.ElapsedMilliseconds}ms)");
+        AppCallback.Log(options.Log, () => $"[WebView2] Environment ready (CreateAsync took {sw.ElapsedMilliseconds}ms)");
         return environment;
     }
 

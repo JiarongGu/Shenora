@@ -2,6 +2,7 @@ using System.Reflection;
 using Shenora.Tests.TestSupport;
 using Shenora.Windows;
 
+using Shenora;
 namespace Shenora.Tests.WebView2;
 
 public class EmbeddedResourceProviderTests
@@ -115,7 +116,7 @@ public class EmbeddedResourceProviderTests
         {
             Assembly = Assembly.GetExecutingAssembly(),
             ResourcePrefix = "Shenora.Tests.NoSuchPrefix",
-            Log = messages.Add,
+            Log = AppCallback.Logger(messages.Add),
         });
 
         Assert.False(provider.CanServe);
@@ -241,5 +242,46 @@ public class EmbeddedResourceProviderTests
         Assert.True(File.Exists(leaked)); // precondition: there IS something to leak
 
         Assert.Null(EmbeddedResourceProvider.ResolveContained(root, "../bundle-evil/secret.txt"));
+    }
+
+    /// <summary>
+    /// 🔴 The reason `BeginWarmup` is on the INTERFACE. The startup call used to be
+    /// `(GetRequiredService&lt;IWebViewResourceProvider&gt;() as EmbeddedResourceProvider)?.BeginWarmup()`
+    /// — with no `else`, so an app that registered its OWN provider got no warmup and no diagnostic.
+    /// That is the same shape as the `dispatcher is MessageDispatcher` defect this repo records, which
+    /// "silently dropped three whole modules". A custom provider must be reachable through the contract.
+    /// </summary>
+    [Fact]
+    public void A_CUSTOM_provider_is_warmed_through_the_interface()
+    {
+        IWebViewResourceProvider custom = new WarmupRecordingProvider();
+
+        custom.BeginWarmup();
+
+        Assert.True(((WarmupRecordingProvider)custom).Warmed);
+    }
+
+    /// <summary>A provider with nothing to warm inherits the default body and is not forced to write one.</summary>
+    [Fact]
+    public void A_provider_that_does_not_override_BeginWarmup_still_compiles_and_is_a_no_op()
+    {
+        IWebViewResourceProvider minimal = new MinimalProvider();
+
+        minimal.BeginWarmup();   // the default interface member — must not throw
+    }
+
+    private sealed class WarmupRecordingProvider : IWebViewResourceProvider
+    {
+        public bool Warmed { get; private set; }
+
+        public Stream? GetResourceStream(string virtualPath) => null;
+        public bool Exists(string virtualPath) => false;
+        public void BeginWarmup() => Warmed = true;
+    }
+
+    private sealed class MinimalProvider : IWebViewResourceProvider
+    {
+        public Stream? GetResourceStream(string virtualPath) => null;
+        public bool Exists(string virtualPath) => false;
     }
 }

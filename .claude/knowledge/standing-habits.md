@@ -39,12 +39,30 @@ the file itself. They are prose now, and they never "complete":
   dropped `MemoryStream` became a leaked OS file handle. Reading it a release earlier would have found
   nothing wrong. **The cheap query: what did this change make LAZY, SHARED, REMOTE or REUSED that used
   to be none of those?**
+- 🔴 **Re-run the SEAM AUDIT after any pass that adds extension points — it is two greps, and the method
+  is why it is a habit rather than a task.** Enumerate every public contract, then ask of each: *is there
+  an implementation, and does anything CONSUME it?* Most unconsumed contracts are legitimate —
+  options-supplied collaborators, per-webview objects, app-supplied seams — so the signal is narrow:
+  **a kit-built implementation that nothing calls.** An extension point is done when something ASKS for
+  it, not when the interface compiles (D63).
+  - ⚠ **The second half of the question, added after a variant that was not silent:** *does anything
+    IMPLEMENT what the kit PROMISES?* A capability query marked video encodable, so the planner answered
+    `Transcode` while nothing could perform it and the track was dropped. The first three instances were
+    silent; that one said the word — **a plan naming a conversion is read as a promise.**
 - **Keep `docs/ARCHITECTURE.md` + `docs/README.md` in sync as pieces land.** Partly gated since
   2026-08-05: `doc-drift` fails if a packable project is named in neither. Everything below package
   granularity — a new type, a moved folder — is still yours to keep honest.
 - **Add a `.claude/knowledge/` rule the moment an invariant is EARNED**, via
   `node devtools/dev.mjs knowledge new <name>` — don't let it live only in a code comment. UI-thread
   marshalling, WebView2 gotchas, IPC batching numbers and the mobile header table all got here that way.
+- **Re-measure the COMMENT RATIO in `src/` when a pass has been adding prose**, because it ships to
+  adopters' IDEs and it has drifted upward before while a rule against it was already written: 45 %
+  (2026-08-14) → 47.3 % (2026-08-15) → **40.9 % (2026-08-17: 17,186 comment / 42,035 total, 0.84 per
+  code line)**. ⚠ There is no target, deliberately — a `///` on every public member is CORRECT for a
+  library, so a low number is not the goal and a ratio alone cannot tell a doc from a narration. The
+  number's job is to catch a REVERSAL. `doc-shape` sweeps `src/` for session-log prose, which is the
+  floor under it.
+
 - **Keep naming the concrete bug each ADOPTION stage removes.** From the first adopter's Stage-0
   feedback (2026-07-31): what made the decision easy was *"Stage 1 carries no IPC dependency, so it
   deletes the most duplicated code for the least risk; the IPC substrate comes last because it is the

@@ -9,9 +9,9 @@ using Shenora.Engine.Files;
 namespace Shenora.Mobile;
 
 /// <summary>
-/// The MAUI implementations of <c>Shenora</c>'s shell contracts — the peers of
-/// <c>Shenora.Windows</c>'s. Each one is either a real implementation, an honest no-op the platform
-/// already satisfies, or a loud refusal; never a quiet nothing (see <see cref="ShellCapability"/>).
+/// The MAUI implementations of <c>Shenora</c>'s shell contracts. Each is a real implementation, an
+/// honest no-op the platform already satisfies, or a loud refusal — never a quiet nothing (see
+/// <see cref="ShellCapability"/>).
 /// </summary>
 internal static class MauiShellNames
 {
@@ -20,9 +20,19 @@ internal static class MauiShellNames
 }
 
 /// <summary>
-/// Clipboard over MAUI Essentials. Text works everywhere; the two IMAGE members refuse, because
-/// Essentials' clipboard is text-only — there is no image API to call, so "absent" is literally true
-/// rather than a shortcut.
+/// The mobile clipboard, over the PLATFORM's own pasteboard rather than MAUI Essentials.
+/// <para>
+/// ⚠ <b>Essentials' <c>Clipboard</c> is text-only, and that is an Essentials limit, not a platform
+/// one</b> — <c>UIPasteboard</c> and Android's <c>ClipboardManager</c> both carry pictures and typed
+/// data. <see cref="ShellCapability"/>'s rule is that a refusal means the capability is genuinely
+/// ABSENT here, so refusing an image because the convenience wrapper lacks one would have been the
+/// wrong kind of "no". Text and the byte formats go through the platform APIs below.
+/// </para>
+/// <para>
+/// 🔴 <b><see cref="ClipboardContent.Files"/> DOES refuse, on both platforms, and that one is honest.</b>
+/// "Copy these files so a file manager can paste them" is a desktop idea — neither pasteboard has an
+/// expression for it, and there is no file manager on the other side to receive it.
+/// </para>
 /// </summary>
 public sealed class MobileClipboardService : IClipboardService
 {
@@ -30,9 +40,7 @@ public sealed class MobileClipboardService : IClipboardService
     public Task SetTextAsync(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        // Empty means CLEAR, matching the desktop implementation's rule — the WinForms one routes an
-        // empty string to Clipboard.Clear() because an empty selection is app DATA, not a bug. Here
-        // SetTextAsync("") is already the clear, so the two shells agree without a special case.
+        // Empty means CLEAR, as on the desktop shell — SetTextAsync("") already is the clear here.
         return Clipboard.Default.SetTextAsync(text);
     }
 
@@ -40,14 +48,152 @@ public sealed class MobileClipboardService : IClipboardService
     public Task<string?> GetTextAsync() => Clipboard.Default.GetTextAsync();
 
     /// <inheritdoc />
-    public Task SetImageFromFileAsync(string imagePath) =>
-        throw ShellCapability.NotSupported("Putting an image on the clipboard", MauiShellNames.Shell,
-            "MAUI Essentials' clipboard carries text only — use the platform share sheet (IShareTarget in your app) for images.");
+    public Task ClearAsync() => Clipboard.Default.SetTextAsync(string.Empty);
 
     /// <inheritdoc />
-    public Task<bool> TrySaveImageToFileAsync(string targetPath) =>
-        throw ShellCapability.NotSupported("Reading an image from the clipboard", MauiShellNames.Shell,
-            "MAUI Essentials' clipboard carries text only.");
+    public async Task SetAsync(ClipboardContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        // Refuse BEFORE writing anything: the contract says nothing is written when this throws, and a
+        // half-applied clipboard is worse than a refused one.
+        if (content.Files.Count > 0)
+        {
+            throw ShellCapability.NotSupported("Putting FILES on the clipboard", MauiShellNames.Shell,
+                "No mobile pasteboard carries a file list. Share the files instead (the platform share sheet), "
+                + "or put their content on the clipboard as bytes under a media type.");
+        }
+
+        if (content.IsEmpty) { await ClearAsync().ConfigureAwait(false); return; }
+
+        var unsupported = UnsupportedFormats(content);
+        if (unsupported.Count > 0)
+        {
+            throw ShellCapability.NotSupported(
+                $"Putting {string.Join(", ", unsupported)} on the clipboard", MauiShellNames.Shell,
+                "This shell carries text and the formats listed in ClipboardContent; check what you are asking for.");
+        }
+
+        await SetPlatformAsync(content).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public Task<ClipboardContent> GetAsync() => GetPlatformAsync();
+
+    /// <summary>
+    /// Which of <paramref name="content"/>'s byte formats this platform has no expression for. ⚠ The
+    /// answer differs per platform on purpose — iOS's pasteboard takes an arbitrary UTI, Android's
+    /// <c>ClipData</c> does not — so an app is told exactly what it asked for that cannot happen here,
+    /// rather than "clipboard not supported".
+    /// </summary>
+    private static IReadOnlyList<string> UnsupportedFormats(ClipboardContent content)
+    {
+#if IOS || MACCATALYST
+        // UIPasteboard.SetData takes any pasteboard type, so nothing here is absent.
+        _ = content;
+        return [];
+#elif ANDROID
+        // ClipData carries text and HTML text directly. Everything else — a picture included — travels as
+        // a content:// URI, which needs a ContentProvider the APP declares in its own manifest; the kit
+        // cannot supply one on its behalf, so it says so rather than inventing a path that fails later.
+        return [.. content.Formats.Keys.Where(f => f != ClipboardContent.Html)];
+#else
+        return [.. content.Formats.Keys];
+#endif
+    }
+
+    /// <summary>Write through the platform's own pasteboard. Text-only shells fall back to Essentials.</summary>
+    private static Task SetPlatformAsync(ClipboardContent content)
+    {
+#if IOS || MACCATALYST
+        var board = global::UIKit.UIPasteboard.General;
+        // One assignment, one item — the pasteboard replaces its contents, which is the atomicity the
+        // contract promises. Building the dictionary first is what keeps text and picture together.
+        var item = new global::Foundation.NSMutableDictionary();
+        if (content.Text is { } text)
+        {
+            // The UTI as a literal: the binding's constant is deprecated in favour of a type the kit
+            // would otherwise have to reference, and this string IS the stable platform identity.
+            item[new global::Foundation.NSString("public.utf8-plain-text")] =
+                new global::Foundation.NSString(text);
+        }
+        foreach (var (mediaType, bytes) in content.Formats)
+        {
+            // The pasteboard speaks UTIs; the two the kit names have well-known ones, and anything else
+            // is the app's private type, carried verbatim under its media type.
+            var type = mediaType switch
+            {
+                ClipboardContent.PngImage => "public.png",
+                ClipboardContent.Html => "public.html",
+                _ => mediaType,
+            };
+            item[new global::Foundation.NSString(type)] =
+                global::Foundation.NSData.FromArray(bytes.ToArray());
+        }
+        board.Items = [item];
+        return Task.CompletedTask;
+#elif ANDROID
+        var manager = (global::Android.Content.ClipboardManager?)global::Android.App.Application.Context
+            .GetSystemService(global::Android.Content.Context.ClipboardService);
+        if (manager is null) return Task.CompletedTask;
+
+        var text = content.Text ?? string.Empty;
+        // NewHtmlText carries BOTH representations in one ClipData, which is exactly the atomicity the
+        // contract is for: a receiver that wants markup gets it, a plain-text receiver gets the text.
+        var clip = content.Formats.TryGetValue(ClipboardContent.Html, out var html)
+            ? global::Android.Content.ClipData.NewHtmlText("Shenora", text,
+                  global::System.Text.Encoding.UTF8.GetString(html.Span))
+            : global::Android.Content.ClipData.NewPlainText("Shenora", text);
+        manager.PrimaryClip = clip;
+        return Task.CompletedTask;
+#else
+        // A shell with no platform pasteboard binding still honours the text half.
+        return Clipboard.Default.SetTextAsync(content.Text ?? string.Empty);
+#endif
+    }
+
+    /// <summary>Read back through the platform's own pasteboard.</summary>
+    private static async Task<ClipboardContent> GetPlatformAsync()
+    {
+        var formats = new Dictionary<string, ReadOnlyMemory<byte>>(StringComparer.OrdinalIgnoreCase);
+#if IOS || MACCATALYST
+        var board = global::UIKit.UIPasteboard.General;
+        // The item's OWN types, never a fixed probe list: the write side accepts ANY media type
+        // verbatim as a UTI (UnsupportedFormats is empty here), so probing only the two well-known
+        // UTIs silently dropped every custom format on read-back — the round-trip
+        // ClipboardContent.Formats exists to promise.
+        // ⚠ Bounded to the kit's own shapes. This is the SYSTEM pasteboard, holding whatever the last
+        // app copied — a Photos copy carries several MB-scale representations per item — and
+        // materializing every foreign type on every GetAsync would read all of it into managed arrays
+        // for nothing. The kit writes media types, which contain '/'; a platform UTI never does, so
+        // the filter is exactly "what this contract can round-trip".
+        foreach (var type in board.Types ?? [])
+        {
+            // Text is the contract's own field, read through Essentials below — not a Formats entry.
+            if (type == "public.utf8-plain-text") continue;
+            var mediaType = type switch
+            {
+                "public.png" => ClipboardContent.PngImage,
+                "public.html" => ClipboardContent.Html,
+                _ => type,
+            };
+            if (!mediaType.Contains('/')) continue;
+            if (board.DataForPasteboardType(type) is { } data) formats[mediaType] = data.ToArray();
+        }
+#elif ANDROID
+        var manager = (global::Android.Content.ClipboardManager?)global::Android.App.Application.Context
+            .GetSystemService(global::Android.Content.Context.ClipboardService);
+        if (manager?.PrimaryClip is { ItemCount: > 0 } clip
+            && clip.GetItemAt(0)?.HtmlText is { } html)
+        {
+            formats[ClipboardContent.Html] = global::System.Text.Encoding.UTF8.GetBytes(html);
+        }
+#endif
+        // Essentials for the text on every shell: it is the one representation all of them agree on, and
+        // its null-versus-empty behaviour is already the contract's.
+        var text = await Clipboard.Default.GetTextAsync().ConfigureAwait(false);
+        return new ClipboardContent { Text = text, Formats = formats };
+    }
 }
 
 /// <summary>Opening a URL, over Essentials' <see cref="Browser"/>.</summary>
@@ -56,8 +202,8 @@ public sealed class MobileUrlLauncher : IUrlLauncher
     private readonly Action<Exception>? _onError;
 
     /// <param name="onError">
-    /// Receives a failure. <see cref="OpenUrl"/> is void by contract while the platform API is async,
-    /// so the open is started and not awaited — without this sink a failure is invisible.
+    /// Receives a failure. <see cref="OpenUrl"/> is void by contract while the platform API is async, so
+    /// the open is started and not awaited — without this sink a failed open is invisible.
     /// </param>
     public MobileUrlLauncher(Action<Exception>? onError = null) => _onError = onError;
 
@@ -65,16 +211,15 @@ public sealed class MobileUrlLauncher : IUrlLauncher
     public void OpenUrl(string url)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
-        // http/https only, the same gate the desktop launcher enforces: a page must not be able to
-        // hand the shell an arbitrary scheme to launch.
+        // http/https only: a page must not be able to hand the shell an arbitrary scheme to launch.
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             throw new ArgumentException($"Only http/https URLs can be opened (got '{url}').", nameof(url));
         }
 
-        // Fire-and-forget with a guarded continuation — never async void, which would make a
-        // rejected open an unobservable crash on the UI thread.
+        // Guarded continuation, never async void: that would make a rejected open an unobservable
+        // crash on the UI thread.
         _ = Browser.Default.OpenAsync(uri, BrowserLaunchMode.SystemPreferred)
             .ContinueWith(t => { if (t.Exception is { } ex) _onError?.Invoke(ex.GetBaseException()); },
                 CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
@@ -82,10 +227,9 @@ public sealed class MobileUrlLauncher : IUrlLauncher
 }
 
 /// <summary>
-/// Blocking interaction with the main UI. An honest NO-OP rather than a refusal: on mobile the
-/// things that need it — a document picker, a share sheet — are modal by the platform, so the
-/// capability is satisfied, just not by us. That distinction is the one <see cref="ShellCapability"/>
-/// draws; refusing here would break portable logic that correctly brackets a picker call.
+/// Blocking interaction with the main UI. A NO-OP rather than a refusal: the things that need it — a
+/// document picker, a share sheet — are already modal by the platform, so refusing here would break
+/// portable logic that correctly brackets a picker call.
 /// </summary>
 public sealed class MobileUiInteraction : IUiInteraction
 {
@@ -99,61 +243,33 @@ public sealed class MobileUiInteraction : IUiInteraction
 /// <summary>
 /// File picking over Essentials' <see cref="FilePicker"/>.
 /// <para>
-/// This is the first REAL test of the lean <c>FileDialogContracts.cs</c> admits in writing — that
-/// <c>FileDialogOptions</c> is desktop-flavoured and "a mobile document picker would ignore the
-/// validation hints and return a content URI". The finding: the contract holds, and no break is
-/// needed for opening a file. <see cref="FileDialogResult.FilePath"/> is specified as "a path or URI
-/// the HOST can resolve", which is exactly what Android hands back.
+/// ⚠ <b><c>OpenReadAsync</c> is NOT overridden because MAUI's picker COPIES the chosen document into
+/// app cache</b> and returns a real filesystem path, so the interface's default path-based read is
+/// correct here. The copy is what a caller must account for: the handle is a SNAPSHOT, not the live
+/// document — writing to it does not write back to the user's file, and the cache can be evicted.
 /// </para>
 /// <para>
-/// <b>It does NOT override <c>OpenReadAsync</c>, and that was measured rather than assumed.</b>
-/// MAUI's picker COPIES the chosen document into app cache and returns a real filesystem path
-/// (<c>/data/data/&lt;pkg&gt;/cache/…/name.ext</c>) rather than a content URI, so the interface's
-/// default path-based read is already correct on this shell. Verified on a device — the sample's
-/// PICK_FILE route returned exactly such a path.
-/// The semantic difference that copy introduces matters more than the API shape: the handle is a
-/// SNAPSHOT, not the live document. Writing to it does not write back to the user's file, and the
-/// cache can be evicted. Read it promptly; do not treat it as durable storage.
+/// IGNORED here: <c>CheckFileExists</c>, <c>CheckPathExists</c>, <c>ValidateNames</c> and
+/// <c>OverwritePrompt</c> (the picker owns validation), <c>DefaultPath</c> and <c>RememberPathKey</c>
+/// (no addressable start directory), and <c>DefaultExtension</c>. <c>Title</c> and <c>Filters</c> map.
 /// </para>
 /// <para>
-/// What is IGNORED here, stated rather than discovered: <c>CheckFileExists</c>,
-/// <c>CheckPathExists</c>, <c>ValidateNames</c> and <c>OverwritePrompt</c> (the picker owns
-/// validation), <c>DefaultPath</c> and <c>RememberPathKey</c> (no addressable start directory), and
-/// <c>DefaultExtension</c>. <c>Title</c> and <c>Filters</c> DO map.
-/// </para>
-/// <para>
-/// <b>SAVING is implemented PER PLATFORM</b> — <c>AndroidFileDialogs</c> and <c>IosFileDialogs</c>, each
-/// in its own shell project — because the two systems express it differently and neither resembles a
-/// desktop save dialog. See <see cref="SaveAsync"/>.
-/// </para>
-/// <para>
-/// 🔴 <b>ABSTRACT, not <c>partial</c></b> (owner, 2026-08-08: *"use abstraction or composition, do not use
-/// partial class — the partial class is only useful and meaningful for code generation"*). It was a partial
-/// method to get one property: a THIRD platform joining this shared source cannot compile until someone
-/// decides what save means there, rather than silently inheriting a stub that refuses at runtime.
-/// <c>abstract</c> gives exactly that — an unimplemented member is a compile error — while also being a
-/// real seam: the split is visible in the type system, a test can subclass it, and the two halves stop
-/// pretending to be one class that no tooling can see the whole of.
+/// <b>SAVING is per platform</b> — <c>AndroidFileDialogs</c> and <c>IosFileDialogs</c>, each in its own
+/// shell project — so a third platform joining this shared source cannot compile until it says what save
+/// means there. See <see cref="SaveAsync"/>.
 /// </para>
 /// </summary>
 public abstract class MobileFileDialogsBase : IFileDialogs
 {
     /// <summary>
-    /// Pick a destination and write to it — the portable save, implemented natively per platform:
-    /// <c>ACTION_CREATE_DOCUMENT</c> on Android, <c>UIDocumentPickerViewController</c> on iOS.
+    /// Pick a destination and write to it — the portable save, native per platform:
+    /// <c>ACTION_CREATE_DOCUMENT</c> on Android, <c>UIDocumentPickerViewController</c> on iOS. Both
+    /// produce the content into a CACHE TEMP first, so the user's existing document is untouched until
+    /// the content is complete.
     /// <para>
-    /// <b>Both platforms produce the content into a CACHE TEMP first and only then hand it over</b>, so
-    /// the user's existing document is untouched until the content is complete — the same reasoning as
-    /// the desktop's <c>Files.BeginReplace</c>, applied to a destination that is a system grant rather
-    /// than a path. The remaining window is the hand-over copy itself, which is bounded by copy speed
-    /// rather than by however long the caller's operation takes; that difference is the whole point,
-    /// because a long encode is where an in-place write does its damage.
-    /// </para>
-    /// <para>
-    /// <b>⚠ Do not assume the pick happens before the write.</b> Android asks first and then produces
-    /// (so a cancel costs nothing); iOS must produce first, because its export picker hands over a file
-    /// that already exists — so a cancel there wastes the work. Portable logic must therefore treat the
-    /// callback as "may run even if the user ultimately cancels".
+    /// <b>⚠ Do not assume the pick happens before the write.</b> Android asks first and then produces (a
+    /// cancel costs nothing); iOS must produce first, because its export picker hands over a file that
+    /// already exists. Treat <paramref name="write"/> as "may run even if the user ultimately cancels".
     /// </para>
     /// </summary>
     public abstract Task<FileDialogResult> SaveAsync(SaveFileOptions? options,
@@ -166,15 +282,13 @@ public abstract class MobileFileDialogsBase : IFileDialogs
         var result = await FilePicker.Default.PickAsync(new PickOptions
         {
             PickerTitle = options?.Title,
-            // FileTypes is left unset ON PURPOSE. Android matches on MIME types while the kit's
-            // filters carry EXTENSIONS, so honouring them would need an extension→MIME table the kit
-            // has no business owning and would get wrong for exactly the app-specific formats that
-            // matter. "Any file" is the honest answer; an app that needs narrowing passes its own
+            // FileTypes stays unset: Android matches on MIME types while the kit's filters carry
+            // EXTENSIONS, so honouring them needs an extension→MIME table that would be wrong for
+            // exactly the app-specific formats that matter. An app needing narrowing passes its own
             // PickOptions through its own contract.
         }).ConfigureAwait(false);
 
-        // FullPath is the host-resolvable form on each platform (a content URI on Android) — which is
-        // what the contract asks for, and why nothing has to break here.
+        // FullPath is the host-resolvable form on each platform, which is what the contract asks for.
         return result is null ? FileDialogResult.Cancelled() : FileDialogResult.Selected(result.FullPath);
     }
 
@@ -194,14 +308,12 @@ public abstract class MobileFileDialogsBase : IFileDialogs
             "instead — it is implemented here, and it is the portable shape on every shell (D35).");
 
     /// <summary>
-    /// A cache file to produce content into before handing it to the platform, under the cache directory
-    /// because that is the space both platforms let an app write without a grant.
+    /// A cache file to produce content into before handing it to the platform — the space both platforms
+    /// let an app write without a grant.
     /// <para>
     /// ⚠ <b>Uniqueness goes in the DIRECTORY, never in the file NAME.</b> iOS's export picker suggests
-    /// the temp file's own name to the user, so a <c>{guid}-name.txt</c> temp showed up in the "Save as"
-    /// field as <c>89c9bdcc7248436…</c> — found on the simulator, and invisible on Android, where the
-    /// suggested name is passed separately to <c>Launch()</c> and the temp's name never surfaces. A
-    /// per-call directory gives the same collision safety with the filename left alone.
+    /// the temp file's own name to the user, so a <c>{guid}-name.txt</c> temp reaches the "Save as" field
+    /// as the guid. Invisible on Android, which passes the suggested name separately to <c>Launch()</c>.
     /// </para>
     /// </summary>
     protected static string NewTempPath(string? suggestedName)
@@ -214,8 +326,7 @@ public abstract class MobileFileDialogsBase : IFileDialogs
 
     /// <summary>
     /// Drop a temp produced by <see cref="NewTempPath"/>, its per-call directory included — otherwise
-    /// every save leaks an empty folder into the cache for the life of the install. Best-effort by
-    /// design: a cache the OS reclaims is not worth masking a real outcome for.
+    /// every save leaks an empty folder into the cache for the life of the install. Never throws.
     /// </summary>
     protected static void DiscardTemp(string tempPath)
     {
@@ -233,9 +344,9 @@ public abstract class MobileFileDialogsBase : IFileDialogs
 
     /// <summary>
     /// The name to suggest in the picker: the caller's <see cref="SaveFileOptions.FileName"/>, with
-    /// <see cref="SaveFileOptions.DefaultExtension"/> appended when it carries no extension of its
-    /// own. Unlike the desktop, the NAME is the only place an extension can be expressed here — the
-    /// MIME type is deliberately generic (see the platform implementations).
+    /// <see cref="SaveFileOptions.DefaultExtension"/> appended when it carries no extension of its own.
+    /// Defaults to <c>untitled</c>. The NAME is the only place an extension can be expressed here — the
+    /// platform implementations keep the MIME type generic.
     /// </summary>
     protected static string SuggestedName(SaveFileOptions? options)
     {

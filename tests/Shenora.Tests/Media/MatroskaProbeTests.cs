@@ -259,10 +259,10 @@ public class MatroskaProbeTests
         var policy = new MediaPlaybackPolicy
         {
             Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4a", ".webm" },
-            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
             {
-                [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9", "av1" },
-                [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus", "flac" },
+                [MediaStreamKind.Video] = new HashSet<MediaStreamCodec>() { "h264", "vp9", "av1" },
+                [MediaStreamKind.Audio] = new HashSet<MediaStreamCodec>() { "aac", "opus", "flac" },
             },
         };
 
@@ -291,10 +291,10 @@ public class MatroskaProbeTests
         var plan = MediaPlaybackPlanner.Plan(MatroskaProbe.Read(file)!, new MediaPlaybackPolicy
         {
             Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4a", ".webm" },
-            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
             {
-                [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9", "av1" },
-                [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus", "flac" },
+                [MediaStreamKind.Video] = new HashSet<MediaStreamCodec>() { "h264", "vp9", "av1" },
+                [MediaStreamKind.Audio] = new HashSet<MediaStreamCodec>() { "aac", "opus", "flac" },
             },
         });
 

@@ -40,11 +40,11 @@ public sealed class MediaConversionPolicyTests
     /// <summary>A stand-in device. ⚠ Only what it is ASKED about, so a wrong question shows up as false.</summary>
     private sealed class FakeDevice(params string[] decodable) : IMediaCapability
     {
-        private readonly HashSet<string> _decodable = new(decodable, StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<MediaStreamCodec> _decodable = new(decodable.Select(n => (MediaStreamCodec)n));
 
-        public IReadOnlySet<string> Decodable(MediaStreamKind kind) => _decodable;
+        public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => _decodable;
 
-        public IReadOnlySet<string> Encodable(MediaStreamKind kind) => _decodable;
+        public IReadOnlySet<MediaStreamCodec> Encodable(MediaStreamKind kind) => _decodable;
     }
 
     /// <summary>
@@ -325,7 +325,7 @@ public sealed class MediaConversionPolicyTests
         Resolve = static _ => null,
         AllowedRoots = [Path.GetTempPath()],
         CacheRoot = Path.Combine(Path.GetTempPath(), "shenora-order-" + Guid.NewGuid().ToString("N")[..8]),
-        Log = log,
+        Log = AppCallback.Logger(log),
     };
 
     private static readonly MissionScheduler Scheduler =

@@ -39,10 +39,11 @@ Shenora.Windows.CaptionButtonState
   property Pressed
 Shenora.Windows.ClipboardService
   method .ctor
+  method ClearAsync
+  method GetAsync
   method GetTextAsync
-  method SetImageFromFileAsync
+  method SetAsync
   method SetTextAsync
-  method TrySaveImageToFileAsync
 Shenora.Windows.DownloadHit
   method .ctor
   method Deconstruct
@@ -60,6 +61,9 @@ Shenora.Windows.DpiHelper
   method ScaleFromDeviceDpi
   method SystemScale
 Shenora.Windows.DropZoneManager
+  field DragEnterEvent
+  field DragLeaveEvent
+  field FileDropEvent
   field Module
   method .ctor
   method ClearAll
@@ -74,6 +78,10 @@ Shenora.Windows.DropZoneManagerOptions
   property ParentForm
   property WebView
 Shenora.Windows.DropZoneModule
+  field RegisterType
+  field ShowType
+  field UnregisterType
+  field UpdateType
   method .ctor
   method RouteMessageAsync
   property ModuleName
@@ -108,8 +116,8 @@ Shenora.Windows.FormInteraction
   method SetMainForm
   method UnblockInteraction
 Shenora.Windows.IAppMaximizable
+  property AppPlacement
   property AppRestoreBounds
-  property IsAppMaximized
 Shenora.Windows.IFormInteraction
   method GetMainForm
   method GetMainFormHandle
@@ -119,6 +127,7 @@ Shenora.Windows.IShellLauncher
   method OpenDirectory
   method RevealInExplorer
 Shenora.Windows.IWebViewResourceProvider
+  method BeginWarmup
   method Exists
   method GetResourceStream
 Shenora.Windows.IWindowStateStore
@@ -130,10 +139,17 @@ Shenora.Windows.InteractiveSession
   method ComposeProfileDirectory
   method RunAsync
   property IsBusy
+Shenora.Windows.InteractiveSessionErrorCodes
+  field Busy
+  field Cancelled
+  field Error
+  field Incomplete
+  field Unavailable
 Shenora.Windows.InteractiveSessionOptions
   method .ctor
   property Anchor
   property BackColor
+  property Browser
   property ClientSize
   property Icon
   property LoadingFallbackTimeout
@@ -141,9 +157,14 @@ Shenora.Windows.InteractiveSessionOptions
   property NavigationGuard
   property OnLoading
   property Owner
-  property ProfileDirectory
   property RevealImmediately
   property Title
+Shenora.Windows.InteractiveSessionResult
+  method .ctor
+  method ThrowIfFailed
+  property Blob
+  property ErrorCode
+  property Success
 Shenora.Windows.JsonFileWindowStateStore
   method .ctor
   method Load
@@ -162,11 +183,11 @@ Shenora.Windows.OptimizedForm
   method SetCaptionButtons
   method ToggleMaximize
   method WndProc
+  property AppPlacement
   property AppRestoreBounds
   property CaptionButtonColors
   property CaptionButtonStateChanged
   property CreateParams
-  property IsAppMaximized
   property WndProcHook
 Shenora.Windows.OptimizedFormOptions
   method .ctor
@@ -177,14 +198,18 @@ Shenora.Windows.OptimizedFormOptions
   property NativeCaptionButtons
   property RoundedCorners
   property TopResizeBorder
+Shenora.Windows.ProcessLaunchOptions
+  method .ctor
+  property Arguments
+  property ExecutablePath
+  property WorkingDirectory
 Shenora.Windows.RenderSession
   method CallDevToolsAsync
   method DisposeAsync
   method ExecuteScriptAsync
   method GetHtmlAsync
   method NavigateAsync
-  method OnMessage
-  method OnNetwork
+  property Id
 Shenora.Windows.RenderSessionPool
   method .ctor
   method Dispose
@@ -217,7 +242,7 @@ Shenora.Windows.SecondaryWindows
   method Dispose
   method HasWindow
   method Open
-Shenora.Windows.SessionApiCall
+Shenora.Windows.SessionAuthRequest
   method .ctor
   method Deconstruct
   method Equals
@@ -226,35 +251,58 @@ Shenora.Windows.SessionApiCall
   method ToString
   method op_Equality
   method op_Inequality
-  property BodySample
-  property ContentType
-  property Method
-  property Url
-Shenora.Windows.SessionBrowser
+  property Challenge
+  property Password
+  property Uri
+  property UserName
 Shenora.Windows.SessionBrowserOptions
   method .ctor
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
   property AdditionalBrowserArguments
+  property Events
   property FolderMappings
   property InitTimeout
   property IsDevelopment
   property KeepAliveInBackground
   property Log
   property MuteAudio
+  property ObserveResponse
+  property OnAuthRequest
+  property OnCertificateRequest
+  property OnPermissionRequest
+  property OnScriptDialog
+  property OnWindowRequest
   property ProfileDirectory
   property RequestFilter
   property ResourceProvider
+  property ResponseBodySample
   property VirtualHost
+Shenora.Windows.SessionCertificateRequest
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Host
+  property Port
+  property SelectedIndex
+  property Subjects
 Shenora.Windows.SessionController
   method ExecuteScriptAsync
   method FitToBox
   method GetCookiesAsync
   method NavigateAsync
-  method OnDownload
-  method OnMessage
-  method OnNavigation
-  method OnNewWindow
   method Reveal
   method SetLoading
+  property Id
   property WindowClosed
 Shenora.Windows.SessionCookie
   method .ctor
@@ -269,39 +317,18 @@ Shenora.Windows.SessionCookie
   property Name
   property Path
   property Value
-Shenora.Windows.SessionEndReason
-  field Disposed
-  field RendererFailed
-  field value__
-Shenora.Windows.SessionEnded
-  method .ctor
-  method Deconstruct
-  method Equals
-  method Equals
-  method GetHashCode
-  method ToString
-  method op_Equality
-  method op_Inequality
-  property Detail
-  property Reason
-Shenora.Windows.SessionErrorCodes
-  field Busy
-  field Cancelled
-  field Error
-  field Incomplete
-  field Unavailable
-Shenora.Windows.SessionFrame
-  method .ctor
-  method Deconstruct
-  method Equals
-  method Equals
-  method GetHashCode
-  method ToString
-  method op_Equality
-  method op_Inequality
-  property Height
-  property Jpeg
-  property Width
+Shenora.Windows.SessionEvents
+  field DomContentLoaded
+  field DownloadStarting
+  field Module
+  field NavigationCompleted
+  field NavigationStarting
+  field ProcessFailed
+  field ResponseReceived
+  field SourceChanged
+  field TitleChanged
+  field WebMessage
+  field WindowCloseRequested
 Shenora.Windows.SessionInput
   method .ctor
   method Equals
@@ -330,6 +357,31 @@ Shenora.Windows.SessionKeyInput
   property Key
   property Meta
   property Shift
+Shenora.Windows.SessionNavigationResult
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Status
+  property Success
+  property Uri
+Shenora.Windows.SessionPermissionRequest
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Allow
+  property Kind
+  property Uri
+  property UserInitiated
 Shenora.Windows.SessionPointerAction
   field Down
   field Move
@@ -350,12 +402,59 @@ Shenora.Windows.SessionPointerInput
   property EqualityContract
   property X
   property Y
-Shenora.Windows.SessionResult
+Shenora.Windows.SessionProcessReport
   method .ctor
-  method ThrowIfFailed
-  property Blob
-  property ErrorCode
-  property Success
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property ExitCode
+  property Kind
+  property Reason
+  property Terminal
+Shenora.Windows.SessionResponse
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property BodySample
+  property Headers
+  property ReasonPhrase
+  property StatusCode
+  property Uri
+Shenora.Windows.SessionScriptDialog
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Accept
+  property DefaultText
+  property Kind
+  property Message
+  property ResultText
+  property Uri
+Shenora.Windows.SessionSource
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Title
+  property Uri
 Shenora.Windows.SessionTextInput
   method .ctor
   method Deconstruct
@@ -396,6 +495,16 @@ Shenora.Windows.SessionViewportInput
   property EqualityContract
   property Height
   property Width
+Shenora.Windows.SessionWebMessage
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Message
 Shenora.Windows.SessionWheelInput
   method .ctor
   method Deconstruct
@@ -411,6 +520,18 @@ Shenora.Windows.SessionWheelInput
   property EqualityContract
   property X
   property Y
+Shenora.Windows.SessionWindowRequest
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Allow
+  property Uri
+  property UserInitiated
 Shenora.Windows.ShellLauncher
   method .ctor
   method LaunchProcess
@@ -434,6 +555,11 @@ Shenora.Windows.SingleInstanceHostOptions
   property RestartArgument
   property RestartWaitTimeout
   property Scope
+Shenora.Windows.SingleInstanceResult
+  field Acquired
+  field AlreadyRunning
+  field Unverified
+  field value__
 Shenora.Windows.SplashPanel
   method .ctor
   method Dispose
@@ -452,13 +578,47 @@ Shenora.Windows.StreamingSession
   method StartAsync
   property Controller
   property Frames
+  property Id
+Shenora.Windows.StreamingSessionEndReason
+  field Disposed
+  field RendererFailed
+  field value__
+Shenora.Windows.StreamingSessionEnded
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Detail
+  property Reason
+Shenora.Windows.StreamingSessionFrame
+  method .ctor
+  method Deconstruct
+  method Equals
+  method Equals
+  method GetHashCode
+  method ToString
+  method op_Equality
+  method op_Inequality
+  property Bytes
+  property Format
+  property Height
+  property Width
+Shenora.Windows.StreamingSessionFrameFormat
+  field Jpeg
+  field Png
+  field value__
 Shenora.Windows.StreamingSessionOptions
   method .ctor
   property Anchor
   property Browser
   property FrameBuffer
+  property FrameFormat
+  property FrameQuality
   property InitialViewport
-  property JpegQuality
   property Log
   property MaxFrameHeight
   property MaxFrameWidth
@@ -507,9 +667,6 @@ Shenora.Windows.UnhandledExceptionSource
   field value__
 Shenora.Windows.WebView2BuilderExtensions
   method PrewarmWebView2
-Shenora.Windows.WebView2Interceptor
-  method Use
-  property RangeDelivery
 Shenora.Windows.WebViewCustomScheme
   method .ctor
   property AllowedOrigins
@@ -609,7 +766,15 @@ Shenora.Windows.WinFormsUiDispatcher
   property State
   property TargetName
 Shenora.Windows.WindowCommandModule
+  field CloseType
+  field IsMaximizedType
+  field MinimizeType
   field Module
+  field SetCaptionButtonsType
+  field SetThemeType
+  field StartDragType
+  field StartResizeType
+  field ToggleMaximizeType
   method .ctor
   method RouteMessageAsync
   property ModuleName
@@ -621,6 +786,10 @@ Shenora.Windows.WindowCommandOptions
   property SetCaptionButtons
   property ToggleMaximize
   property Window
+Shenora.Windows.WindowPlacement
+  field Maximized
+  field Normal
+  field value__
 Shenora.Windows.WindowState
   method .ctor
   method Deconstruct
@@ -631,7 +800,7 @@ Shenora.Windows.WindowState
   method op_Equality
   method op_Inequality
   property Height
-  property Maximized
+  property Placement
   property Width
   property X
   property Y
@@ -647,9 +816,6 @@ Shenora.Windows.WindowStateManager
   method AttachTo
   method IsVisible
   method Save
-  method ToLogical
-  method ToPhysical
-  method ToPhysical
 Shenora.Windows.WindowStateOptions
   method .ctor
   property DefaultHeight

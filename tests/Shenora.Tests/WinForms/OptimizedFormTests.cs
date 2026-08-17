@@ -73,9 +73,9 @@ public class OptimizedFormTests
 
         _ = form.Handle;
         form.Maximize();                        // raises through the guard
-        Assert.True(form.IsAppMaximized);       // …and the state change still completed
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);       // …and the state change still completed
         form.RestoreFromMax();
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
 
         Assert.Equal(2, calls);                 // the subscriber really did run, and really did throw
         Assert.True(form.IsHandleCreated);      // …and the window survived both
@@ -92,10 +92,10 @@ public class OptimizedFormTests
         _ = form.Handle;
 
         form.Maximize();                    // captures the off-screen rect as the restore target
-        Assert.True(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
         form.RestoreFromMax();
 
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         Assert.True(
             WindowStateManager.IsVisible(form.Bounds.X, form.Bounds.Y, form.Bounds.Width, form.Bounds.Height,
                 Screen.AllScreens.Select(s => s.Bounds), new WindowStateOptions()),
@@ -139,11 +139,11 @@ public class OptimizedFormTests
         form.MaximizedChanged += (_, _) => changes++;
 
         form.ToggleMaximize();
-        Assert.True(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
         Assert.Equal(FormWindowState.Maximized, form.WindowState);
 
         form.ToggleMaximize();
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         Assert.Equal(FormWindowState.Normal, form.WindowState);
         Assert.Equal(2, changes);
     });
@@ -161,14 +161,14 @@ public class OptimizedFormTests
 
         form.Maximize();
 
-        Assert.True(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Maximized, form.AppPlacement);
         // Manual maximize: WindowState stays Normal — IsAppMaximized is the source of truth.
         Assert.Equal(FormWindowState.Normal, form.WindowState);
         Assert.True(form.Width > original.Width && form.Height > original.Height);
 
         form.RestoreFromMax();
 
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         // The restore-bounds roundtrip. This also guards the restore TARGET, which now comes from
         // WINDOWPLACEMENT.rcNormalPosition rather than the live window rect (so that maximizing a
         // SNAPPED window and restoring it exits the snap, as every other Windows app does).
@@ -212,7 +212,7 @@ public class OptimizedFormTests
         form.RestoreFromMax();
 
         Assert.Equal(FormWindowState.Normal, form.WindowState);
-        Assert.False(form.IsAppMaximized);
+        Assert.Equal(WindowPlacement.Normal, form.AppPlacement);
         Assert.Equal(new Rectangle(100, 100, 640, 480), form.Bounds);
     });
 
@@ -221,15 +221,44 @@ public class OptimizedFormTests
     {
         using var form = new OptimizedForm();
         var seen = new List<int>();
-        form.WndProcHook = msg =>
+        form.WndProcHook = m =>
         {
-            seen.Add(msg);
-            return false; // observe, don't swallow
+            seen.Add(m.Msg);
+            return null; // observe, don't swallow
         };
 
         _ = form.Handle; // handle creation pumps creation messages through WndProc
 
         Assert.NotEmpty(seen);
+    });
+
+    /// <summary>
+    /// The reason the hook takes a whole <c>Message</c>: it must be able to read the PARAMETERS and
+    /// answer with a RESULT. As `Func&lt;int, bool&gt;` it saw only the id, so every real use of a
+    /// window-procedure hook — WM_COPYDATA, WM_POWERBROADCAST, any RegisterWindowMessage channel with
+    /// a payload — was out of reach.
+    /// </summary>
+    [Fact]
+    public void WndProc_hook_reads_the_PARAMETERS_and_can_answer_with_a_RESULT() => Sta.Run(() =>
+    {
+        const int WM_USER = 0x0400;
+        using var form = new OptimizedForm();
+        var payload = (wParam: IntPtr.Zero, lParam: IntPtr.Zero);
+
+        form.WndProcHook = m =>
+        {
+            if (m.Msg != WM_USER) return null;          // null = not handled, fall through
+            payload = (m.WParam, m.LParam);
+            return new IntPtr(42);                       // handled, and this becomes m.Result
+        };
+
+        var message = Message.Create(form.Handle, WM_USER, new IntPtr(7), new IntPtr(9));
+        typeof(Control).GetMethod("WndProc", System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(form, [message]);
+
+        Assert.Equal(new IntPtr(7), payload.wParam);
+        Assert.Equal(new IntPtr(9), payload.lParam);
     });
 
     [Fact]

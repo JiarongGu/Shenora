@@ -19,7 +19,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * greenfield app would send its own shape and build `SessionInput` records host-side.
  */
 interface Frame {
-  jpeg: string;
+  bytes: string;
+  format: string;
   width: number;
   height: number;
 }
@@ -110,7 +111,7 @@ export function StreamViewer({ hosted }: { hosted: boolean }) {
         ref={imgRef}
         data-testid="stream-frame"
         alt="streamed page"
-        src={frame ? `data:image/jpeg;base64,${frame.jpeg}` : undefined}
+        src={frame ? `data:image/${frame.format};base64,${frame.bytes}` : undefined}
         style={{
           display: 'block', // an inline <img> with no src does not honour the height below
           width: '100%', height: '14rem', objectFit: 'contain',

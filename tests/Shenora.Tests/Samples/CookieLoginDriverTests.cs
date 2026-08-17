@@ -154,6 +154,108 @@ public class CookieLoginDriverTests
         Assert.NotNull(blob); // substring semantics: "session" ~ "JSESSIONID"
     }
 
+    // ── The bus hint: the SessionEvents catalogue's first consumer ───────────────────────────────────
+    // 🔴 D63's bar, and why these exist: a seam is done when something ASKS for it, and "a test must
+    // supply a fake and assert it was USED". Absent is otherwise indistinguishable from working — the
+    // driver still captures at poll speed whether or not the hint is ever consulted, so only a timing
+    // assertion can tell the difference.
+
+    [Fact]
+    public async Task A_hint_gets_the_jar_re_read_WITHOUT_waiting_out_the_poll_interval()
+    {
+        // The poll is set to a minute, so finishing at all proves the hint was consulted. An assertion
+        // on the captured blob alone would pass with the hint ignored — it would just take a minute.
+        var browser = new FakeBrowser { Jar = [] };
+        var hinted = new TaskCompletionSource();
+        var flow = new CookieLoginDriver(new CookieLoginDriverOptions
+        {
+            LoginUrl = "https://login.example.com/signin",
+            CookieReadUrl = "https://api.example.com/",
+            AuthCookiePatterns = ["^auth_token$"],
+            PollInterval = TimeSpan.FromMinutes(1),
+            RevealDelay = TimeSpan.FromMinutes(1),
+        });
+
+        // Read 3, and BOTH offsets are load-bearing. Read 1 is the baseline and its RETURN value is the
+        // snapshot, so a cookie added on read 1 lands IN the baseline, is never "fresh", and the loop
+        // never ends. Read 2 is the first poll, which captures before the loop has waited on anything —
+        // so the hint would go unconsulted and the test would assert nothing. Only read 3 forces a wait.
+        browser.OnRead = b => { if (b.Reads == 3) b.Jar.Add(Auth("fresh")); };
+        var hooks = new CookieLoginDriver.Hooks
+        {
+            ReadCookies = browser.Hooks.ReadCookies,
+            Navigate = browser.Hooks.Navigate,
+            Reveal = browser.Hooks.Reveal,
+            SetLoading = browser.Hooks.SetLoading,
+            // ONE-SHOT. A hint that completes every time is a spin, not a hint — and a spin here would
+            // hang the suite rather than fail it, since the poll it is racing is a minute long.
+            WaitForHint = ct => hinted.TrySetResult()
+                ? Task.CompletedTask
+                : Task.Delay(Timeout.Infinite, ct),
+        };
+
+        var blob = await flow.DriveAsync(hooks, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(blob);
+        Assert.True(hinted.Task.IsCompleted, "the loop must consult the hint, not just the timer");
+    }
+
+    [Fact]
+    public async Task A_RESPONSE_that_sets_a_cookie_signals_the_hint_and_one_that_does_not_is_ignored()
+    {
+        // The bus half, over a REAL EventBus — the only part of the bridge reachable without a browser.
+        var bus = new Shenora.Core.Events.EventBus();
+        using var hint = new CookieLoginDriver.CookieHint(bus, "session-a");
+
+        // A response with no Set-Cookie leaves the hint unsignalled…
+        await bus.EmitAsync(SessionEvents.Module, SessionEvents.ResponseReceived,
+            new SessionResponse("https://login/app.js", 200, "OK", [new("Content-Type", "text/javascript")], ""),
+            scope: "session-a");
+        Assert.False(hint.IsSignalled);
+
+        // …and one that sets a cookie wakes it.
+        await bus.EmitAsync(SessionEvents.Module, SessionEvents.ResponseReceived,
+            new SessionResponse("https://login/callback", 302, "Found", [new("Set-Cookie", "auth_token=x")], ""),
+            scope: "session-a");
+
+        Assert.True(hint.IsSignalled);
+    }
+
+    [Fact]
+    public async Task ANOTHER_session_cannot_wake_this_flow()
+    {
+        // What the scope is FOR. Two logins running side by side on one bus: a redirect in the other
+        // window must not make this one re-read its jar, or the "many sessions" case is untestable noise.
+        var bus = new Shenora.Core.Events.EventBus();
+        using var hint = new CookieLoginDriver.CookieHint(bus, "session-a");
+
+        await bus.EmitAsync(SessionEvents.Module, SessionEvents.ResponseReceived,
+            new SessionResponse("https://login/callback", 302, "Found", [new("Set-Cookie", "auth_token=x")], ""),
+            scope: "session-b");
+
+        Assert.False(hint.IsSignalled);
+    }
+
+    [Fact]
+    public async Task A_BURST_of_cookie_responses_cannot_turn_the_poll_into_a_spin()
+    {
+        // ⚠ The defect an unbounded Release() would have introduced: five permits means the next five
+        // polls do not wait at all, so the loop hammers the cookie jar. Capped at one.
+        var bus = new Shenora.Core.Events.EventBus();
+        using var hint = new CookieLoginDriver.CookieHint(bus, "session-a");
+
+        for (var i = 0; i < 5; i++)
+        {
+            await bus.EmitAsync(SessionEvents.Module, SessionEvents.ResponseReceived,
+                new SessionResponse($"https://login/{i}", 200, "OK", [new("Set-Cookie", $"c{i}=1")], ""),
+                scope: "session-a");
+        }
+
+        Assert.True(hint.IsSignalled);                       // a signal is pending…
+        await hint.WaitAsync(CancellationToken.None);        // …one wait consumes it…
+        Assert.False(hint.IsSignalled);                      // …and five responses left exactly one
+    }
+
     [Fact]
     public void Construction_validates_the_options()
     {

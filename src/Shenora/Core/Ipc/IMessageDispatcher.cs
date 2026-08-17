@@ -45,13 +45,12 @@ public interface IMessageDispatcher
     /// (<see cref="MessageDispatcherExtensions.MapModule(IMessageDispatcher, IIpcModule)"/> and
     /// friends) is an extension method over this, so all of them work on the interface.
     /// <para>
-    /// WHY THIS IS ON THE INTERFACE (P5.5 H6). The interface previously exposed only dispatch/send, so
-    /// a composition that maps a facade AFTER the container is built — the documented pattern for
-    /// anything needing the live window — had to DOWNCAST to <see cref="MessageDispatcher"/>. The
-    /// reference composition did exactly that, and its <c>if (dispatcher is MessageDispatcher concrete)</c>
-    /// had no <c>else</c>: registering a different <see cref="IMessageDispatcher"/>, or wrapping it in a
-    /// decorator, silently dropped three whole modules and the frameless title bar simply stopped
-    /// working, with no error anywhere. Adopters copy that branch.
+    /// 🔴 <b>It is on the INTERFACE so that late mapping never needs a downcast.</b> Mapping a facade
+    /// after the container is built is the documented pattern for anything needing the live window; with
+    /// composition only on the concrete type, a caller writes
+    /// <c>if (dispatcher is MessageDispatcher concrete)</c> — and the branch with no <c>else</c> silently
+    /// drops every module the moment a decorator or an alternative registration is in play, with no error
+    /// anywhere. Adopters copy that branch.
     /// </para>
     /// <para>
     /// Late mapping is safe while requests are in flight — see

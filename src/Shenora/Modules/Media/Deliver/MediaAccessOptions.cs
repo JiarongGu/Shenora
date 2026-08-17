@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Shenora.Modules.Media;
 
 /// <summary>
@@ -32,7 +34,7 @@ public sealed class MediaAccessOptions
     public string Module { get; init; } = "SHENORA.MEDIA";
 
     /// <summary>Diagnostics. Guarded at every call site — a throwing sink never escapes.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; init; }
 
     /// <summary>
     /// Has a CONVERSION route already been registered on this object? Set by

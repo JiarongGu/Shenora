@@ -146,6 +146,51 @@ describe('useDropZone', () => {
     expect(transport.posted).toHaveLength(0);
   });
 
+  it('a failed REGISTER reaches the app\'s onError, and the console when there is none', async () => {
+    // A D63 test: the sink is SUPPLIED and asserted USED, because an absent handler and a working one
+    // are indistinguishable from the outside — a drop zone that failed to register looks exactly like
+    // one nobody has dragged onto yet.
+    const { transport, bus, bridge, targetRef } = createFixture();
+    transport.autoAck = false;
+    const onError = vi.fn();
+    renderHook(() => useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z1', bridge, bus, onError }));
+    await flush();
+
+    act(() => transport.fail(transport.lastRequest().id, 'NO_HANDLER'));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]?.[1]).toBe('REGISTER');
+  });
+
+  it('falls back to the console when no onError is supplied, and does NOT double-report', async () => {
+    const { transport, bus, bridge, targetRef } = createFixture();
+    transport.autoAck = false;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const onError = vi.fn();
+      const { unmount } = renderHook(() =>
+        useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z1', bridge, bus }));
+      await flush();
+      act(() => transport.fail(transport.lastRequest().id, 'NO_HANDLER'));
+      await act(async () => { await Promise.resolve(); });
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      unmount();
+
+      // …and a caller that owns its reporting is not ALSO logged, the rule the package's other three
+      // sinks follow. Same failure, one more console call would mean the fallback fires either way.
+      consoleError.mockClear();
+      renderHook(() => useDropZone({ targetRef, onDrop: () => {}, zoneId: 'z2', bridge, bus, onError }));
+      await flush();
+      act(() => transport.fail(transport.lastRequest().id, 'NO_HANDLER'));
+      await act(async () => { await Promise.resolve(); });
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('a stale REGISTER ack after teardown cannot mark the zone registered', async () => {
     // Regression (StrictMode's mount-unmount-remount): the in-flight REGISTER's ack landed
     // after the cleanup's UNREGISTER and marked the DESTROYED zone "registered" — no re-send,
@@ -255,5 +300,60 @@ describe('useDropZone', () => {
     await flush();
     expect(transport.routes()).toEqual(['REGISTER', 'SHOW', 'SHOW']);
     expect(transport.posted[2]?.payload).toMatchObject({ zoneId: 'z1' });
+  });
+
+  it('🔴 generates its zone id ONCE, not on every render', async () => {
+    // `useRef(newZoneId())` evaluates its argument on every render and keeps only the first, so the
+    // generator ran a crypto.randomUUID() per render of every drop zone — invisible, since the value
+    // was correct, and paid forever. Counted through `crypto.randomUUID` because that is where the
+    // cost actually is.
+    const { bridge, bus, targetRef } = createFixture();
+    const randomUUID = vi.spyOn(crypto, 'randomUUID');
+
+    try {
+      const { rerender } = renderHook(() => useDropZone({ targetRef, onDrop: () => {}, bridge, bus }));
+      await flush();
+      const afterMount = randomUUID.mock.calls.length;
+
+      rerender();
+      rerender();
+      rerender();
+      await flush();
+
+      // Re-renders must add nothing. (Not asserting the mount count itself — other ids are minted
+      // during a mount, and pinning that number would break for reasons unrelated to this defect.)
+      expect(randomUUID.mock.calls.length).toBe(afterMount);
+    } finally {
+      randomUUID.mockRestore();
+    }
+  });
+
+  it('the id a later message carries is still the id it REGISTERED under', async () => {
+    // ⚠ The behavioural half, and it has to reach a LIVE read to mean anything. An earlier version
+    // asserted on `data-drop-zone-id` and the REGISTER count after a rerender — both are written by
+    // effects that do not re-run on a plain rerender, so they hold the first id no matter what the ref
+    // does. Measured: a "mint a fresh id every render" implementation passed that version untouched.
+    //
+    // SHOW is different: its handler reads the ref when the mouse leaves, long after the effects ran.
+    // So a drifting id surfaces exactly where it would hurt — the host receiving SHOW for a zone it
+    // never registered, and simply not showing the overlay.
+    const { transport, bridge, bus, targetRef, element } = createFixture();
+
+    const { rerender } = renderHook(() => useDropZone({ targetRef, onDrop: () => {}, bridge, bus }));
+    await flush();
+    const registered = (transport.posted[0]?.payload as { zoneId: string }).zoneId;
+
+    rerender();
+    rerender();
+    await flush();
+
+    act(() => {
+      element.dispatchEvent(new MouseEvent('mouseleave'));
+    });
+    await flush();
+
+    expect(transport.routes()).toEqual(['REGISTER', 'SHOW']);
+    expect(transport.posted[1]?.payload).toMatchObject({ zoneId: registered });
+    expect(element.getAttribute('data-drop-zone-id')).toBe(registered);
   });
 });

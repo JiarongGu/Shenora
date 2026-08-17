@@ -13,10 +13,10 @@ public class MediaPlaybackPlannerTests
     private static MediaPlaybackPolicy Browser(bool canEncodeVideo = true, bool canEncodeAudio = true) => new()
     {
         Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm" },
-        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
         {
-            [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp9" },
-            [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "opus" },
+            [MediaStreamKind.Video] = new HashSet<MediaStreamCodec>() { "h264", "vp9" },
+            [MediaStreamKind.Audio] = new HashSet<MediaStreamCodec>() { "aac", "opus" },
         },
         Encodable = new HashSet<MediaStreamKind>(
             (canEncodeVideo ? [MediaStreamKind.Video] : Array.Empty<MediaStreamKind>())
@@ -36,7 +36,7 @@ public class MediaPlaybackPlannerTests
 
         Assert.Equal(MediaPlaybackAction.Direct, plan.Action);
         Assert.True(plan.ContainerOpens);
-        Assert.All(plan.Streams, s => Assert.False(s.NeedsReEncode));
+        Assert.All(plan.Streams, s => Assert.True(s.Plays));
     }
 
     /// <summary>
@@ -55,8 +55,8 @@ public class MediaPlaybackPlannerTests
         // a perfectly good picture.
         var video = Assert.Single(plan.Streams, s => s.Stream.Kind == MediaStreamKind.Video);
         var audio = Assert.Single(plan.Streams, s => s.Stream.Kind == MediaStreamKind.Audio);
-        Assert.False(video.NeedsReEncode);
-        Assert.True(audio.NeedsReEncode);
+        Assert.True(video.Plays);
+        Assert.Equal(MediaStreamVerdict.NeedsReEncode, audio.Verdict);
         Assert.Contains("audio only", plan.Reason);
         Assert.Contains("ac3", plan.Reason);
     }
@@ -73,7 +73,7 @@ public class MediaPlaybackPlannerTests
 
         Assert.Equal(MediaPlaybackAction.Remux, plan.Action);
         Assert.False(plan.ContainerOpens);
-        Assert.All(plan.Streams, s => Assert.False(s.NeedsReEncode));
+        Assert.All(plan.Streams, s => Assert.True(s.Plays));
     }
 
     /// <summary>
@@ -118,7 +118,7 @@ public class MediaPlaybackPlannerTests
         var plan = MediaPlaybackPlanner.Plan(Probe(".mp4", Video(null), Audio(null)), Browser());
 
         Assert.Equal(MediaPlaybackAction.Direct, plan.Action);
-        Assert.All(plan.Streams, s => Assert.True(s.DecodesNatively));
+        Assert.All(plan.Streams, s => Assert.True(s.Plays));
     }
 
     /// <summary>
@@ -136,7 +136,7 @@ public class MediaPlaybackPlannerTests
 
         Assert.Equal(MediaPlaybackAction.Direct, plan.Action);
         Assert.Equal(4, plan.Streams.Count);
-        Assert.All(plan.Streams, s => Assert.False(s.NeedsReEncode));
+        Assert.All(plan.Streams, s => Assert.True(s.Plays));
     }
 
     /// <summary>
@@ -166,7 +166,7 @@ public class MediaPlaybackPlannerTests
         var plan = MediaPlaybackPlanner.Plan(Probe(".mp4", Video("aac")), Browser());
 
         Assert.Equal(MediaPlaybackAction.Transcode, plan.Action);
-        Assert.True(Assert.Single(plan.Streams).NeedsReEncode);
+        Assert.Equal(MediaStreamVerdict.NeedsReEncode, Assert.Single(plan.Streams).Verdict);
     }
 
     /// <summary>Both streams undecodable is still one verdict, and the reason names both.</summary>

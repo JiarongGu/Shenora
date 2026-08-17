@@ -3,57 +3,29 @@ using System.Buffers.Binary;
 namespace Shenora.Modules.Media;
 
 /// <summary>
-/// Writes FRAGMENTED MP4 — an <c>init</c> segment that declares the tracks, then numbered media segments
-/// that each carry their own index.
-///
+/// Writes FRAGMENTED MP4 — an <c>init</c> segment that declares the tracks, then numbered media segments that
+/// each carry their own index. A fragment states only its OWN samples, so a producer can emit piece 3 while
+/// piece 900 does not exist yet. No codec, no demuxer: it takes samples that already exist and writes the
+/// boxes around them.
 /// <para>
-/// 🔴 <b>Why fragments at all, when <see cref="Mp4Remuxer"/> already writes MP4.</b> A plain MP4 states every
-/// sample's position in one <c>moov</c>, so it cannot be written until the last sample is known — which is why
-/// the remux path either finishes the whole file or computes the whole layout up front (D71). A fragment
-/// states only its OWN samples, so a producer can emit piece 3 while piece 900 does not exist yet. That is the
-/// difference between "an hour-long source is an hour-long wait" and "playback starts in seconds", and it is
-/// the whole reason <see cref="ISegmentEngine"/> is a separate seam from a converter.
-/// </para>
-///
-/// <para>
-/// ⚠ <b>fMP4 and NOT MPEG-TS, deliberately.</b> <c>isTypeSupported('video/mp2t')</c> answered <c>true</c> on
-/// both mobile shells and that claim is not trusted: <c>canPlayType</c> produced exactly such a <c>true</c>
-/// for HLS on the same day, and a MediaSource append failure is SILENT. fMP4 is what every
-/// <c>MediaSource</c>/<c>ManagedMediaSource</c> implementation actually consumes, and it buys a second thing
-/// that matters more than compatibility: <b>a segment's picture bytes are countable</b>. MPEG-TS names its
-/// streams in the PMT, so a segment whose encoder wrote nothing still declares a video stream and looks
-/// correct; here the <c>trun</c> carries the sizes, so "the encoder accepted every frame and wrote zero
-/// bytes" — the failure <see cref="ISegmentEngine.HasRenderedPicture"/> exists for — is a subtraction rather
-/// than a guess.
-/// </para>
-///
-/// <para>
-/// <b>What this type is NOT.</b> It has no codec, no demuxer and no idea what a segment grid is. It takes
-/// samples that already exist and writes the boxes around them, which is what makes it testable with
-/// synthetic input and no media at all — the same split that keeps <c>MediaPlaybackPlanner</c> pure.
+/// ⚠ <b>fMP4 and NOT MPEG-TS.</b> A <c>MediaSource</c> append failure is SILENT, and only the <c>trun</c>'s
+/// sizes make a segment's picture bytes COUNTABLE — MPEG-TS names its streams in the PMT, so a segment whose
+/// encoder wrote nothing still declares a video stream and looks correct. That subtraction is what
+/// <see cref="ISegmentEngine.HasRenderedPicture"/> rests on.
 /// </para>
 /// </summary>
 internal static class Mp4FragmentWriter
 {
-    /// <summary>
-    /// <c>trun</c> flags: the data offset, plus a duration, size and flags for every sample. Composition
-    /// offsets are added only when some sample needs one — see <see cref="Trun"/>.
-    /// </summary>
+    /// <summary><c>trun</c> flags: the data offset, plus a duration, size and flags for every sample.
+    /// Composition offsets are added only when some sample needs one — see <see cref="Trun"/>.</summary>
     private const uint TrunDataOffset = 0x000001;
     private const uint TrunSampleDuration = 0x000100;
     private const uint TrunSampleSize = 0x000200;
     private const uint TrunSampleFlags = 0x000400;
     private const uint TrunCompositionOffsets = 0x000800;
 
-    /// <summary>
-    /// <c>tfhd</c> flag <c>default-base-is-moof</c>: every <c>trun</c> offset is measured from the start of
-    /// its own <c>moof</c>.
-    /// <para>
-    /// ⚠ The alternative — a base offset stated as an absolute file position — makes a segment's meaning
-    /// depend on where the file sits, which is exactly wrong for a piece that is fetched on its own and
-    /// appended to a buffer. This is why a fragment can be served, cached and replayed with no context.
-    /// </para>
-    /// </summary>
+    /// <summary><c>tfhd</c> flag <c>default-base-is-moof</c>: every <c>trun</c> offset is measured from the
+    /// start of its own <c>moof</c>, so a fragment can be served, cached and replayed with no context.</summary>
     private const uint TfhdDefaultBaseIsMoof = 0x020000;
 
     /// <summary>
@@ -64,11 +36,8 @@ internal static class Mp4FragmentWriter
     /// tracks declaring zero samples and is entitled to conclude the movie is empty — which renders as a file
     /// that opens, reports a duration of nothing and plays nothing.
     /// </para>
-    /// <para>
-    /// The duration is deliberately zero everywhere. A fragmented movie's length is not known when its init
-    /// segment is written, and each fragment carries its own decode time instead — the page learns the real
-    /// length from the manifest, which is computed from the source's duration rather than from this.
-    /// </para>
+    /// The duration is zero everywhere: a fragmented movie's length is not known when its init segment is
+    /// written, and each fragment carries its own decode time instead.
     /// </summary>
     /// <param name="target">Written from the current position. Need not be seekable.</param>
     /// <param name="tracks">One per track, in the order their <c>traf</c> boxes will appear in every fragment.</param>
@@ -84,8 +53,7 @@ internal static class Mp4FragmentWriter
 
         using (w.Box("ftyp"))
         {
-            // `iso5` is the brand that admits `tfdt`, which every fragment here writes. The rest are the
-            // compatibility set browsers and HLS readers look for.
+            // `iso5` admits `tfdt`, which every fragment here writes; the rest are the compatibility set.
             w.Ascii("iso5");
             w.U32(0x200);
             w.Ascii("isom");
@@ -134,8 +102,7 @@ internal static class Mp4FragmentWriter
                     {
                         w.U32(track.TrackId);
                         w.U32(1);                       // sample description index — the only entry in stsd
-                        // Zero defaults throughout: every fragment states a duration, size and flags per
-                        // sample explicitly, so a default that disagreed would be a second source of truth.
+                        // Zero defaults: every fragment states a duration, size and flags per sample itself.
                         w.U32(0);                       // default sample duration
                         w.U32(0);                       // default sample size
                         w.U32(0);                       // default sample flags
@@ -148,10 +115,8 @@ internal static class Mp4FragmentWriter
         buffer.CopyTo(target);
     }
 
-    /// <summary>
-    /// A sample table that indexes NOTHING — the fragmented form. It still carries the <c>stsd</c>, because
-    /// that is where the decoder configuration lives and a fragment never repeats it.
-    /// </summary>
+    /// <summary>A sample table that indexes NOTHING — the fragmented form. It still carries the
+    /// <c>stsd</c>, which a fragment never repeats.</summary>
     private static void EmptyStbl(BoxWriter w, Mp4FragmentTrack track)
     {
         using (w.Box("stbl"))
@@ -165,8 +130,7 @@ internal static class Mp4FragmentWriter
             using (w.FullBox("stts", 0, 0)) w.U32(0);
             using (w.FullBox("stsc", 0, 0)) w.U32(0);
             using (w.FullBox("stsz", 0, 0)) { w.U32(0); w.U32(0); }
-            // `stco` rather than `co64`: it indexes nothing, so the 32-bit form cannot overflow and is what
-            // every fragmented writer emits.
+            // `stco` rather than `co64`: it indexes nothing, so the 32-bit form cannot overflow.
             using (w.FullBox("stco", 0, 0)) w.U32(0);
         }
     }
@@ -174,20 +138,17 @@ internal static class Mp4FragmentWriter
     /// <summary>
     /// One media segment: <c>styp</c> + <c>moof</c> + <c>mdat</c>.
     /// <para>
-    /// 🔴 <b>The one hard part is <c>trun</c>'s data offset, and it is circular by construction:</b> it points
-    /// from the start of the <c>moof</c> to that track's first sample byte inside the <c>mdat</c> — a distance
-    /// that includes the size of the <c>moof</c> being written. So the <c>moof</c> is built into a buffer with
-    /// the offsets left blank, its length is then known, and each blank is patched. Guessing the length
-    /// instead is how a hand-rolled fragmenter produces a segment that appends without error and plays
-    /// silence.
+    /// 🔴 <b><c>trun</c>'s data offset is circular by construction:</b> it points from the start of the
+    /// <c>moof</c> to that track's first sample byte inside the <c>mdat</c> — a distance that includes the
+    /// size of the <c>moof</c> being written. So the <c>moof</c> is built into a buffer with the offsets left
+    /// blank, its length is then known, and each blank is patched. A guessed length produces a segment that
+    /// appends without error and plays silence.
     /// </para>
     /// </summary>
     /// <param name="target">Written from the current position. Need not be seekable.</param>
     /// <param name="sequenceNumber">1-based and strictly increasing across a run — <c>mfhd</c>'s only field.</param>
-    /// <param name="tracks">
-    /// The tracks contributing samples, in the SAME order as the init segment declared them. A track with no
-    /// samples in this segment is omitted rather than written empty.
-    /// </param>
+    /// <param name="tracks">The tracks contributing samples, in the SAME order as the init segment declared
+    /// them. A track with no samples in this segment is omitted rather than written empty.</param>
     public static void WriteFragment(Stream target, int sequenceNumber, IReadOnlyList<Mp4FragmentTrackData> tracks)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -247,8 +208,7 @@ internal static class Mp4FragmentWriter
         buffer.Position = 0;
         buffer.CopyTo(target);
 
-        // The mdat, written straight through rather than buffered — it is the whole payload, and a segment's
-        // bytes are the one thing here big enough to be worth not copying twice.
+        // The mdat, written straight through rather than buffered — it is the whole payload.
         var payload = contributing.Sum(t => (long)t.Data.Length);
         Span<byte> header = stackalloc byte[8];
         BinaryPrimitives.WriteUInt32BigEndian(header, checked((uint)(payload + 8)));
@@ -263,11 +223,10 @@ internal static class Mp4FragmentWriter
     /// </summary>
     private static long Trun(BoxWriter w, IReadOnlyList<Mp4FragmentSample> samples)
     {
-        // Composition offsets are written only when one is non-zero — the same rule `Mp4Builder` applies to
-        // `ctts`, and for the same reason: an all-zero table is legal and is four bytes per sample a reader
-        // has to walk for nothing. ⚠ Version 1, so the offsets are SIGNED: a fragment states its own decode
-        // time and does nothing to shift the presentation, so a negative offset is ordinary here where the
-        // whole-file writer had shifted it away.
+        // Composition offsets are written only when one is non-zero: an all-zero table is four bytes per
+        // sample a reader walks for nothing. ⚠ Version 1, so the offsets are SIGNED — a fragment states its
+        // own decode time and does nothing to shift the presentation, so a negative offset is ordinary here
+        // where the whole-file writer had shifted it away.
         var composed = false;
         for (var i = 0; i < samples.Count; i++)
         {
@@ -320,11 +279,9 @@ internal sealed class Mp4FragmentTrack
     /// <summary>Ticks per second for this track's sample durations and decode times.</summary>
     public required uint Timescale { get; init; }
 
-    /// <summary>
-    /// The <c>stsd</c> child — an <c>avc1</c>/<c>hvc1</c>/<c>mp4a</c> entry, built by
+    /// <summary>The <c>stsd</c> child — an <c>avc1</c>/<c>hvc1</c>/<c>mp4a</c> entry, built by
     /// <see cref="Mp4Builder.VisualSampleEntry"/> or <see cref="Mp4Builder.AudioSampleEntry"/>. It carries the
-    /// decoder configuration, which is why a fragment needs none.
-    /// </summary>
+    /// decoder configuration, which is why a fragment needs none.</summary>
     public required byte[] SampleEntry { get; init; }
 
     /// <summary>Picture or sound.</summary>
@@ -355,11 +312,9 @@ internal sealed class Mp4FragmentTrackData
 
     /// <summary>
     /// Where this fragment starts on the track's timeline, in its own timescale — <c>tfdt</c>.
-    /// <para>
-    /// ⚠ <b>This is what makes a fragment addressable, and it must be the RUNNING total rather than zero.</b>
-    /// A run that restarts mid-source (a seek) numbers its segments from the index it was asked for, so the
-    /// decode time has to be computed from that index and not from how many samples this run has emitted.
-    /// </para>
+    /// ⚠ <b>It must be the RUNNING total rather than zero.</b> A run that restarts mid-source (a seek) numbers
+    /// its segments from the index it was asked for, so the decode time has to be computed from that index and
+    /// not from how many samples this run has emitted.
     /// </summary>
     public required long BaseMediaDecodeTime { get; init; }
 
@@ -368,11 +323,8 @@ internal sealed class Mp4FragmentTrackData
 
     /// <summary>
     /// The sample bytes, concatenated in the same order as <see cref="Samples"/> and summing to their lengths.
-    /// <para>
-    /// Held whole because a fragment is bounded by the segment grid — a few seconds, not a film. That bound is
-    /// the reason this is a buffer rather than a stream, and it stops being true if a caller ever asks for a
-    /// segment measured in minutes.
-    /// </para>
+    /// Held whole because a fragment is bounded by the segment grid — a few seconds, not a film; that stops
+    /// being true if a caller ever asks for a segment measured in minutes.
     /// </summary>
     public required ReadOnlyMemory<byte> Data { get; init; }
 }

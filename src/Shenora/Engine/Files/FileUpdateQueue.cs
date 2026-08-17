@@ -1,5 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Engine.Missions;
-using Shenora;
+using Shenora.Core.Shell;
 
 namespace Shenora.Engine.Files;
 
@@ -7,42 +8,29 @@ namespace Shenora.Engine.Files;
 public sealed class FileUpdateQueueOptions
 {
     /// <summary>
-    /// Optional cross-process exclusion. Supply one and the queue takes a lease on every path an
-    /// update touches before applying it, releasing them after — so the app's OWN second process, or
-    /// a child process it spawns while holding leases itself, cannot interleave with an update.
-    ///
+    /// Optional cross-process exclusion. Supply one and the queue takes a lease on every path an update
+    /// touches before applying it, releasing them after.
     /// <para>
-    /// Null (the default) means in-process serialization only, which is all a single-instance app
-    /// needs. It buys nothing against a process that does not take leases; see
-    /// <see cref="LockInspector"/> for that half.
+    /// Null (the default) is in-process serialization only, and buys nothing against a process that does
+    /// not take leases; see <see cref="LockInspector"/> for that half.
     /// </para>
     /// </summary>
     public IPathLocker? Locker { get; set; }
 
-    /// <summary>
-    /// How long to wait for leases before giving up on an update. Default 30s. Ignored without a
-    /// <see cref="Locker"/>.
-    /// </summary>
+    /// <summary>Wait this long for leases before giving up. Default 30s; ignored without a <see cref="Locker"/>.</summary>
     public TimeSpan LeaseTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Optional. When a change fails, the queue asks this who is holding the path and reports it in
-    /// <see cref="FileUpdateResult.Holders"/> — turning "the process cannot access the file" into
-    /// something an app can act on or show a user.
+    /// <see cref="FileUpdateResult.Holders"/>.
     /// </summary>
     public IFileLockInspector? LockInspector { get; set; }
 
     /// <summary>
-    /// Write-ahead journal, which is what makes <see cref="FileAtomicity.AllOrNothing"/> survive the
-    /// process DYING rather than merely failing. Null (the default) means rollback is in-memory only:
-    /// correct for a failed change, absent after a power cut.
-    ///
-    /// <para>
-    /// Only <see cref="FileAtomicity.AllOrNothing"/> updates are journalled. A
-    /// <see cref="FileAtomicity.PerChange"/> update promises nothing about a crash, so writing a file
-    /// per update to guarantee something nobody asked for would be pure cost.
-    /// </para>
-    ///
+    /// Write-ahead journal — what makes <see cref="FileAtomicity.AllOrNothing"/> survive the process
+    /// DYING rather than merely failing. Null (the default) means rollback is in-memory only: correct
+    /// for a failed change, absent after a power cut. Only <see cref="FileAtomicity.AllOrNothing"/>
+    /// updates are journalled; <see cref="FileAtomicity.PerChange"/> promises nothing about a crash.
     /// <para>
     /// Supplying one means calling <see cref="FileUpdateQueue.RecoverAsync"/> at startup. A journal
     /// nobody replays is a directory that fills up.
@@ -50,21 +38,13 @@ public sealed class FileUpdateQueueOptions
     /// </summary>
     public IFileUpdateJournal? Journal { get; set; }
 
-    /// <summary>
-    /// Diagnostics sink, guarded through <see cref="AppCallback.Log"/> — a throwing sink cannot take
-    /// the queue down.
-    /// </summary>
-    public Action<string>? Log { get; set; }
+    /// <summary>Diagnostics sink, guarded through <see cref="AppCallback.Log"/> — a throwing sink cannot take the queue down.</summary>
+    public ILogger? Log { get; set; }
 }
 
 /// <summary>
 /// The default <see cref="IFileUpdateQueue"/>: one writer per partition, changes applied in order,
-/// with compensating rollback when the update asks for it.
-///
-/// <para>
-/// The whole component is a lock plus a switch over four change kinds. That is deliberate — the
-/// hard part of this problem is deciding WHAT the semantics should be (D30/D31), not the applying.
-/// </para>
+/// with compensating rollback when the update asks for it (D30/D31).
 /// </summary>
 public sealed class FileUpdateQueue : IFileUpdateQueue
 {
@@ -78,10 +58,9 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         : this(options, new SystemFileOperations()) { }
 
     /// <summary>
-    /// Test seam. Kept INTERNAL rather than public because the kit deliberately ships no filesystem
-    /// abstraction — apps have their own and should keep them (`docs/ADOPTION.md`). It exists so the
-    /// serialization and rollback invariants can be proven with an injected probe instead of with
-    /// sleeps and real disks, which is the only way those assertions are worth anything.
+    /// Test seam, INTERNAL because the kit ships no filesystem abstraction (`docs/ADOPTION.md`). It
+    /// exists so the serialization and rollback invariants can be proven with an injected probe rather
+    /// than with sleeps and real disks.
     /// </summary>
     internal FileUpdateQueue(FileUpdateQueueOptions? options, IFileOperations operations)
     {
@@ -103,12 +82,14 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         try
         {
             // Leases come AFTER the in-process gate, never before: taking a cross-process lock while
-            // another thread of this same process already holds the partition would be waiting on
-            // ourselves through the filesystem.
+            // another thread of this process holds the partition is waiting on ourselves through the
+            // filesystem.
             var leases = await AcquireLeasesAsync(update, cancellationToken).ConfigureAwait(false);
-            if (leases is null)
+            if (leases.Held is null)
             {
-                var contested = PathsOf(update).First();
+                // ⚠ The path that ACTUALLY refused, never the first one in the set: naming the wrong file
+                // asks the lock inspector about a file nobody is holding, so `Holders` comes back empty.
+                var contested = leases.Contested!;
                 var error = new IOException(
                     $"another process holds a lease on '{contested}' (waited {_options.LeaseTimeout}).");
                 return new FileUpdateResult(0, 0, error, rolledBack: false, HoldersOf(contested));
@@ -120,7 +101,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             }
             finally
             {
-                foreach (var lease in leases) await Guarded(lease.DisposeAsync).ConfigureAwait(false);
+                foreach (var lease in leases.Held) await Guarded(lease.DisposeAsync).ConfigureAwait(false);
             }
         }
         finally
@@ -130,9 +111,14 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// Every path an update touches, in a stable order. Sorted so two updates that overlap acquire
-    /// their leases in the SAME order — the lock-ordering rule the mission scheduler avoids by
-    /// declaring claims as a set, and which returns the moment locks are taken one at a time.
+    /// Every path an update touches, in a stable order. Sorted so two updates that overlap acquire their
+    /// leases in the SAME order.
+    /// <para>
+    /// ⚠ <b>The DISTINCT is platform-correct, and must be</b> (see <c>PathComparison</c>): on a
+    /// case-sensitive filesystem such as Android's ext4/f2fs, an ignore-case dedup would drop a genuinely
+    /// distinct path — and a path missing here never gets a LEASE, so the cross-process exclusion
+    /// silently covers less than the caller asked for.
+    /// </para>
     /// </summary>
     private static IEnumerable<string> PathsOf(FileUpdate update) =>
         update.Changes
@@ -145,13 +131,19 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 _ => [],
             })
             .Select(PathClaims.Canonical)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase);
+            .Distinct(PathComparer)
+            // Ordering need only be CONSISTENT, but uses the same comparer so there is one answer here.
+            .Order(PathComparer);
 
-    /// <summary>Null when any lease could not be taken — everything already taken is released first.</summary>
-    private async Task<List<IPathLease>?> AcquireLeasesAsync(FileUpdate update, CancellationToken cancellationToken)
+    private static StringComparer PathComparer { get; } = StringComparer.FromComparison(PathComparison.ForPaths);
+
+    /// <summary><c>Held</c> null = the attempt failed, and <c>Contested</c> names the path that refused.</summary>
+    private readonly record struct LeaseAttempt(List<IPathLease>? Held, string? Contested);
+
+    /// <summary><c>Held</c> null when any lease could not be taken — everything already taken is released first.</summary>
+    private async Task<LeaseAttempt> AcquireLeasesAsync(FileUpdate update, CancellationToken cancellationToken)
     {
-        if (_options.Locker is not { } locker) return [];
+        if (_options.Locker is not { } locker) return new LeaseAttempt([], null);
 
         var held = new List<IPathLease>();
         foreach (var path in PathsOf(update))
@@ -162,17 +154,16 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             {
                 foreach (var acquired in held) await Guarded(acquired.DisposeAsync).ConfigureAwait(false);
                 Log(() => $"file update deferred: could not lease {path}");
-                return null;
+                return new LeaseAttempt(null, path);
             }
             held.Add(lease);
         }
-        return held;
+        return new LeaseAttempt(held, null);
     }
 
     /// <summary>
-    /// Best-effort "who is holding this?", for a failure an app would otherwise report as an opaque
-    /// IOException. Never throws: a diagnostic that can fail the operation it is describing is worse
-    /// than no diagnostic.
+    /// Best-effort "who is holding this?". Never throws: a diagnostic that can fail the operation it is
+    /// describing is worse than no diagnostic.
     /// </summary>
     private IReadOnlyList<FileLockHolder> HoldersOf(string path)
     {
@@ -180,7 +171,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         try { return inspector.WhoHolds(path); }
         catch (Exception ex)
         {
-            Log(() => $"lock inspector failed for {path}: {ex.GetType().Name}");
+            Log(() => $"lock inspector failed for {path}", ex);
             return [];
         }
     }
@@ -200,17 +191,15 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// Runs with the partition held, so nothing else is mutating these paths through this queue. The
-    /// cancellation token is deliberately NOT observed past this point: a half-applied set abandoned
-    /// mid-way is the one outcome no caller can do anything with.
+    /// Runs with the partition held. The cancellation token is NOT observed past this point: a
+    /// half-applied set abandoned mid-way is the one outcome no caller can do anything with.
     /// </summary>
     private async Task<FileUpdateResult> ApplyLockedAsync(FileUpdate update)
     {
         var atomic = update.Atomicity == FileAtomicity.AllOrNothing;
         var undo = new List<FileUndoStep>();
         var staged = new List<FileUndoStep>();   // deletes to finish once the whole set lands
-        // Journalled only for AllOrNothing: PerChange promises nothing about a crash, so recording an
-        // undo plan for it would be writing a file per update to guarantee something nobody asked for.
+        // Journalled only for AllOrNothing: PerChange promises nothing about a crash.
         var journal = atomic ? _options.Journal : null;
         var updateId = $"u{Guid.NewGuid():N}";
         var startedUtc = DateTimeOffset.UtcNow;
@@ -227,8 +216,8 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             catch (Exception ex)
             {
                 var holders = FirstPathOf(change) is { } contested ? HoldersOf(contested) : [];
-                Log(() => $"file update failed at change {index} ({change.GetType().Name}): {ex.GetType().Name}"
-                          + (holders.Count > 0 ? $" — held by {string.Join(", ", holders)}" : string.Empty));
+                Log(() => $"file update failed at change {index} ({change.GetType().Name})"
+                          + (holders.Count > 0 ? $" — held by {string.Join(", ", holders)}" : string.Empty), ex);
                 if (!atomic) return new FileUpdateResult(index, index, ex, rolledBack: false, holders);
 
                 await RollbackAsync(undo).ConfigureAwait(false);
@@ -254,24 +243,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         return new FileUpdateResult(update.Changes.Count, null, null, rolledBack: false, []);
     }
 
-    /// <summary>
-    /// Finish what a previous run left half-done. Call it at startup, before submitting anything —
-    /// an interrupted update's paths are exactly the ones a new update is likely to touch.
-    ///
-    /// <para>
-    /// Entries left <see cref="FileUpdateStage.Applying"/> are ROLLED BACK: the update never reached
-    /// the point where it could claim to have landed, so the only state it is entitled to is the one
-    /// before it started. Entries left <see cref="FileUpdateStage.Committing"/> are FINISHED —
-    /// rolling those back would undo an update that had already succeeded.
-    /// </para>
-    ///
-    /// <para>
-    /// Safe to run twice: every undo step checks the world before acting, because after a crash it
-    /// cannot assume the change it undoes ever happened.
-    /// </para>
-    /// </summary>
-    /// <param name="cancellationToken">Abandons recovery; entries not yet handled stay in the journal.</param>
-    /// <returns>How many interrupted updates were resolved.</returns>
+    /// <inheritdoc />
     public async Task<int> RecoverAsync(CancellationToken cancellationToken = default)
     {
         if (_options.Journal is not { } journal) return 0;
@@ -318,14 +290,12 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
         while (true)
         {
             attempt++;
-            // Re-planned on every attempt: a retry happens because the world refused, and the world
-            // may look different now (the target that existed a moment ago may be gone).
+            // Re-planned every attempt: a retry means the world refused, and it may look different now.
             var planned = await PlanChangeAsync(change, atomic).ConfigureAwait(false);
             try
             {
-                // WRITE-AHEAD. The plan for undoing this change is durable BEFORE the change happens.
-                // An entry written afterwards is missing exactly the change that got interrupted,
-                // which is the only one recovery needs.
+                // WRITE-AHEAD: the undo plan is durable BEFORE the change happens. An entry written
+                // afterwards is missing exactly the change that got interrupted — the only one recovery needs.
                 if (journal is not null && (planned.Undo.Count > 0 || planned.Staged.Count > 0))
                     await journal.WriteAsync(
                         new FileUpdateJournalEntry(
@@ -346,14 +316,9 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// What a change WILL do and how to undo it, decided before anything is touched.
-    ///
-    /// <para>
-    /// The split exists for the journal: an undo plan is only useful if it is durable BEFORE the
-    /// mutation, and it can only be computed from the current state (does the target exist? what
-    /// sidecar name will the backup get?). Deciding and doing in one step, as this used to, makes a
-    /// write-ahead record impossible — the plan would only exist after the change it protects.
-    /// </para>
+    /// What a change WILL do and how to undo it, decided before anything is touched. The split exists
+    /// for the journal: an undo plan is only useful if it is durable BEFORE the mutation, and it can
+    /// only be computed from the current state (does the target exist? what sidecar name for the backup?).
     /// </summary>
     private readonly record struct PlannedChange(
         IReadOnlyList<FileUndoStep> Undo, IReadOnlyList<FileUndoStep> Staged, Func<ValueTask> Apply)
@@ -370,8 +335,7 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
                 if (await _operations.DirectoryExistsAsync(create.Path).ConfigureAwait(false))
                     return PlannedChange.Nothing;
                 return new PlannedChange(
-                    // Only remove what we created, and only if still empty — another change may have
-                    // filled it, and undoing that is not this change's business.
+                    // Only remove what we created, and only if still empty.
                     atomic ? [new FileUndoStep(FileUndoKind.RemoveCreatedDirectory, create.Path)] : [],
                     [],
                     () => _operations.CreateDirectoryAsync(create.Path));
@@ -446,16 +410,14 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
             }
 
             default:
-                // The hierarchy is closed (FileChange's constructor is private), so this is only
-                // reachable if a kind is added without a case here — fail loudly rather than skip it.
+                // Closed hierarchy — only reachable if a kind is added without a case here.
                 throw new NotSupportedException($"Unhandled change kind '{change.GetType().Name}'.");
         }
     }
 
     /// <summary>
-    /// Undo applied changes in REVERSE order — the only order that is correct when two changes touch
-    /// the same path. Each step is guarded: a rollback that throws half way would strand the update in
-    /// a state nobody can reason about, so failures are logged and the rest still runs.
+    /// Undo applied changes in REVERSE order — the only order that is correct when two changes touch the
+    /// same path. Each step is guarded, so one failure is logged and the rest still runs.
     /// </summary>
     private async ValueTask RollbackAsync(IReadOnlyList<FileUndoStep> undo)
     {
@@ -464,10 +426,9 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     }
 
     /// <summary>
-    /// Perform one undo step, TOLERATING a world that does not match the plan. After a crash the step
-    /// may already have been done, or never have happened at all: the change it undoes may have been
-    /// interrupted half way. So every step checks first and does nothing when there is nothing to do —
-    /// which also makes recovery safe to run twice.
+    /// Perform one undo step, TOLERATING a world that does not match the plan: after a crash the step may
+    /// already have been done, or never have happened. Every step checks first and does nothing when
+    /// there is nothing to do — which is what makes recovery safe to run twice.
     /// </summary>
     private async ValueTask RunUndoAsync(FileUndoStep step)
     {
@@ -499,23 +460,20 @@ public sealed class FileUpdateQueue : IFileUpdateQueue
     private async ValueTask Guarded(Func<ValueTask> step)
     {
         try { await step().ConfigureAwait(false); }
-        catch (Exception ex) { Log(() => $"file update cleanup step failed: {ex.GetType().Name}"); }
+        catch (Exception ex) { Log(() => "file update cleanup step failed", ex); }
     }
 
     /// <summary>
-    /// A sibling of the target, so the move is same-volume and therefore atomic and instant. A temp
-    /// DIRECTORY elsewhere would silently become a cross-volume copy of the very file being replaced.
+    /// A sibling of the target: same-volume, therefore atomic and instant. A temp DIRECTORY elsewhere
+    /// would silently become a cross-volume COPY of the file being replaced.
     /// </summary>
     private static string SidecarPath(string path, string tag) =>
         $"{path}.shenora-{tag}-{Guid.NewGuid():N}";
 
-    private void Log(Func<string> message) => AppCallback.Log(_options.Log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_options.Log, message, exception: failure);
 }
 
-/// <summary>
-/// The filesystem operations <see cref="FileUpdateQueue"/> performs. Internal: the kit ships no
-/// filesystem abstraction as public surface, and this exists so the queue's invariants are testable.
-/// </summary>
+/// <summary>The filesystem operations <see cref="FileUpdateQueue"/> performs — internal test seam.</summary>
 internal interface IFileOperations
 {
     ValueTask<bool> FileExistsAsync(string path);
@@ -542,10 +500,23 @@ internal sealed class SystemFileOperations : IFileOperations
 
     public ValueTask MoveFileAsync(string from, string to, bool overwrite)
     {
-        // A directory move and a file move are the same intent here; Directory.Move has no overwrite,
-        // and an existing destination directory is a genuine conflict rather than something to clobber.
-        if (Directory.Exists(from)) Directory.Move(from, to);
-        else File.Move(from, to, overwrite);
+        if (Directory.Exists(from))
+        {
+            // Directory.Move has no overwrite, and the contract deliberately does not extend the flag
+            // to trees — replacing one would delete it wholesale behind a flag named for files. Named
+            // here so the refusal reads as the rule it is, not as a bare IOException out of the BCL.
+            if (overwrite && (Directory.Exists(to) || File.Exists(to)))
+            {
+                throw new IOException(
+                    $"'{to}' already exists and Overwrite does not extend to directory moves — " +
+                    "delete the destination first when replacing the tree is really intended.");
+            }
+            Directory.Move(from, to);
+        }
+        else
+        {
+            File.Move(from, to, overwrite);
+        }
         return ValueTask.CompletedTask;
     }
 

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
@@ -44,18 +45,18 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
 {
     private readonly global::Windows.Media.Playback.MediaPlayer _player;
     private readonly global::Windows.Media.SystemMediaTransportControls _controls;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly object _gate = new();
     private PlaybackCommands _supported;
     private TimeSpan _skipInterval = TimeSpan.FromSeconds(15);
     // Remembered from Publish so Report can build a complete timeline. SMTC splits what one PlaybackInfo
     // says across two calls — the duration belongs to the ITEM and the position to the moment — and nothing
-    // carried it between them, so EndTime could only ever be zero (found by the first adopter, 2026-08-05).
+    // carried it between them, so EndTime could only ever be zero (found by the first adopter).
     private TimeSpan? _duration;
     private bool _disposed;
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape into a WinRT callback.</param>
-    public WindowsPlaybackSession(Action<string>? log = null)
+    public WindowsPlaybackSession(ILogger? log = null)
     {
         _log = log;
         _player = new global::Windows.Media.Playback.MediaPlayer();
@@ -129,7 +130,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             updater.MusicProperties.Artist = info.Subtitle ?? string.Empty;
             updater.MusicProperties.AlbumTitle = info.GroupName ?? string.Empty;
             // ⚠ Update() COMMITS the properties above; without it every field is set and nothing is
-            // published. Sabotage-verified: removing it leaves our session visible to the OS with an
+            // published. Removing it leaves our session visible to the OS with an
             // EMPTY title, which is a different symptom from having no session at all.
             updater.Update();
         }, nameof(Publish));
@@ -241,8 +242,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
             catch (Exception ex)
             {
                 // Artwork is decoration. A malformed image must never take the transport surface with it.
-                Log(() => $"[Shenora.Windows] Playback artwork rejected ({ex.GetType().Name}: {ex.Message}); " +
-                          "metadata is still published.");
+                Log(() => "[Shenora.Windows] Playback artwork rejected; metadata is still published.", ex);
             }
         });
     }
@@ -307,7 +307,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
         }
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <inheritdoc />
     public void Dispose()
@@ -322,7 +322,7 @@ public sealed class WindowsPlaybackSession : IPlaybackSession, IDisposable
         }, nameof(Dispose));
         // The player is ours and holds a media pipeline; leaving it would keep the app in the flyout for
         // the rest of the process.
-        try { _player.Dispose(); } catch (Exception ex) { Log(() => $"[Shenora.Windows] Player dispose: {ex.Message}"); }
+        try { _player.Dispose(); } catch (Exception ex) { Log(() => "[Shenora.Windows] Player dispose", ex); }
     }
 }
 #endif

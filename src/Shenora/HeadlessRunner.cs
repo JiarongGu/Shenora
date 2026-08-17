@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Shenora;
 
@@ -11,7 +12,7 @@ public sealed class HeadlessRunnerOptions
     /// and the shutdown hooks fire. A token that is ALREADY cancelled is fine and means "start,
     /// then stop immediately", which is the shape a test wants.
     /// </summary>
-    public CancellationToken StopToken { get; init; }
+    public CancellationToken StopToken { get; set; }
 
     /// <summary>
     /// Also stop on SIGINT (Ctrl+C) and SIGTERM. On by default because the alternative is worse than
@@ -20,10 +21,10 @@ public sealed class HeadlessRunnerOptions
     /// it for — releasing a lock, flushing state, letting a <c>--restarted</c> relaunch through —
     /// is silently skipped. Set false only when the host already owns signal handling.
     /// </summary>
-    public bool StopOnProcessSignals { get; init; } = true;
+    public bool StopOnProcessSignals { get; set; } = true;
 
     /// <summary>Diagnostics sink.</summary>
-    public Action<string>? Log { get; init; }
+    public ILogger? Log { get; set; }
 }
 
 /// <summary>Registers the headless run loop on a <see cref="ShenoraApplicationBuilder"/>.</summary>
@@ -47,10 +48,11 @@ public static class HeadlessHostExtensions
     /// </para>
     /// </summary>
     public static ShenoraApplicationBuilder UseHeadless(this ShenoraApplicationBuilder builder,
-        HeadlessRunnerOptions? options = null)
+        Action<HeadlessRunnerOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        var resolved = options ?? new HeadlessRunnerOptions();
+        var resolved = new HeadlessRunnerOptions();
+        configure?.Invoke(resolved);
         builder.Services.AddSingleton(resolved);
         builder.Services.AddSingleton<IShenoraRunner>(_ => new HeadlessRunner(resolved));
         return builder;

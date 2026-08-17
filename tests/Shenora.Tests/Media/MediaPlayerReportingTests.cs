@@ -125,7 +125,8 @@ public class MediaPlayerReportingTests
     private sealed class FakePlayer : IMediaPlayer
     {
         public MediaPlayerStatus Status { get; private set; } = new() { State = MediaPlayerState.Empty };
-        public double Rate { get; set; } = 1.0;
+        public Task SetRateAsync(double rate, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
         public event Action<MediaPlayerStatus>? StateChanged;
 
         public void Raise(MediaPlayerStatus status)

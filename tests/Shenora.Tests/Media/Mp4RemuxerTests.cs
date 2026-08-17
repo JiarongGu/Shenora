@@ -199,7 +199,7 @@ public class Mp4RemuxerTests
     private static (byte[] Mp4, MediaRemuxerResult Result) Remux(Stream source)
     {
         using var output = new MemoryStream();
-        var result = Mp4Remuxer.Remux(source, output);
+        var result = Mp4Remuxer.Remux(source, output, conversion: null);
         return (output.ToArray(), result);
     }
 
@@ -931,7 +931,7 @@ public class Mp4RemuxerTests
             // only "no exception was thrown" — the outcome IS the defect here, not the absence of a throw.
             MediaRemuxerResult? swallowed = null;
             var thrown = Record.Exception(
-                () => swallowed = Mp4Remuxer.Remux(sourcePath, destinationPath, cts.Token));
+                () => swallowed = Mp4Remuxer.Remux(sourcePath, destinationPath, conversion: null, cts.Token));
 
             Assert.True(thrown is OperationCanceledException,
                 "cancelling the path overload must THROW, not answer "
@@ -1138,10 +1138,10 @@ public class Mp4RemuxerTests
         var plan = MediaPlaybackPlanner.Plan(probe, new MediaPlaybackPolicy
         {
             Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4" },
-            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+            Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
             {
-                [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264" },
-                [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac" },
+                [MediaStreamKind.Video] = new HashSet<MediaStreamCodec>() { "h264" },
+                [MediaStreamKind.Audio] = new HashSet<MediaStreamCodec>() { "aac" },
             },
         });
         Assert.Equal(MediaPlaybackAction.Remux, plan.Action);
@@ -1262,7 +1262,7 @@ public class Mp4RemuxerTests
         using var film = Ac3Film(Frame(1, 32), Frame(2, 48));
         using var output = new MemoryStream();
 
-        var result = Mp4Remuxer.Remux(film, output);
+        var result = Mp4Remuxer.Remux(film, output, conversion: null);
 
         Assert.True(result.Succeeded);              // ⚠ succeeded, and silent
         Assert.Equal(0, result.AudioSamples);
@@ -1278,7 +1278,7 @@ public class Mp4RemuxerTests
             Cluster(0, [SimpleBlock(1, 0, true, Frame(0, 128)), SimpleBlock(2, 0, true, Frame(1, 32))]));
         using var output = new MemoryStream();
 
-        var result = Mp4Remuxer.Remux(film, output);
+        var result = Mp4Remuxer.Remux(film, output, conversion: null);
 
         Assert.True(result.Succeeded, result.Reason);
         Assert.Empty(result.Dropped);

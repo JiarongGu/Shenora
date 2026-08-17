@@ -243,5 +243,37 @@ describe('ShenoraEventBus', () => {
       expect(bus.getSubscriptionCount('OTHER', 'TICK')).toBe(2);
       expect(bus.getSubscriptionCount()).toBe(4);
     });
+
+    it('🔴 the per-MODULE count answers about that module, not about everything', () => {
+      // It used to fall through to the count-everything branch, because the guard demanded BOTH
+      // arguments. That returns a plausible number for a different question, with nothing to show the
+      // substitution — the shape a diagnostic can least afford, since a diagnostic is what you consult
+      // when you already distrust your understanding.
+      const bus = new ShenoraEventBus();
+      bus.subscribe('APP', 'TICK', () => {});
+      bus.subscribe('APP', 'DONE', () => {});
+      bus.subscribeToModule('APP', () => {});
+      bus.subscribeToAll(() => {});
+      bus.subscribe('OTHER', 'TICK', () => {});
+      bus.subscribeToModule('OTHER', () => {});
+
+      // APP: two exact + one whole-module + one catch-all.
+      expect(bus.getSubscriptionCount('APP')).toBe(4);
+      // OTHER: one exact + one whole-module + the same catch-all.
+      expect(bus.getSubscriptionCount('OTHER')).toBe(3);
+      // …and neither is the global total, which is what both used to answer.
+      expect(bus.getSubscriptionCount()).toBe(6);
+    });
+
+    it('a module name that PREFIXES another does not borrow its subscriptions', () => {
+      // The exact map is keyed `module\0type`, so a prefix scan without the separator would let `APP`
+      // count everything belonging to `APPLE`.
+      const bus = new ShenoraEventBus();
+      bus.subscribe('APPLE', 'TICK', () => {});
+      bus.subscribe('APPLE', 'DONE', () => {});
+
+      expect(bus.getSubscriptionCount('APP')).toBe(0);
+      expect(bus.getSubscriptionCount('APPLE')).toBe(2);
+    });
   });
 });

@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using Shenora;
+using Microsoft.Extensions.Logging;
 using Shenora.Core.WebView;
 using Shenora.Engine;
 
@@ -123,7 +123,7 @@ internal sealed class SegmentStream : IDisposable
     private readonly ISegmentEngine _engine;
     private readonly SegmentStreamOptions _options;
     private readonly WebViewRangeDelivery _delivery;
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
 
     /// <summary>Live sources by cache key. Guarded by <see cref="_gate"/>.</summary>
     private readonly Dictionary<string, Source> _sources = new(StringComparer.Ordinal);
@@ -135,7 +135,7 @@ internal sealed class SegmentStream : IDisposable
     private bool _disposed;
 
     private SegmentStream(ISegmentEngine engine, SegmentStreamOptions options,
-                          WebViewRangeDelivery delivery, Action<string>? log)
+                          WebViewRangeDelivery delivery, ILogger? log)
     {
         _engine = engine;
         _options = options;
@@ -151,8 +151,8 @@ internal sealed class SegmentStream : IDisposable
     /// <param name="engine">The app's production engine.</param>
     /// <param name="options">The app's route, resolver and roots.</param>
     /// <param name="log">Optional diagnostics. Guarded — a throwing sink must not break serving.</param>
-    internal static IDisposable Use(IWebViewInterceptor interceptor, ISegmentEngine engine,
-                                  SegmentStreamOptions options, Action<string>? log = null)
+    internal static ISegmentStreamRoute Use(IWebViewInterceptor interceptor, ISegmentEngine engine,
+                                  SegmentStreamOptions options, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(interceptor);
         ArgumentNullException.ThrowIfNull(engine);
@@ -160,6 +160,9 @@ internal sealed class SegmentStream : IDisposable
         ArgumentNullException.ThrowIfNull(options.Access);
         ArgumentNullException.ThrowIfNull(options.Access.Resolve);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.Access.CacheRoot);
+        // At composition time: a non-positive grid is a plan nothing can be built from, and discovering that
+        // on the first request would answer 404 for a source that is perfectly fine.
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SegmentSeconds);
 
         var stream = new SegmentStream(engine, options, interceptor.RangeDelivery, log);
         var route = interceptor.Use((request, next, cancellationToken) =>
@@ -167,7 +170,7 @@ internal sealed class SegmentStream : IDisposable
             // "Not mine" must fall through the REST of the pipeline, not terminate it.
             if (stream.Parse(request.Uri) is not { } parsed) return next(request, cancellationToken);
             return Task.FromResult<WebViewResourceResponse?>(
-                stream.Answer(request, parsed.Source, parsed.Resource));
+                stream.Answer(request, parsed.Source, parsed.Resource, cancellationToken));
         });
 
         return new Registration(route, stream);
@@ -205,7 +208,8 @@ internal sealed class SegmentStream : IDisposable
     }
 
     /// <summary>Answer one request: the manifest, a segment, or a refusal.</summary>
-    private WebViewResourceResponse Answer(WebViewResourceRequest request, string requested, string resource)
+    private WebViewResourceResponse Answer(WebViewResourceRequest request, string requested, string resource,
+                                           CancellationToken cancellationToken)
     {
         // Containment runs BEFORE the filesystem is touched, and a refusal is the same 404 as a missing file
         // so nothing can probe for existence by comparing responses.
@@ -224,11 +228,11 @@ internal sealed class SegmentStream : IDisposable
         catch (Exception ex)
         {
             // No exception text on the wire, ever — a path is the likeliest thing it would carry.
-            Log(() => $"segments: could not stat a source ({ex.GetType().Name})");
+            Log(() => "segments: could not stat a source", ex);
             return WebViewResourceResponse.NotFound();
         }
 
-        var source = OpenSource(contained, info);
+        var source = OpenSource(contained, info, cancellationToken);
         if (source is null) return WebViewResourceResponse.NotFound();
 
         if (resource.Equals(_options.ManifestName, StringComparison.OrdinalIgnoreCase))
@@ -255,21 +259,22 @@ internal sealed class SegmentStream : IDisposable
         return EnsureSegment(source, index)
             ? WebViewFiles.Serve(request, SegmentPath(source, index), SegmentContentType, _delivery)
             // ⚠ The ONE not-ready answer, shared with the conversion and computed-remux routes rather than
-            // copied a third time — this route held a byte-identical private copy, with its own hardcoded
-            // `Retry-After`, until 2026-08-13. The interval is a contract with the page's own retry loop, so
-            // three copies were three numbers that could drift apart while every test still passed.
+            // copied per route. The `Retry-After` interval is a contract with the page's own retry loop, so
+            // separate copies are separate numbers that can drift apart while every test still passes.
             : MediaConversionExtensions.NotReadyYet();
     }
 
     /// <summary>
-    /// The source's cache entry, probing it the first time it is seen.
+    /// The source's cache entry, probed and PLANNED the first time it is seen.
     /// <para>
     /// ⚠ <b>This probes ON THE REQUEST PATH</b>, which the kit's other routes refuse to do — and it is
     /// unavoidable here rather than sloppy: the manifest IS the answer to the first request, and it cannot be
-    /// written without the duration. It costs a container-header read, once per source per process.
+    /// written without the duration or the boundaries. A re-encoding engine answers both from the container
+    /// header; a COPYING one has to find the source's keyframes, which costs a walk of its frame index — the
+    /// same walk every production run already pays, in exchange for not encoding the picture at all (D76).
     /// </para>
     /// </summary>
-    private Source? OpenSource(string path, FileInfo info)
+    private Source? OpenSource(string path, FileInfo info, CancellationToken cancellationToken)
     {
         // Identity+length+mtime: replacing the source invalidates its segments rather than serving
         // yesterday's.
@@ -280,12 +285,29 @@ internal sealed class SegmentStream : IDisposable
             if (_disposed) return null;
             _touched[key] = DateTime.UtcNow;
             if (_sources.TryGetValue(key, out var existing)) return existing;
+        }
 
-            if (_engine.DurationOf(path) is not { } duration || duration <= TimeSpan.Zero)
-            {
-                Log(() => $"segments: no duration for {Path.GetFileName(path)} — refusing");
-                return null;
-            }
+        if (_engine.DurationOf(path) is not { } duration || duration <= TimeSpan.Zero)
+        {
+            Log(() => $"segments: no duration for {Path.GetFileName(path)} — refusing");
+            return null;
+        }
+
+        // 🔴 ONE plan object, used by the manifest AND handed to every run for this source. A playlist and a
+        // producer that computed boundaries separately would disagree silently: the bytes stay valid, and a
+        // seek lands at the wrong moment. Null means the engine will hit the grid, which is then the plan.
+        var plan = _engine.PlanSegments(path, _options.SegmentSeconds, cancellationToken)
+                   ?? SegmentPlan.Grid(_options.SegmentSeconds, duration);
+        var hasPicture = _engine.HasPicture(path);
+
+        lock (_gate)
+        {
+            if (_disposed) return null;
+            // ⚠ Re-checked because the planning above runs OUTSIDE this lock — deliberately, since it can
+            // take seconds on a large film and this lock guards every OTHER stream's entry too. Two
+            // first-requests for one source may therefore both plan; that costs a duplicated walk, where
+            // holding the lock would stall an unrelated stream for the whole of it.
+            if (_sources.TryGetValue(key, out var raced)) return raced;
 
             var directory = Path.Combine(_options.Access.CacheRoot, key);
             System.IO.Directory.CreateDirectory(directory);
@@ -295,14 +317,14 @@ internal sealed class SegmentStream : IDisposable
                 Path = path,
                 Directory = directory,
                 Duration = duration,
-                SegmentCount = (int)Math.Ceiling(duration.TotalSeconds / _options.SegmentSeconds),
-                HasPicture = _engine.HasPicture(path),
+                Plan = plan,
+                HasPicture = hasPicture,
             };
             DropUnfinishedTail(source);
             _sources[key] = source;
 
             Log(() => $"segments: {Path.GetFileName(path)} {duration.TotalSeconds:0.00}s"
-                    + $" -> {source.SegmentCount} segments (picture={source.HasPicture})");
+                    + $" -> {plan} (picture={source.HasPicture})");
 
             // Off the request path: the sweep stats every cached directory, and a request should never pay
             // for housekeeping that a previous request created the need for.
@@ -312,19 +334,22 @@ internal sealed class SegmentStream : IDisposable
     }
 
     /// <summary>
-    /// The synthetic VOD playlist. Every segment named before any exists.
+    /// The synthetic VOD playlist. Every segment named before any exists, each with the length the PLAN says
+    /// it has.
     /// <para>
-    /// ⚠ The tail carries the REAL remainder rather than a flat segment length. The grid is fixed everywhere
-    /// else, but a playlist's declared total is the sum of its <c>EXTINF</c>s — a flat last entry would
-    /// overstate the source by up to one whole segment, and a scrub bar built on it seeks past the end.
+    /// ⚠ The tail carries the REAL remainder rather than a flat segment length, and a derived plan's entries
+    /// differ from one another throughout. A playlist's declared total is the sum of its <c>EXTINF</c>s — a
+    /// flat last entry would overstate the source by up to one whole segment, and a scrub bar built on it
+    /// seeks past the end.
     /// </para>
     /// <para>
-    /// The engine may write ONE segment past the last one named here — an AAC encoder adds priming, so the
-    /// encoded stream runs a frame or two longer than the source. It is never asked for, because a request
+    /// Anything the engine produces past the last segment named here lands INSIDE it — an AAC encoder adds
+    /// priming, so an encoded stream runs a frame or two longer than the source declared. The plan clamps a
+    /// time past its end to its last index rather than naming a segment nobody can ask for, since a request
     /// outside <see cref="Source.SegmentCount"/> is refused.
     /// </para>
     /// </summary>
-    private string Manifest(Source source)
+    private static string Manifest(Source source)
     {
         var builder = new StringBuilder();
         builder.Append("#EXTM3U\n");
@@ -333,8 +358,11 @@ internal sealed class SegmentStream : IDisposable
         // line without which no segment can be decoded. The two must move together.
         builder.Append("#EXT-X-VERSION:7\n");
         builder.Append("#EXT-X-PLAYLIST-TYPE:VOD\n");
+        // 🔴 The LONGEST segment, not the length that was asked for. A plan cut on the source's own keyframes
+        // routinely holds a segment longer than the target, and a TARGETDURATION below any EXTINF is a
+        // MUST the playlist spec states, so a strict reader may refuse the lot — for a stream whose bytes are fine.
         builder.Append(CultureInfo.InvariantCulture,
-            $"#EXT-X-TARGETDURATION:{(int)Math.Ceiling(_options.SegmentSeconds)}\n");
+            $"#EXT-X-TARGETDURATION:{(int)Math.Ceiling(source.Plan.LongestSeconds)}\n");
         builder.Append("#EXT-X-MEDIA-SEQUENCE:0\n");
         // The initialisation segment: the tracks and their decoder configuration, which the numbered
         // segments deliberately never repeat.
@@ -343,8 +371,7 @@ internal sealed class SegmentStream : IDisposable
 
         for (var i = 0; i < source.SegmentCount; i++)
         {
-            var remaining = source.Duration.TotalSeconds - (i * _options.SegmentSeconds);
-            var seconds = Math.Max(0.001, Math.Min(_options.SegmentSeconds, remaining));
+            var seconds = Math.Max(0.001, source.Plan.LengthOf(i));
             builder.Append(CultureInfo.InvariantCulture, $"#EXTINF:{seconds:0.000},\n");
             builder.Append(CultureInfo.InvariantCulture, $"seg{i}{SegmentRunRequest.SegmentExtension}\n");
         }
@@ -540,11 +567,11 @@ internal sealed class SegmentStream : IDisposable
         try { System.IO.Directory.CreateDirectory(source.Directory); }
         catch (Exception ex)
         {
-            Log(() => $"segments: could not re-create the cache directory ({ex.GetType().Name})");
+            Log(() => "segments: could not re-create the cache directory", ex);
         }
 
         var run = _engine.Start(new SegmentRunRequest(
-            source.Path, source.Directory, source.HasPicture, index, _options.SegmentSeconds, source.Attempt));
+            source.Path, source.Directory, source.HasPicture, index, source.Plan, source.Attempt));
         if (run is null)
         {
             Log(() => $"segments: no engine candidate left for seg{index} (attempt {source.Attempt}) — giving up");
@@ -576,7 +603,7 @@ internal sealed class SegmentStream : IDisposable
     /// Delete the highest-numbered segment the first time a source is opened in this process.
     /// <para>
     /// ⚠ The app can be killed mid-write, and what that leaves behind is a segment file that EXISTS, is
-    /// non-empty and is truncated — which <see cref="IsComplete"/> would then accept forever, because the
+    /// non-empty and is truncated — which <see cref="IsComplete(Source, int)"/> would then accept forever, because the
     /// process that could have said otherwise is gone. Dropping exactly one file per source costs one
     /// segment of re-encoding and closes the hole.
     /// </para>
@@ -586,7 +613,10 @@ internal sealed class SegmentStream : IDisposable
         try
         {
             var highest = -1;
-            foreach (var file in System.IO.Directory.EnumerateFiles(source.Directory, "seg*.ts"))
+            // ⚠ The SEGMENT extension, from the one place that states it. This glob said `seg*.ts` for a day
+            // after D75 moved the tier to fMP4, so the sweep matched nothing and the hole below stayed open
+            // while every test still passed — none of them writes a truncated file.
+            foreach (var file in System.IO.Directory.EnumerateFiles(source.Directory, $"seg*{SegmentRunRequest.SegmentExtension}"))
             {
                 if (TryParseSegmentIndex(Path.GetFileName(file), out var index) && index > highest) highest = index;
             }
@@ -597,7 +627,7 @@ internal sealed class SegmentStream : IDisposable
         }
         catch (Exception ex)
         {
-            Log(() => $"segments: could not sweep an unfinished tail ({ex.GetType().Name})");
+            Log(() => "segments: could not sweep an unfinished tail", ex);
         }
     }
 
@@ -650,13 +680,13 @@ internal sealed class SegmentStream : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    Log(() => $"segments: could not evict {entry.Dir.Name} ({ex.GetType().Name})");
+                    Log(() => $"segments: could not evict {entry.Dir.Name}", ex);
                 }
             }
         }
         catch (Exception ex)
         {
-            Log(() => $"segments: cache sweep failed ({ex.GetType().Name})");
+            Log(() => "segments: cache sweep failed", ex);
         }
     }
 
@@ -694,7 +724,7 @@ internal sealed class SegmentStream : IDisposable
             && int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out index);
     }
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 
     /// <inheritdoc />
     public void Dispose()
@@ -720,8 +750,15 @@ internal sealed class SegmentStream : IDisposable
         public required string Path { get; init; }
         public required string Directory { get; init; }
         public required TimeSpan Duration { get; init; }
-        public required int SegmentCount { get; init; }
         public required bool HasPicture { get; init; }
+
+        /// <summary>
+        /// Where this source's cuts are — computed ONCE, stated by the manifest and handed to every run.
+        /// </summary>
+        public required SegmentPlan Plan { get; init; }
+
+        /// <summary>How many segments the manifest names. The plan's, so the two can never differ.</summary>
+        public int SegmentCount => Plan.Count;
 
         /// <summary>The live production, or null when nothing is running.</summary>
         public ISegmentRun? Run { get; set; }
@@ -749,13 +786,93 @@ internal sealed class SegmentStream : IDisposable
     }
 
     /// <summary>Removing the route and killing the windows are one operation, so they are one disposable.</summary>
-    private sealed class Registration(IDisposable route, SegmentStream stream) : IDisposable
+    private sealed class Registration(IDisposable route, SegmentStream stream) : ISegmentStreamRoute
     {
+        /// <inheritdoc />
+        public bool IsComplete(string source) => stream.IsComplete(source);
+
+        /// <inheritdoc />
+        public Task<SegmentMergeResult> MergeAsync(string source, string destination,
+                                                            CancellationToken cancellationToken = default)
+            => stream.MergeAsync(source, destination, cancellationToken);
+
         public void Dispose()
         {
             try { route.Dispose(); } catch (Exception) { /* the pipeline is going away anyway */ }
             stream.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The cache entry for a source that has ALREADY been opened, or null. ⚠ Deliberately does not open
+    /// one: completeness is a fact about produced output, and probing a source nobody asked for would make
+    /// a question about the cache do a container read.
+    /// </summary>
+    private Source? Known(string source)
+    {
+        string key;
+        try
+        {
+            var info = new FileInfo(source);
+            if (!info.Exists) return null;
+            key = DerivedCacheKey.For(Path.GetFullPath(source), info.Length, info.LastWriteTimeUtc, "hls");
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        lock (_gate) return _sources.TryGetValue(key, out var found) ? found : null;
+    }
+
+    private bool IsComplete(string source)
+        => Known(source) is { } entry && SegmentMerge.IsComplete(entry.Directory, entry.Plan);
+
+    private async Task<SegmentMergeResult> MergeAsync(string source, string destination,
+                                                               CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(destination);
+
+        if (Known(source) is not { } entry)
+        {
+            return new SegmentMergeResult(SegmentMergeOutcome.UnknownSource,
+                "this route has not served that source, so nothing has been produced for it");
+        }
+
+        // 🔴 The one refusal that is a POLICY rather than a failure: the cache may evict anything and an
+        // artifact may be evicted by nothing, so they cannot share a directory (D71).
+        if (SegmentMerge.IsInside(destination, _options.Access.CacheRoot))
+        {
+            return new SegmentMergeResult(SegmentMergeOutcome.DestinationRefused,
+                "the destination is inside the segment cache, which is swept oldest-used-first under a byte "
+                + "cap — a persisted artifact must live somewhere nothing evicts");
+        }
+
+        if (!SegmentMerge.IsComplete(entry.Directory, entry.Plan))
+        {
+            return new SegmentMergeResult(SegmentMergeOutcome.Incomplete,
+                $"not every one of the {entry.SegmentCount} segments has been produced yet");
+        }
+
+        try
+        {
+            await SegmentMerge.WriteAsync(SegmentMerge.Parts(entry.Directory, entry.Plan), destination,
+                                             cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log(() => "segments: could not merge a stream", ex);
+            return new SegmentMergeResult(SegmentMergeOutcome.Failed,
+                $"the artifact could not be written ({ex.GetType().Name})");
+        }
+
+        Log(() => $"segments: merged {entry.SegmentCount} segments into one file");
+        return new SegmentMergeResult(SegmentMergeOutcome.Written,
+            $"{entry.SegmentCount} segments written as one fragmented MP4");
     }
 }
 
@@ -770,9 +887,13 @@ public static class SegmentStreamExtensions
     /// removes nothing keeps the call site identical on every platform.
     /// </para>
     /// </summary>
-    /// <returns>Dispose to remove the route and kill every running production.</returns>
-    public static IDisposable UseSegmentStream(this IWebViewInterceptor interceptor, ISegmentEngine engine,
-                                               SegmentStreamOptions options, Action<string>? log = null)
+    /// <returns>
+    /// Dispose to remove the route and kill every running production. ⚠ Also the handle for asking whether
+    /// a stream has FINISHED and turning it into one file (D71's piece 5) — the app asks in .NET, exactly
+    /// as it warms a computed-remux plan, so the page contract does not change.
+    /// </returns>
+    public static ISegmentStreamRoute UseSegmentStream(this IWebViewInterceptor interceptor, ISegmentEngine engine,
+                                                       SegmentStreamOptions options, ILogger? log = null)
     {
         ArgumentNullException.ThrowIfNull(interceptor);
         ArgumentNullException.ThrowIfNull(engine);
@@ -781,8 +902,20 @@ public static class SegmentStreamExtensions
             : new NoRoute();
     }
 
-    private sealed class NoRoute : IDisposable
+    /// <summary>
+    /// What a shell with no engine returns. ⚠ It answers NOT-complete rather than throwing: a platform
+    /// without an engine has produced nothing, which is the same true answer the route gives for a source
+    /// it has never served, and an app should not need a platform branch to ask the question.
+    /// </summary>
+    private sealed class NoRoute : ISegmentStreamRoute
     {
+        public bool IsComplete(string source) => false;
+
+        public Task<SegmentMergeResult> MergeAsync(string source, string destination,
+                                                            CancellationToken cancellationToken = default)
+            => Task.FromResult(new SegmentMergeResult(SegmentMergeOutcome.UnknownSource,
+                "this shell registered no segment engine, so nothing has been produced"));
+
         public void Dispose() { }
     }
 }

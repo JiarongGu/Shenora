@@ -2,37 +2,29 @@ namespace Shenora.Modules.Media;
 
 /// <summary>
 /// The arithmetic a segment engine runs on: which segment a time belongs to, where a segment starts, and
-/// where a run must seek in the SOURCE to produce one.
-///
+/// where a run must seek in the SOURCE to produce one. Pure — the codec loop around it needs a device, none
+/// of this does.
 /// <para>
-/// Pure, and separated from the engine for the reason <c>MediaPlaybackPlanner</c> is separated from the
-/// converter: the decisions are where the bugs live, so they should be the part a test can pin exactly. The
-/// codec loop around this needs a device; none of this does.
-/// </para>
-///
-/// <para>
-/// 🔴 <b>THE GRID IS ONLY LEGAL BECAUSE OF A COUPLING IN TWO OTHER FILES, and it is stated here because
-/// nothing stated it anywhere.</b> <c>SegmentRunRequest.SegmentSeconds</c> says the grid is "not negotiable
-/// by the engine" and that a run which cannot hit it must not claim it. What makes it hittable is that both
-/// platform encoders are configured to emit a keyframe every SECOND —
+/// 🔴 <b>THE GRID IS ONLY LEGAL BECAUSE OF A COUPLING IN TWO OTHER FILES</b>, and
+/// <see cref="SegmentRunRequest.Plan"/> says the boundaries are not negotiable by the engine: what makes a
+/// GRID hittable is that both platform encoders emit a keyframe every SECOND —
 /// <c>AndroidMediaVideoConversion</c> sets <c>KeyIFrameInterval = 1</c>, <c>IosMediaVideoConversion</c> sets
-/// <c>MaxKeyFrameIntervalDuration = 1</c>, each calling it "a SEEKING decision, not a quality one". So every
-/// whole-second boundary is a keyframe, and a grid measured in whole seconds lands on one every time.
+/// <c>MaxKeyFrameIntervalDuration = 1</c>. ⚠ <b>Which is why a fractional grid is REFUSED rather than rounded
+/// silently</b>: <c>SegmentStreamOptions.SegmentSeconds</c> is app-settable, a 2.5-second grid puts every
+/// second boundary where no keyframe exists, and those segments still PLAY — the fault appears only when
+/// somebody seeks, as a jump to the wrong place or a burst of macroblocks.
 /// </para>
 /// <para>
-/// ⚠ <b>Which is exactly why a fractional grid has to be REFUSED rather than rounded silently.</b>
-/// <c>SegmentStreamOptions.SegmentSeconds</c> is app-settable, and a 2.5-second grid puts every second
-/// boundary where no keyframe exists. The segments still PLAY — the manifest is synthetic and the bytes are
-/// valid — and the fault only appears when somebody seeks, as a jump to the wrong place or a burst of
-/// macroblocks. A failure that needs a seek to reveal it is one to refuse at composition time.
+/// 🔴 <b>All of which is about a RE-ENCODED track, and stops applying the moment one is COPIED</b> (D76): a
+/// copied stream keeps the ORIGINAL encoder's keyframes, so there is no grid to hit. Those runs take their
+/// boundaries from <see cref="KeyFrameStarts"/> instead.
 /// </para>
 /// </summary>
 internal static class SegmentGrid
 {
     /// <summary>
     /// How often the kit's own encoders emit a keyframe, in seconds. <b>Not a preference and not settable
-    /// here</b> — it mirrors what the two platform video converters are configured with, and this constant
-    /// exists so the dependency is visible from the side that depends on it.
+    /// here</b> — it mirrors what the two platform video converters are configured with.
     /// </summary>
     public const double EncoderKeyFrameSeconds = 1.0;
 
@@ -65,6 +57,48 @@ internal static class SegmentGrid
         return true;
     }
 
+    /// <summary>
+    /// The boundaries a COPIED track can actually be cut on: its own keyframes, taking the first one at or
+    /// past every <paramref name="targetSeconds"/> step.
+    /// <para>
+    /// 🔴 <b>Greedy forward, never nearest.</b> A boundary must be a keyframe or the segment cannot be decoded
+    /// on its own, so the only choice is WHICH keyframe, and taking the first at or past the target keeps
+    /// every segment at least as long as was asked for. The nearest one sometimes falls BEFORE it, and a run
+    /// of short segments is how a player ends up making one request per second for a two-hour film.
+    /// ⚠ The result always opens with 0 whether or not a keyframe sits there: a source whose first frame is
+    /// not a sync sample is playable from its start and nowhere else.
+    /// </para>
+    /// </summary>
+    /// <param name="samples">The lead track's samples, in storage order.</param>
+    /// <param name="timeline">
+    /// The source's clock. ⚠ <b>The same converter the RUN uses</b> — a boundary the producer cannot land on
+    /// exactly moves to the next keyframe, making one segment far longer than the playlist says it is.
+    /// </param>
+    /// <param name="targetSeconds">The length asked for. Every segment is at least this long except the last.</param>
+    /// <returns>Segment start times in seconds, ascending, beginning with 0.</returns>
+    public static IReadOnlyList<double> KeyFrameStarts(IReadOnlyList<MatroskaSample> samples,
+                                                      SourceTimeline timeline, double targetSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+
+        var starts = new List<double> { 0 };
+        if (timeline.Timescale == 0 || targetSeconds <= 0) return starts;
+
+        var last = 0.0;
+        foreach (var sample in samples)
+        {
+            if (!sample.KeyFrame) continue;
+            var at = timeline.SecondsOf(sample.Ticks);
+            // Also rejects a keyframe whose time went BACKWARDS, which a reordering stream can present and
+            // which makes the plan non-ascending — the one shape a manifest cannot express.
+            if (at < last + targetSeconds) continue;
+            starts.Add(at);
+            last = at;
+        }
+
+        return starts;
+    }
+
     /// <summary>Which segment a media time falls in. Negative times clamp to 0 rather than going negative.</summary>
     public static int SegmentOf(long ticks, long ticksPerSecond, double segmentSeconds)
     {
@@ -83,27 +117,21 @@ internal static class SegmentGrid
     /// <summary>
     /// Where a run must START READING the source to produce a segment beginning at
     /// <paramref name="startTicks"/> — the last keyframe at or before it.
-    ///
     /// <para>
-    /// 🔴 <b>At or BEFORE, and the direction is the whole point.</b> A decoder handed a non-keyframe produces
-    /// garbage until the next one arrives, so a run that seeks to the exact boundary and starts feeding there
-    /// emits a segment whose opening frames are macroblock soup. Seeking BACK to the previous keyframe and
-    /// decoding forward costs some frames nobody keeps and is the only way to have a correct picture at the
-    /// boundary.
-    /// </para>
-    /// <para>
-    /// ⚠ This is about the SOURCE's keyframes, which have nothing to do with the output's: the source was
-    /// encoded by somebody else, with whatever GOP they chose. The output's boundaries are guaranteed by the
-    /// encoder's own one-second interval (see the type remarks) — these two are independent, and conflating
-    /// them is how a segmenter ends up trusting the wrong file's index.
+    /// 🔴 <b>At or BEFORE.</b> A decoder handed a non-keyframe produces garbage until the next one arrives, so
+    /// a run that seeks to the exact boundary and starts feeding there emits a segment whose opening frames
+    /// are macroblock soup. Seeking BACK and decoding forward costs frames nobody keeps.
+    /// ⚠ These are the SOURCE's keyframes, which have nothing to do with the output's — those are guaranteed
+    /// by the encoder's own one-second interval (see the type remarks), and conflating the two is how a
+    /// segmenter ends up trusting the wrong file's index.
     /// </para>
     /// </summary>
     /// <param name="samples">One track's samples, in storage order (which is also decode order).</param>
     /// <param name="startTicks">The segment's start on the media timeline.</param>
     /// <returns>
-    /// An index into <paramref name="samples"/>. Zero when the track declares no keyframe at all — reading
-    /// from the beginning is the only honest answer, and the caller logs it rather than refusing, because a
-    /// track with no sync sample is playable from its start and nowhere else.
+    /// An index into <paramref name="samples"/>. Zero when the track declares no keyframe at all — a track
+    /// with no sync sample is playable from its start and nowhere else, so the caller logs rather than
+    /// refuses.
     /// </returns>
     public static int SeekIndex(IReadOnlyList<MatroskaSample> samples, long startTicks)
     {
@@ -119,14 +147,10 @@ internal static class SegmentGrid
     }
 
     /// <summary>
-    /// Should the frame at <paramref name="ticks"/> OPEN a new segment, given the one being written?
-    ///
-    /// <para>
-    /// Both halves are required, and dropping either produces a stream that appends without complaint:
-    /// without the boundary test the segments are whatever length the encoder felt like and stop matching the
-    /// manifest; without the keyframe test a segment starts mid-GOP and cannot be decoded on its own, which
-    /// is precisely what a page seeking into the middle of a film asks it to do.
-    /// </para>
+    /// Should the frame at <paramref name="ticks"/> OPEN a new segment, given the one being written? Both
+    /// halves are required, and dropping either produces a stream that appends without complaint: without the
+    /// boundary test the segments stop matching the manifest; without the keyframe test a segment starts
+    /// mid-GOP and cannot be decoded on its own, which is what a page seeking into a film asks it to do.
     /// </summary>
     /// <param name="ticks">The candidate frame's time on the media timeline.</param>
     /// <param name="keyFrame">Whether it is a sync sample.</param>
@@ -136,4 +160,52 @@ internal static class SegmentGrid
     public static bool StartsNewSegment(long ticks, bool keyFrame, int current,
                                         long ticksPerSecond, double segmentSeconds)
         => keyFrame && SegmentOf(ticks, ticksPerSecond, segmentSeconds) > current;
+}
+
+/// <summary>
+/// The source's own clock, expressed EXACTLY as something MP4 can state.
+/// <para>
+/// 🔴 <b>The two containers state the same clock in opposite directions, and the naive conversion
+/// truncates.</b> Matroska declares NANOSECONDS PER TICK; MP4 declares TICKS PER SECOND. The 1 ms scale every
+/// real file uses divides cleanly to 1000, but an unusual one (1 500 000 ns) divides to 666 instead of 666⅔,
+/// and a copied track declared on that timescale plays 0.05 % slow for the whole film while every box in the
+/// file validates. So the ratio is reduced instead: every tick is multiplied by <see cref="Factor"/>.
+/// </para>
+/// <para>
+/// ⚠ It matters because a COPIED track is stated on the SOURCE's clock (D76); a converted one is stated on
+/// its codec's, where the question never arises.
+/// </para>
+/// </summary>
+/// <param name="Timescale">Ticks per second, as MP4 states it.</param>
+/// <param name="Factor">What a source tick is multiplied by to land on <paramref name="Timescale"/>.</param>
+internal readonly record struct SourceTimeline(uint Timescale, long Factor)
+{
+    private const long NanosecondsPerSecond = 1_000_000_000L;
+
+    /// <summary>Milliseconds — the sample reader's own fallback, and what a malformed scale falls back to.</summary>
+    private static SourceTimeline Milliseconds => new(1000, 1);
+
+    /// <summary>Reduce Matroska's <c>TimestampScale</c> to an exact MP4 timescale.</summary>
+    public static SourceTimeline For(long timestampScaleNs)
+    {
+        if (timestampScaleNs is <= 0 or > NanosecondsPerSecond) return Milliseconds;
+
+        var divisor = Gcd(timestampScaleNs, NanosecondsPerSecond);
+        var timescale = NanosecondsPerSecond / divisor;
+        return timescale is > 0 and <= uint.MaxValue
+            ? new SourceTimeline((uint)timescale, timestampScaleNs / divisor)
+            : Milliseconds;
+    }
+
+    /// <summary>A source tick count as a time in seconds.</summary>
+    public double SecondsOf(long ticks) => Timescale == 0 ? 0 : ticks * (double)Factor / Timescale;
+
+    /// <summary>A time in seconds back to the source's OWN ticks — what a sample index is searched by.</summary>
+    public long TicksAt(double seconds) => Factor <= 0 ? 0 : (long)Math.Round(seconds * Timescale / Factor);
+
+    private static long Gcd(long a, long b)
+    {
+        while (b != 0) (a, b) = (b, a % b);
+        return a;
+    }
 }

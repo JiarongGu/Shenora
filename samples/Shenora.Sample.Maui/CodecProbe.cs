@@ -233,10 +233,10 @@ internal static class CodecProbe
 
         try
         {
-            log($"[CODEC] kit decode audio: {string.Join(' ', device.DecodableAudio().OrderBy(n => n, StringComparer.Ordinal))}");
-            log($"[CODEC] kit encode audio: {string.Join(' ', device.EncodableAudio().OrderBy(n => n, StringComparer.Ordinal))}");
-            log($"[CODEC] kit decode video: {string.Join(' ', device.DecodableVideo().OrderBy(n => n, StringComparer.Ordinal))}");
-            log($"[CODEC] kit encode video: {string.Join(' ', device.EncodableVideo().OrderBy(n => n, StringComparer.Ordinal))}");
+            log($"[CODEC] kit decode audio: {string.Join(' ', device.DecodableAudio().OrderBy(c => c.ToString(), StringComparer.Ordinal))}");
+            log($"[CODEC] kit encode audio: {string.Join(' ', device.EncodableAudio().OrderBy(c => c.ToString(), StringComparer.Ordinal))}");
+            log($"[CODEC] kit decode video: {string.Join(' ', device.DecodableVideo().OrderBy(c => c.ToString(), StringComparer.Ordinal))}");
+            log($"[CODEC] kit encode video: {string.Join(' ', device.EncodableVideo().OrderBy(c => c.ToString(), StringComparer.Ordinal))}");
 
             // AAC is the control here for the same reason it is one above: every target decodes it, so a
             // "no" means the contract is broken rather than that the device lacks it.

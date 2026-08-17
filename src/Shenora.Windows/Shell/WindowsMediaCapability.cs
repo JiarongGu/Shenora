@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Shenora.Modules.Platform;
 using Shenora.Modules.Media;
 
@@ -39,20 +40,20 @@ namespace Shenora.Windows;
 /// </summary>
 public sealed class WindowsMediaCapability : IMediaCapability
 {
-    private readonly Action<string>? _log;
+    private readonly ILogger? _log;
     private readonly object _gate = new();
-    private readonly Dictionary<(MediaStreamKind Kind, bool Encode), IReadOnlySet<string>> _cache = [];
+    private readonly Dictionary<(MediaStreamKind Kind, bool Encode), IReadOnlySet<MediaStreamCodec>> _cache = [];
 
     /// <param name="log">Diagnostics. Guarded — a throwing sink must not escape a capability query.</param>
-    public WindowsMediaCapability(Action<string>? log = null) => _log = log;
+    public WindowsMediaCapability(ILogger? log = null) => _log = log;
 
     /// <inheritdoc />
-    public IReadOnlySet<string> Decodable(MediaStreamKind kind) => Query(kind, encode: false);
+    public IReadOnlySet<MediaStreamCodec> Decodable(MediaStreamKind kind) => Query(kind, encode: false);
 
     /// <inheritdoc />
-    public IReadOnlySet<string> Encodable(MediaStreamKind kind) => Query(kind, encode: true);
+    public IReadOnlySet<MediaStreamCodec> Encodable(MediaStreamKind kind) => Query(kind, encode: true);
 
-    private IReadOnlySet<string> Query(MediaStreamKind kind, bool encode)
+    private IReadOnlySet<MediaStreamCodec> Query(MediaStreamKind kind, bool encode)
     {
         lock (_gate)
         {
@@ -63,14 +64,14 @@ public sealed class WindowsMediaCapability : IMediaCapability
             () => Enumerate(kind, encode),
             // ⚠ EMPTY on failure, never a guess. "I know of none" is the honest answer and the safe
             // direction for a planner reading it — it converts rather than assuming playback will work.
-            (IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            ex => Log(() => $"[Shenora.Windows] codec query failed ({ex.GetType().Name}: {ex.Message})."));
+            (IReadOnlySet<MediaStreamCodec>)new HashSet<MediaStreamCodec>(),
+            ex => Log(() => "[Shenora.Windows] codec query failed.", ex));
 
         lock (_gate) _cache[(kind, encode)] = found;
         return found;
     }
 
-    private IReadOnlySet<string> Enumerate(MediaStreamKind kind, bool encode)
+    private IReadOnlySet<MediaStreamCodec> Enumerate(MediaStreamKind kind, bool encode)
     {
         var codecKind = kind switch
         {
@@ -80,7 +81,7 @@ public sealed class WindowsMediaCapability : IMediaCapability
             // an empty set says "I know of none" rather than inventing an answer.
             _ => (CodecKind?)null,
         };
-        if (codecKind is not { } resolved) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (codecKind is not { } resolved) return new HashSet<MediaStreamCodec>();
 
         var category = encode ? CodecCategory.Encoder : CodecCategory.Decoder;
         // GetAwaiter().GetResult() rather than .Wait(): this is called from a planner that is synchronous by
@@ -91,14 +92,14 @@ public sealed class WindowsMediaCapability : IMediaCapability
         var codecs = new CodecQuery().FindAllAsync(resolved, category, string.Empty)
             .AsTask().GetAwaiter().GetResult();
 
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var names = new HashSet<MediaStreamCodec>();
         // 🔴 The UNRECOGNISED ones are logged too, and that is not tidiness. An unknown subtype is dropped,
         // which reads downstream as "the device does not support it" — indistinguishable from the machine
         // genuinely lacking the codec (D63's failure mode, in a translation table). Without this line a
         // missing row here and an absent decoder produce identical evidence, so a device measurement can
         // never be attributed. This one was written after `MFVideoFormat_HEVC` turned out to be missing
         // from the table while `H265` was present.
-        var unknown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unknown = new HashSet<MediaStreamCodec>();
         foreach (var codec in codecs)
         {
             foreach (var subtype in codec.Subtypes)
@@ -157,6 +158,6 @@ public sealed class WindowsMediaCapability : IMediaCapability
         _ => null,
     };
 
-    private void Log(Func<string> message) => AppCallback.Log(_log, message);
+    private void Log(Func<string> message, Exception? failure = null) => AppCallback.Log(_log, message, exception: failure);
 }
 #endif

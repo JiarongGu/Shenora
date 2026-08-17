@@ -534,7 +534,26 @@ vid.addEventListener('playing', () => reportPlayer('Playing'));
 vid.addEventListener('pause', () => reportPlayer(vid.ended ? 'Ended' : 'Paused'));
 vid.addEventListener('ended', () => reportPlayer('Ended'));
 vid.addEventListener('error', () => reportPlayer('Failed'));
-vid.addEventListener('timeupdate', () => { if (!vid.paused && !vid.ended) reportPlayer('Playing'); });
+// 🔴 HOOK PARITY, and it is what makes the background-handoff question ASKABLE here at all.
+// `useMediaPlayer` reports on TRANSITIONS ONLY — never `timeupdate` — so the host's last known position
+// under the hook is whatever the last transition left. This sample reports ~4x a second, which keeps the
+// position fresh and therefore HIDES whether the `pause` fired at background time crosses IPC before the
+// process freezes. With the flag on, the sample behaves as the hook does and the question is live.
+let hookParity = false;
+window.__shenoraSetHookParity = (on) => { hookParity = !!on; return String(hookParity); };
+vid.addEventListener('timeupdate', () => {
+  if (hookParity) return;
+  if (!vid.paused && !vid.ended) reportPlayer('Playing');
+});
+
+// 🔴 THE SAME `visibilitychange` REPORT THE HOOK SHIPS, and the sample carries it for the same reason:
+// with transition-only reporting the host's position is the moment playback STARTED. Measured here on an
+// Android emulator — page 19.79 s, host 0.01 s, `HANDOFF: TookOver at 0.01s`. This is the fix under test,
+// so hook parity deliberately does NOT silence it: parity means "report like the hook", and the hook does.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  reportPlayer(vid.paused ? (vid.ended ? 'Ended' : 'Paused') : 'Playing');
+});
 
 // ── AND THE OTHER HALF: THE HOST DRIVING THIS ELEMENT ─────────────────────────────────────────────
 //
@@ -653,6 +672,74 @@ log('t', `channel: ${channelSource}`);
 // heavy logic in the page, results over the IPC log mirror.
 //
 // It parks its answer in a slot the host polls, because EvaluateJavaScriptAsync does not await promises.
+/**
+ * 🔴 THE SAME STREAM, DRIVEN BY THE SHIPPED MODULE — `bindSegmentStream` from @shenora/react.
+ *
+ * Every device run so far drove MediaSource with the hand-written copy below, so the module an adopter
+ * actually gets had never executed on a device (D63: a seam nothing consults is indistinguishable from a
+ * broken one). This runs the real one and reports what the BINDING says about itself.
+ *
+ * ⚠ The hand-written probe stays as the CONTROL. It is what proved the bytes independently of the kit's
+ * own module, so a disagreement between the two is a finding rather than noise — and a probe that only
+ * ever exercises the thing under test cannot tell you which of them is wrong.
+ */
+window.__shenoraSegKit = function (base) {
+  window.__shenoraSegKitProbe = null;
+  const out = [];
+  const say = (k, v) => out.push(`${k}=${v}`);
+  const done = () => { window.__shenoraSegKitProbe = out.join('|'); };
+
+  (async () => {
+    let bind;
+    try {
+      ({ bindSegmentStream: bind } = await import('./shenora/segmentBinder.js'));
+    } catch (e) {
+      say('module', 'MISSING');   // a fresh clone has no dist/ — see the csproj
+      return done();
+    }
+    say('module', 'SHIPPED @shenora/react');
+
+    const el = document.createElement('video');
+    el.muted = true; el.playsInline = true; el.disableRemotePlayback = true;
+    document.body.appendChild(el); el.style.width = el.style.height = '1px';
+    el.play().catch(() => {});
+
+    let binding;
+    try {
+      binding = await bind({
+        manifest: base + 'index.m3u8',
+        element: el,
+        onDiagnostic: (line) => out.push(`log:${line.replace(/\|/g, '/')}`),
+      });
+    } catch (e) {
+      say('bind', 'THREW ' + (e && e.message ? e.message : e));
+      el.remove();
+      return done();
+    }
+
+    say('attachedBy', binding.attachedBy);
+    say('codecs', binding.codecs);
+
+    // The binder fetches in the background; give it the same budget the hand-written probe gets.
+    for (let i = 0; i < 80 && binding.appended.size === 0; i++) await new Promise(r => setTimeout(r, 100));
+    say('appended', binding.appended.size);
+
+    // 🔴 The FRAME SIZE, for the same reason the control asserts it: a wrong configuration still appends,
+    // still buffers, still reports ready, and renders a blank rectangle.
+    for (let i = 0; i < 40 && !el.videoWidth; i++) await new Promise(r => setTimeout(r, 100));
+    say('frame', el.videoWidth + 'x' + el.videoHeight);
+    const b = el.buffered;
+    say('buffered', b.length ? b.start(0).toFixed(2) + '-' + b.end(b.length - 1).toFixed(2) : 'EMPTY');
+    say('streaming', binding.streaming);
+
+    binding.dispose();
+    el.remove();
+    done();
+  })().catch((e) => { say('threw', (e && e.name) ? e.name : String(e)); done(); });
+
+  return 'started';
+};
+
 window.__shenoraSegCheck = function (base, mime) {
   window.__shenoraSegProbe = 'pending';
   (async () => {
@@ -692,12 +779,54 @@ window.__shenoraSegCheck = function (base, mime) {
       /* THE APPEND — the only part a device is required for. */
       const Src = window.ManagedMediaSource ?? window.MediaSource;
       if (!Src) { say('append', 'NO-MEDIASOURCE'); return done(); }
-      const mime = 'video/mp4; codecs="avc1.640028"';
-      say('typeSupported', Src.isTypeSupported ? Src.isTypeSupported(mime) : 'n/a');
+      /* ⚠ The mime the HOST passed, not a hardcoded one. This line used to shadow the parameter with
+         `video/mp4; codecs="avc1.640028"`, so the C# side could pass whatever it liked and the page
+         opened a video buffer regardless — which for a sound-only fixture is a buffer of the wrong
+         kind, and for a copied picture would have hidden the source's real profile. */
+      /* 🔴 THE TRACK SET MUST MATCH THE INIT SEGMENT, and a mismatch is fatal rather than degraded.
+         The host passes a two-track string, but what the engine actually produced depends on the
+         DEVICE: Android decodes no AC-3, so the soundtrack is dropped and the init carries video
+         alone (677 bytes rather than 1133) — and appending that to a buffer opened for video+audio
+         fails the FIRST append. Measured on Chromium 151; `codecsFromInitSegment` in @shenora/react
+         is the shipped form of this, inlined here because the probe page bundles nothing. */
+      const declared = (() => {
+        try {
+          const v = new DataView(init.buffer, init.byteOffset, init.byteLength);
+          const cc = (at) => String.fromCharCode(v.getUint8(at), v.getUint8(at+1), v.getUint8(at+2), v.getUint8(at+3));
+          const found = [];
+          for (let i = 0; i + 8 <= init.byteLength; i++) {
+            if (cc(i + 4) !== 'stsd') continue;
+            let at = i + 8 + 8, end = i + v.getUint32(i);
+            while (at + 8 <= end) {
+              const size = v.getUint32(at);
+              if (size < 8) break;
+              const f = cc(at + 4);
+              if (f === 'avc1' || f === 'avc3') {
+                found.push(`${f}.${[1,2,3].map(k => v.getUint8(at + 8 + 78 + 8 + k).toString(16).padStart(2,'0')).join('')}`);
+              } else if (f === 'mp4a') found.push('mp4a.40.2');
+              else found.push(f);
+              at += size;
+            }
+          }
+          return found.length ? found.join(',') : null;
+        } catch { return null; }
+      })();
+      const useMime = declared ? `video/mp4; codecs="${declared}"` : mime;
+      say('declaredCodecs', declared ?? 'UNREADABLE');
+      say('typeSupported', Src.isTypeSupported ? Src.isTypeSupported(useMime) : 'n/a');
       const ms = new Src();
       const el = document.createElement('video');
       el.muted = true; el.playsInline = true; el.disableRemotePlayback = true;
-      el.srcObject = ms;
+      /* 🔴 THE TWO SHELLS ATTACH A MediaSource DIFFERENTLY, and getting it wrong throws BEFORE any
+         append — so the probe reported `threw=TypeError` and proved nothing about the fragments.
+         iOS takes `srcObject` (a ManagedMediaSource is a valid MediaSourceHandle); Android's Chromium
+         refuses it — "The provided value is not of type '(MediaSourceHandle or MediaStream)'" — and
+         wants an object URL. Feature-detected rather than branched on the shell: which one works is a
+         property of the MediaSource implementation, not of the OS. */
+      let attachedBy = 'srcObject';
+      try { el.srcObject = ms; }
+      catch { attachedBy = 'objectURL'; el.src = URL.createObjectURL(ms); }
+      say('attachedBy', attachedBy);
       document.body.appendChild(el); el.style.width = el.style.height = '1px';
       let started = 0, ended = 0;
       ms.addEventListener('startstreaming', () => started++);
@@ -711,7 +840,7 @@ window.__shenoraSegCheck = function (base, mime) {
       say('sourceopen', opened);
       if (!opened) { el.remove(); return done(); }
       let sb;
-      try { sb = ms.addSourceBuffer(mime); }
+      try { sb = ms.addSourceBuffer(useMime); }
       catch (e) { say('addSourceBuffer', 'THREW ' + e.name); el.remove(); return done(); }
       const append = (bytes) => new Promise((res) => {
         sb.addEventListener('updateend', () => res('ok'), { once: true });
@@ -720,12 +849,38 @@ window.__shenoraSegCheck = function (base, mime) {
       });
       say('appendInit', await append(init));
       say('appendSeg0', await append(seg));
+      /* 🔴 EVERY REMAINING SEGMENT, because `endstreaming` cannot be observed without filling the
+         buffer. Reporting it after a single 3-second append is how this probe previously answered 0
+         and proved nothing: a source with no reason to say stop is indistinguishable from a binder
+         that mishandles the stop half. Failures are counted rather than fatal — a partial fill still
+         answers the question, and a mid-list error is itself worth seeing. */
+      let appended = 1, appendFailed = 0;
+      for (let i = 1; i < segs.length; i++) {
+        const more = await fetchProduced(base + segs[i], 'seg' + i);
+        if (!more) { appendFailed++; continue; }
+        if (await append(more) === 'ok') appended++; else appendFailed++;
+      }
+      say('appendedSegments', appended + '/' + segs.length);
+      if (appendFailed) say('appendFailures', appendFailed);
       /* Buffered range is the honest proof: an append that "succeeded" and buffered nothing is the
          silent failure this whole probe exists for. */
       const b = sb.buffered;
       say('buffered', b.length ? b.start(0).toFixed(2) + '-' + b.end(0).toFixed(2) : 'EMPTY');
       say('startstreaming', started);
+      /* 🔴 THE FRAME SIZE IS THE ASSERTION, never readyState (D74). A wrong `avcC` still appends, still
+         buffers, still reports ready — and then renders a blank rectangle. For a COPIED picture the
+         avcC came from the source rather than from an encoder, so this is the one number that says the
+         copy carried a decodable configuration. Waits, because dimensions arrive with the first decoded
+         frame rather than with the append. */
+      for (let i = 0; i < 40 && !el.videoWidth; i++) await new Promise(r => setTimeout(r, 100));
+      say('frame', el.videoWidth + 'x' + el.videoHeight);
+      /* ⚠ AFTER the wait, not before it. `endstreaming` arrives when the platform decides it has
+         enough — which is never synchronous with the last append, and the earlier reading was taken
+         several seconds too early to see it. Given its own window rather than borrowing the frame
+         wait's, so a fast decode cannot cut the observation short. */
+      for (let i = 0; i < 50 && !ended; i++) await new Promise(r => setTimeout(r, 100));
       say('endstreaming', ended);
+      say('streamingAtEnd', ms.streaming);
       el.remove();
     } catch (err) {
       say('threw', (err && err.name) ? err.name : String(err));

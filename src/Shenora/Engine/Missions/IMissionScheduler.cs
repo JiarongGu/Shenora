@@ -1,4 +1,3 @@
-using Shenora;
 using Shenora.Engine.Files;
 
 namespace Shenora.Engine.Missions;
@@ -46,7 +45,7 @@ public interface ILane
     /// It exists because the alternative was measuring wall-clock time. A lane set to 3 under a global
     /// bound of 1 runs at 1 while <see cref="Capacity"/> answers 3, and nothing an app could ASK
     /// distinguished that from a lane genuinely running at 3 — so a governor that widened a lane had no
-    /// way to notice its request had no effect (found by the first adopter, 2026-08-05).
+    /// way to notice its request had no effect (found by the first adopter).
     /// </para>
     /// </summary>
     int EffectiveCapacity { get; }
@@ -80,8 +79,6 @@ public interface ILane
 /// This is the EXECUTION half of long-running work. The REPORTING half already exists as
 /// <c>Shenora.Core.Ipc</c>'s REQUEST tracking; a mission body reports progress into it. The two compose
 /// and must not be merged — the modules may depend on the cores, never the reverse (D19/D20).
-/// ⚠ This said <c>Shenora.Ipc</c>'s "operation registry" until 2026-08-10: a package D65 folded in, and
-/// a subsystem D66 deleted when operations merged into <c>IpcRequest</c>.
 /// </para>
 /// </summary>
 public interface IMissionScheduler : IAsyncDisposable

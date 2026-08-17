@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using Shenora;
 using Shenora.Tests.TestSupport;
-using Shenora.Modules.Update;
+using Shenora.Engine.Update;
 using Shenora.Engine.Files;
 
 namespace Shenora.Tests.Io;

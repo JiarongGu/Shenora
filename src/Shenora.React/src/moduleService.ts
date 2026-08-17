@@ -10,10 +10,17 @@ import { getBridge, type ShenoraBridge } from './bridge.js';
  * interface NoteRequests { GET_ALL: void; ADD: { title: string } }
  * class NoteService extends BaseModuleService<NoteRequests> {
  *   constructor() { super('NOTES'); }
- *   getAll() { return this.send<Note[]>('GET_ALL'); }
- *   add(title: string) { return this.send<Note>('ADD', { payload: { title } }); }
+ *   getAll(): Promise<Note[]> { return this.send('GET_ALL'); }
+ *   add(title: string): Promise<Note> { return this.send('ADD', { payload: { title } }); }
  * }
  * ```
+ *
+ * 🔴 **DECLARE THE RETURN TYPE; NEVER WRITE `send<Note>(…)`.** TypeScript has no partial type-argument
+ * inference, so naming the response argument makes `TType` fall back to its DEFAULT — the union of every
+ * key — and `payload` collapses to the union of every route's payload. The check silently stops
+ * checking: `send<Note>('ADD', { payload: { notAField: 1 } })` compiles clean, while the same call
+ * without the type argument is a TS2353. The response is inferred from the method's declared return
+ * type instead, which every method here has anyway. `moduleService.test.ts` pins both halves.
  *
  * DEVIATION from the source: its boolean/array/optional convenience wrappers were pure casts
  * around the same call — the response generic already expresses them, so they're gone.

@@ -7,17 +7,9 @@ using Shenora.Modules.FileDialog;
 using Shenora.Modules.Media;
 using Shenora.Core.Shell;
 
-// 🔴 THE ONE PLATFORM-SPECIFIC THING IN THIS FILE, deliberately gathered into a single block.
-//
-// This file is SHARED source: it compiles into both Shenora.Android and Shenora.iOS, because MAUI hosting
-// is genuinely the same on each — that is what `Shenora.Mobile` is FOR (owner, 2026-08-08). The
-// implementations it registers are NOT the same, and they no longer pretend to be: each lives in its own
-// shell project under `Platforms/<Platform>/`, in its own namespace, named for its platform, exactly as
-// `WindowsMediaPlayer` is.
-//
-// Aliasing them here keeps every registration below platform-agnostic and readable. The alternative —
-// an `#if` around each `TryAddSingleton` — would put six conditionals through the middle of the
-// composition and hide what is actually one substitution.
+// Shared source: this file compiles into BOTH Shenora.Android and Shenora.iOS. The implementations it
+// registers do differ per shell, and these aliases are the only place that shows — every registration
+// below stays platform-agnostic.
 #if ANDROID
 
 using PlatformFileDialogs = Shenora.Android.AndroidFileDialogs;
@@ -44,42 +36,27 @@ namespace Shenora.Mobile;
 public static class MobileHostExtensions
 {
     /// <summary>
-    /// 🔴 <b>Named for the PLATFORM, not the category — <c>UseAndroid</c> on Android and
-    /// <c>UseIOS</c> on iOS, over one shared body (D65).</b> D37 made the package set one-per-platform
-    /// and the ENTRY POINTS never followed: this was <c>UseMobile</c>, a category name serving two
-    /// packages that ship, build and are consumed separately. A platform is the one thing an adopter
-    /// genuinely picks, so it is the one call that earns a name.
-    /// <para>
-    /// ⚠ <b>It is the ONE place the two mobile surfaces deliberately differ</b>, which costs the trick
-    /// that let the Android API baseline gate iOS from a Windows host. Accepted rather than worked
-    /// around (owner, 2026-08-07: the build story is changing anyway) — revisit the arrangement with
-    /// the build toolkit rather than engineering around today's packaging.
-    /// </para>
-    /// <para>
-    /// Make this a MAUI-hosted application: registers the shell contracts this platform can honour
-    /// (<see cref="IClipboardService"/>, <see cref="IUrlLauncher"/>, <see cref="IUiInteraction"/>,
+    /// Make this a MAUI-hosted application — named for the platform, <c>UseAndroid</c> on Android and
+    /// <c>UseIOS</c> on iOS over one shared body (D65). Registers the shell contracts this platform can
+    /// honour (<see cref="IClipboardService"/>, <see cref="IUrlLauncher"/>, <see cref="IUiInteraction"/>,
     /// <see cref="IFileDialogs"/>, <see cref="IUiDispatcher"/>), each with <c>TryAdd</c> so an app
     /// registration wins.
-    /// </para>
     /// <para>
-    /// <b>It registers NO <see cref="IShenoraRunner"/>, deliberately.</b> MAUI owns the loop, so
+    /// <b>Registers NO <see cref="IShenoraRunner"/>:</b> MAUI owns the loop, so
     /// <see cref="ShenoraApplication.Run"/> — contractually "blocks until shutdown" — has no honest
     /// implementation here. Drive <see cref="ShenoraApplication.Start"/> and
-    /// <see cref="ShenoraApplication.Stop"/> from the app's own lifecycle instead; both are
-    /// idempotent precisely because Android recreates an activity on a configuration change.
+    /// <see cref="ShenoraApplication.Stop"/> from the app's own lifecycle instead; both are idempotent,
+    /// because Android recreates an activity on a configuration change.
     /// </para>
     /// <para>
-    /// The services that are NOT here are the point of the capability rule: no drop zones, no tray,
-    /// no secondary windows, no window state. Those are absent on this platform rather than
-    /// implemented differently, and portable logic asking for one gets a named refusal
-    /// (<see cref="ShellCapability"/>) rather than a null or a silent nothing.
+    /// No drop zones, tray, secondary windows or window state: portable logic asking for one gets a
+    /// named refusal (<see cref="ShellCapability"/>), never a null or a silent nothing.
     /// </para>
     /// </summary>
     /// <param name="builder">The application builder.</param>
     /// <param name="dispatcher">
     /// The MAUI dispatcher UI work marshals to — typically <c>Application.Current.Dispatcher</c>, or
-    /// the hosting page's. Required rather than resolved, because Core has no way to find it and a
-    /// silently-missing UI dispatcher swallows UI work.
+    /// the hosting page's.
     /// </param>
     /// <param name="onError">Reports a failure from posted UI work or a backgrounded URL open.</param>
 #if ANDROID
@@ -89,11 +66,6 @@ public static class MobileHostExtensions
     public static ShenoraApplicationBuilder UseIOS(this ShenoraApplicationBuilder builder,
         IDispatcher dispatcher, Action<Exception>? onError = null)
 #else
-    // A hard COMPILE error rather than a category-named fallback: this source compiles into
-    // Shenora.Android and Shenora.iOS and nothing else, so a third target reaching here means someone
-    // added a platform without naming its entry point — and a category-named shim (which is what this
-    // used to be) would let that ship looking deliberate. Same fail-closed choice as
-    // PlatformPlaybackSession's guard a few lines down.
 #error Shenora.Mobile: this platform has no shell entry point. Add a Use<Platform>() arm above (D65).
 #endif
     {
@@ -105,121 +77,76 @@ public static class MobileHostExtensions
         builder.Services.TryAddSingleton<IUrlLauncher>(_ => new MobileUrlLauncher(onError));
         builder.Services.TryAddSingleton<IUiInteraction, MobileUiInteraction>();
         builder.Services.TryAddSingleton<IFileDialogs, PlatformFileDialogs>();
-        // The page's ROUTE to them, registered where the platform implementation is (D64). ⚠ Two of the
-        // four routes are DESKTOP capabilities and refuse here with CapabilityNotSupported (D35) — which
-        // is why the facade ships on this shell at all rather than being withheld: the page asks the
-        // handshake what this shell can honour and renders accordingly (D36), and a refusal is a real
-        // answer where an absent module would just look broken.
+        // The page's ROUTE to them (D64). ⚠ Two of the four routes are DESKTOP capabilities and refuse
+        // here with CapabilityNotSupported (D35); the page asks the handshake what this shell honours and
+        // renders accordingly (D36).
         builder.Services.AddShenoraFileDialogs();
 
-        // The system media transport surface. ONE NAME, two entirely separate bodies — Android registers a
-        // MediaSession, iOS writes two process-wide singletons and shares no code with it at all. That is
-        // unlike every service above, which really is one class for both platforms; the shared NAME is what
-        // keeps this registration, the docs and the metadata baselines symmetrical anyway.
-        //
-        // LAZY, because both constructors touch platform state an app that never plays anything should not
-        // pay for. DI disposes it, which matters on iOS: its command targets are attached to a shared
-        // command center and would outlive the object otherwise.
-        //
-        // No log sink is passed, deliberately: `onError` takes an Exception, and wrapping a diagnostic line
-        // in one would report ordinary information as a fault. An app that wants these diagnostics
-        // registers its own instance with a sink — `TryAdd` means an app registration wins, which is the
-        // same escape hatch every other service here has.
+        // The system media transport surface: ONE NAME, two entirely separate bodies (Android registers a
+        // MediaSession, iOS writes two process-wide singletons). Lazy — both constructors touch platform
+        // state. DI must dispose it: on iOS its command targets attach to a shared command center and
+        // would outlive the object. No log sink is passed; an app wanting diagnostics registers its own
+        // instance with one, which `TryAdd` lets win.
 #if !ANDROID && !IOS && !MACCATALYST
-        // A hard COMPILE error rather than a missing registration: without this a fourth shell would build
-        // clean and fail at the INJECTION SITE, with nothing naming which platform forgot to implement it.
-        // Same fail-closed choice as MobileWebViewInterceptor's undeclared range delivery.
 #error Shenora.Mobile: this platform has no PlatformPlaybackSession. Add one under Services/, or register a stub that throws ShellCapability.NotSupported.
 #endif
         builder.Services.TryAddSingleton<IPlaybackSession>(_ => new PlatformPlaybackSession());
 
-        // The live status surface. Registered on BOTH shells even though only iOS can do it, because the
-        // contract carries its own "cannot" channel (`Unavailable`) — so portable logic asks and branches
-        // instead of catching, and Android answers with a reason rather than failing at the injection site
-        // with a message about a missing service.
+        // The live status surface. Registered on BOTH shells though only iOS can do it: the contract
+        // carries its own `Unavailable` channel, so Android answers with a reason instead of failing at
+        // the injection site with a message about a missing service.
         builder.Services.TryAddSingleton<ILiveActivities>(_ => new PlatformLiveActivities());
 
-        // What THIS DEVICE can decode and encode. Registered on both shells because the answer differs
-        // between them AND between devices of the same platform — Android codec support is vendor-declared,
-        // which is why MediaCodecList is a runtime query. Before this, an app filling MediaPlaybackPolicy
-        // had to GUESS those sets; the kit still ships no codec list, it ships the question (D42).
-        //
-        // Singleton because both implementations cache: the Android walk allocates a Java object per codec
-        // and the iOS one builds a converter per candidate, and neither answer can change while the process
-        // runs.
+        // What THIS DEVICE can decode and encode — a runtime query, because the answer differs per
+        // platform AND per device (Android codec support is vendor-declared). The kit ships no codec
+        // list, it ships the question (D42). Singleton because both implementations cache.
         builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaCapability>(_ => new PlatformMediaCapability());
 
 #if ANDROID || IOS || MACCATALYST
-        // The transcode tier — the soundtrack half of D59's device→webview gap. Registered on BOTH mobile
-        // shells since 2026-08-07: Android chains a MediaCodec decoder → AAC encoder, iOS chains two
-        // AudioConverters through PCM. Windows has none yet and says so by absence.
+        // The transcode tier — the device→webview gap of D59, on both mobile shells.
         //
-        // ⚠ Deliberately WITHOUT the #error guard the playback session uses: that guard means "every shell
-        // MUST answer this", and this contract is genuinely optional — Mp4Remuxer takes it as a nullable,
-        // and a shell without one gets container repair plus a REPORTED drop (MediaRemuxerResult.Dropped),
-        // which is honest rather than silent.
+        // ⚠ WITHOUT the #error guard the playback session uses: this contract is optional. Mp4Remuxer
+        // takes it as a nullable, so a shell with no converter gets container repair plus a REPORTED drop
+        // (MediaRemuxerResult.Dropped) rather than a silent one.
         //
-        // NOT a singleton: each Begin() holds two real codec instances, and a device has only a handful.
-        // Sharing the FACTORY is fine; sharing a run would not be.
+        // The FACTORY is shared; a run is not — each Begin() holds two real codec instances and a device
+        // has only a handful.
         builder.Services.TryAddSingleton<Shenora.Modules.Media.IMediaStreamConversion>(services =>
         {
-            // The PIPELINE is registered, with this platform's converters already in it. An app adds its
-            // own with pipeline.Use(...) and keeps these behind it, rather than replacing the lot.
+            // The pipeline is registered with this platform's converters already in it; an app adds its
+            // own with pipeline.Use(...) and keeps these behind it.
             //
-            // 🔴 THE DEVICE IS HANDED IN, so `CanConvert` answers from what this hardware actually reports
-            // instead of by BUILDING the converter's codecs on every ask. Those are two different questions —
-            // what the kit CLAIMS and what the device CAN DO — and fusing them cost a day on 2026-08-13: a
-            // promise made from an encoder alone, and a refusal of a codec that only lacked its file's ESDS.
+            // 🔴 THE DEVICE IS HANDED IN, so `CanConvert` answers from what this hardware reports instead
+            // of by BUILDING the converter's codecs on every ask — otherwise the kit both promises work
+            // from an encoder alone and refuses a codec that only lacked its file's ESDS.
             var pipeline = new Shenora.Modules.Media.MediaConversionPipeline(
                 services.GetService<Shenora.Modules.Media.IMediaCapability>());
 
-            // 🔴 THE APP'S SINK, RESOLVED — so diagnostics no longer require a DOWNCAST. This registration
-            // passed no log, deliberately (an app that wants them registers its own and later registrations
-            // are asked first), which meant an app had to write
-            // `GetService<IMediaStreamConversion>() as MediaConversionPipeline` and re-register to hear a
-            // word. That escape hatch still works and is still supported; it is no longer the only way in.
-            // ⚠ It is the SAME `Log` the routes use, deliberately: a second sink would let the routes and
-            // the converters disagree about where lines go, and the whole point is that an app configures
-            // the media tier's diagnostics ONCE. Absent, this is null and the converters are mute exactly
-            // as before — the cost of those three device round-trips was the SILENCE, not the mechanism.
+            // ⚠ The SAME `Log` the media routes use, so the two cannot disagree about where lines go.
+            // Absent, this is null and the converters are mute — and the silence is what costs a device
+            // round trip.
             var log = services.GetService<Shenora.Modules.Media.MediaAccessOptions>()?.Log;
             PlatformMediaAudioConversion.Use(pipeline, log);
 
-            // The PICTURE half, on BOTH shells since 2026-08-13. Both converters decline what they do not
-            // handle, so ONE pipeline serves both kinds and neither needs a registry.
-            //
-            // 🔴 This was `#if ANDROID` until then, justified here as "the asymmetry is honest rather than
-            // an omission — iOS decodes what its webview accepts, so a converter there would be a
-            // capability nothing consults (D63)". That was FALSE, and the measurement was already in the
-            // repo when it was written: iOS decodes mpeg4 and ITS OWN WEBVIEW REFUSES IT, so a page got
-            // sound and a blank picture with no error at all — the same gap the Android converter exists
-            // for. D63 asks whether anything CONSULTS a capability, and something did.
+            // The PICTURE half, on both shells: each platform decodes video codecs its own webview
+            // refuses, which surfaces as sound with a blank picture and NO error. Both converters decline
+            // what they do not handle, so one pipeline serves both kinds.
             PlatformMediaVideoConversion.Use(pipeline, log);
             return pipeline;
         });
 #endif
 
 #if IOS || MACCATALYST || ANDROID
-        // The HOST-OWNED PLAYER (D54). BOTH mobile shells now, and the type name is the same on each —
-        // AVPlayer behind it on iOS, android.media.MediaPlayer on Android, and MediaPlayerBase holding the
-        // state machine they share.
+        // The HOST-OWNED PLAYER (D54) — AVPlayer on iOS, android.media.MediaPlayer on Android, one type
+        // name over the state machine in MediaPlayerBase. Singleton for the same reason IPlaybackSession
+        // is: a handle on a process-wide facility, so two would fight over the audio session and the Now
+        // Playing surface.
         //
-        // iOS came FIRST because that is where the gap is provable rather than argued — the system pauses a
-        // backgrounded <video> outright, and AVPlayer keeps going. Android's gap is narrower but real: the
-        // platform decodes a superset of what the webview does (PlatformMediaCapability reports which), and
-        // playback outlives the page. Windows landed the same week (WindowsMediaPlayer).
-        //
-        // Singleton to match IPlaybackSession, and for the same reason: it is a handle on a process-wide
-        // facility, so two of them would fight over the audio session and the Now Playing surface.
-        //
-        // 🔴 BY ITS OWN TYPE, NOT AS IMediaPlayer (owner, 2026-08-08) — a BREAKING change from the original
-        // registration, and the rule is now the same on every shell. The default IMediaPlayer is the
-        // PAGE-BACKED MediaPlayer because rendering through the page is the normal case (D58); a shell that
-        // claimed IMediaPlayer moved the audio out of the page's element, and the page's PLAYER_REPORT then
-        // landed on a native player with no Report to take — MediaPlayerModule short-circuits, so
-        // `useMediaPlayer(ref)` did not fail, it quietly stopped working. That is the silent degradation
-        // this kit treats as the worse outcome, and it also made MediaPlayerExtensions' own documentation
-        // false on this shell.
+        // 🔴 REGISTERED BY ITS OWN TYPE, NOT AS IMediaPlayer. The default IMediaPlayer stays the
+        // PAGE-BACKED MediaPlayer (D58); a shell claiming IMediaPlayer moves audio out of the page's
+        // element and the page's PLAYER_REPORT then lands on a native player with no Report to take —
+        // MediaPlayerModule short-circuits, so `useMediaPlayer(ref)` does not fail, it quietly stops
+        // working.
         //
         //     var player = services.GetRequiredService<PlatformMediaPlayer>();   // opt in by name
         builder.Services.TryAddSingleton(_ => new PlatformMediaPlayer());

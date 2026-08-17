@@ -147,31 +147,6 @@ public class ShenoraApplicationTests
         Assert.Same(builder.Paths, app.Paths);
     }
 
-    private sealed class RecordingModule(List<string> log, string name, Action<IServiceCollection>? configure = null) : IShenoraModule
-    {
-        public void ConfigureServices(IServiceCollection services)
-        {
-            log.Add(name);
-            configure?.Invoke(services);
-        }
-    }
-
-    private sealed class ModuleService;
-
-    [Fact]
-    public void Modules_configure_services_in_registration_order()
-    {
-        var log = new List<string>();
-        var builder = ShenoraApplication.CreateBuilder(Options());
-        builder
-            .AddModule(new RecordingModule(log, "first", s => s.AddSingleton<ModuleService>()))
-            .AddModule(new RecordingModule(log, "second"));
-
-        Assert.Empty(log); // deferred to Build()
-        using var app = builder.Build();
-        Assert.Equal(["first", "second"], log);
-        Assert.NotNull(app.Services.GetRequiredService<ModuleService>());
-    }
 
     [Fact]
     public void Build_can_only_be_called_once()

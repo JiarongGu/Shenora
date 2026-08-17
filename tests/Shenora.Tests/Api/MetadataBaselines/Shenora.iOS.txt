@@ -1,9 +1,10 @@
 Shenora.Mobile.MobileClipboardService
   method .ctor
+  method ClearAsync
+  method GetAsync
   method GetTextAsync
-  method SetImageFromFileAsync
+  method SetAsync
   method SetTextAsync
-  method TrySaveImageToFileAsync
 Shenora.Mobile.MobileFileDialogsBase
   method .ctor
   method DiscardTemp
@@ -52,6 +53,8 @@ Shenora.Mobile.MobileWebViewInterceptor
   method Dispose
   method Use
   property RangeDelivery
+Shenora.Mobile.MobileWindowLifecycle
+  property IsRecreating
 Shenora.iOS.IosFileDialogs
   method .ctor
   method SaveAsync

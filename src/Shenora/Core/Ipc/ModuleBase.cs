@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shenora;
 using Shenora.Core.Events;
 
 namespace Shenora.Core.Ipc;
@@ -27,11 +26,9 @@ public abstract class ModuleBase : IIpcModule
     /// surface: the sanctioned accessor for a route is the <c>context</c> parameter of
     /// <see cref="RouteMessageAsync"/>.
     /// <para>
-    /// ⚠ <b>There used to be a third parameter, an <see cref="IIpcRequestTracker"/>, and REMOVING it is
-    /// the fix rather than a simplification.</b> It made request tracking a wiring obligation on every
-    /// facade author, and not one facade in the kit met it — so <c>Begin</c> was never called anywhere,
-    /// and the entire feature was inert with nothing to see. Tracking is the DISPATCHER's now
-    /// (<see cref="MessageDispatcher.DispatchAsync"/>), which no module can forget to opt into.
+    /// ⚠ <b>Request tracking is deliberately NOT a parameter here.</b> It belongs to the dispatch boundary
+    /// (<see cref="MessageDispatcher.DispatchAsync"/>), which no module can forget to opt into — as a
+    /// per-facade wiring obligation it was met by none and the feature was inert (D63).
     /// </para>
     /// </summary>
     protected ModuleBase(ILogger? logger = null, IEventBus? events = null)
@@ -96,9 +93,8 @@ public abstract class ModuleBase : IIpcModule
     /// and the difference is an adopter's debugging time.</b> Reaching here proves the module IS
     /// registered and mapped — the dispatcher found it and handed the request over. `NO_HANDLER` means
     /// the opposite: nothing claimed the module name at all. Those need opposite fixes (correct a route
-    /// name, versus wire the module up), and until 2026-08-08 both answered `NO_HANDLER` with identical
-    /// parameters, so the wire could not tell them apart. Found by a test that tried to USE the
-    /// distinction as its probe and discovered there was none.
+    /// name, versus wire the module up), so answering both with `NO_HANDLER` and identical parameters
+    /// leaves the wire unable to tell them apart.
     /// </para>
     /// </summary>
     protected ShenoraException UnknownType(IpcRequest request)

@@ -5,6 +5,7 @@ using Shenora.Core.Shell;
 using Shenora.Engine.Files;
 using Shenora.Engine.Missions;
 using Shenora.Core.Ipc;
+using Shenora.Engine;
 
 namespace Shenora.Sample.Logic;
 
@@ -157,10 +158,10 @@ public sealed class PortableSampleModule(
     private static readonly MediaPlaybackPolicy BrowserPolicy = new()
     {
         Containers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".mov", ".webm" },
-        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<string>>
+        Codecs = new Dictionary<MediaStreamKind, IReadOnlySet<MediaStreamCodec>>
         {
-            [MediaStreamKind.Video] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "h264", "vp8", "vp9", "av1" },
-            [MediaStreamKind.Audio] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "aac", "mp3", "opus", "vorbis", "flac" },
+            [MediaStreamKind.Video] = new HashSet<MediaStreamCodec>() { "h264", "vp8", "vp9", "av1" },
+            [MediaStreamKind.Audio] = new HashSet<MediaStreamCodec>() { "aac", "mp3", "opus", "vorbis", "flac" },
         },
         // Encodable is left EMPTY: this sample ships no engine, so it can convert nothing — and saying so
         // honestly is the point. The planner then answers `Unsupported` instead of promising a transcode
@@ -195,8 +196,10 @@ public sealed class PortableSampleModule(
             {
                 Kind = s.Stream.Kind.ToString(),
                 s.Stream.Codec,
-                s.DecodesNatively,
-                s.NeedsReEncode,
+                // The VERDICT, not two booleans: "assumed" (an unnamed codec given the benefit of the
+                // doubt) reads differently from "decodes", and a page showing a green tick for both
+                // would be claiming a certainty the planner never had.
+                Verdict = s.Verdict.ToString(),
             }),
         };
     }

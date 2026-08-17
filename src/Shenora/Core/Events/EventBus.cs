@@ -199,5 +199,5 @@ public sealed class EventBus : IEventBus
     }
 
     /// <summary>Active subscription count (diagnostics).</summary>
-    public int GetHandlerCount() => _handlers.Count;
+    internal int GetHandlerCount() => _handlers.Count;
 }

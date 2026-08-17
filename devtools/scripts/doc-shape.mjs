@@ -61,6 +61,39 @@ const SELF_NARRATION = [
   [/\bthis (was|is) (wrong|false|stale|obsolete)\b/i, 'narrates a past wrong claim'],
 ];
 
+// 🔴 SESSION-LOG NARRATION IN A DECISIONS FILE — the one this cleanup exists for (owner, 2026-08-14:
+// *"this is DECISIONS not really should be used as session log"*). `SELF_NARRATION` above catches prose
+// about the DOCUMENT; this catches prose about the WORK — how many attempts it took, who caught it, what
+// a review found, which day it was measured. An entry is *the decision, its why, and the constraint it
+// imposes*; how we arrived belongs to the commit that landed it.
+//
+// ⚠ WARNS rather than fails, and the reason is the same one the line cap warns for: this is a judgement
+// about prose, and some of these phrases are load-bearing in a minority of cases (a constraint really can
+// be "this is unproven — it was never measured"). It prints a worklist a human triages.
+// ⚠ Used TWICE — over `DECISIONS.md` entries and over `src/` comments (section 5) — deliberately from one
+// definition, so the two cannot drift about what "session log" means.
+const SESSION_LOG = [
+  [/\bsabotage[- ]verif/i, 'says how it was checked, not what must hold'],
+  [/\b(argued|asked|proposed|reverted|relitigated)\s+(twice|three times|four times|\d+ times)\b/i,
+    'counts attempts — that is the session, not the decision'],
+  [/\b(in|over)\s+(one|a single|the same)\s+(session|evening|afternoon|sitting)\b/i, 'dates the work'],
+  // ⚠ A COUNT is required, or this is a false positive 16 times over in `src/`. "a lossy round-trip",
+  // "never round-trip to read it", "the CDP round-trips are cheap but not free" are all SYSTEM facts —
+  // the phrase only reports a session when it is counting them ("three device round-trips").
+  [/\b(one|two|three|four|five|\d+)\s+(device\s+)?round[- ]trips?\b/i, 'counts the session, not the system'],
+  [/\b(found|caught|fixed|raised)\s+(by|in)\s+(a\s+)?(review|test)\b/i, 'attributes to a review or a test'],
+  [/\bre-?raised in review\b/i, 'attributes to a review'],
+  [/\b(found|caught|hit|reproduced)\s+live\b/i, 'attributes to a session'],
+  [/\bpaid for (it |this )?once\b/i, 'narrates a past incident'],
+  [/\bsurvived (two|three|four|five|\d+) releases\b/i, 'narrates how long it went unnoticed'],
+  // ⚠ The date needs NO preposition, which is how the first version of this check found nothing in `src/`
+  // while eight dated measurements sat in it: the comments write "Measured 2026-08-13", not "measured on".
+  [/\b(measured|proven|verified|caught|fixed|found|hit)\b[^.]{0,24}\b20\d\d-\d\d-\d\d\b/i, 'stamps a work date'],
+  [/\bthe tell (was|is)\b/i, 'narrates the diagnosis'],
+  [/\bnot theorised\b/i, 'argues with a past claim'],
+  [/\bcost (us |the repo )?(a|one|two|three|\d+)\s+(day|days|session|round|release)/i, 'prices the session'],
+];
+
 // History BY DEFINITION — the same exemption doc-drift grants, for the same reason. `local/` is an
 // informal ARCHIVE (owner, 2026-08-08): its whole value is recording what was true THEN.
 const EXEMPT = /^(CHANGELOG\.md|devtools\/retired-names\.txt|local\/)/;
@@ -137,17 +170,51 @@ if (fs.existsSync(decPath)) {
   const lines = fs.readFileSync(decPath, 'utf8').split(/\r?\n/);
   const marks = [];
   lines.forEach((l, i) => {
-    const m = l.match(/^-\s+\*\*(D(\d+))\s*(?:—|-|–)?/);
-    if (m) marks.push({ id: m[1], n: Number(m[2]), at: i });
+    const m = l.match(/^-\s+\*\*(D(\d+))\s*(?:—|-|–)?\s*(.*)$/);
+    // 🔴 The SUBJECT is carried, not just the number. A report reading `D70 is 28 lines` says nothing
+    // about what D70 is, so deciding whether a cluster is finished means opening the file for every
+    // row — and skipping that is how "39 over the cap, none of them media" got written about a list
+    // whose largest entry WAS media. The title is the cheapest possible fix and it is already matched.
+    if (m) marks.push({ id: m[1], n: Number(m[2]), at: i, title: m[3] ?? '' });
   });
 
   // ⚠ NO duplicate-number check here on purpose: `doc-drift` check (6) already owns it, and two
   // owners for one invariant is the drift this gate exists to stop. Its own comment carries the D51
   // measurement that earned it.
+  // 🔴 THE LAST ENTRY ENDS AT ITS SECTION, NOT AT EOF. Running its span to `lines.length` swallowed
+  // everything after it — the whole "## Anti-goals" section — so the final entry reported ~100 lines
+  // whatever it actually said, and could not be brought under the cap by editing it at all. A check no
+  // edit can satisfy is one its reader learns to skip. Sabotage-verified by planting a long last entry.
+  const sectionAfter = (at) => {
+    for (let i = at + 1; i < lines.length; i++) if (/^##\s/.test(lines[i])) return i;
+    return lines.length;
+  };
+
+  // The session-log sweep, per LINE, so the report names the sentence to rewrite rather than the entry.
+  lines.forEach((line, i) => {
+    for (const [pattern, why] of SESSION_LOG) {
+      if (!pattern.test(line)) continue;
+      flag(decRel, i + 1, `session log: ${why}`,
+        'an entry is the decision, its why and the constraint it imposes — how it was arrived at belongs to the commit',
+        'warn');
+      break;
+    }
+  });
+
+  /** An entry's subject, short enough to scan a list of rows by. */
+  const subject = (title) => {
+    const flat = String(title)
+      .replace(/\*\*/g, '').replace(/[`*_]/g, '')     // the heading is bold and often has code spans
+      .replace(/\s+/g, ' ')
+      .trim();
+    return flat.length > 60 ? `${flat.slice(0, 57)}…` : (flat || '(untitled)');
+  };
+
   marks.forEach((m, j) => {
-    const span = (j + 1 < marks.length ? marks[j + 1].at : lines.length) - m.at;
+    const end = j + 1 < marks.length ? marks[j + 1].at : sectionAfter(m.at);
+    const span = end - m.at;
     if (span > ENTRY_CAP) {
-      flag(decRel, m.at + 1, `${m.id} is ${span} lines (cap ${ENTRY_CAP})`,
+      flag(decRel, m.at + 1, `${m.id} is ${span} lines (cap ${ENTRY_CAP}) — ${subject(m.title)}`,
         'an entry is a decision + why + the constraint it imposes; measurements and audits belong in the commit that landed them',
         'warn');
     }
@@ -191,6 +258,132 @@ if (fs.existsSync(notesPath)) {
 }
 
 // ── report ────────────────────────────────────────────────────────────────────────────────────────
+// ── 5. A SHIPPED XML DOC IS ADOPTER-FACING API DOCUMENTATION, not a record of how a bug was found ──
+//
+// 🔴 THE MEASUREMENT THAT OPENED THIS (2026-08-14): 19,717 of 43,208 lines in `src/` are comment — 45 %,
+// with `Mp4Remuxer.cs` at 46 % and `SegmentPlan.cs` at 48 %. Those `///` lines are extracted into the
+// nupkg and render in an adopter's IDE, and they had learned the rule base's own habit: incident
+// narration, attempt counts, stamped work dates, "found by review". An adopter reading `IMediaPlayer`
+// does not need to know which session paid for a bug — that is what the commit is for.
+//
+// ⚠ Same patterns as the DECISIONS sweep, deliberately: one definition of "this is session log", used in
+// both places, so the two cannot drift about what the phrase means. WARNS — it is a judgement about prose
+// and the tree carries hundreds of these, so it is a worklist rather than a wall.
+// ⚠ `//` implementation comments are IN SCOPE too: they do not ship, but they are where the habit starts,
+// and a post-mortem comment IS worth keeping when it states what must not be done again. The test is
+// whether a reader who never saw the incident can act on the sentence.
+// SELF_NARRATION reasons that must NOT be applied to code comments — see the exclusion at the loop below.
+const NOT_CODE_SAFE = new Set(['narrates a past wrong claim']);
+
+const SRC_ROOTS = ['src'];
+const sourceFiles = [];
+const findSources = (dir) => {
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      if (e.name === 'obj' || e.name === 'bin' || e.name === 'node_modules') continue;
+      findSources(full);
+    } else if (e.name.endsWith('.cs')) {
+      sourceFiles.push(full);
+    }
+  }
+};
+for (const root of SRC_ROOTS) findSources(path.join(repo, root));
+
+for (const full of sourceFiles) {
+  const rel = path.relative(repo, full).split(path.sep).join('/');
+  let lines = [];
+  try { lines = fs.readFileSync(full, 'utf8').split(/\r?\n/); } catch { continue; }
+
+  lines.forEach((line, i) => {
+    if (!/^\s*(\/\/\/|\/\/)/.test(line)) return;
+    for (const [pattern, why] of SESSION_LOG) {
+      if (!pattern.test(line)) continue;
+      flag(rel, i + 1, `session log in a comment: ${why}`,
+        'a shipped XML doc is adopter-facing API documentation; how a defect was found belongs to the commit',
+        'warn');
+      return;
+    }
+    // 🔴 DOC-HISTORY IN A COMMENT — the SAME definition the docs sweep uses (SELF_NARRATION), applied here
+    // too. It was not, and that is the gap that let sixteen sites accumulate in the media tier alone:
+    // "it re-encoded everything until 2026-08-14", "REVERSED 2026-08-12 BY D71 … this remark used to say",
+    // "NOT X, which this paragraph claimed until 2026-08-13". Every one is a fact about the DOCUMENT, which
+    // is the class `phase-workflow`'s correct-in-place rule forbids — enforced for DECISIONS.md since
+    // 2026-08-14 and, until now, nowhere else. A rule alone did not hold it: the comment ratio went
+    // 45 % -> 47.3 % in eleven days with the rule already written.
+    //
+    // ⚠ Line-at-a-time here, block-at-a-time there, so the `requires` narrowing cannot see its
+    // correction marker across lines. Only patterns that are self-contained on ONE line are applied —
+    // which is every one of them except the `this <element> … said` shape, and that shape is the only one
+    // needing the narrowing at all.
+    //
+    // 🔴 AND ONE PATTERN IS EXCLUDED IN CODE, found by running this before trusting it: `this (is|was)
+    // false` matched `MissionScheduler`'s "during its own construction this is false" — a sentence about a
+    // BOOLEAN, not about the prose. `false` is a literal in a language comment and a judgement in a
+    // document, so the same words are a true positive there and a false one here.
+    for (const [pattern, why, requires] of SELF_NARRATION) {
+      if (requires || NOT_CODE_SAFE.has(why) || !pattern.test(line)) continue;
+      flag(rel, i + 1, `doc history in a comment: ${why}`,
+        'correct the prose in place — what it USED to say belongs to the commit that changed it',
+        'warn');
+      return;
+    }
+  });
+}
+
+// ── 6. CHANGELOG.md's STRUCTURE, which is the one thing about it that IS checkable ────────────────
+// The file is exempt from every PROSE gate above by construction — it is history, so a "stale" claim in a
+// released section is correct. Its SHAPE is not history, and nothing was looking: an edit meant for the
+// `### Fixed` heading matched the same words inside the header's own authoring rule, split that sentence
+// in half, and left a `### Added` heading whose text was the rest of the paragraph. It shipped in a commit
+// whose `verify` was green.
+//
+// Three structural facts, all stated in the file itself and none previously enforced.
+const CL_GROUPS = new Set(['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security', 'Breaking']);
+const clRel = 'CHANGELOG.md';
+const clPath = path.join(repo, clRel);
+if (fs.existsSync(clPath)) {
+  let version = null;                 // the `## …` section a heading falls under
+  let fenced = false;                 // inside ``` … ``` nothing is a heading
+  const seen = new Map();             // version → Set of `###` names already used
+  fs.readFileSync(clPath, 'utf8').split(/\r?\n/).forEach((line, i) => {
+    // ⚠ Fenced blocks FIRST. An entry quoting markdown would otherwise be flagged, and a gate that
+    // blocks a release over a code sample is the disproportion `phase-workflow` warns about — the same
+    // shape as the size budget that once failed a release over 0.2 KB.
+    if (/^```/.test(line)) { fenced = !fenced; return; }
+    if (fenced) return;
+    if (/^## /.test(line)) { version = line.slice(3).trim(); seen.set(version, new Set()); return; }
+    const heading = /^### (.*)$/.exec(line);
+    if (!heading) return;
+    const text = heading[1].trim();
+
+    // (a) The heading's text must be a GROUP NAME and nothing else. This is what catches a heading that
+    //     is really the tail of a sentence — the exact shape that got through.
+    if (!CL_GROUPS.has(text)) {
+      flag(clRel, i + 1, `### ${text.slice(0, 60)}`,
+        `not a changelog group — a \`### \` line must read exactly one of: ${[...CL_GROUPS].join(', ')}`);
+      return;
+    }
+    // (b) A group before any version section belongs to no release.
+    if (version === null) {
+      flag(clRel, i + 1, `### ${text}`, 'appears before the first `## <version>` heading, so it groups nothing');
+      return;
+    }
+    // (c) The file's own rule: "Each `###` heading appears AT MOST ONCE per version."
+    // ⚠ UNRELEASED ONLY, and that is not a loophole. The same file says released sections are FROZEN and
+    // stay as they were published, so demanding an edit there would be a gate ordering a rule violation —
+    // 0.3.0 carries two `### Added` lists and is deliberately left alone. Nothing is lost: every new entry
+    // lands in `## Unreleased`, which is where a duplicate can still be merged for free.
+    if (/^Unreleased$/i.test(version) && seen.get(version).has(text)) {
+      flag(clRel, i + 1, `### ${text} (second one under ${version})`,
+        'append to the existing group — a reader scanning `### Breaking` stops at the first list and misses the rest');
+    }
+    seen.get(version).add(text);
+  });
+}
+
 const byFile = new Map();
 for (const f of findings) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f]);
 

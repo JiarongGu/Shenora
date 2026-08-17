@@ -1,12 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getBridge, type ShenoraBridge } from './bridge.js';
 import { eventBus as defaultEventBus, type ShenoraEventBus } from './eventBus.js';
 import type { EventMessage, ShellInfo } from './types.js';
 
-/** Host access for components: the (default) bridge and whether a host transport exists. */
+/**
+ * Host access for components: the (default) bridge and whether a host transport exists.
+ *
+ * ⚠ The result is MEMOIZED, and that is not a micro-optimisation. A fresh object every render is a
+ * fresh dependency for every `useEffect`/`useMemo`/`useCallback` that lists it, so the natural
+ * `const shenora = useShenora(); useEffect(…, [shenora])` re-runs on EVERY render — a subscribe/
+ * unsubscribe cycle per frame in the worst case. The identity changes only when the bridge itself does,
+ * or when `isAvailable` flips as a host attaches, which are the two moments a consumer means to react to.
+ */
 export function useShenora(): { isAvailable: boolean; bridge: ShenoraBridge } {
   const bridge = getBridge();
-  return { isAvailable: bridge.isAvailable, bridge };
+  const isAvailable = bridge.isAvailable;
+  return useMemo(() => ({ isAvailable, bridge }), [isAvailable, bridge]);
 }
 
 /**
