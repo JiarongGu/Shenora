@@ -52,6 +52,13 @@ the file itself. They are prose now, and they never "complete":
 - **Keep `docs/ARCHITECTURE.md` + `docs/README.md` in sync as pieces land.** Partly gated since
   2026-08-05: `doc-drift` fails if a packable project is named in neither. Everything below package
   granularity — a new type, a moved folder — is still yours to keep honest.
+- 🔴 **AFTER A RELEASE, AUDIT THE PROSE AGAINST WHAT SHIPPED — no gate can.** The gates check names,
+  paths, versions and generated tables; none can ask "does the README describe this capability at
+  all?". Measured after 0.11.0 by reading `CHANGELOG`'s section against README/ADOPTION/the guides
+  and the API baselines: a guide was teaching the exact lifecycle bug the release FIXED, three docs
+  named types that no longer compile, and the release's clearest showcase feature (the page-facing
+  clipboard) appeared in no document anywhere. ⚠ **Read the changelog section as the checklist** —
+  each `### Added` entry should be findable by someone who does not already know it exists.
 - **Add a `.claude/knowledge/` rule the moment an invariant is EARNED**, via
   `node devtools/dev.mjs knowledge new <name>` — don't let it live only in a code comment. UI-thread
   marshalling, WebView2 gotchas, IPC batching numbers and the mobile header table all got here that way.
