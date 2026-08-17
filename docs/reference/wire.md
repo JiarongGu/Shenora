@@ -104,3 +104,113 @@ What a host advertises in its handshake, and what a page branches on instead of 
 | `ShellCapability.Tray` | `tray` | A tray icon. |
 | `ShellCapability.ClipboardFiles` | `clipboardFiles` | A page needs this because no web API expresses it — and it is the one clipboard capability that genuinely differs by shell, since a phone's pasteboard has no file list at all. |
 | `ShellCapability.LocalFiles` | `localFiles` | local content asks for this and falls back — to an external handler, or to hiding the control — rather than showing a player that can never load. |
+
+## Clipboard routes
+
+The page's access to the native clipboard — the capability D53 added for what React cannot reach.
+
+| Constant | Value | |
+|---|---|---|
+| `ClipboardModule.Module` | `SHENORA.CLIPBOARD` | The module name this facade answers on. |
+| `ClipboardModule.ReadType` | `READ` | Route: everything the clipboard is offering, no gesture required. |
+| `ClipboardModule.WriteType` | `WRITE` | Route: replace the clipboard with one item. |
+| `ClipboardModule.ClearType` | `CLEAR` | Route: leave the clipboard holding nothing. |
+
+## File dialog routes
+
+Native open/save pickers, including the mobile shells' own.
+
+| Constant | Value | |
+|---|---|---|
+| `FileDialogModule.Module` | `SHENORA.DIALOGS` | The module name this facade answers on. |
+| `FileDialogModule.OpenFileType` | `OPEN_FILE` | Route: pick an existing file. |
+| `FileDialogModule.OpenFolderType` | `OPEN_FOLDER` | Route: pick a folder. |
+| `FileDialogModule.SaveFileType` | `SAVE_FILE` | Route: pick a save destination and get the PATH back. |
+| `FileDialogModule.SaveTextType` | `SAVE_TEXT` | Route: pick a destination AND write text to it, in one call — the PORTABLE save, working on every shell because the HOST does the writing. |
+
+## Request-tracking routes
+
+What a page calls to list, cancel or clear the long requests the events above report.
+
+| Constant | Value | |
+|---|---|---|
+| `IpcRequestsModule.ListType` | `LIST` | Route: snapshot of known requests — in flight first, then retained history. |
+| `IpcRequestsModule.CancelType` | `CANCEL` | Route: abort a request in flight by id — XMLHttpRequest.abort(). |
+| `IpcRequestsModule.ClearFinishedType` | `CLEAR_FINISHED` | Route: drop retained finished history. |
+
+## Window command routes
+
+Frameless chrome drives the real window through these.
+
+| Constant | Value | |
+|---|---|---|
+| `WindowCommandModule.Module` | `SHENORA.WINDOW` | The reserved module name (mirrored by the client's WindowCommands). |
+| `WindowCommandModule.MinimizeType` | `MINIMIZE` | Route: minimize the window. |
+| `WindowCommandModule.ToggleMaximizeType` | `TOGGLE_MAXIMIZE` | Route: maximize if restored, restore if maximized. |
+| `WindowCommandModule.CloseType` | `CLOSE` | Route: close the window (the app's FormClosing logic still runs). |
+| `WindowCommandModule.IsMaximizedType` | `IS_MAXIMIZED` | Route: is it maximized? Answers { maximized } — authoritative for the chrome's glyph, since a manual work-area maximize never shows in WindowState. |
+| `WindowCommandModule.StartDragType` | `START_DRAG` | Route: begin an OS window-move loop (the page's header on mousedown). |
+| `WindowCommandModule.StartResizeType` | `START_RESIZE` | Route: begin an OS resize loop: { edge } — top, topLeft or topRight. |
+| `WindowCommandModule.SetThemeType` | `SET_THEME` | Route: { dark }. |
+| `WindowCommandModule.SetCaptionButtonsType` | `SET_CAPTION_BUTTONS` | Route: { buttons }, the caption-button hit rectangles. |
+
+## Drop zone routes
+
+Registering the page regions a native file drop is matched against.
+
+| Constant | Value | |
+|---|---|---|
+| `DropZoneModule.RegisterType` | `REGISTER` | Route: declare a zone at { zoneId, x, y, width, height } (page coordinates). |
+| `DropZoneModule.UpdateType` | `UPDATE` | Route: same payload as RegisterType — updating IS registering with new bounds, which is why they share a case. |
+| `DropZoneModule.UnregisterType` | `UNREGISTER` | Route: forget a zone: { zoneId }. |
+| `DropZoneModule.ShowType` | `SHOW` | Route: raise the drop overlay over a zone: { zoneId }. |
+
+## Drop zone events
+
+What the host pushes back as a drag crosses a registered zone.
+
+| Constant | Value | |
+|---|---|---|
+| `DropZoneManager.Module` | `SHENORA.DROPZONE` | The reserved module name (mirrored by the client's useDropZone). |
+| `DropZoneManager.DragEnterEvent` | `DRAG_ENTER` | Event: the pointer entered a zone while dragging: { zoneId }. |
+| `DropZoneManager.DragLeaveEvent` | `DRAG_LEAVE` | Event: the pointer left a zone, or the drag ended elsewhere: { zoneId }. |
+| `DropZoneManager.FileDropEvent` | `FILE_DROP` | Event: files were dropped: { zoneId, files, position }. |
+
+## Browser session events
+
+What an auxiliary session publishes on the event bus — the 0.11.0 replacement for the deleted observation taps.
+
+| Constant | Value | |
+|---|---|---|
+| `SessionEvents.Module` | `SHENORA.SESSION` | The module every session event is published under. |
+| `SessionEvents.ResponseReceived` | `RESPONSE_RECEIVED` | A network response arrived — payload SessionResponse. |
+| `SessionEvents.NavigationStarting` | `NAVIGATION_STARTING` | A top-level navigation began — payload SessionSource. |
+| `SessionEvents.NavigationCompleted` | `NAVIGATION_COMPLETED` | A top-level navigation finished, successfully or not — payload SessionNavigationResult. |
+| `SessionEvents.DomContentLoaded` | `DOM_CONTENT_LOADED` | The document exists and is parsed — payload SessionSource. |
+| `SessionEvents.SourceChanged` | `SOURCE_CHANGED` | The address changed WITHOUT a navigation — payload SessionSource. |
+| `SessionEvents.TitleChanged` | `TITLE_CHANGED` | The document title changed — payload SessionSource. |
+| `SessionEvents.WebMessage` | `WEB_MESSAGE` | The page posted a message via chrome.webview.postMessage — payload SessionWebMessage. |
+| `SessionEvents.DownloadStarting` | `DOWNLOAD_STARTING` | The page began a download — payload DownloadHit. |
+| `SessionEvents.WindowCloseRequested` | `WINDOW_CLOSE_REQUESTED` | The page called window.close() — no payload. |
+| `SessionEvents.ProcessFailed` | `PROCESS_FAILED` | A browser process died — payload SessionProcessReport. |
+
+## Interactive session failures
+
+The `code` when an interactive session cannot answer.
+
+| Constant | Value | |
+|---|---|---|
+| `InteractiveSessionErrorCodes.Busy` | `SESSION_BUSY` | Another session is already open — interactive sessions serialize. |
+| `InteractiveSessionErrorCodes.Cancelled` | `SESSION_CANCELLED` | The caller's token tripped, or the user closed before the driver captured. |
+| `InteractiveSessionErrorCodes.Incomplete` | `SESSION_INCOMPLETE` | The driver finished without capturing anything (e.g. |
+| `InteractiveSessionErrorCodes.Error` | `SESSION_ERROR` | The driver (or the window) threw — details stay in the host log. |
+| `InteractiveSessionErrorCodes.Unavailable` | `SESSION_UNAVAILABLE` | The UI-thread anchor is gone (headless / teardown). |
+
+## Clipboard media types
+
+The keys of `ClipboardContent.Formats` the kit names itself; an app's own type is its own string.
+
+| Constant | Value | |
+|---|---|---|
+| `ClipboardContent.PngImage` | `image/png` | PNG bytes — the interchange image format every platform and browser reads. |
+| `ClipboardContent.Html` | `text/html` | UTF-8 HTML, for a paste that keeps its formatting. |

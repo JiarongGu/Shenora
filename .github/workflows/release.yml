@@ -214,12 +214,16 @@ jobs:
           # commit in the first case and lose the stamp; it would also produce an EMPTY commit on a
           # re-run that rewrote none of them.
           #
-          # KEEP THIS LIST AND THE `git add` BELOW IN LOCKSTEP with what `doctor --fix` rewrites.
-          # docs/ARCHITECTURE.md joined that set on 2026-08-02 (its status line is version-synced the
-          # same way README's headline is); adding it here and NOT to the commit would push a release
-          # whose ARCHITECTURE still names the previous version — and `doctor` fails on exactly that,
-          # so the next verify on main would be red.
-          $changed = if (git status --porcelain -- src/Directory.Build.props CHANGELOG.md README.md docs/ARCHITECTURE.md src/Shenora.React/package.json) { 'true' } else { 'false' }
+          # 🔴 THE FILE LIST COMES FROM project.config.mjs (`derivedVersionFiles`) — the same source
+          # `doctor --fix` rewrites from — because this step used to keep its own hardcoded copy and
+          # that copy went stale: v0.11.0 published `@shenora/cli` at the right version while
+          # committing only the React package.json, leaving the tracked file a release behind. The
+          # old comment here said "KEEP THIS LIST IN LOCKSTEP", which is exactly the instruction a
+          # second copy always comes with and never survives. There is one list now.
+          $derived = node -e "import('./devtools/project.config.mjs').then(m => console.log(m.default.derivedVersionFiles.join(' ')))"
+          if (-not $derived) { throw "could not read derivedVersionFiles from devtools/project.config.mjs" }
+          "derived=$derived" >> $env:GITHUB_OUTPUT
+          $changed = if (git status --porcelain -- ($derived -split ' ')) { 'true' } else { 'false' }
 
           "changed=$changed" >> $env:GITHUB_OUTPUT
           "version=$final" >> $env:GITHUB_OUTPUT
@@ -367,11 +371,12 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           # Named explicitly so nothing else the job touched — a publish/ artifact, a scratch file —
-          # can ride along into a release commit. These five all move in lockstep with a release and
-          # are all rewritten by "Determine version" above (VersionPrefix + the CHANGELOG stamp
-          # directly; README `## Status`, docs/ARCHITECTURE.md's `## Current state` line and the npm
-          # version via `doctor --fix`). Must match the `git status --porcelain` list up there.
-          git add src/Directory.Build.props CHANGELOG.md README.md docs/ARCHITECTURE.md src/Shenora.React/package.json
+          # can ride along into a release commit. They all move in lockstep with a release and are all
+          # rewritten by "Determine version" above (VersionPrefix + the CHANGELOG stamp directly;
+          # README `## Status`, docs/ARCHITECTURE.md's `## Current state`, the getting-started
+          # PackageReference and every npm version via `doctor --fix`). ONE list, from the config —
+          # see the note on the porcelain check above for the release this cost.
+          git add ${{ steps.version.outputs.derived }}
           git commit -m "chore: release ${{ steps.version.outputs.tag }}"
           git push
 

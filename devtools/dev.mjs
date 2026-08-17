@@ -355,6 +355,24 @@ function shotTarget(name, argv) {
   return path.join(dir, `${name ?? `${config.shotPrefix}-${stamp}`}.png`);
 }
 
+/**
+ * Tracked markdown that could carry a version-bearing snippet: the root README and everything under
+ * `docs/`. Deliberately not the whole tree — `CHANGELOG.md` is history by definition (a 0.10.0
+ * snippet in the 0.10.0 section is CORRECT), and `local/` is private and archival.
+ */
+function trackedDocsWithSnippets() {
+  const found = ['README.md'];
+  const walkDocs = (dir) => {
+    for (const entry of fs.readdirSync(path.join(repo, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walkDocs(rel);
+      else if (entry.name.endsWith('.md') && rel !== 'docs/DECISIONS.md') found.push(rel);
+    }
+  };
+  walkDocs('docs');
+  return found;
+}
+
 // The npm package.json version and the README "## Status" headline are derived; `doctor` fails
 // on drift, `doctor --fix` (also run by `pack`) rewrites them.
 function doctor({ fix = false } = {}) {
@@ -400,6 +418,26 @@ function doctor({ fix = false } = {}) {
         /(## Current state — \*\*v)\d+\.\d+\.\d+[^ *]*( published\*\*)/, `$1${config.version}$2`));
       console.log(`  fixed docs/ARCHITECTURE.md status line -> v${config.version}`);
     } else fail(`docs/ARCHITECTURE.md status line v${state[1]} != VersionPrefix ${config.version}`);
+  }
+
+  // 🔴 A `PackageReference` shown in a DOC is a copy of the version too, and the least forgiving one:
+  // it is the first thing a new adopter pastes. `docs/getting-started.md` sat at 0.10.0 through the
+  // 0.11.0 release — step 1 of the guide installed the PREVIOUS release — because the sync list knew
+  // about headlines and package.json and not about snippets. Generalised rather than pinned to that
+  // file: any tracked doc that shows a Shenora PackageReference is checked, so the NEXT doc to carry
+  // one is covered the day it is written.
+  for (const rel of trackedDocsWithSnippets()) {
+    const docPath = path.join(repo, rel);
+    const text = fs.readFileSync(docPath, 'utf8');
+    const RE = /(<PackageReference\s+Include="Shenora[^"]*"\s+Version=")(\d+\.\d+\.\d+[^"]*)(")/g;
+    const stale = [...text.matchAll(RE)].filter((m) => m[2] !== config.version);
+    if (stale.length === 0) continue;
+    if (fix) {
+      fs.writeFileSync(docPath, text.replace(RE, `$1${config.version}$3`));
+      console.log(`  fixed ${rel} PackageReference version(s) -> ${config.version}`);
+    } else {
+      fail(`${rel} shows PackageReference Version="${stale[0][2]}" != VersionPrefix ${config.version}`);
+    }
   }
 
   // The npm tarball must SHIP the license text, not just declare MIT in the manifest (P5.5 H6). The

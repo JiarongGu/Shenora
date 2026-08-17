@@ -76,6 +76,25 @@ export default {
    * shipping. `@shenora/cli` is pure Node with no build step, which is why it is here but not above.
    */
   npmPackages: ['src/Shenora.React', 'src/Shenora.Cli'],
+  /**
+   * 🔴 EVERY TRACKED FILE `doctor --fix` MAY REWRITE — the ONE list the release workflow stages and
+   * diffs, so its commit cannot miss one. It used to hardcode its own copy, and that copy went stale
+   * the moment a SECOND npm package arrived: v0.11.0 published `@shenora/cli` at the right version
+   * (the runner's `doctor --fix` synced it) while committing only the React package.json, so the
+   * tracked file stayed a release behind. A second list of the same thing is the defect, not the
+   * symptom — the workflow now asks for this one.
+   * ⚠ `docs/getting-started.md` is here because it shows a `PackageReference`: the snippet a new
+   * adopter pastes first, and it sat at 0.10.0 through the 0.11.0 release.
+   */
+  derivedVersionFiles: [
+    'src/Directory.Build.props',
+    'CHANGELOG.md',
+    'README.md',
+    'docs/ARCHITECTURE.md',
+    'docs/getting-started.md',
+    'src/Shenora.React/package.json',
+    'src/Shenora.Cli/package.json',
+  ],
   /** Pack output (gitignored). */
   packagesDir: 'publish/packages',
 

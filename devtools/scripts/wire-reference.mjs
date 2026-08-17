@@ -42,7 +42,40 @@ const SECTIONS = [
   ['MediaConversionEvents', 'Media conversion', 'A conversion outlives its request, so the page learns from these rather than from a response.'],
   ['MediaConversionErrorCodes', 'Media conversion failures', 'The `reason` on a conversion FAILED event. Anything else is an exception TYPE name.'],
   ['ShellCapability', 'Shell capabilities', 'What a host advertises in its handshake, and what a page branches on instead of sniffing the platform.'],
+  // ⚠ ADDED 2026-08-18, all long shipped and none of them published here — found by a docs audit, not
+  // by this gate, which is the point of NOT_WIRE below. A page names every one of these by hand.
+  ['ClipboardModule', 'Clipboard routes', 'The page\'s access to the native clipboard — the capability D53 added for what React cannot reach.'],
+  ['FileDialogModule', 'File dialog routes', 'Native open/save pickers, including the mobile shells\' own.'],
+  ['IpcRequestsModule', 'Request-tracking routes', 'What a page calls to list, cancel or clear the long requests the events above report.'],
+  ['WindowCommandModule', 'Window command routes', 'Frameless chrome drives the real window through these.'],
+  ['DropZoneModule', 'Drop zone routes', 'Registering the page regions a native file drop is matched against.'],
+  ['DropZoneManager', 'Drop zone events', 'What the host pushes back as a drag crosses a registered zone.'],
+  ['SessionEvents', 'Browser session events', 'What an auxiliary session publishes on the event bus — the 0.11.0 replacement for the deleted observation taps.'],
+  ['InteractiveSessionErrorCodes', 'Interactive session failures', 'The `code` when an interactive session cannot answer.'],
+  ['ClipboardContent', 'Clipboard media types', 'The keys of `ClipboardContent.Formats` the kit names itself; an app\'s own type is its own string.'],
 ];
+
+/**
+ * 🔴 EVERY OTHER TYPE DECLARING A `public const string`, EXPLICITLY JUDGED NOT TO CROSS THE WIRE.
+ *
+ * The gate below fails on a type that is in NEITHER list, which is the hole this closes: SECTIONS is an
+ * ALLOW-LIST, so a type nobody added was silently absent while the gate still reported "matches the
+ * source constants" — it did, over less of the wire each time. The header already recorded that
+ * happening once (`MediaConversionEvents`, 2026-08-10) and it had happened again by 0.11.0 to NINE
+ * types, the page-facing clipboard among them. A list of what is deliberately EXCLUDED cannot rot the
+ * same way: a new type forces a decision instead of defaulting to invisible.
+ */
+const NOT_WIRE = new Map([
+  ['AppRootArgument', 'a command-line flag the launcher passes, never a message'],
+  ['Files', 'a temp-file suffix on disk'],
+  ['PathClaims', 'a mission claim-scope name, host-side scheduling only'],
+  ['MissionScheduler', 'the global lane name, host-side scheduling only'],
+  ['SegmentRunRequest', 'file names inside a segment run\'s own directory — the page follows the manifest, it does not build these'],
+  ['SafeAreaScript', 'a marker inside an injected script, read by that script alone'],
+  ['ShenoraEnvironment', 'a dev-marker FILE name on disk'],
+  ['MauiShellNames', 'the shell name used in capability-refusal messages, not a route'],
+  ['WebViewScripts', 'the injected script SOURCES themselves'],
+]);
 
 /** Every `public const string` with its summary's first sentence, keyed by declaring type. */
 function readConstants() {
@@ -58,7 +91,14 @@ function readConstants() {
       }
     }
   };
-  walk(path.join(repo, 'src', 'Shenora'));
+  // 🔴 EVERY package that can declare a wire constant, not just the core one. `src/Shenora` alone left
+  // the whole SHELL half of the wire unreadable — window commands, drop zones and session events are
+  // declared in `Shenora.Windows` and are named by a page exactly as often as the core's own routes.
+  // ⚠ The plain `Shenora` prefix would also match `Shenora.Tests`; these are named explicitly.
+  for (const pkg of ['Shenora', 'Shenora.Windows', 'Shenora.Mobile', 'Shenora.Android', 'Shenora.iOS']) {
+    const dir = path.join(repo, 'src', pkg);
+    if (fs.existsSync(dir)) walk(dir);
+  }
   return found;
 }
 
@@ -122,6 +162,19 @@ function render(found) {
     console.error(`\x1b[31m✖ wire-reference: no public const strings found for ${missing.join(', ')}.\x1b[39m`);
     console.error('  Either the type was renamed (update SECTIONS in this script) or its constants went.');
     console.error('  Publishing the reference without them would silently shrink the documented wire.');
+    process.exitCode = 1;
+  }
+
+  // …AND THE OTHER DIRECTION, which is the one that actually bit: a type carrying wire constants that
+  // NOBODY listed. Silent absence is indistinguishable from "there was nothing to publish", so a type
+  // in neither list stops the generator until someone says which it is.
+  const listed = new Set(SECTIONS.map(([type]) => type));
+  const unjudged = [...found.keys()].filter((type) => !listed.has(type) && !NOT_WIRE.has(type));
+  if (unjudged.length > 0) {
+    console.error(`\x1b[31m✖ wire-reference: ${unjudged.join(', ')} declare(s) public const strings and appear(s) in neither list.\x1b[39m`);
+    console.error('  If a page or client names these, add a SECTIONS row so they are PUBLISHED.');
+    console.error('  If they never cross the wire, add them to NOT_WIRE with the reason.');
+    console.error('  Doing neither is how the reference silently shrank before — see NOT_WIRE\'s note.');
     process.exitCode = 1;
   }
 
