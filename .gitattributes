@@ -7,3 +7,10 @@
 # a .gitignore of `bin/\r\n` + `\r\n` calls `zzz/qqq/` ignored, attributed to the blank line.
 .gitignore text eol=lf
 .gitattributes text eol=lf
+
+# Markdown checks out as LF too: the gates compare generated text against these files, and an
+# autocrlf checkout failing a comparison every LF checkout passes is this same class again —
+# decisions-index was the second victim after .gitignore. (Its checker now also normalizes, so this
+# line is the belt and that is the braces.)
+*.md text eol=lf
+

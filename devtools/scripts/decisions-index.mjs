@@ -106,7 +106,11 @@ const main = () => {
   }
 
   const current = text.slice(from, to + END.length);
-  if (current === wanted) {
+  // Compared with endings NORMALIZED: `wanted` is '\n'-joined while an autocrlf checkout hands this
+  // file over as CRLF — the exact split the WRITER below already handles, and the check half did
+  // not, so the release runner failed a gate every LF checkout passed (2026-08-18). Content is the
+  // claim being checked; the line ending is the checkout's business.
+  if (current.replaceAll('\r\n', '\n') === wanted) {
     console.log(`  ok  decisions-index: ${entries.length} decisions listed, matching the entries`);
     return;
   }
