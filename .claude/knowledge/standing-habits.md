@@ -52,6 +52,10 @@ the file itself. They are prose now, and they never "complete":
 - **Keep `docs/ARCHITECTURE.md` + `docs/README.md` in sync as pieces land.** Partly gated since
   2026-08-05: `doc-drift` fails if a packable project is named in neither. Everything below package
   granularity — a new type, a moved folder — is still yours to keep honest.
+- **Run `dev.mjs test clipboard` after touching `ClipboardService`.** That suite is held OUT of the gate
+  (this box refuses ~30 % of clipboard writes from a looping test process — an OS-level condition, see
+  `TASKS.md`), so the gate will not do it for you. A held-out suite can rot, which is the price of the
+  split and the reason the exclusion announces itself on every run.
 - 🔴 **AFTER A RELEASE, AUDIT THE PROSE AGAINST WHAT SHIPPED — no gate can.** The gates check names,
   paths, versions and generated tables; none can ask "does the README describe this capability at
   all?". Measured after 0.11.0 by reading `CHANGELOG`'s section against README/ADOPTION/the guides
