@@ -119,6 +119,22 @@ npx shenora ios deploy           # build → sign → verify extensions → inst
 npx shenora ios log              # your app's own output, off the device
 ```
 
+**Android is the same four verbs, and they run on WINDOWS** — which is where most .NET Android work
+happens, so this half is not a Mac story at all:
+
+```bash
+npx shenora android doctor       # dotnet, the android workload, adb, a JDK, devices ready
+npx shenora android devices      # including the ones adb calls unauthorized
+npx shenora android deploy       # build → install → launch  [--device <serial>]
+npx shenora android log          # your app's lines, filtered by PID  [-n <lines>] [--all]
+npx shenora android build        # a distributable: .apk, or --aab for Play
+```
+
+It exists for the four things that are not `adb`: finding a JDK (Android Studio ships one in `jbr/` and
+sets no variable), finding `adb` (Visual Studio's SDK lands in `%LOCALAPPDATA%\Android\Sdk` and exports
+nothing), **refusing to guess** between an attached emulator and phone, and reading the log by PID
+rather than by tag — which is every line YOUR app wrote, under any tag, excluding a stale instance.
+
 You do **not** own an Xcode project, which is why several `cap` commands have no counterpart here — see
 `@shenora/cli`'s own README for the parity table.
 

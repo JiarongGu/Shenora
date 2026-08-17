@@ -246,13 +246,19 @@ buffered whole.
 > virtual host — is set up in it. So a session can load `http://localhost:…` or the internet, but NOT
 > your app's embedded bundle: navigating an off-screen session to your packaged origin renders
 > WebView2's "can't reach this page". Affects desktop-only apps serving embedded resources; a
-> server-backed app whose pages are already on a loopback origin is unaffected. Tracked as `TASKS.md`
-> E1.
+> server-backed app whose pages are already on a loopback origin is unaffected. To serve your bundle
+> into a session deliberately, set `VirtualHost` + `ResourceProvider` on its `SessionBrowserOptions` —
+> `docs/guides/sessions.md` has the both-or-neither rule and the CORS caveat.
 
 Off-screen and auxiliary browser sessions over the same runtime: a bounded LIFO `RenderSessionPool`,
 `InteractiveSession` (a human-in-the-loop window over an isolated persistent profile, driven by
 **your** driver), and `StreamingSession` (frames out, input in). The kit ships the mechanics and no
-scenario — a worked driver example lives in the sample, to copy and edit.
+scenario — a worked driver example lives in the sample, to copy and edit. **What a session DOES is
+published on the app's own `IEventBus`** (`SessionEvents`, scoped by session id — navigation, DOM,
+downloads, web messages, renderer failures), and five hooks decide what happens when a page raises a
+dialog, an auth challenge, a certificate request, a popup or a permission prompt. Three of those
+prevent a wedge that would otherwise stop an off-screen page for good.
+**`docs/guides/sessions.md`** is the guide.
 
 ### `@shenora/react` — the client half
 

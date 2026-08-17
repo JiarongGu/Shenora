@@ -164,6 +164,29 @@ Two things that adapter learned the moment it ran, both of which you will hit:
   ⚠ This replaced an adapter that reported missions as tracked "operations" — it was the only code
   anywhere that needed a parked state, which is exactly why that state existed and why removing it was
   safe (D66).
+- 🔴 **Put YOUR `Key` in that payload, not just `MissionId`.** `MissionId` is the scheduler's and is
+  **per-process**: recovery resubmits under a new one, so it cannot key anything that outlives a
+  restart, and a page folding by it is folding by an opaque `m7` your app never chose. Set
+  `MissionDefinition.Key` on submit and it now travels on `MissionExecution` and `MissionRecord` —
+  emit `mission.Key?.Value` beside the id and the page can say WHAT each row is:
+
+  ```csharp
+  events.Emit(module, MissionUpdated, new
+  {
+      missionId = mission.MissionId,       // the scheduler's, per-process
+      key       = mission.Key?.Value,      // yours, and the one you can recognise
+      kind      = mission.Kind ?? "WORK",
+      state,
+      attempt   = mission.Attempt,
+  });
+  ```
+
+  The same `Key` is what `IsActive(key)` answers about and what deduplicates a resubmission — an
+  identical key already in flight carries the second caller's completion and the body never runs
+  twice (`MissionOutcome.Deduplicated`, which counts as success). ⚠ **`MissionRecord.Key` matters
+  most**: the kit ships no store (D28), so that record is the wire format between the kit and your
+  storage, and a `rehydrate` callback needs something your app chose rather than an id it has never
+  seen.
 - **Cancellation stays yours.** The scheduler cancels through the token you passed to `SubmitAsync`.
   The kit deliberately does not guess a link between that lifetime and anything on the page: to offer a
   real cancel, keep your own `CancellationTokenSource` per submission and expose your own route.

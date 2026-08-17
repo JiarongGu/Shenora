@@ -181,6 +181,17 @@ Shenora.slnx
 │   │                                            IFileDialogs and its IPC module. Every write it performs
 │   │                                            is atomic (see Engine/Files above), and SaveAsync is the
 │   │                                            only universal shape: mobile grants a DOCUMENT, not a path.
+│   │                                    Modules/Clipboard/ namespace Shenora.Modules.Clipboard —
+│   │                                            ClipboardModule over the shell's IClipboardService,
+│   │                                            OPT-IN via AddShenoraClipboard() because a page reaching
+│   │                                            the clipboard is a decision, not a default. What it buys
+│   │                                            over the browser's own API: no user gesture, and an app's
+│   │                                            private format carried verbatim.
+│   │                                    Modules/Requests/ namespace Shenora.Modules.Requests —
+│   │                                            IpcRequestsModule (LIST / CANCEL / CLEAR_FINISHED) over
+│   │                                            IIpcRequestTracker. ON BY DEFAULT (D64): Build() adds it
+│   │                                            for every app, which is why its registration is internal
+│   │                                            and UseRequests only configures it.
 │   │                                    Core/Events/ namespace Shenora.Core.Events — IEventBus and
 │   │                                            EventMessage, one of the three cores Build() composes
 │   │                                            unconditionally (D64). In-process pub/sub; a transport
@@ -412,6 +423,8 @@ and the dependency rules a reviewer checks.
   `ObjectDisposedException` when `Dispatch` answers false.
 - **Portable contracts live in `Shenora` (D20):** `IUiDispatcher`/`UiTargetState`,
   `IFileDialogs`/`IFileDialogPathStore` + `FileDialogOptions`/`Filter`/`Result`, `IClipboardService`,
+  `IFileLockInspector`/`FileLockHolder` (0.11.0 moved these out of `Engine/Files` under exactly this
+  rule — a SHELL implements it, so the contract lives here),
   and the portable bases `IUrlLauncher`/`IUiInteraction`, plus `ShellCapability` — the shared
   capability vocabulary (`windowChrome`, `dropZones`, `filePicker`, `folderPicker`, `savePicker`,
   `secondaryWindows`, `tray`) and the `NotSupported` factory a shell throws from when it lacks one

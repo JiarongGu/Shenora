@@ -10,11 +10,11 @@ times — 502 lines holding six open tasks, then 570 holding three, then 458 hol
 block looked justified on the day it was written. `node devtools/dev.mjs doc-shape` now fails on a done
 marker here, because the prose rule alone lost three times.
 
-**Status: v0.10.0 is published; the tree is well ahead of it.** `CHANGELOG.md`'s `## Unreleased` is large
-and **mostly BREAKING** (D64/D65/D66) — read `### Breaking` before touching the surface. **The release is
-deliberately ON HOLD** (owner, 2026-08-08: *"im still holding the release since currenly stage this is
-not a proper version for app to use yet"*), so correctness beats cosmetics and a half-finished surface
-is a reason to keep working rather than to cut.
+**Status: v0.11.0 is published (2026-08-17)** — the release the long hold was waiting for, carrying the
+whole review-and-fix arc plus `@shenora/cli`'s first real publish. The tree is at the tag. `CHANGELOG.md`
+has no `## Unreleased` section until the next change opens one; the 0.11.0 section is the record of what
+that release contained, and it is **mostly BREAKING** (D64/D65/D66) — read `### Breaking` before
+touching the surface.
 
 > **ADOPTING THIS KIT? Start at `docs/ADOPTION.md`, not here.** This is the maintainer's remaining work,
 > and a short list means the kit is in good shape rather than that nothing is happening. Several entries
@@ -55,36 +55,6 @@ stub is no-code with a "do not install" description, so the exposure is cosmetic
 - [ ] After the first OIDC release: tighten publishing access on both packages (require 2FA /
   disallow tokens) so the trusted publisher is the only path, and drop the fallback sentence from
   RELEASING.md once it describes a path that no longer exists.
-
-### 📖 CAPABILITIES THAT SHIP AND ARE DOCUMENTED NOWHERE (from the post-0.11.0 audit)
-
-The audit's WRONG items are fixed (`e72c394`) and its gate holes closed (`b874d8a`). What is left is
-prose that has to be WRITTEN, not corrected — each is a shipped capability an adopter cannot discover:
-
-- [ ] 🔴 **The segment engine has no usage section, in the guide that advertises it.**
-  `docs/guides/media.md:10` promises "three things: a segmenting engine, …" and then explains the
-  other two. Nothing shows `SegmentEngine.Default(...)`, `UseSegmentStream(...)`, `ISegmentEngine`, or
-  the page-side `bindSegmentStream`/`codecsFromInitSegment`. This is the D71 headline; the entry point
-  shipped and the prose never followed, which is the "complete and unusable at the same time" state
-  the CHANGELOG entry itself names.
-- [ ] **`BackgroundPlaybackTransfer` is absent from both `media.md` and `mobile.md`** — new in 0.11.0,
-  and the whole point of the `Window.Stopped`/`Resumed` split an app has to wire.
-- [ ] **The browser-session hooks and event catalogue have no guide at all** — five wedge-preventing
-  hooks (script dialog, basic auth, client certificate, popup, permission), the ten `SessionEvents`
-  types, and the `RequestFilter` fail-open correction. One of the largest areas of 0.11.0 change, and
-  `ADOPTION.md` mentions `SessionBrowserOptions` only in passing. Probably wants its own guide beside
-  the other four (a `sessions` one), which is a file to CREATE — do not add the pointer before the doc.
-- [ ] **`missions.md` never shows `MissionExecution.Key`/`MissionRecord.Key`** — the breaking change
-  exists precisely so an app can map a mission back to its own item, and the guide's worked observer
-  (and its sample) still emit only `missionId`, which is per-process and not durable.
-- [ ] **`ARCHITECTURE.md` gaps below package level**: no paragraph for `Modules/Clipboard/` or
-  `Modules/Requests/` (while `Platform/` and `FileDialog/` get one), and the D20 portable-contract
-  list omits `IFileLockInspector`/`FileLockHolder`, which 0.11.0 moved into `Core/Shell` under exactly
-  that rule.
-- [ ] **`getting-started.md`'s device walkthrough shows only the iOS CLI verbs** — the Android half
-  runs on Windows, which is where most .NET Android work happens.
-- [ ] **README's "Extra browsers" section** predates the event rework: it should point at `IEventBus`
-  + `SessionEvents` as how an app observes a session now that the taps are gone.
 
 ### 🎬 STREAMING IS THE PRIMARY PATH — the media tier (D71)
 

@@ -269,3 +269,113 @@ Four things that are yours and worth knowing before you start:
   derived cache key, and cancellation. You are writing the engine call, not the plumbing.
 
 ---
+
+## The segmenting engine — playing a file that has to be converted WHILE it plays
+
+The conversion route above finishes a file and then serves it, which is right when the wait is short and
+wrong when it is a two-hour film. The segment tier is the other answer: a synthetic HLS manifest computed
+from the DURATION alone, with segments produced on demand as the player asks for them, so playback starts
+in seconds and the conversion never has to complete.
+
+**Which one a source takes is YOUR registration decision, not an arbitration the kit performs** (D75).
+The two routes are independent middleware; you give them non-overlapping `Resolve` predicates and that is
+the whole routing rule. The shape of the choice is D71's: a producer that can state a length can be a
+computed file served over ranges, and a producer that can promise nothing gets the time grid.
+
+**Host — the engine, then the route:**
+
+```csharp
+// Null conversion is ACCEPTED and means IsAvailable = false — see the platform note below.
+var engine = SegmentEngine.Default(services.GetService<IMediaStreamConversion>(), log);
+
+var route = interceptor.UseSegmentStream(engine, new SegmentStreamOptions
+{
+    RoutePath      = "/shenora-hls/",   // default
+    SegmentSeconds = 6.0,               // default
+    Access = new MediaAccessOptions
+    {
+        Resolve      = uri => MyRouteToSourceFile(uri),   // null = not a segment request
+        AllowedRoots = [libraryDir],                      // EMPTY means nothing is servable
+        CacheRoot    = segmentCacheDir,
+    },
+}, log);
+```
+
+🔴 **`UseSegmentStream` registers NOTHING when the engine is unavailable, and that is the feature.** It
+returns a stub route instead of throwing, so the call site is identical on a shell with no conversion
+engine — the page gets an honest "not ready" rather than the app failing to compose. Check
+`engine.IsAvailable` if you want to hide the UI that leads there.
+
+**Page — one call, no hook:**
+
+```ts
+import { bindSegmentStream } from '@shenora/react';
+
+const binding = await bindSegmentStream({ manifest: '/shenora-hls/film/index.m3u8', element: video });
+// …later, on unmount:
+binding.dispose();
+```
+
+It resolves once the init segment is appended — the first playable moment — and keeps fetching behind
+you until every segment is in or you dispose it. `binding` reports `attachedBy`, `codecs`, `appended` and
+`streaming`. **There is deliberately no `useSegmentStream` hook**: this needs no React, and a hook would
+add a lifecycle without adding a capability. Call it from an effect.
+
+### The traps, each of which was measured rather than reasoned
+
+- 🔴 **The codecs string is read from the INIT SEGMENT, never assumed.** The track set is a fact about the
+  DEVICE, not the file: the same source yields a two-track init on iOS and a video-only one on Android, and
+  a mismatch kills the FIRST append and plays nothing — silently. `codecsFromInitSegment` is what the
+  binder uses; if it answers `null`, do not open a buffer.
+- **Attachment is feature-detected, not branched on the OS.** iOS takes `srcObject` (a
+  `ManagedMediaSource` is a valid handle) and Chromium refuses it outright and wants an object URL —
+  which one works is a property of the MediaSource, not of the platform. `binding.attachedBy` tells you
+  which happened.
+- ⚠ **`streaming: false` is an instruction, not a status.** iOS's `ManagedMediaSource` really does raise
+  `endstreaming` (measured: never at 6 s buffered, fired at 60 s), and fetching through it is the exact
+  misuse that source type exists to detect — the penalty there is the source being torn down. Absent
+  signals mean "always streaming", which is every other platform.
+- **fMP4 segments only, never MPEG-TS.** `isTypeSupported('video/mp2t')` answers `true` on both mobile
+  shells and cannot be trusted; a MediaSource append failure is silent.
+- ⚠ **`CacheRoot` is swept** — oldest-used-first under `CacheCapBytes` (2 GB default). A file you intend to
+  KEEP must live outside it, and `MergeAsync` refuses a destination inside it for that reason.
+- **The init segment is produced, not pre-existing.** A page asking before production starts gets a
+  "not ready" 503 — never a 404, and never an empty file, which would poison the buffer.
+
+## Background playback — handing off when the app leaves the screen
+
+A page-backed player stops when the page does: both mobile platforms suspend a backgrounded webview within
+seconds, and a page cannot START audio while backgrounded at all (pressing HOME is not a user gesture).
+`BackgroundPlaybackTransfer` moves the playhead to the shell's own native player on the way out, and back
+on the way in.
+
+```csharp
+var transfer = new BackgroundPlaybackTransfer(
+    services.GetRequiredService<IMediaPlayer>(),   // the page-backed player UseMediaPlayer registered
+    nativePlayer,                                  // AndroidMediaPlayer / IosMediaPlayer, resolved BY TYPE
+    new BackgroundPlaybackOptions
+    {
+        // Asked at BACKGROUND time, on your thread: it must not block.
+        ResolveNativeSource = () => _lastServedFile,
+    });
+
+window.Stopped += async (_, _) => { try { await transfer.ToBackgroundAsync(); } catch { /* see below */ } };
+window.Resumed += async (_, _) => { try { await transfer.ToForegroundAsync(); } catch { /* see below */ } };
+```
+
+- 🔴 **`Stopped`/`Resumed`, NOT `Deactivated`/`Activated`.** The latter also fire for a dialog or the
+  notification shade, which would move audio out of a page that is still on screen.
+- **The native player is resolved by its concrete type on purpose.** The shells do not register it as
+  `IMediaPlayer`, because the default one must stay the page-backed player or `useMediaPlayer(ref)`
+  silently drives the wrong thing.
+- ⚠ **Wrap each handler in try/catch and unsubscribe on unload.** An `async` lambda on an event is
+  `async void`: an escape is an unhandled UI-thread exception, not a failed transfer. And MAUI's `Window`
+  is process-scoped, so a handler left attached puts TWO transfers on the next transition.
+- **A playback that FINISHED while you were away is parked, not restarted** — handing its position back
+  would seek a finished element to its own duration and rewind it. That is the `Finished` outcome, and it
+  pauses rather than plays.
+- ⚠ **How long it survives is UNMEASURED past ~45 s** (Android 45 s, iOS 43 s, against a 60 s clip, on an
+  emulator and a simulator — both gentler than a handset). Minutes are nobody's claim yet. A foreground
+  service is the APP's to post; that split is what `IPlaybackSession` documents.
+
+---
