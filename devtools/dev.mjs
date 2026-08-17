@@ -710,13 +710,14 @@ function runPosixLauncherBuild() {
 
 function ensureTool(toolName) {
   const exe = path.join(repo, 'devtools', toolName, 'bin', 'Release', TOOL_TFM[toolName], `${toolName}.exe`);
-  if (!fs.existsSync(exe)) {
-    console.log(`building ${toolName} (first run)…`);
-    const b = spawnSync('dotnet', ['build', path.join(repo, 'devtools', toolName, `${toolName}.csproj`),
-      '-c', 'Release', '-v', 'quiet'], { stdio: 'inherit', cwd: repo });
-    if (b.status !== 0) return null;
-  }
-  return exe;
+  // ALWAYS an (incremental) build, never gated on the exe existing: a tool whose source drifted kept
+  // running as its stale binary — the launcher conformance passed locally over an update-probe that
+  // no longer COMPILED, and the release workflow's fresh build was the first thing to say so.
+  // Incremental is seconds when nothing changed, which is cheap next to a verdict from a corpse.
+  const b = spawnSync('dotnet', ['build', path.join(repo, 'devtools', toolName, `${toolName}.csproj`),
+    '-c', 'Release', '-v', 'quiet'], { stdio: 'inherit', cwd: repo });
+  if (b.status !== 0) return null;
+  return fs.existsSync(exe) ? exe : null;
 }
 
 switch (cmd) {
@@ -726,6 +727,11 @@ switch (cmd) {
     const buildEnv = androidBuildEnv();
     const ok = buildEnv !== null
       && step('dotnet build', () => run('dotnet', ['build', config.solution, '-v', 'minimal'], { env: buildEnv }))
+      // The update-probe is OUTSIDE the solution but INSIDE the release path — the launcher job
+      // compiles it fresh on every release, so the gate must too. It drifted against the ILogger
+      // standardisation and the first compiler to see it was CI's, mid-release.
+      && step('dotnet build (update-probe)', () => run('dotnet',
+        ['build', path.join('devtools', 'update-probe', 'update-probe.csproj'), '-c', 'Release', '-v', 'minimal']))
       && ensureNpmDeps(npmDirAbs)
       && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }))
       && buildCliPackage();

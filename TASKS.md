@@ -39,10 +39,10 @@ only for a package that already exists. The workflow is already built for both p
 `id-token: write`, npm CLI upgrade for OIDC, token fallback, first-publish guard) — what remains is
 npmjs.com configuration, which is owner-side by nature:
 
-✅ The seed is LIVE: `@shenora/cli@0.0.1-seed.0`, published 2026-08-17 15:27 UTC, feed-verified.
-⚠ `latest` points at the stub too — npm force-creates `latest` on a first publish whatever `--tag`
-says, and refuses to delete it; the real release repoints it. The stub is no-code with a "do not
-install" description, so the exposure is cosmetic.
+The seed exists (`@shenora/cli@0.0.1-seed.0`, published 2026-08-17 15:27 UTC, feed-verified), so
+both settings pages are reachable. ⚠ `latest` points at the stub — npm force-creates `latest` on a
+first publish whatever `--tag` says and refuses to delete it; the real release repoints it, and the
+stub is no-code with a "do not install" description, so the exposure is cosmetic.
 
 - [ ] **Configure the trusted publisher on BOTH packages** (owner-side UI, cannot be verified from
   outside): npmjs.com → package → Settings → Trusted publisher → GitHub Actions → this repo +

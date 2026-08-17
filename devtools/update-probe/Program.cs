@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 // ⚠ `Shenora.Engine.Update`, not `Shenora.IO` — D65 relayered the namespaces and this probe has not
 // compiled since, because `verify` does not build it and `dev.mjs update-probe` is run by hand. Found
 // 2026-08-09 by the doc gate, of all things: the RETIRED-NAME scan flagged the prose beside this line.
+using Shenora;
 using Shenora.Engine.Update;
 
 namespace Shenora.UpdateProbe;
@@ -97,7 +98,7 @@ internal static class Program
             }
 
             // ── 2. Stage it, exactly as an app's downloader would ────────────────────────────────
-            var stage = new UpdateStage(new UpdateStageOptions { Root = stageRoot, Log = Console.Error.WriteLine });
+            var stage = new UpdateStage(new UpdateStageOptions { Root = stageRoot, Log = AppCallback.Logger(Console.Error.WriteLine) });
             CopyTree(releaseDir, stage.StagedDirectory);
             // The FULL release manifest goes into the stage, exactly as FetchAsync writes it: ApplyAsync
             // computes REMOVALS from this file, and CommitAsync refuses to publish a marker without it.
@@ -216,7 +217,7 @@ internal static class Program
         var stage = new UpdateStage(new UpdateStageOptions
         {
             Root = Path.Combine(root, ".update"),
-            Log = Console.Error.WriteLine,
+            Log = AppCallback.Logger(Console.Error.WriteLine),
         });
         stage.Begin();
         CopyTree(releaseDir, stage.StagedDirectory);
