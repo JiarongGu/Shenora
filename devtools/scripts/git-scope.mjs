@@ -55,6 +55,8 @@
 // is the thing this module exists to end. (Scanning literally everything was the other candidate;
 // it would drag `node_modules/` and every `obj/` into a prose scan, which is how a tool becomes one
 // nobody runs.)
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -164,10 +166,33 @@ export function citedOutOfScope(paths) {
   // Both spellings of each candidate — see the slash note above.
   const probes = [...new Set(safe.flatMap((p) => (p.endsWith('/') ? [p] : [p, `${p}/`])))];
 
+  // 🔴 THE REPO'S OWN RULES ONLY — global and system git config are pointed at an empty file for this
+  // one query. The question is "would a CLONE have this path", and a clone's ignore set is the tree's
+  // .gitignore files, never one machine's personal config. The header's "hostile global excludesFile"
+  // paragraph called that configuration rare and chose to name it rather than defend against it — and
+  // then the RELEASE RUNNER turned out to be one (2026-08-18): its git called word-pairs scraped from
+  // comments (`FormClosing/FormClosed`, `size/min`) ignored, doctor --fix exploded with citation
+  // findings no other machine could reproduce, and the release stopped on prose that was fine. The
+  // WALK keeps the standard sources on purpose: for tracked files `--others` makes it airtight anyway,
+  // and there a personal rule can only hide personal junk, which is the safe direction.
   const res = spawnSync('git', ['check-ignore', '--stdin', '-z'],
-    { cwd: repo, encoding: 'utf8', input: probes.join('\0'), maxBuffer: 64 * 1024 * 1024 });
+    {
+      cwd: repo, encoding: 'utf8', input: probes.join('\0'), maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, GIT_CONFIG_GLOBAL: emptyConfig(), GIT_CONFIG_SYSTEM: emptyConfig() },
+    });
   if (res.error || (res.status !== 0 && res.status !== 1)) return null;
   return new Set(res.stdout.split('\0').filter(Boolean).map((p) => p.replace(/\/+$/, '')));
+}
+
+// An empty file both GIT_CONFIG_* variables can point at — created once per process. An env value of
+// '' or a missing file would make git error (128) rather than read nothing, which the caller would
+// then report as "git could not answer" and fall back for the wrong reason.
+let emptyConfigPath = null;
+function emptyConfig() {
+  if (emptyConfigPath) return emptyConfigPath;
+  emptyConfigPath = path.join(os.tmpdir(), 'shenora-git-scope-empty-config');
+  try { fs.writeFileSync(emptyConfigPath, '', { flag: 'wx' }); } catch { /* already there — fine */ }
+  return emptyConfigPath;
 }
 
 // The root everything above is relative to, exported because a caller resolving the same paths must
