@@ -227,7 +227,7 @@ mp3/flac/vorbis and not ac3/eac3/dts/alac, while an iPhone decodes ac3/eac3. Ask
 assume, in either direction — the kit's job is to bridge what the platform CAN do, so calling a supported
 codec unsupported is as wrong as the reverse.
 
-⚠ Setting both `Convert` and `AudioConversion` **throws at registration**: the second configures the
+⚠ Setting both `Convert` and `Conversion` **throws at registration**: the second configures the
 default engine, so a custom `Convert` would make it dead configuration. Compose them instead —
 `myMuxer.ToConverter(conversion)` takes both.
 

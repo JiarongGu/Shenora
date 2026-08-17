@@ -33,7 +33,7 @@ The release narrative is `CHANGELOG.md`; how the shape was arrived at is `git lo
 Shenora.slnx
 ├── src/
 │   ├── Shenora        net10.0          — deps: M.E.DependencyInjection (impl, D17), M.E.Logging.Abstractions
-│   │                                        ── Media/ (namespace Shenora.Modules.Media; a PACKAGE until D53,
+│   │                                        Modules/Media/ (namespace Shenora.Modules.Media; a PACKAGE until D53,
 │   │                                          2026-08-07, now shell work inside Core)
 │   │                                          The TRANSLATION LAYER for the web (D52): the minimum
 │   │                                          transformation that makes a file the user already has
@@ -188,24 +188,6 @@ Shenora.slnx
 │   │                                    ⚠ A RESTRUCTURE UPDATES THE MAP FOR THE FOLDERS ITS OWN COMMITS
 │   │                                    TOUCHED, which is not the same set as the folders it MOVED —
 │   │                                    D65 moved every one and three went missing from this tree.
-│   ├── Shenora.Launcher/   (C++17, CMake — NOT a NuGet package yet)
-│   │                                          The native APPLY step, which is the one part of staged
-│   │                                          updates that cannot be done in .NET: it runs when the
-│   │                                          runtime may be absent and must replace files the app
-│   │                                          holds open. A LIBRARY (manifest parse, overlay, tracked
-│   │                                          removals, the platform seam) plus a TEMPLATE `main.cpp`
-│   │                                          an app copies and edits four constants in — the split
-│   │                                          D50 took from §0's measurement of two donor launchers.
-│   │                                          One tree for Windows + Linux: std::filesystem everywhere,
-│   │                                          Win32/POSIX behind include/shenora/platform.hpp, and BOTH
-│   │                                          compiled on every build so neither can rot.
-│   │                                          It re-hashes NOTHING — `ready.json` exists only when the
-│   │                                          C# side verified the whole stage, and re-verifying would
-│   │                                          duplicate a rule that can drift.
-│   │                                          Gated by the RELEASE workflow's launcher matrix (win-x64 +
-│   │                                          linux-x64) running the conformance harness against the
-│   │                                          built binary, NOT by `dev.mjs verify`, which has no C++
-│   │                                          toolchain and deliberately does not grow one.
 │   ├── Shenora.Launcher/    (C++17 + CMake, plus the packaging csproj)
 │   │                                          B4b: puts the per-RID launcher binaries the `launcher`
 │   │                                          release matrix builds (win-x64 + linux-x64) into one nupkg
@@ -268,7 +250,11 @@ Shenora.slnx
 │   │                                          inheriting a stub that refuses at runtime.
 │   │                                          BOTH are in the solution and gated on
 │   │                                          every run — LIBRARY, not app, so no Mac is involved.
-│   └── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
+│   ├── Shenora.React/      @shenora/react    — peer: react >=18; build tsc, test vitest
+│   └── Shenora.Cli/        @shenora/cli      — build-time only (D67), a devDependency that ships inside
+│                                               nothing: the `shenora` binary takes a built app onto a
+│                                               simulator, an iPhone or an Android device. Node, no build
+│                                               step, tested with vitest. The Android half runs on Windows.
 ├── tests/
 │   └── Shenora.Tests       net10.0-windows  — xunit; references the four leaf src projects (Core transitively)
 └── samples/                                 — never packable; the e2e subject (dev.mjs sample/vite/shot/wgc/click)
@@ -300,12 +286,19 @@ Shenora.slnx
     │                                            whose file landings go through one IFileUpdateQueue
     │                                            partition (proven live 2026-08-02 — both staged at
     │                                            the same millisecond, both landed through the queue)
-    └── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
-                                                 into the desktop sample's wwwroot; page-owned title
-                                                 bar (WindowCommands + useWindowMaximized), notifyReady,
-                                                 useShenoraQuery echo, useShenoraEvent tick, useDropZone
-                                                 target, secondary-window controls, dev interceptor
-                                                 (the e2e subject)
+    ├── Shenora.Sample.Web      Vite + React    — consumes @shenora/react (file:), port 3900, builds
+    │                                            into the desktop sample's wwwroot; page-owned title
+    │                                            bar (WindowCommands + useWindowMaximized), notifyReady,
+    │                                            useShenoraQuery echo, useShenoraEvent tick, useDropZone
+    │                                            target, secondary-window controls, dev interceptor
+    │                                            (the e2e subject)
+    └── Shenora.Sample.Maui     net10.0-android — the MOBILE e2e subject, and the only one a device claim
+                                +net10.0-ios     may cite: it hosts the same portable logic over the MAUI
+                                                 shells and carries the on-device probes (media, codecs,
+                                                 safe area, save picker, background playback, Live
+                                                 Activity). `dev.mjs android`/`mac` drive it.
+                                                 ⚠ Its net10.0-ios TFM is macOS-only, so the `#if IOS`
+                                                 half cannot be compiled or verified on Windows.
 ```
 
 - Version: single `<VersionPrefix>` in `src/Directory.Build.props`; npm + README synced by

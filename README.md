@@ -18,7 +18,10 @@ depend on each other.
 <!-- version-indicator: the **vX.Y.Z below is AUTO-SYNCED from src/Directory.Build.props
      <VersionPrefix> by `node devtools/dev.mjs pack` / `doctor --fix`. Don't hand-edit the
      version here — bump VersionPrefix; the headline follows. -->
-**v0.11.0 — pre-release, stabilising toward 1.0.** The application builder, WinForms host, WebView2
+**v0.11.0 — pre-release, stabilising toward 1.0.** The page-facing clipboard (`useClipboard()` over an
+opt-in `SHENORA.CLIPBOARD` module — reading with no user gesture, and an app's own format carried
+verbatim, neither of which the browser's Clipboard API can do), the segment/streaming media tier, and
+the browser sessions' hook + event catalogue are the newest arrivals. The application builder, WinForms host, WebView2
 hosting, the full typed IPC stack (envelopes, middleware dispatcher, scoped-container router, event
 bus, postMessage transport, `@shenora/react` client), the native desktop surface (frameless chrome +
 native caption buttons, STA dialogs, shell/clipboard, drag-drop zones, secondary windows, tray) and
@@ -54,9 +57,10 @@ two mobile ones are built from a single shared source tree so they cannot drift.
 
 **`Shenora.Windows` offers two TFMs and you pick, which is the point** (D46). Everything in the shell is in
 both; the versioned one additionally implements `IPlaybackSession` (Windows' media flyout and lock-screen
-transport), because `SystemMediaTransportControls` is WinRT and the WinRT projections exist only when the
-target framework names a Windows SDK version. Stay on plain `net10.0-windows` and that one capability refuses
-by name with the one-line fix in the message; retarget and it works, on a Windows 10 1809 floor. **The kit
+transport) and `WindowsMediaPlayer` (the Media Foundation `IMediaPlayer`), because both rest on WinRT and
+the WinRT projections exist only when the target framework names a Windows SDK version. Stay on plain
+`net10.0-windows` and those two capabilities refuse
+by name with the one-line fix in the message; retarget and they work, on a Windows 10 1809 floor. **The kit
 does not narrow your supported platforms for a feature you did not ask for.**
 
 Dependencies — the graph is a **fan, one level deep**: each shell references `Shenora` and nothing else

@@ -58,6 +58,26 @@ Drive the pair from the platform instead: `Start()` from `Window.Created`, `Stop
 `Window.Destroying`. Both are idempotent, so wiring them somewhere that fires more than once
 (an activity's `OnCreate`/`OnResume`) is safe.
 
+🔴 **But GUARD the stop, or a configuration change looks like a shutdown.** Android destroys and
+recreates the window for a change the manifest does not declare — a locale or font-scale change,
+whatever `ConfigurationChanges` the app's `MainActivity` did not list. An unconditional `Stop()`
+then cancels every in-flight request: measured on a device, a save whose picker was open came back
+`OPERATION_CANCELLED` with the user's chosen file created and left empty.
+
+```csharp
+window.Destroying += (_, _) =>
+{
+    // The kit's answer to "is this teardown real?" — false on iOS, where a scene teardown is one.
+    if (Shenora.Mobile.MobileWindowLifecycle.IsRecreating) return;
+    shenora.Stop();
+};
+```
+
+⚠ **In-flight work SURVIVES a recreation, and its response does not.** The mobile bridge sets
+`IpcHostBridgeOptions.CancelInFlightOnDispose = false`, so a request the page started runs to
+completion while the page that asked dies with the window. Write mobile handlers so the side effect
+is what matters — the user's file gets written; nobody is left to hear the answer.
+
 **The client needs no MAUI-specific code.** `@shenora/react`'s `ShenoraBridge` detects the host, so
 `invoke`/`post` work unchanged from the desktop shell. ⚠ **The page MUST load MAUI's bridge script**
 (`<script src="_framework/hybridwebview.js"></script>` on .NET 10). Without it `window.HybridWebView`
@@ -69,15 +89,19 @@ does not exist, and the failure is silent in the worst way: the page renders, th
 | | |
 |---|---|
 | **Transfers unchanged** | The whole IPC substrate — envelopes, `MessageDispatcher`, `ModuleBase`, `IModuleContext`, request tracking (`IIpcRequestTracker`), `IEventBus`, batched notifications. Every `Shenora` contract. The mission scheduler and the file-update queue. |
-| **Different implementation, same contract** | `IClipboardService`, `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. |
+| **Different implementation, same contract** | `IUrlLauncher`, `IFileDialogs`, `IUiDispatcher` — MAUI Essentials behind the same interfaces. ⚠ `IClipboardService` is NOT one of them: it goes to each platform's own pasteboard (`UIPasteboard` / `ClipData`), because Essentials' clipboard is text-only and that is an Essentials limit rather than a platform one. |
 | **Transfers, INCLUDING seekable media** | **Resource serving.** `HybridWebView` has a request-interception seam in .NET 10 (`WebResourceRequested`, `e.Uri`, `e.Headers`, `e.Handled`), and the simple case needs none of it — put the built frontend in `Resources/Raw/wwwroot` and the platform serves it. What the seam buys is DYNAMIC content: a generated image, an exported file, **and seekable media**. ⚠ **Seeking needs no `e.PlatformArgs`** (measured on both devices — **D44**): `SetResponse` has a SECOND overload taking a header DICTIONARY, on both mobile TFMs, and every header reaches the native response. **But the two shells need OPPOSITE BODIES** for the same request — Android applies the `Range` start itself so you must NOT slice; iOS passes the body through so you MUST. **You do not write that yourself any more** (D45): `MobileWebViewInterceptor` implements the same `IWebViewInterceptor` the desktop does, so `interceptor.UseFiles(…)` and the page's `mediaUrl(…)` are literally the same code on all three shells and the delivery rule is read off the platform. Read D44 only if you are writing a middleware that answers ranges by hand; getting it wrong plays every faststart file perfectly and fails every other one. |
 | **Absent, not different** | Native drop zones, tray, secondary windows, window state, frameless chrome. These are desktop CONCEPTS. You will not find them registered, and the mobile packages do not reference the packages that hold them — so portable logic cannot accidentally depend on one. |
 | **The OS media transport** | `IPlaybackSession` — the lock screen, the media flyout, headphone and car-stereo buttons. One contract, three implementations, verified against each OS's own registry. `Publish` / `Report` / `Clear` go app → OS and `CommandReceived` comes back. ⚠ Two things to know. `Report` is for JUMPS, not a timer: all three platforms extrapolate the displayed time from a position plus a rate, so pushing it every 250 ms spends battery telling the OS what it already knows — and a *delayed* report lands as a jump backwards, because the platform treats it as current. And a session makes you CONTROLLABLE, not VISIBLE: Android needs a MediaStyle notification, iOS an active `AVAudioSession`, and both mean picking icons, channels, categories and interruption behaviour — your decisions, not the kit's. |
 | **Live Activities / Dynamic Island (iOS)** | `ILiveActivities` — see the recipe below. Android registers an implementation that answers `Unavailable` with a reason rather than throwing, so portable logic asks and branches. |
 
-**Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing:
-clipboard IMAGES (Essentials is text-only) and the folder picker throw
-`ShellCapability.NotSupported` naming the platform and the alternative. `IUiInteraction`'s
+**Where a contract is only partly honourable, it refuses LOUDLY** rather than doing nothing: the
+folder picker, and a clipboard PICTURE **on Android only**, throw `ShellCapability.NotSupported`
+naming the platform and the alternative. ⚠ The clipboard's split is per-platform and deliberate —
+iOS carries any format, because `UIPasteboard` takes an arbitrary UTI; Android refuses everything
+but text and HTML, because a picture there travels as a `content://` URI needing a `ContentProvider`
+the ADOPTING APP declares in its own manifest, which the kit cannot supply on its behalf. Ask
+`UnsupportedFormats` rather than assuming either answer. `IUiInteraction`'s
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
 
