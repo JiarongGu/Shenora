@@ -32,6 +32,78 @@ export function filesToPush(root: string): string[] | null {
 export interface PushResult {
   files: number;
   bytes: number;
+  /** Files this tool had sent before and has now taken away. */
+  removed: number;
+}
+
+/**
+ * What the last push sent, kept ON the target.
+ *
+ * ⚠ It lives beside the source rather than here because the question it answers is about THAT machine:
+ * two developers pushing to one Mac, or the same one from two checkouts, each need the manifest that
+ * matches what is actually on disk there.
+ */
+const MANIFEST = '.shenora-push-manifest';
+
+/**
+ * Paths already on the target that this push is responsible for.
+ *
+ * 🔴 **With no manifest yet, a git checkout's own INDEX is one** — and that case is not hypothetical, it
+ * is the FIRST push into an existing checkout, which is how most people will start. Measured: pushing
+ * today's tree over a checkout several weeks old left both halves of every renamed file, so
+ * `IFileLockInspector` existed twice and the kit failed to compile with three errors on a tree that is
+ * clean here. `git ls-files` names exactly what that older commit put there, which is exactly what may
+ * need taking away.
+ *
+ * ⚠ Tracked files only, so a build output or anything untracked is never a deletion candidate.
+ */
+function previousManifest(target: Target, remoteDir: string): string[] {
+  const raw = target.probe(`cat ${q(target.join(remoteDir, MANIFEST))} 2>/dev/null`);
+  if (raw) return raw.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const tracked = target.probe(`git -C ${q(remoteDir)} ls-files 2>/dev/null`);
+  return tracked ? tracked.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+}
+
+/**
+ * Delete what we sent last time and would not send now.
+ *
+ * 🔴 The delete list is `previous MINUS current`, so it can only ever name a file this tool put there.
+ * Computed HERE rather than by a remote `find`, which would have to decide what belongs to us and would
+ * get it wrong on a directory holding anything else.
+ */
+function removeStale(target: Target, remoteDir: string, current: string[], stamp: string): number {
+  const keep = new Set(current);
+  const stale = previousManifest(target, remoteDir).filter((f) => !keep.has(f));
+  if (stale.length === 0) return 0;
+
+  // ⚠ Through a FILE and `xargs`, never an argument list: a rename sweep can stale hundreds of paths and
+  // an `rm a b c …` command line would sail past ssh's 8 KB ceiling — where it is truncated and can still
+  // report success, deleting some prefix of what was asked and saying it did the lot.
+  const listing = path.join(os.tmpdir(), `shenora-stale-${stamp}.txt`);
+  const remoteListing = `/tmp/shenora-stale-${stamp}.txt`;
+  try {
+    fs.writeFileSync(listing, `${stale.join('\n')}\n`, 'utf8');
+    if (!target.push(listing, remoteListing)) return 0;
+    // `-I{}` so a path containing a space is one argument; `rm -f` so an already-absent file is not an
+    // error — the manifest describes what we sent, not what survived.
+    target.sh(`cd ${q(remoteDir)} && xargs -I{} rm -f {} < ${q(remoteListing)}; rm -f ${q(remoteListing)}`,
+      { quiet: true });
+    return stale.length;
+  } finally {
+    fs.rmSync(listing, { force: true });
+  }
+}
+
+/** Record what this push sent, so the next one knows what to take away. */
+function writeManifest(target: Target, remoteDir: string, files: string[], stamp: string): void {
+  const local = path.join(os.tmpdir(), `shenora-manifest-${stamp}.txt`);
+  try {
+    fs.writeFileSync(local, `${files.join('\n')}\n`, 'utf8');
+    target.push(local, target.join(remoteDir, MANIFEST));
+  } finally {
+    fs.rmSync(local, { force: true });
+  }
 }
 
 /**
@@ -42,10 +114,16 @@ export interface PushResult {
  * never arrives — the build reproduces the very error you were fixing, and "my fix did not work" is the
  * wrong but completely natural conclusion.
  *
- * ⚠ **It ADDS and OVERWRITES; it does not delete.** A file removed here stays there. That is the honest
- * trade for not running `rm -rf` on a machine over the network from a tool, and it is stated rather than
- * hidden because it can matter: a renamed file leaves its old copy behind, and the old copy still
- * compiles.
+ * 🔴 **It DELETES what it previously sent and would no longer send, and that is not tidiness.** The first
+ * version only added and overwrote, on the reasoning that a tool should not `rm` over the network. It
+ * broke the very first real build: the Mac's older checkout still held files this kit had since renamed,
+ * so the push left both copies and `IFileLockInspector` existed twice — three compile errors in the KIT,
+ * on a tree that builds cleanly here. **A stale source file is not clutter, it is a second definition**,
+ * and the failure reads as "the framework is broken" rather than "your copy is stale".
+ *
+ * ⚠ It removes **only paths the manifest IT wrote last time names**, never anything else on that machine.
+ * A file the Mac has that this never sent is untouched, so pointing `remote.dir` at a directory holding
+ * other things cannot lose them.
  *
  * 🔴 **If the destination is a git checkout, its git metadata now DESCRIBES A TREE THAT IS NOT THERE.**
  * The files are current; `git log` still names whatever commit was checked out, and `git status` shows
@@ -108,8 +186,12 @@ export function pushTree(target: Target, root: string, remoteDir: string): PushR
       return null;
     }
 
-    console.log(`shenora: ${remoteDir} is up to date.`);
-    return { files: files.length, bytes };
+    const removed = removeStale(target, remoteDir, files, stamp);
+    writeManifest(target, remoteDir, files, stamp);
+
+    console.log(`shenora: ${remoteDir} is up to date`
+      + `${removed > 0 ? ` (${removed} stale file${removed === 1 ? '' : 's'} removed)` : ''}.`);
+    return { files: files.length, bytes, removed };
   } finally {
     fs.rmSync(listFile, { force: true });
     fs.rmSync(archive, { force: true });

@@ -141,6 +141,20 @@ them could have been found by reading — which is the argument for the trip rat
   could not open the identity file, then reports the denial that follows from having none to offer.
   Matched on the denial, the advice was "append your public key to the Mac's `authorized_keys`" — sending
   you to configure the wrong computer for a file missing on this one. Now its own verdict.
+- **A failed DEVICE build printed nothing at all.** `target.gui` cannot stream — its script runs detached
+  in the Mac's own login session, so the log exists only as a return value — and the device path never
+  printed it. The result was the single line *"the build failed — see the output above"* with nothing
+  above it: a tool reporting a failure it declines to explain. The publish path already printed its log
+  and this one did not, which is the shape of every second-call-site bug.
+- **"Could not find any available provisioning profiles" now says what it means** — that no profile
+  matches THIS bundle id, not that the Mac has none — and names the Apple ID step that creates one.
+- **`ios push` deletes what it previously sent and would no longer send.** The first version only added
+  and overwrote, on the reasoning that a tool should not `rm` over the network. It broke the very first
+  real build: the Mac's older checkout still held files this kit had since renamed, so both copies
+  survived, `IFileLockInspector` existed twice, and the KIT failed to compile with three errors on a tree
+  that is clean here. A stale source file is not clutter, it is a second definition. Deletion is bounded
+  by a manifest this tool writes, so it can only ever remove paths it put there; on a first push into an
+  existing checkout, git's own index serves as that manifest — which is exactly the case that broke.
 - **`deploy --simulator` announced "running in the simulator" for an app that crashed on startup.**
   `simctl launch` prints a pid and exits 0 whether or not the process survives, so "launched" was being
   read as "running" — and the app died every time. Caught by screenshotting the result and finding the

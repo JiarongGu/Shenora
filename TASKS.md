@@ -112,15 +112,15 @@ versions and finds the connected iPhone) → `devices`/`simulators` → `deploy 
 Mac, boots, installs, launches) → `shot` (a 1206×2622 PNG pulled back here). Five defects came out of
 that hour and are fixed; the CHANGELOG has them.
 
-- [ ] **The GUI hand-off has still never run**, because nothing above it signs. It is the piece with the
-  most assumptions and the worst failure mode. Needs `ios build --host` or `deploy --device --host`.
-  - ⚠ **It fails by WAITING.** The completion marker is polled from a DETACHED Terminal session, so a
-    wrong assumption does not error — it sits out the full 20 minutes and then reports a failure it
-    cannot explain. If it hangs, read `/tmp/shenora-gui-*.log` ON the Mac before theorising.
-  - ⚠ **The Mac must be logged in at its screen.** A locked or logged-out Mac has no GUI session to hand
-    the signing to, so `osascript` fails rather than the build.
-  - ⚠ **This Mac cannot currently sign at all** — `doctor` reports no Xcode Apple ID, so its one
-    provisioning profile cannot be refreshed. That is a prerequisite, not a kit bug.
+- [ ] **A signed build has never SUCCEEDED**, and the blocker is an account rather than the kit. The
+  hand-off mechanism itself is proven: the script stages, Terminal runs it in the Aqua session, the
+  `.done` marker carries the exit code, the poll reads it and the log comes back. What fails is the build
+  inside it — *"Could not find any available provisioning profiles"*, because no profile on that Mac
+  matches `com.shenora.sample.maui` and, with no Apple ID signed into Xcode, nothing can create one.
+  - Prerequisite: Xcode → Settings → Accounts → add an Apple ID, then open any project once so it
+    registers the device. `doctor`'s `device signing` row reports this before a build.
+  - ⚠ Retest the moment that is done — it is the last untested path, and the only one where the kit
+    could still be wrong about something that costs twenty minutes to discover.
 
 
 - [ ] **`ios push` leaves a git checkout's METADATA describing a tree that is no longer there.** The files

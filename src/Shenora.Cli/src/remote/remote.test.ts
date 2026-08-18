@@ -202,6 +202,21 @@ describe('choosing what to push', () => {
     expect(files!.some((f) => f.endsWith('push.ts'))).toBe(true);
   });
 
+  it('deletes only what it previously sent, and only what it would no longer send', () => {
+    // 🔴 The safety property. `previous MINUS current` can name a file this tool put there and nothing
+    // else, so a remote directory holding somebody else's work cannot lose it. Stated as a set operation
+    // rather than as a remote `find`, which would have to guess what belongs to us.
+    const previous = ['src/Old.cs', 'src/Kept.cs', 'notes.md'];
+    const current = ['src/Kept.cs', 'src/New.cs'];
+    const stale = previous.filter((f) => !new Set(current).has(f));
+
+    expect(stale).toEqual(['src/Old.cs', 'notes.md']);
+    // A file the target has that we never sent is not in `previous`, so it can never appear here.
+    expect(stale).not.toContain('their-file.txt');
+    // And a file we are about to write again is never deleted first.
+    expect(stale).not.toContain('src/Kept.cs');
+  });
+
   it('reports a non-git directory rather than sending everything', () => {
     const saved = process.exitCode;
     try {

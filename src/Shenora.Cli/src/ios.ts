@@ -621,7 +621,28 @@ function build(target: Target, cfg: DeployConfig, rid: string, signing: string, 
   const r = signing && target.isRemote
     ? target.gui(command, { tag: 'device-build' })
     : target.sh(command, { cwd: dir });
+
+  // 🔴 A GUI build's output must be PRINTED here, because `gui` cannot stream: its script runs detached
+  // in another session, so the log only exists as a return value. Missing this, a failed device build
+  // printed the single line "the build failed — see the output above" with nothing above it — a tool
+  // reporting a failure it declines to explain, which is worse than crashing. Hit on the first real
+  // signed build; the publish path already did this and this one did not.
+  if (target.isRemote && signing && r.out.trim()) console.log(r.out.trimEnd());
+
   if (r.status === 0) return true;
+
+  // Signing's own most common failure, and the message is opaque about the cause: it means no profile on
+  // this Mac matches THIS bundle id, not that none exist. Without an Apple ID signed into Xcode there is
+  // nothing that can create one, which is why `doctor` reports that as a MISSING row.
+  if (/Could not find any available provisioning profiles/i.test(r.out)) {
+    console.error('\nshenora: no provisioning profile on that Mac covers this app.');
+    console.error(`  It means no profile matches ${cfg.bundleId} — not that the Mac has none at all.`);
+    console.error('  A profile is created by Xcode once an Apple ID is signed in:');
+    console.error('    Xcode → Settings → Accounts → + → your Apple ID,');
+    console.error('    then open any project once so it can register this device.');
+    console.error('  `shenora ios doctor` reports the account and profile count before a build.');
+    return false;
+  }
   // The Xcode gate is common enough, and its message specific enough, to name the escape hatch here
   // rather than leave an adopter to find it. Detected from the SDK's own wording.
   // Both shapes of the same mismatch: the up-front gate says "requires Xcode", and past it the linker
