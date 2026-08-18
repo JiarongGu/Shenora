@@ -17,7 +17,7 @@ import path from 'node:path';
 import { withPipefail, argValue, describeSpawnFailure, run, splitArgs, shellPassthrough } from './exec.js';
 import {
   simulatorLogPredicate, describeConnection, findArtifact, describeLogOutcome, parseDeviceList,
-  isAlreadyBooted, describeDeviceSigning,
+  isAlreadyBooted, describeDeviceSigning, pickBindingBand,
 } from './ios.js';
 import { parseDevices, findPackage, adbCandidates, resolveJdk } from './android.js';
 import {
@@ -614,6 +614,27 @@ describe('findPackage — the Android artifact', () => {
     expect(findPackage(dir, 'apk', Date.now() - 5_000)).toBeNull();
     // …and the same file IS accepted when the build really did produce it.
     expect(findPackage(dir, 'apk', old - 5_000)).toBe(artifact);
+  });
+});
+
+describe('pickBindingBand — an Xcode older than the newest bindings can still build', () => {
+  it('🔴 picks the newest band AT OR BELOW the SDK, which is the measured unblock', () => {
+    // The real machine: Xcode 26.3, packs requiring 26.0 / 26.6 / 27.0. No band ships for 26.3 at all,
+    // so `dotnet workload update` only changes WHICH Xcode is demanded — pinning 26.0 is what builds.
+    expect(pickBindingBand(['26.0', '26.6', '27.0'], '26.3')).toBe('26.0');
+  });
+
+  it('prefers the SDK\'s own band when it is installed, rather than dropping further back', () => {
+    expect(pickBindingBand(['26.0', '26.5', '27.0'], '26.5')).toBe('26.5');
+  });
+
+  it('answers null when every band is newer — that Mac cannot build at all, and should be told so', () => {
+    expect(pickBindingBand(['26.6', '27.0'], '26.3')).toBeNull();
+  });
+
+  it('orders versions NUMERICALLY — 26.10 is above 26.5, which a string compare gets backwards', () => {
+    expect(pickBindingBand(['26.5', '26.10'], '27.0')).toBe('26.10');
+    expect(pickBindingBand(['26.5', '26.10'], '26.9')).toBe('26.5');
   });
 });
 

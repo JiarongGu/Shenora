@@ -241,6 +241,28 @@ export function cmdDoctor(cfg: DeployConfig | null): void {
   });
   line('device signing', signing.text, signing.good);
 
+  // 🔴 PREDICTED, not discovered at minute twenty. Every row above can say `ok` on a Mac that cannot
+  // build at all: the workload and Xcode are each fine, and only their PAIRING fails, at build time.
+  // Measured: no workload band ships a pack for Xcode 26.3 (only 26.0, 26.6, 27.0), so `dotnet workload
+  // update` merely changes WHICH Xcode is demanded — the answer is to pin a band the Xcode satisfies.
+  const sdk = xcodeSdkVersion();
+  const bands = cfg ? iosBindingBands(iosTfmOf(cfg)) : [];
+  if (sdk && bands.length > 0) {
+    const newest = [...bands].sort(compareVersions).at(-1)!;
+    const usable = pickBindingBand(bands, sdk);
+    if (compareVersions(newest, sdk) <= 0) {
+      line('ios bindings', `${newest} ≤ Xcode SDK ${sdk}`);
+    } else if (usable) {
+      line('ios bindings',
+        `newest is ${newest} but Xcode SDK is ${sdk} — build with -p:TargetPlatformVersion=${usable}`, false);
+      console.log(`          (a device build works pinned to ${usable}; the newest bindings name APIs `
+        + 'this Xcode has never shipped)');
+    } else {
+      line('ios bindings',
+        `every installed band (${bands.join(', ')}) is newer than Xcode SDK ${sdk} — no build can succeed`, false);
+    }
+  }
+
   // ⚠ A devicectl failure is reported as a failure here too, and NOT as `good: false`: doctor answers
   // "can this machine build and deploy", and a device is optional for that — the simulator path works
   // without one. Saying the reader broke is information; failing the whole check over it is not.
@@ -270,6 +292,40 @@ export function cmdDoctor(cfg: DeployConfig | null): void {
     console.error(`  running: ${cliVersion()}  ${cliEntry()}`);
     process.exitCode = 1;
   }
+}
+
+/** Compare dotted numeric versions — `26.10` is ABOVE `26.5`, which a string compare gets backwards. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/**
+ * The newest installed binding band the Xcode can actually satisfy, or null when none can.
+ *
+ * 🔴 THE ASYMMETRY IS THE WHOLE FIX, and it is measured rather than reasoned. The SDK picks the NEWEST
+ * installed bindings, so on a Mac whose Xcode is older than them every build dies on a wall of
+ * `MT4162 … not available in iOS 26.2 (introduced in 26.4)` — and `MtouchLink=SdkOnly` cannot help,
+ * because `ManagedRegistrar` walks every binding regardless. But:
+ *
+ *     bindings NEWER than the SDK → impossible (they name APIs that do not exist)
+ *     bindings OLDER than the SDK → fine (everything they name still exists)
+ *
+ * so pinning `TargetPlatformVersion` to the newest band at-or-below the SDK builds, links, signs and
+ * installs on hardware. Verified on Xcode 26.3 with bands 26.0/26.6/27.0 installed: 26.0 works.
+ *
+ * ⚠ A dev-loop unblock, and the choice must be VISIBLE — silently building against old bindings would
+ * hide a missing API until runtime. An App Store build should still match the pair.
+ */
+export function pickBindingBand(bands: string[], sdkVersion: string): string | null {
+  const usable = bands.filter((b) => compareVersions(b, sdkVersion) <= 0);
+  if (usable.length === 0) return null;
+  return usable.sort(compareVersions)[usable.length - 1]!;
 }
 
 /**
@@ -314,6 +370,31 @@ export function describeDeviceSigning(
       : `${accounts} account(s), no profile yet — one is minted on the first device build`,
     good: true,
   };
+}
+
+/**
+ * The iOS binding bands installed for this TFM's .NET version, from the SDK's own packs directory
+ * (`Microsoft.iOS.Sdk.net10.0_26.0` → `26.0`).
+ *
+ * ⚠ Filtered by the NET version on purpose: a machine carrying `net9.0_18.0` beside `net10.0_26.5`
+ * would otherwise offer a band that cannot build this app at all.
+ */
+function iosBindingBands(tfm: string): string[] {
+  const net = /^net(\d+\.\d+)/.exec(tfm)?.[1];
+  const root = probe('dirname "$(readlink -f "$(command -v dotnet)")"');
+  if (!net || !root) return [];
+  const packs = path.join(root, 'packs');
+  try {
+    if (!fs.existsSync(packs)) return [];
+    return fs.readdirSync(packs)
+      .map((name) => new RegExp(`^Microsoft\\.iOS\\.Sdk\\.net${net.replace('.', '\\.')}_(\\d+\\.\\d+)$`).exec(name)?.[1])
+      .filter((band): band is string => Boolean(band));
+  } catch { return []; }
+}
+
+/** The installed Xcode's iPhoneOS SDK version, or '' when it cannot be asked. */
+function xcodeSdkVersion(): string {
+  return probe('xcrun --sdk iphoneos --show-sdk-version');
 }
 
 /** Xcode's known Apple IDs, or null when the preference cannot be read. */
@@ -435,13 +516,29 @@ function build(cfg: DeployConfig, rid: string, signing: string, extra: string): 
   if (r.status === 0) return true;
   // The Xcode gate is common enough, and its message specific enough, to name the escape hatch here
   // rather than leave an adopter to find it. Detected from the SDK's own wording.
-  if (/requires Xcode/i.test(r.out)) {
-    console.error('\nshenora: that is the .NET-for-iOS workload refusing this machine\'s Xcode version.');
-    console.error('  Match the pair (install the Xcode it names, or a workload built for the one you have),');
-    console.error('  or override per-machine:');
-    console.error('    shenora ios deploy --simulator -- -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly');
-    console.error('  ⚠ Both flags are needed — the first clears the up-front gate, the second clears MT0180');
-    console.error('    from the linker step. It is a dev-loop unblock, NOT a shipping configuration.');
+  // Both shapes of the same mismatch: the up-front gate says "requires Xcode", and past it the linker
+  // says MT4162 (a binding naming an API this Xcode never shipped).
+  if (/requires Xcode/i.test(r.out) || /MT4162/.test(r.out)) {
+    console.error('\nshenora: that is the .NET-for-iOS workload and this machine\'s Xcode disagreeing.');
+    const sdk = xcodeSdkVersion();
+    const band = sdk ? pickBindingBand(iosBindingBands(iosTfmOf(cfg)), sdk) : null;
+    if (band) {
+      // 🔴 A DEVICE build IS possible — measured, not reasoned. The SDK picks the NEWEST bindings, and
+      // older ones are fine because every API they name still exists; pinning the band is the fix, and
+      // it is named here rather than left as "use the simulator".
+      console.error(`  This Mac's Xcode SDK is ${sdk}, and it CAN build against bindings ${band}:`);
+      console.error(`    shenora ios deploy -- -p:TargetPlatformVersion=${band} -p:ValidateXcodeVersion=false`);
+      console.error('  ⚠ A dev-loop unblock, and a VISIBLE one on purpose: you are building against older');
+      console.error('    bindings, so an API newer than them is missing at runtime rather than at compile');
+      console.error('    time. Match the pair for anything you ship.');
+    } else {
+      console.error('  Match the pair (install the Xcode it names, or a workload built for the one you have),');
+      console.error('  or override per-machine:');
+      console.error('    shenora ios deploy --simulator -- -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly');
+      console.error('  ⚠ Both flags are needed — the first clears the up-front gate, the second clears MT0180');
+      console.error('    from the linker step. It is a dev-loop unblock, NOT a shipping configuration.');
+    }
+    console.error('  `shenora ios doctor` predicts this before a build.');
   }
   return fail('the build failed — see the output above.');
 }

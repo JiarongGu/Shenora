@@ -32,6 +32,20 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`@shenora/cli` predicts the Xcode/bindings mismatch instead of discovering it at minute twenty.**
+  `ios doctor` gains a `device signing` row and an `ios bindings` row; the second is the one that
+  matters, because every other row can say `ok` on a Mac that cannot build at all — the workload and
+  Xcode are each fine and only their PAIRING fails, at build time. Measured: no workload band ships a
+  pack for Xcode 26.3 (only 26.0, 26.6, 27.0), so `dotnet workload update` merely changes WHICH Xcode
+  is demanded. The fix is an asymmetry — bindings NEWER than the SDK name APIs that do not exist,
+  bindings OLDER are fine — so the doctor names the newest band the Xcode can satisfy, and a failed
+  build prints that exact `-p:TargetPlatformVersion=` pin rather than only offering `--simulator`. A
+  **device** build works this way; it is a dev-loop unblock and deliberately a visible one, since
+  building against older bindings moves a missing API from compile time to runtime.
+- **`shenora.deploy.json` takes `iosTfm` beside `androidTfm`.** The unqualified `tfm` still works and
+  is still read as the iOS one — which is exactly how it bit an adopter, so a TFM naming the other
+  platform is now refused up front with the field and the fix.
+
 - **`@shenora/react` names the media CONVERSION wire it was always meant to.** `MediaConversionEvents`
   (`sourceProgress`/`ready`/`failed`), `MediaConversionErrorCodes.unsupportedCodec` and
   `MEDIA_PLAYER_STATUS` are exported constants now. The host published all four and this changelog told
