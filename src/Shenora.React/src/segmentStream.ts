@@ -14,6 +14,27 @@
  * `docs/design/media.md`.
  */
 
+/**
+ * The reserved path segment naming a source by the handle the HOST issued for it:
+ * `{routePath}${SEGMENT_REMOTE_PREFIX}{handle}/index.m3u8`.
+ *
+ * 🔴 **A page cannot name a remote url, only a handle.** The host's `MediaSourceRegistry` issues one when
+ * the app authorises a source, and the route accepts nothing else — which is what stops a page reaching an
+ * address the host can see and it cannot. Mirrors `SegmentStreamOptions.RemotePrefix`.
+ */
+export const SEGMENT_REMOTE_PREFIX = '~remote/';
+
+/**
+ * The manifest url for a handle the app handed this page.
+ *
+ * ⚠ The handle is opaque and is NOT a url — do not build one from it, and do not log it beside anything
+ * that identifies the user. It is a capability: whoever holds it can stream that source.
+ */
+export function remoteSegmentUrl(routePath: string, handle: string, resource = 'index.m3u8'): string {
+  const base = routePath.endsWith('/') ? routePath : `${routePath}/`;
+  return `${base}${SEGMENT_REMOTE_PREFIX}${encodeURIComponent(handle)}/${resource}`;
+}
+
 /** One entry in the playlist the host serves. */
 export interface SegmentEntry {
   /** Relative to the manifest — `seg12.m4s`. */

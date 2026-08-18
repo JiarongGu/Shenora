@@ -214,3 +214,11 @@ The keys of `ClipboardContent.Formats` the kit names itself; an app's own type i
 |---|---|---|
 | `ClipboardContent.PngImage` | `image/png` | PNG bytes — the interchange image format every platform and browser reads. |
 | `ClipboardContent.Html` | `text/html` | UTF-8 HTML, for a paste that keeps its formatting. |
+
+## Segment stream route shapes
+
+The reserved path segment a page uses to name a source by its registered handle.
+
+| Constant | Value | |
+|---|---|---|
+| `SegmentStreamOptions.RemotePrefix` | `~remote/` | The path segment that means "an issued handle follows": {RoutePath}~remote/{handle}/{resource}. |

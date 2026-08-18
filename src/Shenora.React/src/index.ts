@@ -136,6 +136,8 @@ export {
   nextSegment,
   segmentMimeType,
   codecsFromInitSegment,
+  remoteSegmentUrl,
+  SEGMENT_REMOTE_PREFIX,
 } from './segmentStream.js';
 export { bindSegmentStream, SegmentBinderError } from './segmentBinder.js';
 export type { SegmentBinderOptions, SegmentBinding } from './segmentBinder.js';

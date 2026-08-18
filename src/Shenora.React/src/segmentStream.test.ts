@@ -5,6 +5,8 @@ import {
   parseManifest,
   pickMediaSource,
   segmentMimeType,
+  remoteSegmentUrl,
+  SEGMENT_REMOTE_PREFIX,
   type SegmentEntry,
 } from './segmentStream.js';
 
@@ -259,5 +261,34 @@ describe('codecsFromInitSegment', () => {
   it('composes with segmentMimeType', () => {
     expect(segmentMimeType(codecsFromInitSegment(twoTrack)!))
       .toBe('video/mp4; codecs="avc1.640015,mp4a.40.2"');
+  });
+});
+
+describe('remoteSegmentUrl — naming a source by its handle', () => {
+  it('builds the shape the host route parses', () => {
+    // 🔴 Mirrors `SegmentStreamOptions.RemotePrefix`. The two are checked against each other by the
+    // wire-reference gate; this pins the SHAPE, which the gate cannot see.
+    expect(remoteSegmentUrl('/shenora-hls/', 'abc123'))
+      .toBe('/shenora-hls/~remote/abc123/index.m3u8');
+    expect(SEGMENT_REMOTE_PREFIX).toBe('~remote/');
+  });
+
+  it('tolerates a route path given without its trailing slash', () => {
+    // Both spellings are natural to write, and the difference would otherwise be a 404 with no clue —
+    // the route matches on a prefix, so `//` or a missing `/` simply fails to parse.
+    expect(remoteSegmentUrl('/shenora-hls', 'abc123'))
+      .toBe('/shenora-hls/~remote/abc123/index.m3u8');
+  });
+
+  it('names another resource under the same handle', () => {
+    expect(remoteSegmentUrl('/shenora-hls/', 'abc123', 'seg7.m4s'))
+      .toBe('/shenora-hls/~remote/abc123/seg7.m4s');
+  });
+
+  it('escapes the handle rather than trusting its shape', () => {
+    // The kit issues 32 hex characters, so this can never bite through the kit's own registry — but the
+    // handle arrives from the app, and a url builder that assumes its input is safe is the wrong shape
+    // to ship regardless of who happens to be calling it today.
+    expect(remoteSegmentUrl('/shenora-hls/', 'a/b?c')).toBe('/shenora-hls/~remote/a%2Fb%3Fc/index.m3u8');
   });
 });

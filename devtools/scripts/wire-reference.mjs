@@ -54,6 +54,10 @@ const SECTIONS = [
   ['SessionEvents', 'Browser session events', 'What an auxiliary session publishes on the event bus — the 0.11.0 replacement for the deleted observation taps.'],
   ['InteractiveSessionErrorCodes', 'Interactive session failures', 'The `code` when an interactive session cannot answer.'],
   ['ClipboardContent', 'Clipboard media types', 'The keys of `ClipboardContent.Formats` the kit names itself; an app\'s own type is its own string.'],
+  // ⚠ A URL SHAPE rather than a message field, and it belongs here for the same reason the routes above
+  // do: the page BUILDS this string by hand. A segment stream over a registered remote source is fetched
+  // from `{RoutePath}~remote/{handle}/{resource}`, so the prefix is as much a contract as any type name.
+  ['SegmentStreamOptions', 'Segment stream route shapes', 'The reserved path segment a page uses to name a source by its registered handle.'],
 ];
 
 /**
