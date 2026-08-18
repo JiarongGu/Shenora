@@ -112,11 +112,14 @@ versions and finds the connected iPhone) → `devices`/`simulators` → `deploy 
 Mac, boots, installs, launches) → `shot` (a 1206×2622 PNG pulled back here). Five defects came out of
 that hour and are fixed; the CHANGELOG has them.
 
-- [ ] 🔴 **NOTHING ON WINDOWS COMPILES THE SAMPLE'S `#if IOS` ARM, and it had rotted.** Found by the
-  first signed device build: two call sites passed a method group where the kit now wants an `ILogger?`,
-  and the `#elif ANDROID` arm three lines below each was already correct — so an API change fixed one
-  branch and left the other, for who knows how long. `verify` builds neither (the MAUI head needs the iOS
-  workload), and `dev.mjs android` compiles only the ANDROID arm.
+- [ ] 🔴 **NOTHING ON WINDOWS COMPILES THE SAMPLE'S `#if IOS` ARM, and it was broken for FOUR DAYS.**
+  Dated from git rather than guessed: `Use()` began taking an `ILogger?` on **2026-08-14** (`71684e6`),
+  breaking both arms at once; the ANDROID arm was fixed on **08-18** (`764bdb7`) and the iOS arm three
+  lines above it was not, because `dev.mjs android` compiles one and nothing compiles the other. It stayed
+  broken across the 0.11.0 release.
+  - ⚠ **Bounded, and worth stating so the entry is not read as worse than it is**: `Shenora.iOS` itself
+    compiled throughout, and `samples/` ships in no package — so no adopter received this. What was broken
+    is the thing an adopter COPIES, which is why it still matters.
   - **The mechanism now exists**: `shenora ios build --host` compiles that arm on the Mac. Make it a
     habit before a release, or wire it into a Mac-side check — it is the only thing that can see this
     class of rot, and the kit's own sample is the first thing an adopter copies.
