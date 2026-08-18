@@ -110,6 +110,40 @@ at the first list and missed five more breaking changes.
 
 ### Fixed
 
+🧭 **Found by taking the remote path to a REAL Mac.** Every one of these passed a green gate, and none of
+them could have been found by reading — which is the argument for the trip rather than a note about it.
+
+- **The Xcode-mismatch advice named a flag that cannot work.** `ios doctor` and the build-failure handler
+  both said to pin `-p:TargetPlatformVersion=<band>`. `-p:` sets a **global** MSBuild property, so it
+  reaches every project in the graph including the plain `net10.0` ones, which have no target platform at
+  all and fail with `MSB4184 … "targetPlatformIdentifier" cannot have zero length` — an error naming
+  neither iOS nor the version that caused it. The pin belongs in the iOS head's `.csproj`, where it
+  applies to that project alone; both messages now say so. **The band selection itself was right**: the
+  build succeeded against bindings 26.0 on an Xcode whose SDK is 26.2.
+- **A remote build was declared stale immediately after succeeding.** The freshness check read the
+  `.app`'s `Info.plist` on the stated rule that it "is rewritten every build". Measured on the Mac: after
+  a successful incremental build the `.app` was **34 seconds** old and its `Info.plist` was **3.9 days**
+  old, so the CLI refused to install a build that had just succeeded on screen. It now takes the newest
+  mtime anywhere in the bundle — no single file inside a build output is a clock — and allows 30 s of
+  skew for a remote target, because two machines means two clocks.
+- **`dotnet build` was handed the CHECKOUT ROOT, not the project.** One helper answered "the project's
+  directory" locally and "the repo root" remotely, so a remote build went off to compile the solution
+  found there — the Windows sample and the test project — and failed with `NETSDK1100: To build a project
+  targeting Windows on this operating system`, on a Mac that was working perfectly.
+- **A missing ssh key file was diagnosed as a key the Mac refused.** ssh reports both: it warns that it
+  could not open the identity file, then reports the denial that follows from having none to offer.
+  Matched on the denial, the advice was "append your public key to the Mac's `authorized_keys`" — sending
+  you to configure the wrong computer for a file missing on this one. Now its own verdict.
+- **`deploy --simulator` announced "running in the simulator" for an app that crashed on startup.**
+  `simctl launch` prints a pid and exits 0 whether or not the process survives, so "launched" was being
+  read as "running" — and the app died every time. Caught by screenshotting the result and finding the
+  simulator sitting on its home screen. It now checks the pid three seconds later and, when the app is
+  gone, says so and prints the crash. Precisely the false-success class this CLI's README claims to have
+  closed, reached from a direction none of the existing checks watched.
+- **`--key` and `SHENORA_IOS_KEY` are new**, because there was no way to name a project-scoped ssh key
+  without committing the hostname beside it: `shenora.deploy.json` is normally tracked. A tool whose only
+  configured path leaks is a tool people configure wrongly.
+
 - **`SegmentStream` ignored `MediaAccessOptions.Log`.** That option says it is stated once for every
   delivery path and the conversion route beside it reads it, but the segment route consulted only its own
   optional parameter — so an app that configured the shared sink got diagnostics from one route and silence

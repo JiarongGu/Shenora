@@ -23,11 +23,21 @@ export function parseHostSpec(spec: string): RemoteHost | null {
  * each developer points at their own Mac.
  */
 export function resolveHost(cfg: DeployConfig | null, args: readonly string[]): RemoteHost | null {
+  // 🔴 The KEY has to be settable beside the host, and separately from the config file. Found by using
+  // this for real: `shenora.deploy.json` is normally TRACKED, a project-scoped ssh key is good practice
+  // (the family's own harness uses one), and without this the only way to name that key was to commit
+  // the hostname and account next to it. A tool whose only configured path leaks is a tool people
+  // configure wrongly.
+  const key = argValue(args, '--key') ?? process.env.SHENORA_IOS_KEY?.trim() ?? undefined;
+  const withKey = (host: RemoteHost | null): RemoteHost | null =>
+    host && (key ? { ...host, key } : host);
+
   const flag = argValue(args, '--host');
-  if (flag) return parseHostSpec(flag);
+  if (flag) return withKey(parseHostSpec(flag));
   const env = process.env.SHENORA_IOS_HOST;
-  if (env?.trim()) return parseHostSpec(env);
-  return hasHost(cfg?.remote) ? cfg.remote : null;
+  if (env?.trim()) return withKey(parseHostSpec(env));
+  // The config's own `key` still applies when it has one; an explicit flag or variable overrides it.
+  return hasHost(cfg?.remote) ? withKey(cfg.remote) : null;
 }
 
 /**
@@ -63,6 +73,7 @@ export type HostVerdict =
   | 'unreachable'
   | 'refused'
   | 'denied'
+  | 'no-key-file'
   | 'throttled'
   | 'no-ssh-client'
   | 'unknown';
@@ -135,6 +146,20 @@ export function classifySshFailure(detail: string, host: RemoteHost, label: stri
       'The Mac is asleep, off, or on a different network from this machine.',
       'A Mac asleep on wifi is unreachable; on ethernet it usually still answers.',
       'Do not diagnose this with ping — macOS often drops ICMP, so silence proves nothing.',
+    ]);
+  }
+  // 🔴 CHECKED BEFORE `permission denied`, because ssh reports BOTH: a key file it could not open, and
+  // then the refusal that follows from having no key to offer. Matching the refusal first tells you to
+  // authorise a key on the MAC when the file is missing on THIS machine — advice that sends you to the
+  // wrong computer entirely. Found the first time this ran against a real Mac, against a config naming a
+  // key that had been renamed.
+  if (/identity file (.+) not accessible|no such identity/i.test(detail)) {
+    const named = /identity file (.+?) not accessible/i.exec(detail)?.[1]?.trim();
+    return say('no-key-file', `the ssh key${named ? ` ${named}` : ''} does not exist on this machine.`, [
+      'Nothing is wrong with the Mac — ssh could not open the key it was told to use, so it had',
+      'none to offer and the Mac refused the connection that followed.',
+      'Point at one that exists: --key <path>, or SHENORA_IOS_KEY, or "remote": { "key": … }.',
+      'Omit it entirely to let ssh use its own default (an agent, or ~/.ssh/id_*).',
     ]);
   }
   if (/permission denied/i.test(detail)) {

@@ -6,6 +6,7 @@ import { SshTarget, guiScript, hasHost, SSH_COMMAND_LIMIT } from './ssh.js';
 import { LocalTarget, withCwd } from './target.js';
 import { parseHostSpec, classifySshFailure, resolveHost } from './host.js';
 import type { DeployConfig } from '../config.js';
+import { buildProject, buildDir } from '../ios.js';
 
 describe('withCwd', () => {
   it('joins with && so a failed cd cannot run the command somewhere else', () => {
@@ -122,6 +123,31 @@ describe('classifying an ssh refusal', () => {
     expect(d.fix.join(' ')).not.toContain('multicast');
   });
 
+  /**
+   * 🔴 Found the first time this ran against a real Mac, and the reason it must be checked BEFORE the
+   * refusal: ssh reports BOTH. It warns that it could not open the key, then reports the denial that
+   * follows from having had none to offer. Matched on the denial, the advice is "authorise your key on
+   * the Mac" — sending you to configure the wrong computer, for a file missing on this one.
+   */
+  it('separates a MISSING key file from a key the Mac refused', () => {
+    const real = 'Warning: Identity file C:/Users/x/.ssh/gone not accessible: No such file or directory.\n'
+      + 'bob@mac.local: Permission denied (publickey,password,keyboard-interactive).';
+    const d = at(real);
+
+    expect(d.verdict).toBe('no-key-file');
+    expect(d.summary).toContain('C:/Users/x/.ssh/gone');
+    expect(d.fix.join(' ')).toContain('Nothing is wrong with the Mac');
+    // ...and it must NOT hand out the authorized_keys advice, which is the whole failure.
+    expect(d.fix.join(' ')).not.toContain('authorized_keys');
+  });
+
+  it('still reports a genuine refusal as one', () => {
+    // The other direction: with no missing-file warning, this IS the key-not-authorised case.
+    const d = at('bob@mac.local: Permission denied (publickey).');
+    expect(d.verdict).toBe('denied');
+    expect(d.fix.join(' ')).toContain('authorized_keys');
+  });
+
   it('names Remote Login for a refused connection — the most common cause by far', () => {
     expect(at('Connection refused').fix.join(' ')).toContain('Remote Login');
   });
@@ -155,5 +181,49 @@ describe('LocalTarget', () => {
     expect(local.list('/definitely/not/here')).toEqual([]);
     expect(local.mtimeMs('/definitely/not/here')).toBeNull();
     expect(local.mtimeMs(process.cwd())).toBeGreaterThan(0);
+  });
+});
+
+describe('what gets handed to dotnet on a remote build', () => {
+  // A target that answers as a Mac would, without one.
+  const mac = {
+    label: 'you@mac.local', isRemote: true,
+    sh: () => ({ status: 0, out: '' }), probe: () => '/Users/you',
+    exists: () => true, list: () => [], mtimeMs: () => 1, newestMtimeMs: () => 1,
+    join: (...p: string[]) => p.join('/').replace(/\/+/g, '/'),
+    basename: (p: string) => p.split('/').pop() ?? p,
+    dirname: (p: string) => p.split('/').slice(0, -1).join('/'),
+    push: () => true, pull: () => true, gui: () => ({ status: 0, out: '' }), close() {},
+  };
+  const cfg = {
+    // ⚠ A WINDOWS root, because that is the whole point: the CLI runs here and the build runs there, so
+    // this path is spelled in one convention and everything derived from it in another.
+    root: 'D:\\work\\MyRepo',
+    project: 'samples/App/App.csproj',
+    configuration: 'Debug',
+  } as unknown as DeployConfig;
+
+  it('🔴 names the PROJECT, never the checkout root', () => {
+    // The bug this pins cost a real remote build: handed the root, `dotnet build` builds whatever
+    // SOLUTION is there — which on this kit's own tree meant the Windows sample and the test project,
+    // failing with `NETSDK1100: To build a project targeting Windows on this operating system`. An
+    // error about a project nobody asked for, on a Mac that was working perfectly.
+    expect(buildProject(cfg, mac)).toBe('/Users/you/MyRepo/samples/App/App.csproj');
+    expect(buildProject(cfg, mac)).not.toBe('/Users/you/MyRepo');
+  });
+
+  it('puts bin/ beside the project, not beside the solution', () => {
+    expect(buildDir(cfg, mac)).toBe('/Users/you/MyRepo/samples/App');
+  });
+
+  it('honours an explicit remote dir', () => {
+    const pinned = { ...cfg, remote: { host: 'mac.local', dir: '/Volumes/build/Repo' } } as DeployConfig;
+    expect(buildProject(pinned, mac)).toBe('/Volumes/build/Repo/samples/App/App.csproj');
+  });
+
+  it('treats a directory-shaped project as its own build dir', () => {
+    // `cfg.project` MAY name a directory — the SDK accepts one — and then there is no filename to strip.
+    const dirProject = { ...cfg, project: 'samples/App' } as DeployConfig;
+    expect(buildDir(dirProject, mac)).toBe('/Users/you/MyRepo/samples/App');
   });
 });

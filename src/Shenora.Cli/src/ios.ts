@@ -272,9 +272,12 @@ export function cmdDoctor(cfg: DeployConfig | null, args: readonly string[]): vo
       line('ios bindings', `${newest} ≤ Xcode SDK ${sdk}`);
     } else if (usable) {
       line('ios bindings',
-        `newest is ${newest} but Xcode SDK is ${sdk} — build with -p:TargetPlatformVersion=${usable}`, false);
-      console.log(`          (a device build works pinned to ${usable}; the newest bindings name APIs `
-        + 'this Xcode has never shipped)');
+        `newest is ${newest} but Xcode SDK is ${sdk} — pin <TargetPlatformVersion>${usable}</…> in the csproj`,
+        false);
+      console.log(`          (a build works pinned to ${usable}; the newest bindings name APIs this Xcode `
+        + 'has never shipped.');
+      console.log('           In the PROJECT, not -p: on the command line — a global property reaches the');
+      console.log('           non-platform projects too, and they cannot take one.)');
     } else {
       line('ios bindings',
         `every installed band (${bands.join(', ')}) is newer than Xcode SDK ${sdk} — no build can succeed`, false);
@@ -474,8 +477,16 @@ function simulatorRid(): string {
  */
 const remoteHomes = new Map<string, string>();
 
-function buildDir(cfg: DeployConfig, target: Target): string {
-  if (!target.isRemote) return projectDir(cfg);
+/**
+ * The REPOSITORY ROOT on the build machine — the counterpart of `cfg.root`, not of `projectDir`.
+ *
+ * 🔴 The distinction cost a real remote build. Collapsed into one helper, the local answer was the
+ * PROJECT's directory and the remote answer was the REPO ROOT, and handing the root to `dotnet build`
+ * builds whatever solution sits there: the first remote run went off to compile the Windows sample and
+ * the test project, and failed with `NETSDK1100: To build a project targeting Windows on this operating
+ * system` — an error about a project nobody asked for, on a machine that was working perfectly.
+ */
+function remoteRoot(cfg: DeployConfig, target: Target): string {
   const dir = cfg.remote?.dir?.trim();
   if (dir) return dir;
 
@@ -492,7 +503,7 @@ function buildDir(cfg: DeployConfig, target: Target): string {
   // when it is wrong loudly.
   if (!home) {
     fail(`could not read the home directory on ${target.label}.`,
-      '  Set "remote": { "dir": "…" } to the project\'s path on that machine, or check the connection'
+      '  Set "remote": { "dir": "…" } to the checkout\'s path on that machine, or check the connection'
       + ' with `shenora ios doctor --host`.');
     return '';
   }
@@ -500,20 +511,52 @@ function buildDir(cfg: DeployConfig, target: Target): string {
 }
 
 /**
- * Is the artifact newer than the build claiming it? Same rule (and the same one-second filesystem
- * allowance) as `findPackage` on the Android side: the output directory is never cleaned between runs,
- * so without this a build that produced nothing hands back the previous run's output. A `.app` is a
- * DIRECTORY whose own mtime can survive a rebuild of its contents — its Info.plist is rewritten every
- * build and is the honest clock.
+ * What to hand `dotnet build`/`publish` — the PROJECT, never the directory above it.
+ *
+ * ⚠ `cfg.project` may itself name a directory (the SDK accepts one), which is why this joins rather than
+ * assuming a `.csproj`. What it must never do is stop at the repo root: `dotnet build <root>` builds the
+ * solution found there, which on this kit's own tree means the Windows sample and the test project.
+ */
+export function buildProject(cfg: DeployConfig, target: Target): string {
+  if (!target.isRemote) return path.join(cfg.root, cfg.project);
+  const root = remoteRoot(cfg, target);
+  return root ? target.join(root, cfg.project) : '';
+}
+
+/** The project's own DIRECTORY on the build machine — where its `bin/` lives. */
+export function buildDir(cfg: DeployConfig, target: Target): string {
+  if (!target.isRemote) return projectDir(cfg);
+  const project = buildProject(cfg, target);
+  if (!project) return '';
+  // A `.csproj` sits IN the directory that holds `bin/`; a directory-shaped `project` already IS it.
+  return /\.[a-z]+proj$/i.test(project) ? target.dirname(project) : project;
+}
+
+/**
+ * Is the artifact newer than the build claiming it? Same purpose as `findPackage` on the Android side:
+ * the output directory is never cleaned between runs, so without this a build that produced nothing
+ * hands back the previous run's output.
+ *
+ * 🔴 **It asks the WHOLE bundle, and the previous version's rule was measured false.** That rule was
+ * "a `.app`'s own mtime can survive a rebuild, so read its Info.plist, which is rewritten every build".
+ * The first half is true; the second is not. On a real Mac, immediately after a successful incremental
+ * build, the `.app` was 34 seconds old and its `Info.plist` was **3.9 days** old — so this refused a
+ * perfectly good build with "nothing was produced this time", which is a confident statement about a
+ * build that had just succeeded on screen. Neither file is a clock; the newest thing anywhere inside is.
+ *
+ * ⚠ **The one-second allowance is now a THIRTY-second one, and only for a remote target.** Two machines
+ * means two clocks: this stamps `builtAfter` here and reads mtimes there. Measured skew against the
+ * Mac in question was 2 s, in the forgiving direction — but nothing guarantees the sign, and an NTP
+ * correction mid-build is exactly the kind of thing that would make this reject one build in a hundred
+ * for no visible reason. It only has to be tight enough to catch "yesterday's leftover".
  */
 function builtBy(target: Target, full: string, builtAfter?: number): boolean {
   if (builtAfter === undefined) return true;
-  const plist = target.join(full, 'Info.plist');
-  const clock = full.endsWith('.app') && target.exists(plist) ? plist : full;
-  const mtime = target.mtimeMs(clock);
-  // A path that cannot be read is NOT fresh — `target.mtimeMs` answers null rather than throwing, and
+  const mtime = target.newestMtimeMs(full);
+  const allowance = target.isRemote ? 30_000 : 1_000;
+  // A path that cannot be read is NOT fresh — `newestMtimeMs` answers null rather than throwing, and
   // "unknown" must not be mistaken for "just built".
-  return mtime !== null && mtime >= builtAfter - 1000;
+  return mtime !== null && mtime >= builtAfter - allowance;
 }
 
 /** The built .app, FOUND rather than composed: the bundle name follows the assembly, not the project. */
@@ -565,8 +608,10 @@ function checkExtensions(target: Target, app: string): { checked: number; proble
 function build(target: Target, cfg: DeployConfig, rid: string, signing: string, extra: string): boolean {
   if (extra) console.log(`shenora: extra build args:${extra}`);
   console.log(`shenora: building ${cfg.project} (${iosTfmOf(cfg)}, ${rid})…`);
+  const project = buildProject(cfg, target);
   const dir = buildDir(cfg, target);
-  const command = `dotnet build ${q(dir)} -c ${q(cfg.configuration)} `
+  if (!project) return false;      // remoteRoot already reported why
+  const command = `dotnet build ${q(project)} -c ${q(cfg.configuration)} `
     + `-f ${q(iosTfmOf(cfg))} -p:RuntimeIdentifier=${q(rid)}${signing}${extra} 2>&1 | tail -40`;
   // 🔴 Signing needs the login keychain, and an ssh session is a different audit session — codesign
   // then fails `errSecInternalComponent` (see `SshTarget.gui`'s own doc for how this was proven). A
@@ -588,8 +633,19 @@ function build(target: Target, cfg: DeployConfig, rid: string, signing: string, 
       // 🔴 A DEVICE build IS possible — measured, not reasoned. The SDK picks the NEWEST bindings, and
       // older ones are fine because every API they name still exists; pinning the band is the fix, and
       // it is named here rather than left as "use the simulator".
-      console.error(`  This Mac's Xcode SDK is ${sdk}, and it CAN build against bindings ${band}:`);
-      console.error(`    shenora ios deploy -- -p:TargetPlatformVersion=${band} -p:ValidateXcodeVersion=false`);
+      console.error(`  This Mac's Xcode SDK is ${sdk}, and it CAN build against bindings ${band}.`);
+      // 🔴 IN THE PROJECT, not on the command line, and the difference is not style. `-p:` sets a GLOBAL
+      // MSBuild property, which propagates into every project in the graph — including the plain
+      // `net10.0` ones, which have no target platform at all. They then fail with
+      // `MSB4184 … "targetPlatformIdentifier" cannot have zero length`, an error naming neither iOS nor
+      // the version that caused it. Measured against a real Mac, after this command had confidently
+      // recommended exactly that.
+      console.error(`  Set it in your iOS head's .csproj, where it applies to that project ALONE:`);
+      console.error(`    <TargetPlatformVersion>${band}</TargetPlatformVersion>`);
+      console.error('  then build with:');
+      console.error('    shenora ios deploy -- -p:ValidateXcodeVersion=false');
+      console.error('  ⚠ NOT `-p:TargetPlatformVersion` on the command line — a global property reaches the');
+      console.error('    non-platform projects too, and they cannot take one.');
       console.error('  ⚠ A dev-loop unblock, and a VISIBLE one on purpose: you are building against older');
       console.error('    bindings, so an API newer than them is missing at runtime rather than at compile');
       console.error('    time. Match the pair for anything you ship.');
@@ -657,7 +713,9 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   // cleaned between runs, so an artifact older than this belongs to a previous one.
   const startedAt = Date.now();
   const projDir = buildDir(cfg, target);
-  const publish = `cd ${q(projDir)} && dotnet publish ${q(projDir)} -c ${q(configuration)} `
+  const project = buildProject(cfg, target);
+  if (!project) return;            // remoteRoot already reported why
+  const publish = `cd ${q(projDir)} && dotnet publish ${q(project)} -c ${q(configuration)} `
     + `-f ${q(iosTfmOf(cfg))} -p:RuntimeIdentifier=${q(rid)} -p:ArchiveOnBuild=true${extra} 2>&1 | tail -40`;
 
   // 🔴 A DEVICE artifact, so this SIGNS — which means it needs the login keychain, which an ssh session
@@ -805,11 +863,48 @@ function deployToSimulator(target: Target, cfg: DeployConfig, args: string[], ex
       '  If it says no booted device, pass --simulator "iPhone 16 Pro" (`shenora ios simulators`).');
     return;
   }
-  if (target.sh(`xcrun simctl launch ${q(simTarget)} ${q(cfg.bundleId)} 2>&1 | tail -10`).status !== 0) {
+  const launched = target.sh(`xcrun simctl launch ${q(simTarget)} ${q(cfg.bundleId)} 2>&1 | tail -10`);
+  if (launched.status !== 0) {
     fail('launch failed.');
     return;
   }
+  if (!stillRunning(target, launched.out, cfg)) return;
   console.log('\nshenora: running in the simulator. Screenshot it with `shenora ios shot`.');
+}
+
+/**
+ * Did the app SURVIVE its launch? Reported honestly, with the crash if not.
+ *
+ * 🔴 **`simctl launch` prints a pid and exits 0 for an app that dies immediately**, so "launched" is not
+ * evidence of "running" — and this command said *"running in the simulator"* about a build that crashed
+ * on startup every single time. Caught by screenshotting the result: the simulator was sitting on its
+ * home screen while the CLI reported success. That is precisely the false-success class this tool's own
+ * README claims to have closed, arrived at from a direction none of the existing checks watched.
+ *
+ * ⚠ The pid is a HOST pid — `simctl` runs simulator processes on the Mac itself — so `ps` can answer.
+ */
+function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): boolean {
+  const pid = /:\s*(\d+)\s*$/m.exec(launchOutput.trim())?.[1];
+  if (!pid) return true;      // Nothing to check against; do not invent a failure.
+
+  // A crash-on-startup is over in well under a second; this is long enough to catch it and short enough
+  // not to be felt.
+  const alive = target.sh(`sleep 3; ps -p ${q(pid)} > /dev/null 2>&1 && echo alive || echo gone`,
+    { quiet: true, timeoutMs: 60_000 });
+  if (!/gone/.test(alive.out)) return true;
+
+  fail('the app launched and then exited immediately.',
+    '  A launch reports a pid whether or not the process survives, so this is checked rather than assumed.');
+  const crash = target.probe(
+    `xcrun simctl spawn booted log show --last 2m --predicate ${q(simulatorLogPredicate(cfg.bundleId))}`
+    + ` 2>/dev/null | tail -25`);
+  if (crash) {
+    console.error('\n  Its last output:\n');
+    console.error(crash.split('\n').map((l) => `    ${l}`).join('\n'));
+  } else {
+    console.error(`  Nothing in its log. \`shenora ios log\` may have more.`);
+  }
+  return false;
 }
 
 function deployToDevice(target: Target, cfg: DeployConfig, args: string[], extra: string): void {

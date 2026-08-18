@@ -104,21 +104,30 @@ not less, because that change is unexercised.
     on a **16.0 s** window, and Android's equivalent dies at ~15.4 s. Too close to ignore before
     promising page-side background audio anywhere.
 
-### 📱 THE REMOTE MAC PATH HAS NEVER TOUCHED A MAC
+### 📱 THE REMOTE MAC PATH — the SIGNING half is still unproven
 
-`shenora ios --host` and `shenora diag` are built (`docs/design/cli-remote.md`). Everything provable
-without Apple hardware is tested — the ssh command ceiling, the GUI script's subshell shape, the six-way
-transport diagnosis, the path spelling, the loopback boundary — and three diagnosis branches were driven
-end to end against real `ssh`. **What has never run is a build, sign, install and launch against a Mac.**
+`shenora ios --host` and `shenora diag` are built (`docs/design/cli-remote.md`). **Driven against a real
+LAN Mac on 2026-08-19**, the unsigned loop works end to end: `doctor` (reports real Xcode/.NET/workload
+versions and finds the connected iPhone) → `devices`/`simulators` → `deploy --simulator` (builds on the
+Mac, boots, installs, launches) → `shot` (a 1206×2622 PNG pulled back here). Five defects came out of
+that hour and are fixed; the CHANGELOG has them.
 
-- [ ] **Take it to a real Mac once**, in this order, because each step's failure invalidates the next:
-  `ios doctor --host` (reaches, and every row reports) → `deploy --simulator --host` (no signing) →
-  `build --host` (signs, via the GUI hand-off) → `deploy --device --host` → `shot --host` (the pull-back).
-  - ⚠ **The `gui` hand-off is the one to watch.** Its completion marker is polled from a DETACHED
-    Terminal session, so a wrong assumption there does not error — it waits out the full timeout and
-    reports a failure it cannot explain. If it hangs, read `/tmp/shenora-gui-*.log` ON the Mac first.
-  - ⚠ **The Mac must be logged in at its screen for a device build.** A locked or logged-out Mac has no
-    GUI session to hand the signing to, and `osascript` fails rather than the build.
+- [ ] **The GUI hand-off has still never run**, because nothing above it signs. It is the piece with the
+  most assumptions and the worst failure mode. Needs `ios build --host` or `deploy --device --host`.
+  - ⚠ **It fails by WAITING.** The completion marker is polled from a DETACHED Terminal session, so a
+    wrong assumption does not error — it sits out the full 20 minutes and then reports a failure it
+    cannot explain. If it hangs, read `/tmp/shenora-gui-*.log` ON the Mac before theorising.
+  - ⚠ **The Mac must be logged in at its screen.** A locked or logged-out Mac has no GUI session to hand
+    the signing to, so `osascript` fails rather than the build.
+  - ⚠ **This Mac cannot currently sign at all** — `doctor` reports no Xcode Apple ID, so its one
+    provisioning profile cannot be refreshed. That is a prerequisite, not a kit bug.
+
+- [ ] **The sample crashes on launch when the bindings are pinned** — `Token … is not valid in the scope
+  of module Microsoft.iOS.dll`, from building against bindings 26.0 under an Xcode whose SDK is 26.2.
+  This is exactly the runtime cost the pin's own warning names, now observed rather than predicted. It is
+  a fact about THIS Mac's toolchain pairing, not about the sample; the fix is matching Xcode to the
+  workload. Worth re-checking once they match, because until then nothing on this machine can prove a
+  launched app actually runs.
 
 - [ ] **There is no PUSH step.** `buildDir` assumes the Mac already has the checkout (`remote.dir`, or
   `~/<repo name>`) and that the adopter keeps it in sync. Whether the kit should own that — a git push to

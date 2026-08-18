@@ -63,6 +63,17 @@ export interface Target {
   list(directory: string): string[];
   /** Modification time in epoch ms, or null when it cannot be read. */
   mtimeMs(path: string): number | null;
+  /**
+   * The newest modification time ANYWHERE under a directory, epoch ms — or the file's own.
+   *
+   * 🔴 Exists because no single file inside a build output is a reliable clock. Measured on a real Mac:
+   * after a successful incremental build the `.app` directory was 34 seconds old and the `Info.plist`
+   * inside it was **3.9 days** old, so a freshness check reading the plist declared a good build stale
+   * and refused to install it. A directory's own mtime is no better — it changes only when an entry is
+   * added or removed, so a rebuild that rewrites existing files leaves it untouched. "Did anything get
+   * written?" has to ask about everything.
+   */
+  newestMtimeMs(path: string): number | null;
   /** Copy a local file TO the target. */
   push(localPath: string, targetPath: string): boolean;
   /** Copy a file FROM the target to here. */
@@ -135,6 +146,26 @@ export class LocalTarget implements Target {
   mtimeMs(path: string): number | null {
     try {
       return fs.statSync(path).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
+  newestMtimeMs(target: string): number | null {
+    try {
+      const stat = fs.statSync(target);
+      if (!stat.isDirectory()) return stat.mtimeMs;
+      let newest = stat.mtimeMs;
+      // Bounded by the tree itself; a `.app` is thousands of small files at worst, which is a few
+      // milliseconds of `stat` and only happens once per command.
+      for (const entry of fs.readdirSync(target, { withFileTypes: true, recursive: true })) {
+        const full = path.join(entry.parentPath ?? target, entry.name);
+        try {
+          const m = fs.statSync(full).mtimeMs;
+          if (m > newest) newest = m;
+        } catch { /* vanished mid-walk; it cannot be the newest thing that matters */ }
+      }
+      return newest;
     } catch {
       return null;
     }

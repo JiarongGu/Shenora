@@ -117,7 +117,7 @@ describe('the host seam', () => {
       label: 'me@mac.local',
       isRemote: true,
       sh(command: string) { calls.push(command); return { status: 0, out: 'Xcode 26.5\n' }; },
-      probe: () => '', exists: () => false, list: () => [], mtimeMs: () => null,
+      probe: () => '', exists: () => false, list: () => [], mtimeMs: () => null, newestMtimeMs: () => null,
       join: (...p: string[]) => p.join('/'), basename: (p: string) => p, dirname: (p: string) => p,
       push: () => true, pull: () => true, gui() { return { status: 0, out: '' }; }, close() {},
     };

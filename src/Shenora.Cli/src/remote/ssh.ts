@@ -141,9 +141,20 @@ export class SshTarget implements Target {
 
   mtimeMs(p: string): number | null {
     // BSD stat — the target is macOS by definition here. Seconds, so scale to match `fs.statSync`.
-    const out = this.probe(`stat -f %m ${q(p)} 2>/dev/null`);
-    const seconds = Number(out);
-    return out && Number.isFinite(seconds) ? seconds * 1000 : null;
+    return this.seconds(`stat -f %m ${q(p)} 2>/dev/null`);
+  }
+
+  newestMtimeMs(p: string): number | null {
+    // ⚠ ONE round trip, deliberately: statting a bundle's files individually over ssh would be thousands
+    // of connections. `-exec … +` batches, and `tail -1` of a numeric sort is the newest.
+    return this.seconds(
+      `find ${q(p)} -exec stat -f %m {} + 2>/dev/null | sort -n | tail -1`);
+  }
+
+  private seconds(command: string): number | null {
+    const out = this.probe(command);
+    const value = Number(out);
+    return out && Number.isFinite(value) ? value * 1000 : null;
   }
 
   push(localPath: string, targetPath: string): boolean {
