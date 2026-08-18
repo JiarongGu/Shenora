@@ -420,11 +420,31 @@ function xcodeSdkVersion(target: Target): string {
 /** Xcode's known Apple IDs, or null when the preference cannot be read. */
 function xcodeAccountCount(target: Target): number | null {
   const raw = target.probe('defaults read com.apple.dt.Xcode DVTDeveloperAccountManagerAppleIDLists');
-  if (!raw) return null;
-  // The value is a plist dict of arrays; an empty account list prints as `( )` per key. Counting the
-  // entries rather than parsing the plist keeps this to one cheap read.
-  const entries = raw.match(/"[^"]+@[^"]+"/g);
-  return entries ? entries.length : 0;
+  return raw ? countXcodeAccounts(raw) : null;
+}
+
+/**
+ * How many accounts that preference actually names.
+ *
+ * 🔴 **It counts ENTRIES, not email addresses, and the first version counted emails.** Xcode does not
+ * store the address here — a signed-in account prints as `identifier = "4F2E7F1A-…"`, a UUID — so a
+ * regex looking for `"…@…"` found nothing and `doctor` reported **no Apple ID on a Mac where one was
+ * signed in**. That is the worst kind of wrong for a doctor: it sends someone to fix what is already
+ * fixed, and it keeps saying so afterwards.
+ *
+ * ⚠ The key EXISTS with an empty list when no account is signed in (`"IDE.Identifiers.Prod" = ( );`),
+ * which is why presence of the preference proves nothing and the parenthesised list has to be read.
+ * Pure, so both directions are pinned by a test rather than by a Mac.
+ */
+export function countXcodeAccounts(raw: string): number {
+  // ⚠ Records inside the LIST, not brace groups anywhere: the value is a plist dict, so its own outer
+  // braces are always there and counting those reported one account for an empty list — the exact
+  // false-positive this function exists to avoid, reached from the other side.
+  const open = raw.indexOf('(');
+  const close = raw.lastIndexOf(')');
+  if (open < 0 || close < open) return 0;
+  // A record is `{ … }`; the field names inside are Xcode's business and may change.
+  return (raw.slice(open, close).match(/\{/g) ?? []).length;
 }
 
 /** Installed provisioning profiles across BOTH stores Xcode has used. */

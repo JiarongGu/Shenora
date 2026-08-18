@@ -6,7 +6,7 @@ import { SshTarget, guiScript, hasHost, SSH_COMMAND_LIMIT } from './ssh.js';
 import { LocalTarget, withCwd } from './target.js';
 import { parseHostSpec, classifySshFailure, resolveHost } from './host.js';
 import type { DeployConfig } from '../config.js';
-import { buildProject, buildDir } from '../ios.js';
+import { buildProject, buildDir, countXcodeAccounts } from '../ios.js';
 import { filesToPush } from './push.js';
 import os from 'node:os';
 
@@ -183,6 +183,45 @@ describe('LocalTarget', () => {
     expect(local.list('/definitely/not/here')).toEqual([]);
     expect(local.mtimeMs('/definitely/not/here')).toBeNull();
     expect(local.mtimeMs(process.cwd())).toBeGreaterThan(0);
+  });
+});
+
+describe('counting Xcode accounts', () => {
+  /**
+   * 🔴 Both fixtures are VERBATIM from a real Mac. The signed-in one is why this exists: `doctor`
+   * reported "no Xcode Apple ID" on a machine where an account was signed in, because the first version
+   * looked for a quoted email and Xcode stores an `identifier` UUID instead.
+   */
+  it('counts a signed-in account that stores an identifier, not an address', () => {
+    const signedIn = [
+      '{',
+      '    "IDE.Identifiers.Prod" =     (',
+      '                {',
+      '            identifier = "4F2E7F1A-7049-44C5-8DFA-E10AA8F8A558";',
+      '        }',
+      '    );',
+      '}',
+    ].join('\n');
+    expect(countXcodeAccounts(signedIn)).toBe(1);
+  });
+
+  it('reports NONE when the key exists with an empty list', () => {
+    // ⚠ The direction that makes the check meaningful: the preference is present either way, so its
+    // existence proves nothing and only the parenthesised list can answer.
+    expect(countXcodeAccounts('{\n    "IDE.Identifiers.Prod" =     (\n    );\n}')).toBe(0);
+  });
+});
+
+describe('remote probes', () => {
+  it('does not apply pipefail — a probe treats failure as an ANSWER', () => {
+    // 🔴 `xcodebuild -version | head -1`: head closes the pipe after one line, xcodebuild dies of
+    // SIGPIPE, and pipefail promotes that to the pipeline's status — so the probe returns '' and doctor
+    // says MISSING Xcode about a Mac running Xcode 26.3. Racy too, so the same Mac answered correctly
+    // one minute and "not installed" the next. `exec.ts`'s LOCAL probe never did this; the remote one
+    // must match it, or one capability probe gives two answers depending on transport.
+    const source = String(SshTarget.prototype.probe);
+    expect(source).toContain('false');          // the pipefail argument
+    expect(source).not.toContain('this.sh(');   // routing through sh would re-introduce it
   });
 });
 

@@ -90,13 +90,18 @@ export class SshTarget implements Target {
    * remote login shell, which expands `$VAR` itself BEFORE `bash -lc` ever runs. Double-quoted, a command
    * mentioning `$HOME` is expanded against the outer shell's empty environment and silently reads blank.
    */
-  private wrap(command: string, cwd?: string): string {
-    return `bash -lc ${q(withPipefail(withCwd(command, cwd)))}`;
+  private wrap(command: string, cwd?: string, pipefail = true): string {
+    const body = withCwd(command, cwd);
+    return `bash -lc ${q(pipefail ? withPipefail(body) : body)}`;
   }
 
   sh(command: string, options: TargetRunOptions = {}): RunResult {
+    return this.exec(command, options, true);
+  }
+
+  private exec(command: string, options: TargetRunOptions, pipefail: boolean): RunResult {
     const { cwd, timeoutMs = 30 * 60_000, quiet = false, stream = false } = options;
-    const remote = this.wrap(command, cwd);
+    const remote = this.wrap(command, cwd, pipefail);
     if (remote.length > SSH_COMMAND_LIMIT) {
       const out = `shenora: this command is ${remote.length} bytes, past ssh's ${SSH_COMMAND_LIMIT}-byte`
         + ` ceiling — past it the command is truncated and can still report success.\n`;
@@ -115,8 +120,22 @@ export class SshTarget implements Target {
     return { status: r.status ?? 1, out };
   }
 
+  /**
+   * 🔴 **NO `pipefail` here, and the difference is not cosmetic — it is the local behaviour.**
+   * `exec.ts`'s local `probe` runs the command bare; this one routed through {@link sh}, which adds
+   * `set -o pipefail` to anything containing a pipe. That is right for a command whose failure matters
+   * and WRONG for a probe, where failure is an answer: `xcodebuild -version | head -1` makes `head`
+   * close the pipe after one line, `xcodebuild` dies of SIGPIPE, and pipefail promotes that to the
+   * pipeline's status — so the probe returns '' and `doctor` reports **`MISSING Xcode` on a Mac with
+   * Xcode 26.3 installed and working**.
+   *
+   * ⚠ It is also RACY, which is worse than being wrong: whether the producer notices the closed pipe
+   * depends on timing, so the same Mac answered correctly on one run and "not installed" on the next.
+   * The same shape as the donor harness's `bash -lc` vs `bash -s` divergence — one capability probe,
+   * two transports, two answers.
+   */
   probe(command: string): string {
-    const r = this.sh(command, { quiet: true, timeoutMs: 60_000 });
+    const r = this.exec(command, { quiet: true, timeoutMs: 60_000 }, false);
     return r.status === 0 ? r.out.trim() : '';
   }
 

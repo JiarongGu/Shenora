@@ -141,6 +141,20 @@ them could have been found by reading — which is the argument for the trip rat
   could not open the identity file, then reports the denial that follows from having none to offer.
   Matched on the denial, the advice was "append your public key to the Mac's `authorized_keys`" — sending
   you to configure the wrong computer for a file missing on this one. Now its own verdict.
+- 🔴 **`ios doctor` reported two things MISSING that were present**, which is the worst answer a doctor
+  can give: it sends someone to fix what is already fixed, and keeps saying so afterwards. Both were
+  found by an owner adding an Apple ID and the row not changing.
+  - **A remote `probe` applied `set -o pipefail`; the local one never has.** So `xcodebuild -version |
+    head -1` — where `head` closes the pipe and `xcodebuild` dies of SIGPIPE — had that promoted to the
+    pipeline's status, and doctor reported **`MISSING Xcode` on a Mac running Xcode 26.3**. Racy, too:
+    the same Mac answered correctly on one run and "not installed" on the next, depending on whether the
+    producer noticed the closed pipe. `pipefail` is right for a command whose failure matters and wrong
+    for a probe, where failure is an ANSWER — and one capability probe must not give two answers
+    depending on which transport ran it.
+  - **The Apple ID count looked for an email address.** Xcode stores an `identifier` UUID, so a
+    signed-in account read as none. It now counts records inside the list — and the empty-list case is
+    pinned too, because the preference key exists either way, so its presence proves nothing.
+
 - **A failed DEVICE build printed nothing at all.** `target.gui` cannot stream — its script runs detached
   in the Mac's own login session, so the log exists only as a return value — and the device path never
   printed it. The result was the single line *"the build failed — see the output above"* with nothing
