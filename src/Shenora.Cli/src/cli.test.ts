@@ -9,7 +9,7 @@
 // does not exist and a `node -e` that sleeps, so they are fast, need no mock, and run anywhere. They are
 // also the only ones that fail when the diagnostic is left UNWIRED — measured, the four pure-function
 // tests beside them all passed while `run` ignored it completely.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,10 +17,13 @@ import path from 'node:path';
 import { withPipefail, argValue, describeSpawnFailure, run, splitArgs, shellPassthrough } from './exec.js';
 import {
   simulatorLogPredicate, describeConnection, findArtifact, describeLogOutcome, parseDeviceList,
-  isAlreadyBooted,
+  isAlreadyBooted, describeDeviceSigning,
 } from './ios.js';
 import { parseDevices, findPackage, adbCandidates, resolveJdk } from './android.js';
-import { loadConfig, projectDir, requireFields, CONFIG_FILE, SAMPLE_CONFIG } from './config.js';
+import {
+  loadConfig, projectDir, requireFields, platformTfm, iosTfmOf, CONFIG_FILE, SAMPLE_CONFIG,
+  type DeployConfig,
+} from './config.js';
 import { cmdCopy, lastLines } from './copy.js';
 import { main } from './cli.js';
 
@@ -611,6 +614,78 @@ describe('findPackage — the Android artifact', () => {
     expect(findPackage(dir, 'apk', Date.now() - 5_000)).toBeNull();
     // …and the same file IS accepted when the build really did produce it.
     expect(findPackage(dir, 'apk', old - 5_000)).toBe(artifact);
+  });
+});
+
+describe('describeDeviceSigning — a CERTIFICATE is not an ACCOUNT, and neither is a PROFILE', () => {
+  // Measured on a Mac that reported `signing identity 1 found` → `shenora: ready` and could not sign at
+  // all: valid certificate, free personal team, no Xcode Apple ID, no profiles. The build died on
+  // "No Accounts: Add a new account in Accounts settings" AFTER a full compile.
+  it('🔴 refuses a certificate with no Apple ID, which is the state that reads as ready', () => {
+    const result = describeDeviceSigning({ identities: 1, accounts: 0, profiles: 0 });
+    expect(result.good).toBe(false);
+    expect(result.text).toContain('NO Xcode Apple ID');
+  });
+
+  it('still refuses when profiles exist but no account can refresh them', () => {
+    // A free personal team's profile expires after 7 days, so this machine works until it silently
+    // does not — and no re-deploy can fix it without the account.
+    const result = describeDeviceSigning({ identities: 1, accounts: 0, profiles: 2 });
+    expect(result.good).toBe(false);
+    expect(result.text).toContain('cannot be refreshed');
+  });
+
+  it('an account with NO profile yet is fine — one is minted on the first device build', () => {
+    const result = describeDeviceSigning({ identities: 1, accounts: 1, profiles: 0 });
+    expect(result.good).toBe(true);
+    expect(result.text).toContain('minted');
+  });
+
+  it('passes when all three hold', () => {
+    expect(describeDeviceSigning({ identities: 1, accounts: 1, profiles: 3 }).good).toBe(true);
+  });
+
+  it('does not double-report a missing certificate, and does not guess when a probe failed', () => {
+    // The certificate has its own row with its own remedy; and an unreadable preference is not evidence
+    // of a broken machine — the `security`-failed case above already taught that.
+    expect(describeDeviceSigning({ identities: 0, accounts: 1, profiles: 1 }).text).toContain('see the row above');
+    expect(describeDeviceSigning({ identities: null, accounts: null, profiles: 0 }).good).toBe(true);
+    expect(describeDeviceSigning({ identities: 1, accounts: null, profiles: 0 }).good).toBe(true);
+  });
+});
+
+describe('platformTfm — a MAUI app has one TFM per platform', () => {
+  const base: DeployConfig = { project: 'a.csproj', tfm: 'net10.0-ios', androidTfm: 'net10.0-android',
+    androidLogTag: 'DOTNET', bundleId: 'com.x', team: '', configuration: 'Debug',
+    webDir: '', webTarget: '', root: '/tmp', file: '/tmp/x.json' };
+
+  it('🔴 refuses an ANDROID tfm on the iOS path, naming the field and the fix', () => {
+    // The measured failure: `tfm` reads as "the tfm" beside `androidTfm`, so an Android-only project
+    // sets it, and `ios deploy` dies on NETSDK1147 asking for the android workload — on a Mac, which
+    // reads as a broken machine rather than a config that cannot express two heads.
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m: unknown) => { errors.push(String(m)); });
+    // Restored like every other exit-code assertion here: a refusal sets process.exitCode, and leaving
+    // it set fails an UNRELATED later test (it failed "bare `shenora` is help, not an error").
+    const before = process.exitCode;
+    try {
+      expect(platformTfm({ ...base, tfm: 'net10.0-android' }, 'ios')).toBeNull();
+      expect(process.exitCode).toBe(1);
+    } finally { spy.mockRestore(); process.exitCode = before; }
+    expect(errors.join('\n')).toContain('not a ios target');
+    expect(errors.join('\n')).toContain('iosTfm');
+  });
+
+  it('prefers the explicit iosTfm over the unqualified tfm', () => {
+    expect(iosTfmOf({ ...base, iosTfm: 'net10.0-ios18.0' })).toBe('net10.0-ios18.0');
+    expect(platformTfm({ ...base, tfm: 'net10.0-android', iosTfm: 'net10.0-ios' }, 'ios')).toBe('net10.0-ios');
+    // …and falls back, so every existing config keeps working untouched.
+    expect(iosTfmOf(base)).toBe('net10.0-ios');
+  });
+
+  it('accepts each platform its own', () => {
+    expect(platformTfm(base, 'ios')).toBe('net10.0-ios');
+    expect(platformTfm(base, 'android')).toBe('net10.0-android');
   });
 });
 

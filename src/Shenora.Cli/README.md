@@ -16,11 +16,16 @@ npx shenora ios build       # a distributable: Release publish → .ipa
 ```json
 {
   "project": "src/MyApp/MyApp.csproj",
-  "tfm": "net10.0-ios",
+  "iosTfm": "net10.0-ios",
+  "androidTfm": "net10.0-android",
   "bundleId": "com.example.myapp",
   "team": "ABCDE12345"
 }
 ```
+
+⚠ **One TFM per platform.** `iosTfm` and `androidTfm` name the two heads a MAUI app has. The older
+unqualified `tfm` still works and is read as the iOS one — which is exactly how it bites, so a value
+naming the other platform is now refused by name instead of failing minutes later inside the SDK.
 
 ## Why this exists
 

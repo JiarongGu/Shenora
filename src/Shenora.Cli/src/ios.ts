@@ -10,8 +10,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sh, probe, q, fail, argValue, splitArgs, shellPassthrough } from './exec.js';
-import { projectDir, requireFields, type DeployConfig } from './config.js';
+import { iosTfmOf, platformTfm, projectDir, requireFields, type DeployConfig } from './config.js';
 
 interface Device {
   id: string;
@@ -190,10 +191,21 @@ export function cmdSimulators(): void {
 export function cmdDoctor(cfg: DeployConfig | null): void {
   if (!assertMac()) return;
   let ok = true;
+  // 🔴 COUNTED, because the worst outcome this command has is silence plus exit 0 — it reads as
+  // "nothing to report, everything is fine" and the operator moves on. Reported by the first adopter:
+  // `npx shenora ios doctor` printed nothing and succeeded while the same code through the binary
+  // printed the full report. Whatever swallows the output, a doctor that reported NOTHING has not
+  // examined anything, and must not say so with a zero exit.
+  let written = 0;
   const line = (label: string, value: string, good = true): void => {
     console.log(`  ${good ? 'ok     ' : 'MISSING'} ${label.padEnd(20)} ${value}`);
+    written++;
     if (!good) ok = false;
   };
+
+  // WHICH binary is answering — the first question when a report looks wrong or absent, and the one an
+  // operator cannot ask from outside (`npx` may resolve a different copy than the one just installed).
+  line('shenora cli', `${cliVersion()}  ${cliEntry()}`);
 
   const xcode = probe('xcodebuild -version | head -1');
   line('Xcode', xcode || '(not found — install it from the App Store)', Boolean(xcode));
@@ -217,6 +229,18 @@ export function cmdDoctor(cfg: DeployConfig | null): void {
       : identityCount > 0 ? `${identityCount} found` : '(none — Xcode > Settings > Accounts)',
     identityCount > 0);
 
+  // 🔴 A CERTIFICATE IS NOT AN ACCOUNT, AND NEITHER IS A PROFILE — all three decide whether a DEVICE
+  // build can sign, and the row above is the one that stays green longest. Measured on a Mac reporting
+  // `1 found` → `ready` that could not sign at all: valid certificate, a free personal team, and NO
+  // Xcode Apple ID and NO provisioning profiles. The build then dies on `No Accounts: Add a new account
+  // in Accounts settings` — after a full compile.
+  const signing = describeDeviceSigning({
+    identities: identity.status === 0 ? identityCount : null,
+    accounts: xcodeAccountCount(),
+    profiles: provisioningProfileCount(),
+  });
+  line('device signing', signing.text, signing.good);
+
   // ⚠ A devicectl failure is reported as a failure here too, and NOT as `good: false`: doctor answers
   // "can this machine build and deploy", and a device is optional for that — the simulator path works
   // without one. Saying the reader broke is information; failing the whole check over it is not.
@@ -237,6 +261,100 @@ export function cmdDoctor(cfg: DeployConfig | null): void {
 
   console.log(ok ? '\nshenora: ready.' : '\nshenora: not ready — see MISSING above.');
   if (!ok) process.exitCode = 1;
+
+  // The invariant, checked last: a report of nothing is never a pass. Written to STDERR on purpose —
+  // if stdout is what went missing, saying so on stdout would vanish with it.
+  if (written === 0) {
+    console.error('\nshenora: doctor examined nothing — this is a BUG in the tool or its packaging, '
+      + 'not a clean bill of health.');
+    console.error(`  running: ${cliVersion()}  ${cliEntry()}`);
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * Can this Mac sign for a DEVICE? Pure, so the rule is testable off macOS — the platform half is two
+ * lookups either side of it.
+ *
+ * 🔴 The three facts are not interchangeable and only one of them is what `security find-identity`
+ * answers. A CERTIFICATE proves a key exists; an ACCOUNT is what `-allowProvisioningUpdates` needs to
+ * MINT or refresh a profile; a PROFILE is what the device demands at install. Certificate-only is the
+ * trap this exists for, because it is also the state a working machine decays into: a free personal
+ * team's profile expires after 7 days, and refreshing it needs the account that is missing.
+ *
+ * @param identities how many codesigning identities the keychain holds; null when `security` failed.
+ * @param accounts   Xcode Apple IDs; null when the preference could not be read.
+ * @param profiles   installed provisioning profiles across both stores.
+ */
+export function describeDeviceSigning(
+  { identities, accounts, profiles }: { identities: number | null; accounts: number | null; profiles: number },
+): { text: string; good: boolean } {
+  // Certificate already has its own row and its own remedy; do not double-report it.
+  if (identities === null) return { text: '(unknown — the identity check above could not run)', good: true };
+  if (identities === 0) return { text: '(no certificate — see the row above)', good: false };
+  if (accounts === null) {
+    return { text: `(could not read Xcode's account list; ${profiles} profile(s) installed)`, good: true };
+  }
+  if (accounts === 0) {
+    return {
+      text: profiles > 0
+        // A profile without an account works until it expires and can never be refreshed — worth a
+        // distinct message, because "it built yesterday" is exactly how this is discovered.
+        ? `❌ no Xcode Apple ID — ${profiles} profile(s) will work until they expire and cannot be refreshed`
+        : '❌ certificate but NO Xcode Apple ID and no profiles — a device build dies at signing, after '
+          + 'the full compile. Xcode > Settings > Accounts, add your Apple ID.',
+      good: false,
+    };
+  }
+  return {
+    text: profiles > 0
+      ? `${accounts} account(s), ${profiles} profile(s)`
+      // An account with no profile is FINE: -allowProvisioningUpdates mints one. Said plainly so the
+      // zero does not read as the failure above.
+      : `${accounts} account(s), no profile yet — one is minted on the first device build`,
+    good: true,
+  };
+}
+
+/** Xcode's known Apple IDs, or null when the preference cannot be read. */
+function xcodeAccountCount(): number | null {
+  const raw = probe('defaults read com.apple.dt.Xcode DVTDeveloperAccountManagerAppleIDLists');
+  if (!raw) return null;
+  // The value is a plist dict of arrays; an empty account list prints as `( )` per key. Counting the
+  // entries rather than parsing the plist keeps this to one cheap read.
+  const entries = raw.match(/"[^"]+@[^"]+"/g);
+  return entries ? entries.length : 0;
+}
+
+/** Installed provisioning profiles across BOTH stores Xcode has used. */
+function provisioningProfileCount(): number {
+  const home = os.homedir();
+  const stores = [
+    path.join(home, 'Library', 'Developer', 'Xcode', 'UserData', 'Provisioning Profiles'),
+    path.join(home, 'Library', 'MobileDevice', 'Provisioning Profiles'),
+  ];
+  let found = 0;
+  for (const dir of stores) {
+    try {
+      if (fs.existsSync(dir)) {
+        found += fs.readdirSync(dir).filter((f) => f.endsWith('.mobileprovision')).length;
+      }
+    } catch { /* an unreadable store counts as none — the caller's message covers both */ }
+  }
+  return found;
+}
+
+/** This CLI's own version, read from the package it was loaded from. `(unknown)` rather than throwing. */
+function cliVersion(): string {
+  try {
+    const manifest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+    return `v${(JSON.parse(fs.readFileSync(manifest, 'utf8')) as { version?: string }).version ?? '?'}`;
+  } catch { return '(version unknown)'; }
+}
+
+/** Where this CLI is actually running FROM — the answer to "did npx run the copy I just installed?". */
+function cliEntry(): string {
+  try { return fileURLToPath(import.meta.url); } catch { return '(entry unknown)'; }
 }
 
 /**
@@ -266,7 +384,7 @@ function builtBy(full: string, builtAfter?: number): boolean {
 function findApp(cfg: DeployConfig, rid: string, builtAfter?: number): string | null {
   // `projectDir`, not `path.dirname` — see its doc: a `project` naming a DIRECTORY resolved to the
   // PARENT, so this looked for the .app one level too high and answered "not built" about a built app.
-  const dir = path.join(projectDir(cfg), 'bin', cfg.configuration, cfg.tfm, rid);
+  const dir = path.join(projectDir(cfg), 'bin', cfg.configuration, iosTfmOf(cfg), rid);
   if (!fs.existsSync(dir)) return null;
   const app = fs.readdirSync(dir).find((e) => e.endsWith('.app'));
   if (!app) return null;
@@ -308,10 +426,10 @@ function checkExtensions(app: string): { checked: number; problems: string[] } {
 
 function build(cfg: DeployConfig, rid: string, signing: string, extra: string): boolean {
   if (extra) console.log(`shenora: extra build args:${extra}`);
-  console.log(`shenora: building ${cfg.project} (${cfg.tfm}, ${rid})…`);
+  console.log(`shenora: building ${cfg.project} (${iosTfmOf(cfg)}, ${rid})…`);
   const r = sh(
     `dotnet build ${q(path.join(cfg.root, cfg.project))} -c ${q(cfg.configuration)} `
-    + `-f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)}${signing}${extra} 2>&1 | tail -40`,
+    + `-f ${q(iosTfmOf(cfg))} -p:RuntimeIdentifier=${q(rid)}${signing}${extra} 2>&1 | tail -40`,
     { cwd: cfg.root },
   );
   if (r.status === 0) return true;
@@ -354,6 +472,9 @@ function build(cfg: DeployConfig, rid: string, signing: string, extra: string): 
 export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   if (!assertMac()) return;
   if (!requireFields(cfg, ['project'])) return;
+  // Refuse a non-iOS TFM HERE rather than letting the SDK say `NETSDK1147: install the android
+  // workload` twenty lines into a build — see `platformTfm`.
+  if (!platformTfm(cfg, 'ios')) return;
 
   const { own, passthrough } = splitArgs(args);
   const extra = shellPassthrough(passthrough);
@@ -371,13 +492,13 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   }
 
   const rid = 'ios-arm64';
-  console.log(`shenora: publishing ${cfg.project} (${cfg.tfm}, ${rid}, ${configuration})…`);
+  console.log(`shenora: publishing ${cfg.project} (${iosTfmOf(cfg)}, ${rid}, ${configuration})…`);
   // Stamped BEFORE the publish, exactly as the Android side does: the output directory is never
   // cleaned between runs, so an artifact older than this belongs to a previous one.
   const startedAt = Date.now();
   const r = sh(
     `dotnet publish ${q(path.join(cfg.root, cfg.project))} -c ${q(configuration)} `
-    + `-f ${q(cfg.tfm)} -p:RuntimeIdentifier=${q(rid)} -p:ArchiveOnBuild=true${extra} 2>&1 | tail -40`,
+    + `-f ${q(iosTfmOf(cfg))} -p:RuntimeIdentifier=${q(rid)} -p:ArchiveOnBuild=true${extra} 2>&1 | tail -40`,
     { cwd: cfg.root },
   );
   if (r.status !== 0) {
@@ -389,7 +510,7 @@ export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   // 🔴 REPORT THE ARTIFACT, and refuse to claim success without finding one. `dotnet publish` exits 0
   // having produced nothing more than once in this repo's history (a skipped target with a satisfied
   // incremental check), and "publish succeeded" with no file is the least actionable message possible.
-  const dir = path.join(projectDir(cfg), 'bin', configuration, cfg.tfm, rid, 'publish');
+  const dir = path.join(projectDir(cfg), 'bin', configuration, iosTfmOf(cfg), rid, 'publish');
   const artifact = findArtifact(dir, startedAt) ?? findArtifact(path.dirname(dir), startedAt);
   if (!artifact) {
     // Say STALE when a leftover is what was found — "no artifact appeared" beside a directory visibly
@@ -460,6 +581,7 @@ export function isAlreadyBooted(output: string): boolean {
 export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
   if (!assertMac()) return;
   if (!requireFields(cfg, ['project', 'bundleId'])) return;
+  if (!platformTfm(cfg, 'ios')) return;
   const { own, passthrough } = splitArgs(args);
   const extra = shellPassthrough(passthrough);
   if (own.includes('--simulator')) deployToSimulator(cfg, own, extra);
@@ -481,7 +603,7 @@ function deployToSimulator(cfg: DeployConfig, args: string[], extra: string): vo
     fail(stale
       ? `the build reported success but ${path.basename(stale)} predates it — nothing was produced `
         + 'this time, and installing the leftover would run yesterday\'s code as if it were today\'s.'
-      : `the build succeeded but no .app appeared under bin/${cfg.configuration}/${cfg.tfm}/${rid}.`);
+      : `the build succeeded but no .app appeared under bin/${cfg.configuration}/${iosTfmOf(cfg)}/${rid}.`);
     return;
   }
   console.log(`shenora: ${path.basename(app)}`);
@@ -538,7 +660,7 @@ function deployToDevice(cfg: DeployConfig, args: string[], extra: string): void 
     fail(stale
       ? `the build reported success but ${path.basename(stale)} predates it — nothing was produced `
         + 'this time, and installing the leftover would run yesterday\'s code as if it were today\'s.'
-      : `the build succeeded but no .app appeared under bin/${cfg.configuration}/${cfg.tfm}/ios-arm64.`);
+      : `the build succeeded but no .app appeared under bin/${cfg.configuration}/${iosTfmOf(cfg)}/ios-arm64.`);
     return;
   }
   console.log(`shenora: ${path.basename(app)}`);

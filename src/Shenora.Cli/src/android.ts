@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { run, captureRun, fail, argValue, splitArgs } from './exec.js';
-import { projectDir, requireFields, type DeployConfig } from './config.js';
+import { platformTfm, projectDir, requireFields, type DeployConfig } from './config.js';
 
 /**
  * Where `adb` is.
@@ -148,6 +148,7 @@ export function cmdDevices(): void {
  */
 export function cmdDeploy(cfg: DeployConfig, args: string[]): void {
   if (!requireFields(cfg, ['project', 'bundleId'])) return;
+  if (!platformTfm(cfg, 'android')) return;
   // Same globally-documented `--` the build command honours; `own` also keeps `argValue` from reading a
   // passthrough token as a device serial, which is the iOS half's measured trap.
   const { own, passthrough } = splitArgs(args);
@@ -260,6 +261,7 @@ function appPid(serial: string, packageId: string): string | null {
  */
 export function cmdBuild(cfg: DeployConfig, args: string[]): void {
   if (!requireFields(cfg, ['project'])) return;
+  if (!platformTfm(cfg, 'android')) return;
   // 🔴 `--` IS DOCUMENTED GLOBALLY — the help text says "anything after `--` goes straight to
   // `dotnet build`" directly beneath these Android commands — and this half silently dropped it. Half
   // live, too: `--aab` was still read from the flat array, so the flag someone typed BEFORE `--` worked

@@ -8,8 +8,18 @@ export const CONFIG_FILE = 'shenora.deploy.json';
 export interface DeployConfig {
   /** The .NET app head to build (e.g. a MAUI csproj), relative to the config file. */
   project: string;
-  /** Target framework moniker for the iOS head. */
+  /**
+   * Target framework moniker for the **iOS** head.
+   *
+   * ⚠ Unqualified for historical reasons, and that is exactly how it bites: beside `androidTfm` it
+   * reads as "the tfm", so an Android-only project sets it to `net10.0-android`, and `ios deploy` then
+   * builds the ANDROID target and dies on `NETSDK1147: install the android workload` — an error naming
+   * a workload nobody wants on a Mac, so it reads as a broken machine. {@link iosTfm} is the clear
+   * spelling; this stays as its fallback, and {@link platformTfm} refuses a mismatch by name.
+   */
   tfm: string;
+  /** Target framework moniker for the iOS head. Preferred over the unqualified {@link tfm}. */
+  iosTfm?: string;
   /** Target framework moniker for the Android head. */
   androidTfm: string;
   /**
@@ -110,6 +120,43 @@ export function projectDir(cfg: DeployConfig): string {
   return isDirectory(full) ? full : path.dirname(full);
 }
 
+/**
+ * The iOS TFM in force: `iosTfm` when set, else the unqualified `tfm`. Use this everywhere rather than
+ * reading `cfg.tfm`, or setting the clear field would silently change nothing.
+ */
+export const iosTfmOf = (cfg: DeployConfig): string => cfg.iosTfm?.trim() || cfg.tfm;
+
+/**
+ * The TFM for the platform being built, refusing one that names a different platform.
+ *
+ * 🔴 A wrong answer here is only discovered by the SDK, minutes later, in the vocabulary of the wrong
+ * platform: an `ios deploy` carrying `net10.0-android` dies on `NETSDK1147: the following workloads
+ * must be installed: android`, which reads as a broken Mac rather than a config that could not express
+ * two heads. Found by the first adopter taking a real app to a real iPhone.
+ *
+ * @returns the moniker, or null when it is missing or names the wrong platform (already reported).
+ */
+export function platformTfm(cfg: DeployConfig, platform: 'ios' | 'android'): string | null {
+  const field = platform === 'ios' ? (cfg.iosTfm?.trim() ? 'iosTfm' : 'tfm') : 'androidTfm';
+  const value = String(cfg[field] ?? '').trim();
+  if (!value) {
+    console.error(`\nshenora: ${CONFIG_FILE} is missing: ${field}`);
+    console.error(`  ${cfg.file}`);
+    process.exitCode = 1;
+    return null;
+  }
+  if (!value.includes(`-${platform}`)) {
+    console.error(`\nshenora: ${CONFIG_FILE}'s \`${field}\` is "${value}", which is not a ${platform} target.`);
+    console.error(`  A MAUI app has one TFM per platform. Set \`${platform === 'ios' ? 'iosTfm' : 'androidTfm'}\``
+      + ` to your ${platform} head (e.g. "net10.0-${platform}");`);
+    console.error(`  \`tfm\` alone is read as the iOS one, which is why an Android value lands here.`);
+    console.error(`  ${cfg.file}`);
+    process.exitCode = 1;
+    return null;
+  }
+  return value;
+}
+
 /** Fields a command needs, named ONE AT A TIME so the message is actionable rather than a schema dump. */
 export function requireFields(cfg: DeployConfig, fields: (keyof DeployConfig)[]): boolean {
   const missing = fields.filter((f) => !String(cfg[f] ?? '').trim());
@@ -122,7 +169,8 @@ export function requireFields(cfg: DeployConfig, fields: (keyof DeployConfig)[])
 
 export const SAMPLE_CONFIG = `{
   "project": "src/MyApp/MyApp.csproj",
-  "tfm": "net10.0-ios",
+  "iosTfm": "net10.0-ios",
+  "androidTfm": "net10.0-android",
   "bundleId": "com.example.myapp",
   "team": "ABCDE12345",
   "webDir": "web/dist"
