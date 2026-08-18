@@ -15,10 +15,9 @@ your app's cookies.
 product in here — those are a product, not a mechanism (D21). The worked driver lives in the desktop
 sample (`CookieLoginDriver`), and it is a plain consumer of the public seam: copy it, it is yours.
 
-⚠ **Desktop only.** These rest on CDP and on WebView2 primitives neither mobile shell exposes in-process
-— read D39 before writing a mobile port, because a port IS buildable behind the same interface and is
-materially weaker (polled frames, `isTrusted: false` input), which is exactly what the pages this stack
-exists for reject.
+⚠ **Desktop only.** These rest on CDP and on WebView2 primitives neither mobile shell exposes
+in-process. **Read D39 before writing a mobile port** — the trap is that one IS buildable behind the
+same interface, and the decision records why the result would not be the same capability.
 
 ## Which one you want
 
@@ -180,11 +179,25 @@ What holds, both failing closed:
 ## Serving your own bundle into a session
 
 A session gets its own environment with **none** of the shell's serving set up — so navigating one to
-your packaged origin renders WebView2's "can't reach this page". To serve your bundle inside a session,
-set `VirtualHost` **and** `ResourceProvider` on its `SessionBrowserOptions`: both-or-neither, enforced at
-init. ⚠ `DeferredSchemes` handlers are NOT available inside a session (they need environment-level
-registration), and the bundle response's `Access-Control-Allow-Origin: *` is safe only on a session
-rendering YOUR pages — never on one co-browsing somebody else's.
+your packaged origin renders WebView2's "can't reach this page". Pass the host's own two values
+through; the same provider INSTANCE means the session's requests hit a cache the shell already warmed:
+
+```csharp
+Browser = new SessionBrowserOptions
+{
+    ProfileDirectory = …,
+    VirtualHost      = hostOptions.VirtualHost,
+    ResourceProvider = hostOptions.ResourceProvider,   // the SAME instance, not a second provider
+}
+```
+
+Both or neither — either alone is refused at initialization, because on its own it serves nothing and
+looks exactly like the bug it would be. **You only need any of this if you serve an EMBEDDED bundle**:
+a server-backed app's pages are on a real loopback origin, which a session already reaches.
+
+**D38 is the WHY**, including the two limits that decide whether this fits your case at all: a custom
+or deferred SCHEME cannot work inside a session, and a bundle response's CORS header makes this safe
+only on a session rendering your own pages. Read it before co-browsing anyone else's.
 
 ## If init times out
 

@@ -62,8 +62,6 @@ const readNpmPackage = () => JSON.parse(fs.readFileSync(path.join(npmDirAbs, 'pa
 // TYPE-CHECKED by the gate rather than trusted. A CLI that ships broken output is worse than one that
 // does not ship: the adopter meets it at the moment they are trying to reach a device for the first time.
 const cliDirAbs = path.join(repo, 'src', 'Shenora.Cli');
-const buildCliPackage = () => ensureNpmDeps(cliDirAbs)
-  && step('npm build (cli package)', () => runNpm('run build', { cwd: cliDirAbs }));
 
 // ---- The Android TFM needs a JDK, and the failure without one is unhelpful.
 //
@@ -770,9 +768,11 @@ switch (cmd) {
       // standardisation and the first compiler to see it was CI's, mid-release.
       && step('dotnet build (update-probe)', () => run('dotnet',
         ['build', path.join('devtools', 'update-probe', 'update-probe.csproj'), '-c', 'Release', '-v', 'minimal']))
-      && ensureNpmDeps(npmDirAbs)
-      && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }))
-      && buildCliPackage();
+      // EVERY npm package, from the config — see `pack` for the release this shape cost.
+      && config.npmPackages.every((dir) => {
+        const abs = path.join(repo, ...dir.split('/'));
+        return ensureNpmDeps(abs) && step(`npm build (${dir.split('/').pop()})`, () => runNpm('run build', { cwd: abs }));
+      });
     process.exitCode = ok ? 0 : 1;
     break;
   }
@@ -996,15 +996,19 @@ switch (cmd) {
     // The npm package belongs to the default pass — `--mac` produces NuGet only, so the two passes
     // cannot both emit a tarball and leave the publish step guessing which is current.
     if (!macPass) {
-      ok = ok && ensureNpmDeps(npmDirAbs);
-      ok = ok && step('npm build (react package)', () => runNpm('run build', { cwd: npmDirAbs }));
-      ok = ok && step('npm pack (react package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: npmDirAbs }));
-      // 🔴 BOTH npm packages, or the second one silently never ships. `@shenora/cli` (D67) was added on
-      // 2026-08-08 and this loop packed only the React package for its first two days — `doctor` held the
-      // version in lockstep the whole time, which is exactly what made the gap invisible: every check said
-      // "consistent" about a tarball that was never produced.
-      ok = ok && buildCliPackage();
-      ok = ok && step('npm pack (cli package)', () => runNpm(`pack --pack-destination "${out}"`, { cwd: cliDirAbs }));
+      // 🔴 EVERY npm package, from the config — never a step per package typed by hand. `@shenora/cli`
+      // (D67) was added on 2026-08-08 and this packed only the React package for its first two days:
+      // `doctor` held the version in lockstep the whole time, which is exactly what made the gap
+      // invisible — every check said "consistent" about a tarball that was never produced. The fix
+      // then was a SECOND hardcoded pair, which is the same bug waiting for a third package; this is
+      // the loop that ends it. Both packages expose the same `build` script, so nothing is special-cased.
+      for (const dir of config.npmPackages) {
+        const abs = path.join(repo, ...dir.split('/'));
+        const name = dir.split('/').pop();
+        ok = ok && ensureNpmDeps(abs);
+        ok = ok && step(`npm build (${name})`, () => runNpm('run build', { cwd: abs }));
+        ok = ok && step(`npm pack (${name})`, () => runNpm(`pack --pack-destination "${out}"`, { cwd: abs }));
+      }
     }
     if (ok) ok = step('build assets the targets NAME are inside the package', () => checkPackagedBuildAssets(out));
     if (ok) ok = step('evict stale Shenora.* from the NuGet global cache', () => evictGlobalCache());

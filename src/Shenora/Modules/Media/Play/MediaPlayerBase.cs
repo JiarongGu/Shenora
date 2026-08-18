@@ -100,9 +100,12 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         // Names what is actually wrong: only a RELATIVE string reaches here now, and the fix is to root
         // it. The old wording ("not a file path or an absolute URL") was the message a `file:` URL got
         // while being both of those things.
+        // ⚠ The offending value is NOT interpolated. This type documents its message as an "app-safe
+        // reason", and an adopter reporting `ex.Message` onward is the exact copy-paste `IpcErrorMapping`
+        // exists to prevent — a caller's path must not become the thing that leaks through it.
         var uri = ParseUri(source.Uri)
             ?? throw new MediaPlayerException(
-                $"Media source URI '{source.Uri}' is relative — pass a rooted path or an absolute URL.");
+                "Media source URI is relative — pass a rooted path or an absolute URL.");
 
         Teardown();
 

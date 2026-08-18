@@ -343,10 +343,21 @@ jobs:
           npm install -g npm@latest
 
           $v = '${{ steps.version.outputs.version }}'
-          $packages = @(
-            @{ Name = '@shenora/react'; Filter = 'shenora-react-*.tgz' },
-            @{ Name = '@shenora/cli';   Filter = 'shenora-cli-*.tgz'   }
-          )
+          # 🔴 FROM THE CONFIG, not a list typed here. This was a second hand-kept copy of
+          # `project.config.mjs`'s `npmPackages` — the same shape as the `git add` list two steps up,
+          # which silently dropped `@shenora/cli`'s version bump for a whole release. A third package
+          # added to the config would have packed, passed every gate, and never been PUBLISHED, with
+          # nothing failing. (The NuGet push beside this one already enumerates the directory instead.)
+          # ⚠ The npm NAME comes from each package.json, never from the directory: `npm pack` derives the
+          # tarball from the name, so reading the manifest is the only spelling guaranteed to match what
+          # Pack produced. A convention ("Shenora.React" -> "react") would hold today and be the next
+          # silent mismatch.
+          $names = node -e "import('node:fs').then(fs => import('./devtools/project.config.mjs').then(m => console.log(m.default.npmPackages.map(d => JSON.parse(fs.readFileSync(d + '/package.json', 'utf8')).name).join(' '))))"
+          if (-not $names) { throw "could not read npm package names from devtools/project.config.mjs" }
+          $packages = foreach ($name in ($names -split ' ')) {
+            # `@shenora/react` -> `shenora-react-*.tgz`, exactly as `npm pack` names it.
+            @{ Name = $name; Filter = ($name -replace '^@', '' -replace '/', '-') + '-*.tgz' }
+          }
 
           foreach ($p in $packages) {
             $tgz = Get-ChildItem 'publish/packages' -Filter $p.Filter | Select-Object -First 1

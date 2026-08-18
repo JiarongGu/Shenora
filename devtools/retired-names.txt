@@ -516,3 +516,16 @@ SessionFrame             # -> StreamingSessionFrame       (all four below are st
 SessionFrameFormat       # -> StreamingSessionFrameFormat
 SessionEnded             # -> StreamingSessionEnded
 SessionEndReason         # -> StreamingSessionEndReason
+
+# 2026-08-18 — found by `retired-audit` once it could SEE both baseline directories (it listed only
+# Api/Baselines/, so the mobile packages were invisible to it). Both left the public surface in 0.11.0
+# with no entry here, which is how an adopter meets a removal with no warning.
+#
+# 🔴 ONLY THE DELETED ONES BELONG HERE — a type made INTERNAL is not retired, it is still a current
+# fact inside the assembly, and registering one poisons every gate that reads this file. Measured the
+# hour this was written: adding `SessionBrowser` and `WebView2Interceptor` (both demoted in 0.11.0,
+# both alive in `src/`) turned doc-drift red with 85 findings, every one an internal CALL SITE. The
+# audit reports "left the public surface", which is deletion AND demotion; the remedy differs — a
+# deletion needs a line here, a demotion needs the `### Breaking` note it already has.
+IShenoraModule           # 0.11.0 -> deleted; a module is an IIpcModule registered with AddIpcModule
+SessionApiCall           # 0.11.0 -> deleted with the observation taps; SessionEvents.ResponseReceived

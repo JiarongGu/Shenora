@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { outOfScope } from './git-scope.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(repo, 'docs', 'reference', 'wire.md');
@@ -84,7 +85,10 @@ function readConstants() {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === 'obj' || entry.name === 'bin') continue;
+        // `outOfScope`, not a hand-written `bin`/`obj` list — git decides what a clone would not have.
+        // A name list is what `git-scope.mjs` exists to retire: it is complete right up until a new
+        // KIND of directory appears, and the last one was still added by name.
+        if (outOfScope(path.relative(repo, full))) continue;
         walk(full);
       } else if (entry.name.endsWith('.cs')) {
         scan(fs.readFileSync(full, 'utf8'), found);

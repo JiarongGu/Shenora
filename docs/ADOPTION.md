@@ -260,28 +260,11 @@ Replace hand-rolled `EnsureCoreWebView2Async` + settings + event wiring with `We
   user-data folder is deleted — worth knowing before you conclude your code is at fault.
 - **Serving your own frontend into an OFF-SCREEN session** (co-browsing it, rendering it headlessly,
   capturing it) needs the same pair handed to the session, because a session browser builds its own
-  environment and inherits none of the host's serving:
-  ```csharp
-  Browser = new SessionBrowserOptions
-  {
-      ProfileDirectory = …,
-      VirtualHost = hostOptions.VirtualHost,           // the host's own two values,
-      ResourceProvider = hostOptions.ResourceProvider, // the SAME provider instance
-  }
-  ```
-  Set both or neither — either alone is refused at initialization, because on its own it serves nothing
-  and looks exactly like the bug it would be. **A `DeferredSchemes` handler is NOT available inside a
-  session** (D38): those need environment-level scheme registration, which sessions do not expose, so a
-  page whose subresources come from `app://` will 404 them off-screen. **You only need any of this if
-  you serve an embedded bundle** — a server-backed app's pages are on a real loopback origin, which a
-  session can already reach.
-  ⚠ **Only on a session that renders YOUR pages.** Bundle responses carry
-  `Access-Control-Allow-Origin: *` — nearly moot in the shell, where the bundle is the document's own
-  origin, and not moot here, where the page can be any origin: script in a third-party page you are
-  co-browsing could `fetch` your whole bundle. Your shipped frontend is not a secret, so this is an
-  unintended read channel rather than a breach, and the fix costs nothing because these options are
-  per-session — give a third-party co-browse session its own `SessionBrowserOptions` without them, the
-  way it already gets its own `ProfileDirectory`.
+  environment and inherits none of the host's serving. **You only need this if you serve an EMBEDDED
+  bundle** — a server-backed app's pages are on a real loopback origin, which a session already reaches.
+  The wiring, the both-or-neither rule and the two limits that decide whether it fits (a deferred SCHEME
+  cannot work inside a session; the bundle's CORS header makes it safe only on a session rendering YOUR
+  pages) are `guides/sessions.md` and D38 — one owner rather than a second copy that drifts.
 - **Policies you may not have.** `NewWindowRequested`, `PermissionRequested`, `ProcessFailed` and
   download handling are wired with safe defaults; app hooks fall back to the built-in policy if they
   throw, because leaving one of those events unanswered is its own bug.

@@ -18,6 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { baselineFilesAt, baselineText } from './api-baselines.mjs';
 import { fileURLToPath } from 'node:url';
 
 // The script's own location, like every other tool here — see the note in stale-scan.mjs.
@@ -28,16 +29,13 @@ const TAG = process.argv[2] ?? 'v0.10.0';
 // rather than a fake: swap the revs and a property that LOST the modifier is seen as GAINING it.
 const REV = process.argv[3] ?? 'HEAD';
 
-function gitShow(rev, file) {
-  try { return execFileSync('git', ['show', `${rev}:${file}`], { encoding: 'utf8', cwd: repo }); }
-  catch { return ''; }
-}
-
-function listBaselines(rev) {
-  const out = execFileSync('git', ['ls-tree', '-r', '--name-only', rev, '--',
-    'tests/Shenora.Tests/Api/Baselines/'], { encoding: 'utf8', cwd: repo });
-  return out.split(/\r?\n/).filter((l) => l.endsWith('.txt'));
-}
+// 🔴 BOTH baseline directories, via the shared reader — this used to list `Api/Baselines/` only, and
+// `Shenora.Android`/`Shenora.iOS` have no file there at all: their whole surface lives in
+// `MetadataBaselines/`. So the gate for UNRECORDED REMOVALS could not see a public type leaving either
+// mobile package — the exact failure this tool's header cites as its reason for existing, in the two
+// packages it never covered. Found 2026-08-18 while fixing the same blind spot in `namespace-moves`.
+const gitShow = (rev, file) => baselineText(rev, file);
+const listBaselines = (rev) => baselineFilesAt(rev);
 
 // A type line starts at column 0; members are indented. Grab the fully-qualified name, then keep the
 // last dotted segment — generics and base lists trimmed.

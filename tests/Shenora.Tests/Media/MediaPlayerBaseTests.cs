@@ -101,7 +101,9 @@ public class MediaPlayerBaseTests
         // The old message named a file path and an absolute URL — the two things a rejected `file:` URL
         // already was. Only a relative string can reach this now, so it says so, and names the fix.
         Assert.Contains("relative", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("clip.wma", error.Message, StringComparison.Ordinal);
+        // ⚠ And it does NOT echo the caller's value: this type's message is documented app-safe, so a
+        // path must not ride out through an adopter that reports `ex.Message` onward.
+        Assert.DoesNotContain("clip.wma", error.Message, StringComparison.Ordinal);
     }
 
     // ── Invariant 1 — a TERMINAL state is never overwritten by a platform transition ───────────────

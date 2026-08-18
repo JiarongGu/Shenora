@@ -100,8 +100,10 @@ folder picker, and a clipboard PICTURE **on Android only**, throw `ShellCapabili
 naming the platform and the alternative. ⚠ The clipboard's split is per-platform and deliberate —
 iOS carries any format, because `UIPasteboard` takes an arbitrary UTI; Android refuses everything
 but text and HTML, because a picture there travels as a `content://` URI needing a `ContentProvider`
-the ADOPTING APP declares in its own manifest, which the kit cannot supply on its behalf. Ask
-`UnsupportedFormats` rather than assuming either answer. `IUiInteraction`'s
+the ADOPTING APP declares in its own manifest, which the kit cannot supply on its behalf. So a page
+that offers "copy image" should gate on the shell rather than assume either answer — the refusal is a
+`ShellCapability.NotSupported` naming the format, which is a caught exception rather than a question
+you can ask in advance. `IUiInteraction`'s
 block/unblock is the opposite case — a documented no-op, because mobile pickers are already modal, so
 the capability is satisfied BY the platform rather than absent.
 

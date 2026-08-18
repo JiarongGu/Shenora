@@ -88,6 +88,30 @@ has a delegate. The two below are what survived.
   baselines the release already diffs, so it need not be hand-maintained.
 
 
+### 🧹 THREE CLEANUP CANDIDATES FROM THE 2026-08-18 REVIEW — each needs a judgment, not a patch
+
+The review's mechanical findings are fixed (a shared baseline reader, the npm package list read from
+config in three places, `outOfScope` back in the walkers). These three are left because each is a
+DECISION rather than a defect:
+
+- [ ] **`WindowStateManager.ToPhysical`/`ToLogical` were made internal on the same unfalsifiable
+  claim that cost us `DerivedCacheKey`** — "no consumer outside the assembly", which is only checkable
+  against this repo. They are pure DPI-aware logical↔physical bounds conversions, and an app persisting
+  window state for a window the kit does NOT manage would re-derive them and be silently wrong (a
+  slightly misplaced window, no error). ⚠ Same shape as the harvest finding: decide whether the value
+  is a CALCULATION (keep internal) or an AGREEMENT with what the kit persists (make public + pin).
+  The other 0.11.0 demotions were checked and have better stated reasons.
+- [ ] **`WireMirrorTests` has no completeness check**, so a wire family with no C#⇄TS mirror is
+  invisible — the same allow-list shape `wire-reference` just had. Confirmed gap:
+  `MediaConversionEvents`/`MediaConversionErrorCodes` have no fact and no TS constant at all, while the
+  CHANGELOG tells a page to branch on `READY`/`FAILED`. Either add the mirror + the missing client
+  constants, or state in the test file which families are deliberately host-only.
+- [ ] **Three parsers of `DECISIONS.md`'s entry lines** (`decisions-index`, `decision-audit`,
+  `doc-shape`), one of which already carries a comment about the other two having drifted, plus a
+  byte-identical `sectionAfter` in two of them. `decisions-index` already exports `readEntries` and is
+  the only one handling the `D40 · D41` tombstone form. Consolidating is cheap; the judgment is whether
+  the two consumers want exactly its parse.
+
 ### 📦 NPM TRUSTED PUBLISHING — owner-side UI, and it cannot be verified from here
 
 Both packages now exist on the registry, so both Trusted Publisher settings pages are reachable. Until

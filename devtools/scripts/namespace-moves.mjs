@@ -15,50 +15,11 @@
 // rename is `retired-names.txt`'s job, and pretending otherwise would invent a mapping.
 //
 // Usage: node devtools/scripts/namespace-moves.mjs <from-ref> [to-ref]   (to-ref defaults to the worktree)
-import fs from 'node:fs';
-import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-
-const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BASELINE_DIRS = ['tests/Shenora.Tests/Api/Baselines', 'tests/Shenora.Tests/Api/MetadataBaselines'];
-
-/** A declaration line names its type as the LAST whitespace-separated token before any generic/base part. */
-const DECL = /^(?:static\s+|sealed\s+|abstract\s+|readonly\s+|partial\s+)*(?:class|interface|record|struct|enum|delegate)\s+([A-Za-z0-9_.]+)/;
-
-/** Every fully-qualified type name in one baseline's text. */
-function typesIn(text) {
-  const found = new Set();
-  for (const line of text.split(/\r?\n/)) {
-    // Only top-level declaration lines — members are indented, and a member can carry a type name too.
-    if (/^\s/.test(line)) continue;
-    const m = DECL.exec(line.trim());
-    if (m && m[1].includes('.')) found.add(m[1]);
-  }
-  return found;
-}
-
-/** Baseline text at a git ref (null ref = the working tree). */
-function baselinesAt(ref) {
-  const all = new Set();
-  for (const dir of BASELINE_DIRS) {
-    if (ref === null) {
-      const abs = path.join(repo, dir);
-      if (!fs.existsSync(abs)) continue;
-      for (const f of fs.readdirSync(abs)) {
-        // `.actual` is a drift DUMP, not a baseline — including it would report a type twice.
-        if (f.endsWith('.txt')) typesIn(fs.readFileSync(path.join(abs, f), 'utf8')).forEach((t) => all.add(t));
-      }
-      continue;
-    }
-    const list = spawnSync('git', ['ls-tree', '-r', ref, '--name-only', dir], { cwd: repo, encoding: 'utf8' });
-    for (const file of (list.stdout ?? '').split('\n').filter((f) => f.endsWith('.txt'))) {
-      const show = spawnSync('git', ['show', `${ref}:${file}`], { cwd: repo, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-      if (show.status === 0) typesIn(show.stdout).forEach((t) => all.add(t));
-    }
-  }
-  return all;
-}
+// 🔴 The baseline reading is SHARED (`api-baselines.mjs`) and this file's first version is why. It
+// carried its own regex demanding a `class|interface|…` keyword, which the MetadataBaselines format
+// does not have — so the mobile packages contributed ZERO types and the generated table silently had
+// no Android or iOS row. A smaller answer is indistinguishable from a clean one.
+import { typesAt } from './api-baselines.mjs';
 
 const [from, to = null] = process.argv.slice(2);
 if (!from) {
@@ -66,8 +27,8 @@ if (!from) {
   console.error('   e.g. node devtools/scripts/namespace-moves.mjs v0.10.0');
   process.exitCode = 1;
 } else {
-  const before = baselinesAt(from);
-  const after = baselinesAt(to);
+  const before = typesAt(from);
+  const after = typesAt(to);
   if (before.size === 0) {
     console.error(`namespace-moves: no baseline types found at '${from}' — is it a valid ref?`);
     process.exitCode = 1;

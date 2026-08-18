@@ -96,6 +96,10 @@ type that moved AND was renamed shows as gone — that is `devtools/retired-name
 | `Shenora.IO.Compression.ZipUpdateSource` | `Shenora.Engine.Update.ZipUpdateSource` |
 | `Shenora.IO.FileAtomicity` | `Shenora.Engine.Files.FileAtomicity` |
 | `Shenora.IO.FileChange` | `Shenora.Engine.Files.FileChange` |
+| `Shenora.IO.FileChange+CreateDirectory` | `Shenora.Engine.Files.FileChange+CreateDirectory` |
+| `Shenora.IO.FileChange+Delete` | `Shenora.Engine.Files.FileChange+Delete` |
+| `Shenora.IO.FileChange+Move` | `Shenora.Engine.Files.FileChange+Move` |
+| `Shenora.IO.FileChange+Replace` | `Shenora.Engine.Files.FileChange+Replace` |
 | `Shenora.IO.FilePathLocker` | `Shenora.Engine.Files.FilePathLocker` |
 | `Shenora.IO.FilePathLockerOptions` | `Shenora.Engine.Files.FilePathLockerOptions` |
 | `Shenora.IO.FileUndoKind` | `Shenora.Engine.Files.FileUndoKind` |
@@ -160,7 +164,7 @@ type that moved AND was renamed shows as gone — that is `devtools/retired-name
 | `Shenora.Media.MediaStreamKind` | `Shenora.Modules.Media.MediaStreamKind` |
 | `Shenora.Media.MediaStreamPlan` | `Shenora.Modules.Media.MediaStreamPlan` |
 
-Gone from the public surface (renamed, made internal, or removed) — 30:
+Gone from the public surface (renamed, made internal, or removed) — 33:
 
 - `Shenora.Core.DerivedCacheKey`
 - `Shenora.Core.IShenoraModule`
@@ -180,6 +184,9 @@ Gone from the public surface (renamed, made internal, or removed) — 30:
 - `Shenora.Ipc.OperationServiceCollectionExtensions`
 - `Shenora.Ipc.OperationStatus`
 - `Shenora.Ipc.OperationsFacade`
+- `Shenora.Mobile.MobileFileDialogs`
+- `Shenora.Mobile.MobileLiveActivities`
+- `Shenora.Mobile.MobilePlaybackSession`
 - `Shenora.Windows.DropZoneFacade`
 - `Shenora.Windows.SessionApiCall`
 - `Shenora.Windows.SessionBrowser`
@@ -193,4 +200,4 @@ Gone from the public surface (renamed, made internal, or removed) — 30:
 - `Shenora.Windows.WinFormsHostOptions`
 - `Shenora.Windows.WindowCommandFacade`
 
-154 moved, 30 gone, 335 public type(s) at v0.11.0.
+158 moved, 33 gone, 365 public type(s) at v0.11.0.

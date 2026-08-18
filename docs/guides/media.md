@@ -187,8 +187,9 @@ on both mobile shells, it errors within ~70 ms and never retries. So the wait mo
 which already knows what it is about to play.
 
 ```csharp
+// The WAIT is here, once: 1.74 s to plan a 79 MiB film (measured 2026-08-12, D72's proof run).
 if (await computed.PlanAsync(path, ct) is MediaPlanOutcome.Ready)
-    ShowPlayer(url);          // its FIRST request is a 206 — ~1.9 s for a 79 MiB film, cached after
+    ShowPlayer(url);          // …so the page's FIRST request is already a plain 206.
 ```
 
 `PlanAsync` answers four things you act on differently: `Ready`, `Unplannable` (remote, or the output would
