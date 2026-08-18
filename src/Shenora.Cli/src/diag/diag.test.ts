@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import { createDiagService, DiagState, isLoopback, plainAddress, lanAddresses } from './service.js';
 import { diagPage } from './page.js';
-import { positionals } from './commands.js';
+import { positionals, cmdDiagEval } from './commands.js';
 
 const servers: http.Server[] = [];
 afterEach(() => {
@@ -240,6 +240,43 @@ describe('the page', () => {
     const html = diagPage({ appOrigin: "http://x/'+alert(1)+'" });
     const body = html.slice(html.indexOf('<script>') + 8, html.indexOf('</script>'));
     expect(() => new Function(body)).not.toThrow();
+  });
+});
+
+describe('eval reports failure in the EXIT CODE, not only in text', () => {
+  /**
+   * 🔴 Measured against a real WebKit: a throwing expression printed `(threw) Can't find variable: nope`
+   * and exited 0, so `diag eval … && next-step` marched on after a failed probe. A diagnostic that
+   * reports a failure it does not signal is the same false success this CLI polices in builds, arriving
+   * through the one command whose entire job is to tell you the truth about a device.
+   */
+  it('sets a non-zero exit code when the device says it threw', async () => {
+    const saved = process.exitCode;
+    const state = new DiagState();
+    const { server } = createDiagService({ state, page: () => diagPage() });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (typeof address === 'string' || address === null) throw new Error('no port');
+    const args = ['--port', String(address.port)];
+
+    try {
+      process.exitCode = saved;
+      // ⚠ The answer must arrive AFTER the command reads its cursor, not before. Recording it first
+      // made this time out — which is the cursor behaving correctly: `cmdDiagEval` reads the results
+      // head before queueing precisely so a fast device cannot answer into a window nobody is watching,
+      // and a result already in the past is, correctly, not a reply to a question not yet asked.
+      const running = cmdDiagEval(args, 'nope.missing');
+      await new Promise((r) => setTimeout(r, 150));
+      state.record('phone', 'eval', false, "Can't find variable: nope");
+      const ok = await running;
+
+      expect(ok).toBe(false);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      // ⚠ Restored: the suite shares one process, so a left-behind code fails an unrelated later test.
+      process.exitCode = saved;
+    }
   });
 });
 

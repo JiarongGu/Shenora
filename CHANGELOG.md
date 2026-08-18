@@ -82,6 +82,10 @@ at the first list and missed five more breaking changes.
   agent — so the only channel that exists is one the page itself opens. It ships inside nothing, because
   it runs arbitrary JS in whatever page polls it, and a diagnostic hosted inside the app dies with it
   exactly when it is needed.
+  - **A failed `diag eval` now exits non-zero.** It printed `(threw) …` and exited 0, so
+    `diag eval … && next-step` marched on after a failed probe — the same false success this CLI polices
+    in builds, arriving through the one command whose entire job is telling you the truth about a device.
+    Found by running it against a real WebKit rather than a fake.
   - **Split by trust, not convenience.** Queueing work, reading results and running an ssh command decide
     what RUNS, so they are loopback-only, checked against the socket's own address and never a header; a
     request for one from off-box gets 404, not 403. Polling and reporting stay open, because the device

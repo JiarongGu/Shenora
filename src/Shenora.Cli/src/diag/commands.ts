@@ -155,6 +155,10 @@ export async function cmdDiagEval(args: readonly string[], expression: string): 
     const hit = data?.results?.find((r) => r.kind === 'eval' && (!device || r.device === device));
     if (hit) {
       console.log(`\n${hit.device}  ${hit.ok ? '' : '(threw) '}${hit.value}`);
+      // 🔴 The EXIT CODE has to carry it too. Printing "(threw)" and exiting 0 means
+      // `diag eval … && next-step` runs the next step after a failed probe — the same false success
+      // this CLI polices everywhere else, arriving through a diagnostic rather than a build.
+      if (!hit.ok) process.exitCode = 1;
       return hit.ok;
     }
     if (Date.now() > deadline) {
