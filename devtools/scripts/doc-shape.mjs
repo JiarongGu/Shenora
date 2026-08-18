@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { outOfScope } from './git-scope.mjs';
+import { decisionMarks, sectionAfter } from './decisions-parse.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const check = process.argv.includes('--check');
@@ -169,26 +170,13 @@ const decPath = path.join(repo, decRel);
 if (fs.existsSync(decPath)) {
   const lines = fs.readFileSync(decPath, 'utf8').split(/\r?\n/);
   const marks = [];
-  lines.forEach((l, i) => {
-    const m = l.match(/^-\s+\*\*(D(\d+))\s*(?:—|-|–)?\s*(.*)$/);
-    // 🔴 The SUBJECT is carried, not just the number. A report reading `D70 is 28 lines` says nothing
-    // about what D70 is, so deciding whether a cluster is finished means opening the file for every
-    // row — and skipping that is how "39 over the cap, none of them media" got written about a list
-    // whose largest entry WAS media. The title is the cheapest possible fix and it is already matched.
-    if (m) marks.push({ id: m[1], n: Number(m[2]), at: i, title: m[3] ?? '' });
-  });
+  // The mark parse and the span end are SHARED (`decisions-parse.mjs`): this file and `decision-audit`
+  // ran byte-identical `sectionAfter` copies, each having fixed the same end-at-EOF bug separately.
+  marks.push(...decisionMarks(lines));
 
   // ⚠ NO duplicate-number check here on purpose: `doc-drift` check (6) already owns it, and two
   // owners for one invariant is the drift this gate exists to stop. Its own comment carries the D51
   // measurement that earned it.
-  // 🔴 THE LAST ENTRY ENDS AT ITS SECTION, NOT AT EOF. Running its span to `lines.length` swallowed
-  // everything after it — the whole "## Anti-goals" section — so the final entry reported ~100 lines
-  // whatever it actually said, and could not be brought under the cap by editing it at all. A check no
-  // edit can satisfy is one its reader learns to skip. Sabotage-verified by planting a long last entry.
-  const sectionAfter = (at) => {
-    for (let i = at + 1; i < lines.length; i++) if (/^##\s/.test(lines[i])) return i;
-    return lines.length;
-  };
 
   // The session-log sweep, per LINE, so the report names the sentence to rewrite rather than the entry.
   lines.forEach((line, i) => {
@@ -211,7 +199,7 @@ if (fs.existsSync(decPath)) {
   };
 
   marks.forEach((m, j) => {
-    const end = j + 1 < marks.length ? marks[j + 1].at : sectionAfter(m.at);
+    const end = j + 1 < marks.length ? marks[j + 1].at : sectionAfter(lines, m.at);
     const span = end - m.at;
     if (span > ENTRY_CAP) {
       flag(decRel, m.at + 1, `${m.id} is ${span} lines (cap ${ENTRY_CAP}) — ${subject(m.title)}`,

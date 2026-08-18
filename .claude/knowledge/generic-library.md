@@ -184,6 +184,13 @@ keeps the library reusable (adopted from the family's other library, where it's 
   every cached artefact on every device. **A type whose value is agreement stays public, and gets its
   format pinned by a golden test** (`DerivedCacheKeyTests`), so the agreement is defended rather than
   described. Demote a shipped type only for something the kit ALONE can meaningfully call.
+  - **The discriminator, applied to the next candidate rather than argued in the abstract:** is a wrong
+    answer SILENT and permanent, or visible and self-correcting? `WindowStateManager.ToPhysical`/
+    `ToLogical` were re-examined under this rule and stayed internal — every Form-shaped use is already
+    public (`Apply`/`AttachTo`/`Save` + `WindowState`/`IWindowStateStore`), and a wrong conversion is a
+    misplaced window the user moves and the next save corrects. **Keep the POSITIVE reason at the site**
+    ("the public entry points already cover it"), never the unfalsifiable one, or the next reviewer
+    re-raises it with no way to tell which kind it is.
 - 🔴 **An interface whose only implementations are the REAL one and a TEST DOUBLE is not a seam — it is
   the cost of one.** A test fake is not a second consumer; it is what the abstraction charges you. Ask what
   the second REAL implementation is, and if the answer is hypothetical, use the concrete type. (`MediaPlayer`

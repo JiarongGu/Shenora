@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { outOfScope } from './git-scope.mjs';
+import { DECISIONS_REL, decisionLines, decisionMarks, sectionAfter } from './decisions-parse.mjs';
 
 // The script's own location, never process.cwd() — `doctor` fails any scanner that roots at the cwd,
 // because a partial scan is indistinguishable from a clean one when the clean answer is silence.
@@ -82,27 +83,17 @@ for (const f of sourceFiles) {
 }
 
 // ── parse DECISIONS.md into entries ───────────────────────────────────────────────────────────────
-const docRel = 'docs/DECISIONS.md';
-const lines = fs.readFileSync(path.join(repo, docRel), 'utf8').split(/\r?\n/);
-const marks = [];
-lines.forEach((l, i) => {
-  const m = l.match(/^-\s+\*\*(D\d+)\s*(?:—|-|–)?/);
-  if (m) marks.push({ id: m[1], at: i });
-});
-// 🔴 THE LAST ENTRY ENDS AT ITS SECTION, NOT AT EOF — the same defect `doc-shape` carried, in a second
-// copy of the same idea. Running the final entry's body to `lines.length` swallowed everything after it
-// (the whole "## Anti-goals" section), so whichever entry happened to be last reported ~100 lines and a
-// handful of findings that were not in it at all. ⚠ Two tools splitting the same file two ways is how one
-// gets fixed and the other does not; both now stop at the next `## `.
-const sectionAfter = (at) => {
-  for (let i = at + 1; i < lines.length; i++) if (/^##\s/.test(lines[i])) return i;
-  return lines.length;
-};
+const docRel = DECISIONS_REL;
+// The parse is SHARED (`decisions-parse.mjs`) — this file and `doc-shape` ran byte-identical copies of
+// `sectionAfter`, each with the same end-at-EOF bug fixed separately, and this comment used to say so
+// while keeping the copy. The module is that third copy not being written.
+const lines = decisionLines();
+const marks = decisionMarks(lines);
 
 const entries = marks.map((m, j) => ({
   id: m.id,
   line: m.at + 1,
-  body: lines.slice(m.at, j + 1 < marks.length ? marks[j + 1].at : sectionAfter(m.at)),
+  body: lines.slice(m.at, j + 1 < marks.length ? marks[j + 1].at : sectionAfter(lines, m.at)),
 }));
 
 // 🔴 A PERMANENT FLOOR OF KNOWN-FALSE FINDINGS IS WORSE THAN NO CHECK, because it teaches its reader to

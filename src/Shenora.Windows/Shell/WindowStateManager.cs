@@ -211,6 +211,18 @@ public sealed class WindowStateManager(IWindowStateStore store, WindowStateOptio
     /// incomplete pair can't place a window — the caller centers instead). Does NOT clamp to a work
     /// area — prefer
     /// <see cref="ToPhysical(WindowState?, double, WindowStateOptions, IEnumerable{Rectangle})"/>.
+    /// <para>
+    /// ⚠ <b>INTERNAL, and re-examined 2026-08-18 against the `DerivedCacheKey` mistake</b> — that type
+    /// was demoted on "no consumer outside this assembly", which is unfalsifiable from inside the repo,
+    /// and an adopter had one. The reason to keep THESE internal is a positive one instead: every
+    /// Form-shaped use is already public — <c>Apply(form, scale)</c>, <c>AttachTo(form, scale)</c>,
+    /// <c>Save(form)</c>, plus <see cref="WindowState"/> and <c>IWindowStateStore</c> for a custom
+    /// store — so an app never has to reproduce this arithmetic to persist a window. And unlike a cache
+    /// key, a wrong answer here is VISIBLE and self-correcting: a slightly misplaced window that the
+    /// user moves and the next save fixes, not a silently orphaned cache.
+    /// 🔴 If an adopter ever needs the conversion WITHOUT a Form, that is the harvest signal (D15) —
+    /// promote it then, rather than guessing now.
+    /// </para>
     /// </summary>
     internal static (int Width, int Height, int? X, int? Y, WindowPlacement Placement) ToPhysical(
         WindowState? state, double scale, WindowStateOptions options)
