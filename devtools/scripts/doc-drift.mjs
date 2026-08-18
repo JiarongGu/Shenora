@@ -112,7 +112,11 @@ const HISTORY_BY_DEFINITION =
   // both DELETED on 2026-08-07 — and their presence here is what made them deletable: a file the drift
   // gate treats as history-by-definition is, by the repo's own definition, an archive. That is a useful
   // test to apply to the next doc that wants an exemption.
-  /^(devtools\/retired-names\.txt|CHANGELOG\.md)$/;
+  // ⚠ `docs/reference/namespace-moves.md` joined on 2026-08-18 and passes that test differently from
+  // the two deleted ones: its ENTIRE left column is old fully-qualified names — saying where each went
+  // is the file's only job — and it is GENERATED (`dev.mjs namespace-moves`), so the "an exempt file
+  // rots unnoticed" hazard does not apply. Nobody maintains it; a release regenerates it.
+  /^(devtools\/retired-names\.txt|CHANGELOG\.md|docs\/reference\/namespace-moves\.md)$/;
 
 /** `Name  # why it went` per line; blank lines and `#` comments ignored. */
 // A retired entry is a LITERAL phrase, so every regex metacharacter in it is escaped before it becomes

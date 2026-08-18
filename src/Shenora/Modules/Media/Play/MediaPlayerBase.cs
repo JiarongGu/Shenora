@@ -97,8 +97,12 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(source.Uri)) throw new MediaPlayerException("Media source URI is empty.");
 
+        // Names what is actually wrong: only a RELATIVE string reaches here now, and the fix is to root
+        // it. The old wording ("not a file path or an absolute URL") was the message a `file:` URL got
+        // while being both of those things.
         var uri = ParseUri(source.Uri)
-            ?? throw new MediaPlayerException("Media source URI is not a file path or an absolute URL.");
+            ?? throw new MediaPlayerException(
+                $"Media source URI '{source.Uri}' is relative — pass a rooted path or an absolute URL.");
 
         Teardown();
 
@@ -345,10 +349,18 @@ public abstract class MediaPlayerBase : IMediaPlayer, IDisposable
     /// <summary>
     /// A file path or an absolute URL, and nothing else. A relative string is REJECTED, never resolved
     /// against the process's working directory — that is not where an app's media lives.
+    /// <para>
+    /// ⚠ <b>A <c>file:</c> URL is accepted, and used not to be.</b> The guard read <c>!parsed.IsFile</c>,
+    /// so <c>new Uri(path).AbsoluteUri</c> — the obvious thing for a .NET caller to hand over — matched
+    /// neither branch and was refused as "not a file path or an absolute URL", naming both of the things
+    /// it IS. Found by the first adopter, one failed open each. It costs nothing to accept: the rooted
+    /// branch below already returns a <c>file:</c> URI, so every consumer downstream was handling one
+    /// anyway (<c>IosMediaPlayer</c> branches on <c>IsFile</c> and takes <c>LocalPath</c>).
+    /// </para>
     /// </summary>
     private static Uri? ParseUri(string uri)
     {
-        if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && !parsed.IsFile) return parsed;
+        if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed)) return parsed;
         return Path.IsPathRooted(uri) ? new Uri(uri) : null;
     }
 

@@ -471,6 +471,8 @@ sealed class Shenora.Engine.Compression.ResourcePackOptions
 static class Shenora.Engine.Compression.ZipExtraction
   public static Shenora.Engine.Compression.ExtractionResult ExtractTo(System.IO.Compression.ZipArchive archive, string destinationDirectory, Shenora.Engine.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Engine.Compression.ExtractionResult ExtractTo(string archivePath, string destinationDirectory, Shenora.Engine.Compression.ExtractionLimits? limits = null, bool overwrite = false, System.Threading.CancellationToken cancellationToken = default)
+static class Shenora.Engine.DerivedCacheKey
+  public static string For(string path, long length, System.DateTime lastWriteUtc, string variant = "")
 enum Shenora.Engine.Files.FileAtomicity (int)
   public const Shenora.Engine.Files.FileAtomicity AllOrNothing = 1
   public const Shenora.Engine.Files.FileAtomicity PerChange = 0

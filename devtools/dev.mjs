@@ -1349,6 +1349,14 @@ switch (cmd) {
     run('node', [path.join(repo, 'devtools', 'scripts', 'decisions-index.mjs'), ...args]);
     break;
 
+  // namespace-moves <from-ref> [to-ref] — old FQN → new FQN for every type that changed namespace,
+  // read from the API baselines. A RELEASE step: the package-fold table in a changelog names the
+  // packages, and an adopter following it still meets one CS0246 per type (first harvest, 0.11.0 —
+  // 154 types moved and the notes listed five). Paste the output into the release's migration notes.
+  case 'namespace-moves':
+    run('node', [path.join(repo, 'devtools', 'scripts', 'namespace-moves.mjs'), ...args]);
+    break;
+
   // retired-audit [tag] [rev=HEAD] — which public types left the SHIPPED surface without a retired-names
   // entry. The question BEFORE stale-scan's: not "is this name still described as current?" but "is this
   // removal recorded at all?" Release step, not part of verify — it needs tags.
@@ -1372,6 +1380,7 @@ switch (cmd) {
     // shipped with a `case` and a rule telling you to run it, and neither appeared here.
     console.log('usage: node devtools/dev.mjs <build|test|verify|pack|doctor|changelog|sample|vite|shot|wgc|click|rclick|move|drag|input|responsiveness|android|mac|launcher [--posix]|nuget-retire|knowledge|clean|check-sensitive|reserved-paths|install-hooks>');
     console.log('  release        : retired-audit <prev-tag>   (account for every public REMOVAL)');
+    console.log('                   namespace-moves <prev-tag> (old FQN -> new FQN, for the migration notes)');
     console.log('  probes         : update-probe [dir] | android-jdk');
     console.log('  prose review (never gates, triage by hand): stale-scan | cite-scan | self-rename-scan | decision-audit | name-scope');
     console.log('  doc shape      : doc-shape [--check]        (verify runs --check: self-narration FAILS, the D-entry line cap WARNS)');

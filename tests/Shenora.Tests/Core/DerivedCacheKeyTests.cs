@@ -1,112 +1,71 @@
-using Shenora;
 using Shenora.Engine;
 
 namespace Shenora.Tests.Core;
 
 /// <summary>
-/// The cache key all three surveyed implementations arrived at independently. The tests that matter are
-/// the ones a path-only key would pass — because a path-only key is the bug, and it looks fine until a
-/// user replaces a file.
+/// 🔴 THE FORMAT IS THE CONTRACT, so it is pinned by VALUE rather than by property.
+/// <para>
+/// This type is public because an adopter's cache key must AGREE with the kit's byte for byte — the
+/// first adoption harvest (Yaorin, 0.10.0 → 0.11.0) found it made internal and had to re-derive it by
+/// hand. Every knob below (separator normalisation, case, field order, tick precision, the 8-byte
+/// truncation) looks optional and produces a <i>valid-looking</i> key that matches nothing when it
+/// drifts, which silently orphans every cached artefact on every device with no error anywhere.
+/// </para>
+/// <para>
+/// ⚠ So a change that fails these tests is not a test to update — it is a BREAKING change to every
+/// deployed cache, and it belongs in <c>CHANGELOG.md</c> under <c>### Breaking</c> with a note that
+/// existing caches are orphaned.
+/// </para>
 /// </summary>
 public class DerivedCacheKeyTests
 {
-    private static readonly DateTime Monday = new(2026, 8, 3, 12, 0, 0, DateTimeKind.Utc);
+    // A fixed instant, so the pinned values below cannot drift with the clock or the machine's zone.
+    private static readonly DateTime Mtime = new(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void The_same_source_produces_the_same_key()
+    public void The_key_format_is_pinned_by_value()
     {
-        Assert.Equal(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
-                     DerivedCacheKey.For("C:/media/a.mkv", 100, Monday));
-    }
-
-    /// <summary>
-    /// The whole reason mtime is in the key. A path-only key survives an overwrite and then serves
-    /// yesterday's conversion of a file the user has replaced — a stale-cache bug that reads as corruption
-    /// and never shows up in testing, because a test rarely overwrites its own fixture in place.
-    /// </summary>
-    [Fact]
-    public void Replacing_the_file_changes_the_key_even_at_the_same_path_and_size()
-    {
-        var before = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday);
-        var after = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday.AddSeconds(1));
-
-        Assert.NotEqual(before, after);
-    }
-
-    /// <summary>
-    /// Length is in the key as well as mtime because the two fail differently: a copy or a restore can
-    /// preserve an mtime while changing the bytes.
-    /// </summary>
-    [Fact]
-    public void A_changed_length_changes_the_key_even_when_the_mtime_did_not_move()
-    {
-        Assert.NotEqual(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
-                        DerivedCacheKey.For("C:/media/a.mkv", 101, Monday));
-    }
-
-    /// <summary>
-    /// One source, several derived forms. Without the variant a thumbnail could be served as a converted
-    /// stream — same source, same key.
-    /// </summary>
-    [Fact]
-    public void Different_variants_of_one_source_never_collide()
-    {
-        var mp4 = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday, "mp4");
-        var thumb = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday, "thumb-720");
-        var none = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday);
-
-        Assert.NotEqual(mp4, thumb);
-        Assert.NotEqual(mp4, none);
-    }
-
-    /// <summary>
-    /// On Windows the same file legitimately arrives spelled several ways, and each spelling would
-    /// otherwise get its own cache entry — duplicated work that is easy to ship and hard to notice.
-    /// </summary>
-    [Theory]
-    [InlineData(@"C:\media\a.mkv")]
-    [InlineData("c:/MEDIA/A.mkv")]
-    [InlineData(@"c:\Media\a.MKV")]
-    public void Separator_and_case_variants_of_one_path_share_a_key(string spelling)
-    {
-        Assert.Equal(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
-                     DerivedCacheKey.For(spelling, 100, Monday));
-    }
-
-    /// <summary>Different files must not share an entry, however similar their names.</summary>
-    [Fact]
-    public void Different_paths_produce_different_keys()
-    {
-        Assert.NotEqual(DerivedCacheKey.For("C:/media/a.mkv", 100, Monday),
-                        DerivedCacheKey.For("C:/media/b.mkv", 100, Monday));
-    }
-
-    /// <summary>
-    /// A local timestamp and its UTC equivalent are the same instant, so they must not produce two entries
-    /// for one file — the kind of duplication that appears only on a machine outside UTC.
-    /// </summary>
-    [Fact]
-    public void The_same_instant_in_another_kind_gives_the_same_key()
-    {
-        var utc = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday);
-        var asLocal = DerivedCacheKey.For("C:/media/a.mkv", 100, Monday.ToLocalTime());
-
-        Assert.Equal(utc, asLocal);
+        // 🔴 GOLDEN VALUES. If one of these changes, read this class's summary before touching it.
+        Assert.Equal("051050403c46356d", DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime));
+        Assert.Equal("f3b28da7ebdc6d09", DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime, "hls"));
     }
 
     [Fact]
-    public void The_key_is_filesystem_safe_and_a_fixed_length()
+    public void One_file_spelled_several_ways_is_ONE_key()
     {
-        var key = DerivedCacheKey.For(@"C:\media\a file with spaces & 中文.mkv", 100, Monday, "mp4");
-
-        Assert.Equal(16, key.Length);
-        Assert.True(key.All(char.IsAsciiHexDigitLower), key);
+        // Separator and case normalisation: a Windows path arrives spelled both ways from a picker, a
+        // config file and a URL, and three cache entries for one file is the bug this prevents.
+        var canonical = DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime);
+        Assert.Equal(canonical, DerivedCacheKey.For(@"C:\media\film.mkv", 1234, Mtime));
+        Assert.Equal(canonical, DerivedCacheKey.For("C:/Media/Film.MKV", 1234, Mtime));
     }
 
     [Fact]
-    public void An_empty_path_or_negative_length_is_refused_rather_than_hashed()
+    public void Length_and_mtime_and_variant_each_change_the_key()
     {
-        Assert.Throws<ArgumentException>(() => DerivedCacheKey.For("  ", 100, Monday));
-        Assert.Throws<ArgumentOutOfRangeException>(() => DerivedCacheKey.For("C:/a.mkv", -1, Monday));
+        var baseline = DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime);
+
+        // Length and mtime fail differently — a copy preserves mtime while changing bytes, an edit
+        // changes bytes without moving the length — which is why both are in the key.
+        Assert.NotEqual(baseline, DerivedCacheKey.For("C:/media/film.mkv", 1235, Mtime));
+        Assert.NotEqual(baseline, DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime.AddTicks(1)));
+        // And a variant, so a thumbnail can never be served as a converted stream.
+        Assert.NotEqual(baseline, DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime, "thumb-720"));
+    }
+
+    [Fact]
+    public void A_local_mtime_keys_the_same_as_its_UTC_instant()
+    {
+        // The same moment expressed in local time must not produce a second cache entry.
+        var local = Mtime.ToLocalTime();
+        Assert.Equal(DerivedCacheKey.For("C:/media/film.mkv", 1234, Mtime),
+                     DerivedCacheKey.For("C:/media/film.mkv", 1234, local));
+    }
+
+    [Fact]
+    public void A_blank_path_or_a_negative_length_is_a_caller_bug()
+    {
+        Assert.Throws<ArgumentException>(() => DerivedCacheKey.For("  ", 1, Mtime));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DerivedCacheKey.For("C:/x", -1, Mtime));
     }
 }

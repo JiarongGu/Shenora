@@ -18,8 +18,19 @@ namespace Shenora.Engine;
 /// ⚠ <b>Not a content hash, and not trying to be</b> — hashing a 4 GB video to decide whether to reuse a
 /// thumbnail costs more than producing it. For real integrity use <c>UpdateManifest</c>'s per-file SHA-256.
 /// </para>
+/// <para>
+/// 🔴 <b>PUBLIC BECAUSE THE FORMAT IS THE CONTRACT, not because hashing is hard.</b> It was made internal
+/// in 0.11.0 on the reasoning that every consumer lived in this assembly — which an adopter falsified
+/// immediately: their own on-device HLS route keyed its segment directories with this, and the removal
+/// left them re-deriving it by hand. The value here was never SHA-256 (any language has that); it is that
+/// an app's key AGREES with the kit's, byte for byte. Separator normalisation, lower-casing, field order,
+/// tick precision and the 8-byte truncation each look optional and each produce a <i>valid-looking</i> key
+/// that matches nothing — so a drifting copy silently orphans every cache on every device, with no error
+/// anywhere. <c>DerivedCacheKeyTests</c> pins the exact output for that reason: the format is now
+/// something the gate defends rather than something a reader infers.
+/// </para>
 /// </summary>
-internal static class DerivedCacheKey
+public static class DerivedCacheKey
 {
     /// <summary>
     /// A stable, filesystem-safe key for a source file's derived artefact.

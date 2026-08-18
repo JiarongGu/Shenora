@@ -626,6 +626,11 @@ Interceptor
 Middleware
 Handler
 Delivery
+# `Derived` + `Cache` (2026-08-18): DerivedCacheKey went public again after the first adoption harvest
+# found an app re-deriving it by hand. Both name the MECHANISM — what the key is OVER (something
+# derived from a source) and what it is FOR — rather than any scenario that uses one.
+Derived
+Cache
 # `Pipeline` (2026-08-04) is the composition itself, now a public type because all three shells share it
 # rather than hand-rolling the back-to-front chain build three times.
 Pipeline

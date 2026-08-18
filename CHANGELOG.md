@@ -28,9 +28,44 @@ second one. `## Unreleased` had grown two separate `### Breaking` lists (P5.5 H7
 here than untidy: that heading is the SemVer gate at 1.0, so a reader scanning it would have stopped
 at the first list and missed five more breaking changes.
 
+## Unreleased
+
+### Fixed
+
+🧭 **The first ADOPTION HARVEST (D15), from Yaorin's 0.10.0 → 0.11.0 upgrade.** Three findings, and the
+first two are things only an adopter could have found — the kit's own tests and gates were green for
+both.
+
+- 🔴 **`DerivedCacheKey` is PUBLIC again**, restoring what 0.11.0 removed. It was demoted because "every
+  consumer is in the same assembly", which is unfalsifiable from inside this repo: the adopter's
+  on-device HLS route keyed its segment directories with it, and the removal left them carrying a
+  byte-for-byte copy with a comment forbidding edits. ⚠ **The value was never the SHA-256** — it is that
+  an app's key AGREES with the kit's, and every knob (separator normalisation, case, field order, tick
+  precision, the 8-byte truncation) yields a *valid-looking* key that matches nothing when it drifts,
+  silently orphaning every cached artefact on every device with no error anywhere. The exact format is
+  now pinned by golden values in `DerivedCacheKeyTests`, so it is defended rather than described.
+- **`MediaSource.Uri` accepts a `file:` URL.** `new Uri(path).AbsoluteUri` — the obvious thing for a
+  .NET caller to hand over — was refused as *"not a file path or an absolute URL"* while being both,
+  because the guard read `!parsed.IsFile`. It costs nothing to accept: the rooted-path branch already
+  produced a `file:` URI, so every consumer downstream was handling one. The rejection message now
+  names what is actually left (a relative string) and the fix, instead of the two things the rejected
+  input already was.
+- **A generated `docs/reference/namespace-moves.md`** — old fully-qualified name → new one for every
+  type that changed namespace, from the API baselines (`dev.mjs namespace-moves <tag>`, and a release
+  step). The 0.11.0 notes carried the PACKAGE fold and the adopter still met one `CS0246` per type,
+  each a grep through the kit's source, because a fold re-namespaces within the package too: **154
+  types moved where the notes named five.**
+
 ## 0.11.0 — 2026-08-17
 
 ### Breaking
+
+📋 **UPGRADING FROM 0.10.0? `docs/reference/namespace-moves.md` is the mechanical list** — old
+fully-qualified name → new one, for all **154** types that changed namespace, generated from the API
+baselines. The package-fold table below names the PACKAGES (`Shenora.Core` → `Shenora`), and the first
+adopter found that following it alone still costs one `CS0246` per type, because the fold also
+re-namespaced within the package (`Shenora.Core.IEventBus` → `Shenora.Core.Events.IEventBus`). Read the
+generated list first and the prose below for the reasoning.
 
 🔴 **A bare `Session…` name now means SHARED by every session kind; one that belongs to a single kind
 carries that kind.** Six types were named for the area and served exactly one session type, which is the

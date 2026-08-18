@@ -63,6 +63,47 @@ public class MediaPlayerBaseTests
         return player;
     }
 
+    // ── What OpenAsync accepts as a source URI ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 A <c>file:</c> URL is what a .NET caller produces with <c>new Uri(path).AbsoluteUri</c>, and it
+    /// used to be REFUSED as "not a file path or an absolute URL" while being both. Found by the first
+    /// adopter (Yaorin, 0.11.0), one failed open each. The rooted-path branch already yields a
+    /// <c>file:</c> URI, so everything downstream was handling one anyway.
+    /// </summary>
+    [Fact]
+    public async Task A_file_URL_opens_and_arrives_as_the_same_uri_a_rooted_path_would()
+    {
+        var rooted = OperatingSystem.IsWindows() ? @"C:\media\clip.wma" : "/media/clip.wma";
+
+        var viaPath = new FakePlayer();
+        var openingPath = viaPath.OpenAsync(Source(rooted));
+        viaPath.Opened();
+        await openingPath;
+
+        var viaUrl = new FakePlayer();
+        var openingUrl = viaUrl.OpenAsync(Source(new Uri(rooted).AbsoluteUri));
+        viaUrl.Opened();
+        await openingUrl;
+
+        // Both spellings reach OpenCore, and reach it as the SAME uri — otherwise a platform that
+        // branches on IsFile/LocalPath would behave differently for one of them.
+        Assert.Equal(viaPath.Calls, viaUrl.Calls);
+    }
+
+    [Fact]
+    public async Task A_RELATIVE_uri_is_refused_and_the_message_says_which_thing_is_wrong()
+    {
+        var player = new FakePlayer();
+
+        var error = await Assert.ThrowsAsync<MediaPlayerException>(() => player.OpenAsync(Source("clip.wma")));
+
+        // The old message named a file path and an absolute URL — the two things a rejected `file:` URL
+        // already was. Only a relative string can reach this now, so it says so, and names the fix.
+        Assert.Contains("relative", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("clip.wma", error.Message, StringComparison.Ordinal);
+    }
+
     // ── Invariant 1 — a TERMINAL state is never overwritten by a platform transition ───────────────
 
     /// <summary>

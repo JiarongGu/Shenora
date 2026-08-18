@@ -173,6 +173,17 @@ keeps the library reusable (adopted from the family's other library, where it's 
   scenario:** a `ProjectReference` does not grant `internal` access, so a helper two packages need
   is public (or it needs `InternalsVisibleTo` per package — the worse trade). This is why
   `WinFormsUiDispatcher` is public (D19/D20); don't "helpfully" demote it.
+- 🔴 **"NO CONSUMER OUTSIDE THIS ASSEMBLY" IS UNFALSIFIABLE FROM INSIDE THE REPO — an adopter is by
+  definition outside it.** Demoting a SHIPPED public type on that reasoning is a break you cannot check
+  for, and the first adoption harvest caught one: 0.11.0 made `DerivedCacheKey` internal because "every
+  consumer is in the same assembly", while an adopter's on-device HLS route was keying its segment
+  directories with it. ⚠ **Ask what the type PROMISES, not what it computes.** That one looks like a
+  SHA-256 helper (any language has that) and is really a FORMAT AGREEMENT: an app's key must match the
+  kit's byte for byte, and every knob — separator normalisation, case, field order, tick precision, the
+  truncation — produces a *valid-looking* key that matches nothing when it drifts, silently orphaning
+  every cached artefact on every device. **A type whose value is agreement stays public, and gets its
+  format pinned by a golden test** (`DerivedCacheKeyTests`), so the agreement is defended rather than
+  described. Demote a shipped type only for something the kit ALONE can meaningfully call.
 - 🔴 **An interface whose only implementations are the REAL one and a TEST DOUBLE is not a seam — it is
   the cost of one.** A test fake is not a second consumer; it is what the abstraction charges you. Ask what
   the second REAL implementation is, and if the answer is hypothetical, use the concrete type. (`MediaPlayer`

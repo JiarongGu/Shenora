@@ -94,6 +94,15 @@ burns no version:
    - Takes an optional second rev — `retired-audit v0.9.0 v0.10.0` audits a shipped release after the fact,
      and swapping the revs is how the `required` detector was verified against real history instead of a
      fake (a loss one way is a gain the other).
+2c. **Hand an adopter the MOVES, not just the packages**: `node devtools/dev.mjs namespace-moves
+   <previous tag> > docs/reference/namespace-moves.md` — old fully-qualified name → new one, for every
+   type that changed namespace, read from the API baselines. **Earned by the first adoption harvest**
+   (Yaorin, 0.10.0 → 0.11.0): the release notes carried the PACKAGE fold (`Shenora.Core` → `Shenora`)
+   and an adopter applying it still met one `CS0246` per type, each a grep through the kit's source —
+   because a fold re-namespaces WITHIN the package too. It found 154 moves where the notes named five.
+   Generated rather than written, for D57's reason: a hand-kept move table is a second statement of
+   every type's location. ⚠ Matched by type NAME, so a type that moved AND was renamed reports as gone
+   — that half is `retired-names.txt`'s, which step 2b already covers.
 3. **Pack**: `node devtools/dev.mjs pack` → `publish/packages/*.nupkg` + **two** npm tarballs
    (`@shenora/react` and the build-time `@shenora/cli`, D67 — both `package.json` versions and the README
    headline synced from `VersionPrefix`), each with its sha256 printed.
