@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig, CONFIG_FILE, SAMPLE_CONFIG, type DeployConfig } from './config.js';
-import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot } from './ios.js';
+import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot, cmdPush } from './ios.js';
 import {
   cmdDoctor as androidDoctor, cmdDevices as androidDevices, cmdDeploy as androidDeploy,
   cmdLog as androidLog, cmdBuild as androidBuild,
@@ -35,6 +35,7 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
                                the app's own output — the booted SIMULATOR by default; --device
                                relaunches on the phone with a console attached (startup is the point)
   shenora ios shot [-o <file>] screenshot the booted simulator
+  shenora ios push             send this working tree to the remote Mac (uncommitted edits included)
 
   shenora android doctor       can this machine build, install and log? (works on Windows too)
   shenora android devices      attached devices and emulators, including the ones adb calls unauthorized
@@ -88,7 +89,7 @@ function needConfig(): DeployConfig | null {
 // have a project wired.
 const MACHINE_ONLY = new Set(['doctor', 'devices', 'simulators']);
 
-const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot']);
+const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot', 'push']);
 const ANDROID_VERBS = new Set(['doctor', 'devices', 'deploy', 'log', 'build']);
 const DIAG_VERBS = new Set(['serve', 'devices', 'report', 'eval', 'host']);
 
@@ -161,6 +162,7 @@ export function main(argv: string[]): void | Promise<void> {
     if (verb === 'build') return cmdBuild(cfg, args);
     if (verb === 'deploy') return cmdDeploy(cfg, args);
     if (verb === 'log') return cmdLog(cfg, args);
+    if (verb === 'push') return cmdPush(cfg, args);
     return cmdShot(cfg, args);
   }
 

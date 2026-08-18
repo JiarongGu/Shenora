@@ -122,18 +122,12 @@ that hour and are fixed; the CHANGELOG has them.
   - ⚠ **This Mac cannot currently sign at all** — `doctor` reports no Xcode Apple ID, so its one
     provisioning profile cannot be refreshed. That is a prerequisite, not a kit bug.
 
-- [ ] **The sample crashes on launch when the bindings are pinned** — `Token … is not valid in the scope
-  of module Microsoft.iOS.dll`, from building against bindings 26.0 under an Xcode whose SDK is 26.2.
-  This is exactly the runtime cost the pin's own warning names, now observed rather than predicted. It is
-  a fact about THIS Mac's toolchain pairing, not about the sample; the fix is matching Xcode to the
-  workload. Worth re-checking once they match, because until then nothing on this machine can prove a
-  launched app actually runs.
 
-- [ ] **There is no PUSH step.** `buildDir` assumes the Mac already has the checkout (`remote.dir`, or
-  `~/<repo name>`) and that the adopter keeps it in sync. Whether the kit should own that — a git push to
-  the Mac, refusing a dirty tree, is the shape the family's own harness proved — is unanswered, and worth
-  deciding against a real loop rather than in the abstract: it may be that `rsync`/`git` in the adopter's
-  own hands is the right answer and the kit should only say so.
+- [ ] **`ios push` leaves a git checkout's METADATA describing a tree that is no longer there.** The files
+  are current; `git log` still names the old commit and `git status` shows everything as modified. Proven
+  on the real Mac: after a push its HEAD read `a30d994` while the tree held today's files. Documented on
+  `pushTree`, but a `--dir` that defaults to a NON-checkout scratch path may be the better answer —
+  decide it the next time someone is actually using the loop, not now.
 
 - [ ] **`diag` has `eval` but not `fetch` or `navigate` as first-class actions.** `eval` expresses both,
   so this is ergonomics, not capability — file it only if the raw form turns out to be what people

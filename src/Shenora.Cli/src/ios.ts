@@ -16,6 +16,7 @@ import { q, fail, argValue, splitArgs, shellPassthrough } from './exec.js';
 import { iosTfmOf, platformTfm, projectDir, requireFields, type DeployConfig } from './config.js';
 import { resolveTarget, resolveHost, diagnoseHost, reportDiagnosis } from './remote/host.js';
 import type { Target } from './remote/target.js';
+import { pushTree } from './remote/push.js';
 
 interface Device {
   id: string;
@@ -898,6 +899,21 @@ function stillRunning(target: Target, launchOutput: string, cfg: DeployConfig): 
   const crash = target.probe(
     `xcrun simctl spawn booted log show --last 2m --predicate ${q(simulatorLogPredicate(cfg.bundleId))}`
     + ` 2>/dev/null | tail -25`);
+
+  // 🔴 A metadata-token failure is a MIXED BUILD, and it does not look like one. Hit for real: after
+  // pinning TargetPlatformVersion the app died on `Token … is not valid in the scope of module
+  // Microsoft.iOS.dll`, which reads as "these bindings are missing an API" — the very thing the pin's own
+  // warning primes you to expect. It was neither: `obj/` still held metadata from the previous band, and
+  // deleting it fixed it outright. Named here because the plausible reading is the wrong one.
+  if (/is not valid in the scope of module|ResolveFullTokenReference/i.test(crash)) {
+    console.error('\n  That is a MIXED BUILD, not a missing API — the two look identical from here.');
+    console.error('  Something in obj/ was compiled against a different iOS binding version. If you have');
+    console.error('  changed TargetPlatformVersion or the workload, the incremental build kept the old');
+    console.error('  metadata. Delete the intermediates and build again:');
+    console.error(`    rm -rf ${q(target.join(buildDir(cfg, target), 'obj'))}`
+      + ` ${q(target.join(buildDir(cfg, target), 'bin'))}`);
+  }
+
   if (crash) {
     console.error('\n  Its last output:\n');
     console.error(crash.split('\n').map((l) => `    ${l}`).join('\n'));
@@ -1082,6 +1098,28 @@ export function cmdLog(cfg: DeployConfig, args: string[]): void {
   const outcome = describeLogOutcome(r.status, r.out);
   if (outcome.kind === 'failed') fail(outcome.message, outcome.hint);
   else console.log(outcome.kind === 'empty' ? outcome.message : outcome.text);
+}
+
+/**
+ * `shenora ios push` — put this working tree on the Mac.
+ *
+ * 🔴 **Without this every other remote command is a claim about code that may not be there.** The Mac
+ * built whatever its checkout happened to hold, and nothing said so: a build succeeds, an app installs,
+ * and it is last week's. The one failure mode a device loop must not have is being confidently wrong
+ * about WHICH code ran.
+ */
+export function cmdPush(cfg: DeployConfig, args: string[]): void {
+  const target = resolveTarget(cfg, args);
+  if (!target) return;
+  if (!target.isRemote) {
+    fail('there is nothing to push — the build machine is this one.',
+      '  `push` exists to send this tree to a Mac reached with --host.');
+    return;
+  }
+  const dir = remoteRoot(cfg, target);
+  if (!dir) return;                       // remoteRoot already reported why
+  pushTree(target, cfg.root, dir);
+  target.close();
 }
 
 export function cmdShot(cfg: DeployConfig, args: string[]): void {

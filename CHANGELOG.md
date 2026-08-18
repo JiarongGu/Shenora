@@ -52,6 +52,13 @@ at the first list and missed five more breaking changes.
     branches were driven end to end against real ssh. A build, sign, install and launch against actual
     hardware has not run.
 
+- **`shenora ios push` — send this working tree to the Mac.** Without it every other remote command was a
+  claim about code that might not be there: the Mac built whatever its checkout happened to hold, and
+  nothing said so. It sends what git lists as source — tracked plus not-ignored — so `bin/`, `obj/` and
+  `node_modules` stay here (measured on this repo: 626 files against 23,882 on disk), and **uncommitted
+  edits travel**, because the obvious `git push` implementation would have the Mac build HEAD and the fix
+  you just made would never arrive. It adds and overwrites; it does not delete.
+
 - **`shenora diag` — a device that answers back.** `diag serve` starts a service, a phone on the LAN opens
   the printed URL and **polls**; `diag devices|report|eval` drive it from another terminal, and `diag host`
   runs a command on the Mac. The direction is the trick: a webview cannot be dialled into — no port, no

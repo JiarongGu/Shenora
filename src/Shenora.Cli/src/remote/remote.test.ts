@@ -7,6 +7,8 @@ import { LocalTarget, withCwd } from './target.js';
 import { parseHostSpec, classifySshFailure, resolveHost } from './host.js';
 import type { DeployConfig } from '../config.js';
 import { buildProject, buildDir } from '../ios.js';
+import { filesToPush } from './push.js';
+import os from 'node:os';
 
 describe('withCwd', () => {
   it('joins with && so a failed cd cannot run the command somewhere else', () => {
@@ -181,6 +183,34 @@ describe('LocalTarget', () => {
     expect(local.list('/definitely/not/here')).toEqual([]);
     expect(local.mtimeMs('/definitely/not/here')).toBeNull();
     expect(local.mtimeMs(process.cwd())).toBeGreaterThan(0);
+  });
+});
+
+describe('choosing what to push', () => {
+  it('lists source, not build output', () => {
+    // 🔴 `git ls-files -co --exclude-standard` against a directory walk: measured on this repo, 625
+    // files versus 23,882 on disk. The difference is bin/, obj/ and node_modules — and copying a
+    // Windows obj/ onto a Mac does not merely waste time, it hands that build a stale intermediate
+    // stamped for another machine. It also excludes gitignored `local/`, which is private by design.
+    const files = filesToPush(process.cwd());
+    expect(files).not.toBeNull();
+    expect(files!.length).toBeGreaterThan(0);
+    expect(files!.some((f) => f.includes('node_modules'))).toBe(false);
+    expect(files!.some((f) => /(^|\/)(bin|obj)\//.test(f))).toBe(false);
+    expect(files!.some((f) => f.startsWith('local/'))).toBe(false);
+    // ...and it really did find this package's own sources.
+    expect(files!.some((f) => f.endsWith('push.ts'))).toBe(true);
+  });
+
+  it('reports a non-git directory rather than sending everything', () => {
+    const saved = process.exitCode;
+    try {
+      // Fail-closed: with no git there is no way to tell source from output, and the safe answer is to
+      // stop rather than to fall back on a walk that would sweep up every build artefact on disk.
+      expect(filesToPush(os.tmpdir())).toBeNull();
+    } finally {
+      process.exitCode = saved;
+    }
   });
 });
 
