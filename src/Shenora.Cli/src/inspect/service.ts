@@ -7,7 +7,7 @@ import http from 'node:http';
 import os from 'node:os';
 import type { Target } from '../remote/target.js';
 
-export const DIAG_DEFAULT_PORT = 7699;
+export const INSPECT_DEFAULT_PORT = 7699;
 
 /** Caps. A result is text, not a payload — anything larger is a mistake, not a big report. */
 const MAX_ACTIONS = 200;
@@ -16,7 +16,7 @@ const MAX_DEVICES = 32;
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_LABEL = 120;
 
-export interface DiagAction {
+export interface InspectAction {
   seq: number;
   kind: 'eval' | 'reload' | 'report';
   payload: string;
@@ -24,7 +24,7 @@ export interface DiagAction {
   device?: string;
 }
 
-export interface DiagResult {
+export interface InspectResult {
   seq: number;
   device: string;
   kind: string;
@@ -33,7 +33,7 @@ export interface DiagResult {
   at: string;
 }
 
-export interface DiagDevice {
+export interface InspectDevice {
   name: string;
   /** The LAN address, taken from the SOCKET — the one fact a device cannot report about itself. */
   address: string;
@@ -77,22 +77,22 @@ const clamp = (v: unknown, max = MAX_LABEL): string => String(v ?? '').slice(0, 
  * ⚠ **Append-only with a monotonic `seq`; a poll never CONSUMES.** A destructive queue makes a dropped
  * response cost an action rather than a retry, and makes two devices steal each other's work.
  */
-export class DiagState {
+export class InspectState {
   private actionSeq = 0;
   private resultSeq = 0;
-  readonly actions: DiagAction[] = [];
-  readonly results: DiagResult[] = [];
-  readonly devices = new Map<string, DiagDevice>();
+  readonly actions: InspectAction[] = [];
+  readonly results: InspectResult[] = [];
+  readonly devices = new Map<string, InspectDevice>();
 
-  queue(kind: DiagAction['kind'], payload: string, device?: string): DiagAction {
-    const action: DiagAction = { seq: ++this.actionSeq, kind, payload, ...(device ? { device } : {}) };
+  queue(kind: InspectAction['kind'], payload: string, device?: string): InspectAction {
+    const action: InspectAction = { seq: ++this.actionSeq, kind, payload, ...(device ? { device } : {}) };
     this.actions.push(action);
     while (this.actions.length > MAX_ACTIONS) this.actions.shift();
     return action;
   }
 
-  record(device: string, kind: string, ok: boolean, value: string): DiagResult {
-    const result: DiagResult = {
+  record(device: string, kind: string, ok: boolean, value: string): InspectResult {
+    const result: InspectResult = {
       seq: ++this.resultSeq,
       device: clamp(device),
       kind: clamp(kind, 40),
@@ -106,20 +106,20 @@ export class DiagState {
   }
 
   /** Everything after `since`, plus the head so a caller can advance its cursor past an empty poll. */
-  actionsSince(since: number, device?: string): { actions: DiagAction[]; latest: number } {
+  actionsSince(since: number, device?: string): { actions: InspectAction[]; latest: number } {
     const mine = this.actions.filter((a) => a.seq > since && (!a.device || a.device === device));
     return { actions: mine, latest: this.actionSeq };
   }
 
-  resultsSince(since: number): { results: DiagResult[]; latest: number } {
+  resultsSince(since: number): { results: InspectResult[]; latest: number } {
     return { results: this.results.filter((r) => r.seq > since), latest: this.resultSeq };
   }
 
   /** A poll IS a heartbeat, so "is it still there?" costs no extra request. */
-  touch(name: string, address: string, report?: string): DiagDevice {
+  touch(name: string, address: string, report?: string): InspectDevice {
     const key = clamp(name) || 'unnamed';
     const existing = this.devices.get(key);
-    const device: DiagDevice = {
+    const device: InspectDevice = {
       name: key,
       address,
       polls: (existing?.polls ?? 0) + 1,
@@ -161,12 +161,12 @@ async function readBody(req: http.IncomingMessage): Promise<unknown> {
   });
 }
 
-export interface DiagServiceOptions {
-  state?: DiagState;
+export interface InspectServiceOptions {
+  state?: InspectState;
   /** The page to serve. Injected so the server module has no opinion about HTML. */
   page: () => string;
   /**
-   * The Mac, for `POST /api/diag/host`. A function because resolving one can print, and it should only
+   * The Mac, for `POST /api/inspect/host`. A function because resolving one can print, and it should only
    * happen when something asks.
    */
   host?: () => Target | null;
@@ -175,8 +175,8 @@ export interface DiagServiceOptions {
 /**
  * Build the service. Separate from listening so a test can drive real requests without a fixed port.
  */
-export function createDiagService(options: DiagServiceOptions): { server: http.Server; state: DiagState } {
-  const state = options.state ?? new DiagState();
+export function createInspectService(options: InspectServiceOptions): { server: http.Server; state: InspectState } {
+  const state = options.state ?? new InspectState();
 
   const server = http.createServer((req, res) => {
     void handle(req, res).catch(() => {
@@ -211,7 +211,7 @@ export function createDiagService(options: DiagServiceOptions): { server: http.S
       return;
     }
 
-    if (route === '/' || route === '/index.html' || route === '/diag.html') {
+    if (route === '/' || route === '/index.html' || route === '/inspect.html') {
       send(res, 200, options.page());
       return;
     }
@@ -227,20 +227,20 @@ export function createDiagService(options: DiagServiceOptions): { server: http.S
     switch (`${req.method} ${route}`) {
       // ── The device's half. Open to the LAN: the device being diagnosed is routinely the one that
       // cannot authenticate, and neither route decides anything.
-      case 'POST /api/diag/hello': {
+      case 'POST /api/inspect/hello': {
         const body = (await readBody(req)) as { device?: string; report?: unknown } | null;
         const report = body?.report === undefined ? undefined : JSON.stringify(body.report);
         const device = state.touch(clamp(body?.device) || peer, peer, report);
         send(res, 200, { ok: true, device: device.name, latest: state.actionsSince(0).latest });
         return;
       }
-      case 'GET /api/diag/actions': {
+      case 'GET /api/inspect/actions': {
         const device = clamp(url.searchParams.get('device'));
         if (device) state.touch(device, peer);
         send(res, 200, state.actionsSince(since, device));
         return;
       }
-      case 'POST /api/diag/results': {
+      case 'POST /api/inspect/results': {
         const body = (await readBody(req)) as
           { device?: string; kind?: string; ok?: boolean; value?: unknown } | null;
         if (!body) {
@@ -254,10 +254,10 @@ export function createDiagService(options: DiagServiceOptions): { server: http.S
       }
 
       // ── The operator's half. Loopback only.
-      case 'POST /api/diag/actions': {
+      case 'POST /api/inspect/actions': {
         if (!operatorOnly()) return;
         const body = (await readBody(req)) as
-          { kind?: DiagAction['kind']; payload?: string; device?: string } | null;
+          { kind?: InspectAction['kind']; payload?: string; device?: string } | null;
         if (!body?.payload) {
           send(res, 400, { error: 'payload is required' });
           return;
@@ -266,17 +266,17 @@ export function createDiagService(options: DiagServiceOptions): { server: http.S
         send(res, 200, { ok: true, seq: action.seq });
         return;
       }
-      case 'GET /api/diag/results': {
+      case 'GET /api/inspect/results': {
         if (!operatorOnly()) return;
         send(res, 200, state.resultsSince(since));
         return;
       }
-      case 'GET /api/diag/devices': {
+      case 'GET /api/inspect/devices': {
         if (!operatorOnly()) return;
         send(res, 200, { devices: [...state.devices.values()] });
         return;
       }
-      case 'POST /api/diag/host': {
+      case 'POST /api/inspect/host': {
         // 🔴 THIS RUNS A COMMAND ON THE MAC. Reachable from the LAN it would be a remote shell for
         // anyone on the same wifi. The loopback gate is the only thing between those two readings, and
         // `service.test.ts` fails if it is ever removed.

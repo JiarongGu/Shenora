@@ -106,7 +106,7 @@ not less, because that change is unexercised.
 
 ### 📱 THE REMOTE MAC PATH — the SIGNING half is still unproven
 
-`shenora ios --host` and `shenora diag` are built (`docs/design/cli-remote.md`). **Driven against a real
+`shenora ios --host` and `shenora inspect` are built (`docs/design/cli-remote.md`). **Driven against a real
 LAN Mac on 2026-08-19**, the unsigned loop works end to end: `doctor` (reports real Xcode/.NET/workload
 versions and finds the connected iPhone) → `devices`/`simulators` → `deploy --simulator` (builds on the
 Mac, boots, installs, launches) → `shot` (a 1206×2622 PNG pulled back here). Five defects came out of
@@ -131,11 +131,11 @@ that hour and are fixed; the CHANGELOG has them.
   `pushTree`, but a `--dir` that defaults to a NON-checkout scratch path may be the better answer —
   decide it the next time someone is actually using the loop, not now.
 
-- [ ] **`diag` has `eval` but not `fetch` or `navigate` as first-class actions.** `eval` expresses both,
+- [ ] **`inspect` has `eval` but not `fetch` or `navigate` as first-class actions.** `eval` expresses both,
   so this is ergonomics, not capability — file it only if the raw form turns out to be what people
   actually type.
 
-⚠ **A codec probe was deliberately left out of the diag page.** Yaorin's version carried one and it paid
+⚠ **A codec probe was deliberately left out of the inspector page.** Yaorin's version carried one and it paid
 for itself immediately — run against headless Edge with `--disable-gpu` it reported `HEVC: ""` where the
 same engine in a real WebView2 window answers `probably`, which is a real lesson: **a codec matrix is
 CONTEXT-dependent and headless is not a proxy for the shipped surface.** But the list it probed encoded

@@ -1203,6 +1203,39 @@ export function cmdProvision(cfg: DeployConfig, args: string[]): void {
   console.log('\nshenora: profiles are in place. `shenora ios deploy --device` can sign now.');
 }
 
+/**
+ * `shenora ios exec <command…>` — run something on the build machine.
+ *
+ * ⚠ It lives with the iOS verbs rather than beside the device inspector, and the reason is that it acts
+ * on the MAC. It resolves its target exactly as `build` and `deploy` do — same `--host`, same config,
+ * same diagnosis when the Mac will not answer — so grouping it with commands about a phone made the
+ * inspector mean two unrelated things.
+ *
+ * Runs DIRECTLY rather than through the inspect service, so it needs nothing listening. The service
+ * carries the same capability for its operator page, gated to loopback.
+ */
+export function cmdExec(cfg: DeployConfig | null, args: string[]): boolean {
+  const { own } = splitArgs(args);
+  // Everything that is not a flag or a flag's value — the command to run.
+  const valued = new Set(['--host', '--key', '--device']);
+  const words: string[] = [];
+  for (let i = 0; i < own.length; i++) {
+    const a = own[i]!;
+    if (valued.has(a)) { i++; continue; }
+    if (a.startsWith('--')) continue;
+    words.push(a);
+  }
+  const command = words.join(' ');
+  if (!command.trim()) return fail('nothing to run.', '  shenora ios exec "xcodebuild -version"');
+
+  const target = resolveTarget(cfg, args);
+  if (!target) return false;
+  const r = target.sh(command);
+  target.close();
+  if (r.status !== 0) process.exitCode = 1;
+  return r.status === 0;
+}
+
 export function cmdShot(cfg: DeployConfig, args: string[]): void {
   const target = resolveTarget(cfg, args);
   if (!target) return;

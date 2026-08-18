@@ -2,8 +2,8 @@
 import { argValue, fail } from '../exec.js';
 import type { DeployConfig } from '../config.js';
 import { resolveTarget } from '../remote/host.js';
-import { createDiagService, lanAddresses, DIAG_DEFAULT_PORT, type DiagResult } from './service.js';
-import { diagPage } from './page.js';
+import { createInspectService, lanAddresses, INSPECT_DEFAULT_PORT, type InspectResult } from './service.js';
+import { inspectPage } from './page.js';
 
 /** Flags that consume the token after them, so {@link positionals} does not read a value as a word. */
 const VALUED_FLAGS = new Set(['--port', '--device', '--host', '--app']);
@@ -26,7 +26,7 @@ export function positionals(args: readonly string[]): string[] {
 }
 
 const portOf = (args: readonly string[]): number =>
-  Number(argValue(args, '--port') ?? process.env.SHENORA_DIAG_PORT ?? DIAG_DEFAULT_PORT) || DIAG_DEFAULT_PORT;
+  Number(argValue(args, '--port') ?? process.env.SHENORA_INSPECT_PORT ?? INSPECT_DEFAULT_PORT) || INSPECT_DEFAULT_PORT;
 
 const base = (args: readonly string[]): string => `http://127.0.0.1:${portOf(args)}`;
 
@@ -53,16 +53,16 @@ async function ask(args: readonly string[], path: string, body?: unknown): Promi
 function noService(args: readonly string[]): false {
   return fail(
     `no diag service is answering on port ${portOf(args)}.`,
-    '  Start one in another terminal:  shenora diag serve',
+    '  Start one in another terminal:  shenora inspect serve',
   );
 }
 
-/** `shenora diag serve` — hold the service open and print the URL a phone should open. */
-export function cmdDiagServe(cfg: DeployConfig | null, args: readonly string[]): Promise<void> {
+/** `shenora inspect serve` — hold the service open and print the URL a phone should open. */
+export function cmdInspectServe(cfg: DeployConfig | null, args: readonly string[]): Promise<void> {
   const port = portOf(args);
   const appOrigin = argValue(args, '--app') ?? '';
-  const { server } = createDiagService({
-    page: () => diagPage({ appOrigin }),
+  const { server } = createInspectService({
+    page: () => inspectPage({ appOrigin }),
     // Resolved lazily and QUIETLY: a diag service is useful with no Mac configured at all, so this
     // must not print a refusal at startup for a route nobody may call.
     host: () => (cfg?.remote?.host || process.env.SHENORA_IOS_HOST ? resolveTarget(cfg, args) : null),
@@ -75,7 +75,7 @@ export function cmdDiagServe(cfg: DeployConfig | null, args: readonly string[]):
         // service. It answers every route validly, so the session looks fine while driving someone
         // else's devices.
         fail(`port ${port} is already in use — something else is listening.`,
-          `  Another diag service, perhaps. Pick another:  shenora diag serve --port ${port + 1}`);
+          `  Another diag service, perhaps. Pick another:  shenora inspect serve --port ${port + 1}`);
       } else {
         fail(`the diag service could not start — ${e.message}`);
       }
@@ -86,7 +86,7 @@ export function cmdDiagServe(cfg: DeployConfig | null, args: readonly string[]):
     // half is gated per-request on the peer's address, never on the bind address.
     server.listen(port, '0.0.0.0', () => {
       const addresses = lanAddresses();
-      console.log(`\nshenora diag — open this on the device you are diagnosing:\n`);
+      console.log(`\nshenora inspect — open this on the device you are diagnosing:\n`);
       if (addresses.length === 0) {
         console.log('  (this machine has no LAN address — a device cannot reach it)');
       }
@@ -98,14 +98,14 @@ export function cmdDiagServe(cfg: DeployConfig | null, args: readonly string[]):
   });
 }
 
-/** `shenora diag devices` — who has checked in. */
-export async function cmdDiagDevices(args: readonly string[]): Promise<boolean> {
-  const data = (await ask(args, '/api/diag/devices')) as { devices?: Array<Record<string, unknown>> } | null;
+/** `shenora inspect devices` — who has checked in. */
+export async function cmdInspectDevices(args: readonly string[]): Promise<boolean> {
+  const data = (await ask(args, '/api/inspect/devices')) as { devices?: Array<Record<string, unknown>> } | null;
   if (!data) return noService(args);
   const devices = data.devices ?? [];
   if (devices.length === 0) {
     console.log('\nNo device has checked in yet.');
-    console.log('  Open the URL printed by `shenora diag serve` on the device.');
+    console.log('  Open the URL printed by `shenora inspect serve` on the device.');
     return true;
   }
   console.log('');
@@ -116,10 +116,10 @@ export async function cmdDiagDevices(args: readonly string[]): Promise<boolean> 
   return true;
 }
 
-/** `shenora diag report [--device X]` — what a device said about itself. */
-export async function cmdDiagReport(args: readonly string[]): Promise<boolean> {
+/** `shenora inspect report [--device X]` — what a device said about itself. */
+export async function cmdInspectReport(args: readonly string[]): Promise<boolean> {
   const want = argValue(args, '--device');
-  const data = (await ask(args, '/api/diag/devices')) as
+  const data = (await ask(args, '/api/inspect/devices')) as
     { devices?: Array<{ name: string; report?: string }> } | null;
   if (!data) return noService(args);
   const devices = (data.devices ?? []).filter((d) => !want || d.name === want);
@@ -132,55 +132,40 @@ export async function cmdDiagReport(args: readonly string[]): Promise<boolean> {
 }
 
 /**
- * `shenora diag eval <expression>` — run it on the device and print what came back.
+ * `shenora inspect eval <expression>` — run it on the device and print what came back.
  *
  * ⚠ The results cursor is read BEFORE the action is queued. A device polling on a 1.2 s loop can answer
  * before a cursor read that came after would have started watching, and the result is then invisible.
  */
-export async function cmdDiagEval(args: readonly string[], expression: string): Promise<boolean> {
-  if (!expression.trim()) return fail('nothing to evaluate.', '  shenora diag eval "location.href"');
+export async function cmdInspectEval(args: readonly string[], expression: string): Promise<boolean> {
+  if (!expression.trim()) return fail('nothing to evaluate.', '  shenora inspect eval "location.href"');
   const device = argValue(args, '--device');
 
-  const before = (await ask(args, '/api/diag/results')) as { latest?: number } | null;
+  const before = (await ask(args, '/api/inspect/results')) as { latest?: number } | null;
   if (!before) return noService(args);
   const cursor = before.latest ?? 0;
 
-  const queued = (await ask(args, '/api/diag/actions',
+  const queued = (await ask(args, '/api/inspect/actions',
     { kind: 'eval', payload: expression, ...(device ? { device } : {}) })) as { ok?: boolean } | null;
   if (!queued?.ok) return fail('the diag service refused the action.');
 
   const deadline = Date.now() + 15_000;
   for (;;) {
-    const data = (await ask(args, `/api/diag/results?since=${cursor}`)) as { results?: DiagResult[] } | null;
+    const data = (await ask(args, `/api/inspect/results?since=${cursor}`)) as { results?: InspectResult[] } | null;
     const hit = data?.results?.find((r) => r.kind === 'eval' && (!device || r.device === device));
     if (hit) {
       console.log(`\n${hit.device}  ${hit.ok ? '' : '(threw) '}${hit.value}`);
       // 🔴 The EXIT CODE has to carry it too. Printing "(threw)" and exiting 0 means
-      // `diag eval … && next-step` runs the next step after a failed probe — the same false success
+      // `inspect eval … && next-step` runs the next step after a failed probe — the same false success
       // this CLI polices everywhere else, arriving through a diagnostic rather than a build.
       if (!hit.ok) process.exitCode = 1;
       return hit.ok;
     }
     if (Date.now() > deadline) {
       return fail('no device answered within 15s.',
-        '  `shenora diag devices` shows who is polling. A device whose page was closed cannot answer.');
+        '  `shenora inspect devices` shows who is polling. A device whose page was closed cannot answer.');
     }
     await new Promise((r) => setTimeout(r, 400));
   }
 }
 
-/**
- * `shenora diag host <command…>` — run something on the configured Mac.
- *
- * Runs it DIRECTLY rather than through the service, so it works with nothing listening. The service
- * carries the same capability so the operator page can use it, gated to loopback.
- */
-export function cmdDiagHost(cfg: DeployConfig | null, args: readonly string[], command: string): boolean {
-  if (!command.trim()) return fail('nothing to run.', '  shenora diag host "xcodebuild -version"');
-  const target = resolveTarget(cfg, args);
-  if (!target) return false;
-  const r = target.sh(command);
-  target.close();
-  if (r.status !== 0) process.exitCode = 1;
-  return r.status === 0;
-}

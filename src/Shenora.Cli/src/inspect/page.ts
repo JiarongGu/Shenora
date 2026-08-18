@@ -1,6 +1,6 @@
 // The page a device opens. One self-contained string: no imports, no build step, no framework — so it
 // cannot break when the app's own dependencies do, which is the state it exists to diagnose.
-import { DIAG_DEFAULT_PORT } from './service.js';
+import { INSPECT_DEFAULT_PORT } from './service.js';
 
 export interface PageOptions {
   /** Shown in the heading, so two services on one LAN are told apart. */
@@ -9,7 +9,7 @@ export interface PageOptions {
   appOrigin?: string;
 }
 
-export function diagPage(options: PageOptions = {}): string {
+export function inspectPage(options: PageOptions = {}): string {
   const title = options.title ?? 'Shenora device diagnostics';
   const appOrigin = options.appOrigin ?? '';
   return `<!doctype html>
@@ -162,7 +162,7 @@ export function diagPage(options: PageOptions = {}): string {
   }
 
   function hello() {
-    return fetch('/api/diag/hello', {
+    return fetch('/api/inspect/hello', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device: device, report: report }),
@@ -173,7 +173,7 @@ export function diagPage(options: PageOptions = {}): string {
   }
 
   function post(kind, ok, value) {
-    return fetch('/api/diag/results', {
+    return fetch('/api/inspect/results', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device: device, kind: kind, ok: ok, value: value }),
@@ -206,7 +206,7 @@ export function diagPage(options: PageOptions = {}): string {
   }
 
   function poll() {
-    fetch('/api/diag/actions?device=' + encodeURIComponent(device) + '&since=' + (since === null ? 0 : since),
+    fetch('/api/inspect/actions?device=' + encodeURIComponent(device) + '&since=' + (since === null ? 0 : since),
       { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -242,4 +242,4 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
 }
 
-export { DIAG_DEFAULT_PORT };
+export { INSPECT_DEFAULT_PORT };

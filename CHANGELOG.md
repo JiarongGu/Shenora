@@ -76,14 +76,19 @@ at the first list and missed five more breaking changes.
   edits travel**, because the obvious `git push` implementation would have the Mac build HEAD and the fix
   you just made would never arrive. It adds and overwrites; it does not delete.
 
-- **`shenora diag` — a device that answers back.** `diag serve` starts a service, a phone on the LAN opens
-  the printed URL and **polls**; `diag devices|report|eval` drive it from another terminal, and `diag host`
+- **`shenora inspect` — a device that answers back.** *(Named `diag` while it was being built; renamed
+  before it ever shipped, so nothing to migrate. `diag` abbreviated a SCENARIO — "I am diagnosing" —
+  where `inspect` is what every other toolchain calls attaching to a running app and looking inside, so
+  an adopter guesses it without reading this. Running a command on the Mac moved to `ios exec`, where the
+  target and its `--host` resolution already live: it acts on the Mac, not on a phone, and grouping it
+  here made one command mean two unrelated things.)* `inspect serve` starts a service, a phone on the LAN opens
+  the printed URL and **polls**; `inspect devices|report|eval` drive it from another terminal, and `ios exec`
   runs a command on the Mac. The direction is the trick: a webview cannot be dialled into — no port, no
   agent — so the only channel that exists is one the page itself opens. It ships inside nothing, because
   it runs arbitrary JS in whatever page polls it, and a diagnostic hosted inside the app dies with it
   exactly when it is needed.
-  - **A failed `diag eval` now exits non-zero.** It printed `(threw) …` and exited 0, so
-    `diag eval … && next-step` marched on after a failed probe — the same false success this CLI polices
+  - **A failed `inspect eval` now exits non-zero.** It printed `(threw) …` and exited 0, so
+    `inspect eval … && next-step` marched on after a failed probe — the same false success this CLI polices
     in builds, arriving through the one command whose entire job is telling you the truth about a device.
     Found by running it against a real WebKit rather than a fake.
   - **Split by trust, not convenience.** Queueing work, reading results and running an ssh command decide

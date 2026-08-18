@@ -73,18 +73,18 @@ from an ssh session — an ssh login is a different *audit session*, so signing 
 GUI session, which is what this does, and it needs a session to hand it to. Simulator builds sign ad-hoc
 and never meet this.
 
-## `shenora diag` — a device that answers back
+## `shenora inspect` — a device that answers back
 
 Getting an app onto a phone is half the problem; the other half is that a phone tells you nothing. There
 is no console, no devtools worth the name on iOS, and the failure you care about is usually "it launched
 and the screen is blank".
 
 ```bash
-npx shenora diag serve            # prints a LAN URL — open it on the phone
-npx shenora diag devices          # who has checked in
-npx shenora diag report           # what the device says about itself
-npx shenora diag eval "location.href"
-npx shenora diag host "xcodebuild -version"    # run something on the Mac
+npx shenora inspect serve            # prints a LAN URL — open it on the phone
+npx shenora inspect devices          # who has checked in
+npx shenora inspect report           # what the device says about itself
+npx shenora inspect eval "location.href"
+npx shenora ios exec "xcodebuild -version"    # run something on the Mac
 ```
 
 The device opens the page and **polls** — because a webview cannot be dialled into, there is no port to
@@ -136,7 +136,7 @@ counterpart here — that is a difference in design, not a missing feature.
 | `build` (a distributable) | `ios build` | ✅ — `dotnet publish`, **Release by default**, `.ipa` via `ArchiveOnBuild` |
 | `add`, `open`, `ls`, `migrate` | — | **N/A by design**: they manage an Xcode/Android Studio project you edit. There isn't one |
 | Android (`cap run android`) | `android deploy`, `android log`, `android build` | ✅ — and it runs on Windows |
-| — | `ios … --host`, `diag` | **no counterpart**: a remote Mac, and a device that answers back |
+| — | `ios … --host`, `inspect` | **no counterpart**: a remote Mac, and a device that answers back |
 
 **Android is here too** — `android doctor|devices|deploy|log|build`, and it runs on **Windows**, which is
 where most .NET Android work happens. It does not exist to wrap `adb`; it exists for the four things that

@@ -13,7 +13,7 @@ Two kinds of elsewhere, and the direction of the connection is what separates th
 | Example | the LAN Mac | the iPhone running your app |
 | Who connects | we connect out, over ssh | it connects in, by polling |
 | Why | it has sshd; we have a key | **a webview cannot be dialled** — there is no port to open, no agent to install |
-| Abstraction | `Target` (`remote/target.ts`) | the diag service (`diag/server.ts`) |
+| Abstraction | `Target` (`remote/target.ts`) | the inspect service (`inspect/service.ts`) |
 
 That asymmetry is the whole design. A phone's webview is not a server and never will be, so the only
 channel that exists is one the page itself opens — which makes the device half a **queue the device drains**
@@ -71,11 +71,11 @@ another sixteen.
 Simulator builds sign ad-hoc and never meet any of this, which is why `--simulator` stays on plain ssh and
 is much faster.
 
-## The diag service — server + client
+## The inspect service — server + client
 
-`shenora diag serve` starts a Node HTTP service on the dev machine. A device on the LAN opens its page,
+`shenora inspect serve` starts a Node HTTP service on the dev machine. A device on the LAN opens its page,
 and from then on the device polls for work and reports results. The operator drives it from another
-terminal (`shenora diag eval …`) or from the same page opened locally.
+terminal (`shenora inspect eval …`) or from the same page opened locally.
 
 **It is a devtool you start, never a flag in a product binary.** It runs arbitrary JS in whatever page
 polls it. Shipping that inside the app would put an eval endpoint in a release build, and a diagnostic
@@ -97,7 +97,7 @@ The server binds `0.0.0.0` deliberately: the whole point is that a phone can rea
 sends can move it. A privileged request from off-box gets **404**, not 403: an operator route should not
 confirm it exists to anyone who cannot use it.
 
-🔴 **The ssh route is on the operator half and that is load-bearing.** `POST /api/diag/host` runs a command
+🔴 **The ssh route is on the operator half and that is load-bearing.** `POST /api/inspect/host` runs a command
 on the configured Mac. Reachable from the LAN it would be a remote shell for anyone on the coffee-shop
 wifi, so it is gated by the same loopback test as the rest of the operator half, and there is a test that
 fails if that gate is ever removed.

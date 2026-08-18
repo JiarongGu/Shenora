@@ -1,9 +1,9 @@
 // The diag service's claims, and one of them is a security boundary.
 import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
-import { createDiagService, DiagState, isLoopback, plainAddress, lanAddresses } from './service.js';
-import { diagPage } from './page.js';
-import { positionals, cmdDiagEval } from './commands.js';
+import { createInspectService, InspectState, isLoopback, plainAddress, lanAddresses } from './service.js';
+import { inspectPage } from './page.js';
+import { positionals, cmdInspectEval } from './commands.js';
 
 const servers: http.Server[] = [];
 afterEach(() => {
@@ -11,9 +11,9 @@ afterEach(() => {
 });
 
 /** Start a service bound to every interface, so a request can arrive from off-loopback. */
-async function serve(): Promise<{ port: number; state: DiagState }> {
-  const state = new DiagState();
-  const { server } = createDiagService({ state, page: () => diagPage() });
+async function serve(): Promise<{ port: number; state: InspectState }> {
+  const state = new InspectState();
+  const { server } = createInspectService({ state, page: () => inspectPage() });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '0.0.0.0', resolve));
   const address = server.address();
@@ -36,7 +36,7 @@ const get = async (host: string, port: number, path: string): Promise<number> =>
 async function reachableLan(port: number): Promise<string | null> {
   for (const address of lanAddresses()) {
     try {
-      await fetch(`http://${address}:${port}/api/diag/actions?device=probe`);
+      await fetch(`http://${address}:${port}/api/inspect/actions?device=probe`);
       return address;
     } catch {
       // That interface cannot reach us; try the next.
@@ -67,21 +67,21 @@ describe('the trust boundary', () => {
     if (!lan) {
       // Honest skip: with no reachable non-loopback address there is no way to BE an off-box peer, and a
       // silent pass here would be the gate reporting green on a machine that never tested it.
-      console.warn('diag: no reachable LAN address — the off-box half of this test did not run');
+      console.warn('inspect: no reachable LAN address — the off-box half of this test did not run');
       return;
     }
 
     // From loopback: the operator half exists.
-    expect(await get('127.0.0.1', port, '/api/diag/devices')).toBe(200);
-    expect(await get('127.0.0.1', port, '/api/diag/results')).toBe(200);
+    expect(await get('127.0.0.1', port, '/api/inspect/devices')).toBe(200);
+    expect(await get('127.0.0.1', port, '/api/inspect/results')).toBe(200);
 
     // 🔴 From the LAN — the same routes must be INVISIBLE. Connecting to this machine's own LAN address
     // gives the server a non-loopback peer, which is exactly what a phone would be.
-    expect(await get(lan, port, '/api/diag/devices')).toBe(404);
-    expect(await get(lan, port, '/api/diag/results')).toBe(404);
+    expect(await get(lan, port, '/api/inspect/devices')).toBe(404);
+    expect(await get(lan, port, '/api/inspect/results')).toBe(404);
 
     // ...while the device's own half still answers, because a device cannot authenticate.
-    expect(await get(lan, port, '/api/diag/actions?device=phone')).toBe(200);
+    expect(await get(lan, port, '/api/inspect/actions?device=phone')).toBe(200);
     expect(await get(lan, port, '/')).toBe(200);
   });
 
@@ -89,7 +89,7 @@ describe('the trust boundary', () => {
     const { port } = await serve();
     const lan = await reachableLan(port);
     if (!lan) return;
-    const res = await fetch(`http://${lan}:${port}/api/diag/host`, {
+    const res = await fetch(`http://${lan}:${port}/api/inspect/host`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: 'echo pwned' }),
@@ -101,7 +101,7 @@ describe('the trust boundary', () => {
   it('never consults a header for the peer address', () => {
     // A regression guard with teeth: if the gate is ever rewritten to read X-Forwarded-For, this string
     // appears in the module and the test fails. The address must stay a SOCKET fact.
-    const source = String(createDiagService);
+    const source = String(createInspectService);
     expect(source.toLowerCase()).not.toContain('x-forwarded-for');
   });
 });
@@ -121,13 +121,13 @@ describe('the host seam', () => {
       join: (...p: string[]) => p.join('/'), basename: (p: string) => p, dirname: (p: string) => p,
       push: () => true, pull: () => true, gui() { return { status: 0, out: '' }; }, close() {},
     };
-    const { server } = createDiagService({ page: () => diagPage(), host: () => fake });
+    const { server } = createInspectService({ page: () => inspectPage(), host: () => fake });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (typeof address === 'string' || address === null) throw new Error('no port');
 
-    const res = await fetch(`http://127.0.0.1:${address.port}/api/diag/host`, {
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/inspect/host`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: 'xcodebuild -version' }),
@@ -141,13 +141,13 @@ describe('the host seam', () => {
   });
 
   it('says so plainly when no Mac is configured, rather than pretending to run', async () => {
-    const { server } = createDiagService({ page: () => diagPage() });
+    const { server } = createInspectService({ page: () => inspectPage() });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (typeof address === 'string' || address === null) throw new Error('no port');
 
-    const res = await fetch(`http://127.0.0.1:${address.port}/api/diag/host`, {
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/inspect/host`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: 'echo hi' }),
@@ -158,7 +158,7 @@ describe('the host seam', () => {
 
 describe('the cursor', () => {
   it('never consumes, so two devices do not steal each other\'s work', () => {
-    const state = new DiagState();
+    const state = new InspectState();
     state.queue('eval', '1 + 1');
     expect(state.actionsSince(0, 'a').actions).toHaveLength(1);
     // The same action is still there for the second device.
@@ -166,7 +166,7 @@ describe('the cursor', () => {
   });
 
   it('returns the head even when nothing is new, so a first poll can skip the backlog', () => {
-    const state = new DiagState();
+    const state = new InspectState();
     state.queue('eval', 'old');
     state.queue('eval', 'older');
     const { actions, latest } = state.actionsSince(2);
@@ -176,7 +176,7 @@ describe('the cursor', () => {
   });
 
   it('gives a targeted action only to its device', () => {
-    const state = new DiagState();
+    const state = new InspectState();
     state.queue('eval', 'mine', 'phone-a');
     expect(state.actionsSince(0, 'phone-a').actions).toHaveLength(1);
     expect(state.actionsSince(0, 'phone-b').actions).toHaveLength(0);
@@ -186,7 +186,7 @@ describe('the cursor', () => {
   });
 
   it('keeps a device\'s report across later polls that carry none', () => {
-    const state = new DiagState();
+    const state = new InspectState();
     state.touch('phone', '203.0.113.9', '{"shell":"WKWebView"}');
     state.touch('phone', '203.0.113.9');       // a plain heartbeat
     expect(state.devices.get('phone')?.report).toBe('{"shell":"WKWebView"}');
@@ -197,7 +197,7 @@ describe('the cursor', () => {
 describe('the device roster', () => {
   it('records the address from the socket, not from the body', async () => {
     const { port, state } = await serve();
-    await fetch(`http://127.0.0.1:${port}/api/diag/hello`, {
+    await fetch(`http://127.0.0.1:${port}/api/inspect/hello`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device: 'phone', address: '10.9.9.9' }),
@@ -213,23 +213,23 @@ describe('the page', () => {
   it('starts its cursor at the head rather than zero', () => {
     // Pinned as TEXT because the behaviour lives in browser JS the suite cannot execute. If the line
     // changes shape this fails and asks for a fresh look, which is the most this file can honestly do.
-    expect(diagPage()).toContain('if (since === null) { since = d.latest;');
+    expect(inspectPage()).toContain('if (since === null) { since = d.latest;');
   });
 
   it('re-announces on a reconnect edge', () => {
-    expect(diagPage()).toContain('if (!on) { on = true; hello()');
-    expect(diagPage()).toContain(".catch(function () { on = false;");
+    expect(inspectPage()).toContain('if (!on) { on = true; hello()');
+    expect(inspectPage()).toContain(".catch(function () { on = false;");
   });
 
   it('escapes a title rather than letting it close the tag', () => {
-    expect(diagPage({ title: '</title><script>x' })).not.toContain('</title><script>x');
+    expect(inspectPage({ title: '</title><script>x' })).not.toContain('</title><script>x');
   });
 
   it('serves JavaScript that actually parses', () => {
     // 🔴 The page's script is a STRING, so `tsc` never looks at it and the text assertions above pass
     // just as happily over a syntax error. It would then break completely on the one device whose
     // devtools you cannot open — which is the device this whole feature exists for.
-    const html = diagPage({ appOrigin: 'http://example.test:8080' });
+    const html = inspectPage({ appOrigin: 'http://example.test:8080' });
     const body = html.slice(html.indexOf('<script>') + 8, html.indexOf('</script>'));
     expect(body.length).toBeGreaterThan(1000);
     // Compiles without running: a syntax error throws, and nothing here touches a DOM.
@@ -237,7 +237,7 @@ describe('the page', () => {
   });
 
   it('puts the app origin in as JSON, so an apostrophe cannot break the script', () => {
-    const html = diagPage({ appOrigin: "http://x/'+alert(1)+'" });
+    const html = inspectPage({ appOrigin: "http://x/'+alert(1)+'" });
     const body = html.slice(html.indexOf('<script>') + 8, html.indexOf('</script>'));
     expect(() => new Function(body)).not.toThrow();
   });
@@ -246,14 +246,14 @@ describe('the page', () => {
 describe('eval reports failure in the EXIT CODE, not only in text', () => {
   /**
    * 🔴 Measured against a real WebKit: a throwing expression printed `(threw) Can't find variable: nope`
-   * and exited 0, so `diag eval … && next-step` marched on after a failed probe. A diagnostic that
+   * and exited 0, so `inspect eval … && next-step` marched on after a failed probe. A diagnostic that
    * reports a failure it does not signal is the same false success this CLI polices in builds, arriving
    * through the one command whose entire job is to tell you the truth about a device.
    */
   it('sets a non-zero exit code when the device says it threw', async () => {
     const saved = process.exitCode;
-    const state = new DiagState();
-    const { server } = createDiagService({ state, page: () => diagPage() });
+    const state = new InspectState();
+    const { server } = createInspectService({ state, page: () => inspectPage() });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
@@ -263,10 +263,10 @@ describe('eval reports failure in the EXIT CODE, not only in text', () => {
     try {
       process.exitCode = saved;
       // ⚠ The answer must arrive AFTER the command reads its cursor, not before. Recording it first
-      // made this time out — which is the cursor behaving correctly: `cmdDiagEval` reads the results
+      // made this time out — which is the cursor behaving correctly: `cmdInspectEval` reads the results
       // head before queueing precisely so a fast device cannot answer into a window nobody is watching,
       // and a result already in the past is, correctly, not a reply to a question not yet asked.
-      const running = cmdDiagEval(args, 'nope.missing');
+      const running = cmdInspectEval(args, 'nope.missing');
       await new Promise((r) => setTimeout(r, 150));
       state.record('phone', 'eval', false, "Can't find variable: nope");
       const ok = await running;

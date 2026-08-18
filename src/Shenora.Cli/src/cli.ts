@@ -6,15 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig, CONFIG_FILE, SAMPLE_CONFIG, type DeployConfig } from './config.js';
-import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot, cmdPush, cmdProvision } from './ios.js';
+import { cmdDevices, cmdDoctor, cmdBuild, cmdDeploy, cmdLog, cmdSimulators, cmdShot, cmdPush, cmdProvision, cmdExec } from './ios.js';
 import {
   cmdDoctor as androidDoctor, cmdDevices as androidDevices, cmdDeploy as androidDeploy,
   cmdLog as androidLog, cmdBuild as androidBuild,
 } from './android.js';
 import { cmdCopy, cmdSync } from './copy.js';
 import {
-  cmdDiagServe, cmdDiagDevices, cmdDiagReport, cmdDiagEval, cmdDiagHost, positionals,
-} from './diag/commands.js';
+  cmdInspectServe, cmdInspectDevices, cmdInspectReport, cmdInspectEval, positionals,
+} from './inspect/commands.js';
 
 const USAGE = `shenora — take a built app onto a simulator or a real iPhone
 
@@ -38,6 +38,7 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
   shenora ios push             send this working tree to the remote Mac (uncommitted edits included)
   shenora ios provision [<extra.bundle.id>…]
                                mint the signing profiles a device build needs (app + its extensions)
+  shenora ios exec <command>   run a command on the build machine (the Mac) over ssh
 
   shenora android doctor       can this machine build, install and log? (works on Windows too)
   shenora android devices      attached devices and emulators, including the ones adb calls unauthorized
@@ -48,14 +49,13 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
   shenora android build [--configuration <name>] [--aab]
                                a distributable: .apk, or .aab for Play
 
-  shenora diag serve [--port <n>] [--app <origin>]
-                               a diagnostics service a DEVICE opens over the LAN — it polls, you drive
-  shenora diag devices         which devices have checked in
-  shenora diag report [--device <name>]
+  shenora inspect serve [--port <n>] [--app <origin>]
+                               attach to a running app: a DEVICE opens the printed URL and polls
+  shenora inspect devices      which devices have checked in
+  shenora inspect report [--device <name>]
                                what a device says about itself: shell, viewport, what it can reach
-  shenora diag eval <expr> [--device <name>]
+  shenora inspect eval <expr> [--device <name>]
                                run an expression in the device's page and print what came back
-  shenora diag host <command>  run a command on the Mac over ssh
 
 iOS work can run on a Mac elsewhere on your network — every \`ios\` verb takes \`--host\`:
   shenora ios doctor --host you@mac.local     (or set SHENORA_IOS_HOST once)
@@ -91,9 +91,9 @@ function needConfig(): DeployConfig | null {
 // have a project wired.
 const MACHINE_ONLY = new Set(['doctor', 'devices', 'simulators']);
 
-const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot', 'push', 'provision']);
+const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot', 'push', 'provision', 'exec']);
 const ANDROID_VERBS = new Set(['doctor', 'devices', 'deploy', 'log', 'build']);
-const DIAG_VERBS = new Set(['serve', 'devices', 'report', 'eval', 'host']);
+const INSPECT_VERBS = new Set(['serve', 'devices', 'report', 'eval']);
 
 /**
  * A verb this group does not have — reported BEFORE the config is looked for.
@@ -113,7 +113,7 @@ function unknownVerb(group: string, verb: string | undefined): void {
 }
 
 /**
- * @returns a promise ONLY for the verbs that genuinely need one (`diag`), so every existing synchronous
+ * @returns a promise ONLY for the verbs that genuinely need one (`inspect`), so every existing synchronous
  * caller — and every test that asserts on `process.exitCode` right after the call — is unaffected.
  */
 export function main(argv: string[]): void | Promise<void> {
@@ -121,18 +121,16 @@ export function main(argv: string[]): void | Promise<void> {
 
   if (group === 'init') return init();
 
-  if (group === 'diag') {
-    if (!DIAG_VERBS.has(verb ?? '')) return unknownVerb('diag', verb);
-    // ⚠ Never `needConfig()`: a diag service is useful with no project at all — diagnosing a device
-    // that will not load anything is exactly when there is nothing else set up.
+  if (group === 'inspect') {
+    if (!INSPECT_VERBS.has(verb ?? '')) return unknownVerb('inspect', verb);
+    // ⚠ Never `needConfig()`: the inspector is useful with no project at all — a device that will not
+    // load anything is exactly the case where nothing else is set up yet.
     const cfg = loadConfig();
     const done = (p: Promise<unknown>): Promise<void> => p.then(() => undefined);
-    if (verb === 'serve') return cmdDiagServe(cfg, args);
-    if (verb === 'devices') return done(cmdDiagDevices(args));
-    if (verb === 'report') return done(cmdDiagReport(args));
-    if (verb === 'eval') return done(cmdDiagEval(args, positionals(args).join(' ')));
-    cmdDiagHost(cfg, args, positionals(args).join(' '));
-    return;
+    if (verb === 'serve') return cmdInspectServe(cfg, args);
+    if (verb === 'devices') return done(cmdInspectDevices(args));
+    if (verb === 'report') return done(cmdInspectReport(args));
+    return done(cmdInspectEval(args, positionals(args).join(' ')));
   }
 
   if (group === 'copy' || group === 'sync') {
@@ -166,6 +164,7 @@ export function main(argv: string[]): void | Promise<void> {
     if (verb === 'log') return cmdLog(cfg, args);
     if (verb === 'push') return cmdPush(cfg, args);
     if (verb === 'provision') return cmdProvision(cfg, args);
+    if (verb === 'exec') { cmdExec(cfg, args); return; }
     return cmdShot(cfg, args);
   }
 
