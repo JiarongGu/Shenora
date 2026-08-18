@@ -46,10 +46,57 @@ handful of failures you only learn by hitting them. Each check here is one this 
   raw stream shows a screen of noise with none of your app's lines — which looks exactly like a broken
   log sink.
 
+## The Mac can be somewhere else
+
+Most .NET developers shipping to iOS work on Windows and have a Mac on the network rather than under the
+desk. Every `ios` verb takes `--host`:
+
+```bash
+npx shenora ios doctor --host you@mac.local     # or: set SHENORA_IOS_HOST once
+npx shenora ios deploy --host you@mac.local
+```
+
+It needs Remote Login on (System Settings → General → Sharing) and your key in the Mac's
+`~/.ssh/authorized_keys`. When it will not connect, `doctor` says **which** of the six unrelated causes it
+is — an asleep Mac, Remote Login off, a key never authorised, an `.local` name that does not resolve, ssh's
+auth-retry budget, or no ssh client here — because "cannot connect" sends you round all six.
+
+⚠ **A device build needs the Mac logged in at its screen.** `codesign` cannot reach a login-keychain key
+from an ssh session — an ssh login is a different *audit session*, so signing dies with
+`errSecInternalComponent` no matter what you sign. The way through is to hand the build to the Mac's own
+GUI session, which is what this does, and it needs a session to hand it to. Simulator builds sign ad-hoc
+and never meet this.
+
+## `shenora diag` — a device that answers back
+
+Getting an app onto a phone is half the problem; the other half is that a phone tells you nothing. There
+is no console, no devtools worth the name on iOS, and the failure you care about is usually "it launched
+and the screen is blank".
+
+```bash
+npx shenora diag serve            # prints a LAN URL — open it on the phone
+npx shenora diag devices          # who has checked in
+npx shenora diag report           # what the device says about itself
+npx shenora diag eval "location.href"
+npx shenora diag host "xcodebuild -version"    # run something on the Mac
+```
+
+The device opens the page and **polls** — because a webview cannot be dialled into, there is no port to
+open and no agent to install, so the only channel that exists is one the page itself opens. From then on
+you queue work and it drains the queue.
+
+**It is a devtool you start, and it ships inside nothing.** `@shenora/cli` is a devDependency; running
+arbitrary JS in a page is not something that should be a flag in a product binary. A diagnostic hosted
+inside the app would also die with it, exactly when you need it most.
+
+The operator half — queueing work, reading results, running a command on the Mac — is **loopback only**,
+tested. The device half is open to the LAN, because the device being diagnosed is routinely the one that
+cannot authenticate.
+
 ## Requirements, and the two that cannot be automated
 
 macOS with Xcode, the `maui-ios` workload, and an *Apple Development* signing identity — `shenora ios
-doctor` checks all of it and names what is missing.
+doctor` checks all of it and names what is missing. The Mac may be this machine or one on your LAN.
 
 Two things are yours and no tool can do them for you:
 
@@ -69,6 +116,7 @@ counterpart here — that is a difference in design, not a missing feature.
 | `build` (a distributable) | `ios build` | ✅ — `dotnet publish`, **Release by default**, `.ipa` via `ArchiveOnBuild` |
 | `add`, `open`, `ls`, `migrate` | — | **N/A by design**: they manage an Xcode/Android Studio project you edit. There isn't one |
 | Android (`cap run android`) | `android deploy`, `android log`, `android build` | ✅ — and it runs on Windows |
+| — | `ios … --host`, `diag` | **no counterpart**: a remote Mac, and a device that answers back |
 
 **Android is here too** — `android doctor|devices|deploy|log|build`, and it runs on **Windows**, which is
 where most .NET Android work happens. It does not exist to wrap `adb`; it exists for the four things that

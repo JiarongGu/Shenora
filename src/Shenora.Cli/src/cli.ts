@@ -12,6 +12,9 @@ import {
   cmdLog as androidLog, cmdBuild as androidBuild,
 } from './android.js';
 import { cmdCopy, cmdSync } from './copy.js';
+import {
+  cmdDiagServe, cmdDiagDevices, cmdDiagReport, cmdDiagEval, cmdDiagHost, positionals,
+} from './diag/commands.js';
 
 const USAGE = `shenora — take a built app onto a simulator or a real iPhone
 
@@ -41,6 +44,18 @@ const USAGE = `shenora — take a built app onto a simulator or a real iPhone
                                the app's own lines, filtered by tag then tailed HERE
   shenora android build [--configuration <name>] [--aab]
                                a distributable: .apk, or .aab for Play
+
+  shenora diag serve [--port <n>] [--app <origin>]
+                               a diagnostics service a DEVICE opens over the LAN — it polls, you drive
+  shenora diag devices         which devices have checked in
+  shenora diag report [--device <name>]
+                               what a device says about itself: shell, viewport, what it can reach
+  shenora diag eval <expr> [--device <name>]
+                               run an expression in the device's page and print what came back
+  shenora diag host <command>  run a command on the Mac over ssh
+
+iOS work can run on a Mac elsewhere on your network — every \`ios\` verb takes \`--host\`:
+  shenora ios doctor --host you@mac.local     (or set SHENORA_IOS_HOST once)
 
 Anything after \`--\` goes straight to \`dotnet build\`, for what is true of YOUR machine only:
   shenora ios deploy --simulator -- -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly
@@ -75,6 +90,7 @@ const MACHINE_ONLY = new Set(['doctor', 'devices', 'simulators']);
 
 const IOS_VERBS = new Set(['doctor', 'devices', 'simulators', 'build', 'deploy', 'log', 'shot']);
 const ANDROID_VERBS = new Set(['doctor', 'devices', 'deploy', 'log', 'build']);
+const DIAG_VERBS = new Set(['serve', 'devices', 'report', 'eval', 'host']);
 
 /**
  * A verb this group does not have — reported BEFORE the config is looked for.
@@ -93,10 +109,28 @@ function unknownVerb(group: string, verb: string | undefined): void {
   process.exitCode = 1;
 }
 
-export function main(argv: string[]): void {
+/**
+ * @returns a promise ONLY for the verbs that genuinely need one (`diag`), so every existing synchronous
+ * caller — and every test that asserts on `process.exitCode` right after the call — is unaffected.
+ */
+export function main(argv: string[]): void | Promise<void> {
   const [group, verb, ...args] = argv;
 
   if (group === 'init') return init();
+
+  if (group === 'diag') {
+    if (!DIAG_VERBS.has(verb ?? '')) return unknownVerb('diag', verb);
+    // ⚠ Never `needConfig()`: a diag service is useful with no project at all — diagnosing a device
+    // that will not load anything is exactly when there is nothing else set up.
+    const cfg = loadConfig();
+    const done = (p: Promise<unknown>): Promise<void> => p.then(() => undefined);
+    if (verb === 'serve') return cmdDiagServe(cfg, args);
+    if (verb === 'devices') return done(cmdDiagDevices(args));
+    if (verb === 'report') return done(cmdDiagReport(args));
+    if (verb === 'eval') return done(cmdDiagEval(args, positionals(args).join(' ')));
+    cmdDiagHost(cfg, args, positionals(args).join(' '));
+    return;
+  }
 
   if (group === 'copy' || group === 'sync') {
     const cfg = needConfig();
@@ -120,9 +154,9 @@ export function main(argv: string[]): void {
   if (group === 'ios') {
     if (!IOS_VERBS.has(verb ?? '')) return unknownVerb('ios', verb);
     const cfg = MACHINE_ONLY.has(verb ?? '') ? loadConfig() : needConfig();
-    if (verb === 'doctor') return cmdDoctor(cfg);
-    if (verb === 'devices') return cmdDevices();
-    if (verb === 'simulators') return cmdSimulators();
+    if (verb === 'doctor') return cmdDoctor(cfg, args);
+    if (verb === 'devices') return cmdDevices(cfg, args);
+    if (verb === 'simulators') return cmdSimulators(cfg, args);
     if (!cfg) return;                      // needConfig already said why
     if (verb === 'build') return cmdBuild(cfg, args);
     if (verb === 'deploy') return cmdDeploy(cfg, args);

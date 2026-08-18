@@ -32,6 +32,38 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`@shenora/cli` can drive a Mac that is somewhere else.** Every `ios` verb takes `--host user@mac.local`
+  (or `SHENORA_IOS_HOST`, or a `remote` block in `shenora.deploy.json`), because the adopter this kit is
+  pitched at is a .NET developer on Windows whose Mac is on the LAN rather than under the desk. `ios.ts`
+  used to ask `/bin/sh` about Xcode and `node:fs` about the build output in adjacent lines, which is only
+  correct while both are the same machine; a `Target` seam now separates "run a command there" from "ask
+  about ITS filesystem", with a local and an ssh implementation.
+  - **`ios doctor` diagnoses the TRANSPORT before anything else**, and the ordering is the whole value: a
+    Mac that is merely asleep answers every probe with silence, so without this the report reads
+    `MISSING Xcode`, `MISSING .NET SDK` — confident and completely wrong about a machine that is fine. It
+    separates the six causes that all present as "cannot connect": asleep, Remote Login off, key not
+    authorised, an `.local` name that does not resolve, ssh's auth-retry budget, no ssh client here.
+  - **A device build is handed to the Mac's GUI session**, because `codesign` cannot use a login-keychain
+    key from an ssh session — a different audit session, so signing dies with `errSecInternalComponent`
+    whatever you sign. That includes `ios build`, which reads as "just a build" and is in fact the one
+    command with no unsigned path through it at all.
+  - ⚠ **The on-Mac half is UNVERIFIED.** Everything provable without a Mac is tested — the ssh command
+    ceiling, the GUI script's shape, the six-way diagnosis, the path spelling — and three diagnosis
+    branches were driven end to end against real ssh. A build, sign, install and launch against actual
+    hardware has not run.
+
+- **`shenora diag` — a device that answers back.** `diag serve` starts a service, a phone on the LAN opens
+  the printed URL and **polls**; `diag devices|report|eval` drive it from another terminal, and `diag host`
+  runs a command on the Mac. The direction is the trick: a webview cannot be dialled into — no port, no
+  agent — so the only channel that exists is one the page itself opens. It ships inside nothing, because
+  it runs arbitrary JS in whatever page polls it, and a diagnostic hosted inside the app dies with it
+  exactly when it is needed.
+  - **Split by trust, not convenience.** Queueing work, reading results and running an ssh command decide
+    what RUNS, so they are loopback-only, checked against the socket's own address and never a header; a
+    request for one from off-box gets 404, not 403. Polling and reporting stay open, because the device
+    you most need to diagnose is routinely the one that cannot authenticate. Proven against a live server
+    from this machine's own LAN address, and sabotage-verified.
+
 - **`SegmentStream` can stream a REMOTE source, and the page cannot name one.** `SegmentStreamOptions`
   gains `Sources`, a `MediaSourceRegistry` the app registers a `RemoteMediaSource` with and gets an opaque
   handle back; the route serves `~remote/{handle}/…` and nothing else. That inversion is strictly tighter
@@ -50,14 +82,6 @@ at the first list and missed five more breaking changes.
   - **`Identity` keys the cache when the url rotates.** A presigned url is a different string every hour
     for the same film; keyed on the url it re-segments from scratch each time while the old copies wait for
     the sweep.
-
-### Fixed
-
-- **`SegmentStream` ignored `MediaAccessOptions.Log`.** That option says it is stated once for every
-  delivery path and the conversion route beside it reads it, but the segment route consulted only its own
-  optional parameter — so an app that configured the shared sink got diagnostics from one route and silence
-  from the other, with nothing to say which. Found while writing the leak test above, whose first run
-  captured no lines at all.
 
 - **`@shenora/cli` predicts the Xcode/bindings mismatch instead of discovering it at minute twenty.**
   `ios doctor` gains a `device signing` row and an `ios bindings` row; the second is the one that
@@ -85,6 +109,12 @@ at the first list and missed five more breaking changes.
   declared host-only, with the reason.
 
 ### Fixed
+
+- **`SegmentStream` ignored `MediaAccessOptions.Log`.** That option says it is stated once for every
+  delivery path and the conversion route beside it reads it, but the segment route consulted only its own
+  optional parameter — so an app that configured the shared sink got diagnostics from one route and silence
+  from the other, with nothing to say which. Found while writing the remote-source leak test, whose first
+  run captured no lines at all.
 
 🧭 **The first ADOPTION HARVEST (D15), from Yaorin's 0.10.0 → 0.11.0 upgrade.** Three findings, and the
 first two are things only an adopter could have found — the kit's own tests and gates were green for

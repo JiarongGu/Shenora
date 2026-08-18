@@ -26,6 +26,7 @@ import {
 } from './config.js';
 import { cmdCopy, lastLines } from './copy.js';
 import { main } from './cli.js';
+import { LocalTarget } from './remote/target.js';
 
 const temps: string[] = [];
 const tempDir = (): string => {
@@ -335,9 +336,14 @@ describe('findArtifact — what `shenora ios build` produced', () => {
     return dir;
   };
 
+  // ⚠ The build machine, which is normally the Mac. `LocalTarget` here is what makes these cases
+  // runnable on the Windows box the gate runs on: the LOGIC being pinned (prefer the .ipa, refuse a
+  // stale artifact) is the target's own, and none of it needs a Mac to be true.
+  const here = new LocalTarget();
+
   it('🔴 prefers the .ipa — that is the distributable', () => {
     const dir = make('MyApp.app', 'MyApp.ipa');
-    expect(findArtifact(dir)).toBe(path.join(dir, 'MyApp.ipa'));
+    expect(findArtifact(here, dir)).toBe(path.join(dir, 'MyApp.ipa'));
   });
 
   it('falls back to the .app so the command can say WHY it is not distributable', () => {
@@ -345,15 +351,15 @@ describe('findArtifact — what `shenora ios build` produced', () => {
     // "produced, but not signed into an archive" are different problems with different fixes, and a
     // null here would collapse them into the first.
     const dir = make('MyApp.app');
-    expect(findArtifact(dir)).toBe(path.join(dir, 'MyApp.app'));
+    expect(findArtifact(here, dir)).toBe(path.join(dir, 'MyApp.app'));
   });
 
   it('answers null for a directory that does not exist, rather than throwing', () => {
-    expect(findArtifact(path.join(os.tmpdir(), 'shenora-nope-' + Date.now()))).toBeNull();
+    expect(findArtifact(here, path.join(os.tmpdir(), 'shenora-nope-' + Date.now()))).toBeNull();
   });
 
   it('answers null when the publish left neither', () => {
-    expect(findArtifact(make('intermediate'))).toBeNull();
+    expect(findArtifact(here, make('intermediate'))).toBeNull();
   });
 
   it('🔴 rejects an artifact that PREDATES the build it is supposed to be the output of', () => {
@@ -365,8 +371,8 @@ describe('findArtifact — what `shenora ios build` produced', () => {
     const old = Date.now() - 60 * 60_000;
     fs.utimesSync(artifact, new Date(old), new Date(old));
 
-    expect(findArtifact(dir, Date.now() - 5_000)).toBeNull();
-    expect(findArtifact(dir, old - 5_000)).toBe(artifact);
+    expect(findArtifact(here, dir, Date.now() - 5_000)).toBeNull();
+    expect(findArtifact(here, dir, old - 5_000)).toBe(artifact);
   });
 
   it('a stale .ipa beside a fresh .app yields the .app — this run’s real output', () => {
@@ -378,7 +384,7 @@ describe('findArtifact — what `shenora ios build` produced', () => {
     // The .app clock is its Info.plist when present — a directory's own mtime can survive a rebuild.
     fs.writeFileSync(path.join(dir, 'MyApp.app', 'Info.plist'), '<plist/>');
 
-    expect(findArtifact(dir, Date.now() - 5_000)).toBe(path.join(dir, 'MyApp.app'));
+    expect(findArtifact(here, dir, Date.now() - 5_000)).toBe(path.join(dir, 'MyApp.app'));
   });
 });
 

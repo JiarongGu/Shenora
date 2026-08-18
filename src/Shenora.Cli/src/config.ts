@@ -39,6 +39,21 @@ export interface DeployConfig {
   webDir: string;
   /** Where the app head serves its bundle from, relative to the project. */
   webTarget: string;
+  /**
+   * A Mac on the LAN to run iOS work on, for the adopter who develops on Windows.
+   *
+   * ⚠ **Consider NOT committing this.** A hostname and account name are facts about your network, and
+   * this file is usually tracked. `SHENORA_IOS_HOST=you@mac.local` and `--host` both take precedence, so
+   * a shared config can stay neutral while each developer points at their own machine.
+   */
+  remote?: {
+    host: string;
+    user?: string;
+    /** Private key path. Omitted means ssh's own resolution — an agent, or `~/.ssh/id_*`. */
+    key?: string;
+    /** Where this project lives ON THE MAC. Defaults to a directory named for the project under `~`. */
+    dir?: string;
+  };
   /** Absolute directory holding the config file. Filled in by {@link loadConfig}. */
   root: string;
   /** Absolute path of the config file itself. Filled in by {@link loadConfig}. */

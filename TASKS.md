@@ -104,66 +104,35 @@ not less, because that change is unexercised.
     on a **16.0 s** window, and Android's equivalent dies at ~15.4 s. Too close to ignore before
     promising page-side background audio anywhere.
 
-### 📱 THE iOS DEVKIT — the CLI stops at "installed", and the gap after that is where the time goes
+### 📱 THE REMOTE MAC PATH HAS NEVER TOUCHED A MAC
 
-`@shenora/cli` gets an app onto a phone. Everything after that — is it running, what does its engine
-support, why did that file not play — has no answer in the kit, and on iOS it has no answer anywhere:
-`ios-webkit-debug-proxy` cannot be installed on this project's Mac, and **WebKit does not forward page
-`console.*` to the unified log**, so "the page said nothing" and "the page died" are the same silence.
+`shenora ios --host` and `shenora diag` are built (`docs/design/cli-remote.md`). Everything provable
+without Apple hardware is tested — the ssh command ceiling, the GUI script's subshell shape, the six-way
+transport diagnosis, the path spelling, the loopback boundary — and three diagnosis branches were driven
+end to end against real `ssh`. **What has never run is a build, sign, install and launch against a Mac.**
 
-Two pieces, and the second is the one worth stealing.
+- [ ] **Take it to a real Mac once**, in this order, because each step's failure invalidates the next:
+  `ios doctor --host` (reaches, and every row reports) → `deploy --simulator --host` (no signing) →
+  `build --host` (signs, via the GUI hand-off) → `deploy --device --host` → `shot --host` (the pull-back).
+  - ⚠ **The `gui` hand-off is the one to watch.** Its completion marker is polled from a DETACHED
+    Terminal session, so a wrong assumption there does not error — it waits out the full timeout and
+    reports a failure it cannot explain. If it hangs, read `/tmp/shenora-gui-*.log` ON the Mac first.
+  - ⚠ **The Mac must be logged in at its screen for a device build.** A locked or logged-out Mac has no
+    GUI session to hand the signing to, and `osascript` fails rather than the build.
 
-- [ ] **A remote mode: `shenora ios --host <user@host> …`** (or `"remote"` in `shenora.deploy.json`), so
-  every subcommand runs over SSH against a LAN Mac and copies artefacts back. The commands already shell
-  out; what is missing is that they assume the shell is LOCAL. The adopter this kit is pitched at — a
-  .NET dev on Windows shipping to iOS — never has a local Mac, they have one on the LAN. Measured against
-  the README's own thesis ("how little native code an adopting app has to write"), the device loop
-  currently costs a Windows adopter **1,752 lines** (Yaorin's `devtools/scripts/mac.mjs` at 1,413, plus
-  `mac-transport.mjs` and `lan-discovery.mjs` — and it GREW by 339 in a single day of using it) to
-  reimplement what the CLI already does, and the CLI's hard-won checks — `pipefail`, the extension
-  verification, the two-devices refusal, the filtered log — get reimplemented or lost.
-  - ⚠ **A remote doctor must diagnose the TRANSPORT first.** Reachable? Key authorised? Remote Login on?
-    Those are the failures a Windows adopter actually hits and each currently surfaces as a bare ssh
-    error with no next step. Two traps to name explicitly, both hit for real:
-    **`.local` does not resolve without Bonjour**, and `ping`/`Resolve-DnsName`/`ssh` all fail
-    identically — which reads as "the Mac is off" when it is up. **And mDNS is answered BY the device**,
-    so a name that does not resolve is evidence about POWER, not about DNS.
-    Repeated key attempts also flip the error from `Permission denied (publickey…)` to
-    `Connection closed by … port 22` (MaxAuthTries), which looks like a different, harder fault.
+- [ ] **There is no PUSH step.** `buildDir` assumes the Mac already has the checkout (`remote.dir`, or
+  `~/<repo name>`) and that the adopter keeps it in sync. Whether the kit should own that — a git push to
+  the Mac, refusing a dirty tree, is the shape the family's own harness proved — is unanswered, and worth
+  deciding against a real loop rather than in the abstract: it may be that `rsync`/`git` in the adopter's
+  own hands is the right answer and the kit should only say so.
 
-- [ ] 🔴 **`shenora diag` — a device that POLLS for work, which is the only remote eval iOS has.**
-  BUILT AND PROVEN in Yaorin (2026-08-18, `devtools/scripts/diag-server.mjs` + `devtools/diag/index.html`
-  — take them). A standalone service prints a LAN URL; the phone opens it and polls; the operator queues
-  actions from their machine and reads results.
-  ⚠ **It then solved a problem nothing else could, which is the argument for it.** A LAN Mac had been
-  unreachable all day across four wrong theories. Opening the diag page ON the Mac made it check in — and
-  the check-in carries the SOURCE ADDRESS, taken from the socket, which is the one fact a device cannot
-  state about itself (JS has no access to its own LAN address). That located the machine, and its report
-  (`app server reachable 421 ms`) simultaneously ruled out the network, narrowing an all-day mystery to
-  one setting. A diagnostic that reports its own address is worth more than one that only reports codecs. **No cable, no pairing, no signed build, no inbound
-  access to the phone, and nothing installed on the Mac.** Verified end to end: `report` returned a full
-  codec/engine matrix off the device, `eval` ran an arbitrary expression there and returned its value,
-  `fetch` measured a URL from the device's own position (status/bytes/ms/`accept-ranges`).
-  - **The direction is the whole trick.** Inbound access to a phone needs a cable, a proxy or a signed
-    build; outbound needs a page left open. Invert it and a page that can run one line of JS is a debugger.
-  - 🔴 **Keep it OUT of the app's own server.** Two reasons, and the second is the one that matters:
-    it runs arbitrary JS, which has no business in a product binary where it is one flag from live; and
-    **a diagnostic hosted inside the thing being diagnosed dies with it** — the moment you most need to
-    ask a device what it sees is when the server will not start or the bundle will not boot.
-  - **Split the halves by trust, not by convenience.** Queueing work and reading results decide what
-    RUNS, so they are loopback-only; polling and reporting are open, because the device you most need to
-    diagnose is routinely the one that cannot authenticate. Verified: operator routes answer 200 from
-    loopback and 404 from the LAN, device routes stay open, and queueing from the LAN is refused.
-  - ⚠ **Poll with a cursor, never destructively.** `?since=<seq>` makes a poll idempotent (a dropped
-    response costs a retry) and lets two devices be driven at once without stealing each other's actions.
-    First contact should start at the CURRENT head, or a page opened late replays the whole session's
-    backlog — actively harmful on an `eval` queue.
-  - ⚠ **A cross-origin `no-cors` fetch is the right reachability probe** from a devtool origin: opaque,
-    so no status or body, but it RESOLVES only if the host answered — which is the question being asked.
-  - ⚠ **The clipboard fallback is not optional.** A LAN page is plain http, so it is not a secure context
-    and `navigator.clipboard` does not exist. Select the text instead, or the report cannot leave the phone.
+- [ ] **`diag` has `eval` but not `fetch` or `navigate` as first-class actions.** `eval` expresses both,
+  so this is ergonomics, not capability — file it only if the raw form turns out to be what people
+  actually type.
 
-⚠ **It immediately paid for itself, which is the argument for shipping it:** run against headless Edge
-with `--disable-gpu`, it reported `HEVC: ""` where the same engine in a real WebView2 window answers
-`probably`. A codec matrix is CONTEXT-dependent — headless is not a proxy for the shipped surface — and
-nothing but measuring in the real one would have caught that.
+⚠ **A codec probe was deliberately left out of the diag page.** Yaorin's version carried one and it paid
+for itself immediately — run against headless Edge with `--disable-gpu` it reported `HEVC: ""` where the
+same engine in a real WebView2 window answers `probably`, which is a real lesson: **a codec matrix is
+CONTEXT-dependent and headless is not a proxy for the shipped surface.** But the list it probed encoded
+that app's format decisions, and the kit is not a media library (D53). If it returns it should be a
+DECLARED probe list the page is given, not a list the kit picks.
