@@ -104,6 +104,20 @@ cannot authenticate.
 macOS with Xcode, the `maui-ios` workload, and an *Apple Development* signing identity — `shenora ios
 doctor` checks all of it and names what is missing. The Mac may be this machine or one on your LAN.
 
+**A device build needs a provisioning profile for your bundle id, and the .NET SDK cannot make one** — it
+consumes profiles, it does not create them, so a bundle id nobody has provisioned fails with *"Could not
+find any available provisioning profiles"*, an error about your app caused by a missing step the
+toolchain does not offer. `shenora ios provision` is that step: it drives `xcodebuild
+-allowProvisioningUpdates` against a throwaway project, once per bundle id.
+
+```bash
+npx shenora ios provision                          # your app
+npx shenora ios provision com.example.app.widget   # …and every extension it embeds
+```
+
+⚠ **Extensions need their own profiles.** An extension is provisioned separately from its container, and
+forgetting one fails at the very end of a device install with an error naming the *app*.
+
 Two things are yours and no tool can do them for you:
 
 1. **A free/personal team profile expires after 7 days.** Re-deploy to refresh it.

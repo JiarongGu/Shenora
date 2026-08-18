@@ -52,6 +52,23 @@ at the first list and missed five more breaking changes.
     branches were driven end to end against real ssh. A build, sign, install and launch against actual
     hardware has not run.
 
+- **`shenora ios provision` — mint the signing profiles a device build needs.** The .NET iOS SDK
+  *consumes* provisioning profiles and never creates one, so a bundle id nobody has provisioned fails
+  with *"Could not find any available provisioning profiles"* — an error about your app, caused by the
+  absence of a step the toolchain does not offer at all. This drives `xcodebuild
+  -allowProvisioningUpdates` against a throwaway Xcode project, once per bundle id, through the Mac's own
+  login session (Xcode's stored Apple ID session has the same audit-session problem as the keychain).
+  - **Extensions are included by naming them**, because an extension is provisioned separately from its
+    container and forgetting one fails at the very END of a device install with an error naming the app.
+  - **The team id is READ OFF the Mac's signing certificate** rather than required in config. It
+    identifies a developer account, and `shenora.deploy.json` is normally tracked — requiring it there
+    would mean either publishing it or being unable to provision. This file already holds that no
+    machine-specific fact belongs in config; a team id is one.
+  - **It reports what is ON DISK afterwards, not what `xcodebuild` said.** A build can succeed against a
+    profile it already had, so a zero exit does not mean a profile now exists for the id that was asked
+    for — and "provisioned successfully" followed by a device build failing for want of a profile is
+    exactly the false success this CLI exists to prevent.
+
 - **`shenora ios push` — send this working tree to the Mac.** Without it every other remote command was a
   claim about code that might not be there: the Mac built whatever its checkout happened to hold, and
   nothing said so. It sends what git lists as source — tracked plus not-ignored — so `bin/`, `obj/` and

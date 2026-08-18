@@ -317,7 +317,7 @@ public sealed class MainPage : ContentPage
 							is Shenora.Modules.Media.MediaConversionPipeline pipeline)
 						{
 #if IOS
-							Shenora.iOS.IosMediaVideoConversion.Use(pipeline, MauiProgram.Log);
+							Shenora.iOS.IosMediaVideoConversion.Use(pipeline, AppCallback.Logger(MauiProgram.Log));
 #elif ANDROID
 							Shenora.Android.AndroidMediaVideoConversion.Use(pipeline, AppCallback.Logger(MauiProgram.Log));
 #endif
@@ -473,7 +473,7 @@ public sealed class MainPage : ContentPage
 				// Same as the Android arm: its own pipeline WITH a log, because the host registers the
 				// converter without one and a codec failure is otherwise reported as a malformed file.
 				var diagnosticPipeline = new Shenora.Modules.Media.MediaConversionPipeline();
-				Shenora.iOS.IosMediaAudioConversion.Use(diagnosticPipeline, MauiProgram.Log);
+				Shenora.iOS.IosMediaAudioConversion.Use(diagnosticPipeline, AppCallback.Logger(MauiProgram.Log));
 				await TranscodeProbe.RunAsync(diagnosticPipeline,
 					services.GetService<Shenora.iOS.IosMediaPlayer>(), MauiProgram.Log);
 #else

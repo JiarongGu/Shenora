@@ -17,6 +17,7 @@ import { iosTfmOf, platformTfm, projectDir, requireFields, type DeployConfig } f
 import { resolveTarget, resolveHost, diagnoseHost, reportDiagnosis } from './remote/host.js';
 import type { Target } from './remote/target.js';
 import { pushTree } from './remote/push.js';
+import { provisionBundleIds, teamId } from './remote/provision.js';
 
 interface Device {
   id: string;
@@ -1161,6 +1162,45 @@ export function cmdPush(cfg: DeployConfig, args: string[]): void {
   if (!dir) return;                       // remoteRoot already reported why
   pushTree(target, cfg.root, dir);
   target.close();
+}
+
+/**
+ * `shenora ios provision` — mint the profiles a device build needs.
+ *
+ * ⚠ **Extensions are included by DEFAULT.** An app extension is provisioned separately from its
+ * container and forgetting it fails at the very END of a device install, with an error naming the app.
+ * Extra ids can be named as arguments; `cfg.bundleId` is always first.
+ */
+export function cmdProvision(cfg: DeployConfig, args: string[]): void {
+  const target = resolveTarget(cfg, args);
+  if (!target) return;
+  if (!requireFields(cfg, ['bundleId'])) return;
+  // ⚠ NOT `requireFields(… 'team')`: a team id identifies a developer account, and this config file is
+  // normally tracked. It is read off the Mac's own certificate instead — see `teamId`.
+  const team = teamId(target, cfg.team);
+  if (!team) return;
+
+  const { own } = splitArgs(args);
+  const extra = own.filter((a) => !a.startsWith('-') && a.includes('.'));
+  const ids = [cfg.bundleId, ...extra.filter((id) => id !== cfg.bundleId)];
+
+  console.log(`shenora: provisioning ${ids.length} bundle id(s) for team ${team} on ${target.label}`);
+  const result = provisionBundleIds(target, team, ids);
+  target.close();
+  if (!result) return;
+
+  console.log('');
+  for (const id of ids) {
+    const ok = !result.missing.includes(id);
+    console.log(`  ${ok ? 'ok     ' : 'MISSING'} ${id}`);
+  }
+  if (result.missing.length > 0) {
+    fail(`no profile was created for: ${result.missing.join(', ')}`,
+      '  If Xcode asked to sign in, do it once on the Mac and run this again — the request needs an\n'
+      + '  account it can authorise with, and it cannot ask you from here.');
+    return;
+  }
+  console.log('\nshenora: profiles are in place. `shenora ios deploy --device` can sign now.');
 }
 
 export function cmdShot(cfg: DeployConfig, args: string[]): void {

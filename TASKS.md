@@ -112,15 +112,14 @@ versions and finds the connected iPhone) → `devices`/`simulators` → `deploy 
 Mac, boots, installs, launches) → `shot` (a 1206×2622 PNG pulled back here). Five defects came out of
 that hour and are fixed; the CHANGELOG has them.
 
-- [ ] **A signed build has never SUCCEEDED**, and the blocker is an account rather than the kit. The
-  hand-off mechanism itself is proven: the script stages, Terminal runs it in the Aqua session, the
-  `.done` marker carries the exit code, the poll reads it and the log comes back. What fails is the build
-  inside it — *"Could not find any available provisioning profiles"*, because no profile on that Mac
-  matches `com.shenora.sample.maui` and, with no Apple ID signed into Xcode, nothing can create one.
-  - Prerequisite: Xcode → Settings → Accounts → add an Apple ID, then open any project once so it
-    registers the device. `doctor`'s `device signing` row reports this before a build.
-  - ⚠ Retest the moment that is done — it is the last untested path, and the only one where the kit
-    could still be wrong about something that costs twenty minutes to discover.
+- [ ] 🔴 **NOTHING ON WINDOWS COMPILES THE SAMPLE'S `#if IOS` ARM, and it had rotted.** Found by the
+  first signed device build: two call sites passed a method group where the kit now wants an `ILogger?`,
+  and the `#elif ANDROID` arm three lines below each was already correct — so an API change fixed one
+  branch and left the other, for who knows how long. `verify` builds neither (the MAUI head needs the iOS
+  workload), and `dev.mjs android` compiles only the ANDROID arm.
+  - **The mechanism now exists**: `shenora ios build --host` compiles that arm on the Mac. Make it a
+    habit before a release, or wire it into a Mac-side check — it is the only thing that can see this
+    class of rot, and the kit's own sample is the first thing an adopter copies.
 
 
 - [ ] **`ios push` leaves a git checkout's METADATA describing a tree that is no longer there.** The files
