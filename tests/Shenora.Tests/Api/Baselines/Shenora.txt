@@ -1341,6 +1341,12 @@ sealed class Shenora.Modules.Media.MediaSource : System.IEquatable<Shenora.Modul
   public required string Uri { get; init; }
   public static bool op_Equality(Shenora.Modules.Media.MediaSource? left, Shenora.Modules.Media.MediaSource? right)
   public static bool op_Inequality(Shenora.Modules.Media.MediaSource? left, Shenora.Modules.Media.MediaSource? right)
+sealed class Shenora.Modules.Media.MediaSourceRegistry
+  public .ctor()
+  public bool Release(string handle)
+  public int Count { get; }
+  public string Register(Shenora.Modules.Media.RemoteMediaSource source)
+  public void ReleaseAll()
 struct Shenora.Modules.Media.MediaStreamClaim : System.IEquatable<Shenora.Modules.Media.MediaStreamClaim>
   public .ctor(Shenora.Modules.Media.MediaStreamKind Kind, string Codec)
   public Shenora.Modules.Media.MediaStreamKind Kind { get; init; }
@@ -1417,6 +1423,19 @@ sealed class Shenora.Modules.Media.Mp4Remuxer : Shenora.Modules.Media.IMediaCont
   public static Shenora.Modules.Media.MediaRemuxerResult Remux(System.IO.Stream source, System.IO.Stream destination, Shenora.Modules.Media.IMediaStreamConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public static Shenora.Modules.Media.MediaRemuxerResult Remux(string sourcePath, string destinationPath, Shenora.Modules.Media.IMediaStreamConversion? conversion, System.Threading.CancellationToken cancellationToken = default)
   public string Container { get; }
+sealed class Shenora.Modules.Media.RemoteMediaSource : System.IEquatable<Shenora.Modules.Media.RemoteMediaSource>
+  public Shenora.Modules.Media.RemoteMediaSource <Clone>$()
+  public System.TimeSpan? Duration { get; init; }
+  public bool Equals(Shenora.Modules.Media.RemoteMediaSource? other)
+  public bool? HasPicture { get; init; }
+  public override bool Equals(object? obj)
+  public override int GetHashCode()
+  public override string ToString()
+  public required System.Uri Url { get; init; }
+  public required string Label { get; init; }
+  public static bool op_Equality(Shenora.Modules.Media.RemoteMediaSource? left, Shenora.Modules.Media.RemoteMediaSource? right)
+  public static bool op_Inequality(Shenora.Modules.Media.RemoteMediaSource? left, Shenora.Modules.Media.RemoteMediaSource? right)
+  public string? Identity { get; init; }
 static class Shenora.Modules.Media.SegmentEngine
   public static Shenora.Modules.Media.ISegmentEngine Default(Shenora.Modules.Media.IMediaStreamConversion? conversion, Microsoft.Extensions.Logging.ILogger? log = null)
 enum Shenora.Modules.Media.SegmentMergeOutcome (int)
@@ -1472,8 +1491,10 @@ sealed class Shenora.Modules.Media.SegmentRunRequest : System.IEquatable<Shenora
 static class Shenora.Modules.Media.SegmentStreamExtensions
   public static Shenora.Modules.Media.ISegmentStreamRoute UseSegmentStream(Shenora.Core.WebView.IWebViewInterceptor interceptor, Shenora.Modules.Media.ISegmentEngine engine, Shenora.Modules.Media.SegmentStreamOptions options, Microsoft.Extensions.Logging.ILogger? log = null)
 sealed class Shenora.Modules.Media.SegmentStreamOptions
+  public Shenora.Modules.Media.MediaSourceRegistry? Sources { get; init; }
   public System.TimeSpan PictureGrace { get; init; }
   public System.TimeSpan WaitBudget { get; init; }
+  public const string RemotePrefix = "~remote/"
   public double SegmentSeconds { get; init; }
   public int Lookahead { get; init; }
   public long CacheCapBytes { get; init; }

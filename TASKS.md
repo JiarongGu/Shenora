@@ -104,36 +104,6 @@ not less, because that change is unexercised.
     on a **16.0 s** window, and Android's equivalent dies at ~15.4 s. Too close to ignore before
     promising page-side background audio anywhere.
 
-### 🎬 `SegmentStream` HAS NO REMOTE-SOURCE DOOR, AND IT IS THE ONE THAT NEEDS IT
-
-`MediaConversionOptions.AllowRemoteSource` exists and is exactly right: fail-closed, the APP supplies
-the SSRF policy, the kit never fetches (the app's `Convert` delegate does the reading).
-`SegmentStreamOptions` has no equivalent — its only source is a path contained against
-`MediaAccessOptions.AllowedRoots`.
-
-That is backwards relative to which route benefits. A remote source is most valuable precisely when the
-bytes are NOT on the device, and `/_convert/` must read the WHOLE source before one byte plays, so on an
-hour-long track it is an hour-long wait over the network. The segment stream answers a manifest
-immediately and produces only the pieces asked for — the shape that makes a remote source usable at all.
-
-- [ ] **Add the same door to `SegmentStreamOptions`** — one `AllowRemoteSource` predicate, same
-  fail-closed semantics and same "the kit decides, the app reads" split. The engine already takes a
-  `string` source and every ffmpeg-backed one passes it to `-i`, so nothing below the option changes.
-
-**Found building it by hand in a consumer** (Yaorin, 2026-08-18): a track the WebView refuses that is not
-downloaded had exactly one answer, the server's transcode — CPU and a lossy step spent on a file the
-device's own ffmpeg reads fine. Working around it meant forking the kit's `SegmentStream`, teaching it a
-`~remote/{handle}` route and inverting the containment: the page cannot name a URL, it registers one and
-gets an opaque handle, and the route accepts only handles the registry issued. **That inversion is
-probably the kit's answer too** — it is strictly tighter than a URL predicate, because a policy that has
-to judge a page-supplied URL can be wrong, where a handle that was never issued cannot be guessed.
-
-⚠ Two things worth carrying into the kit's version if it takes this shape:
-- The source string reaches a log by default. A remote one carries the caller's credentials, so the
-  `Source` needs a separate log LABEL — otherwise every existing diagnostic line leaks a token.
-- Duration and picture must be SUPPLIABLE. Probing them remotely costs two engine launches reading a
-  network header before the first manifest can be answered, and the caller usually already knows both.
-
 ### 📱 THE iOS DEVKIT — the CLI stops at "installed", and the gap after that is where the time goes
 
 `@shenora/cli` gets an app onto a phone. Everything after that — is it running, what does its engine

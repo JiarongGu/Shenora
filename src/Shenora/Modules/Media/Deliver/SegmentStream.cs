@@ -40,6 +40,34 @@ public sealed class SegmentStreamOptions
     /// <summary>The URL prefix this route answers. Relative, so one string works on every shell.</summary>
     public string RoutePath { get; init; } = "/shenora-hls/";
 
+    /// <summary>
+    /// Remote sources this route may stream, each addressable only by a handle the APP issued.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 🔴 <b>Null — the default — means this route serves local files only</b>, so a remote source is
+    /// impossible until an app deliberately makes one possible. Fail-closed, like
+    /// <see cref="MediaAccessOptions.AllowedRoots"/> beside it.
+    /// </para>
+    /// <para>
+    /// ⚠ A registered source bypasses <see cref="MediaAccessOptions.AllowedRoots"/> entirely, and that is
+    /// the design rather than a hole in it: containment answers "may this PATH be read", which is not a
+    /// question about a url. The equivalent boundary for a remote source is that the page cannot name one
+    /// at all — see <see cref="MediaSourceRegistry"/>.
+    /// </para>
+    /// </remarks>
+    public MediaSourceRegistry? Sources { get; init; }
+
+    /// <summary>
+    /// The path segment that means "an issued handle follows": <c>{RoutePath}~remote/{handle}/{resource}</c>.
+    /// <para>
+    /// ⚠ A RESERVED segment, checked before <see cref="MediaAccessOptions.Resolve"/> is consulted, so a
+    /// handle can never collide with something an app's own resolver would have matched — and so the app
+    /// does not have to know this route has a second shape.
+    /// </para>
+    /// </summary>
+    public const string RemotePrefix = "~remote/";
+
     /// <summary>The manifest's name under a source: <c>{RoutePath}{app-part}/index.m3u8</c>.</summary>
     public string ManifestName { get; init; } = "index.m3u8";
 
@@ -140,7 +168,11 @@ internal sealed class SegmentStream : IDisposable
         _engine = engine;
         _options = options;
         _delivery = delivery;
-        _log = log;
+        // 🔴 Falls back to the SHARED sink. `MediaAccessOptions.Log` says it is stated once for every
+        // delivery path, and the conversion route beside this one reads it — this route read only its own
+        // parameter, so an app that set the shared one got diagnostics from one route and silence from the
+        // other, with nothing to indicate which. An absent log is indistinguishable from a quiet one.
+        _log = log ?? options.Access.Log;
     }
 
     /// <summary>
@@ -170,7 +202,7 @@ internal sealed class SegmentStream : IDisposable
             // "Not mine" must fall through the REST of the pipeline, not terminate it.
             if (stream.Parse(request.Uri) is not { } parsed) return next(request, cancellationToken);
             return Task.FromResult<WebViewResourceResponse?>(
-                stream.Answer(request, parsed.Source, parsed.Resource, cancellationToken));
+                stream.Answer(request, parsed.Target, parsed.Resource, cancellationToken));
         });
 
         return new Registration(route, stream);
@@ -185,7 +217,7 @@ internal sealed class SegmentStream : IDisposable
     /// resource, and hands the rest to <see cref="MediaAccessOptions.Resolve"/>.
     /// </para>
     /// </summary>
-    private (string Source, string Resource)? Parse(Uri uri)
+    private (Requested Target, string Resource)? Parse(Uri uri)
     {
         if (!uri.IsAbsoluteUri) return null;
         var path = Uri.UnescapeDataString(uri.AbsolutePath);
@@ -197,6 +229,18 @@ internal sealed class SegmentStream : IDisposable
         if (slash <= 0 || slash == rest.Length - 1) return null;
 
         var resource = rest[(slash + 1)..];
+
+        // The reserved shape, checked BEFORE the app's resolver so a handle cannot collide with a path the
+        // app would have matched. An unissued handle falls through as "not mine" rather than 404ing: the
+        // rest of the pipeline may still have something to say about this url.
+        if (rest.StartsWith(SegmentStreamOptions.RemotePrefix, StringComparison.Ordinal))
+        {
+            var handle = rest[SegmentStreamOptions.RemotePrefix.Length..slash];
+            return _options.Sources?.Resolve(handle) is { } remote
+                ? (new Requested(null, remote), resource)
+                : null;
+        }
+
         var sourceUri = new UriBuilder(uri)
         {
             Path = _options.RoutePath + rest[..slash],
@@ -204,35 +248,21 @@ internal sealed class SegmentStream : IDisposable
             Fragment = string.Empty,
         }.Uri;
 
-        return _options.Access.Resolve(sourceUri) is { } source ? (source, resource) : null;
+        return _options.Access.Resolve(sourceUri) is { } source ? (new Requested(source, null), resource) : null;
     }
 
+    /// <summary>
+    /// What a request named: a path the app resolved, or a remote source the app registered. Exactly one.
+    /// </summary>
+    private readonly record struct Requested(string? Path, RemoteMediaSource? Remote);
+
     /// <summary>Answer one request: the manifest, a segment, or a refusal.</summary>
-    private WebViewResourceResponse Answer(WebViewResourceRequest request, string requested, string resource,
+    private WebViewResourceResponse Answer(WebViewResourceRequest request, Requested requested, string resource,
                                            CancellationToken cancellationToken)
     {
-        // Containment runs BEFORE the filesystem is touched, and a refusal is the same 404 as a missing file
-        // so nothing can probe for existence by comparing responses.
-        if (WebViewFiles.ResolveContained(requested, _options.Access.AllowedRoots) is not { } contained)
-        {
-            Log(() => "segments: refused a source outside the allowed roots");
-            return WebViewResourceResponse.NotFound();
-        }
-
-        FileInfo info;
-        try
-        {
-            info = new FileInfo(contained);
-            if (!info.Exists) return WebViewResourceResponse.NotFound();
-        }
-        catch (Exception ex)
-        {
-            // No exception text on the wire, ever — a path is the likeliest thing it would carry.
-            Log(() => "segments: could not stat a source", ex);
-            return WebViewResourceResponse.NotFound();
-        }
-
-        var source = OpenSource(contained, info, cancellationToken);
+        var source = requested.Remote is { } remote
+            ? OpenRemote(remote, cancellationToken)
+            : OpenLocal(requested.Path!, cancellationToken);
         if (source is null) return WebViewResourceResponse.NotFound();
 
         if (resource.Equals(_options.ManifestName, StringComparison.OrdinalIgnoreCase))
@@ -274,11 +304,57 @@ internal sealed class SegmentStream : IDisposable
     /// same walk every production run already pays, in exchange for not encoding the picture at all (D76).
     /// </para>
     /// </summary>
-    private Source? OpenSource(string path, FileInfo info, CancellationToken cancellationToken)
+    private Source? OpenLocal(string requested, CancellationToken cancellationToken)
     {
+        // Containment runs BEFORE the filesystem is touched, and a refusal is the same 404 as a missing file
+        // so nothing can probe for existence by comparing responses.
+        if (WebViewFiles.ResolveContained(requested, _options.Access.AllowedRoots) is not { } contained)
+        {
+            Log(() => "segments: refused a source outside the allowed roots");
+            return null;
+        }
+
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(contained);
+            if (!info.Exists) return null;
+        }
+        catch (Exception ex)
+        {
+            // No exception text on the wire, ever — a path is the likeliest thing it would carry.
+            Log(() => "segments: could not stat a source", ex);
+            return null;
+        }
+
         // Identity+length+mtime: replacing the source invalidates its segments rather than serving
         // yesterday's.
-        var key = DerivedCacheKey.For(path, info.Length, info.LastWriteTimeUtc, "hls");
+        var key = DerivedCacheKey.For(contained, info.Length, info.LastWriteTimeUtc, "hls");
+        return OpenSource(key, contained, Path.GetFileName(contained), null, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// A source the app registered. No containment — see <see cref="SegmentStreamOptions.Sources"/> — and
+    /// no <c>stat</c>, because neither length nor mtime is knowable without fetching.
+    /// </summary>
+    private Source? OpenRemote(RemoteMediaSource remote, CancellationToken cancellationToken)
+    {
+        // ⚠ Keyed on IDENTITY, falling back to the url. A presigned url rotates, and keying on it directly
+        // re-segments the same film under a new key every time the signature changes while the previous
+        // copies sit in the cache until the sweep reaches them.
+        var key = DerivedCacheKey.For(
+            remote.Identity ?? remote.Url.AbsoluteUri, 0, DateTime.UnixEpoch, "hls-remote");
+
+        // 🔴 The LABEL is what every log line below prints. The url is never passed as one, because it
+        // routinely carries the caller's credentials — see RemoteMediaSource's remarks.
+        return OpenSource(key, remote.Url.AbsoluteUri, remote.Label,
+                          remote.Duration, remote.HasPicture, cancellationToken);
+    }
+
+    private Source? OpenSource(string key, string enginePath, string label, TimeSpan? knownDuration,
+                               bool? knownPicture, CancellationToken cancellationToken)
+    {
+        var path = enginePath;
 
         lock (_gate)
         {
@@ -287,9 +363,13 @@ internal sealed class SegmentStream : IDisposable
             if (_sources.TryGetValue(key, out var existing)) return existing;
         }
 
-        if (_engine.DurationOf(path) is not { } duration || duration <= TimeSpan.Zero)
+        // ⚠ The caller's value wins when it has one. Probing a REMOTE source costs an engine launch reading
+        // a network header before the first manifest can be answered — twice, with the picture probe below
+        // — and whoever registered the source usually knows both from the catalogue entry the url came
+        // from. A supplied value is trusted: it is the app's own claim about its own media.
+        if ((knownDuration ?? _engine.DurationOf(path)) is not { } duration || duration <= TimeSpan.Zero)
         {
-            Log(() => $"segments: no duration for {Path.GetFileName(path)} — refusing");
+            Log(() => $"segments: no duration for {label} — refusing");
             return null;
         }
 
@@ -298,7 +378,7 @@ internal sealed class SegmentStream : IDisposable
         // seek lands at the wrong moment. Null means the engine will hit the grid, which is then the plan.
         var plan = _engine.PlanSegments(path, _options.SegmentSeconds, cancellationToken)
                    ?? SegmentPlan.Grid(_options.SegmentSeconds, duration);
-        var hasPicture = _engine.HasPicture(path);
+        var hasPicture = knownPicture ?? _engine.HasPicture(path);
 
         lock (_gate)
         {
@@ -315,6 +395,7 @@ internal sealed class SegmentStream : IDisposable
             var source = new Source
             {
                 Path = path,
+                Label = label,
                 Directory = directory,
                 Duration = duration,
                 Plan = plan,
@@ -323,7 +404,7 @@ internal sealed class SegmentStream : IDisposable
             DropUnfinishedTail(source);
             _sources[key] = source;
 
-            Log(() => $"segments: {Path.GetFileName(path)} {duration.TotalSeconds:0.00}s"
+            Log(() => $"segments: {label} {duration.TotalSeconds:0.00}s"
                     + $" -> {plan} (picture={source.HasPicture})");
 
             // Off the request path: the sweep stats every cached directory, and a request should never pay
@@ -747,7 +828,19 @@ internal sealed class SegmentStream : IDisposable
     /// <summary>One source's cache entry and its live window.</summary>
     private sealed class Source
     {
+        /// <summary>
+        /// What the engine reads: a contained local path, or a registered remote url.
+        /// <para>
+        /// 🔴 <b>NEVER LOG THIS.</b> For a remote source it is the app's credential-bearing url, and
+        /// <c>Path.GetFileName</c> does not sanitise one — it splits on separators, so a query string
+        /// survives intact and lands in the log line whole. Use <see cref="Label"/>, which exists for
+        /// exactly this and is pinned by a test that plants a token in a url and reads the log back.
+        /// </para>
+        /// </summary>
         public required string Path { get; init; }
+
+        /// <summary>The safe name for diagnostics: a file name, or the label the app registered.</summary>
+        public required string Label { get; init; }
         public required string Directory { get; init; }
         public required TimeSpan Duration { get; init; }
         public required bool HasPicture { get; init; }

@@ -32,6 +32,33 @@ at the first list and missed five more breaking changes.
 
 ### Added
 
+- **`SegmentStream` can stream a REMOTE source, and the page cannot name one.** `SegmentStreamOptions`
+  gains `Sources`, a `MediaSourceRegistry` the app registers a `RemoteMediaSource` with and gets an opaque
+  handle back; the route serves `~remote/{handle}/…` and nothing else. That inversion is strictly tighter
+  than the url predicate the conversion route uses: a policy judging a page-supplied url can be **wrong**,
+  and being wrong means the host fetches an address the page could not reach itself. A handle that was
+  never issued cannot be guessed. Null — the default — means local files only. Found by an adopter who
+  had to fork the route to get it, because the alternative for a track the webview refuses was a
+  server-side transcode of a file the device's own engine reads fine.
+  - **The url is treated as a secret and the label is not.** A remote media url routinely carries
+    credentials, and `Path.GetFileName` — which sanitises a local path — leaves a query string completely
+    intact, so every existing diagnostic was one interpolation away from logging a signature. A test plants
+    a token in a url, drives the route and reads the log back.
+  - **`Duration` and `HasPicture` are suppliable**, because probing a remote source costs two engine
+    launches reading a network header before the first manifest can be answered — and whoever registered
+    the source usually has both already. Unset still probes.
+  - **`Identity` keys the cache when the url rotates.** A presigned url is a different string every hour
+    for the same film; keyed on the url it re-segments from scratch each time while the old copies wait for
+    the sweep.
+
+### Fixed
+
+- **`SegmentStream` ignored `MediaAccessOptions.Log`.** That option says it is stated once for every
+  delivery path and the conversion route beside it reads it, but the segment route consulted only its own
+  optional parameter — so an app that configured the shared sink got diagnostics from one route and silence
+  from the other, with nothing to say which. Found while writing the leak test above, whose first run
+  captured no lines at all.
+
 - **`@shenora/cli` predicts the Xcode/bindings mismatch instead of discovering it at minute twenty.**
   `ios doctor` gains a `device signing` row and an `ios bindings` row; the second is the one that
   matters, because every other row can say `ok` on a Mac that cannot build at all — the workload and
