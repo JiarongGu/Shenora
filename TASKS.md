@@ -101,11 +101,6 @@ DECISION rather than a defect:
   slightly misplaced window, no error). ⚠ Same shape as the harvest finding: decide whether the value
   is a CALCULATION (keep internal) or an AGREEMENT with what the kit persists (make public + pin).
   The other 0.11.0 demotions were checked and have better stated reasons.
-- [ ] **`WireMirrorTests` has no completeness check**, so a wire family with no C#⇄TS mirror is
-  invisible — the same allow-list shape `wire-reference` just had. Confirmed gap:
-  `MediaConversionEvents`/`MediaConversionErrorCodes` have no fact and no TS constant at all, while the
-  CHANGELOG tells a page to branch on `READY`/`FAILED`. Either add the mirror + the missing client
-  constants, or state in the test file which families are deliberately host-only.
 - [ ] **Three parsers of `DECISIONS.md`'s entry lines** (`decisions-index`, `decision-audit`,
   `doc-shape`), one of which already carries a comment about the other two having drifted, plus a
   byte-identical `sectionAfter` in two of them. `decisions-index` already exports `readEntries` and is

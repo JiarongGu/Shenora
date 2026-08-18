@@ -30,6 +30,19 @@ at the first list and missed five more breaking changes.
 
 ## Unreleased
 
+### Added
+
+- **`@shenora/react` names the media CONVERSION wire it was always meant to.** `MediaConversionEvents`
+  (`sourceProgress`/`ready`/`failed`), `MediaConversionErrorCodes.unsupportedCodec` and
+  `MEDIA_PLAYER_STATUS` are exported constants now. The host published all four and this changelog told
+  a page to *"wait on READY before setting its element's src, and branch on FAILED's reason"* — while
+  the client named none of them, so every page typed the raw strings, which is exactly the divergence
+  `WireMirrorTests` exists to prevent. It could not see this one: the mirror was a hand-written list of
+  families with no check that the list was COMPLETE — the same allow-list shape that had left nine
+  types unpublished from `wire.md`. That check now exists, reading the generated (and gated)
+  `docs/reference/wire.md`, so a new wire family must be mirrored or declared host-only. Sessions are
+  declared host-only, with the reason.
+
 ### Fixed
 
 🧭 **The first ADOPTION HARVEST (D15), from Yaorin's 0.10.0 → 0.11.0 upgrade.** Three findings, and the

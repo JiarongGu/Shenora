@@ -738,4 +738,74 @@ public class WireMirrorTests
 
         Assert.Equal(host, client);
     }
+
+    /// <summary>
+    /// 🔴 THE COMPLETENESS CHECK — every family ABOVE is hand-written, so until this existed a wire
+    /// vocabulary with no mirror was simply INVISIBLE. That is the allow-list shape this repo keeps
+    /// paying for (`wire-reference`'s SECTIONS had it, and nine types were silently unpublished);
+    /// found here 2026-08-18 with `MediaConversionEvents`/`MediaConversionErrorCodes` — named by the
+    /// host, promised to the page by the CHANGELOG ("wait on READY, branch on FAILED's reason") and
+    /// absent from the client entirely, so every page typed the raw strings.
+    /// <para>
+    /// It reads <c>docs/reference/wire.md</c>, which is GENERATED from the source constants and gated
+    /// to match them — so a new wire type reaches this test the moment it exists, and a family that is
+    /// genuinely host-only has to say so in <see cref="HostOnlyFamilies"/> rather than defaulting to
+    /// unmirrored.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Every_wire_family_is_mirrored_on_the_client_or_declared_host_only()
+    {
+        var wire = File.ReadAllText(RepoFile("docs", "reference", "wire.md"));
+        var values = Regex.Matches(wire, @"^\|\s`(?<type>\w+)\.(?<member>\w+)`\s*\|\s*`(?<value>[^`]*)`",
+                                   RegexOptions.Multiline)
+            .GroupBy(m => m.Groups["type"].Value,
+                     m => m.Groups["value"].Value,
+                     StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
+        Assert.NotEmpty(values);   // parser self-check: wire.md's row shape changed if this trips
+
+        var clientSource = string.Concat(
+            Directory.EnumerateFiles(RepoFile("src", "Shenora.React", "src"), "*.ts")
+                .Where(f => !f.EndsWith(".test.ts", StringComparison.Ordinal))
+                .Select(File.ReadAllText));
+
+        var unmirrored = values
+            .Where(kv => !HostOnlyFamilies.Contains(kv.Key))
+            // A family counts as mirrored when EVERY value it publishes is spelled on the client — a
+            // partial mirror is how `PLAYER_STATUS` and two conversion events went missing inside
+            // families that looked covered.
+            .Where(kv => kv.Value.Any(v => v.Length > 0 && !clientSource.Contains($"'{v}'", StringComparison.Ordinal)))
+            .Select(kv => $"{kv.Key} ({string.Join(", ", kv.Value.Where(v => !clientSource.Contains($"'{v}'", StringComparison.Ordinal)))})")
+            .ToArray();
+
+        Assert.True(unmirrored.Length == 0,
+            "these wire constants are published in docs/reference/wire.md and named nowhere in "
+            + "@shenora/react, so a page must type the raw strings:\n  " + string.Join("\n  ", unmirrored)
+            + "\nEither add them to the client, or add the family to HostOnlyFamilies with the reason.");
+    }
+
+    /// <summary>
+    /// Wire families a PAGE never names, so the client deliberately carries no constant for them.
+    /// ⚠ Each entry is a claim that no page-side code needs it — the same claim that was wrong about
+    /// the media-conversion events, so justify a new one rather than adding it to make a test pass.
+    /// </summary>
+    private static readonly HashSet<string> HostOnlyFamilies = new(StringComparer.Ordinal)
+    {
+        // Sessions are driven from C#: a session is the app's own extra browser, and the documented
+        // way to watch one is `bus.Subscribe(...)` host-side (docs/guides/sessions.md). No page sees
+        // these — a page cannot reach another session's event bus at all.
+        "SessionEvents",
+        "InteractiveSessionErrorCodes",
+    };
+
+    /// <summary>A repo-relative path, resolved from the test output dir like <see cref="ClientSource"/>.</summary>
+    private static string RepoFile(params string[] parts)
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "Shenora.slnx")))
+            dir = Path.GetDirectoryName(dir);
+        Assert.False(dir is null, "repo root (Shenora.slnx) not found above the test output dir");
+        return Path.Combine([dir!, .. parts]);
+    }
 }

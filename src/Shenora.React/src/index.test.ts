@@ -82,10 +82,15 @@ const EXPECTED_EXPORTS = [
   'IpcRequestRoutes',
   'IpcRequestStates',
   'IpcRequestsModuleName',
-  // The host-owned player (D58). These three are a WIRE contract duplicated in C# as MediaPlayerEvents —
-  // exported so an adopter asserts against them rather than retyping the strings.
+  // The host-owned player (D58). A WIRE contract duplicated in C# as MediaPlayerEvents — exported so an
+  // adopter asserts against them rather than retyping the strings. ⚠ The conversion pair joined
+  // 2026-08-18: the host published them and the docs told pages to branch on them while the client
+  // named neither, which `WireMirrorTests`' new completeness check now makes impossible to repeat.
   'MEDIA_PLAYER_MODULE',
   'MEDIA_PLAYER_REPORT',
+  'MEDIA_PLAYER_STATUS',
+  'MediaConversionErrorCodes',
+  'MediaConversionEvents',
   'MediaPlayerCommands',
   'PNG_IMAGE',
   'SegmentBinderError',

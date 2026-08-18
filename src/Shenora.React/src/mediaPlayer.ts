@@ -28,6 +28,41 @@ export const MediaPlayerCommands = {
 /** The one message the page sends back. The host turns it into `MediaPlayer.Report(...)`. */
 export const MEDIA_PLAYER_REPORT = 'PLAYER_REPORT';
 
+/** What the page asks to read the host player's current status (`MediaPlayerModule.StatusType`). */
+export const MEDIA_PLAYER_STATUS = 'PLAYER_STATUS';
+
+/**
+ * A CONVERSION's events, on the same module. **A wire contract** mirrored from C#
+ * `MediaConversionEvents` — a conversion outlives the request that started it, so the page learns from
+ * these rather than from a response.
+ *
+ * ⚠ These were named in the host and in the docs (a page "waits on READY before setting its element's
+ * src, and branches on FAILED's reason") while existing NOWHERE on this side, so every page that used
+ * them typed the raw strings — the divergence `WireMirrorTests` exists to prevent, in the one family
+ * the mirror did not cover. Added 2026-08-18.
+ */
+export const MediaConversionEvents = {
+  /** Fraction complete: `{ source, progress }`. Throttle in the app if the engine is chatty. */
+  sourceProgress: 'SOURCE_PROGRESS',
+  /** The converted file is servable: `{ source }`. Set the element's `src` now. */
+  ready: 'READY',
+  /** Failed: `{ source, reason }`, plus `dropped` when `reason` is {@link MediaConversionErrorCodes}. */
+  failed: 'FAILED',
+} as const;
+
+/**
+ * Stable `reason` tokens on {@link MediaConversionEvents.failed}. Anything else is a TYPE name from an
+ * unexpected fault — never exception text.
+ */
+export const MediaConversionErrorCodes = {
+  /**
+   * The output would have lost a stream, so nothing was cached; the event carries `dropped`, the codecs.
+   * ⚠ It means "not playable HERE" rather than always "not supported" — a run configured with no
+   * conversion seam never asked the platform.
+   */
+  unsupportedCodec: 'UNSUPPORTED_CODEC',
+} as const;
+
 /**
  * What the element is doing, in the host's vocabulary (`MediaPlayerState`).
  *
