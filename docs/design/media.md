@@ -79,6 +79,32 @@ They look alike and differ in WHEN their output is usable — the reason all fou
 An hour-long source is an hour-long wait through the third and a few seconds through the fourth. The kit
 ships a default for each; an app past the platform's reach replaces one (D42, D51, D70).
 
+## Where a source may come from — two doors, and they are not the same shape
+
+A delivery route reads something the PAGE asked for, so every route needs an answer to "may I read this?".
+There are two, and which one applies depends on whether the thing named is a path or a url:
+
+| | **Local** | **Remote** |
+|---|---|---|
+| Named by | the page, via the app's `Resolve` | the app only — the page names a HANDLE |
+| Guarded by | `MediaAccessOptions.AllowedRoots` containment | `MediaSourceRegistry` — the handle was issued or it was not |
+| Fails closed as | empty roots serve nothing | no registry means no remote source at all |
+
+**Containment cannot guard a url**, which is why the second door is not the first one widened. `AllowedRoots`
+answers "is this path inside a directory I trust", and a url has no such relation to anything. The conversion
+route asks the app to judge instead (`AllowRemoteSource`, a predicate over the url); `SegmentStream` inverts
+it so there is nothing to judge.
+
+🔴 **The inversion is strictly tighter, and that is the whole argument for it.** A predicate over a
+page-supplied url can be WRONG — and wrong means the host fetches an address the page could not reach
+itself, with the host's network position. A handle that was never issued cannot be guessed, so the page
+cannot express a source the app did not authorise. The predicate stays on the conversion route because it
+shipped there; new doors take the registry.
+
+⚠ **A url is a credential carrier, so it travels with a LABEL.** Diagnostics print the label and never the
+url. `Path.GetFileName` is not a substitute: it sanitises a path by splitting on separators, and a query
+string has none — so `?sig=…` survives it whole.
+
 ## Delivery, and why registration ORDER is load-bearing (D73)
 
 `UseComputedRemux` must precede `UseMediaConversion`, or the conversion route answers every request its own

@@ -786,3 +786,11 @@ Script
 # a `PluginSystem` or a `LicensingSystem` would each be a scenario name wearing a mechanism's clothes. It
 # earns its place because "file system" is ONE noun, not a noun with `System` appended.
 System
+# `Remote` (2026-08-19) — for `RemoteMediaSource`, the source a `MediaSourceRegistry` issues a handle for.
+# It names WHERE the bytes are, which is the only thing separating it from the local path beside it, and
+# it is the word every platform uses for exactly this distinction: remote host, remote endpoint, remote
+# procedure call, `git remote`. No application supplies it — an app's domain word for the same object
+# would be `Stream`, `Track`, `Asset` or `Episode`, none of which this admits.
+# ⚠ It carries a real constraint rather than a location: a remote source cannot be contained against
+# `AllowedRoots`, cannot be `stat`ed, and its url may be a credential. `Remote` is what says so.
+Remote
