@@ -74,9 +74,23 @@ machine. `cbdhsvc_*` is implicated (restarting it moved 13/15 → 3–6/15) and 
 sample proves nothing. The suite is held out of the gate deliberately (`[Trait("Category",
 "RealClipboard")]`, run it with `dev.mjs test clipboard`).
 
-- [ ] **The residual ~30 % is unexplained.** Worth one pass when it next bites: the next suspects are
-  another clipboard listener (a manager tool, RDP/VM sync) or Cloud Clipboard. ⚠ Toggling Windows
-  clipboard history OFF is the untried experiment; it changes a user-facing setting, so restore it.
+- [ ] **The residual ~30 % is unexplained, but the suspect list is now SHORTER and one suspect is
+  PROVEN to exist.** Investigated 2026-08-20:
+  - ✔ **Cloud Clipboard and clipboard history are ELIMINATED** — `EnableClipboardHistory`,
+    `EnableCloudClipboard` and `CloudClipboardAutomaticUpload` are all unset under
+    `HKCU\Software\Microsoft\Clipboard`, so neither was ever running. No setting was changed to learn
+    this, and none needs to be.
+  - 🔴 **A VM clipboard sync DOES exist on this machine and actively WRITES the Windows clipboard**: the
+    Android emulator's bridge, proven by setting the host clipboard and watching the guest follow twice
+    (see `mobile-harness.md`). A qemu process has been running here since **12 Aug** — spanning the
+    16 Aug diagnosis — and a second-writer is exactly the shape this entry predicted.
+  - ⚠ **An A/B today could not convict it, because the fault is not currently reproducing**: nine runs
+    with and without the live emulator gave ONE failure, on the first run, then eight clean. That is the
+    entry's own warning working as intended — a healthy sample proves nothing.
+  - **So the experiment is READY rather than done.** When it next bites, run `dev.mjs test clipboard`
+    several times with every qemu process stopped and again with one running, and compare the SPREAD.
+    ⚠ A wedged emulator from 12 Aug is still resident and cannot be killed — it needs a reboot, and
+    until then "no VM running" is not actually achievable on this box.
 
 ### 📋 THE MOBILE CLIPBOARD — `text/html` is LOST on Android
 
