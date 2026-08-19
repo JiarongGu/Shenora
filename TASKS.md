@@ -125,6 +125,20 @@ that hour and are fixed; the CHANGELOG has them.
     class of rot, and the kit's own sample is the first thing an adopter copies.
 
 
+- [ ] **The inspector's SHELL-DETECTION branch has never matched anything.** It reports `WebView2` /
+  `WKWebView` / a bridge marker, and every run so far has been Safari or Chrome — where "none detected"
+  is the correct answer and therefore proves nothing.
+  - Attempted 2026-08-19 by pointing the desktop sample's WebView2 at the inspector over CDP
+    (`dev.mjs sample --dev` exposes a debugging port). Both `127.0.0.1` and the LAN address failed:
+    `net::ERR_ABORTED` — a CANCELLED navigation, not refused or blocked, with the renderer then
+    unresponsive to `Runtime.evaluate`. **The cause was not isolated.** The kit's own `e.Cancel = true`
+    sites are all in the auxiliary-session subsystem, not the main host, and the sample calls
+    `_host.Navigate()` itself, so a superseding navigation is the leading guess and nothing more.
+  - ⚠ **Probably the wrong target anyway.** An app's main webview is the APP's, and the inspector is
+    meant to be opened by a browser on the device. The honest way to prove this branch is an app that
+    opens the inspector deliberately — a secondary window, or a debug menu item — which is also the only
+    shape in which the detection is useful.
+
 - [ ] **`ios push` leaves a git checkout's METADATA describing a tree that is no longer there.** The files
   are current; `git log` still names the old commit and `git status` shows everything as modified. Proven
   on the real Mac: after a push its HEAD read `a30d994` while the tree held today's files. Documented on
