@@ -93,6 +93,20 @@ not less, because that change is unexercised.
   `HtmlText` survives a round trip, and whether an app's own media-type string is accepted as a
   pasteboard type at all. ⚠ **Paste into a FOREIGN app** (Notes, Gmail) — a self round-trip would pass
   even if the kit invented a private UTI nothing else reads.
+  - ✔ **The foreign reader is solved and needs no human**: `xcrun simctl pbpaste booted` reads the
+    simulator's pasteboard from OUTSIDE the app, and `pbcopy` writes it. Plant a sentinel first, or a
+    stale pasteboard passes the test on its own.
+  - 🔴 **The blocker is TRIGGERING the in-app action, and it is not a permissions problem.** Attempted
+    2026-08-19: `cliclick` at the mapped coordinate, then again with a `return` keypress, changed
+    nothing — the app logged no clipboard activity at all. Accessibility IS granted (System Events
+    returns the Simulator's window position and size over ssh), so synthetic input simply does not reach
+    the WebView's content this way. The donor harness records the same shape — taps landing only a FOCUS
+    on some web controls — so this is the known wall rather than a new one.
+  - **What would get past it**: a page-side trigger rather than a synthetic tap — the sample exposing the
+    clipboard round trip as a startup probe (the way `[CODEC]` and `[ACTIVITY]` already report), so the
+    test is `deploy` + read the log. That also makes it runnable in CI-shaped conditions later.
+  - ⚠ Separately, `dev.mjs mac tap` fails EARLIER than any of this — "could not read the Simulator window
+    geometry" — while the same query through System Events answers fine. A devtools bug, not a kit one.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
