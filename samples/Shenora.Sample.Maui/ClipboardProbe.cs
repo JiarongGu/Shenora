@@ -43,37 +43,50 @@ internal static class ClipboardProbe
         log("[CLIPBOARD] the question: does a multi-format item survive a round trip, and is it readable "
             + "from OUTSIDE this app?");
 
+        // 🔴 TWO round trips, not one, because `SetAsync` is ALL-OR-NOTHING by contract — it refuses the
+        // whole content rather than writing part of it. Asked together, Android's refusal of an app's own
+        // media type aborted the write and the `text/html` question never got asked at all; the run
+        // reported one exception and answered nothing. Measured on an emulator 2026-08-19.
+        await Round(clipboard, log, "well-known", new Dictionary<string, ReadOnlyMemory<byte>>
+        {
+            [ClipboardContent.Html] = Encoding.UTF8.GetBytes($"<b>{Sentinel}</b>"),
+        });
+
+        // ⚠ Expected to DIFFER per platform, which is the point: iOS's pasteboard takes an arbitrary UTI
+        // and Android's `ClipData` does not. A refusal here is an ANSWER, not a failure.
+        await Round(clipboard, log, "app's own", new Dictionary<string, ReadOnlyMemory<byte>>
+        {
+            [CustomType] = Encoding.UTF8.GetBytes("custom-payload"),
+        });
+
+        log("[CLIPBOARD] CROSS-CHECK: read the pasteboard from OUTSIDE — `xcrun simctl pbpaste booted`, or "
+            + "`adb shell service call clipboard` — which is the only reader that proves another app sees it.");
+    }
+
+    /// <summary>One write/read pair, reported on its own so a refusal of one cannot hide the rest.</summary>
+    private static async Task Round(IClipboardService clipboard, Action<string> log, string label,
+                                    Dictionary<string, ReadOnlyMemory<byte>> formats)
+    {
+        var name = string.Join(", ", formats.Keys);
         try
         {
-            var written = new ClipboardContent
-            {
-                Text = Sentinel,
-                Formats = new Dictionary<string, ReadOnlyMemory<byte>>
-                {
-                    [ClipboardContent.Html] = Encoding.UTF8.GetBytes($"<b>{Sentinel}</b>"),
-                    [CustomType] = Encoding.UTF8.GetBytes("custom-payload"),
-                },
-            };
-            await clipboard.SetAsync(written);
-            log($"[CLIPBOARD] wrote text + {written.Formats.Count} format(s)");
-
+            await clipboard.SetAsync(new ClipboardContent { Text = Sentinel, Formats = formats });
             var read = await clipboard.GetAsync();
-            // ⚠ Each reported SEPARATELY rather than as one pass/fail. A platform that keeps the text and
-            // drops the custom type is a different answer from one that keeps everything, and collapsing
-            // them would hide exactly the case this exists to find.
-            log($"[CLIPBOARD] text     : {(read.Text == Sentinel ? "round-tripped" : $"CHANGED -> {Describe(read.Text)}")}");
-            log($"[CLIPBOARD] html     : {(read.Formats.ContainsKey(ClipboardContent.Html) ? "present" : "DROPPED")}");
-            log($"[CLIPBOARD] custom   : {(read.Formats.ContainsKey(CustomType) ? "present" : "DROPPED")}"
-                + $"   ({CustomType})");
-            log($"[CLIPBOARD] formats back: {(read.Formats.Count == 0 ? "(none)" : string.Join(", ", read.Formats.Keys))}");
-            log("[CLIPBOARD] CROSS-CHECK: `xcrun simctl pbpaste booted` should print the sentinel — that is a "
-                + "FOREIGN reader, and the only one that proves another app could read this.");
+
+            log($"[CLIPBOARD] {label,-10} text : "
+                + (read.Text == Sentinel ? "round-tripped" : $"CHANGED -> {Describe(read.Text)}"));
+            foreach (var key in formats.Keys)
+            {
+                log($"[CLIPBOARD] {label,-10} {key} : {(read.Formats.ContainsKey(key) ? "present" : "DROPPED")}");
+            }
+            log($"[CLIPBOARD] {label,-10} back : "
+                + (read.Formats.Count == 0 ? "(no formats)" : string.Join(", ", read.Formats.Keys)));
         }
         catch (Exception ex)
         {
-            // A refusal is an ANSWER on this surface (Files on a phone is a documented throw), so the type
-            // is named rather than swallowed — but it must not take the app down on startup.
-            log($"[CLIPBOARD] refused: {ex.GetType().Name} — {ex.Message}");
+            // A refusal is an ANSWER on this surface — `Files` on a phone is a documented throw — so the
+            // type is named rather than swallowed, and it must not take the app down on startup.
+            log($"[CLIPBOARD] {label,-10} REFUSED ({name}): {ex.GetType().Name} — {ex.Message}");
         }
     }
 

@@ -82,27 +82,29 @@ sample proves nothing. The suite is held out of the gate deliberately (`[Trait("
   another clipboard listener (a manager tool, RDP/VM sync) or Cloud Clipboard. ⚠ Toggling Windows
   clipboard history OFF is the untried experiment; it changes a user-facing setting, so restore it.
 
-### 📋 THE MOBILE CLIPBOARD — iOS answered, ANDROID still open
+### 📋 THE MOBILE CLIPBOARD — `text/html` is LOST on Android
 
-**iOS is ANSWERED** (2026-08-19, simulator, through the sample's `[CLIPBOARD]` startup probe): text
-round-trips, `text/html` and an app's own `application/x-shenora-probe` both come back off ONE item, and
-`xcrun simctl pbpaste` — a genuinely foreign reader — prints the sentinel. The probe also found a real
-defect on its first run, since fixed: the multi-format paths reached `UIPasteboard` off the main thread
-and threw on every call.
+Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19, simulator + emulator).
 
-- [ ] **ANDROID is unanswered, and it is the half likelier to differ.** Whether `HtmlText` survives a
-  round trip, and whether an app's own media type is carried at all — `ClipData` has no equivalent of
-  iOS's arbitrary UTI, which is why `UnsupportedFormats` answers per-platform in the first place. The
-  probe is already in the sample and prints the same six lines, so this is `dev.mjs android deploy` and
-  reading logcat rather than new work.
-  - ⚠ **Do NOT carry the iOS conclusion across.** Two different pasteboard models; the entry that filed
-    this said so before either had run.
+| | text | `text/html` | an app's own type |
+|---|---|---|---|
+| iOS | round-trips | present | present (arbitrary UTI) |
+| Android | round-trips | **DROPPED** | refused, by name |
 
-⚠ **A synthetic tap cannot drive the sample's web controls**, which is why this is a startup probe rather
-than a button press. Measured: `cliclick` at the mapped coordinate, then a `return` keypress, both left
-the app silent — with Accessibility granted and the Simulator's window geometry readable over the same
-ssh session. Separately `dev.mjs mac tap` fails earlier still ("could not read the Simulator window
-geometry") while the same System Events query answers fine. A devtools bug, not a kit one.
+- [ ] 🔴 **Android ACCEPTS `text/html` and then loses it, which is worse than refusing it.** The custom
+  type is refused explicitly and that is honest; HTML passes `UnsupportedFormats`, is written with
+  `ClipData.NewHtmlText`, and comes back with no formats at all. Silent loss on a surface whose whole
+  job is carrying representations.
+  - **The cause is NOT isolated.** Both halves read correctly: the write uses `NewHtmlText`, the read
+    takes `GetItemAt(0).HtmlText`. Candidates, none tested — Android gates clipboard READS on the app
+    having focus (a startup probe may not); the emulator's own clipboard listener was active in logcat
+    during the run and may have replaced the clip; or `HtmlText` needs the clip DESCRIPTION to declare
+    the HTML mime type on this API level.
+  - **Cheapest next step**: have the probe log `PrimaryClip.Description` mime types straight after its
+    own write. That separates "we never wrote HTML" from "something replaced it" from "we cannot read it
+    back", which is three different fixes.
+  - ⚠ Then decide: carry it, or refuse it like the custom type. **Accepting and dropping is the one
+    option that is not defensible** — an adopter cannot tell it happened.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
