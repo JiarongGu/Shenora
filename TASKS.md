@@ -57,17 +57,13 @@ they are configured, a release needs the `NPM_TOKEN` fallback.
   that filed this. **Do not build a cache for CPU.** A cold two-hour file is disk-bound and is the only
   remaining argument; it needs its own measurement first, and any cache kept must be bounded by BYTES
   and evict on memory pressure.
-- [ ] 🔴 **Android's per-request range cost needs a DECISION, not more work.** `Unsliced` delivery makes a
-  `Range: bytes=0-65535` on a 79 MiB film read the whole output (82,843,185 bytes, 117,285 reads,
-  26–31 s); iOS gets exactly the window it asked for.
-  - ⛔ **Two approaches are CLOSED and the reasons are on `WebViewRangeDelivery.Unsliced` — read them
-    before proposing either again.** A seekable body cannot work from this side (the platform's binding
-    never calls `Seek`); cheap filler for the discarded prefix stakes correctness on the delivery model
-    never changing, and fails silently at the wrong offset when it does.
-  - **What is left is one question, and it needs the blocked device run:** is D44 still true on current
-    Android/Chromium — is a proper `206` + `Content-Range` honoured now, so the shell could move to
-    `Sliced`? That is the only path that removes the cost rather than hiding it. Re-measure the way it
-    was measured (bytes + read count + wall clock).
+**ANSWERED 2026-08-20 — the cost STAYS, and `Unsliced` is correct.** The open question was whether D44
+still holds on current Android: does a proper `206` + `Content-Range` get honoured, letting the shell
+move to `Sliced`? Measured on Android 16 (SDK 36, WebView 133.0.6943.137) by flipping the constant and
+serving a non-faststart file: **35 requests, 28 of them the identical tail range**, each answered `206`
+with a correct `Content-Range` — the retry loop, unchanged. `Unsliced` serves the same clip in FOUR.
+The reasoning now lives on `WebViewRangeDelivery.Unsliced` with the numbers; re-measure there if a much
+later WebView is worth retesting.
 
 ### 🔧 THE BOX REFUSES ~30 % OF CLIPBOARD WRITES FROM A LOOPING TEST PROCESS
 
@@ -140,16 +136,6 @@ that run did NOT settle.
     habit before a release, or wire it into a Mac-side check — it is the only thing that can see this
     class of rot, and the kit's own sample is the first thing an adopter copies.
 
-
-- [ ] **`ios push` leaves a git checkout's METADATA describing a tree that is no longer there.** The files
-  are current; `git log` still names the old commit and `git status` shows everything as modified. Proven
-  on the real Mac: after a push its HEAD read `a30d994` while the tree held today's files. Documented on
-  `pushTree`, but a `--dir` that defaults to a NON-checkout scratch path may be the better answer —
-  decide it the next time someone is actually using the loop, not now.
-
-- [ ] **`inspect` has `eval` but not `fetch` or `navigate` as first-class actions.** `eval` expresses both,
-  so this is ergonomics, not capability — file it only if the raw form turns out to be what people
-  actually type.
 
 ⚠ **A codec probe was deliberately left out of the inspector page.** Yaorin's version carried one and it paid
 for itself immediately — run against headless Edge with `--disable-gpu` it reported `HEVC: ""` where the

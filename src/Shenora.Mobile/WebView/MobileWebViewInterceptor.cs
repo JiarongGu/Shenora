@@ -59,6 +59,13 @@ public sealed class MobileWebViewInterceptor : IWebViewInterceptor, IDisposable
 #if ANDROID
         // Android's webview applies the Range START to whatever body it is handed, so slicing as well applies
         // the offset twice — a player asking for a file's tail gets an empty body and retries it forever.
+        //
+        // 🔴 **RE-MEASURED 2026-08-20 on Android 16 (SDK 36, WebView 133.0.6943.137) and STILL TRUE**, so
+        // this is not a stale workaround for an old Chromium. Flipping to `Sliced` and serving a
+        // non-faststart file produced **35 requests, 28 of them the identical tail range**
+        // (`bytes=393216-`, each answered `206` with a correct `Content-Range`) — the retry loop this
+        // comment predicts. Unsliced serves the same clip in FOUR requests. A correct 206 is not enough;
+        // the webview offsets the body it is given regardless of what the headers say.
         WebViewRangeDelivery.Unsliced;
 #elif IOS || MACCATALYST
         // WKURLSchemeHandler passes the body through verbatim, so the handler slices — ordinary correct HTTP.
