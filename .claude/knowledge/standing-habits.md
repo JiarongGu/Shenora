@@ -81,4 +81,14 @@ the file itself. They are prose now, and they never "complete":
   specific bugs a hand-rolled shell tends to have (the DPI-mis-scaled `Screen.WorkingArea` restore;
   `CloseReason.UserClosing` firing for a programmatic `Close()`). Write new stages the same way.
 
+- 🔴 **Compile the sample's `#if IOS` arm before a release — nothing on Windows does.** Measured
+  2026-08-19: it had not compiled for FOUR DAYS and shipped that way across 0.11.0. `Use()` began taking
+  an `ILogger?` on 08-14, breaking the `#if IOS` and `#elif ANDROID` arms together; the Android one was
+  fixed on 08-18 because `dev.mjs android` compiles it, and the iOS one three lines above it was not,
+  because nothing does. `verify` cannot — the MAUI head needs the iOS workload.
+  **`shenora ios build --host` is the only thing that can see this class of rot**, and the kit's own
+  sample is the first thing an adopter copies. ⚠ Bounded when it happened — `Shenora.iOS` itself
+  compiled and `samples/` ships in no package — so this is about the thing people COPY, not the thing
+  they install.
+
 ---

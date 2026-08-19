@@ -149,3 +149,13 @@ scriptable stand-in that records how each command was dispatched.
 succeeds, a signature verifies, or an app launches. They claim the orchestration is right, which is where
 every one of this subsystem's defects actually was — each found once, by hand, against real hardware, and
 none of which would have been found twice.
+
+## The codec probe the inspector does NOT carry
+
+⚠ **A codec probe was deliberately left out of the inspector page.** Yaorin's version carried one and it paid
+for itself immediately — run against headless Edge with `--disable-gpu` it reported `HEVC: ""` where the
+same engine in a real WebView2 window answers `probably`, which is a real lesson: **a codec matrix is
+CONTEXT-dependent and headless is not a proxy for the shipped surface.** But the list it probed encoded
+that app's format decisions, and the kit is not a media library (D53). If it returns it should be a
+DECLARED probe list the page is given, not a list the kit picks.
+
