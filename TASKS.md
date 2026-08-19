@@ -125,9 +125,12 @@ that hour and are fixed; the CHANGELOG has them.
     class of rot, and the kit's own sample is the first thing an adopter copies.
 
 
-- [ ] **The inspector's SHELL-DETECTION branch has never matched anything.** It reports `WebView2` /
-  `WKWebView` / a bridge marker, and every run so far has been Safari or Chrome — where "none detected"
-  is the correct answer and therefore proves nothing.
+- [ ] **The inspector's SHELL-DETECTION branch has never matched anything** — though its PREDICATE is now
+  confirmed. It reports `WebView2` / `WKWebView` / a bridge marker, and every run so far has been Safari
+  or Chrome, where "none detected" is the correct answer and therefore proves nothing.
+  - ✔ **The marker itself is real**: evaluating `!!(window.chrome && window.chrome.webview)` inside the
+    desktop sample's own page over CDP returns **true**, so the test the branch performs is the right one
+    in a genuine Shenora WebView2 host. What is untested is the inspector PAGE running there.
   - Attempted 2026-08-19 by pointing the desktop sample's WebView2 at the inspector over CDP
     (`dev.mjs sample --dev` exposes a debugging port). Both `127.0.0.1` and the LAN address failed:
     `net::ERR_ABORTED` — a CANCELLED navigation, not refused or blocked, with the renderer then
