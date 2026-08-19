@@ -106,6 +106,16 @@ internal static class ClipboardProbe
             }
             log($"[CLIPBOARD] {label,-10} back : "
                 + (read.Formats.Count == 0 ? "(no formats)" : string.Join(", ", read.Formats.Keys)));
+
+            // 🔴 THE SAME READ, FIVE SECONDS LATER, through the kit. Every "DROPPED" so far came from a
+            // read taken immediately after the write, and `PrimaryClip` is a cross-process call — so the
+            // one thing never tested is whether the data is simply not VISIBLE yet. If the late read
+            // finds the format the early one missed, nothing was ever dropped and the probe was the bug.
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            var late = await clipboard.GetAsync();
+            log($"[CLIPBOARD] {label,-10} late : "
+                + (late.Formats.Count == 0 ? "(no formats)" : string.Join(", ", late.Formats.Keys))
+                + $"  text={(late.Text == Sentinel ? "sentinel" : Describe(late.Text))}");
         }
         catch (Exception ex)
         {

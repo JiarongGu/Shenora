@@ -99,6 +99,14 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
   | the ORDER of writes | later writes win | 1st html, 2nd plain, 3rd html — **dead** |
   | racing read-after-write | a settled read is stable | 1.2 s settle: still varies — **dead** |
 
+  - ✔ **The kit is CLEARED, and this is now evidence rather than inference.** Logging both call sites
+    showed identical arguments — `label`, a 23-char text, `html='<b>SHENORA-CLIPBOARD-PROBE</b>'`,
+    30 chars — into the identical `ClipData.NewHtmlText`. On one run BOTH the kit's write and the direct
+    control returned `text/plain`. Same inputs, same API, different answers between runs: nothing in the
+    kit's path distinguishes it from calling the platform by hand.
+  - ✔ **The read is not racing either.** A second `GetAsync` five seconds later reports the same
+    `(no formats)` while the TEXT is present — consistently. So the HTML is genuinely absent, not merely
+    invisible yet, and the earlier read-race idea is dead too.
   - 🔴 **The prime remaining suspect is the EMULATOR'S CLIPBOARD BRIDGE**, which mirrors the guest
     clipboard to the Windows host and is the one variable I could not hold still. **The way to test it is
     to turn that sharing OFF** (Extended Controls → Settings) and repeat: stable results implicate the
