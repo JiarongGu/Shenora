@@ -32,6 +32,12 @@ internal static class ClipboardProbe
     /// <summary>Recognisable in `pbpaste` output, and obviously ours if it turns up anywhere unexpected.</summary>
     internal const string Sentinel = "SHENORA-CLIPBOARD-PROBE";
 
+    /// <summary>
+    /// How long to wait before touching the clipboard at all. Generous rather than tuned — the cost of
+    /// being too short is a WRONG ANSWER that reads as a platform limitation.
+    /// </summary>
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromSeconds(12);
+
     internal static async Task RunAsync(IClipboardService? clipboard, Action<string> log)
     {
         if (clipboard is null)
@@ -42,6 +48,14 @@ internal static class ClipboardProbe
 
         log("[CLIPBOARD] the question: does a multi-format item survive a round trip, and is it readable "
             + "from OUTSIDE this app?");
+
+        // 🔴 WAIT FOR FOCUS BEFORE MEASURING ANYTHING. Android restricts clipboard READS to the focused
+        // app, and this runs from startup — so an early read answers as though the clipboard held plain
+        // text no matter what is on it. Two conclusions were drawn from exactly that and both were
+        // wrong: first "Android drops text/html", then a kit-side check that refused a write which had
+        // actually succeeded. The same control call answered differently on consecutive runs, which is
+        // the tell that the INSTRUMENT was moving, not the thing being measured.
+        await Task.Delay(SettleDelay);
 
         // 🔴 TWO round trips, not one, because `SetAsync` is ALL-OR-NOTHING by contract — it refuses the
         // whole content rather than writing part of it. Asked together, Android's refusal of an app's own

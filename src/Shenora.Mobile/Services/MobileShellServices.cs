@@ -169,11 +169,20 @@ public sealed class MobileClipboardService : IClipboardService
         var text = content.Text ?? string.Empty;
         // NewHtmlText carries BOTH representations in one ClipData, which is exactly the atomicity the
         // contract is for: a receiver that wants markup gets it, a plain-text receiver gets the text.
-        var clip = content.Formats.TryGetValue(ClipboardContent.Html, out var html)
+        var wantsHtml = content.Formats.TryGetValue(ClipboardContent.Html, out var html);
+        var clip = wantsHtml
             ? global::Android.Content.ClipData.NewHtmlText("Shenora", text,
                   global::System.Text.Encoding.UTF8.GetString(html.Span))
             : global::Android.Content.ClipData.NewPlainText("Shenora", text);
         manager.PrimaryClip = clip;
+
+        // ⚠ **DO NOT "verify" this write by reading PrimaryClip back here.** That was tried and reverted
+        // the same day: Android restricts clipboard READS to the focused app, so during startup the
+        // read-back answers as though the clip were plain text, and the check refuses a write that in
+        // fact succeeded. Turning a working capability into a named refusal is worse than the silent
+        // drop it was meant to replace, and the failure is invisible because the refusal LOOKS informed.
+        // Anything measuring this must read once focus is settled — see the sample's `[CLIPBOARD]` probe.
+        _ = wantsHtml;
         return Task.CompletedTask;
 #else
         // A shell with no platform pasteboard binding still honours the text half.

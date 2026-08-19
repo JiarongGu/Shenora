@@ -91,19 +91,26 @@ Both platforms have now run the sample's `[CLIPBOARD]` startup probe (2026-08-19
 | iOS | round-trips | present | present (arbitrary UTI) |
 | Android | round-trips | **DROPPED** | refused, by name |
 
-- [ ] **Android loses `text/html`, the KIT is not at fault, and the remaining question is WHERE.**
-  A control in the probe calls `ClipData.NewHtmlText` directly — no kit code in the path — and the clip
-  it produces declares `mime=[text/plain] htmlText=null`. The kit's write is correct; the platform is
-  not carrying it. The kit's read and a focus-gated read were both eliminated first, by asking the
-  platform what it held immediately after the write.
-  - ⚠ **Measured on an EMULATOR, whose clipboard is bridged to the host and may flatten formats.** That
-    is a real alternative to "this Android version dropped HTML support", and the two have opposite
-    consequences. **Re-run the probe on a real handset before deciding** — it is already in the sample
-    and prints the control line itself.
-  - **Then decide, and only then**: carry it if a device carries it, or add `Html` to Android's
-    `UnsupportedFormats` so it is refused by name like an app's own type. **Accepting and silently
-    dropping is the one option that is not defensible** — an adopter cannot tell it happened. Do not
-    make that change off an emulator result alone.
+- [ ] **Android: the kit BUILDS a correct HTML clip and the stored clip is plain text. Mechanism
+  unknown.** Investigated at length on an emulator 2026-08-19; recording the evidence rather than a
+  theory, because three theories have already been wrong here.
+  - **Established, reproducibly:** temporary instrumentation inside the write showed
+    `built=[text/html] storedBack=[text/plain]` — the kit constructs the right clip, and what the
+    platform holds afterwards is plain. A CONTROL in the sample calling `ClipData.NewHtmlText` directly
+    reads back `mime=[text/html] htmlText=30 chars` **in the same run**, so the API works on this image.
+  - **Eliminated:** the kit's arguments (`wantsHtml=True htmlBytes=30`); the kit's READ path (a
+    platform-direct read sees the same plain clip); and focus/timing — the probe's settle delay was
+    raised from 4 s to 12 s and both give byte-identical output.
+  - **The one difference left** is that the kit writes on the MAIN thread (`main=True`, since
+    `SetAsync` marshals for UIKit's sake) while the control writes on a background thread. That is a
+    lead, NOT a conclusion — it has not been tested, and "the obvious remaining difference" has been
+    wrong twice already today.
+  - **Next experiment**, cheap and decisive: make the control write from the main thread too. If it then
+    also stores plain, the marshalling is implicated and iOS and Android want different threads; if it
+    still stores HTML, the difference is somewhere else entirely and this lead dies too.
+  - ⚠ **Do not "fix" this by refusing `text/html` on Android.** That was tried: verifying the write by
+    reading it back turned a working capability into a named refusal, because the read is the unreliable
+    half. Reverted, with the reason recorded at the call site.
 
 ### 🎧 BACKGROUND PLAYBACK — how long it survives is unmeasured
 
